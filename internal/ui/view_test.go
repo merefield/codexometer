@@ -281,13 +281,14 @@ func TestPalettesAndFallback(t *testing.T) {
 }
 
 func TestTimeFormatting(t *testing.T) {
-	if got := countdown(time.Now().Add(-time.Second)); got != "00:00:00" {
+	now := time.Unix(10_000, 0)
+	if got := countdownFrom(now, now.Add(-time.Second)); got != "00:00:00" {
 		t.Fatalf("past countdown = %q", got)
 	}
-	if got := countdown(time.Now().Add(125 * time.Hour)); !strings.HasPrefix(got, "5D 04:") {
+	if got := countdownFrom(now, now.Add(125*time.Hour)); got != "5D 05:00" {
 		t.Fatalf("long countdown = %q", got)
 	}
-	if got := countdown(time.Now().Add(time.Hour + 2*time.Minute + 3*time.Second)); !strings.HasPrefix(got, "01:02:0") {
+	if got := countdownFrom(now, now.Add(time.Hour+2*time.Minute+3*time.Second)); got != "01:02:03" {
 		t.Fatalf("short countdown = %q", got)
 	}
 	if got := compactDuration(60*time.Second + time.Nanosecond); got != "01:01" {
