@@ -13,7 +13,7 @@ opening `/status` in your working Codex session.
 
 ![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
 
-_Hacker theme with simulated quota data._
+_Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
 
 Codexometer refreshes once a minute by default. It is read-only: it displays
 quota information and never starts a model turn or consumes a reset credit.
