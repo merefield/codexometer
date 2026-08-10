@@ -38,7 +38,7 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 
 func TestStyleHotkeyCyclesAndWraps(t *testing.T) {
 	model := New(nil, time.Minute)
-	for want := styleRotary; want < styleCount; want++ {
+	for want := stylePie; want < styleCount; want++ {
 		updated, _ := model.Update(key('s'))
 		model = updated.(Model)
 		if model.meterStyle != want {

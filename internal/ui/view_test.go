@@ -62,13 +62,13 @@ func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 	}
 }
 
-func TestRotaryViewPlacesQuotaWindowsSideBySide(t *testing.T) {
+func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 	model := Model{
 		snapshot:    codex.DemoSnapshot(),
 		width:       80,
 		height:      24,
 		nextRefresh: time.Now().Add(time.Minute),
-		meterStyle:  styleRotary,
+		meterStyle:  stylePie,
 	}
 	output := ansi.Strip(model.View())
 	foundSharedRow := false
@@ -79,25 +79,8 @@ func TestRotaryViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 		}
 	}
 	if !foundSharedRow {
-		t.Fatalf("rotary gauges were not side by side:\n%s", output)
+		t.Fatalf("pie gauges were not side by side:\n%s", output)
 	}
-}
-
-func TestBoatViewPlacesQuotaWindowsSideBySide(t *testing.T) {
-	model := Model{
-		snapshot:    codex.DemoSnapshot(),
-		width:       80,
-		height:      24,
-		nextRefresh: time.Now().Add(time.Minute),
-		meterStyle:  styleBoat,
-	}
-	output := ansi.Strip(model.View())
-	for _, line := range strings.Split(output, "\n") {
-		if strings.Contains(line, "5 HOURS LOOP") && strings.Contains(line, "1 WEEK LOOP") {
-			return
-		}
-	}
-	t.Fatalf("boat gauges were not side by side:\n%s", output)
 }
 
 func TestGaugeGridStyleClassification(t *testing.T) {
@@ -108,20 +91,20 @@ func TestGaugeGridStyleClassification(t *testing.T) {
 	}
 }
 
-func TestRotaryGridWrapsAdditionalGaugesToPreserveDetail(t *testing.T) {
+func TestPieGridIncludesAdditionalGaugesResponsively(t *testing.T) {
 	meters := codex.DemoSnapshot().Meters()
 	meters = append(meters, codex.Meter{Bucket: "extra", Name: "1 DAY", Window: codex.Window{UsedPercent: 12}})
-	output := ansi.Strip(renderMeterGrid(80, 20, meters, styleRotary, paletteFor(themeBlueSteel)))
-	if columns := meterGridColumns(80, 20, len(meters), styleRotary); columns != 2 {
-		t.Fatalf("three radial gauges used %d columns, want 2", columns)
+	output := ansi.Strip(renderMeterGrid(80, 20, meters, stylePie, paletteFor(themeBlueSteel)))
+	if columns := meterGridColumns(80, 20, len(meters), stylePie); columns < 2 {
+		t.Fatalf("three radial gauges used %d columns, want at least 2", columns)
 	}
-	for _, want := range []string{"5 HOURS LOOP", "1 WEEK LOOP", "EXTRA // 1 DAY LOOP"} {
+	for _, want := range []string{"5 HOURS LOOP", "1 WEEK LOOP", "EXTRA // 1 DAY"} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("responsive rotary grid missing %q:\n%s", want, output)
+			t.Fatalf("responsive pie grid missing %q:\n%s", want, output)
 		}
 	}
 	if height := lipgloss.Height(output); height != 20 {
-		t.Fatalf("responsive rotary grid height = %d, want 20:\n%s", height, output)
+		t.Fatalf("responsive pie grid height = %d, want 20:\n%s", height, output)
 	}
 }
 
@@ -132,7 +115,7 @@ func TestGridRespondsToFourRateLimitsAndTerminalShape(t *testing.T) {
 		codex.Meter{Bucket: "extra", Name: "1 MONTH", Window: codex.Window{UsedPercent: 48}},
 	)
 	colors := paletteFor(themeUltraviolet)
-	for _, style := range []meterStyleID{styleRotary, stylePie, styleTachometer} {
+	for _, style := range []meterStyleID{stylePie} {
 		narrowColumns := meterGridColumns(100, 24, len(meters), style)
 		wideColumns := meterGridColumns(300, 24, len(meters), style)
 		if narrowColumns < 2 {
@@ -151,9 +134,9 @@ func TestGridRespondsToFourRateLimitsAndTerminalShape(t *testing.T) {
 	}
 }
 
-func TestBarsAlwaysFlowOneMeterPerRow(t *testing.T) {
+func TestHorizontalStylesAlwaysFlowOneMeterPerRow(t *testing.T) {
 	meters := codex.DemoSnapshot().Meters()
-	for _, style := range []meterStyleID{styleBars, styleFuel} {
+	for _, style := range []meterStyleID{styleBars, styleConsumptionPace, styleFuel} {
 		if columns := meterGridColumns(160, 30, len(meters), style); columns != 1 {
 			t.Fatalf("%s used %d columns, want one", style.name(), columns)
 		}
@@ -197,7 +180,7 @@ func TestMeterGridKeepsRowHeightsEqualAndPadsAboveFooter(t *testing.T) {
 
 func TestMeterGridUsesAllocatedHeightWithoutInternalOverflow(t *testing.T) {
 	meters := codex.DemoSnapshot().Meters()
-	for _, style := range []meterStyleID{styleRotary, stylePie, styleTachometer} {
+	for _, style := range []meterStyleID{stylePie, styleConsumptionPace} {
 		output := ansi.Strip(renderMeterGrid(116, 24, meters, style, paletteFor(themeHacker)))
 		height := strings.Count(output, "\n") + 1
 		if height != 24 {
@@ -207,7 +190,7 @@ func TestMeterGridUsesAllocatedHeightWithoutInternalOverflow(t *testing.T) {
 }
 
 func TestRadialViewsPlaceQuotaWindowsSideBySide(t *testing.T) {
-	for _, style := range []meterStyleID{styleRotary, stylePie, styleTachometer} {
+	for _, style := range []meterStyleID{stylePie} {
 		model := Model{
 			snapshot:    codex.DemoSnapshot(),
 			width:       80,
@@ -260,8 +243,8 @@ func TestRenderMeterHandlesAdditionalBucketAndMissingReset(t *testing.T) {
 		Name:   "30 MINUTES",
 		Window: codex.Window{UsedPercent: 75},
 	}
-	output := ansi.Strip(renderMeter(70, meter, styleCrashBar, colors))
-	for _, want := range []string{"CODEX OTHER // 30 MINUTES LOOP", "USED  75%", "RESET DATA UNAVAILABLE", "🚗", "█▌"} {
+	output := ansi.Strip(renderMeter(70, meter, styleFuel, colors))
+	for _, want := range []string{"CODEX OTHER // 30 MINUTES LOOP", "USED  75%", "RESET DATA UNAVAILABLE", "RANGE  25%"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("rendered meter missing %q: %q", want, output)
 		}
@@ -319,9 +302,6 @@ func TestVisualizationClampsAndFallbacks(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	if output := ansi.Strip(renderVisualization(20, 0, meterStyleID(999), colors.primary, colors)); !strings.Contains(output, "░") {
 		t.Fatalf("unknown style did not fall back to bars: %q", output)
-	}
-	if output := ansi.Strip(renderCrashBar(20, 0, colors.primary, colors)); !strings.Contains(output, "🚗") {
-		t.Fatalf("zero crash bar missing car: %q", output)
 	}
 	if output := ansi.Strip(renderPie(20, 100, colors.primary, colors)); !strings.Contains(output, "100%") {
 		t.Fatalf("full pie missing percentage: %q", output)

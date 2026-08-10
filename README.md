@@ -11,6 +11,10 @@ opening `/status` in your working Codex session.
 ◉ QUOTA TELEMETRY CONSOLE // CRT-01 // SIGNAL LOCKED
 ```
 
+![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
+
+_Hacker theme with simulated quota data._
+
 Codexometer refreshes once a minute by default. It is read-only: it displays
 quota information and never starts a model turn or consumes a reset credit.
 
@@ -155,29 +159,27 @@ The default remains the original green hacker-terminal presentation.
 Press `s` to cycle:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Rotary** — smooth Braille-cell circular dials with moving needles.
-3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+2. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
    for clean curves at any size.
-4. **Rev Meter** — a responsive car tachometer with a swept needle, redline
-   marks, and live RPM readout.
-5. **Crash Bar** — a tiny left-facing car drives toward the wall and crashes at
-   100%.
-6. **Fuel Tank** — remaining quota becomes the car's remaining range, with one
-   full-width tank per row.
-7. **Burning Fuse** — the flame advances toward a chunky multi-line bomb and
-   produces a full-sized explosion at 100%.
-8. **Pellet Run** — a large retro Pac-Man eats through widely spaced quota
-   pellets.
-9. **Sinking Ship** — the boat settles below the waterline as quota use rises.
+3. **Consumption Pace** — a signed horizontal scale comparing elapsed window
+   time with quota consumed. Positive headroom means consumption is behind
+   elapsed time; a negative deficit means quota is being used too quickly.
+4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
+   and whose dark segment shows consumed capacity, labelled from Empty to Full;
+   one full-width tank appears per row. Its reset-cycle comparison also drains
+   backward and aligns exactly with the tank's first and last inner cells.
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
-available rectangle proportionally. Bars and Fuel Tank flow one meter per row.
+available rectangle proportionally. Bars, Consumption Pace, and Fuel Tank flow
+one meter per row.
 Meter rows always use identical heights; indivisible spare rows become quiet
 space above the footer instead of stretching one quota block more than another.
-Rotary, Pie, and Rev Meter use at least two columns when multiple limits exist,
-adding rows when that preserves more radial detail and adding columns when the
-terminal is wide enough. Every style also shows a `RESET CYCLE` comparison:
+Pie uses at least two columns when multiple limits exist, adding rows when that
+preserves more radial detail and adding columns when the terminal is wide
+enough. Consumption Pace calculates `elapsed window % - quota used %`, placing
+under-budget consumption on the positive side and over-budget consumption on
+the negative side. Every style also shows a `RESET CYCLE` comparison:
 its label and countdown occupy one line, while its progress bar occupies a
 separate line with the same width and active colour as the main visualization.
 Its percentage is elapsed time from the calculated window start
@@ -297,3 +299,7 @@ Codexometer uses:
 - Bubble Tea for the terminal event loop
 - Lip Gloss for adaptive ANSI styling
 - Codex app-server JSON-RPC for authenticated quota data
+
+## License
+
+Codexometer is available under the [MIT License](LICENSE).

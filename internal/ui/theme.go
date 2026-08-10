@@ -21,14 +21,9 @@ type meterStyleID int
 
 const (
 	styleBars meterStyleID = iota
-	styleRotary
 	stylePie
-	styleTachometer
-	styleCrashBar
+	styleConsumptionPace
 	styleFuel
-	styleFuse
-	stylePac
-	styleBoat
 	styleCount
 )
 
@@ -39,14 +34,9 @@ func (s meterStyleID) next() meterStyleID {
 func (s meterStyleID) name() string {
 	return [...]string{
 		"BARS",
-		"ROTARY",
 		"PIE",
-		"REV METER",
-		"CRASH BAR",
+		"CONSUMPTION PACE",
 		"FUEL TANK",
-		"BURNING FUSE",
-		"PELLET RUN",
-		"SINKING SHIP",
 	}[s]
 }
 

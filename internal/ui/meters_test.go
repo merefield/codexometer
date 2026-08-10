@@ -19,14 +19,9 @@ func TestEveryMeterStyleHasDistinctiveOutput(t *testing.T) {
 		want  string
 	}{
 		{styleBars, "█"},
-		{styleRotary, "ROTARY"},
 		{stylePie, "BRAILLE PIE"},
-		{styleTachometer, "QUOTA RPM"},
-		{styleCrashBar, "🚗"},
+		{styleConsumptionPace, "PACE DATA UNAVAILABLE"},
 		{styleFuel, "RANGE"},
-		{styleFuse, "🔥"},
-		{stylePac, "╭──╮"},
-		{styleBoat, "HULL STATUS"},
 	}
 	for _, test := range tests {
 		output := renderVisualization(60, 62, test.style, colors.primary, colors)
@@ -92,6 +87,27 @@ func TestResetGaugeUsesSameActiveColorAsMeter(t *testing.T) {
 	}
 }
 
+func TestFuelResetGaugeDrainsAndAlignsWithTankCells(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	duration := int64(60)
+	reset := time.Unix(10_000, 0)
+	window := codex.Window{WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())}
+	gauge := ansi.Strip(renderReverseResetGauge(50, 44, window, reset.Add(-45*time.Minute), "RESET T-00:45:00", colors.primary, colors))
+	lines := strings.Split(gauge, "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "RESET CYCLE  75% LEFT") {
+		t.Fatalf("reverse reset gauge did not show remaining cycle time: %q", gauge)
+	}
+	if leading := lipgloss.Width(lines[1]) - lipgloss.Width(strings.TrimLeft(lines[1], " ")); leading != 3 {
+		t.Fatalf("reverse reset gauge begins at column %d, want tank-cell column 3: %q", leading, lines[1])
+	}
+	if cells := strings.Count(lines[1], "█") + strings.Count(lines[1], "░"); cells != 44 {
+		t.Fatalf("reverse reset gauge has %d cells, want tank width 44: %q", cells, lines[1])
+	}
+	if filled := strings.Count(lines[1], "█"); filled != 33 {
+		t.Fatalf("reverse reset gauge filled %d cells, want 75%% of 44 = 33: %q", filled, lines[1])
+	}
+}
+
 func TestResetProgressUsesWindowStartAndClamps(t *testing.T) {
 	duration := int64(60)
 	reset := time.Unix(10_000, 0)
@@ -117,133 +133,94 @@ func TestResetProgressUsesWindowStartAndClamps(t *testing.T) {
 	}
 }
 
+func TestConsumptionPaceComparesElapsedTimeWithUsage(t *testing.T) {
+	duration := int64(100)
+	reset := time.Unix(20_000, 0)
+	now := reset.Add(-50 * time.Minute)
+	window := codex.Window{UsedPercent: 25, WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())}
+	if got, ok := consumptionPace(window, now); !ok || got != 25 {
+		t.Fatalf("under-pace consumption = %d, %v; want +25, true", got, ok)
+	}
+	window.UsedPercent = 75
+	if got, ok := consumptionPace(window, now); !ok || got != -25 {
+		t.Fatalf("over-pace consumption = %d, %v; want -25, true", got, ok)
+	}
+	if _, ok := consumptionPace(codex.Window{UsedPercent: 25}, now); ok {
+		t.Fatal("missing window timing unexpectedly produced a consumption pace")
+	}
+}
+
 func ptr[T any](value T) *T { return &value }
 
-func TestMetaphorStylesReachTheirEndStates(t *testing.T) {
+func TestFuelTankReachesEmptyEndState(t *testing.T) {
 	colors := paletteFor(themeUltraviolet)
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{"fuel", renderFuelTank(40, 100, colors.danger, colors), "RANGE   0%"},
-		{"fuse", renderFuse(40, 100, colors.danger, colors), "DETONATED"},
-		{"pellet", renderPelletRun(40, 100, colors.danger, colors), "💥"},
-		{"boat", renderSinkingShip(40, 100, colors.danger, colors), "SUNK"},
-	}
-	for _, test := range tests {
-		if !strings.Contains(test.output, test.want) {
-			t.Errorf("%s end state missing %q: %q", test.name, test.want, test.output)
-		}
+	output := renderFuelTank(40, 100, colors.danger, colors)
+	if !strings.Contains(output, "RANGE   0%") {
+		t.Fatalf("fuel end state missing empty range: %q", output)
 	}
 }
 
-func TestFuseUsesLargeBomb(t *testing.T) {
-	colors := paletteFor(themeRust)
-	output := ansi.Strip(renderFuse(50, 62, colors.warning, colors))
-	for _, want := range []string{"╭─────╮", "┤  ●  │", "TNT", "╰─────╯"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("large bomb missing %q: %q", want, output)
-		}
-	}
-	if lines := strings.Count(output, "\n") + 1; lines != 6 {
-		t.Fatalf("large bomb used %d lines, want 6: %q", lines, output)
-	}
-}
-
-func TestRevMeterLooksLikeCarTachometer(t *testing.T) {
+func TestFuelTankIsReverseGaugeWithCorrectEndpoints(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	output := ansi.Strip(renderTachometerSized(52, 14, 75, colors.warning, colors))
-	for _, want := range []string{"6.0K RPM", "QUOTA RPM", "75%", "REDLINE 80"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("tachometer missing %q: %q", want, output)
+	output := renderFuelTankSized(20, 4, 25, colors.warning, colors)
+	available := lipgloss.NewStyle().Foreground(colors.primary).Render(strings.Repeat("▰", 11))
+	consumed := lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("▱", 3))
+	if !strings.Contains(output, available+consumed) {
+		t.Fatalf("fuel tank did not render remaining capacity as a reverse gauge: %q", output)
+	}
+	if !strings.Contains(ansi.Strip(output), "E              F") {
+		t.Fatalf("fuel tank endpoint labels were not Empty-to-Full: %q", output)
+	}
+}
+
+func TestConsumptionPaceGaugeUsesSignedHorizontalAxis(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	positive := ansi.Strip(renderConsumptionPaceSized(41, 4, 25, true, colors))
+	negative := ansi.Strip(renderConsumptionPaceSized(41, 4, -25, true, colors))
+	for _, want := range []string{"-100", "+100", "HEADROOM +25 POINTS", "CONSUMPTION PACE"} {
+		if !strings.Contains(positive, want) {
+			t.Fatalf("positive pace gauge missing %q: %q", want, positive)
 		}
 	}
-	if !strings.ContainsAny(output, "⡀⢀⠈⠁⠂⠄⠆⠇⣀⣠⣤⣴⣶⣷⣿") {
-		t.Fatalf("tachometer did not use a Braille radial face: %q", output)
+	if !strings.Contains(negative, "DEFICIT -25 POINTS") {
+		t.Fatalf("negative pace gauge missing deficit: %q", negative)
 	}
-}
-
-func TestCrashBarHitsWallAtFullUsage(t *testing.T) {
-	colors := paletteFor(themeRust)
-	output := ansi.Strip(renderCrashBar(40, 100, colors.danger, colors))
-	if !strings.Contains(output, "█▌💥🚗") {
-		t.Fatalf("full crash bar did not show impact: %q", output)
-	}
-}
-
-func TestCrashBarCarTravelsRightToLeft(t *testing.T) {
-	colors := paletteFor(themeHacker)
-	start := ansi.Strip(renderCrashBar(50, 0, colors.primary, colors))
-	progress := ansi.Strip(renderCrashBar(50, 75, colors.warning, colors))
-	startRoad := lineContaining(start, "🚗")
-	progressRoad := lineContaining(progress, "🚗")
-	startCar := strings.Index(startRoad, "🚗")
-	progressCar := strings.Index(progressRoad, "🚗")
-	if strings.Index(startRoad, "█▌") != 0 || strings.Index(progressRoad, "█▌") != 0 {
-		t.Fatalf("wall is not on the left: start=%q progress=%q", start, progress)
-	}
-	if progressCar < 0 || startCar < 0 || progressCar >= startCar {
-		t.Fatalf("car did not move left: start=%d progress=%d", startCar, progressCar)
-	}
-}
-
-func TestPelletRunUsesLargePacmanAndSpacedPellets(t *testing.T) {
-	colors := paletteFor(themeHacker)
-	output := ansi.Strip(renderPelletRun(60, 25, colors.primary, colors))
-	for _, want := range []string{"╭──╮", "│   <", "╰──╯", "•  •"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("large pellet run missing %q: %q", want, output)
-		}
-	}
-	if lines := strings.Count(output, "\n") + 1; lines != 5 {
-		t.Fatalf("large Pac-Man used %d lines, want 5: %q", lines, output)
+	positiveMarker := runeColumn(lineContainingRune(positive, '◆'), '◆')
+	negativeMarker := runeColumn(lineContainingRune(negative, '◆'), '◆')
+	if positiveMarker <= 20 || negativeMarker >= 20 {
+		t.Fatalf("pace markers did not straddle zero: negative=%d positive=%d", negativeMarker, positiveMarker)
 	}
 }
 
 func TestRadialGraphicsUseLargeCircularCanvases(t *testing.T) {
 	colors := paletteFor(themeUltraviolet)
-	tests := []struct {
-		name      string
-		output    string
-		minWidth  int
-		minHeight int
-	}{
-		{"rotary", renderRotary(52, 62, colors.primary, colors), 46, 14},
-		{"pie", renderPie(52, 62, colors.primary, colors), 36, 11},
-		{"rev meter", renderTachometer(52, 62, colors.primary, colors), 46, 14},
+	plain := ansi.Strip(renderPie(52, 62, colors.primary, colors))
+	if width := longestLineWidth(plain); width < 36 {
+		t.Errorf("pie is only %d cells wide, want at least 36", width)
 	}
-	for _, test := range tests {
-		plain := ansi.Strip(test.output)
-		if width := longestLineWidth(plain); width < test.minWidth {
-			t.Errorf("%s is only %d cells wide, want at least %d", test.name, width, test.minWidth)
-		}
-		if height := strings.Count(plain, "\n") + 1; height < test.minHeight {
-			t.Errorf("%s is only %d rows tall, want at least %d", test.name, height, test.minHeight)
-		}
+	if height := strings.Count(plain, "\n") + 1; height < 11 {
+		t.Errorf("pie is only %d rows tall, want at least 11", height)
 	}
 }
 
 func TestRadialGraphicsScaleToAllocatedRectangle(t *testing.T) {
 	colors := paletteFor(themeBlueSteel)
-	for _, style := range []meterStyleID{styleRotary, stylePie, styleTachometer} {
-		small := renderVisualizationSized(42, 9, 62, style, colors.primary, colors)
-		large := renderVisualizationSized(70, 20, 62, style, colors.primary, colors)
-		if got := lipgloss.Width(small); got != 42 {
-			t.Errorf("%s small width = %d, want 42", style.name(), got)
-		}
-		if got := lipgloss.Height(small); got != 9 {
-			t.Errorf("%s small height = %d, want 9", style.name(), got)
-		}
-		if got := lipgloss.Width(large); got != 70 {
-			t.Errorf("%s large width = %d, want 70", style.name(), got)
-		}
-		if got := lipgloss.Height(large); got != 20 {
-			t.Errorf("%s large height = %d, want 20", style.name(), got)
-		}
-		if brailleCount(ansi.Strip(large)) <= brailleCount(ansi.Strip(small)) {
-			t.Errorf("%s did not add radial detail when enlarged", style.name())
-		}
+	small := renderVisualizationSized(42, 9, 62, stylePie, colors.primary, colors)
+	large := renderVisualizationSized(70, 20, 62, stylePie, colors.primary, colors)
+	if got := lipgloss.Width(small); got != 42 {
+		t.Errorf("pie small width = %d, want 42", got)
+	}
+	if got := lipgloss.Height(small); got != 9 {
+		t.Errorf("pie small height = %d, want 9", got)
+	}
+	if got := lipgloss.Width(large); got != 70 {
+		t.Errorf("pie large width = %d, want 70", got)
+	}
+	if got := lipgloss.Height(large); got != 20 {
+		t.Errorf("pie large height = %d, want 20", got)
+	}
+	if brailleCount(ansi.Strip(large)) <= brailleCount(ansi.Strip(small)) {
+		t.Error("pie did not add radial detail when enlarged")
 	}
 }
 
@@ -279,11 +256,20 @@ func longestLineWidth(output string) int {
 	return longest
 }
 
-func lineContaining(output, needle string) string {
+func lineContainingRune(output string, needle rune) string {
 	for _, line := range strings.Split(output, "\n") {
-		if strings.Contains(line, needle) {
+		if strings.ContainsRune(line, needle) {
 			return line
 		}
 	}
 	return ""
+}
+
+func runeColumn(line string, needle rune) int {
+	for column, r := range []rune(line) {
+		if r == needle {
+			return column
+		}
+	}
+	return -1
 }
