@@ -142,7 +142,11 @@ func frameSized(width, height int, title, body string, color lipgloss.Color, col
 }
 
 func countdown(at time.Time) string {
-	d := time.Until(at)
+	return countdownFrom(time.Now(), at)
+}
+
+func countdownFrom(now, at time.Time) string {
+	d := at.Sub(now)
 	if d <= 0 {
 		return "00:00:00"
 	}
