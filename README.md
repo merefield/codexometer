@@ -1,6 +1,7 @@
 # Codexometer
 
-Codexometer is a small, retro terminal dashboard for your current Codex quota.
+Codexometer is a small, retro terminal dashboard for your current
+[Codex](https://github.com/openai/codex) quota.
 Keep it open in a second terminal window or pane and you can see every active
 usage window, its remaining capacity, and its reset time without repeatedly
 opening `/status` in your working Codex session.
