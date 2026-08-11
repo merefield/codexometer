@@ -16,8 +16,9 @@ opening `/status` in your working Codex session.
 
 _Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
 
-Codexometer refreshes once a minute by default. It is read-only: it displays
-quota information and never starts a model turn or consumes a reset credit.
+Codexometer refreshes once a minute by default. Its quota dashboard is
+read-only. The optional Benchmark tab starts model turns only when you
+explicitly click its run button; those trials consume Codex quota.
 
 ## Why use it?
 
@@ -54,8 +55,11 @@ It works particularly well in:
 - Available earned reset credits when present.
 - Online, refreshing, stale-data, and error states.
 - A countdown to the next automatic refresh.
-- An optional Stopwatch view that measures token activity observed across local
+- An optional Monitor view that measures token activity observed across local
   Codex sessions between Go and Stop, with a live 30-second bar chart.
+- An opt-in deterministic coding benchmark comparing every visible Codex model
+  and supported reasoning effort by correctness, elapsed time, token use, and
+  estimated standard API-equivalent cost.
 
 Codexometer does not assume that every account has the same windows. Some
 accounts expose a shorter rolling window and a weekly window; plans and backend
@@ -126,7 +130,7 @@ Codexometer deliberately does not:
 - send credentials to another service;
 - invoke a model merely to discover quota information.
 
-The Stopwatch additionally reads locally persisted Codex rollout files under
+The Monitor additionally reads locally persisted Codex rollout files under
 `$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It scans only for
 `token_count` telemetry records and decodes only their token totals and
 timestamps; message text, reasoning, commands, tool results, and credentials are
@@ -146,8 +150,13 @@ codexometer --codex /path/to/codex
 | `Tab` | Select the next meter-style tab |
 | `Shift+Tab` | Select the previous meter-style tab |
 | `r` | Refresh quota data immediately |
-| `s` | Start the Stopwatch recorder (Stopwatch view only) |
-| `p` | Stop and take a final up-to-date reading (Stopwatch view only) |
+| `s` | Start recording (Monitor view only) |
+| `p` | Stop and take a final up-to-date reading (Monitor view only) |
+| `b` | Run the selected challenge (Benchmark view only) |
+| `a` | Arm, then confirm, Run All (Benchmark view only) |
+| `[` / `]`, `Left` / `Right` | Select the previous or next benchmark challenge |
+| `f` | Show all, passed, or failed benchmark results |
+| `Page Up` / `Page Down` | Scroll through Benchmark result pages |
 | `q` | Quit |
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
@@ -177,7 +186,7 @@ The default remains the original green hacker-terminal presentation.
 Select a tab with the mouse, `Tab`, or `Shift+Tab`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Stopwatch** — establishes a zero baseline across locally active Codex
+2. **Monitor** — establishes a zero baseline across locally active Codex
    sessions when you press Start. A large readout follows newly appended token
    telemetry once per second and shows total observed tokens, elapsed time, and
    average rate; clickable Start and Stop controls sit beside it. The full-width
@@ -194,6 +203,13 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
+6. **Benchmark** — runs a selected hermetic coding challenge, or the complete
+   four-challenge suite, against every visible model and each reasoning effort
+   that model advertises. Results arrive sequentially in a table with task,
+   pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
+   Filter the table to all, passed, or failed trials. Scroll a long result matrix
+   with Page Up, Page Down, or the mouse wheel. Click any column-heading button
+   to sort by that field; click it again to reverse the order.
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
@@ -214,7 +230,7 @@ receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
 
-The Stopwatch is deliberately separate from the percentage gauges: no token
+The Monitor is deliberately separate from the percentage gauges: no token
 ceiling is exposed for those quota windows, so a percentage-based bar would be
 misleading. It follows the local token telemetry underlying Codex's live
 [`thread/tokenUsage/updated`](https://developers.openai.com/codex/app-server)
@@ -230,6 +246,75 @@ that is not writing locally. Token totals normally appear when Codex emits usage
 for a model response, not token-by-token while a response is streaming. Raw token
 counts also do not reveal or reproduce the backend's quota-weighting rules, so
 they should not be converted directly into the percentage gauges.
+
+### Deterministic benchmark
+
+The Benchmark tab discovers the current account's visible models and their
+supported reasoning efforts through `model/list`. Select a challenge with the
+arrow buttons, then press `b` or click **Run Selected** to run it against every
+model/effort combination. **Run All** runs all four challenges against every
+combination. Because that means `challenge count × model/effort count` model
+turns, Codexometer displays the exact total and requires a second confirmation
+within five seconds. A fresh, ephemeral, read-only app-server thread is used for
+each trial, so benchmark history does not clutter normal Codex sessions. The
+turns still consume the same account quota shown by Codexometer.
+
+#### Challenges
+
+Every trial asks the model to return one named Starlark function:
+
+| Challenge | Required behavior | Verification set |
+| --- | --- | --- |
+| **Merge Ranges** | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
+| **LRU Cache** | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
+| **Expression** | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
+| **Shortest Path** | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
+
+#### How PASS and FAIL are decided
+
+There is no LLM judge and no subjective scoring. Codexometer loads the returned
+function into its embedded Starlark interpreter, runs every case for that
+challenge, computes the expected result with a separate Go reference
+implementation, and compares the values exactly. It also snapshots the input
+and rejects a solution that mutates it.
+
+A row is `PASS` only when all of the following are true:
+
+- the turn completes and returns the required strict JSON object containing
+  Starlark source;
+- the source loads, defines the correctly named callable, and stays within the
+  64 KiB source and 250,000 execution-step limits;
+- every hand-written and generated case returns the exact reference answer with
+  the required type and bounded shape; and
+- none of the supplied inputs are mutated.
+
+Any syntax/runtime error, timeout, malformed response, wrong type or value,
+mutation, safety/size-limit violation, or failed case produces `FAIL`. The first
+failure is retained as the row's diagnostic. The test data is deterministic, so
+the same Codexometer version judges every model/effort combination identically.
+
+Starlark is a deliberately small, Python-like embedded language. Every prompt
+includes the same compact language contract—available statements and built-ins,
+plus the absence of `while`, recursion, imports, `load`, and `eval`—to reduce
+advantage from prior syntax familiarity. It cannot remove that advantage
+entirely: these results measure algorithmic coding through Starlark and may
+favor models stronger at Python-like languages. They are not a language-neutral
+measure of general model quality.
+
+Codexometer links the Starlark interpreter into the standalone binary and
+exposes no filesystem, process, network, clock, or environment capabilities to
+submitted code. Restricted return types and bounded result sizes add further
+containment.
+
+Token totals come from the trial thread's live `thread/tokenUsage/updated`
+events. API-equivalent cost is an estimate, not a ChatGPT charge: it applies the
+published standard API input, cached-input, and output token prices known to
+this Codexometer release, plus cache-write prices where OpenAI publishes one.
+Reasoning tokens are already included in the output-token total. An unknown
+model—or usage in a token class without a published price—displays `N/A` rather
+than being guessed. Pricing can change; consult the
+[official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
+for the current source values.
 
 ## Options
 
@@ -276,9 +361,9 @@ need Go or Codexometer's source dependencies.
 
 ## Versioning
 
-Codexometer follows semantic versioning; the current source version is `v0.1.2`. The Git tag is
+Codexometer follows semantic versioning; the current source version is `v0.2.0`. The Git tag is
 the release source of truth. Go automatically embeds that tag in binaries built
-with `go install github.com/merefield/codexometer@v0.1.2`; direct source builds
+with `go install github.com/merefield/codexometer@v0.2.0`; direct source builds
 fall back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -291,7 +376,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.2" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.2.0" .
 ```
 
 ## How refresh works
@@ -309,7 +394,7 @@ interval. Pressing `r` refreshes immediately. If a refresh fails after valid
 data has already been displayed, Codexometer retains the last snapshot and
 marks it as stale instead of blanking the dashboard.
 
-While Stopwatch is running it checks appended local token telemetry once per
+While the Monitor is recording it checks appended local token telemetry once per
 second and rolls the observed deltas into 30-second graph buckets. These reads do
 not contact OpenAI or invoke a model. Pressing Stop performs one immediate final
 local read and forces complete session discovery, including Codex sessions
@@ -343,12 +428,12 @@ selected font includes block, arrow, and emoji glyphs.
 ### The terminal is too small
 
 Codexometer adapts its header and meter widths, but rich gauges need enough
-rows to display every quota window. Increase the pane height or return to the
-compact default bar style with `s`.
+rows to display every quota window. Increase the pane height or use `Tab` to
+return to the compact default bar style.
 
-### Stopwatch remains at zero
+### Monitor remains at zero
 
-The Stopwatch observes rollout telemetry under the same `CODEX_HOME` visible to
+The Monitor observes rollout telemetry under the same `CODEX_HOME` visible to
 the Codexometer process. Confirm that the Codex session doing work is local and
 uses that home. A native Windows Codex session and a native Windows Codexometer
 normally share the same user profile; WSL and native Windows have different
@@ -375,11 +460,12 @@ go test -cover ./...
 
 Codexometer uses:
 
-- Go 1.22+
+- Go 1.25+
 - Bubble Tea for the terminal event loop
 - Lip Gloss for adaptive ANSI styling
+- Starlark for deterministic, hermetic benchmark-code evaluation
 - Codex app-server JSON-RPC for authenticated quota data
-- Local Codex rollout `token_count` records for live Stopwatch telemetry
+- Local Codex rollout `token_count` records for live Monitor telemetry
 
 ## License
 

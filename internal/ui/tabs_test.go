@@ -18,9 +18,9 @@ func TestStyleTabsChooseResponsiveLabels(t *testing.T) {
 		want  string
 	}{
 		{width: 100, want: "CONSUMPTION PACE"},
-		{width: 44, want: "TIMER"},
-		{width: 19, want: "[S]"},
-		{width: 9, want: "S"},
+		{width: 44, want: "MON"},
+		{width: 19, want: "[M]"},
+		{width: 9, want: "M"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := styleTabLayout(test.width, false)
@@ -73,15 +73,15 @@ func TestStyleTabsSupportHoverClickAndPulse(t *testing.T) {
 	}
 }
 
-func TestStopwatchTabShowsPulsingRecordingDotWhileAnotherTabIsActive(t *testing.T) {
-	model := Model{meterStyle: styleBars, stopwatchState: stopwatchRunning}
+func TestMonitorTabShowsPulsingRecordingDotWhileAnotherTabIsActive(t *testing.T) {
+	model := Model{meterStyle: styleBars, monitorState: monitorRunning}
 	colors := paletteFor(themeHacker)
 	model.phase = 0
 	bright := model.renderStyleTabs(100, colors)
 	model.phase = 1
 	dark := model.renderStyleTabs(100, colors)
 	if !strings.Contains(ansi.Strip(bright), "●") {
-		t.Fatal("recording tab did not retain a pulsing dot away from the Stopwatch view")
+		t.Fatal("recording tab did not retain a pulsing dot away from the Monitor view")
 	}
 	if recordingDotColor(0, colors) == recordingDotColor(1, colors) {
 		t.Fatal("recording tab dot does not alternate between bright and dark red")
@@ -91,11 +91,11 @@ func TestStopwatchTabShowsPulsingRecordingDotWhileAnotherTabIsActive(t *testing.
 	}
 }
 
-func TestSOnlyStartsStopwatch(t *testing.T) {
+func TestSOnlyStartsMonitor(t *testing.T) {
 	model := Model{meterStyle: styleBars}
 	updated, command := model.Update(key('s'))
 	model = updated.(Model)
-	if command != nil || model.meterStyle != styleBars || model.stopwatchState != stopwatchIdle {
-		t.Fatal("S changed state outside the Stopwatch tab")
+	if command != nil || model.meterStyle != styleBars || model.monitorState != monitorIdle {
+		t.Fatal("S changed state outside the Monitor tab")
 	}
 }

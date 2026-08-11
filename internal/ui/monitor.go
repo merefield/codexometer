@@ -11,24 +11,24 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-type stopwatchRect struct {
+type monitorRect struct {
 	x      int
 	y      int
 	width  int
 	height int
 }
 
-func (r stopwatchRect) contains(x, y int) bool {
+func (r monitorRect) contains(x, y int) bool {
 	return x >= r.x && x < r.x+r.width && y >= r.y && y < r.y+r.height
 }
 
-type stopwatchView struct {
+type monitorView struct {
 	view     string
-	goRect   stopwatchRect
-	stopRect stopwatchRect
+	goRect   monitorRect
+	stopRect monitorRect
 }
 
-type stopwatchGeometry struct {
+type monitorGeometry struct {
 	width        int
 	height       int
 	gap          int
@@ -36,11 +36,11 @@ type stopwatchGeometry struct {
 	graphHeight  int
 	readoutWidth int
 	buttonWidths [2]int
-	goRect       stopwatchRect
-	stopRect     stopwatchRect
+	goRect       monitorRect
+	stopRect     monitorRect
 }
 
-func layoutStopwatchArea(width, height int) stopwatchGeometry {
+func layoutMonitorArea(width, height int) monitorGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
@@ -58,7 +58,7 @@ func layoutStopwatchArea(width, height int) stopwatchGeometry {
 	}
 	buttonWidths := distributeSpace(max(controlsWidth-gap, 2), 2)
 	goX := readoutWidth + gap
-	return stopwatchGeometry{
+	return monitorGeometry{
 		width:        width,
 		height:       height,
 		gap:          gap,
@@ -66,61 +66,61 @@ func layoutStopwatchArea(width, height int) stopwatchGeometry {
 		graphHeight:  graphHeight,
 		readoutWidth: readoutWidth,
 		buttonWidths: [2]int{buttonWidths[0], buttonWidths[1]},
-		goRect:       stopwatchRect{x: goX, width: buttonWidths[0], height: topHeight},
-		stopRect: stopwatchRect{
+		goRect:       monitorRect{x: goX, width: buttonWidths[0], height: topHeight},
+		stopRect: monitorRect{
 			x: goX + buttonWidths[0] + gap, width: buttonWidths[1], height: topHeight,
 		},
 	}
 }
 
-func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchView {
-	layout := layoutStopwatchArea(width, height)
+func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
+	layout := layoutMonitorArea(width, height)
 
-	readout := m.renderStopwatchReadout(layout.readoutWidth, layout.topHeight, colors)
-	goButton := m.renderStopwatchButton(layout.buttonWidths[0], layout.topHeight, "(S)TART", footerButtonStopwatchGo, m.stopwatchGoEnabled(), colors)
-	stopButton := m.renderStopwatchButton(layout.buttonWidths[1], layout.topHeight, "STO(P)", footerButtonStopwatchStop, m.stopwatchStopEnabled(), colors)
+	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
+	goButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, "(S)TART", footerButtonMonitorGo, m.monitorGoEnabled(), colors)
+	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, "STO(P)", footerButtonMonitorStop, m.monitorStopEnabled(), colors)
 	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
-	graph := m.renderStopwatchGraph(layout.width, layout.graphHeight, colors)
+	graph := m.renderMonitorGraph(layout.width, layout.graphHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
 	}
 
-	return stopwatchView{
+	return monitorView{
 		view: view, goRect: layout.goRect, stopRect: layout.stopRect,
 	}
 }
 
-func (m Model) renderStopwatchReadout(width, height int, colors palette) string {
+func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	state := "READY"
 	hint := "PRESS S OR CLICK START // LOCAL SESSIONS"
-	switch m.stopwatchState {
-	case stopwatchStarting:
+	switch m.monitorState {
+	case monitorStarting:
 		state, hint = "ZEROING COUNTER", "SCANNING LOCAL CODEX TELEMETRY"
-	case stopwatchRunning:
-		state, hint = "RECORDING ●", fmt.Sprintf("LIVE LOCAL SESSIONS %d // P OR CLICK STOP", m.stopwatchSessions)
-	case stopwatchStopping:
+	case monitorRunning:
+		state, hint = "RECORDING ●", fmt.Sprintf("LIVE LOCAL SESSIONS %d // P OR CLICK STOP", m.monitorSessions)
+	case monitorStopping:
 		state, hint = "FINAL SYNC", "READING APPENDED TOKEN TELEMETRY"
-	case stopwatchStopped:
-		state, hint = "STOPPED", fmt.Sprintf("FINAL CONSUMPTION // LOCAL SESSIONS %d", m.stopwatchSessions)
+	case monitorStopped:
+		state, hint = "STOPPED", fmt.Sprintf("FINAL CONSUMPTION // LOCAL SESSIONS %d", m.monitorSessions)
 	}
-	if m.stopwatchError != "" {
-		state, hint = "NO TOKEN SIGNAL", m.stopwatchError
+	if m.monitorError != "" {
+		state, hint = "NO TOKEN SIGNAL", m.monitorError
 	}
 
 	total := int64(0)
-	if !m.stopwatchStartedAt.IsZero() && m.stopwatchLatest >= m.stopwatchBaseline {
-		total = m.stopwatchLatest - m.stopwatchBaseline
+	if !m.monitorStartedAt.IsZero() && m.monitorLatest >= m.monitorBaseline {
+		total = m.monitorLatest - m.monitorBaseline
 	}
-	elapsed := m.stopwatchElapsed(time.Now())
+	elapsed := m.monitorElapsed(time.Now())
 	rate := int64(0)
 	if elapsed > 0 {
 		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
 	}
 
 	stateColor := colors.primary
-	if m.stopwatchState == stopwatchRunning && m.stopwatchError == "" {
+	if m.monitorState == monitorRunning && m.monitorError == "" {
 		stateColor = lipgloss.Color("#7A2633")
 		if m.phase%2 == 0 {
 			stateColor = colors.danger
@@ -134,22 +134,22 @@ func (m Model) renderStopwatchReadout(width, height int, colors palette) string 
 	if height >= 6 {
 		lines = append(lines, colors.label().Render(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))))
 	}
-	if height >= 8 && !m.stopwatchStartedAt.IsZero() {
-		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.stopwatchBaseline), formatTokens(m.stopwatchLatest))))
+	if height >= 8 && !m.monitorStartedAt.IsZero() {
+		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest))))
 	}
 	if height >= 10 {
-		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("SAMPLES %d  //  NEXT %s", len(m.stopwatchSamples), m.stopwatchNextLabel())))
+		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel())))
 		last := "--:--"
-		if !m.stopwatchLastActivity.IsZero() {
-			last = compactDuration(time.Since(m.stopwatchLastActivity))
+		if !m.monitorLastActivity.IsZero() {
+			last = compactDuration(time.Since(m.monitorLastActivity))
 		}
-		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.stopwatchSessions, last)
+		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, max(width-4, 1), "")))
 	}
 	return frameSized(width, max(height-2, 1), "SESSION READOUT", strings.Join(lines, "\n"), colors.primary, colors)
 }
 
-func (m Model) renderStopwatchButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
+func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
 	border := colors.dim
 	foreground := colors.dim
 	if enabled {
@@ -174,11 +174,11 @@ func (m Model) renderStopwatchButton(width, height int, label string, id footerB
 	return style.Render(label)
 }
 
-func (m Model) renderStopwatchGraph(width, height int, colors palette) string {
+func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
 	plotHeight := max(height-3, 1)
 	const sampleWidth = 2 // one block-wide bar plus one cell of breathing room
-	samples := m.stopwatchSamples
+	samples := m.monitorSamples
 	visibleSamples := max((innerWidth+1)/sampleWidth, 1)
 	if len(samples) > visibleSamples {
 		samples = samples[len(samples)-visibleSamples:]
@@ -196,9 +196,9 @@ func (m Model) renderStopwatchGraph(width, height int, colors palette) string {
 	}
 	if len(samples) == 0 {
 		message := "WAITING FOR FIRST SAMPLE"
-		if m.stopwatchState == stopwatchIdle {
+		if m.monitorState == monitorIdle {
 			message = "PRESS START TO ARM RECORDER"
-		} else if m.stopwatchState == stopwatchStopped {
+		} else if m.monitorState == monitorStopped {
 			message = "NO COMPLETE 30 SEC SAMPLE"
 		}
 		message = ansi.Truncate(message, innerWidth, "")
@@ -234,12 +234,12 @@ func (m Model) renderStopwatchGraph(width, height int, colors palette) string {
 				return r
 			}, string(runes)))
 		}
-		lines[row] = renderStopwatchBarRow(runes, colors)
+		lines[row] = renderMonitorBarRow(runes, colors)
 	}
 	return frameSized(width, max(height-2, 1), ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
-func renderStopwatchBarRow(cells []rune, colors palette) string {
+func renderMonitorBarRow(cells []rune, colors palette) string {
 	active := lipgloss.NewStyle().Foreground(colors.primary)
 	dimmed := lipgloss.NewStyle().Foreground(colors.dim)
 	var row strings.Builder
@@ -256,49 +256,49 @@ func renderStopwatchBarRow(cells []rune, colors palette) string {
 	return row.String()
 }
 
-func (m Model) stopwatchButtonAt(x, y int) footerButtonID {
+func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
 	dashboard := m.dashboardLayout()
-	area := layoutStopwatchArea(dashboard.contentWidth, dashboard.meterHeight)
+	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
 	if area.goRect.contains(localX, localY) {
-		return footerButtonStopwatchGo
+		return footerButtonMonitorGo
 	}
 	if area.stopRect.contains(localX, localY) {
-		return footerButtonStopwatchStop
+		return footerButtonMonitorStop
 	}
 	return footerButtonNone
 }
 
-func (m Model) stopwatchGoEnabled() bool {
-	return m.stopwatchState == stopwatchIdle || m.stopwatchState == stopwatchStopped
+func (m Model) monitorGoEnabled() bool {
+	return m.monitorState == monitorIdle || m.monitorState == monitorStopped
 }
 
-func (m Model) stopwatchStopEnabled() bool {
-	return m.stopwatchState == stopwatchRunning
+func (m Model) monitorStopEnabled() bool {
+	return m.monitorState == monitorRunning
 }
 
-func (m Model) stopwatchElapsed(now time.Time) time.Duration {
-	if m.stopwatchStartedAt.IsZero() {
+func (m Model) monitorElapsed(now time.Time) time.Duration {
+	if m.monitorStartedAt.IsZero() {
 		return 0
 	}
 	end := now
-	if m.stopwatchState == stopwatchStopped && !m.stopwatchStoppedAt.IsZero() {
-		end = m.stopwatchStoppedAt
+	if m.monitorState == monitorStopped && !m.monitorStoppedAt.IsZero() {
+		end = m.monitorStoppedAt
 	}
-	if end.Before(m.stopwatchStartedAt) {
+	if end.Before(m.monitorStartedAt) {
 		return 0
 	}
-	return end.Sub(m.stopwatchStartedAt)
+	return end.Sub(m.monitorStartedAt)
 }
 
-func (m Model) stopwatchNextLabel() string {
-	if m.stopwatchState != stopwatchRunning || m.stopwatchNextSample.IsZero() {
+func (m Model) monitorNextLabel() string {
+	if m.monitorState != monitorRunning || m.monitorNextSample.IsZero() {
 		return "--:--"
 	}
-	return compactDuration(time.Until(m.stopwatchNextSample))
+	return compactDuration(time.Until(m.monitorNextSample))
 }
 
 func niceTokenCeiling(value int64) int64 {

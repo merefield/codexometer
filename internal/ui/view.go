@@ -37,8 +37,10 @@ func (m Model) View() string {
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		if m.meterStyle == styleStopwatch {
-			parts = append(parts, m.renderStopwatchArea(contentWidth, layout.meterHeight, colors).view)
+		if m.meterStyle == styleMonitor {
+			parts = append(parts, m.renderMonitorArea(contentWidth, layout.meterHeight, colors).view)
+		} else if m.meterStyle == styleBenchmark {
+			parts = append(parts, m.renderBenchmarkArea(contentWidth, layout.meterHeight, colors))
 		} else if len(meters) > 1 {
 			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterStyle, colors))
 		} else if len(meters) == 1 {

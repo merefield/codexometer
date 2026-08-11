@@ -38,6 +38,44 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	}, nil
 }
 
+func (d *demoFetcher) BenchmarkCombinationCount(context.Context) (int, error) { return 2, nil }
+
+func (d *demoFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.BenchmarkTaskID, emit func(codex.BenchmarkEvent)) {
+	baseResults := []codex.BenchmarkResult{
+		{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "medium", ActualModel: "gpt-5.6-sol", Correct: true, Duration: 12_400 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4_820}, CostUSD: 0.0412, CostKnown: true},
+		{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Effort: "low", ActualModel: "gpt-5.6-terra", Correct: false, Duration: 7_900 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 2_210}, CostUSD: 0.0091, CostKnown: true, Failure: "case 17 returned the wrong answer"},
+	}
+	if len(tasks) == 0 {
+		tasks = []codex.BenchmarkTaskID{codex.BenchmarkMergeRanges}
+	}
+	var results []codex.BenchmarkResult
+	for _, taskID := range tasks {
+		for _, task := range codex.BenchmarkTasks() {
+			if task.ID != taskID {
+				continue
+			}
+			for _, base := range baseResults {
+				result := base
+				result.TaskID, result.TaskName = task.ID, task.Name
+				results = append(results, result)
+			}
+		}
+	}
+	emit(codex.BenchmarkEvent{Total: len(results), Combinations: 2})
+	for index := range results {
+		select {
+		case <-ctx.Done():
+			emit(codex.BenchmarkEvent{Total: len(results), Completed: index, Done: true, Err: ctx.Err()})
+			return
+		default:
+		}
+		emit(codex.BenchmarkEvent{Total: len(results), Completed: index, CurrentModel: results[index].DisplayName, CurrentEffort: results[index].Effort})
+		result := results[index]
+		emit(codex.BenchmarkEvent{Total: len(results), Completed: index + 1, Combinations: 2, CurrentTaskID: result.TaskID, CurrentTask: result.TaskName, CurrentModel: result.DisplayName, CurrentEffort: result.Effort, Result: &result})
+	}
+	emit(codex.BenchmarkEvent{Total: len(results), Completed: len(results), Done: true})
+}
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, defaultDependencies()))
 }
