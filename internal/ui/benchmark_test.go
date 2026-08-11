@@ -53,7 +53,7 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 		},
 	}
 	output := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"(B) RUN SELECTED", "MERGE RANGES", "SHOW //", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
+	for _, want := range []string{"(B) RUN SELECTED", "MERGE RANGES", "SHOW //", "HERMETIC STARLARK", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("benchmark view missing %q:\n%s", want, output)
 		}

@@ -55,9 +55,9 @@ type benchmarkControlSegment struct {
 func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
-	// Controls and status each contain two useful rows. Keep their shared strip
-	// tight and give the result matrix the remaining vertical space.
-	topHeight := min(4, height)
+	// Keep three status rows available for runtime state, current trial detail,
+	// and evaluator limits while still giving the matrix most vertical space.
+	topHeight := min(5, height)
 	controlsWidth := min(max(width*3/5, 38), max(width-1, 1))
 	statusWidth := max(width-controlsWidth-1, 1)
 	// A framed status panel needs enough room for useful content. Once that is no
@@ -66,8 +66,8 @@ func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 	if statusWidth < 12 {
 		controlsHeight := min(4, height)
 		statusHeight := 0
-		if height-controlsHeight >= 8 {
-			statusHeight = 4
+		if height-controlsHeight >= 9 {
+			statusHeight = 5
 		}
 		return benchmarkGeometry{
 			width: width, height: height, topHeight: controlsHeight + statusHeight,
@@ -247,7 +247,7 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 		lipgloss.NewStyle().Bold(true).Foreground(color).Render(ansi.Truncate(state, max(width-4, 1), "")),
 		colors.dimmed().Render(ansi.Truncate(detail, max(width-4, 1), "")),
 	}
-	if height >= 6 {
+	if height >= 5 {
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // 250K STEP LIMIT", max(width-4, 1), "")))
 	}
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
