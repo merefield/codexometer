@@ -39,19 +39,24 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 	}
 }
 
-func TestStyleHotkeyCyclesAndWraps(t *testing.T) {
+func TestTabCyclesStylesAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
 	for want := styleStopwatch; want < styleCount; want++ {
-		updated, _ := model.Update(key('s'))
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 		model = updated.(Model)
 		if model.meterStyle != want {
 			t.Fatalf("got meter style %d, want %d", model.meterStyle, want)
 		}
 	}
-	updated, _ := model.Update(key('s'))
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
 	if model.meterStyle != styleBars {
 		t.Fatalf("meter style did not wrap: got %d", model.meterStyle)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	model = updated.(Model)
+	if model.meterStyle != styleFuel {
+		t.Fatalf("reverse style navigation got %d, want %d", model.meterStyle, styleFuel)
 	}
 }
 
@@ -173,12 +178,6 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 		t.Fatalf("theme click selected theme=%d flash=%d, want theme=%d flash=%d", model.theme, model.flashedButton, themeRust, footerButtonTheme)
 	}
 
-	updated, _ = model.Update(footerMouseMessage(t, model, footerButtonStyle, tea.MouseActionPress))
-	model = updated.(Model)
-	if model.meterStyle != styleStopwatch {
-		t.Fatalf("style click selected %d, want %d", model.meterStyle, styleStopwatch)
-	}
-
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
 	model = updated.(Model)
 	if !model.loading || command == nil {
@@ -219,7 +218,7 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 				model.err = errors.New("stale quota signal")
 			}
 			layout := model.dashboardLayout()
-			for _, id := range []footerButtonID{footerButtonTheme, footerButtonStyle, footerButtonRefresh, footerButtonQuit} {
+			for _, id := range []footerButtonID{footerButtonTheme, footerButtonRefresh, footerButtonQuit} {
 				mouse := footerMouseMessage(t, model, id, tea.MouseActionMotion)
 				if mouse.Y != layout.footerY+1 {
 					t.Errorf("rendered footer y=%d, calculated y=%d", mouse.Y, layout.footerY+1)
@@ -252,28 +251,29 @@ func TestFooterButtonHotkeyFlashesAndLatestPulseWins(t *testing.T) {
 		t.Fatal("theme hotkey pulse was not rendered")
 	}
 
-	updated, _ = model.Update(key('s'))
+	model.loading = false
+	updated, _ = model.Update(key('r'))
 	model = updated.(Model)
-	if model.flashedButton != footerButtonStyle || model.flashSequence == themeSequence {
-		t.Fatal("newer style pulse did not replace theme pulse")
+	if model.flashedButton != footerButtonRefresh || model.flashSequence == themeSequence {
+		t.Fatal("newer refresh pulse did not replace theme pulse")
 	}
 
 	updated, _ = model.Update(footerButtonFlashExpiredMsg{button: footerButtonTheme, sequence: themeSequence})
 	model = updated.(Model)
-	if model.flashedButton != footerButtonStyle {
-		t.Fatal("stale theme expiry cleared the newer style pulse")
+	if model.flashedButton != footerButtonRefresh {
+		t.Fatal("stale theme expiry cleared the newer refresh pulse")
 	}
 
-	updated, _ = model.Update(footerButtonFlashExpiredMsg{button: footerButtonStyle, sequence: model.flashSequence})
+	updated, _ = model.Update(footerButtonFlashExpiredMsg{button: footerButtonRefresh, sequence: model.flashSequence})
 	model = updated.(Model)
 	if model.flashedButton != footerButtonNone {
-		t.Fatal("current style pulse did not expire")
+		t.Fatal("current refresh pulse did not expire")
 	}
 }
 
 func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 	buttons, separator := footerButtonLayout(100)
-	want := []string{"[ (T)HEME ]", "[ (S)TYLE ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
+	want := []string{"[ (T)HEME ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
 	if separator != "  " || len(buttons) != len(want) {
 		t.Fatalf("unexpected full footer layout: separator=%q buttons=%#v", separator, buttons)
 	}
@@ -287,7 +287,7 @@ func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 	if separator != " " {
 		t.Fatalf("compact separator = %q, want one space", separator)
 	}
-	for index, label := range []string{"[T]", "[S]", "[R]", "[Q]"} {
+	for index, label := range []string{"[T]", "[R]", "[Q]"} {
 		if compact[index].label != label {
 			t.Errorf("compact button %d label = %q, want %q", index, compact[index].label, label)
 		}
@@ -310,7 +310,7 @@ func footerMouseMessage(t *testing.T, model Model, id footerButtonID, action tea
 }
 
 func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {
-	buttons, _ := footerButtonLayout(model.contentWidth())
+	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name)
 	for _, button := range buttons {
 		if button.id == id {
 			return button, true

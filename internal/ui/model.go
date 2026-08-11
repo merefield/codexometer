@@ -37,6 +37,11 @@ type Model struct {
 	phase         int
 	theme         themeID
 	meterStyle    meterStyleID
+	hoveredStyle  meterStyleID
+	styleHovered  bool
+	flashedStyle  meterStyleID
+	styleFlashing bool
+	styleSequence uint64
 	hoveredButton footerButtonID
 	flashedButton footerButtonID
 	flashSequence uint64
@@ -100,6 +105,11 @@ type footerButtonFlashExpiredMsg struct {
 	sequence uint64
 }
 
+type styleTabFlashExpiredMsg struct {
+	style    meterStyleID
+	sequence uint64
+}
+
 const footerButtonFlashDuration = 150 * time.Millisecond
 
 type footerButtonID int
@@ -107,7 +117,6 @@ type footerButtonID int
 const (
 	footerButtonNone footerButtonID = iota
 	footerButtonTheme
-	footerButtonStyle
 	footerButtonRefresh
 	footerButtonQuit
 	footerButtonStopwatchGo
@@ -122,7 +131,6 @@ type footerButton struct {
 
 var footerButtonDefinitions = []footerButton{
 	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
-	{id: footerButtonStyle, label: "[ (S)TYLE ]", compact: "[S]"},
 	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
 	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
 }
@@ -156,21 +164,33 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			return m.pressFooterButton(footerButtonTheme)
 		case "s":
-			return m.pressFooterButton(footerButtonStyle)
+			if m.meterStyle == styleStopwatch {
+				return m.pressFooterButton(footerButtonStopwatchGo)
+			}
+		case "tab":
+			return m.pressStyleTab(m.meterStyle.next())
+		case "shift+tab":
+			return m.pressStyleTab(m.meterStyle.previous())
 		case "r":
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
-		case "g":
-			if m.meterStyle == styleStopwatch {
-				return m.pressFooterButton(footerButtonStopwatchGo)
-			}
 		case "p":
 			if m.meterStyle == styleStopwatch {
 				return m.pressFooterButton(footerButtonStopwatchStop)
 			}
 		}
 	case tea.MouseMsg:
+		if style, ok := m.styleTabAt(message.X, message.Y); ok {
+			m.styleHovered = true
+			m.hoveredStyle = style
+			m.hoveredButton = footerButtonNone
+			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+				return m.pressStyleTab(style)
+			}
+			return m, nil
+		}
+		m.styleHovered = false
 		button := m.footerButtonAt(message.X, message.Y)
 		m.hoveredButton = button
 		if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress && button != footerButtonNone {
@@ -220,8 +240,26 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.sequence == m.flashSequence && message.button == m.flashedButton {
 			m.flashedButton = footerButtonNone
 		}
+	case styleTabFlashExpiredMsg:
+		if message.sequence == m.styleSequence && message.style == m.flashedStyle {
+			m.styleFlashing = false
+		}
 	}
 	return m, nil
+}
+
+func (m Model) pressStyleTab(style meterStyleID) (tea.Model, tea.Cmd) {
+	if style < styleBars || style >= styleCount {
+		return m, nil
+	}
+	m.meterStyle = style
+	m.styleSequence++
+	m.flashedStyle = style
+	m.styleFlashing = true
+	sequence := m.styleSequence
+	return m, tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
+		return styleTabFlashExpiredMsg{style: style, sequence: sequence}
+	})
 }
 
 func (m Model) pressFooterButton(button footerButtonID) (tea.Model, tea.Cmd) {
@@ -246,8 +284,6 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
 		m.theme = m.theme.next()
-	case footerButtonStyle:
-		m.meterStyle = m.meterStyle.next()
 	case footerButtonRefresh:
 		if !m.loading {
 			m.loading = true
@@ -294,7 +330,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayout(layout.contentWidth)
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name)
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+len(button.label) {
@@ -307,6 +343,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 
 type dashboardGeometry struct {
 	contentWidth int
+	tabsY        int
 	meterHeight  int
 	meterY       int
 	footerY      int
@@ -328,6 +365,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		headerHeight = 2
 	}
 	const statusHeight = 1
+	const tabsHeight = 1
 	const framedErrorHeight = 4
 	const footerHeight = 2
 	extraHeight := 0
@@ -337,14 +375,16 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if len(m.snapshot.Meters()) == 0 {
 		extraHeight += framedErrorHeight
 	}
-	meterY := 1 + headerHeight + statusHeight + extraHeight
-	meterHeight := max(contentHeight-headerHeight-statusHeight-extraHeight-footerHeight, 1)
+	tabsY := 1 + headerHeight + statusHeight
+	meterY := tabsY + tabsHeight + extraHeight
+	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
 	if m.meterStyle == styleStopwatch || len(m.snapshot.Meters()) > 0 {
 		footerY += meterHeight
 	}
 	return dashboardGeometry{
 		contentWidth: contentWidth,
+		tabsY:        tabsY,
 		meterHeight:  meterHeight,
 		meterY:       meterY,
 		footerY:      footerY,
@@ -375,6 +415,11 @@ func footerButtonLayout(width int) ([]footerButton, string) {
 		buttons[index].label = buttons[index].compact
 	}
 	return buttons, separator
+}
+
+func footerButtonLayoutWithTheme(width int, themeName string) ([]footerButton, string) {
+	themeWidth := len("THEME // ") + len(themeName)
+	return footerButtonLayout(max(width-themeWidth-1, 1))
 }
 
 func (m Model) fetch() tea.Cmd {

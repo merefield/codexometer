@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -16,13 +17,16 @@ func (m Model) View() string {
 	layout := m.dashboardLayout()
 	contentWidth := layout.contentWidth
 
-	header := renderHeader(contentWidth, m.phase, colors)
+	account := ""
+	if !m.loading || len(m.snapshot.Meters()) > 0 {
+		account = m.renderAccount(colors)
+	}
+	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(colors), account, colors)
 	parts := []string{header}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		parts = append(parts, renderBoot(contentWidth, m.phase, colors))
 	} else {
-		status := m.renderStatus(contentWidth, colors)
-		parts = append(parts, status)
+		parts = append(parts, strings.Repeat(" ", contentWidth), m.renderStyleTabs(contentWidth, colors))
 		if m.err != nil {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
@@ -47,17 +51,21 @@ func (m Model) View() string {
 	return lipgloss.NewStyle().Margin(1, 2).Render(panel)
 }
 
-func renderHeader(width, phase int, colors palette) string {
+func renderHeader(width, phase int, signal, account string, colors palette) string {
 	if width < 64 {
-		return colors.header().Render("▰ CODEXOMETER ▰") + "\n" + colors.dimmed().Render("QUOTA TELEMETRY CONSOLE // CRT-01")
+		title := colors.header().Render("▰ CODEXOMETER ▰")
+		subtitle := colors.dimmed().Render("QUOTA TELEMETRY CONSOLE // CRT-01")
+		return joinRight(title, signal, width) + "\n" + joinRight(subtitle, account, width)
 	}
 	logo := []string{
 		"█▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█",
 		"█▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄",
 	}
 	beacon := []string{"◉", "◎", "◌", "◎"}[phase%4]
-	return colors.header().Render(strings.Join(logo, "\n")) + "\n" +
-		colors.dimmed().Render(fmt.Sprintf("%s QUOTA TELEMETRY CONSOLE // CRT-01 // SIGNAL LOCKED", beacon))
+	subtitle := colors.dimmed().Render(fmt.Sprintf("%s QUOTA TELEMETRY CONSOLE // CRT-01 // SIGNAL LOCKED", beacon))
+	return joinRight(colors.header().Render(logo[0]), signal, width) + "\n" +
+		colors.header().Render(logo[1]) + "\n" +
+		joinRight(subtitle, account, width)
 }
 
 func renderBoot(width, phase int, colors palette) string {
@@ -67,7 +75,15 @@ func renderBoot(width, phase int, colors palette) string {
 	return frame(width, "ACQUIRING SIGNAL", colors.label().Render(track)+"\n"+colors.dimmed().Render("HANDSHAKE WITH CODEX APP-SERVER IN PROGRESS"), colors.primary, colors)
 }
 
-func (m Model) renderStatus(width int, colors palette) string {
+func (m Model) renderAccount(colors palette) string {
+	plan := "UNKNOWN PLAN"
+	if m.snapshot.RateLimits.PlanType != nil {
+		plan = codex.DisplayName(*m.snapshot.RateLimits.PlanType)
+	}
+	return colors.dimmed().Render("ACCOUNT // " + plan)
+}
+
+func (m Model) renderSignalStatus(colors palette) string {
 	status := "ONLINE"
 	color := colors.primary
 	if m.err != nil {
@@ -78,12 +94,20 @@ func (m Model) renderStatus(width int, colors palette) string {
 		status = "SCANNING"
 		color = colors.accent
 	}
-	plan := "UNKNOWN PLAN"
-	if m.snapshot.RateLimits.PlanType != nil {
-		plan = codex.DisplayName(*m.snapshot.RateLimits.PlanType)
+	return lipgloss.NewStyle().Bold(true).Foreground(color).Render("● " + status)
+}
+
+func joinRight(left, right string, width int) string {
+	if right == "" {
+		return left
 	}
-	left := lipgloss.NewStyle().Bold(true).Foreground(color).Render("● " + status)
-	right := colors.dimmed().Render("ACCOUNT // " + plan + " // " + colors.name + " // " + m.meterStyle.name())
+	if lipgloss.Width(right) >= width {
+		return ansi.Truncate(right, width, "")
+	}
+	availableLeft := max(width-lipgloss.Width(right)-1, 0)
+	if lipgloss.Width(left) > availableLeft {
+		left = ansi.Truncate(left, availableLeft, "")
+	}
 	gap := max(width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
 }
@@ -97,10 +121,8 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
 		left += fmt.Sprintf("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
-	mode := fmt.Sprintf("THEME %s // VIEW %s", colors.name, m.meterStyle.name())
-	gap := max(width-len(left)-len(mode), 1)
-	status := left + strings.Repeat(" ", gap) + mode
-	buttons, separator := footerButtonLayout(width)
+	status := left
+	buttons, separator := footerButtonLayoutWithTheme(width, colors.name)
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		controls = append(controls, footerButtonAppearance(
@@ -109,7 +131,9 @@ func (m Model) renderFooter(width int, colors palette) string {
 			button.id == m.flashedButton,
 		).Render(button.label))
 	}
-	return colors.dimmed().Render(status) + "\n" + strings.Join(controls, separator)
+	theme := colors.dimmed().Render(fmt.Sprintf("THEME // %s", colors.name))
+	controlRow := joinRight(strings.Join(controls, separator), theme, width)
+	return colors.dimmed().Render(status) + "\n" + controlRow
 }
 
 func footerButtonAppearance(colors palette, hovered, flashed bool) lipgloss.Style {

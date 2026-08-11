@@ -77,7 +77,7 @@ func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchV
 	layout := layoutStopwatchArea(width, height)
 
 	readout := m.renderStopwatchReadout(layout.readoutWidth, layout.topHeight, colors)
-	goButton := m.renderStopwatchButton(layout.buttonWidths[0], layout.topHeight, "(G)O", footerButtonStopwatchGo, m.stopwatchGoEnabled(), colors)
+	goButton := m.renderStopwatchButton(layout.buttonWidths[0], layout.topHeight, "(S)TART", footerButtonStopwatchGo, m.stopwatchGoEnabled(), colors)
 	stopButton := m.renderStopwatchButton(layout.buttonWidths[1], layout.topHeight, "STO(P)", footerButtonStopwatchStop, m.stopwatchStopEnabled(), colors)
 	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
@@ -94,7 +94,7 @@ func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchV
 
 func (m Model) renderStopwatchReadout(width, height int, colors palette) string {
 	state := "READY"
-	hint := "PRESS G OR CLICK GO // LOCAL SESSIONS"
+	hint := "PRESS S OR CLICK START // LOCAL SESSIONS"
 	switch m.stopwatchState {
 	case stopwatchStarting:
 		state, hint = "ZEROING COUNTER", "SCANNING LOCAL CODEX TELEMETRY"
@@ -197,7 +197,7 @@ func (m Model) renderStopwatchGraph(width, height int, colors palette) string {
 	if len(samples) == 0 {
 		message := "WAITING FOR FIRST SAMPLE"
 		if m.stopwatchState == stopwatchIdle {
-			message = "PRESS GO TO ARM RECORDER"
+			message = "PRESS START TO ARM RECORDER"
 		} else if m.stopwatchState == stopwatchStopped {
 			message = "NO COMPLETE 30 SEC SAMPLE"
 		}

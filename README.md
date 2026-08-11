@@ -143,18 +143,21 @@ codexometer --codex /path/to/codex
 | Key | Action |
 | --- | --- |
 | `t` | Cycle color themes |
-| `s` | Cycle meter styles |
+| `Tab` | Select the next meter-style tab |
+| `Shift+Tab` | Select the previous meter-style tab |
 | `r` | Refresh quota data immediately |
-| `g` | Go: start the Stopwatch recorder (Stopwatch view only) |
+| `s` | Start the Stopwatch recorder (Stopwatch view only) |
 | `p` | Stop and take a final up-to-date reading (Stopwatch view only) |
 | `q` | Quit |
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
 
-The footer presents the same actions as clickable buttons. Move the pointer
-over a button to highlight it, or click it to activate it. Buttons pulse
+The responsive tab rail below the account status selects meter styles by mouse,
+`Tab`, or `Shift+Tab`; labels condense automatically as the terminal narrows.
+The footer presents the remaining actions as clickable buttons. Move the pointer
+over a tab or button to highlight it, or click it to activate it. Controls pulse
 briefly when activated by mouse or keyboard. The keyboard assignments remain
-available in terminals without mouse support. Theme and style changes are
+available in terminals without mouse support. Theme and tab changes are
 immediate and do not trigger a network refresh.
 
 ## Themes
@@ -171,7 +174,7 @@ The default remains the original green hacker-terminal presentation.
 
 ## Meter styles
 
-Press `s` to cycle:
+Select a tab with the mouse, `Tab`, or `Shift+Tab`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
 2. **Stopwatch** — establishes a zero baseline across locally active Codex
@@ -273,9 +276,9 @@ need Go or Codexometer's source dependencies.
 
 ## Versioning
 
-Codexometer follows semantic versioning; the current source version is `v0.1.1`. The Git tag is
+Codexometer follows semantic versioning; the current source version is `v0.1.2`. The Git tag is
 the release source of truth. Go automatically embeds that tag in binaries built
-with `go install github.com/merefield/codexometer@v0.1.1`; direct source builds
+with `go install github.com/merefield/codexometer@v0.1.2`; direct source builds
 fall back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -288,7 +291,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.1" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.2" .
 ```
 
 ## How refresh works
