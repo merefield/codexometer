@@ -178,9 +178,9 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
 2. **Stopwatch** — establishes a zero baseline across locally active Codex
-   sessions when you press Go. A large readout follows newly appended token
+   sessions when you press Start. A large readout follows newly appended token
    telemetry once per second and shows total observed tokens, elapsed time, and
-   average rate; clickable Go and Stop controls sit beside it. The full-width
+   average rate; clickable Start and Stop controls sit beside it. The full-width
    plot adds one thin vertical block bar every 30 seconds for tokens observed in
    that interval. New bars enter on the right and push older bars left, and the
    Y axis automatically expands or contracts to fit the visible samples. Stop performs

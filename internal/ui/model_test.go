@@ -294,6 +294,25 @@ func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 	}
 }
 
+func TestFooterLayoutNeverHitTestsControlsTruncatedByTheme(t *testing.T) {
+	for _, themeName := range []string{"HACKER", "BLUE STEEL", "ULTRAVIOLET"} {
+		for width := 1; width <= 60; width++ {
+			buttons, separator := footerButtonLayoutWithTheme(width, themeName)
+			controlsWidth := 0
+			for index, button := range buttons {
+				if index > 0 {
+					controlsWidth += len(separator)
+				}
+				controlsWidth += len(button.label)
+			}
+			available := max(width-len("THEME // ")-len(themeName)-1, 0)
+			if controlsWidth > available {
+				t.Fatalf("theme=%q width=%d exposes %d cells of controls in %d available cells", themeName, width, controlsWidth, available)
+			}
+		}
+	}
+}
+
 func footerMouseMessage(t *testing.T, model Model, id footerButtonID, action tea.MouseAction) tea.MouseMsg {
 	t.Helper()
 	button, ok := footerButtonByID(model, id)

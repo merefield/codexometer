@@ -419,7 +419,25 @@ func footerButtonLayout(width int) ([]footerButton, string) {
 
 func footerButtonLayoutWithTheme(width int, themeName string) ([]footerButton, string) {
 	themeWidth := len("THEME // ") + len(themeName)
-	return footerButtonLayout(max(width-themeWidth-1, 1))
+	available := width - themeWidth - 1
+	if available <= 0 {
+		return nil, " "
+	}
+	buttons, separator := footerButtonLayout(available)
+	visible := buttons[:0]
+	used := 0
+	for _, button := range buttons {
+		required := len(button.label)
+		if len(visible) > 0 {
+			required += len(separator)
+		}
+		if used+required > available {
+			break
+		}
+		visible = append(visible, button)
+		used += required
+	}
+	return visible, separator
 }
 
 func (m Model) fetch() tea.Cmd {
