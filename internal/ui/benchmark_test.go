@@ -80,6 +80,52 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	}
 }
 
+func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
+	model := Model{benchmarkState: benchmarkFinished}
+	for height := 1; height <= 12; height++ {
+		t.Run(fmt.Sprintf("height-%d", height), func(t *testing.T) {
+			const width = 76
+			output := ansi.Strip(model.renderBenchmarkArea(width, height, paletteFor(themeHacker)))
+			if got := lipgloss.Height(output); got != height {
+				t.Fatalf("benchmark height = %d, want %d:\n%s", got, height, output)
+			}
+			if got := lipgloss.Width(output); got != width {
+				t.Fatalf("benchmark width = %d, want %d:\n%s", got, width, output)
+			}
+			geometry := layoutBenchmarkArea(width, height)
+			if geometry.tableHeight < 3 && strings.Contains(output, "RESULT MATRIX") {
+				t.Fatalf("table rendered in an allocation too short for its frame:\n%s", output)
+			}
+			if height == 4 && !strings.Contains(output, "RUN SELECTED") {
+				t.Fatalf("compact controls dropped an action before their spacer:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestVeryShortBenchmarkAreaExposesNoHiddenMouseTargets(t *testing.T) {
+	for _, height := range []int{8, 9, 10} {
+		model := Model{
+			snapshot: codex.DemoSnapshot(), width: 40, height: height,
+			meterStyle: styleBenchmark,
+		}
+		dashboard := model.dashboardLayout()
+		if dashboard.meterHeight >= 3 {
+			t.Fatalf("test height %d produced meter height %d", height, dashboard.meterHeight)
+		}
+		for y := dashboard.meterY; y < dashboard.footerY; y++ {
+			for x := 0; x < model.width; x++ {
+				if button := model.benchmarkButtonAt(x, y); button != footerButtonNone {
+					t.Fatalf("height %d exposed hidden button %d at %d,%d", height, button, x, y)
+				}
+				if column, ok := model.benchmarkHeaderAt(x, y); ok || column != benchmarkSortNone {
+					t.Fatalf("height %d exposed hidden heading %d at %d,%d", height, column, x, y)
+				}
+			}
+		}
+	}
+}
+
 func TestBenchmarkStatusExplainsUnavailableMeasurements(t *testing.T) {
 	model := Model{
 		benchmarkState: benchmarkFinished,
@@ -254,7 +300,7 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
-			for _, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
+			for _, segments := range model.benchmarkVisibleControlLines(max(geometry.controlsWidth-4, 1), geometry.controlsHeight) {
 				for _, segment := range segments {
 					if segment.button == footerButtonNone || !segment.enabled {
 						continue
@@ -267,22 +313,30 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 					}
 				}
 			}
-			for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
-				if segment.button == footerButtonNone || !segment.enabled {
-					continue
-				}
-				x, y := renderedTextStart(t, model, segment.text)
-				for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
-					if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
-						t.Errorf("rendered matrix filter %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+			if geometry.tableHeight >= 3 {
+				for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
+					if segment.button == footerButtonNone || !segment.enabled {
+						continue
+					}
+					x, y := renderedTextStart(t, model, segment.text)
+					for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
+						if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
+							t.Errorf("rendered matrix filter %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+						}
 					}
 				}
 			}
 
+			if geometry.tableHeight < 3 {
+				if got, ok := model.benchmarkHeaderAt(4, dashboard.meterY+geometry.topHeight+2); ok || got != benchmarkSortNone {
+					t.Errorf("hidden compact table exposed a heading click surface: (%d,%v)", got, ok)
+				}
+				return
+			}
 			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
 			_ = tableTitleX
 			headerY := tableTitleY + 2
-			if geometry.tableHeight <= 3 {
+			if geometry.tableHeight == 3 {
 				if got, ok := model.benchmarkHeaderAt(4, headerY); ok || got != benchmarkSortNone {
 					t.Errorf("non-rendered compact heading exposed a click surface: (%d,%v)", got, ok)
 				}

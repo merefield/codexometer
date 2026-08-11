@@ -71,20 +71,28 @@ func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 		}
 		return benchmarkGeometry{
 			width: width, height: height, topHeight: controlsHeight + statusHeight,
-			tableHeight:    max(height-controlsHeight-statusHeight, 1),
+			tableHeight:    max(height-controlsHeight-statusHeight, 0),
 			controlsHeight: controlsHeight, statusHeight: statusHeight,
 			controlsWidth: width, statusWidth: width, stacked: true,
 		}
 	}
 	return benchmarkGeometry{
 		width: width, height: height, topHeight: topHeight,
-		tableHeight:    max(height-topHeight, 1),
+		tableHeight:    max(height-topHeight, 0),
 		controlsHeight: topHeight, statusHeight: topHeight,
 		controlsWidth: controlsWidth, statusWidth: statusWidth,
 	}
 }
 
 func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
+	width, height = max(width, 1), max(height, 1)
+	if height < 3 {
+		lines := []string{fitTableCell("BENCHMARK // TERMINAL TOO SHORT", width)}
+		for len(lines) < height {
+			lines = append(lines, strings.Repeat(" ", width))
+		}
+		return colors.dimmed().Render(strings.Join(lines, "\n"))
+	}
 	layout := layoutBenchmarkArea(width, height)
 	controls := m.renderBenchmarkControls(layout.controlsWidth, layout.controlsHeight, colors)
 	top := controls
@@ -96,8 +104,10 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 			top = lipgloss.JoinHorizontal(lipgloss.Top, controls, " ", status)
 		}
 	}
-	table := m.renderBenchmarkTable(width, layout.tableHeight, colors)
-	view := lipgloss.JoinVertical(lipgloss.Left, top, table)
+	view := top
+	if layout.tableHeight >= 3 {
+		view = lipgloss.JoinVertical(lipgloss.Left, top, m.renderBenchmarkTable(width, layout.tableHeight, colors))
+	}
 	if padding := height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
 	}
@@ -106,11 +116,24 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 
 func (m Model) renderBenchmarkControls(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
-	lines := make([]string, 0, 2)
-	for _, segments := range m.benchmarkControlLines(innerWidth) {
+	lines := make([]string, 0, max(height-2, 0))
+	for _, segments := range m.benchmarkVisibleControlLines(innerWidth, height) {
 		lines = append(lines, m.renderBenchmarkSegments(segments, innerWidth, colors))
 	}
 	return frameSized(width, max(height-2, 1), "BENCHMARK CONTROLS", strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func (m Model) benchmarkVisibleControlLines(width, height int) [][]benchmarkControlSegment {
+	lines := m.benchmarkControlLines(width)
+	capacity := max(height-2, 0)
+	if capacity >= len(lines) {
+		return lines
+	}
+	if capacity == 2 && len(lines) >= 3 {
+		// Drop the decorative spacer before dropping an actionable row.
+		return [][]benchmarkControlSegment{lines[0], lines[2]}
+	}
+	return lines[:min(len(lines), capacity)]
 }
 
 func (m Model) renderBenchmarkSegments(segments []benchmarkControlSegment, width int, colors palette) string {
@@ -252,6 +275,7 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 	if height >= 5 {
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // 250K STEP LIMIT", max(width-4, 1), "")))
 	}
+	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
 }
 
@@ -604,17 +628,17 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	dashboard := m.dashboardLayout()
 	layout := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
-	if localX < 0 {
+	if localX < 0 || localY < 0 || localY >= layout.height || layout.height < 3 {
 		return footerButtonNone
 	}
-	if localX < layout.controlsWidth {
-		for line, segments := range m.benchmarkControlLines(max(layout.controlsWidth-4, 1)) {
+	if localX < layout.controlsWidth && localY < layout.controlsHeight {
+		for line, segments := range m.benchmarkVisibleControlLines(max(layout.controlsWidth-4, 1), layout.controlsHeight) {
 			if localY == line+1 {
 				return benchmarkSegmentButtonAt(localX, segments)
 			}
 		}
 	}
-	if localX < layout.width && localY == layout.topHeight+1 {
+	if layout.tableHeight >= 3 && localX < layout.width && localY == layout.topHeight+1 {
 		return benchmarkSegmentButtonAt(localX, m.benchmarkFilterLine(max(layout.width-4, 1)))
 	}
 	return footerButtonNone
