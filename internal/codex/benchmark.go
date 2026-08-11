@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	benchmarkTurnTimeout = 5 * time.Minute
-	benchmarkCodeLimit   = 64 * 1024
-	benchmarkStepLimit   = 250_000
+	benchmarkTurnTimeout      = 5 * time.Minute
+	benchmarkInterruptTimeout = 15 * time.Second
+	benchmarkCodeLimit        = 64 * 1024
+	benchmarkStepLimit        = 250_000
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -144,6 +145,8 @@ type appServerSession struct {
 	done                  chan struct{}
 	stop                  sync.Once
 	experimentalRawEvents bool
+	turnTimeout           time.Duration
+	interruptTimeout      time.Duration
 }
 
 type lockedBuffer struct {
@@ -469,7 +472,8 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		Model: combination.model.Model, DisplayName: combination.model.DisplayName,
 		Effort: combination.effort, ActualModel: combination.model.Model,
 	}
-	turnCtx, cancel := context.WithTimeout(ctx, benchmarkTurnTimeout)
+	turnTimeout := s.benchmarkTurnTimeout()
+	turnCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	defer cancel()
 
 	temporary, err := os.MkdirTemp("", "codexometer-benchmark-")
@@ -546,106 +550,109 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	var finalMessage, turnFailure string
 	telemetry := newBenchmarkTelemetry()
 	completed := false
-	for !completed {
-		_, err = s.readUntilNotification(turnCtx, func(method string, params json.RawMessage) bool {
-			switch method {
-			case "thread/tokenUsage/updated":
-				var event struct {
-					ThreadID   string `json:"threadId"`
-					TurnID     string `json:"turnId"`
-					TokenUsage struct {
-						Total BenchmarkUsage `json:"total"`
-					} `json:"tokenUsage"`
+	handleNotification := func(method string, params json.RawMessage) bool {
+		switch method {
+		case "thread/tokenUsage/updated":
+			var event struct {
+				ThreadID   string `json:"threadId"`
+				TurnID     string `json:"turnId"`
+				TokenUsage struct {
+					Total BenchmarkUsage `json:"total"`
+				} `json:"tokenUsage"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				telemetry.recordCumulative(event.TokenUsage.Total)
+			}
+		case "rawResponse/completed":
+			var event struct {
+				ThreadID   string          `json:"threadId"`
+				TurnID     string          `json:"turnId"`
+				ResponseID string          `json:"responseId"`
+				Usage      *BenchmarkUsage `json:"usage"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				telemetry.recordRawResponse(event.ResponseID, event.Usage)
+			}
+		case "model/rerouted":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				TurnID   string `json:"turnId"`
+				ToModel  string `json:"toModel"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.ToModel != "" {
+				result.ActualModel = event.ToModel
+			}
+		case "item/started", "item/completed":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				TurnID   string `json:"turnId"`
+				Item     struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"item"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				if benchmarkToolItem(event.Item.Type) && !result.ToolUsed {
+					result.ToolUsed, result.ToolType = true, event.Item.Type
 				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
-					telemetry.recordCumulative(event.TokenUsage.Total)
-				}
-			case "rawResponse/completed":
-				var event struct {
-					ThreadID   string          `json:"threadId"`
-					TurnID     string          `json:"turnId"`
-					ResponseID string          `json:"responseId"`
-					Usage      *BenchmarkUsage `json:"usage"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
-					telemetry.recordRawResponse(event.ResponseID, event.Usage)
-				}
-			case "model/rerouted":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					TurnID   string `json:"turnId"`
-					ToModel  string `json:"toModel"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.ToModel != "" {
-					result.ActualModel = event.ToModel
-				}
-			case "item/started", "item/completed":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					TurnID   string `json:"turnId"`
-					Item     struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					} `json:"item"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
-					if benchmarkToolItem(event.Item.Type) && !result.ToolUsed {
-						result.ToolUsed, result.ToolType = true, event.Item.Type
-					}
-					if method == "item/completed" && event.Item.Type == "agentMessage" {
-						finalMessage = event.Item.Text
-					}
-				}
-			case "turn/completed":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					Turn     struct {
-						ID     string `json:"id"`
-						Status string `json:"status"`
-						Error  *struct {
-							Message string `json:"message"`
-						} `json:"error"`
-						Items []struct {
-							Type string `json:"type"`
-							Text string `json:"text"`
-						} `json:"items"`
-					} `json:"turn"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.Turn.ID == startedTurn.Turn.ID {
-					completed = true
-					if event.Turn.Status != "completed" {
-						turnFailure = "turn " + event.Turn.Status
-						if event.Turn.Error != nil && event.Turn.Error.Message != "" {
-							turnFailure += ": " + event.Turn.Error.Message
-						}
-					}
-					if finalMessage == "" {
-						for _, item := range event.Turn.Items {
-							if item.Type == "agentMessage" {
-								finalMessage = item.Text
-							}
-						}
-					}
-					return true
+				if method == "item/completed" && event.Item.Type == "agentMessage" {
+					finalMessage = event.Item.Text
 				}
 			}
-			return false
-		})
+		case "turn/completed":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				Turn     struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+					Error  *struct {
+						Message string `json:"message"`
+					} `json:"error"`
+					Items []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"items"`
+				} `json:"turn"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.Turn.ID == startedTurn.Turn.ID {
+				completed = true
+				if event.Turn.Status != "completed" {
+					turnFailure = "turn " + event.Turn.Status
+					if event.Turn.Error != nil && event.Turn.Error.Message != "" {
+						turnFailure += ": " + event.Turn.Error.Message
+					}
+				}
+				if finalMessage == "" {
+					for _, item := range event.Turn.Items {
+						if item.Type == "agentMessage" {
+							finalMessage = item.Text
+						}
+					}
+				}
+				return true
+			}
+		}
+		return false
+	}
+	for !completed {
+		_, err = s.readUntilNotification(turnCtx, handleNotification)
 		if err != nil {
 			result.Duration = time.Since(startedAt)
+			if recoverableBenchmarkTimeout(ctx, turnCtx, err) {
+				result.Failure = fmt.Sprintf("turn timed out after %s", turnTimeout)
+				if interruptErr := s.interruptBenchmarkTurn(ctx, startedThread.Thread.ID, startedTurn.Turn.ID, &completed, handleNotification); interruptErr != nil {
+					result.Failure += "; cleanup failed: " + interruptErr.Error()
+					return result, fmt.Errorf("recover timed-out benchmark turn: %w", interruptErr)
+				}
+				applyBenchmarkMeasurements(&result, telemetry)
+				return result, nil
+			}
 			result.Failure = fmt.Sprintf("wait for turn: %v", err)
 			return result, err
 		}
 	}
 	result.Duration = time.Since(startedAt)
-	telemetry.apply(&result)
-	if result.ToolUsed {
-		result.CostIssue = "tool use prohibited: " + result.ToolType
-	} else if result.UsageKnown {
-		result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
-	} else {
-		result.CostIssue = result.UsageIssue
-	}
+	applyBenchmarkMeasurements(&result, telemetry)
 	if turnFailure != "" {
 		result.Failure = turnFailure
 		return result, nil
@@ -665,6 +672,71 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	}
 	result.Correct = true
 	return result, nil
+}
+
+func (s *appServerSession) benchmarkTurnTimeout() time.Duration {
+	if s.turnTimeout > 0 {
+		return s.turnTimeout
+	}
+	return benchmarkTurnTimeout
+}
+
+func (s *appServerSession) benchmarkInterruptTimeout() time.Duration {
+	if s.interruptTimeout > 0 {
+		return s.interruptTimeout
+	}
+	return benchmarkInterruptTimeout
+}
+
+func recoverableBenchmarkTimeout(parent, turn context.Context, err error) bool {
+	return parent.Err() == nil && errors.Is(turn.Err(), context.DeadlineExceeded) && errors.Is(err, context.DeadlineExceeded)
+}
+
+func (s *appServerSession) interruptBenchmarkTurn(
+	ctx context.Context,
+	threadID, turnID string,
+	completed *bool,
+	handleNotification func(string, json.RawMessage) bool,
+) error {
+	cleanupCtx, cancel := context.WithTimeout(ctx, s.benchmarkInterruptTimeout())
+	defer cancel()
+
+	_, err := s.call(cleanupCtx, "turn/interrupt", map[string]string{
+		"threadId": threadID,
+		"turnId":   turnID,
+	}, func(method string, params json.RawMessage) {
+		handleNotification(method, params)
+	})
+	if err != nil {
+		var methodError *benchmarkMethodError
+		// The turn can finish naturally between the deadline and the interrupt
+		// request. A method rejection is safe only when its matching completion
+		// notification was also observed.
+		if !*completed || !errors.As(err, &methodError) {
+			return fmt.Errorf("interrupt turn: %w", err)
+		}
+	}
+	if *completed {
+		return nil
+	}
+	if _, err := s.readUntilNotification(cleanupCtx, handleNotification); err != nil {
+		return fmt.Errorf("confirm interrupted turn: %w", err)
+	}
+	if !*completed {
+		return errors.New("confirm interrupted turn: completion was not observed")
+	}
+	return nil
+}
+
+func applyBenchmarkMeasurements(result *BenchmarkResult, telemetry *benchmarkTelemetry) {
+	telemetry.apply(result)
+	if result.ToolUsed {
+		result.CostIssue = "tool use prohibited: " + result.ToolType
+	} else if result.UsageKnown {
+		result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
+	} else {
+		result.CostIssue = result.UsageIssue
+	}
 }
 
 type benchmarkTelemetry struct {

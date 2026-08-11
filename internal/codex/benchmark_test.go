@@ -195,7 +195,7 @@ func newFakeBenchmarkServer(envelopes ...benchmarkEnvelope) (*appServerSession, 
 	requests := &bytes.Buffer{}
 	server := &appServerSession{
 		stdin: nopWriteCloser{requests}, encoder: json.NewEncoder(requests),
-		envelopes:  make(chan benchmarkEnvelope, len(envelopes)+1),
+		envelopes:  make(chan benchmarkEnvelope, len(envelopes)+16),
 		readErrors: make(chan error, 1), done: make(chan struct{}), stderr: &lockedBuffer{},
 	}
 	for _, envelope := range envelopes {
@@ -274,6 +274,100 @@ func TestRunBenchmarkFailsClosedWhenUsageIsMissing(t *testing.T) {
 	}
 	if result.UsageObserved || result.UsageKnown || result.CostKnown || result.UsageIssue != "matching usage event was not observed" || result.CostIssue != result.UsageIssue {
 		t.Fatalf("missing usage did not fail closed: %#v", result)
+	}
+}
+
+func TestRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"data": []any{map[string]any{
+				"model": "gpt-5.3-codex", "displayName": "GPT-5.3 Codex",
+				"supportedReasoningEfforts": []any{
+					map[string]string{"reasoningEffort": "low"},
+					map[string]string{"reasoningEffort": "high"},
+				},
+			}},
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-low"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-low"}})},
+	)
+	server.turnTimeout = 20 * time.Millisecond
+	server.interruptTimeout = 2 * time.Second
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(4), Result: rawJSON(map[string]any{})}
+		server.envelopes <- benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turnId": "turn-low",
+			"tokenUsage": map[string]any{"total": BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5}},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turn": map[string]any{"id": "turn-low", "status": "interrupted"},
+		})}
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(5), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-high"}, "model": "gpt-5.3-codex",
+		})}
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(6), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-high"}})}
+		server.envelopes <- benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-high", "turnId": "turn-high",
+			"item": map[string]string{"type": "agentMessage", "text": message},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-high", "turn": map[string]any{"id": "turn-high", "status": "completed"},
+		})}
+	}()
+
+	original := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = original })
+
+	var results []BenchmarkResult
+	var final BenchmarkEvent
+	Client{}.RunBenchmarkSuite(context.Background(), []BenchmarkTaskID{BenchmarkMergeRanges}, func(event BenchmarkEvent) {
+		if event.Result != nil {
+			results = append(results, *event.Result)
+		}
+		final = event
+	})
+	if len(results) != 2 {
+		t.Fatalf("suite produced %d results, want 2: %#v", len(results), results)
+	}
+	if results[0].Correct || results[0].Failure != "turn timed out after 20ms" || !results[0].UsageKnown || results[0].Usage.TotalTokens != 55 {
+		t.Fatalf("timed-out result was not retained as a measured failure: %#v", results[0])
+	}
+	if !results[1].Correct || results[1].Effort != "high" {
+		t.Fatalf("suite did not continue to the next combination: %#v", results[1])
+	}
+	if !final.Done || final.Err != nil || final.Completed != 2 || final.Total != 2 {
+		t.Fatalf("suite ended as a global fault: %#v", final)
+	}
+	requestLog := requests.String()
+	if !strings.Contains(requestLog, `"method":"turn/interrupt"`) ||
+		!strings.Contains(requestLog, `"threadId":"thread-low"`) ||
+		!strings.Contains(requestLog, `"turnId":"turn-low"`) {
+		t.Fatalf("timed-out turn was not interrupted: %s", requestLog)
+	}
+}
+
+func TestRunBenchmarkStopsWhenTimedOutTurnCannotBeCleanedUp(t *testing.T) {
+	server, _ := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+	)
+	server.turnTimeout = 10 * time.Millisecond
+	server.interruptTimeout = 20 * time.Millisecond
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr == nil || !errors.Is(fatalErr, context.DeadlineExceeded) {
+		t.Fatalf("failed cleanup error = %v, want deadline exceeded", fatalErr)
+	}
+	if result.Correct || !strings.Contains(result.Failure, "turn timed out after 10ms; cleanup failed") {
+		t.Fatalf("failed cleanup result = %#v", result)
 	}
 }
 

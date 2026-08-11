@@ -259,6 +259,13 @@ within five seconds. A fresh, ephemeral, read-only app-server thread is used for
 each trial, so benchmark history does not clutter normal Codex sessions. The
 turns still consume the same account quota shown by Codexometer.
 
+Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
+that deadline, Codexometer requests `turn/interrupt`, waits for the matching
+`turn/completed` event, records that combination as `FAIL`, and continues with
+the remaining combinations. Explicit user cancellation, app-server transport
+failure, or failure to confirm interruption still stops the suite because the
+server's state is then unsafe or unknown.
+
 #### Challenges
 
 Every trial asks the model to return one named Starlark function:
