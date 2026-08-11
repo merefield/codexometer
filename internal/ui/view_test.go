@@ -66,6 +66,36 @@ func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 	}
 }
 
+func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
+	model := Model{
+		snapshot:    codex.DemoSnapshot(),
+		nextRefresh: time.Now().Add(time.Minute),
+		meterStyle:  styleBars,
+	}
+	colors := paletteFor(themeHacker)
+	account := ansi.Strip(model.renderAccount(colors))
+	if account != "ACCOUNT // PLUS" {
+		t.Fatalf("account metadata = %q", account)
+	}
+	header := ansi.Strip(renderHeader(100, 0, model.renderSignalStatus(colors), model.renderAccount(colors), colors))
+	headerLines := strings.Split(header, "\n")
+	firstLine := headerLines[0]
+	if !strings.HasSuffix(firstLine, "● ONLINE") {
+		t.Fatalf("online status is not at the top right of the header: %q", firstLine)
+	}
+	if !strings.HasSuffix(headerLines[len(headerLines)-1], "ACCOUNT // PLUS") {
+		t.Fatalf("account is not aligned with the subtitle: %q", headerLines[len(headerLines)-1])
+	}
+	footer := ansi.Strip(model.renderFooter(100, colors))
+	if !strings.Contains(footer, "THEME // HACKER") || strings.Contains(footer, "VIEW") {
+		t.Fatalf("footer theme readout = %q", footer)
+	}
+	footerLines := strings.Split(footer, "\n")
+	if !strings.HasSuffix(footerLines[len(footerLines)-1], "THEME // HACKER") {
+		t.Fatalf("theme is not at the bottom right of the footer: %q", footerLines[len(footerLines)-1])
+	}
+}
+
 func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 	model := Model{
 		snapshot:    codex.DemoSnapshot(),

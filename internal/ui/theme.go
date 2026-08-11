@@ -32,6 +32,10 @@ func (s meterStyleID) next() meterStyleID {
 	return (s + 1) % styleCount
 }
 
+func (s meterStyleID) previous() meterStyleID {
+	return (s - 1 + styleCount) % styleCount
+}
+
 func (s meterStyleID) name() string {
 	return [...]string{
 		"BARS",

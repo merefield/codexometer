@@ -22,15 +22,15 @@ func TestStopwatchGoSampleAndStopLifecycle(t *testing.T) {
 	model.loading = false
 	model.meterStyle = styleStopwatch
 
-	updated, command := model.Update(key('g'))
+	updated, command := model.Update(key('s'))
 	model = updated.(Model)
 	if command == nil || model.stopwatchState != stopwatchStarting || model.flashedButton != footerButtonStopwatchGo {
 		t.Fatalf("Go did not arm stopwatch: state=%d flash=%d command=%v", model.stopwatchState, model.flashedButton, command)
 	}
-	flashed := model.renderStopwatchButton(14, 6, "(G)O", footerButtonStopwatchGo, model.stopwatchGoEnabled(), paletteFor(themeHacker))
-	wantFlash := lipgloss.NewStyle().Bold(true).Foreground(paletteFor(themeHacker).background).Background(paletteFor(themeHacker).primary).Render("(G)O")
+	flashed := model.renderStopwatchButton(14, 6, "(S)TART", footerButtonStopwatchGo, model.stopwatchGoEnabled(), paletteFor(themeHacker))
+	wantFlash := lipgloss.NewStyle().Bold(true).Foreground(paletteFor(themeHacker).background).Background(paletteFor(themeHacker).primary).Render("(S)TART")
 	if !strings.Contains(flashed, wantFlash) {
-		t.Fatal("Go hotkey did not visibly pulse after entering the starting state")
+		t.Fatal("Start hotkey did not visibly pulse after entering the starting state")
 	}
 	sequence := model.stopwatchRequest
 	startedAt := time.Unix(100, 0)
@@ -164,7 +164,7 @@ func TestStopwatchViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.View()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION READOUT", "6,250 TOKENS", "ELAPSED", "(G)O", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"SESSION READOUT", "6,250 TOKENS", "ELAPSED", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d stopwatch missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -222,8 +222,8 @@ func TestStopwatchLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	if command != nil || model.hoveredButton != footerButtonStopwatchGo {
 		t.Fatal("hovering the Go box did not select it")
 	}
-	hovered := model.renderStopwatchButton(14, 6, "(G)O", footerButtonStopwatchGo, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(G)O")
+	hovered := model.renderStopwatchButton(14, 6, "(S)TART", footerButtonStopwatchGo, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(S)TART")
 	if !strings.Contains(hovered, wantHover) {
 		t.Fatal("hovering the Go box did not highlight its label")
 	}
