@@ -375,14 +375,51 @@ PASS/FAIL evaluation is independent of these measurements: incomplete or
 ambiguous token telemetry does not make an incorrect program pass, and a valid
 program can still have an unavailable or approximate cost.
 
-#### Future measurement hardening
+#### Measurement hardening status and guidance
 
-Correct long-context and reroute costing still needs each upstream response to
+The measurement path is deliberately fail-closed. Its current hardening status
+is:
+
+| Priority | Safeguard | Status |
+| --- | --- | --- |
+| **P0** | Distinguish missing telemetry from a genuine observed zero | Complete |
+| **P0** | Reject negative, inconsistent, regressing, or overflowing token data | Complete |
+| **P0** | Track token availability independently from price availability and retain the reason for `N/A` | Complete |
+| **P1** | Prefer a validated per-response ledger, with a validated cumulative compatibility fallback | Complete |
+| **P1** | Detect prohibited tool-use items, force the trial to `FAIL`, and invalidate `API EQ` | Complete |
+| **P1** | Apply the correct pricing tier to long-context responses | Deferred |
+| **P2** | Reduce cache-order bias with balanced warm-ups, randomized ordering, or repeated trials | Open |
+| **P2** | Report a cache-neutral comparison alongside the observed cached cost | Open |
+| **P2** | Price mixed-model reroutes from a response-to-model association | Open; the current raw event does not expose that association |
+| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Open |
+| **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Partial; automatic cumulative fallback is already implemented |
+
+Future accounting changes should preserve these rules:
+
+- Never treat absent or invalid telemetry as zero, and never clamp malformed
+  fields into a plausible value.
+- Validate individual responses, overflow-safe aggregates, cumulative
+  monotonicity, and raw-versus-cumulative agreement before setting usage as
+  available.
+- Keep correctness, usage availability, and cost availability as independent
+  states. An unavailable price must not erase a valid token count, and a
+  measurement problem must not change the deterministic Starlark verdict.
+- Prefer exact response telemetry only when response IDs are present and unique;
+  retain the cumulative path for compatible older app-servers.
+- Do not infer prices for unknown models or unpublished token classes. Update
+  the compiled table only from published OpenAI pricing and record its source
+  and effective date when provenance support is added.
+- Treat any tool-use item as a benchmark protocol violation. Text-token pricing
+  alone cannot represent separately priced or externally executed work.
+- Cover missing fields, invalid invariants, integer overflow, duplicate events,
+  event regression, source disagreement, tool use, and experimental-protocol
+  fallback in tests. Keep race-enabled CI green on Linux, macOS, and Windows.
+
+Correct long-context and reroute costing will require each upstream response to
 be associated with the model and pricing tier that actually served it, including
-the exact threshold semantics. Reporting both observed cost and a cache-neutral
-equivalent—or running balanced warm-up and repeated trials—would also make
-model/effort comparisons less sensitive to cache order. These improvements
-would not change the deterministic PASS/FAIL verifier.
+the exact threshold semantics. Cache-neutral or repeated-trial reporting would
+improve comparison quality without changing the deterministic PASS/FAIL
+verifier.
 
 ## Options
 
