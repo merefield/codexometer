@@ -4,8 +4,8 @@ import "testing"
 
 func TestCurrentReportsMaintainedFallbackForSourceBuild(t *testing.T) {
 	got := Current()
-	if got != "0.2.0" {
-		t.Fatalf("Current() = %q, want 0.2.0", got)
+	if got != "0.2.1" {
+		t.Fatalf("Current() = %q, want 0.2.1", got)
 	}
 }
 

@@ -73,6 +73,21 @@ func TestStyleTabsSupportHoverClickAndPulse(t *testing.T) {
 	}
 }
 
+func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
+	for _, width := range []int{40, 45, 60, 80, 100, 160} {
+		model := Model{snapshot: codex.DemoSnapshot(), width: width, height: 24}
+		layout := model.dashboardLayout()
+		tabs, _ := styleTabLayout(layout.contentWidth, false)
+		for _, tab := range tabs {
+			for offset := 0; offset < tab.width; offset++ {
+				if got, ok := model.styleTabAt(2+tab.x+offset, layout.tabsY); !ok || got != tab.style {
+					t.Errorf("width %d tab %q cell %d hit (%d,%v)", width, tab.label, offset, got, ok)
+				}
+			}
+		}
+	}
+}
+
 func TestMonitorTabShowsPulsingRecordingDotWhileAnotherTabIsActive(t *testing.T) {
 	model := Model{meterStyle: styleBars, monitorState: monitorRunning}
 	colors := paletteFor(themeHacker)

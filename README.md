@@ -306,15 +306,71 @@ exposes no filesystem, process, network, clock, or environment capabilities to
 submitted code. Restricted return types and bounded result sizes add further
 containment.
 
+#### Interpreting token and API-equivalent figures
+
 Token totals come from the trial thread's live `thread/tokenUsage/updated`
-events. API-equivalent cost is an estimate, not a ChatGPT charge: it applies the
-published standard API input, cached-input, and output token prices known to
-this Codexometer release, plus cache-write prices where OpenAI publishes one.
-Reasoning tokens are already included in the output-token total. An unknown
-model—or usage in a token class without a published price—displays `N/A` rather
-than being guessed. Pricing can change; consult the
+events. This event is cumulative for a thread; because Codexometer creates a
+fresh ephemeral thread containing one benchmark turn, its final total is used
+as that trial's token count. The event is matched to both the expected thread
+and turn IDs so activity from another trial or Codex session is not included.
+The displayed total includes all reported input tokens—including cached input
+and cache-write input—and all reported output tokens. Reasoning tokens are
+already included in the output-token total and are not added a second time.
+
+`API EQ` is an estimated **standard, short-context, text-token API equivalent**,
+not a bill, a ChatGPT subscription charge, or a prediction of how much account
+quota the turn consumed. Codexometer separates ordinary input, cached input,
+cache-write input, and output, then applies the per-million-token prices known
+to this Codexometer release. An unknown model, or usage in a token class for
+which no price was published when the release was built, displays `N/A` rather
+than inheriting or guessing a price. Pricing can change after a binary is
+released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-for the current source values.
+for current values.
+
+The figures are useful for comparing these particular observed trials, but
+they have important limitations:
+
+- They do not reveal the private quota-weighting rules used by ChatGPT plans,
+  and should not be converted into quota percentages or treated as dollars
+  actually charged.
+- Prompt-cache state can depend on earlier activity and benchmark order. A
+  later trial may receive cheaper cached input or incur a cache write that an
+  otherwise identical trial would not, so observed API-equivalent cost is not
+  a cache-neutral ranking.
+- Current costing applies short-context rates to the cumulative trial usage.
+  It does not implement long-context price thresholds or preserve a separate
+  price calculation for every upstream response within a turn.
+- If Codex reroutes a turn, the accumulated usage is priced using the final
+  reported model. A turn that actually spans differently priced models cannot
+  be reconstructed exactly from the cumulative event alone.
+- Benchmark instructions prohibit tool use, but that restriction is not yet
+  verified from the event stream. Any separately billed tool fee would not be
+  represented by the text-token calculation.
+- The current implementation does not distinguish a missing usage event from
+  a genuine all-zero usage report. A zero-token or zero-cost row should therefore
+  be treated as unavailable telemetry, not as evidence that a completed turn
+  was free.
+- Model-specific Codex instructions and tool descriptions are part of reported
+  input usage. That is appropriate when comparing the real Codex experience,
+  but it is not a measurement of the challenge prompt in isolation.
+
+PASS/FAIL evaluation is independent of these measurements: incomplete or
+ambiguous token telemetry does not make an incorrect program pass, and a valid
+program can still have an unavailable or approximate cost.
+
+#### Future measurement hardening
+
+Future work should make the accounting fail closed: record whether a matching
+usage event was observed, validate that every token field is non-negative and
+internally consistent, and display `N/A` whenever those checks fail. Capturing
+per-response usage would allow long-context thresholds and model reroutes to be
+priced correctly. Tool-call detection should invalidate the cost estimate when
+a separately priced tool is used. Finally, reporting both observed cost and a
+cache-neutral equivalent—or running balanced warm-up and repeated trials—would
+make model/effort comparisons less sensitive to cache order. These changes
+would improve measurement confidence without changing the deterministic
+PASS/FAIL verifier.
 
 ## Options
 
@@ -361,9 +417,9 @@ need Go or Codexometer's source dependencies.
 
 ## Versioning
 
-Codexometer follows semantic versioning; the current source version is `v0.2.0`. The Git tag is
+Codexometer follows semantic versioning; the current source version is `v0.2.1`. The Git tag is
 the release source of truth. Go automatically embeds that tag in binaries built
-with `go install github.com/merefield/codexometer@v0.2.0`; direct source builds
+with `go install github.com/merefield/codexometer@v0.2.1`; direct source builds
 fall back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -376,7 +432,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.2.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.2.1" .
 ```
 
 ## How refresh works

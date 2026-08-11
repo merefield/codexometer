@@ -226,6 +226,13 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 				if got := model.footerButtonAt(mouse.X, mouse.Y); got != id {
 					t.Errorf("hit button %d, want %d", got, id)
 				}
+				button, _ := footerButtonByID(model, id)
+				startX := mouse.X - len(button.label)/2
+				for offset := range len(button.label) {
+					if got := model.footerButtonAt(startX+offset, mouse.Y); got != id {
+						t.Errorf("button %d cell %d hit %d", id, offset, got)
+					}
+				}
 			}
 		})
 	}

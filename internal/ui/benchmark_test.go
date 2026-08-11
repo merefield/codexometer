@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -140,12 +141,12 @@ func TestBenchmarkTableClipsOlderRows(t *testing.T) {
 		})
 	}
 	output := ansi.Strip(model.renderBenchmarkTable(70, 8, paletteFor(themeBlueSteel)))
-	if !strings.Contains(output, "ROWS 19-20/20") || lipgloss.Height(output) != 8 {
+	if !strings.Contains(output, "ROWS 18-20/20") || lipgloss.Height(output) != 8 {
 		t.Fatalf("clipped table is invalid:\n%s", output)
 	}
 	model.benchmarkScroll = 4
 	output = ansi.Strip(model.renderBenchmarkTable(70, 8, paletteFor(themeBlueSteel)))
-	if !strings.Contains(output, "ROWS 15-16/20") {
+	if !strings.Contains(output, "ROWS 14-16/20") {
 		t.Fatalf("scrolled table did not expose older rows:\n%s", output)
 	}
 }
@@ -182,10 +183,10 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	}
 	dashboard := model.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
-	columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
+	headerX, headerY := renderedTextCoordinates(t, model, "[MODEL]")
 	mouse := tea.MouseMsg{
-		X:      4 + columns[0].x + 1,
-		Y:      dashboard.meterY + geometry.topHeight + 2,
+		X:      headerX,
+		Y:      headerY,
 		Action: tea.MouseActionMotion,
 	}
 	updated, command := model.Update(mouse)
@@ -212,6 +213,47 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	view := ansi.Strip(model.renderBenchmarkTable(dashboard.contentWidth, geometry.tableHeight, paletteFor(themeHacker)))
 	if !strings.Contains(view, "[MODEL▼]") || !strings.Contains(view, "[EFFORT]") {
 		t.Fatalf("heading buttons or sort direction missing:\n%s", view)
+	}
+}
+
+func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) {
+	for _, size := range []struct{ width, height int }{
+		{40, 16}, {40, 24}, {45, 24}, {60, 24}, {80, 24}, {100, 30}, {160, 45},
+	} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			model := Model{
+				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
+				meterStyle: styleBenchmark, benchmarkCombinations: 3,
+			}
+			dashboard := model.dashboardLayout()
+			geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
+			for _, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
+				for _, segment := range segments {
+					if segment.button == footerButtonNone || !segment.enabled {
+						continue
+					}
+					x, y := renderedTextStart(t, model, segment.text)
+					for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
+						if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
+							t.Errorf("rendered %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+						}
+					}
+				}
+			}
+
+			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
+			_ = tableTitleX
+			headerY := tableTitleY + 1
+			columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
+			for _, column := range columns {
+				for offset := 0; offset < column.width; offset++ {
+					x := 4 + column.x + offset
+					if got, ok := model.benchmarkHeaderAt(x, headerY); !ok || got != column.sort {
+						t.Errorf("rendered heading %q cell %d at %d,%d hit (%d,%v)", column.title, offset, x, headerY, got, ok)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -375,15 +417,30 @@ func benchmarkControlCoordinates(t *testing.T, model Model, target footerButtonI
 	t.Helper()
 	dashboard := model.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
-	for line, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
-		x := 4
+	for _, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
 		for _, segment := range segments {
 			if segment.button == target {
-				return x + max(lipgloss.Width(segment.text)/2, 0), dashboard.meterY + line + 2
+				return renderedTextCoordinates(t, model, segment.text)
 			}
-			x += lipgloss.Width(segment.text) + 1
 		}
 	}
 	t.Fatalf("benchmark control %d not found", target)
+	return 0, 0
+}
+
+func renderedTextCoordinates(t *testing.T, model Model, text string) (int, int) {
+	t.Helper()
+	x, y := renderedTextStart(t, model, text)
+	return x + max(lipgloss.Width(text)/2, 0), y
+}
+
+func renderedTextStart(t *testing.T, model Model, text string) (int, int) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+		if byteX := strings.Index(line, text); byteX >= 0 {
+			return lipgloss.Width(line[:byteX]), y
+		}
+	}
+	t.Fatalf("rendered text %q not found", text)
 	return 0, 0
 }

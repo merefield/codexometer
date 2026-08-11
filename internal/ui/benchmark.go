@@ -14,12 +14,15 @@ import (
 )
 
 type benchmarkGeometry struct {
-	width         int
-	height        int
-	topHeight     int
-	tableHeight   int
-	controlsWidth int
-	statusWidth   int
+	width          int
+	height         int
+	topHeight      int
+	tableHeight    int
+	controlsHeight int
+	statusHeight   int
+	controlsWidth  int
+	statusWidth    int
+	stacked        bool
 }
 
 type benchmarkSortColumn int
@@ -57,18 +60,43 @@ func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 		topHeight = max(height/2, 2)
 	}
 	controlsWidth := min(max(width*3/5, 38), max(width-1, 1))
+	statusWidth := max(width-controlsWidth-1, 1)
+	// A framed status panel needs enough room for useful content. Once that is no
+	// longer true, stack it below the controls instead of letting Lip Gloss grow
+	// the row beyond the terminal width.
+	if statusWidth < 12 {
+		controlsHeight := min(5, height)
+		statusHeight := 0
+		if height-controlsHeight >= 6 {
+			statusHeight = min(4, height-controlsHeight-3)
+		}
+		return benchmarkGeometry{
+			width: width, height: height, topHeight: controlsHeight + statusHeight,
+			tableHeight:    max(height-controlsHeight-statusHeight, 1),
+			controlsHeight: controlsHeight, statusHeight: statusHeight,
+			controlsWidth: width, statusWidth: width, stacked: true,
+		}
+	}
 	return benchmarkGeometry{
 		width: width, height: height, topHeight: topHeight,
-		tableHeight:   max(height-topHeight-1, 1),
-		controlsWidth: controlsWidth, statusWidth: max(width-controlsWidth-1, 1),
+		tableHeight:    max(height-topHeight, 1),
+		controlsHeight: topHeight, statusHeight: topHeight,
+		controlsWidth: controlsWidth, statusWidth: statusWidth,
 	}
 }
 
 func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 	layout := layoutBenchmarkArea(width, height)
-	controls := m.renderBenchmarkControls(layout.controlsWidth, layout.topHeight, colors)
-	status := m.renderBenchmarkStatus(layout.statusWidth, layout.topHeight, colors)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, controls, " ", status)
+	controls := m.renderBenchmarkControls(layout.controlsWidth, layout.controlsHeight, colors)
+	top := controls
+	if layout.statusHeight > 0 {
+		status := m.renderBenchmarkStatus(layout.statusWidth, layout.statusHeight, colors)
+		if layout.stacked {
+			top = lipgloss.JoinVertical(lipgloss.Left, controls, status)
+		} else {
+			top = lipgloss.JoinHorizontal(lipgloss.Top, controls, " ", status)
+		}
+	}
 	table := m.renderBenchmarkTable(width, layout.tableHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, table)
 	if padding := height - lipgloss.Height(view); padding > 0 {
@@ -153,6 +181,21 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		{text: "[ PASS ]", button: footerButtonBenchmarkFilterPass, enabled: true, active: m.benchmarkFilter == benchmarkFilterPass},
 		{text: "[ FAIL ]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
 	}
+	filterWidth := 0
+	for index, segment := range filter {
+		filterWidth += lipgloss.Width(segment.text)
+		if index > 0 {
+			filterWidth++
+		}
+	}
+	if filterWidth > width {
+		filter = []benchmarkControlSegment{
+			{text: "SHOW", enabled: true},
+			{text: "[ALL]", button: footerButtonBenchmarkFilterAll, enabled: true, active: m.benchmarkFilter == benchmarkFilterAll},
+			{text: "[PASS]", button: footerButtonBenchmarkFilterPass, enabled: true, active: m.benchmarkFilter == benchmarkFilterPass},
+			{text: "[FAIL]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
+		}
+	}
 	return [][]benchmarkControlSegment{selector, run, filter}
 }
 
@@ -214,7 +257,7 @@ func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
 
 func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
-	bodyHeight := max(height-3, 1)
+	bodyHeight := max(height-2, 1)
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
 	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
 	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending))
@@ -534,7 +577,7 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	for line, segments := range m.benchmarkControlLines(max(layout.controlsWidth-4, 1)) {
-		if localY != line+2 {
+		if localY != line+1 {
 			continue
 		}
 		segmentX := 2
@@ -556,7 +599,7 @@ func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
 	dashboard := m.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
 	tableY := dashboard.meterY + geometry.topHeight
-	if y != tableY+2 {
+	if y != tableY+1 {
 		return benchmarkSortNone, false
 	}
 	localX := x - 4

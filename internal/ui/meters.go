@@ -144,9 +144,11 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 	}
 	reset = ansi.Truncate(reset, innerWidth, "")
 
+	bodyHeight := 0
 	visualHeight := 0
 	if height > 0 {
-		visualHeight = max(height-6, 1)
+		bodyHeight = max(height-2, 1)
+		visualHeight = max(bodyHeight-3, 1)
 	}
 	now := time.Now()
 	visual := renderVisualizationSized(innerWidth, visualHeight, used, style, color, colors)
@@ -161,6 +163,17 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
 	}
 	bodyParts := []string{stats, visual, resetGauge}
+	if height > 0 && bodyHeight < 4 {
+		switch bodyHeight {
+		case 1:
+			bodyParts = []string{visual}
+		case 2:
+			bodyParts = []string{stats, visual}
+		case 3:
+			resetLine := strings.Split(resetGauge, "\n")[0]
+			bodyParts = []string{stats, visual, resetLine}
+		}
+	}
 	body := strings.Join(bodyParts, "\n")
 	title := meter.Name
 	if meter.Bucket != "codex" {
@@ -282,7 +295,13 @@ func renderPie(width, used int, color lipgloss.Color, colors palette) string {
 }
 
 func renderPieSized(width, height, used int, color lipgloss.Color, colors palette) string {
-	cellWidth, cellHeight := radialCanvasSize(width, height, 11)
+	const legendWidth = 11
+	showLegend := width >= legendWidth+8
+	reservedLegendWidth := 0
+	if showLegend {
+		reservedLegendWidth = legendWidth
+	}
+	cellWidth, cellHeight := radialCanvasSize(width, height, reservedLegendWidth)
 	pixelWidth := cellWidth * 2
 	pixelHeight := cellHeight * 4
 	centerX := float64(pixelWidth-1) / 2
@@ -327,15 +346,18 @@ func renderPieSized(width, height, used int, color lipgloss.Color, colors palett
 		}
 		rows = append(rows, row.String())
 	}
-	label := []string{
-		colors.dimmed().Render("BRAILLE PIE"),
-		lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("  %3d%%", used)),
-		colors.dimmed().Render("CLOCKWISE"),
-	}
-	label = verticallyCenterLines(label, cellHeight)
 	pie := strings.Join(rows, "\n")
-	legend := strings.Join(label, "\n")
-	visual := lipgloss.JoinHorizontal(lipgloss.Center, pie, "   ", legend)
+	visual := pie
+	if showLegend {
+		label := []string{
+			colors.dimmed().Render("BRAILLE PIE"),
+			lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("  %3d%%", used)),
+			colors.dimmed().Render("CLOCKWISE"),
+		}
+		label = verticallyCenterLines(label, cellHeight)
+		legend := strings.Join(label, "\n")
+		visual = lipgloss.JoinHorizontal(lipgloss.Center, pie, "   ", legend)
+	}
 	if height > 0 {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, visual)
 	}
@@ -350,7 +372,11 @@ func brailleDot(x, y int) int {
 }
 
 func radialCanvasSize(width, height, legendWidth int) (int, int) {
-	availableWidth := max(width-legendWidth-5, 2)
+	overhead := 0
+	if legendWidth > 0 {
+		overhead = legendWidth + 5
+	}
+	availableWidth := max(width-overhead, 2)
 	if height <= 0 {
 		height = max((availableWidth+1)/2, 1)
 	}
