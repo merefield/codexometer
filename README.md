@@ -54,6 +54,8 @@ It works particularly well in:
 - Available earned reset credits when present.
 - Online, refreshing, stale-data, and error states.
 - A countdown to the next automatic refresh.
+- An optional Stopwatch view that measures token activity observed across local
+  Codex sessions between Go and Stop, with a live 30-second bar chart.
 
 Codexometer does not assume that every account has the same windows. Some
 accounts expose a shorter rolling window and a weekly window; plans and backend
@@ -124,6 +126,12 @@ Codexometer deliberately does not:
 - send credentials to another service;
 - invoke a model merely to discover quota information.
 
+The Stopwatch additionally reads locally persisted Codex rollout files under
+`$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It scans only for
+`token_count` telemetry records and decodes only their token totals and
+timestamps; message text, reasoning, commands, tool results, and credentials are
+ignored and never retained by Codexometer.
+
 If you use a nonstandard Codex executable, pass it explicitly:
 
 ```sh
@@ -137,6 +145,8 @@ codexometer --codex /path/to/codex
 | `t` | Cycle color themes |
 | `s` | Cycle meter styles |
 | `r` | Refresh quota data immediately |
+| `g` | Go: start the Stopwatch recorder (Stopwatch view only) |
+| `p` | Stop and take a final up-to-date reading (Stopwatch view only) |
 | `q` | Quit |
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
@@ -173,6 +183,14 @@ Press `s` to cycle:
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
+5. **Stopwatch** — establishes a zero baseline across locally active Codex
+   sessions when you press Go. A large readout follows newly appended token
+   telemetry once per second and shows total observed tokens, elapsed time, and
+   average rate; clickable Go and Stop controls sit beside it. The full-width
+   plot adds one thin vertical block bar every 30 seconds for tokens observed in
+   that interval. New bars enter on the right and push older bars left, and the Y axis
+   automatically expands or contracts to fit the visible samples. Stop performs
+   an immediate final local read instead of relying on the latest graph sample.
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
@@ -193,6 +211,23 @@ receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
 
+The Stopwatch is deliberately separate from the percentage gauges: no token
+ceiling is exposed for those quota windows, so a percentage-based bar would be
+misleading. It follows the local token telemetry underlying Codex's live
+[`thread/tokenUsage/updated`](https://developers.openai.com/codex/app-server)
+data, rather than the delayed account activity
+summary. A separate process cannot subscribe to another Codex process's
+app-server connection, so Codexometer incrementally observes the equivalent
+`token_count` records written to local rollout files.
+
+This is local activity telemetry, not account-wide billing data. It can combine
+multiple sessions using the same local `CODEX_HOME`, but it cannot see Codex
+activity on another computer, in a different Codex home, or in a cloud session
+that is not writing locally. Token totals normally appear when Codex emits usage
+for a model response, not token-by-token while a response is streaming. Raw token
+counts also do not reveal or reproduce the backend's quota-weighting rules, so
+they should not be converted directly into the percentage gauges.
+
 ## Options
 
 ```text
@@ -201,7 +236,7 @@ never change with presentation.
 --demo             use simulated quota data
 --inline           render inline instead of using the alternate screen
 --refresh DURATION refresh interval (default: 1m)
---version          print the version and exit
+-v, --version      print the version and exit
 ```
 
 Examples:
@@ -236,6 +271,26 @@ GOOS=windows GOARCH=amd64 go build -trimpath -o dist/codexometer-windows-amd64.e
 The destination machine needs Codex installed and logged in, but it does not
 need Go or Codexometer's source dependencies.
 
+## Versioning
+
+Codexometer follows semantic versioning, beginning with `v0.1.0`. The Git tag is
+the release source of truth. Go automatically embeds that tag in binaries built
+with `go install github.com/merefield/codexometer@v0.1.0`; direct source builds
+fall back to the maintained value in `internal/version/version.go`.
+
+Both forms report the embedded version and exit without starting the interface:
+
+```sh
+codexometer -v
+codexometer --version
+```
+
+Release automation can override the source-build fallback without editing code:
+
+```sh
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.0" .
+```
+
 ## How refresh works
 
 At startup and on each refresh, Codexometer:
@@ -250,6 +305,12 @@ Automatic refreshes occur once a minute unless `--refresh` changes the
 interval. Pressing `r` refreshes immediately. If a refresh fails after valid
 data has already been displayed, Codexometer retains the last snapshot and
 marks it as stale instead of blanking the dashboard.
+
+While Stopwatch is running it checks appended local token telemetry once per
+second and rolls the observed deltas into 30-second graph buckets. These reads do
+not contact OpenAI or invoke a model. Pressing Stop performs one immediate final
+local read and forces complete session discovery, including Codex sessions
+resumed from older rollout directories.
 
 ## Troubleshooting
 
@@ -282,6 +343,17 @@ Codexometer adapts its header and meter widths, but rich gauges need enough
 rows to display every quota window. Increase the pane height or return to the
 compact default bar style with `s`.
 
+### Stopwatch remains at zero
+
+The Stopwatch observes rollout telemetry under the same `CODEX_HOME` visible to
+the Codexometer process. Confirm that the Codex session doing work is local and
+uses that home. A native Windows Codex session and a native Windows Codexometer
+normally share the same user profile; WSL and native Windows have different
+homes unless `CODEX_HOME` is deliberately shared. Cloud activity and sessions on
+other machines are not visible. Usage is generally appended after a model
+response reports its token totals, so a currently streaming response may not
+appear until its next telemetry event.
+
 ## Development
 
 Format, test, and vet the project:
@@ -304,6 +376,7 @@ Codexometer uses:
 - Bubble Tea for the terminal event loop
 - Lip Gloss for adaptive ANSI styling
 - Codex app-server JSON-RPC for authenticated quota data
+- Local Codex rollout `token_count` records for live Stopwatch telemetry
 
 ## License
 

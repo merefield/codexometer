@@ -12,13 +12,33 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/merefield/codexometer/internal/version"
 )
 
 const requestTimeout = 15 * time.Second
 
 // Client fetches the current quota snapshot through Codex's stable app-server API.
 type Client struct {
-	Binary string
+	Binary    string
+	LiveUsage *LiveUsageReader
+}
+
+// FetchTokenUsage reads live telemetry from locally observed Codex sessions.
+func (c Client) FetchTokenUsage(ctx context.Context) (LiveUsageSnapshot, error) {
+	if c.LiveUsage == nil {
+		return LiveUsageSnapshot{}, errors.New("local Codex session telemetry is not configured")
+	}
+	return c.LiveUsage.FetchTokenUsage(ctx)
+}
+
+// FetchTokenUsageFresh forces complete local rollout discovery for a final
+// Stopwatch reading.
+func (c Client) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, error) {
+	if c.LiveUsage == nil {
+		return LiveUsageSnapshot{}, errors.New("local Codex session telemetry is not configured")
+	}
+	return c.LiveUsage.FetchTokenUsageFresh(ctx)
 }
 
 type rpcError struct {
@@ -83,7 +103,7 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 			"clientInfo": map[string]string{
 				"name":    "codexometer",
 				"title":   "Codexometer",
-				"version": Version,
+				"version": version.Current(),
 			},
 		},
 	}); err != nil {

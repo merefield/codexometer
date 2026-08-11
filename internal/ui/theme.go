@@ -24,6 +24,7 @@ const (
 	stylePie
 	styleConsumptionPace
 	styleFuel
+	styleStopwatch
 	styleCount
 )
 
@@ -37,6 +38,7 @@ func (s meterStyleID) name() string {
 		"PIE",
 		"CONSUMPTION PACE",
 		"FUEL TANK",
+		"STOPWATCH",
 	}[s]
 }
 

@@ -13,10 +13,12 @@ import (
 )
 
 func TestRunVersion(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"--version"}, &stdout, &stderr, dependencies{})
-	if code != 0 || !strings.Contains(stdout.String(), "codexometer ") || stderr.Len() != 0 {
-		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	for _, flag := range []string{"-v", "--version"} {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{flag}, &stdout, &stderr, dependencies{})
+		if code != 0 || stdout.String() != "codexometer v0.1.0\n" || stderr.Len() != 0 {
+			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
+		}
 	}
 }
 
@@ -63,6 +65,18 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			snapshot, err := fetcher.Fetch(context.Background())
 			if err != nil || len(snapshot.Meters()) != 2 {
 				t.Fatalf("demo fetch returned %#v, %v", snapshot, err)
+			}
+			usageFetcher, ok := fetcher.(ui.TokenUsageFetcher)
+			if !ok {
+				t.Fatal("demo fetcher does not provide live token usage")
+			}
+			first, err := usageFetcher.FetchTokenUsage(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := usageFetcher.FetchTokenUsage(context.Background())
+			if err != nil || second.TotalTokens <= first.TotalTokens {
+				t.Fatalf("demo token usage did not advance: first=%#v second=%#v err=%v", first, second, err)
 			}
 			return nil
 		},

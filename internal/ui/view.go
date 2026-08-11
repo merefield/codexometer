@@ -46,7 +46,9 @@ func (m Model) View() string {
 		footer := m.renderFooter(contentWidth, colors)
 		reservedHeight += lipgloss.Height(footer)
 		meterHeight := max(contentHeight-reservedHeight, 1)
-		if len(meters) > 1 {
+		if m.meterStyle == styleStopwatch {
+			parts = append(parts, m.renderStopwatchArea(contentWidth, meterHeight, colors).view)
+		} else if len(meters) > 1 {
 			parts = append(parts, renderMeterGrid(contentWidth, meterHeight, meters, m.meterStyle, colors))
 		} else if len(meters) == 1 {
 			parts = append(parts, renderMeterArea(contentWidth, meterHeight, meters[0], m.meterStyle, colors))
