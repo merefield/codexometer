@@ -497,7 +497,8 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			}
 		}
 	case footerButtonBenchmarkAll:
-		if m.meterStyle == styleBenchmark && m.benchmarkState != benchmarkRunning && m.benchmarkCombinations > 0 {
+		tasks := codex.BenchmarkTasks()
+		if m.meterStyle == styleBenchmark && benchmarkRunAllAvailable(m.benchmarkState == benchmarkRunning, m.benchmarkCombinations, len(tasks)) {
 			if !m.benchmarkAllArmed {
 				m.benchmarkAllArmed = true
 				m.benchmarkConfirmSequence++
@@ -505,7 +506,6 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 				return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
 			}
 			m.benchmarkAllArmed = false
-			tasks := codex.BenchmarkTasks()
 			ids := make([]codex.BenchmarkTaskID, 0, len(tasks))
 			for _, task := range tasks {
 				ids = append(ids, task.ID)

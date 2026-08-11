@@ -145,7 +145,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	run := []benchmarkControlSegment{
 		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: !running && len(tasks) > 0},
-		{text: allLabel, button: footerButtonBenchmarkAll, enabled: !running && m.benchmarkCombinations > 0},
+		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
 	}
 	filter := []benchmarkControlSegment{
 		{text: "SHOW //", enabled: true},
@@ -154,6 +154,10 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		{text: "[ FAIL ]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
 	}
 	return [][]benchmarkControlSegment{selector, run, filter}
+}
+
+func benchmarkRunAllAvailable(running bool, combinations, taskCount int) bool {
+	return !running && combinations > 0 && taskCount > 0
 }
 
 func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {

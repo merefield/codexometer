@@ -325,6 +325,27 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	}
 }
 
+func TestBenchmarkRunAllAvailabilityRequiresTasksAndCombinations(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		running      bool
+		combinations int
+		tasks        int
+		want         bool
+	}{
+		{name: "available", combinations: 2, tasks: 4, want: true},
+		{name: "no tasks", combinations: 2},
+		{name: "no combinations", tasks: 4},
+		{name: "already running", running: true, combinations: 2, tasks: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := benchmarkRunAllAvailable(test.running, test.combinations, test.tasks); got != test.want {
+				t.Fatalf("benchmarkRunAllAvailable(%v, %d, %d) = %v, want %v", test.running, test.combinations, test.tasks, got, test.want)
+			}
+		})
+	}
+}
+
 func TestBenchmarkPassFailFilterButtonsAndHotkey(t *testing.T) {
 	model := Model{
 		width: 100, height: 30, meterStyle: styleBenchmark, benchmarkState: benchmarkFinished,
