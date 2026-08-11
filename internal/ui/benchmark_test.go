@@ -19,6 +19,20 @@ type benchmarkStubFetcher struct {
 	results []codex.BenchmarkResult
 }
 
+type benchmarkCaptureFetcher struct {
+	stubFetcher
+	tasks chan []codex.BenchmarkTaskID
+}
+
+func (f benchmarkCaptureFetcher) BenchmarkCombinationCount(context.Context) (int, error) {
+	return 1, nil
+}
+
+func (f benchmarkCaptureFetcher) RunBenchmarkSuite(_ context.Context, tasks []codex.BenchmarkTaskID, emit func(codex.BenchmarkEvent)) {
+	f.tasks <- append([]codex.BenchmarkTaskID(nil), tasks...)
+	emit(codex.BenchmarkEvent{Total: len(tasks), Completed: len(tasks), Done: true, Combinations: 1})
+}
+
 func (f benchmarkStubFetcher) BenchmarkCombinationCount(context.Context) (int, error) { return 2, nil }
 
 func (f benchmarkStubFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.BenchmarkTaskID, emit func(codex.BenchmarkEvent)) {
@@ -96,10 +110,20 @@ func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
 			if geometry.tableHeight < 3 && strings.Contains(output, "RESULT MATRIX") {
 				t.Fatalf("table rendered in an allocation too short for its frame:\n%s", output)
 			}
-			if height == 4 && !strings.Contains(output, "RUN SELECTED") {
+			if height == 4 && !strings.Contains(output, "RUN SELECTED") && !strings.Contains(output, "B:RUN") {
 				t.Fatalf("compact controls dropped an action before their spacer:\n%s", output)
 			}
 		})
+	}
+}
+
+func TestBenchmarkControlsStayWithinNarrowAllocations(t *testing.T) {
+	model := Model{benchmarkSuite: codex.BenchmarkSuiteExtended, benchmarkCombinations: 12}
+	for width := 5; width <= 44; width++ {
+		output := ansi.Strip(model.renderBenchmarkControls(width, 5, paletteFor(themeHacker)))
+		if got := lipgloss.Width(output); got != width {
+			t.Fatalf("width %d rendered as %d:\n%s", width, got, output)
+		}
 	}
 }
 
@@ -467,7 +491,7 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	updated, command := model.Update(key('a'))
 	model = updated.(Model)
 	if !model.benchmarkAllArmed || model.benchmarkState == benchmarkRunning || command == nil {
-		t.Fatal("first Run All press did not arm confirmation without running")
+		t.Fatal("first Run Suite press did not arm confirmation without running")
 	}
 	controls = ansi.Strip(model.renderBenchmarkControls(60, 8, paletteFor(themeHacker)))
 	if !strings.Contains(controls, "CONFIRM") || !strings.Contains(controls, "132") {
@@ -476,7 +500,63 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	updated, command = model.Update(key('a'))
 	model = updated.(Model)
 	if model.benchmarkAllArmed || model.benchmarkState != benchmarkRunning || command == nil {
-		t.Fatal("second Run All press did not launch the suite")
+		t.Fatal("second Run Suite press did not launch the suite")
+	}
+}
+
+func TestBenchmarkSuiteToggleChangesCatalogAndTurnCount(t *testing.T) {
+	model := New(benchmarkStubFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
+	model.snapshot = codex.DemoSnapshot()
+	model.loading = false
+	model.width, model.height = 100, 30
+	model.meterStyle = styleBenchmark
+	model.benchmarkCombinations = 33
+
+	updated, command := model.Update(key('u'))
+	model = updated.(Model)
+	if command == nil || model.activeBenchmarkSuite() != codex.BenchmarkSuiteExtended || model.benchmarkSelectedTask != 0 {
+		t.Fatalf("suite hotkey did not select Extended: suite=%q task=%d command=%v", model.activeBenchmarkSuite(), model.benchmarkSelectedTask, command != nil)
+	}
+	controls := ansi.Strip(model.renderBenchmarkControls(64, 5, paletteFor(themeHacker)))
+	for _, want := range []string{"EXTENDED", "DEPENDENCY SCHEDULER", "99"} {
+		if !strings.Contains(controls, want) {
+			t.Fatalf("Extended suite controls missing %q:\n%s", want, controls)
+		}
+	}
+
+	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkSuite)
+	updated, command = model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	model = updated.(Model)
+	if command == nil || model.activeBenchmarkSuite() != codex.BenchmarkSuiteCore {
+		t.Fatalf("suite mouse button did not return to Core: suite=%q command=%v", model.activeBenchmarkSuite(), command != nil)
+	}
+}
+
+func TestBenchmarkRunSuiteLaunchesOnlyActiveSuite(t *testing.T) {
+	captured := make(chan []codex.BenchmarkTaskID, 1)
+	fetcher := benchmarkCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, tasks: captured}
+	model := New(fetcher, time.Minute)
+	model.snapshot = codex.DemoSnapshot()
+	model.loading = false
+	model.meterStyle = styleBenchmark
+	model.benchmarkSuite = codex.BenchmarkSuiteExtended
+	model.benchmarkCombinations = 1
+
+	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
+	model, command := model.activateFooterButton(footerButtonBenchmarkAll)
+	if command == nil || model.benchmarkState != benchmarkRunning {
+		t.Fatal("confirmed Run Suite did not launch")
+	}
+	_ = command()
+	got := <-captured
+	want := []codex.BenchmarkTaskID{codex.BenchmarkDependencyScheduler, codex.BenchmarkVersionResolver, codex.BenchmarkEventProcessor}
+	if len(got) != len(want) {
+		t.Fatalf("launched tasks = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("launched tasks = %v, want %v", got, want)
+		}
 	}
 }
 

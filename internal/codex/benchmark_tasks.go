@@ -11,17 +11,27 @@ import (
 // BenchmarkTaskID is the stable identifier for a deterministic benchmark.
 type BenchmarkTaskID string
 
+// BenchmarkSuiteID groups challenges by intended difficulty and run cost.
+type BenchmarkSuiteID string
+
 const (
-	BenchmarkMergeRanges      BenchmarkTaskID = "merge-ranges"
-	BenchmarkLRUCache         BenchmarkTaskID = "lru-cache"
-	BenchmarkExpressionParser BenchmarkTaskID = "expression-parser"
-	BenchmarkShortestPath     BenchmarkTaskID = "shortest-path"
+	BenchmarkMergeRanges         BenchmarkTaskID = "merge-ranges"
+	BenchmarkLRUCache            BenchmarkTaskID = "lru-cache"
+	BenchmarkExpressionParser    BenchmarkTaskID = "expression-parser"
+	BenchmarkShortestPath        BenchmarkTaskID = "shortest-path"
+	BenchmarkDependencyScheduler BenchmarkTaskID = "dependency-scheduler"
+	BenchmarkVersionResolver     BenchmarkTaskID = "version-resolver"
+	BenchmarkEventProcessor      BenchmarkTaskID = "event-processor"
+
+	BenchmarkSuiteCore     BenchmarkSuiteID = "core"
+	BenchmarkSuiteExtended BenchmarkSuiteID = "extended"
 )
 
 // BenchmarkTask is the public description used by the terminal selector.
 type BenchmarkTask struct {
-	ID   BenchmarkTaskID
-	Name string
+	ID    BenchmarkTaskID
+	Name  string
+	Suite BenchmarkSuiteID
 }
 
 type benchmarkDefinition struct {
@@ -33,7 +43,7 @@ type benchmarkDefinition struct {
 
 var benchmarkTaskDefinitions = []benchmarkDefinition{
 	{
-		task:     BenchmarkTask{ID: BenchmarkMergeRanges, Name: "MERGE RANGES"},
+		task:     BenchmarkTask{ID: BenchmarkMergeRanges, Name: "MERGE RANGES (EASY)", Suite: BenchmarkSuiteCore},
 		function: "merge_ranges",
 		prompt: `Write Starlark code defining this function:
 
@@ -43,7 +53,7 @@ The input is a list of inclusive integer ranges, each represented by a two-item 
 		verify: verifyMergeRanges,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkLRUCache, Name: "LRU CACHE"},
+		task:     BenchmarkTask{ID: BenchmarkLRUCache, Name: "LRU CACHE (MODERATE)", Suite: BenchmarkSuiteCore},
 		function: "lru_cache",
 		prompt: `Write Starlark code defining this function:
 
@@ -53,7 +63,7 @@ Simulate a least-recently-used cache. Each operation is ["put", key, value] or [
 		verify: verifyLRUCache,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkExpressionParser, Name: "EXPRESSION"},
+		task:     BenchmarkTask{ID: BenchmarkExpressionParser, Name: "EXPRESSION (MODERATE)", Suite: BenchmarkSuiteCore},
 		function: "evaluate_expression",
 		prompt: `Write Starlark code defining this function:
 
@@ -63,7 +73,7 @@ The input is a valid token list containing non-negative base-10 integer literals
 		verify: verifyExpressionParser,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkShortestPath, Name: "SHORTEST PATH"},
+		task:     BenchmarkTask{ID: BenchmarkShortestPath, Name: "SHORTEST PATH (MODERATE)", Suite: BenchmarkSuiteCore},
 		function: "shortest_path",
 		prompt: `Write Starlark code defining this function:
 
@@ -72,13 +82,58 @@ The input is a valid token list containing non-negative base-10 integer literals
 The grid is a non-empty rectangular list of lists containing 0 for open cells and 1 for blocked cells. Start and end are open [row, column] coordinates. Moving one cell up, down, left, or right costs one. Return the minimum move count from start to end, or -1 if no route exists. Do not mutate any input and do not use load().`,
 		verify: verifyShortestPath,
 	},
+	{
+		task:     BenchmarkTask{ID: BenchmarkDependencyScheduler, Name: "DEPENDENCY SCHEDULER (HARD)", Suite: BenchmarkSuiteExtended},
+		function: "minimum_schedule_time",
+		prompt: `Write Starlark code defining this function:
+
+    minimum_schedule_time(worker_count, jobs)
+
+There are at most seven jobs and one to three workers. Each job is [duration, dependencies], where duration is from 1 through 3 and dependencies is a list of valid zero-based job indexes. The dependency graph is acyclic. A job may start only after all its dependencies finish. Jobs are non-preemptive, each worker can run at most one job at a time, and different workers are identical. Return the minimum possible integer completion time for all jobs. Return 0 for an empty job list. Do not mutate the input and do not use load().`,
+		verify: verifyDependencyScheduler,
+	},
+	{
+		task:     BenchmarkTask{ID: BenchmarkVersionResolver, Name: "VERSION RESOLVER (HARD)", Suite: BenchmarkSuiteExtended},
+		function: "resolve_versions",
+		prompt: `Write Starlark code defining this function:
+
+    resolve_versions(catalog)
+
+The catalog contains one to five packages, each with two or three version records. Catalog entry i is the version list for package i. Each version is [number, requirements, conflicts], with a unique positive number within that package. A requirement [package, minimum, maximum] names a valid package and is inclusive. A conflict [package, version] forbids that exact pairing. Select exactly one listed version for every package so that every selected version's requirements and conflicts are satisfied. Return the selected version numbers in package order. If several solutions exist, return the lexicographically greatest version list; return [] when none exists. Version entries may be unsorted. Do not mutate the input and do not use load().`,
+		verify: verifyVersionResolver,
+	},
+	{
+		task:     BenchmarkTask{ID: BenchmarkEventProcessor, Name: "EVENT PROCESSOR (HARD)", Suite: BenchmarkSuiteExtended},
+		function: "process_ledger",
+		prompt: `Write Starlark code defining this function:
+
+    process_ledger(accounts, events)
+
+Accounts are [account_id, opening_balance], with unique integer IDs and non-negative balances. Events are [sequence, event_id, kind, arg1, arg2, amount], arrive in arbitrary order, and must be processed by ascending unique sequence. Kinds are "transfer", "freeze", "unfreeze", and "reverse". All account references are valid, transfer amounts are positive, and a transfer's accounts differ. Process the first event with each event_id normally; a later duplicate has status "duplicate" and changes nothing. Every first occurrence claims its ID even when it fails.
+
+A transfer moves amount from account arg1 to account arg2. It has status "frozen" if either account is frozen, then "insufficient" if arg1 lacks funds, otherwise "applied". Freeze and unfreeze use arg1; changing the state returns "applied", while requesting the existing state returns "noop". A reverse uses arg1 as the target event_id. It is "invalid" unless that target was a successful, not-yet-reversed transfer; otherwise it checks "frozen" for either original account, then "insufficient" if the original recipient can no longer return the amount, and otherwise reverses the transfer, marks it reversed, and returns "applied".
+
+Return [balances, frozen_accounts, audit]. Balances are [account_id, balance] sorted by account_id; frozen_accounts is a sorted list of IDs; audit contains [sequence, event_id, status] in processing order. Do not mutate the input and do not use load().`,
+		verify: verifyEventProcessor,
+	},
 }
 
-// BenchmarkTasks returns the task catalog in selector and Run All order.
+// BenchmarkTasks returns the complete task catalog in display order.
 func BenchmarkTasks() []BenchmarkTask {
 	tasks := make([]BenchmarkTask, 0, len(benchmarkTaskDefinitions))
 	for _, definition := range benchmarkTaskDefinitions {
 		tasks = append(tasks, definition.task)
+	}
+	return tasks
+}
+
+// BenchmarkTasksForSuite returns the task catalog for one suite in run order.
+func BenchmarkTasksForSuite(suite BenchmarkSuiteID) []BenchmarkTask {
+	tasks := make([]BenchmarkTask, 0, len(benchmarkTaskDefinitions))
+	for _, definition := range benchmarkTaskDefinitions {
+		if definition.task.Suite == suite {
+			tasks = append(tasks, definition.task)
+		}
 	}
 	return tasks
 }
@@ -111,7 +166,8 @@ func benchmarkPrompt(definition benchmarkDefinition) string {
 
 Starlark language contract for this task:
 - Starlark is Python-like but deliberately smaller.
-- You may use top-level def functions, if/elif/else, for loops, break/continue, range, len, int, lists, dictionaries, indexing, slicing, append, and pop.
+- You may use top-level def functions, if/elif/else, for loops, break/continue, range, len, int, sorted, lists, dictionaries, indexing, slicing, append, pop, dictionary get/keys, and membership tests.
+- Integer arithmetic includes +, -, *, //, and %; booleans and None are available.
 - while loops, recursive calls, eval, imports, and load are unavailable.
 - Keep all work deterministic and return only the specified value from the named function.
 
@@ -134,6 +190,14 @@ func loadBenchmarkFunction(code, functionName string) (*starlark.Thread, starlar
 		return nil, nil, fmt.Errorf("%s is not callable", functionName)
 	}
 	return thread, function, nil
+}
+
+func renewBenchmarkStepBudget(thread *starlark.Thread) {
+	thread.SetMaxExecutionSteps(thread.ExecutionSteps() + benchmarkStepLimit)
+}
+
+func renewExtendedBenchmarkStepBudget(thread *starlark.Thread) {
+	thread.SetMaxExecutionSteps(thread.ExecutionSteps() + benchmarkExtendedStepLimit)
 }
 
 type lruOperation struct {
@@ -160,6 +224,7 @@ func verifyLRUCache(code string) error {
 	for index, test := range lruTestCases() {
 		operations := lruOperationsToStarlark(test.items)
 		before := operations.String()
+		renewBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{starlark.MakeInt(test.capacity), operations}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
@@ -295,6 +360,7 @@ func verifyExpressionParser(code string) error {
 		}
 		argument := starlark.NewList(values)
 		before := argument.String()
+		renewBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{argument}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
@@ -447,6 +513,7 @@ func verifyShortestPath(code string) error {
 		start := coordinateToStarlark(test.start)
 		end := coordinateToStarlark(test.end)
 		before := grid.String() + start.String() + end.String()
+		renewBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{grid, start, end}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)

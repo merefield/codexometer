@@ -165,22 +165,44 @@ func (m Model) renderBenchmarkSegments(segments []benchmarkControlSegment, width
 }
 
 func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
-	tasks := codex.BenchmarkTasks()
+	tasks := m.benchmarkTasks()
 	selected := codex.BenchmarkTask{Name: "NO TASKS"}
 	if len(tasks) > 0 {
 		selected = tasks[m.benchmarkSelectedTask%len(tasks)]
 	}
 	running := m.benchmarkState == benchmarkRunning
-	selectorMiddleWidth := max(width-10, 1)
+	suiteName := strings.ToUpper(string(m.activeBenchmarkSuite()))
+	suiteLabel := "[ (U) " + suiteName + " ]"
+	selectorMiddleWidth := max(width-lipgloss.Width(suiteLabel)-11, 1)
+	if selectorMiddleWidth < 12 {
+		if m.activeBenchmarkSuite() == codex.BenchmarkSuiteExtended {
+			suiteLabel = "[U:EXT]"
+		} else {
+			suiteLabel = "[U:CORE]"
+		}
+		selectorMiddleWidth = max(width-lipgloss.Width(suiteLabel)-11, 1)
+	}
 	selector := []benchmarkControlSegment{
+		{text: suiteLabel, button: footerButtonBenchmarkSuite, enabled: !running},
 		{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running},
 		{text: ansi.Truncate("TASK // "+selected.Name, selectorMiddleWidth, ""), enabled: true},
 		{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running},
 	}
+	if benchmarkSegmentsWidth(selector) > width {
+		selectorMiddleWidth = max(width-8, 1)
+		selector = []benchmarkControlSegment{
+			{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running},
+			{text: ansi.Truncate(selected.Name, selectorMiddleWidth, ""), enabled: true},
+			{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running},
+		}
+	}
+	if benchmarkSegmentsWidth(selector) > width {
+		selector = []benchmarkControlSegment{{text: ansi.Truncate(selected.Name, width, ""), enabled: true}}
+	}
 
 	selectedLabel := "[ (B) RUN SELECTED ]"
 	allTurns := m.benchmarkCombinations * len(tasks)
-	allLabel := fmt.Sprintf("[ (A) RUN ALL // %d ]", allTurns)
+	allLabel := fmt.Sprintf("[ (A) RUN SUITE // %d ]", allTurns)
 	if m.benchmarkPlanning {
 		allLabel = "[ DISCOVERING TURNS… ]"
 	}
@@ -189,7 +211,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
 		selectedLabel = "[B:RUN]"
-		allLabel = fmt.Sprintf("[A:ALL %d]", allTurns)
+		allLabel = fmt.Sprintf("[A:SUITE %d]", allTurns)
 		if m.benchmarkPlanning {
 			allLabel = "[A:WAIT]"
 		}
@@ -197,11 +219,32 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 			allLabel = fmt.Sprintf("[A:CONFIRM %d]", allTurns)
 		}
 	}
+	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
+		selectedLabel = "[B]"
+		allLabel = fmt.Sprintf("[A:%d]", allTurns)
+		if m.benchmarkPlanning {
+			allLabel = "[A:…]"
+		}
+		if m.benchmarkAllArmed {
+			allLabel = fmt.Sprintf("[A:%d?]", allTurns)
+		}
+	}
 	run := []benchmarkControlSegment{
 		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: !running && len(tasks) > 0},
 		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
 	}
+	if benchmarkSegmentsWidth(run) > width {
+		run = run[:1]
+	}
 	return [][]benchmarkControlSegment{selector, nil, run}
+}
+
+func benchmarkSegmentsWidth(segments []benchmarkControlSegment) int {
+	width := max(len(segments)-1, 0)
+	for _, segment := range segments {
+		width += lipgloss.Width(segment.text)
+	}
+	return width
 }
 
 func (m Model) benchmarkFilterLine(width int) []benchmarkControlSegment {
@@ -273,7 +316,11 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 		colors.dimmed().Render(ansi.Truncate(detail, max(width-4, 1), "")),
 	}
 	if height >= 5 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // 250K STEP LIMIT", max(width-4, 1), "")))
+		limit := "250K"
+		if m.activeBenchmarkSuite() == codex.BenchmarkSuiteExtended {
+			limit = "2M"
+		}
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // "+limit+" STEPS PER CASE", max(width-4, 1), "")))
 	}
 	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
@@ -337,7 +384,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		lines = append(lines, style.Render(row.text))
 	}
 	if len(visibleResults) == 0 && len(lines) < bodyHeight {
-		message := "RUN SELECTED OR RUN ALL TO BEGIN // THIS CONSUMES CODEX QUOTA"
+		message := "RUN SELECTED OR RUN SUITE TO BEGIN // THIS CONSUMES CODEX QUOTA"
 		if m.benchmarkState == benchmarkRunning {
 			message = "WAITING FOR FIRST RESULT"
 		} else if len(m.benchmarkResults) > 0 {
