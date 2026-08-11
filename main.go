@@ -80,7 +80,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 }
 
 func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
-	options := []tea.ProgramOption{tea.WithMouseCellMotion()}
+	options := []tea.ProgramOption{tea.WithMouseAllMotion()}
 	if !inline {
 		options = append(options, tea.WithAltScreen())
 	}

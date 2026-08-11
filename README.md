@@ -141,7 +141,11 @@ codexometer --codex /path/to/codex
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
 
-Theme and style changes are immediate and do not trigger a network refresh.
+The footer presents the same actions as clickable buttons. Move the pointer
+over a button to highlight it, or click it to activate it. Buttons pulse
+briefly when activated by mouse or keyboard. The keyboard assignments remain
+available in terminals without mouse support. Theme and style changes are
+immediate and do not trigger a network refresh.
 
 ## Themes
 

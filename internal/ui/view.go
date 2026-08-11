@@ -111,8 +111,27 @@ func (m Model) renderFooter(width int, colors palette) string {
 	mode := fmt.Sprintf("THEME %s // VIEW %s", colors.name, m.meterStyle.name())
 	gap := max(width-len(left)-len(mode), 1)
 	status := left + strings.Repeat(" ", gap) + mode
-	controls := "[T] THEME  [S] STYLE  [R] REFRESH  [Q] QUIT"
-	return colors.dimmed().Render(status + "\n" + controls)
+	buttons, separator := footerButtonLayout(width)
+	controls := make([]string, 0, len(buttons))
+	for _, button := range buttons {
+		controls = append(controls, footerButtonAppearance(
+			colors,
+			button.id == m.hoveredButton,
+			button.id == m.flashedButton,
+		).Render(button.label))
+	}
+	return colors.dimmed().Render(status) + "\n" + strings.Join(controls, separator)
+}
+
+func footerButtonAppearance(colors palette, hovered, flashed bool) lipgloss.Style {
+	style := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background)
+	if hovered {
+		style = style.Bold(true).Foreground(colors.primary)
+	}
+	if flashed {
+		style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
+	}
+	return style
 }
 
 func renderError(width int, err error, colors palette) string {
