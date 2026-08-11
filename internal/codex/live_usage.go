@@ -17,7 +17,8 @@ import (
 
 const (
 	activeRolloutHorizon = 24 * time.Hour
-	fullDiscoveryEvery   = 30 * time.Second
+	discoveryEvery       = 5 * time.Second
+	fullDiscoveryEvery   = 5 * time.Minute
 )
 
 // LiveUsageSnapshot is a process-local, monotonically increasing count built
@@ -36,6 +37,7 @@ type LiveUsageReader struct {
 	mu                sync.Mutex
 	initialized       bool
 	startedAt         time.Time
+	lastDiscovery     time.Time
 	lastFullDiscovery time.Time
 	files             map[string]*rolloutCursor
 	totalTokens       int64
@@ -112,8 +114,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		if err := r.initialize(ctx, now); err != nil {
 			return LiveUsageSnapshot{}, err
 		}
-	} else if err := r.discover(ctx, now, forceFullDiscovery || now.Sub(r.lastFullDiscovery) >= fullDiscoveryEvery); err != nil {
-		return LiveUsageSnapshot{}, err
+	} else if forceFullDiscovery || now.Sub(r.lastDiscovery) >= discoveryEvery {
+		full := forceFullDiscovery || now.Sub(r.lastFullDiscovery) >= fullDiscoveryEvery
+		if err := r.discover(ctx, now, full); err != nil {
+			return LiveUsageSnapshot{}, err
+		}
 	}
 
 	var firstReadErr error
@@ -217,6 +222,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 	if firstFileErr != nil && len(r.files) == 0 {
 		return fmt.Errorf("read local Codex session telemetry: %w", firstFileErr)
 	}
+	r.lastDiscovery = now
 	if full {
 		r.lastFullDiscovery = now
 	}

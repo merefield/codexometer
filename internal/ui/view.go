@@ -13,16 +13,8 @@ import (
 
 func (m Model) View() string {
 	colors := paletteFor(m.theme)
-	width := m.width
-	if width == 0 {
-		width = 80
-	}
-	height := m.height
-	if height == 0 {
-		height = 24
-	}
-	contentWidth := max(width-4, 1)
-	contentHeight := max(height-2, 1)
+	layout := m.dashboardLayout()
+	contentWidth := layout.contentWidth
 
 	header := renderHeader(contentWidth, m.phase, colors)
 	parts := []string{header}
@@ -31,27 +23,22 @@ func (m Model) View() string {
 	} else {
 		status := m.renderStatus(contentWidth, colors)
 		parts = append(parts, status)
-		reservedHeight := lipgloss.Height(header) + lipgloss.Height(status)
 		if m.err != nil {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
-			reservedHeight += lipgloss.Height(errorView)
 		}
 		meters := m.snapshot.Meters()
 		if len(meters) == 0 {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)
-			reservedHeight += lipgloss.Height(emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		reservedHeight += lipgloss.Height(footer)
-		meterHeight := max(contentHeight-reservedHeight, 1)
 		if m.meterStyle == styleStopwatch {
-			parts = append(parts, m.renderStopwatchArea(contentWidth, meterHeight, colors).view)
+			parts = append(parts, m.renderStopwatchArea(contentWidth, layout.meterHeight, colors).view)
 		} else if len(meters) > 1 {
-			parts = append(parts, renderMeterGrid(contentWidth, meterHeight, meters, m.meterStyle, colors))
+			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterStyle, colors))
 		} else if len(meters) == 1 {
-			parts = append(parts, renderMeterArea(contentWidth, meterHeight, meters[0], m.meterStyle, colors))
+			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterStyle, colors))
 		}
 		parts = append(parts, footer)
 	}

@@ -174,23 +174,23 @@ The default remains the original green hacker-terminal presentation.
 Press `s` to cycle:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
-   for clean curves at any size.
-3. **Consumption Pace** — a signed horizontal scale comparing elapsed window
-   time with quota consumed. Positive headroom means consumption is behind
-   elapsed time; a negative deficit means quota is being used too quickly.
-4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
-   and whose dark segment shows consumed capacity, labelled from Empty to Full;
-   one full-width tank appears per row. Its reset-cycle comparison also drains
-   backward and aligns exactly with the tank's first and last inner cells.
-5. **Stopwatch** — establishes a zero baseline across locally active Codex
+2. **Stopwatch** — establishes a zero baseline across locally active Codex
    sessions when you press Go. A large readout follows newly appended token
    telemetry once per second and shows total observed tokens, elapsed time, and
    average rate; clickable Go and Stop controls sit beside it. The full-width
    plot adds one thin vertical block bar every 30 seconds for tokens observed in
-   that interval. New bars enter on the right and push older bars left, and the Y axis
-   automatically expands or contracts to fit the visible samples. Stop performs
+   that interval. New bars enter on the right and push older bars left, and the
+   Y axis automatically expands or contracts to fit the visible samples. Stop performs
    an immediate final local read instead of relying on the latest graph sample.
+3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+   for clean curves at any size.
+4. **Consumption Pace** — a signed horizontal scale comparing elapsed window
+   time with quota consumed. Positive headroom means consumption is behind
+   elapsed time; a negative deficit means quota is being used too quickly.
+5. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
+   and whose dark segment shows consumed capacity, labelled from Empty to Full;
+   one full-width tank appears per row. Its reset-cycle comparison also drains
+   backward and aligns exactly with the tank's first and last inner cells.
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
@@ -273,9 +273,9 @@ need Go or Codexometer's source dependencies.
 
 ## Versioning
 
-Codexometer follows semantic versioning, beginning with `v0.1.0`. The Git tag is
+Codexometer follows semantic versioning; the current source version is `v0.1.1`. The Git tag is
 the release source of truth. Go automatically embeds that tag in binaries built
-with `go install github.com/merefield/codexometer@v0.1.0`; direct source builds
+with `go install github.com/merefield/codexometer@v0.1.1`; direct source builds
 fall back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -288,7 +288,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.1.1" .
 ```
 
 ## How refresh works

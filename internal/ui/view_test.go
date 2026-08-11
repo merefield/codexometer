@@ -88,7 +88,7 @@ func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 }
 
 func TestGaugeGridStyleClassification(t *testing.T) {
-	for style := styleBars; style < styleStopwatch; style++ {
+	for _, style := range []meterStyleID{styleBars, stylePie, styleConsumptionPace, styleFuel} {
 		if got := usesMeterGrid(style); !got {
 			t.Errorf("usesMeterGrid(%s) = false, want true", style.name())
 		}
