@@ -259,6 +259,13 @@ within five seconds. A fresh, ephemeral, read-only app-server thread is used for
 each trial, so benchmark history does not clutter normal Codex sessions. The
 turns still consume the same account quota shown by Codexometer.
 
+Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
+that deadline, Codexometer requests `turn/interrupt`, waits for the matching
+`turn/completed` event, records that combination as `FAIL`, and continues with
+the remaining combinations. Explicit user cancellation, app-server transport
+failure, or failure to confirm interruption still stops the suite because the
+server's state is then unsafe or unknown.
+
 #### Challenges
 
 Every trial asks the model to return one named Starlark function:
@@ -286,6 +293,7 @@ A row is `PASS` only when all of the following are true:
   64 KiB source and 250,000 execution-step limits;
 - every hand-written and generated case returns the exact reference answer with
   the required type and bounded shape; and
+- the turn does not emit a tool-use item; and
 - none of the supplied inputs are mutated.
 
 Any syntax/runtime error, timeout, malformed response, wrong type or value,
@@ -306,15 +314,119 @@ exposes no filesystem, process, network, clock, or environment capabilities to
 submitted code. Restricted return types and bounded result sizes add further
 containment.
 
-Token totals come from the trial thread's live `thread/tokenUsage/updated`
-events. API-equivalent cost is an estimate, not a ChatGPT charge: it applies the
-published standard API input, cached-input, and output token prices known to
-this Codexometer release, plus cache-write prices where OpenAI publishes one.
-Reasoning tokens are already included in the output-token total. An unknown
-model—or usage in a token class without a published price—displays `N/A` rather
-than being guessed. Pricing can change; consult the
+#### Interpreting token and API-equivalent figures
+
+Codexometer asks the local app-server for its opt-in `rawResponse/completed`
+telemetry and, when a complete valid ledger is available, sums the exact usage
+reported for each upstream response in the turn. Because that event is an
+internal experimental Codex interface, older app-servers may reject or omit it;
+Codexometer then falls back automatically to the final cumulative
+`thread/tokenUsage/updated` value for the fresh one-turn thread. Both event types
+are matched to the expected thread and turn IDs so activity from another trial
+or Codex session is not included.
+
+Before displaying either source, Codexometer checks that all token fields are
+non-negative, cached plus cache-write input does not exceed total input,
+reasoning output does not exceed output, total equals input plus output, and
+cumulative updates never regress. When both complete raw-response and cumulative
+telemetry are present, their totals must agree. A valid cumulative total can
+stand in for an omitted raw usage payload; otherwise missing, duplicate, or
+inconsistent telemetry displays `N/A`. It is never silently converted to zero
+or clamped into a plausible value, and the status panel retains the reason.
+
+The displayed total includes all reported input tokens—including cached input
+and cache-write input—and all reported output tokens. Reasoning tokens are
+already included in the output-token total and are not added a second time.
+
+`API EQ` is an estimated **standard, short-context, text-token API equivalent**,
+not a bill, a ChatGPT subscription charge, or a prediction of how much account
+quota the turn consumed. Codexometer separates ordinary input, cached input,
+cache-write input, and output, then applies the per-million-token prices known
+to this Codexometer release. Usage availability and price availability are
+tracked separately: a valid token total can still have `API EQ` shown as `N/A`
+for an unknown model or a token class whose price was not published when the
+release was built. Codexometer does not inherit or guess such a price. Pricing
+can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-for the current source values.
+for current values.
+
+The figures are useful for comparing these particular observed trials, but
+they have important limitations:
+
+- They do not reveal the private quota-weighting rules used by ChatGPT plans,
+  and should not be converted into quota percentages or treated as dollars
+  actually charged.
+- Prompt-cache state can depend on earlier activity and benchmark order. A
+  later trial may receive cheaper cached input or incur a cache write that an
+  otherwise identical trial would not, so observed API-equivalent cost is not
+  a cache-neutral ranking.
+- Current costing applies short-context rates to the trial's aggregate usage.
+  It does not implement long-context price thresholds. Although supported Codex
+  versions provide per-response usage, the event does not associate a distinct
+  model price with each response.
+- If Codex reroutes a turn, usage is priced using the final reported model. A
+  turn that actually spans differently priced models cannot be reconstructed
+  exactly without a response-to-model association.
+- Tool use is prohibited for these hermetic trials. If a tool-use item is
+  observed, the row is forced to `FAIL` and `API EQ` is `N/A`, even when valid
+  text-token telemetry was also reported.
+- Exact raw-response telemetry is an internal experimental app-server facility
+  and may change independently of Codexometer. The validated cumulative path is
+  retained for compatibility, but it does not preserve a response-by-response
+  ledger.
+- Model-specific Codex instructions and tool descriptions are part of reported
+  input usage. That is appropriate when comparing the real Codex experience,
+  but it is not a measurement of the challenge prompt in isolation.
+
+PASS/FAIL evaluation is independent of these measurements: incomplete or
+ambiguous token telemetry does not make an incorrect program pass, and a valid
+program can still have an unavailable or approximate cost.
+
+#### Measurement hardening status and guidance
+
+The measurement path is deliberately fail-closed. Its current hardening status
+is:
+
+| Priority | Safeguard | Status |
+| --- | --- | --- |
+| **P0** | Distinguish missing telemetry from a genuine observed zero | Complete |
+| **P0** | Reject negative, inconsistent, regressing, or overflowing token data | Complete |
+| **P0** | Track token availability independently from price availability and retain the reason for `N/A` | Complete |
+| **P1** | Prefer a validated per-response ledger, with a validated cumulative compatibility fallback | Complete |
+| **P1** | Detect prohibited tool-use items, force the trial to `FAIL`, and invalidate `API EQ` | Complete |
+| **P1** | Apply the correct pricing tier to long-context responses | Deferred |
+| **P2** | Reduce cache-order bias with balanced warm-ups, randomized ordering, or repeated trials | Open |
+| **P2** | Report a cache-neutral comparison alongside the observed cached cost | Open |
+| **P2** | Price mixed-model reroutes from a response-to-model association | Open; the current raw event does not expose that association |
+| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Open |
+| **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Partial; automatic cumulative fallback is already implemented |
+
+Future accounting changes should preserve these rules:
+
+- Never treat absent or invalid telemetry as zero, and never clamp malformed
+  fields into a plausible value.
+- Validate individual responses, overflow-safe aggregates, cumulative
+  monotonicity, and raw-versus-cumulative agreement before setting usage as
+  available.
+- Keep correctness, usage availability, and cost availability as independent
+  states. An unavailable price must not erase a valid token count, and a
+  measurement problem must not change the deterministic Starlark verdict.
+- Prefer exact response telemetry only when response IDs are present and unique;
+  retain the cumulative path for compatible older app-servers.
+- Do not infer prices for unknown models or unpublished token classes. Update
+  the compiled table only from published OpenAI pricing and record its source
+  and effective date when provenance support is added.
+- Treat any tool-use item as a benchmark protocol violation. Text-token pricing
+  alone cannot represent separately priced or externally executed work.
+- Cover missing fields, invalid invariants, integer overflow, duplicate events,
+  event regression, source disagreement, tool use, and experimental-protocol
+  fallback in tests. Keep race-enabled CI green on Linux, macOS, and Windows.
+
+Correct long-context and reroute costing will require each upstream response to
+be associated with the model and pricing tier that actually served it, including
+the exact threshold semantics. Cache-neutral or repeated-trial reporting would
+improve comparison quality without changing the deterministic PASS/FAIL
+verifier.
 
 ## Options
 
@@ -361,9 +473,9 @@ need Go or Codexometer's source dependencies.
 
 ## Versioning
 
-Codexometer follows semantic versioning; the current source version is `v0.2.0`. The Git tag is
+Codexometer follows semantic versioning; the current source version is `v0.2.1`. The Git tag is
 the release source of truth. Go automatically embeds that tag in binaries built
-with `go install github.com/merefield/codexometer@v0.2.0`; direct source builds
+with `go install github.com/merefield/codexometer@v0.2.1`; direct source builds
 fall back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -376,7 +488,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.2.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.2.1" .
 ```
 
 ## How refresh works

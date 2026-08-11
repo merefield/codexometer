@@ -49,7 +49,7 @@ func TestViewRendersEveryThemeAndStyleWithinStandardTerminal(t *testing.T) {
 }
 
 func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
-	sizes := []struct{ width, height int }{{80, 24}, {120, 40}, {200, 60}}
+	sizes := []struct{ width, height int }{{40, 16}, {40, 24}, {45, 24}, {60, 24}, {80, 24}, {120, 40}, {200, 60}}
 	for _, size := range sizes {
 		for style := styleBars; style < styleCount; style++ {
 			model := Model{
@@ -97,6 +97,33 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	footerLines := strings.Split(footer, "\n")
 	if !strings.HasSuffix(footerLines[len(footerLines)-1], "THEME // HACKER") {
 		t.Fatalf("theme is not at the bottom right of the footer: %q", footerLines[len(footerLines)-1])
+	}
+}
+
+func TestFrameTitlesAreIntegratedIntoBorderInsteadOfButtonBrackets(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	output := ansi.Strip(frameSized(36, 3, "SESSION READOUT", "BODY", colors.primary, colors))
+	lines := strings.Split(output, "\n")
+	if len(lines) != 5 {
+		t.Fatalf("frame height = %d, want 5:\n%s", len(lines), output)
+	}
+	if !strings.HasPrefix(lines[0], "╭─ SESSION READOUT ") || !strings.HasSuffix(lines[0], "╮") {
+		t.Fatalf("title was not integrated into the top border: %q", lines[0])
+	}
+	if strings.Contains(output, "[ SESSION READOUT ]") {
+		t.Fatalf("frame title still looks like a button:\n%s", output)
+	}
+	for index, line := range lines {
+		if width := lipgloss.Width(line); width != 36 {
+			t.Errorf("line %d width = %d, want 36: %q", index, width, line)
+		}
+	}
+
+	narrow := ansi.Strip(frameSized(5, 1, "TITLE TOO LONG", "X", colors.primary, colors))
+	for index, line := range strings.Split(narrow, "\n") {
+		if width := lipgloss.Width(line); width != 5 {
+			t.Errorf("narrow line %d width = %d, want 5: %q", index, width, line)
+		}
 	}
 }
 

@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	benchmarkTurnTimeout = 5 * time.Minute
-	benchmarkCodeLimit   = 64 * 1024
-	benchmarkStepLimit   = 250_000
+	benchmarkTurnTimeout      = 5 * time.Minute
+	benchmarkInterruptTimeout = 15 * time.Second
+	benchmarkCodeLimit        = 64 * 1024
+	benchmarkStepLimit        = 250_000
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -36,20 +37,44 @@ type BenchmarkUsage struct {
 	ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
 }
 
+// BenchmarkUsageSource identifies the telemetry used for a benchmark result.
+type BenchmarkUsageSource string
+
+const (
+	BenchmarkUsageUnavailable  BenchmarkUsageSource = "unavailable"
+	BenchmarkUsageCumulative   BenchmarkUsageSource = "cumulative"
+	BenchmarkUsageRawResponses BenchmarkUsageSource = "raw-responses"
+)
+
+// BenchmarkResponseUsage is the exact upstream usage for one Responses API
+// completion when the current Codex app-server exposes experimental raw events.
+type BenchmarkResponseUsage struct {
+	ResponseID string
+	Usage      BenchmarkUsage
+}
+
 // BenchmarkResult contains one model/reasoning-effort run.
 type BenchmarkResult struct {
-	TaskID      BenchmarkTaskID
-	TaskName    string
-	Model       string
-	DisplayName string
-	Effort      string
-	ActualModel string
-	Correct     bool
-	Duration    time.Duration
-	Usage       BenchmarkUsage
-	CostUSD     float64
-	CostKnown   bool
-	Failure     string
+	TaskID        BenchmarkTaskID
+	TaskName      string
+	Model         string
+	DisplayName   string
+	Effort        string
+	ActualModel   string
+	Correct       bool
+	Duration      time.Duration
+	Usage         BenchmarkUsage
+	UsageObserved bool
+	UsageKnown    bool
+	UsageIssue    string
+	UsageSource   BenchmarkUsageSource
+	ResponseUsage []BenchmarkResponseUsage
+	CostUSD       float64
+	CostKnown     bool
+	CostIssue     string
+	ToolUsed      bool
+	ToolType      string
+	Failure       string
 }
 
 // BenchmarkEvent incrementally reports discovery, execution, and results.
@@ -108,17 +133,20 @@ type benchmarkEnvelope struct {
 }
 
 type appServerSession struct {
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
-	encoder    *json.Encoder
-	stderr     *lockedBuffer
-	nextID     int
-	wait       sync.Once
-	pending    []benchmarkEnvelope
-	envelopes  chan benchmarkEnvelope
-	readErrors chan error
-	done       chan struct{}
-	stop       sync.Once
+	cmd                   *exec.Cmd
+	stdin                 io.WriteCloser
+	encoder               *json.Encoder
+	stderr                *lockedBuffer
+	nextID                int
+	wait                  sync.Once
+	pending               []benchmarkEnvelope
+	envelopes             chan benchmarkEnvelope
+	readErrors            chan error
+	done                  chan struct{}
+	stop                  sync.Once
+	experimentalRawEvents bool
+	turnTimeout           time.Duration
+	interruptTimeout      time.Duration
 }
 
 type lockedBuffer struct {
@@ -213,6 +241,10 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 }
 
 func startAppServer(ctx context.Context, binary string) (*appServerSession, error) {
+	return startAppServerWithExperimentalUsage(ctx, binary, true)
+}
+
+func startAppServerWithExperimentalUsage(ctx context.Context, binary string, experimental bool) (*appServerSession, error) {
 	if strings.TrimSpace(binary) == "" {
 		binary = "codex"
 	}
@@ -236,14 +268,22 @@ func startAppServer(ctx context.Context, binary string) (*appServerSession, erro
 	server := &appServerSession{
 		cmd: cmd, stdin: stdin, encoder: json.NewEncoder(stdin),
 		stderr: stderr, envelopes: make(chan benchmarkEnvelope, 64), readErrors: make(chan error, 1), done: make(chan struct{}),
+		experimentalRawEvents: experimental,
 	}
 	go server.readLoop(json.NewDecoder(bufio.NewReader(stdout)))
-	if _, err := server.call(ctx, "initialize", map[string]any{
+	initialize := map[string]any{
 		"clientInfo": map[string]string{
 			"name": "codexometer", "title": "Codexometer", "version": version.Current(),
 		},
-	}, nil); err != nil {
+	}
+	if experimental {
+		initialize["capabilities"] = map[string]bool{"experimentalApi": true}
+	}
+	if _, err := server.call(ctx, "initialize", initialize, nil); err != nil {
 		server.close()
+		if experimental && experimentalAPIUnsupported(err) {
+			return startAppServerWithExperimentalUsage(ctx, binary, false)
+		}
 		return nil, fmt.Errorf("initialize Codex app-server: %w", err)
 	}
 	if err := server.encoder.Encode(map[string]any{"method": "initialized"}); err != nil {
@@ -251,6 +291,16 @@ func startAppServer(ctx context.Context, binary string) (*appServerSession, erro
 		return nil, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
 	return server, nil
+}
+
+func experimentalAPIUnsupported(err error) bool {
+	var methodError *benchmarkMethodError
+	if !errors.As(err, &methodError) {
+		return false
+	}
+	return methodError.code == -32601 || methodError.code == -32602 ||
+		strings.Contains(strings.ToLower(methodError.message), "experimentalapi") ||
+		strings.Contains(strings.ToLower(methodError.message), "experimentalrawevents")
 }
 
 func (s *appServerSession) readLoop(decoder *json.Decoder) {
@@ -422,7 +472,8 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		Model: combination.model.Model, DisplayName: combination.model.DisplayName,
 		Effort: combination.effort, ActualModel: combination.model.Model,
 	}
-	turnCtx, cancel := context.WithTimeout(ctx, benchmarkTurnTimeout)
+	turnTimeout := s.benchmarkTurnTimeout()
+	turnCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	defer cancel()
 
 	temporary, err := os.MkdirTemp("", "codexometer-benchmark-")
@@ -432,7 +483,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	}
 	defer os.RemoveAll(temporary)
 
-	threadResult, err := s.call(turnCtx, "thread/start", map[string]any{
+	threadParams := map[string]any{
 		"model":                 combination.model.Model,
 		"cwd":                   temporary,
 		"approvalPolicy":        "never",
@@ -440,7 +491,19 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		"ephemeral":             true,
 		"serviceName":           "codexometer-benchmark",
 		"developerInstructions": "Complete only the supplied deterministic benchmark. Do not use tools or inspect the environment. Return exactly the requested structured output.",
-	}, nil)
+	}
+	if s.experimentalRawEvents {
+		threadParams["experimentalRawEvents"] = true
+	}
+	threadResult, err := s.call(turnCtx, "thread/start", threadParams, nil)
+	if err != nil && s.experimentalRawEvents && experimentalAPIUnsupported(err) {
+		// Older Codex versions may support the stable benchmark API but not raw
+		// response telemetry. Retry this thread without the experimental field and
+		// keep cumulative usage as the compatibility path for the rest of the suite.
+		s.experimentalRawEvents = false
+		delete(threadParams, "experimentalRawEvents")
+		threadResult, err = s.call(turnCtx, "thread/start", threadParams, nil)
+	}
 	if err != nil {
 		result.Failure = fmt.Sprintf("start thread: %v", err)
 		return result, fatalBenchmarkError(turnCtx, err)
@@ -485,87 +548,117 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	}
 
 	var finalMessage, turnFailure string
+	telemetry := newBenchmarkTelemetry()
 	completed := false
-	for !completed {
-		_, err = s.readUntilNotification(turnCtx, func(method string, params json.RawMessage) bool {
-			switch method {
-			case "thread/tokenUsage/updated":
-				var event struct {
-					ThreadID   string `json:"threadId"`
-					TurnID     string `json:"turnId"`
-					TokenUsage struct {
-						Total BenchmarkUsage `json:"total"`
-					} `json:"tokenUsage"`
+	handleNotification := func(method string, params json.RawMessage) bool {
+		switch method {
+		case "thread/tokenUsage/updated":
+			var event struct {
+				ThreadID   string `json:"threadId"`
+				TurnID     string `json:"turnId"`
+				TokenUsage struct {
+					Total BenchmarkUsage `json:"total"`
+				} `json:"tokenUsage"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				telemetry.recordCumulative(event.TokenUsage.Total)
+			}
+		case "rawResponse/completed":
+			var event struct {
+				ThreadID   string          `json:"threadId"`
+				TurnID     string          `json:"turnId"`
+				ResponseID string          `json:"responseId"`
+				Usage      *BenchmarkUsage `json:"usage"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				telemetry.recordRawResponse(event.ResponseID, event.Usage)
+			}
+		case "model/rerouted":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				TurnID   string `json:"turnId"`
+				ToModel  string `json:"toModel"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.ToModel != "" {
+				result.ActualModel = event.ToModel
+			}
+		case "item/started", "item/completed":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				TurnID   string `json:"turnId"`
+				Item     struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"item"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				if benchmarkToolItem(event.Item.Type) && !result.ToolUsed {
+					result.ToolUsed, result.ToolType = true, event.Item.Type
 				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
-					result.Usage = event.TokenUsage.Total
-				}
-			case "model/rerouted":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					TurnID   string `json:"turnId"`
-					ToModel  string `json:"toModel"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.ToModel != "" {
-					result.ActualModel = event.ToModel
-				}
-			case "item/completed":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					TurnID   string `json:"turnId"`
-					Item     struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					} `json:"item"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.Item.Type == "agentMessage" {
+				if method == "item/completed" && event.Item.Type == "agentMessage" {
 					finalMessage = event.Item.Text
 				}
-			case "turn/completed":
-				var event struct {
-					ThreadID string `json:"threadId"`
-					Turn     struct {
-						ID     string `json:"id"`
-						Status string `json:"status"`
-						Error  *struct {
-							Message string `json:"message"`
-						} `json:"error"`
-						Items []struct {
-							Type string `json:"type"`
-							Text string `json:"text"`
-						} `json:"items"`
-					} `json:"turn"`
-				}
-				if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.Turn.ID == startedTurn.Turn.ID {
-					completed = true
-					if event.Turn.Status != "completed" {
-						turnFailure = "turn " + event.Turn.Status
-						if event.Turn.Error != nil && event.Turn.Error.Message != "" {
-							turnFailure += ": " + event.Turn.Error.Message
-						}
-					}
-					if finalMessage == "" {
-						for _, item := range event.Turn.Items {
-							if item.Type == "agentMessage" {
-								finalMessage = item.Text
-							}
-						}
-					}
-					return true
-				}
 			}
-			return false
-		})
+		case "turn/completed":
+			var event struct {
+				ThreadID string `json:"threadId"`
+				Turn     struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+					Error  *struct {
+						Message string `json:"message"`
+					} `json:"error"`
+					Items []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"items"`
+				} `json:"turn"`
+			}
+			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.Turn.ID == startedTurn.Turn.ID {
+				completed = true
+				if event.Turn.Status != "completed" {
+					turnFailure = "turn " + event.Turn.Status
+					if event.Turn.Error != nil && event.Turn.Error.Message != "" {
+						turnFailure += ": " + event.Turn.Error.Message
+					}
+				}
+				if finalMessage == "" {
+					for _, item := range event.Turn.Items {
+						if item.Type == "agentMessage" {
+							finalMessage = item.Text
+						}
+					}
+				}
+				return true
+			}
+		}
+		return false
+	}
+	for !completed {
+		_, err = s.readUntilNotification(turnCtx, handleNotification)
 		if err != nil {
 			result.Duration = time.Since(startedAt)
+			if recoverableBenchmarkTimeout(ctx, turnCtx, err) {
+				result.Failure = fmt.Sprintf("turn timed out after %s", turnTimeout)
+				if interruptErr := s.interruptBenchmarkTurn(ctx, startedThread.Thread.ID, startedTurn.Turn.ID, &completed, handleNotification); interruptErr != nil {
+					result.Failure += "; cleanup failed: " + interruptErr.Error()
+					return result, fmt.Errorf("recover timed-out benchmark turn: %w", interruptErr)
+				}
+				applyBenchmarkMeasurements(&result, telemetry)
+				return result, nil
+			}
 			result.Failure = fmt.Sprintf("wait for turn: %v", err)
 			return result, err
 		}
 	}
 	result.Duration = time.Since(startedAt)
-	result.CostUSD, result.CostKnown = estimateAPICost(result.ActualModel, result.Usage)
+	applyBenchmarkMeasurements(&result, telemetry)
 	if turnFailure != "" {
 		result.Failure = turnFailure
+		return result, nil
+	}
+	if result.ToolUsed {
+		result.Failure = "tool use prohibited: " + result.ToolType
 		return result, nil
 	}
 	code, err := benchmarkCode(finalMessage)
@@ -579,6 +672,241 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	}
 	result.Correct = true
 	return result, nil
+}
+
+func (s *appServerSession) benchmarkTurnTimeout() time.Duration {
+	if s.turnTimeout > 0 {
+		return s.turnTimeout
+	}
+	return benchmarkTurnTimeout
+}
+
+func (s *appServerSession) benchmarkInterruptTimeout() time.Duration {
+	if s.interruptTimeout > 0 {
+		return s.interruptTimeout
+	}
+	return benchmarkInterruptTimeout
+}
+
+func recoverableBenchmarkTimeout(parent, turn context.Context, err error) bool {
+	return parent.Err() == nil && errors.Is(turn.Err(), context.DeadlineExceeded) && errors.Is(err, context.DeadlineExceeded)
+}
+
+func (s *appServerSession) interruptBenchmarkTurn(
+	ctx context.Context,
+	threadID, turnID string,
+	completed *bool,
+	handleNotification func(string, json.RawMessage) bool,
+) error {
+	cleanupCtx, cancel := context.WithTimeout(ctx, s.benchmarkInterruptTimeout())
+	defer cancel()
+
+	_, err := s.call(cleanupCtx, "turn/interrupt", map[string]string{
+		"threadId": threadID,
+		"turnId":   turnID,
+	}, func(method string, params json.RawMessage) {
+		handleNotification(method, params)
+	})
+	if err != nil {
+		var methodError *benchmarkMethodError
+		// The turn can finish naturally between the deadline and the interrupt
+		// request. A method rejection is safe only when its matching completion
+		// notification was also observed.
+		if !*completed || !errors.As(err, &methodError) {
+			return fmt.Errorf("interrupt turn: %w", err)
+		}
+	}
+	if *completed {
+		return nil
+	}
+	if _, err := s.readUntilNotification(cleanupCtx, handleNotification); err != nil {
+		return fmt.Errorf("confirm interrupted turn: %w", err)
+	}
+	if !*completed {
+		return errors.New("confirm interrupted turn: completion was not observed")
+	}
+	return nil
+}
+
+func applyBenchmarkMeasurements(result *BenchmarkResult, telemetry *benchmarkTelemetry) {
+	telemetry.apply(result)
+	if result.ToolUsed {
+		result.CostIssue = "tool use prohibited: " + result.ToolType
+	} else if result.UsageKnown {
+		result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
+	} else {
+		result.CostIssue = result.UsageIssue
+	}
+}
+
+type benchmarkTelemetry struct {
+	cumulative         BenchmarkUsage
+	cumulativeObserved bool
+	lastCumulative     BenchmarkUsage
+	hasLastCumulative  bool
+	rawResponses       []BenchmarkResponseUsage
+	rawIDs             map[string]struct{}
+	rawObserved        bool
+	rawMissingUsage    bool
+	issue              string
+}
+
+func newBenchmarkTelemetry() *benchmarkTelemetry {
+	return &benchmarkTelemetry{rawIDs: make(map[string]struct{})}
+}
+
+func (t *benchmarkTelemetry) recordCumulative(usage BenchmarkUsage) {
+	t.cumulativeObserved = true
+	if issue := validateBenchmarkUsage(usage); issue != "" {
+		t.setIssue("invalid cumulative usage: " + issue)
+	}
+	if t.hasLastCumulative && !benchmarkUsageAtLeast(usage, t.lastCumulative) {
+		t.setIssue("cumulative usage regressed")
+	}
+	t.cumulative = usage
+	t.lastCumulative = usage
+	t.hasLastCumulative = true
+}
+
+func (t *benchmarkTelemetry) recordRawResponse(responseID string, usage *BenchmarkUsage) {
+	t.rawObserved = true
+	if strings.TrimSpace(responseID) == "" {
+		t.setIssue("raw response usage omitted response id")
+		return
+	}
+	if _, duplicate := t.rawIDs[responseID]; duplicate {
+		t.setIssue("duplicate raw response usage: " + responseID)
+		return
+	}
+	t.rawIDs[responseID] = struct{}{}
+	if usage == nil {
+		t.rawMissingUsage = true
+		return
+	}
+	if issue := validateBenchmarkUsage(*usage); issue != "" {
+		t.setIssue("invalid raw response usage: " + issue)
+	}
+	t.rawResponses = append(t.rawResponses, BenchmarkResponseUsage{ResponseID: responseID, Usage: *usage})
+}
+
+func (t *benchmarkTelemetry) apply(result *BenchmarkResult) {
+	result.UsageObserved = t.cumulativeObserved || t.rawObserved
+	result.UsageSource = BenchmarkUsageUnavailable
+	result.ResponseUsage = append([]BenchmarkResponseUsage(nil), t.rawResponses...)
+	if t.issue != "" {
+		result.UsageIssue = t.issue
+		return
+	}
+
+	rawComplete := len(t.rawResponses) > 0 && !t.rawMissingUsage
+	if rawComplete {
+		rawTotal := BenchmarkUsage{}
+		for _, response := range t.rawResponses {
+			if issue := rawTotal.add(response.Usage); issue != "" {
+				result.UsageIssue = "invalid raw response total: " + issue
+				return
+			}
+		}
+		if issue := validateBenchmarkUsage(rawTotal); issue != "" {
+			result.UsageIssue = "invalid raw response total: " + issue
+			return
+		}
+		if t.cumulativeObserved && rawTotal != t.cumulative {
+			result.UsageIssue = "raw and cumulative usage disagree"
+			return
+		}
+		result.Usage, result.UsageKnown, result.UsageSource = rawTotal, true, BenchmarkUsageRawResponses
+		return
+	}
+	if t.cumulativeObserved {
+		result.Usage, result.UsageKnown, result.UsageSource = t.cumulative, true, BenchmarkUsageCumulative
+		return
+	}
+	if t.rawObserved {
+		result.UsageIssue = "raw response omitted usage and no cumulative usage was observed"
+	} else {
+		result.UsageIssue = "matching usage event was not observed"
+	}
+}
+
+func (t *benchmarkTelemetry) setIssue(issue string) {
+	if t.issue == "" {
+		t.issue = issue
+	}
+}
+
+func (u *BenchmarkUsage) add(other BenchmarkUsage) string {
+	fields := []struct {
+		name   string
+		target *int64
+		value  int64
+	}{
+		{"totalTokens", &u.TotalTokens, other.TotalTokens},
+		{"inputTokens", &u.InputTokens, other.InputTokens},
+		{"cachedInputTokens", &u.CachedInputTokens, other.CachedInputTokens},
+		{"cacheWriteInputTokens", &u.CacheWriteInputTokens, other.CacheWriteInputTokens},
+		{"outputTokens", &u.OutputTokens, other.OutputTokens},
+		{"reasoningOutputTokens", &u.ReasoningOutputTokens, other.ReasoningOutputTokens},
+	}
+	for _, field := range fields {
+		if field.value < 0 || *field.target > math.MaxInt64-field.value {
+			return field.name + " overflowed"
+		}
+		*field.target += field.value
+	}
+	return ""
+}
+
+func validateBenchmarkUsage(usage BenchmarkUsage) string {
+	fields := []struct {
+		name  string
+		value int64
+	}{
+		{"totalTokens", usage.TotalTokens},
+		{"inputTokens", usage.InputTokens},
+		{"cachedInputTokens", usage.CachedInputTokens},
+		{"cacheWriteInputTokens", usage.CacheWriteInputTokens},
+		{"outputTokens", usage.OutputTokens},
+		{"reasoningOutputTokens", usage.ReasoningOutputTokens},
+	}
+	for _, field := range fields {
+		if field.value < 0 {
+			return field.name + " is negative"
+		}
+	}
+	if usage.CachedInputTokens > usage.InputTokens ||
+		usage.CacheWriteInputTokens > usage.InputTokens-usage.CachedInputTokens {
+		return "cached and cache-write input exceed inputTokens"
+	}
+	if usage.ReasoningOutputTokens > usage.OutputTokens {
+		return "reasoningOutputTokens exceeds outputTokens"
+	}
+	if usage.InputTokens > math.MaxInt64-usage.OutputTokens {
+		return "inputTokens + outputTokens overflow"
+	}
+	if usage.TotalTokens != usage.InputTokens+usage.OutputTokens {
+		return "totalTokens does not equal inputTokens + outputTokens"
+	}
+	return ""
+}
+
+func benchmarkUsageAtLeast(current, previous BenchmarkUsage) bool {
+	return current.TotalTokens >= previous.TotalTokens &&
+		current.InputTokens >= previous.InputTokens &&
+		current.CachedInputTokens >= previous.CachedInputTokens &&
+		current.CacheWriteInputTokens >= previous.CacheWriteInputTokens &&
+		current.OutputTokens >= previous.OutputTokens &&
+		current.ReasoningOutputTokens >= previous.ReasoningOutputTokens
+}
+
+func benchmarkToolItem(itemType string) bool {
+	switch itemType {
+	case "plan", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall",
+		"collabAgentToolCall", "subAgentActivity", "webSearch", "imageView", "sleep", "imageGeneration":
+		return true
+	default:
+		return false
+	}
 }
 
 func fatalBenchmarkError(ctx context.Context, err error) error {
@@ -822,22 +1150,27 @@ var standardAPIPrices = map[string]apiPrice{
 }
 
 func estimateAPICost(model string, usage BenchmarkUsage) (float64, bool) {
+	cost, known, _ := estimateAPICostWithIssue(model, usage)
+	return cost, known
+}
+
+func estimateAPICostWithIssue(model string, usage BenchmarkUsage) (float64, bool, string) {
+	if issue := validateBenchmarkUsage(usage); issue != "" {
+		return 0, false, "invalid usage: " + issue
+	}
 	price, ok := priceForModel(model)
 	if !ok {
-		return 0, false
+		return 0, false, "no published price for model " + strings.TrimSpace(model)
 	}
 	if usage.CacheWriteInputTokens > 0 && !price.cacheWriteKnown {
-		return 0, false
+		return 0, false, "no published cache-write price for model " + strings.TrimSpace(model)
 	}
 	regularInput := usage.InputTokens - usage.CachedInputTokens - usage.CacheWriteInputTokens
-	if regularInput < 0 {
-		regularInput = 0
-	}
 	cost := float64(regularInput)*price.input +
 		float64(usage.CachedInputTokens)*price.cached +
 		float64(usage.CacheWriteInputTokens)*price.cacheWrite +
 		float64(usage.OutputTokens)*price.output
-	return cost / 1_000_000, true
+	return cost / 1_000_000, true, ""
 }
 
 func priceForModel(model string) (apiPrice, bool) {

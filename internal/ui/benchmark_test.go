@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -47,12 +48,12 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 		width: 100, height: 30, meterStyle: styleBenchmark,
 		benchmarkState: benchmarkFinished,
 		benchmarkResults: []codex.BenchmarkResult{
-			{TaskName: "MERGE RANGES", Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true, Duration: 12500 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4321}, CostKnown: true, CostUSD: 0.0412},
-			{TaskName: "LRU CACHE", Model: "future", DisplayName: "Future Model", Effort: "low", Correct: false, Duration: 2 * time.Minute, Usage: codex.BenchmarkUsage{TotalTokens: 999}, Failure: "wrong result"},
+			{TaskName: "MERGE RANGES", Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true, Duration: 12500 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4321}, UsageKnown: true, CostKnown: true, CostUSD: 0.0412},
+			{TaskName: "LRU CACHE", Model: "future", DisplayName: "Future Model", Effort: "low", Correct: false, Duration: 2 * time.Minute, Usage: codex.BenchmarkUsage{TotalTokens: 999}, UsageKnown: true, Failure: "wrong result"},
 		},
 	}
 	output := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"(B) RUN SELECTED", "MERGE RANGES", "SHOW //", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
+	for _, want := range []string{"(B) RUN SELECTED", "MERGE RANGES", "SHOW //", "HERMETIC STARLARK", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("benchmark view missing %q:\n%s", want, output)
 		}
@@ -62,6 +63,79 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	}
 	if got := lipgloss.Height(output); got != 19 {
 		t.Fatalf("benchmark height = %d, want 19", got)
+	}
+	controls := ansi.Strip(model.renderBenchmarkControls(58, 5, paletteFor(themeHacker)))
+	lines := strings.Split(controls, "\n")
+	selectorLine, runLine := -1, -1
+	for index, line := range lines {
+		if strings.Contains(line, "TASK //") {
+			selectorLine = index
+		}
+		if strings.Contains(line, "(B) RUN SELECTED") {
+			runLine = index
+		}
+	}
+	if selectorLine < 0 || runLine != selectorLine+2 || strings.Trim(lines[selectorLine+1], " │") != "" {
+		t.Fatalf("controls do not contain a blank row between Task and Run:\n%s", controls)
+	}
+}
+
+func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
+	model := Model{benchmarkState: benchmarkFinished}
+	for height := 1; height <= 12; height++ {
+		t.Run(fmt.Sprintf("height-%d", height), func(t *testing.T) {
+			const width = 76
+			output := ansi.Strip(model.renderBenchmarkArea(width, height, paletteFor(themeHacker)))
+			if got := lipgloss.Height(output); got != height {
+				t.Fatalf("benchmark height = %d, want %d:\n%s", got, height, output)
+			}
+			if got := lipgloss.Width(output); got != width {
+				t.Fatalf("benchmark width = %d, want %d:\n%s", got, width, output)
+			}
+			geometry := layoutBenchmarkArea(width, height)
+			if geometry.tableHeight < 3 && strings.Contains(output, "RESULT MATRIX") {
+				t.Fatalf("table rendered in an allocation too short for its frame:\n%s", output)
+			}
+			if height == 4 && !strings.Contains(output, "RUN SELECTED") {
+				t.Fatalf("compact controls dropped an action before their spacer:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestVeryShortBenchmarkAreaExposesNoHiddenMouseTargets(t *testing.T) {
+	for _, height := range []int{8, 9, 10} {
+		model := Model{
+			snapshot: codex.DemoSnapshot(), width: 40, height: height,
+			meterStyle: styleBenchmark,
+		}
+		dashboard := model.dashboardLayout()
+		if dashboard.meterHeight >= 3 {
+			t.Fatalf("test height %d produced meter height %d", height, dashboard.meterHeight)
+		}
+		for y := dashboard.meterY; y < dashboard.footerY; y++ {
+			for x := 0; x < model.width; x++ {
+				if button := model.benchmarkButtonAt(x, y); button != footerButtonNone {
+					t.Fatalf("height %d exposed hidden button %d at %d,%d", height, button, x, y)
+				}
+				if column, ok := model.benchmarkHeaderAt(x, y); ok || column != benchmarkSortNone {
+					t.Fatalf("height %d exposed hidden heading %d at %d,%d", height, column, x, y)
+				}
+			}
+		}
+	}
+}
+
+func TestBenchmarkStatusExplainsUnavailableMeasurements(t *testing.T) {
+	model := Model{
+		benchmarkState: benchmarkFinished,
+		benchmarkResults: []codex.BenchmarkResult{{
+			Correct: true, UsageIssue: "matching usage event was not observed",
+		}},
+	}
+	output := ansi.Strip(model.renderBenchmarkStatus(60, 5, paletteFor(themeHacker)))
+	if !strings.Contains(output, "LAST N/A // matching usage event was not observed") {
+		t.Fatalf("benchmark status did not explain unavailable telemetry:\n%s", output)
 	}
 }
 
@@ -182,10 +256,10 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	}
 	dashboard := model.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
-	columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
+	headerX, headerY := renderedTextCoordinates(t, model, "[MODEL]")
 	mouse := tea.MouseMsg{
-		X:      4 + columns[0].x + 1,
-		Y:      dashboard.meterY + geometry.topHeight + 2,
+		X:      headerX,
+		Y:      headerY,
 		Action: tea.MouseActionMotion,
 	}
 	updated, command := model.Update(mouse)
@@ -215,10 +289,76 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	}
 }
 
+func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) {
+	for _, size := range []struct{ width, height int }{
+		{40, 16}, {40, 24}, {45, 24}, {60, 24}, {80, 24}, {100, 30}, {160, 45},
+	} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			model := Model{
+				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
+				meterStyle: styleBenchmark, benchmarkCombinations: 3,
+			}
+			dashboard := model.dashboardLayout()
+			geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
+			for _, segments := range model.benchmarkVisibleControlLines(max(geometry.controlsWidth-4, 1), geometry.controlsHeight) {
+				for _, segment := range segments {
+					if segment.button == footerButtonNone || !segment.enabled {
+						continue
+					}
+					x, y := renderedTextStart(t, model, segment.text)
+					for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
+						if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
+							t.Errorf("rendered %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+						}
+					}
+				}
+			}
+			if geometry.tableHeight >= 3 {
+				for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
+					if segment.button == footerButtonNone || !segment.enabled {
+						continue
+					}
+					x, y := renderedTextStart(t, model, segment.text)
+					for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
+						if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
+							t.Errorf("rendered matrix filter %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+						}
+					}
+				}
+			}
+
+			if geometry.tableHeight < 3 {
+				if got, ok := model.benchmarkHeaderAt(4, dashboard.meterY+geometry.topHeight+2); ok || got != benchmarkSortNone {
+					t.Errorf("hidden compact table exposed a heading click surface: (%d,%v)", got, ok)
+				}
+				return
+			}
+			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
+			_ = tableTitleX
+			headerY := tableTitleY + 2
+			if geometry.tableHeight == 3 {
+				if got, ok := model.benchmarkHeaderAt(4, headerY); ok || got != benchmarkSortNone {
+					t.Errorf("non-rendered compact heading exposed a click surface: (%d,%v)", got, ok)
+				}
+				return
+			}
+			columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
+			for _, column := range columns {
+				for offset := 0; offset < column.width; offset++ {
+					x := 4 + column.x + offset
+					if got, ok := model.benchmarkHeaderAt(x, headerY); !ok || got != column.sort {
+						t.Errorf("rendered heading %q cell %d at %d,%d hit (%d,%v)", column.title, offset, x, headerY, got, ok)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestBenchmarkSortUsesReasoningOrderAndMetrics(t *testing.T) {
 	results := []codex.BenchmarkResult{
-		{DisplayName: "B", Effort: "xhigh", TaskName: "SHORTEST PATH", Duration: 3 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 300}, CostKnown: true, CostUSD: 0.3},
-		{DisplayName: "A", Effort: "low", TaskName: "LRU CACHE", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, CostKnown: true, CostUSD: 0.1},
+		{DisplayName: "B", Effort: "xhigh", TaskName: "SHORTEST PATH", Duration: 3 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 300}, UsageKnown: true, CostKnown: true, CostUSD: 0.3},
+		{DisplayName: "A", Effort: "low", TaskName: "LRU CACHE", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, UsageKnown: true, CostKnown: true, CostUSD: 0.1},
 		{DisplayName: "C", Effort: "medium", TaskName: "MERGE RANGES", Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 200}},
 	}
 	checks := []struct {
@@ -242,13 +382,28 @@ func TestBenchmarkSortUsesReasoningOrderAndMetrics(t *testing.T) {
 	if !ordered[0].CostKnown || ordered[len(ordered)-1].CostKnown {
 		t.Fatal("descending cost sort did not leave N/A values last")
 	}
+	ordered = sortedBenchmarkResults(results, benchmarkSortTokens, true)
+	if !ordered[0].UsageKnown || ordered[len(ordered)-1].UsageKnown {
+		t.Fatal("descending token sort did not leave N/A values last")
+	}
+}
+
+func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
+	unknown := benchmarkResultValues(codex.BenchmarkResult{})
+	if unknown[5] != "N/A" || unknown[6] != "N/A" {
+		t.Fatalf("unknown measurements = tokens %q, cost %q; want N/A", unknown[5], unknown[6])
+	}
+	observedZero := benchmarkResultValues(codex.BenchmarkResult{UsageKnown: true, CostKnown: true})
+	if observedZero[5] != "0" || observedZero[6] != "~$0.0000" {
+		t.Fatalf("observed zero measurements = tokens %q, cost %q", observedZero[5], observedZero[6])
+	}
 }
 
 func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) {
 	results := []codex.BenchmarkResult{{
 		Model: "gpt-5.6-luna", DisplayName: "GPT-5.6 Luna", Effort: "ultra", TaskName: "SHORTEST PATH",
 		Correct: true, Duration: 12*time.Minute + 34*time.Second,
-		Usage: codex.BenchmarkUsage{TotalTokens: 12_345_678}, CostKnown: true, CostUSD: 12345.6789,
+		Usage: codex.BenchmarkUsage{TotalTokens: 12_345_678}, UsageKnown: true, CostKnown: true, CostUSD: 12345.6789,
 	}}
 	columns := benchmarkTableColumns(96, results)
 	if len(columns) != 7 {
@@ -375,15 +530,35 @@ func benchmarkControlCoordinates(t *testing.T, model Model, target footerButtonI
 	t.Helper()
 	dashboard := model.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
-	for line, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
-		x := 4
+	for _, segments := range model.benchmarkControlLines(max(geometry.controlsWidth-4, 1)) {
 		for _, segment := range segments {
 			if segment.button == target {
-				return x + max(lipgloss.Width(segment.text)/2, 0), dashboard.meterY + line + 2
+				return renderedTextCoordinates(t, model, segment.text)
 			}
-			x += lipgloss.Width(segment.text) + 1
+		}
+	}
+	for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
+		if segment.button == target {
+			return renderedTextCoordinates(t, model, segment.text)
 		}
 	}
 	t.Fatalf("benchmark control %d not found", target)
+	return 0, 0
+}
+
+func renderedTextCoordinates(t *testing.T, model Model, text string) (int, int) {
+	t.Helper()
+	x, y := renderedTextStart(t, model, text)
+	return x + max(lipgloss.Width(text)/2, 0), y
+}
+
+func renderedTextStart(t *testing.T, model Model, text string) (int, int) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+		if byteX := strings.Index(line, text); byteX >= 0 {
+			return lipgloss.Width(line[:byteX]), y
+		}
+	}
+	t.Fatalf("rendered text %q not found", text)
 	return 0, 0
 }

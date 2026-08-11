@@ -207,7 +207,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	for _, test := range []struct {
 		rect monitorRect
 		want footerButtonID
-	}{{geometry.goRect, footerButtonMonitorGo}, {geometry.stopRect, footerButtonMonitorStop}} {
+	}{{geometry.goRect, footerButtonMonitorGo}, {geometry.stopRect, footerButtonNone}} {
 		// Hit an otherwise blank spot inside the large box, not merely its label.
 		x := originX + test.rect.x + 1
 		y := originY + test.rect.y + 1
@@ -215,8 +215,18 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 			t.Errorf("button hit = %d, want %d at %d,%d", got, test.want, x, y)
 		}
 	}
+	model.monitorState = monitorRunning
+	stopX := originX + geometry.stopRect.x + 1
+	stopY := originY + geometry.stopRect.y + 1
 	hoverX := originX + geometry.goRect.x + 1
 	hoverY := originY + geometry.goRect.y + 1
+	if got := model.monitorButtonAt(stopX, stopY); got != footerButtonMonitorStop {
+		t.Errorf("enabled Stop button hit = %d, want %d", got, footerButtonMonitorStop)
+	}
+	if got := model.monitorButtonAt(hoverX, hoverY); got != footerButtonNone {
+		t.Errorf("disabled Start button hit = %d, want none", got)
+	}
+	model.monitorState = monitorIdle
 	updated, command := model.Update(tea.MouseMsg{X: hoverX, Y: hoverY, Action: tea.MouseActionMotion})
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonMonitorGo {
@@ -235,6 +245,40 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorStarting {
 		t.Fatal("clicking the Go box did not start the monitor")
+	}
+}
+
+func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{40, 16}, {40, 24}, {60, 24}, {100, 36}, {160, 45}} {
+		for _, state := range []monitorState{monitorIdle, monitorRunning} {
+			model := Model{
+				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
+				meterStyle: styleMonitor, monitorState: state,
+			}
+			dashboard := model.dashboardLayout()
+			geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+			for _, button := range []struct {
+				rect    monitorRect
+				id      footerButtonID
+				enabled bool
+			}{
+				{geometry.goRect, footerButtonMonitorGo, model.monitorGoEnabled()},
+				{geometry.stopRect, footerButtonMonitorStop, model.monitorStopEnabled()},
+			} {
+				want := footerButtonNone
+				if button.enabled {
+					want = button.id
+				}
+				for localY := button.rect.y; localY < button.rect.y+button.rect.height; localY++ {
+					for localX := button.rect.x; localX < button.rect.x+button.rect.width; localX++ {
+						got := model.monitorButtonAt(2+localX, dashboard.meterY+localY)
+						if got != want {
+							t.Errorf("%dx%d state %d button %d cell %d,%d hit %d, want %d", size.width, size.height, state, button.id, localX, localY, got, want)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 

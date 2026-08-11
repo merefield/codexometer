@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -194,7 +195,7 @@ func newFakeBenchmarkServer(envelopes ...benchmarkEnvelope) (*appServerSession, 
 	requests := &bytes.Buffer{}
 	server := &appServerSession{
 		stdin: nopWriteCloser{requests}, encoder: json.NewEncoder(requests),
-		envelopes:  make(chan benchmarkEnvelope, len(envelopes)+1),
+		envelopes:  make(chan benchmarkEnvelope, len(envelopes)+16),
 		readErrors: make(chan error, 1), done: make(chan struct{}), stderr: &lockedBuffer{},
 	}
 	for _, envelope := range envelopes {
@@ -240,7 +241,7 @@ func TestRunBenchmarkConsumesStreamedResultAndUsage(t *testing.T) {
 	if fatalErr != nil || !result.Correct {
 		t.Fatalf("benchmark result = %#v, fatal error = %v", result, fatalErr)
 	}
-	if result.Usage.TotalTokens != 1200 || !result.CostKnown || result.CostUSD <= 0 {
+	if result.Usage.TotalTokens != 1200 || !result.UsageObserved || !result.UsageKnown || result.UsageSource != BenchmarkUsageCumulative || !result.CostKnown || result.CostUSD <= 0 {
 		t.Fatalf("usage/cost not captured: %#v", result)
 	}
 	if !strings.Contains(requests.String(), `"method":"thread/start"`) || !strings.Contains(requests.String(), `"effort":"high"`) {
@@ -248,6 +249,333 @@ func TestRunBenchmarkConsumesStreamedResultAndUsage(t *testing.T) {
 	}
 	if !strings.Contains(requests.String(), `"sandbox":"read-only"`) {
 		t.Fatalf("thread request did not use the app-server sandbox spelling: %s", requests.String())
+	}
+}
+
+func TestRunBenchmarkFailsClosedWhenUsageIsMissing(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	server, _ := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+		benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "agentMessage", "text": message},
+		})},
+		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		})},
+	)
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr != nil || !result.Correct {
+		t.Fatalf("correct result was affected by missing telemetry: %#v, %v", result, fatalErr)
+	}
+	if result.UsageObserved || result.UsageKnown || result.CostKnown || result.UsageIssue != "matching usage event was not observed" || result.CostIssue != result.UsageIssue {
+		t.Fatalf("missing usage did not fail closed: %#v", result)
+	}
+}
+
+func TestRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"data": []any{map[string]any{
+				"model": "gpt-5.3-codex", "displayName": "GPT-5.3 Codex",
+				"supportedReasoningEfforts": []any{
+					map[string]string{"reasoningEffort": "low"},
+					map[string]string{"reasoningEffort": "high"},
+				},
+			}},
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-low"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-low"}})},
+	)
+	server.turnTimeout = 20 * time.Millisecond
+	server.interruptTimeout = 2 * time.Second
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(4), Result: rawJSON(map[string]any{})}
+		server.envelopes <- benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turnId": "turn-low",
+			"tokenUsage": map[string]any{"total": BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5}},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turn": map[string]any{"id": "turn-low", "status": "interrupted"},
+		})}
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(5), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-high"}, "model": "gpt-5.3-codex",
+		})}
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(6), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-high"}})}
+		server.envelopes <- benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-high", "turnId": "turn-high",
+			"item": map[string]string{"type": "agentMessage", "text": message},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-high", "turn": map[string]any{"id": "turn-high", "status": "completed"},
+		})}
+	}()
+
+	original := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = original })
+
+	var results []BenchmarkResult
+	var final BenchmarkEvent
+	Client{}.RunBenchmarkSuite(context.Background(), []BenchmarkTaskID{BenchmarkMergeRanges}, func(event BenchmarkEvent) {
+		if event.Result != nil {
+			results = append(results, *event.Result)
+		}
+		final = event
+	})
+	if len(results) != 2 {
+		t.Fatalf("suite produced %d results, want 2: %#v", len(results), results)
+	}
+	if results[0].Correct || results[0].Failure != "turn timed out after 20ms" || !results[0].UsageKnown || results[0].Usage.TotalTokens != 55 {
+		t.Fatalf("timed-out result was not retained as a measured failure: %#v", results[0])
+	}
+	if !results[1].Correct || results[1].Effort != "high" {
+		t.Fatalf("suite did not continue to the next combination: %#v", results[1])
+	}
+	if !final.Done || final.Err != nil || final.Completed != 2 || final.Total != 2 {
+		t.Fatalf("suite ended as a global fault: %#v", final)
+	}
+	requestLog := requests.String()
+	if !strings.Contains(requestLog, `"method":"turn/interrupt"`) ||
+		!strings.Contains(requestLog, `"threadId":"thread-low"`) ||
+		!strings.Contains(requestLog, `"turnId":"turn-low"`) {
+		t.Fatalf("timed-out turn was not interrupted: %s", requestLog)
+	}
+}
+
+func TestRunBenchmarkStopsWhenTimedOutTurnCannotBeCleanedUp(t *testing.T) {
+	server, _ := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+	)
+	server.turnTimeout = 10 * time.Millisecond
+	server.interruptTimeout = 20 * time.Millisecond
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr == nil || !errors.Is(fatalErr, context.DeadlineExceeded) {
+		t.Fatalf("failed cleanup error = %v, want deadline exceeded", fatalErr)
+	}
+	if result.Correct || !strings.Contains(result.Failure, "turn timed out after 10ms; cleanup failed") {
+		t.Fatalf("failed cleanup result = %#v", result)
+	}
+}
+
+func TestRunBenchmarkRejectsToolUseAndInvalidatesCost(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	usage := BenchmarkUsage{TotalTokens: 120, InputTokens: 100, OutputTokens: 20}
+	server, _ := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+		benchmarkEnvelope{Method: "item/started", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "commandExecution"},
+		})},
+		benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "agentMessage", "text": message},
+		})},
+		benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "tokenUsage": map[string]any{"total": usage},
+		})},
+		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		})},
+	)
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr != nil || result.Correct || !result.ToolUsed || result.ToolType != "commandExecution" {
+		t.Fatalf("tool protocol violation was not rejected: %#v, %v", result, fatalErr)
+	}
+	if result.Failure != "tool use prohibited: commandExecution" || result.CostKnown || result.CostIssue != result.Failure || !result.UsageKnown {
+		t.Fatalf("tool result accounting is invalid: %#v", result)
+	}
+}
+
+func TestRunBenchmarkPrefersCompleteRawResponseUsage(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	first := BenchmarkUsage{TotalTokens: 110, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10}
+	second := BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5}
+	total := BenchmarkUsage{TotalTokens: 165, InputTokens: 150, CachedInputTokens: 20, OutputTokens: 15}
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+		benchmarkEnvelope{Method: "rawResponse/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "responseId": "response-1", "usage": first,
+		})},
+		benchmarkEnvelope{Method: "rawResponse/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "responseId": "response-2", "usage": second,
+		})},
+		benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "tokenUsage": map[string]any{"total": total},
+		})},
+		benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "agentMessage", "text": message},
+		})},
+		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		})},
+	)
+	server.experimentalRawEvents = true
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr != nil || !result.Correct || !result.UsageKnown || result.UsageSource != BenchmarkUsageRawResponses || result.Usage != total || len(result.ResponseUsage) != 2 {
+		t.Fatalf("raw response usage was not selected: %#v, %v", result, fatalErr)
+	}
+	if !strings.Contains(requests.String(), `"experimentalRawEvents":true`) {
+		t.Fatalf("thread did not request raw events: %s", requests.String())
+	}
+}
+
+func TestRunBenchmarkFallsBackWhenRawEventsAreUnsupported(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	usage := BenchmarkUsage{TotalTokens: 120, InputTokens: 100, OutputTokens: 20}
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Error: &benchmarkRPCError{Code: -32602, Message: "unknown field experimentalRawEvents"}},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})},
+		benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+		benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "tokenUsage": map[string]any{"total": usage},
+		})},
+		benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "agentMessage", "text": message},
+		})},
+		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		})},
+	)
+	server.experimentalRawEvents = true
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "low",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr != nil || !result.Correct || !result.UsageKnown || result.UsageSource != BenchmarkUsageCumulative {
+		t.Fatalf("stable cumulative fallback failed: %#v, %v", result, fatalErr)
+	}
+	if server.experimentalRawEvents || strings.Count(requests.String(), `"experimentalRawEvents":true`) != 1 {
+		t.Fatalf("raw-event compatibility fallback did not disable the field: %s", requests.String())
+	}
+}
+
+func TestBenchmarkTelemetryRejectsInconsistentStreams(t *testing.T) {
+	valid := BenchmarkUsage{TotalTokens: 110, InputTokens: 100, OutputTokens: 10}
+	for _, test := range []struct {
+		name   string
+		record func(*benchmarkTelemetry)
+		want   string
+	}{
+		{name: "negative", record: func(state *benchmarkTelemetry) {
+			state.recordCumulative(BenchmarkUsage{TotalTokens: -1})
+		}, want: "negative"},
+		{name: "invalid breakdown", record: func(state *benchmarkTelemetry) {
+			state.recordCumulative(BenchmarkUsage{TotalTokens: 10, InputTokens: 5, CachedInputTokens: 6, OutputTokens: 5})
+		}, want: "exceed"},
+		{name: "regression", record: func(state *benchmarkTelemetry) {
+			state.recordCumulative(valid)
+			state.recordCumulative(BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5})
+		}, want: "regressed"},
+		{name: "raw mismatch", record: func(state *benchmarkTelemetry) {
+			state.recordRawResponse("response-1", &valid)
+			state.recordCumulative(BenchmarkUsage{TotalTokens: 120, InputTokens: 100, OutputTokens: 20})
+		}, want: "disagree"},
+		{name: "duplicate response", record: func(state *benchmarkTelemetry) {
+			state.recordRawResponse("response-1", nil)
+			state.recordRawResponse("response-1", nil)
+		}, want: "duplicate"},
+		{name: "raw aggregate overflow", record: func(state *benchmarkTelemetry) {
+			maximum := BenchmarkUsage{TotalTokens: math.MaxInt64, InputTokens: math.MaxInt64}
+			state.recordRawResponse("response-1", &maximum)
+			state.recordRawResponse("response-2", &maximum)
+		}, want: "overflowed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := newBenchmarkTelemetry()
+			test.record(state)
+			var result BenchmarkResult
+			state.apply(&result)
+			if result.UsageKnown || !strings.Contains(result.UsageIssue, test.want) {
+				t.Fatalf("inconsistent telemetry did not fail closed: %#v", result)
+			}
+		})
+	}
+}
+
+func TestBenchmarkTelemetryFallsBackWhenRawUsageIsOmitted(t *testing.T) {
+	valid := BenchmarkUsage{TotalTokens: 110, InputTokens: 100, OutputTokens: 10}
+	state := newBenchmarkTelemetry()
+	state.recordRawResponse("response-1", nil)
+	state.recordCumulative(valid)
+	var result BenchmarkResult
+	state.apply(&result)
+	if !result.UsageObserved || !result.UsageKnown || result.UsageSource != BenchmarkUsageCumulative || result.Usage != valid || result.UsageIssue != "" {
+		t.Fatalf("valid cumulative fallback was not used: %#v", result)
+	}
+}
+
+func TestValidateBenchmarkUsageInvariants(t *testing.T) {
+	valid := BenchmarkUsage{
+		TotalTokens: 130, InputTokens: 100, CachedInputTokens: 20,
+		CacheWriteInputTokens: 10, OutputTokens: 30, ReasoningOutputTokens: 15,
+	}
+	if issue := validateBenchmarkUsage(valid); issue != "" {
+		t.Fatalf("valid usage rejected: %s", issue)
+	}
+	for _, mutation := range []func(*BenchmarkUsage){
+		func(usage *BenchmarkUsage) { usage.OutputTokens = -1 },
+		func(usage *BenchmarkUsage) { usage.CachedInputTokens = 95 },
+		func(usage *BenchmarkUsage) { usage.ReasoningOutputTokens = 31 },
+		func(usage *BenchmarkUsage) { usage.TotalTokens++ },
+		func(usage *BenchmarkUsage) {
+			*usage = BenchmarkUsage{
+				TotalTokens: math.MaxInt64, InputTokens: math.MaxInt64,
+				CachedInputTokens: math.MaxInt64, CacheWriteInputTokens: math.MaxInt64,
+			}
+		},
+		func(usage *BenchmarkUsage) {
+			*usage = BenchmarkUsage{TotalTokens: math.MaxInt64, InputTokens: math.MaxInt64, OutputTokens: 1}
+		},
+	} {
+		usage := valid
+		mutation(&usage)
+		if issue := validateBenchmarkUsage(usage); issue == "" {
+			t.Fatalf("invalid usage accepted: %#v", usage)
+		}
+	}
+	invalid := valid
+	invalid.TotalTokens++
+	if _, known, issue := estimateAPICostWithIssue("gpt-5.3-codex", invalid); known || !strings.Contains(issue, "invalid usage") {
+		t.Fatalf("invalid usage received a cost: known=%v issue=%q", known, issue)
+	}
+}
+
+func TestExperimentalAPIUnsupported(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		want bool
+	}{
+		{err: &benchmarkMethodError{code: -32602, message: "invalid params"}, want: true},
+		{err: &benchmarkMethodError{code: -32000, message: "unknown experimentalRawEvents"}, want: true},
+		{err: &benchmarkMethodError{code: -32000, message: "account unavailable"}, want: false},
+		{err: errors.New("transport failed"), want: false},
+	} {
+		if got := experimentalAPIUnsupported(test.err); got != test.want {
+			t.Errorf("experimentalAPIUnsupported(%v) = %v, want %v", test.err, got, test.want)
+		}
 	}
 }
 
@@ -598,7 +926,7 @@ func TestBenchmarkCombinationsPreserveCatalogOrder(t *testing.T) {
 func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 	usage := BenchmarkUsage{
 		InputTokens: 2_000, CachedInputTokens: 500, CacheWriteInputTokens: 100,
-		OutputTokens: 300, ReasoningOutputTokens: 200,
+		OutputTokens: 300, ReasoningOutputTokens: 200, TotalTokens: 2_300,
 	}
 	cost, ok := estimateAPICost("gpt-5.6-sol-2026-08-01", usage)
 	if !ok {
@@ -617,7 +945,7 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 }
 
 func TestEstimateAPICostRequiresPublishedCacheWriteRate(t *testing.T) {
-	usage := BenchmarkUsage{InputTokens: 1_000, CacheWriteInputTokens: 100, OutputTokens: 50}
+	usage := BenchmarkUsage{InputTokens: 1_000, CacheWriteInputTokens: 100, OutputTokens: 50, TotalTokens: 1_050}
 	if _, ok := estimateAPICost("gpt-5.5", usage); ok {
 		t.Fatal("model with no published cache-write rate received a guessed price")
 	}

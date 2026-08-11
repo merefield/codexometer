@@ -77,8 +77,15 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := layoutMonitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	goButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, "(S)TART", footerButtonMonitorGo, m.monitorGoEnabled(), colors)
-	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, "STO(P)", footerButtonMonitorStop, m.monitorStopEnabled(), colors)
+	goLabel, stopLabel := "(S)TART", "STO(P)"
+	if layout.buttonWidths[0] < lipgloss.Width(goLabel)+2 {
+		goLabel = "(S)"
+	}
+	if layout.buttonWidths[1] < lipgloss.Width(stopLabel)+2 {
+		stopLabel = "(P)"
+	}
+	goButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, goLabel, footerButtonMonitorGo, m.monitorGoEnabled(), colors)
+	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, stopLabel, footerButtonMonitorStop, m.monitorStopEnabled(), colors)
 	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
 	graph := m.renderMonitorGraph(layout.width, layout.graphHeight, colors)
@@ -126,25 +133,26 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 			stateColor = colors.danger
 		}
 	}
+	innerWidth := max(width-4, 1)
 	lines := []string{
-		lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state) +
-			lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("  //  "+formatTokens(total)+" TOKENS"),
-		colors.dimmed().Render(ansi.Truncate(hint, max(width-4, 1), "")),
+		ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+
+			lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("  //  "+formatTokens(total)+" TOKENS"), innerWidth, ""),
+		colors.dimmed().Render(ansi.Truncate(hint, innerWidth, "")),
 	}
 	if height >= 6 {
-		lines = append(lines, colors.label().Render(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))))
+		lines = append(lines, colors.label().Render(ansi.Truncate(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
 	}
 	if height >= 8 && !m.monitorStartedAt.IsZero() {
-		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest))))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
 	}
 	if height >= 10 {
-		lines = append(lines, colors.dimmed().Render(fmt.Sprintf("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel())))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel()), innerWidth, "")))
 		last := "--:--"
 		if !m.monitorLastActivity.IsZero() {
 			last = compactDuration(time.Since(m.monitorLastActivity))
 		}
 		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, max(width-4, 1), "")))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
 	return frameSized(width, max(height-2, 1), "SESSION READOUT", strings.Join(lines, "\n"), colors.primary, colors)
 }
@@ -176,7 +184,7 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 
 func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
-	plotHeight := max(height-3, 1)
+	plotHeight := max(height-2, 1)
 	const sampleWidth = 2 // one block-wide bar plus one cell of breathing room
 	samples := m.monitorSamples
 	visibleSamples := max((innerWidth+1)/sampleWidth, 1)
@@ -263,10 +271,10 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	dashboard := m.dashboardLayout()
 	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
-	if area.goRect.contains(localX, localY) {
+	if m.monitorGoEnabled() && area.goRect.contains(localX, localY) {
 		return footerButtonMonitorGo
 	}
-	if area.stopRect.contains(localX, localY) {
+	if m.monitorStopEnabled() && area.stopRect.contains(localX, localY) {
 		return footerButtonMonitorStop
 	}
 	return footerButtonNone

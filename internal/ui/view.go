@@ -162,17 +162,41 @@ func frame(width int, title, body string, color lipgloss.Color, colors palette) 
 }
 
 func frameSized(width, height int, title, body string, color lipgloss.Color, colors palette) string {
+	width = max(width, 1)
 	style := lipgloss.NewStyle().
 		Width(max(width-2, 1)).
 		Padding(0, 1).
 		Border(lipgloss.RoundedBorder()).
+		BorderTop(false).
 		BorderForeground(color).
 		Foreground(colors.primary).
 		Background(colors.background)
 	if height > 0 {
 		style = style.Height(height)
 	}
-	return style.Render("[ " + title + " ]\n" + body)
+	return renderFrameTitle(width, title, color, colors) + "\n" + style.Render(body)
+}
+
+func renderFrameTitle(width int, title string, color lipgloss.Color, colors palette) string {
+	width = max(width, 1)
+	border := lipgloss.RoundedBorder()
+	borderStyle := lipgloss.NewStyle().Foreground(color).Background(colors.background)
+	if width == 1 {
+		return borderStyle.Render(border.Top)
+	}
+	if width == 2 {
+		return borderStyle.Render(border.TopLeft + border.TopRight)
+	}
+
+	title = strings.TrimSpace(ansi.Truncate(title, max(width-6, 0), ""))
+	if title == "" {
+		return borderStyle.Render(border.TopLeft + strings.Repeat(border.Top, width-2) + border.TopRight)
+	}
+	prefix := border.TopLeft + border.Top + " "
+	suffixWidth := max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-1, 1)
+	suffix := " " + strings.Repeat(border.Top, suffixWidth-1) + border.TopRight
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color).Background(colors.background)
+	return borderStyle.Render(prefix) + titleStyle.Render(title) + borderStyle.Render(suffix)
 }
 
 func countdown(at time.Time) string {

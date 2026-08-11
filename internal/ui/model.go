@@ -580,7 +580,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 	const statusHeight = 1
 	const tabsHeight = 1
-	const framedErrorHeight = 4
+	const framedErrorHeight = 3
 	const footerHeight = 2
 	extraHeight := 0
 	if m.err != nil {
