@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// Version is replaced at release time with -ldflags.
-var Version = "dev"
-
 type Snapshot struct {
 	RateLimits            RateLimitSnapshot            `json:"rateLimits"`
 	RateLimitsByLimitID   map[string]RateLimitSnapshot `json:"rateLimitsByLimitId"`

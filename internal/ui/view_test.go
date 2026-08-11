@@ -30,7 +30,11 @@ func TestViewRendersEveryThemeAndStyleWithinStandardTerminal(t *testing.T) {
 			if !strings.Contains(output, style.name()) {
 				t.Errorf("style %d name missing from view", style)
 			}
-			if !strings.Contains(output, "5 HOURS LOOP") || !strings.Contains(output, "1 WEEK LOOP") {
+			if style == styleStopwatch {
+				if !strings.Contains(output, "SESSION READOUT") || !strings.Contains(output, "30 SEC LOCAL TOKEN BARS") {
+					t.Errorf("stopwatch components missing for theme %d", theme)
+				}
+			} else if !strings.Contains(output, "5 HOURS LOOP") || !strings.Contains(output, "1 WEEK LOOP") {
 				t.Errorf("quota windows missing for theme %d style %d", theme, style)
 			}
 			if lines := strings.Count(output, "\n") + 1; lines > 52 {
@@ -84,10 +88,13 @@ func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 }
 
 func TestGaugeGridStyleClassification(t *testing.T) {
-	for style := styleBars; style < styleCount; style++ {
+	for style := styleBars; style < styleStopwatch; style++ {
 		if got := usesMeterGrid(style); !got {
 			t.Errorf("usesMeterGrid(%s) = false, want true", style.name())
 		}
+	}
+	if usesMeterGrid(styleStopwatch) {
+		t.Fatal("stopwatch should use its own full-width layout")
 	}
 }
 

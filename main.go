@@ -6,18 +6,36 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/ui"
+	"github.com/merefield/codexometer/internal/version"
 )
 
-type demoFetcher struct{}
+type demoFetcher struct {
+	mu             sync.Mutex
+	lifetimeTokens int64
+}
 
-func (demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
+func (d *demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 	return codex.DemoSnapshot(), nil
+}
+
+func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.lifetimeTokens == 0 {
+		d.lifetimeTokens = 100_000
+	} else {
+		d.lifetimeTokens += 1_234
+	}
+	return codex.LiveUsageSnapshot{
+		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
+	}, nil
 }
 
 func main() {
@@ -47,14 +65,16 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		demo         = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline       = flags.Bool("inline", false, "render inline instead of using the alternate screen")
 		checkAuth    = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
-		printVersion = flags.Bool("version", false, "print the version and exit")
+		printVersion bool
 	)
+	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
+	flags.BoolVar(&printVersion, "v", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 
-	if *printVersion {
-		fmt.Fprintln(stdout, "codexometer "+codex.Version)
+	if printVersion {
+		fmt.Fprintln(stdout, "codexometer v"+version.Current())
 		return 0
 	}
 	if *checkAuth {
@@ -67,9 +87,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 0
 	}
 
-	var fetcher ui.Fetcher = codex.Client{Binary: *codexPath}
+	client := codex.Client{Binary: *codexPath}
+	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
+		client.LiveUsage = liveUsage
+	}
+	var fetcher ui.Fetcher = client
 	if *demo {
-		fetcher = demoFetcher{}
+		fetcher = &demoFetcher{}
 	}
 
 	if err := deps.startUI(fetcher, *refresh, *inline); err != nil {
