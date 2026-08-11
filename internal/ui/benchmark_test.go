@@ -48,8 +48,8 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 		width: 100, height: 30, meterStyle: styleBenchmark,
 		benchmarkState: benchmarkFinished,
 		benchmarkResults: []codex.BenchmarkResult{
-			{TaskName: "MERGE RANGES", Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true, Duration: 12500 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4321}, CostKnown: true, CostUSD: 0.0412},
-			{TaskName: "LRU CACHE", Model: "future", DisplayName: "Future Model", Effort: "low", Correct: false, Duration: 2 * time.Minute, Usage: codex.BenchmarkUsage{TotalTokens: 999}, Failure: "wrong result"},
+			{TaskName: "MERGE RANGES", Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true, Duration: 12500 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4321}, UsageKnown: true, CostKnown: true, CostUSD: 0.0412},
+			{TaskName: "LRU CACHE", Model: "future", DisplayName: "Future Model", Effort: "low", Correct: false, Duration: 2 * time.Minute, Usage: codex.BenchmarkUsage{TotalTokens: 999}, UsageKnown: true, Failure: "wrong result"},
 		},
 	}
 	output := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
@@ -77,6 +77,19 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	}
 	if selectorLine < 0 || runLine != selectorLine+2 || strings.Trim(lines[selectorLine+1], " │") != "" {
 		t.Fatalf("controls do not contain a blank row between Task and Run:\n%s", controls)
+	}
+}
+
+func TestBenchmarkStatusExplainsUnavailableMeasurements(t *testing.T) {
+	model := Model{
+		benchmarkState: benchmarkFinished,
+		benchmarkResults: []codex.BenchmarkResult{{
+			Correct: true, UsageIssue: "matching usage event was not observed",
+		}},
+	}
+	output := ansi.Strip(model.renderBenchmarkStatus(60, 5, paletteFor(themeHacker)))
+	if !strings.Contains(output, "LAST N/A // matching usage event was not observed") {
+		t.Fatalf("benchmark status did not explain unavailable telemetry:\n%s", output)
 	}
 }
 
@@ -290,8 +303,8 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 
 func TestBenchmarkSortUsesReasoningOrderAndMetrics(t *testing.T) {
 	results := []codex.BenchmarkResult{
-		{DisplayName: "B", Effort: "xhigh", TaskName: "SHORTEST PATH", Duration: 3 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 300}, CostKnown: true, CostUSD: 0.3},
-		{DisplayName: "A", Effort: "low", TaskName: "LRU CACHE", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, CostKnown: true, CostUSD: 0.1},
+		{DisplayName: "B", Effort: "xhigh", TaskName: "SHORTEST PATH", Duration: 3 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 300}, UsageKnown: true, CostKnown: true, CostUSD: 0.3},
+		{DisplayName: "A", Effort: "low", TaskName: "LRU CACHE", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, UsageKnown: true, CostKnown: true, CostUSD: 0.1},
 		{DisplayName: "C", Effort: "medium", TaskName: "MERGE RANGES", Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 200}},
 	}
 	checks := []struct {
@@ -315,13 +328,28 @@ func TestBenchmarkSortUsesReasoningOrderAndMetrics(t *testing.T) {
 	if !ordered[0].CostKnown || ordered[len(ordered)-1].CostKnown {
 		t.Fatal("descending cost sort did not leave N/A values last")
 	}
+	ordered = sortedBenchmarkResults(results, benchmarkSortTokens, true)
+	if !ordered[0].UsageKnown || ordered[len(ordered)-1].UsageKnown {
+		t.Fatal("descending token sort did not leave N/A values last")
+	}
+}
+
+func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
+	unknown := benchmarkResultValues(codex.BenchmarkResult{})
+	if unknown[5] != "N/A" || unknown[6] != "N/A" {
+		t.Fatalf("unknown measurements = tokens %q, cost %q; want N/A", unknown[5], unknown[6])
+	}
+	observedZero := benchmarkResultValues(codex.BenchmarkResult{UsageKnown: true, CostKnown: true})
+	if observedZero[5] != "0" || observedZero[6] != "~$0.0000" {
+		t.Fatalf("observed zero measurements = tokens %q, cost %q", observedZero[5], observedZero[6])
+	}
 }
 
 func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) {
 	results := []codex.BenchmarkResult{{
 		Model: "gpt-5.6-luna", DisplayName: "GPT-5.6 Luna", Effort: "ultra", TaskName: "SHORTEST PATH",
 		Correct: true, Duration: 12*time.Minute + 34*time.Second,
-		Usage: codex.BenchmarkUsage{TotalTokens: 12_345_678}, CostKnown: true, CostUSD: 12345.6789,
+		Usage: codex.BenchmarkUsage{TotalTokens: 12_345_678}, UsageKnown: true, CostKnown: true, CostUSD: 12345.6789,
 	}}
 	columns := benchmarkTableColumns(96, results)
 	if len(columns) != 7 {

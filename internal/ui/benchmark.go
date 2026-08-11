@@ -231,6 +231,8 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 		detail = "PRESS B OR CLICK TO RUN AGAIN"
 		if failure := latestBenchmarkFailure(m.benchmarkResults); failure != "" {
 			detail = "LAST FAIL // " + failure
+		} else if issue := latestBenchmarkMeasurementIssue(m.benchmarkResults); issue != "" {
+			detail = "LAST N/A // " + issue
 		}
 		if m.benchmarkError != "" {
 			state = "BENCHMARK FAULT"
@@ -257,6 +259,18 @@ func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
 	for index := len(results) - 1; index >= 0; index-- {
 		if !results[index].Correct && results[index].Failure != "" {
 			return results[index].Failure
+		}
+	}
+	return ""
+}
+
+func latestBenchmarkMeasurementIssue(results []codex.BenchmarkResult) string {
+	for index := len(results) - 1; index >= 0; index-- {
+		if results[index].UsageIssue != "" {
+			return results[index].UsageIssue
+		}
+		if results[index].CostIssue != "" {
+			return results[index].CostIssue
 		}
 	}
 	return ""
@@ -444,6 +458,10 @@ func benchmarkResultValues(result codex.BenchmarkResult) []string {
 	if result.CostKnown {
 		cost = fmt.Sprintf("~$%.4f", result.CostUSD)
 	}
+	tokens := "N/A"
+	if result.UsageKnown {
+		tokens = formatCompactTokens(result.Usage.TotalTokens)
+	}
 	model := result.DisplayName
 	if result.ActualModel != "" && result.ActualModel != result.Model {
 		model += "→" + result.ActualModel
@@ -454,7 +472,7 @@ func benchmarkResultValues(result codex.BenchmarkResult) []string {
 		result.TaskName,
 		outcome,
 		formatBenchmarkDuration(result.Duration),
-		formatCompactTokens(result.Usage.TotalTokens),
+		tokens,
 		cost,
 	}
 }
@@ -467,6 +485,9 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 	sort.SliceStable(ordered, func(left, right int) bool {
 		if column == benchmarkSortCost && ordered[left].CostKnown != ordered[right].CostKnown {
 			return ordered[left].CostKnown
+		}
+		if column == benchmarkSortTokens && ordered[left].UsageKnown != ordered[right].UsageKnown {
+			return ordered[left].UsageKnown
 		}
 		comparison := compareBenchmarkResults(ordered[left], ordered[right], column)
 		if descending {

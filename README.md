@@ -286,6 +286,7 @@ A row is `PASS` only when all of the following are true:
   64 KiB source and 250,000 execution-step limits;
 - every hand-written and generated case returns the exact reference answer with
   the required type and bounded shape; and
+- the turn does not emit a tool-use item; and
 - none of the supplied inputs are mutated.
 
 Any syntax/runtime error, timeout, malformed response, wrong type or value,
@@ -308,11 +309,24 @@ containment.
 
 #### Interpreting token and API-equivalent figures
 
-Token totals come from the trial thread's live `thread/tokenUsage/updated`
-events. This event is cumulative for a thread; because Codexometer creates a
-fresh ephemeral thread containing one benchmark turn, its final total is used
-as that trial's token count. The event is matched to both the expected thread
-and turn IDs so activity from another trial or Codex session is not included.
+Codexometer asks the local app-server for its opt-in `rawResponse/completed`
+telemetry and, when a complete valid ledger is available, sums the exact usage
+reported for each upstream response in the turn. Because that event is an
+internal experimental Codex interface, older app-servers may reject or omit it;
+Codexometer then falls back automatically to the final cumulative
+`thread/tokenUsage/updated` value for the fresh one-turn thread. Both event types
+are matched to the expected thread and turn IDs so activity from another trial
+or Codex session is not included.
+
+Before displaying either source, Codexometer checks that all token fields are
+non-negative, cached plus cache-write input does not exceed total input,
+reasoning output does not exceed output, total equals input plus output, and
+cumulative updates never regress. When both complete raw-response and cumulative
+telemetry are present, their totals must agree. A valid cumulative total can
+stand in for an omitted raw usage payload; otherwise missing, duplicate, or
+inconsistent telemetry displays `N/A`. It is never silently converted to zero
+or clamped into a plausible value, and the status panel retains the reason.
+
 The displayed total includes all reported input tokens—including cached input
 and cache-write input—and all reported output tokens. Reasoning tokens are
 already included in the output-token total and are not added a second time.
@@ -321,10 +335,11 @@ already included in the output-token total and are not added a second time.
 not a bill, a ChatGPT subscription charge, or a prediction of how much account
 quota the turn consumed. Codexometer separates ordinary input, cached input,
 cache-write input, and output, then applies the per-million-token prices known
-to this Codexometer release. An unknown model, or usage in a token class for
-which no price was published when the release was built, displays `N/A` rather
-than inheriting or guessing a price. Pricing can change after a binary is
-released; consult the
+to this Codexometer release. Usage availability and price availability are
+tracked separately: a valid token total can still have `API EQ` shown as `N/A`
+for an unknown model or a token class whose price was not published when the
+release was built. Codexometer does not inherit or guess such a price. Pricing
+can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values.
 
@@ -338,19 +353,20 @@ they have important limitations:
   later trial may receive cheaper cached input or incur a cache write that an
   otherwise identical trial would not, so observed API-equivalent cost is not
   a cache-neutral ranking.
-- Current costing applies short-context rates to the cumulative trial usage.
-  It does not implement long-context price thresholds or preserve a separate
-  price calculation for every upstream response within a turn.
-- If Codex reroutes a turn, the accumulated usage is priced using the final
-  reported model. A turn that actually spans differently priced models cannot
-  be reconstructed exactly from the cumulative event alone.
-- Benchmark instructions prohibit tool use, but that restriction is not yet
-  verified from the event stream. Any separately billed tool fee would not be
-  represented by the text-token calculation.
-- The current implementation does not distinguish a missing usage event from
-  a genuine all-zero usage report. A zero-token or zero-cost row should therefore
-  be treated as unavailable telemetry, not as evidence that a completed turn
-  was free.
+- Current costing applies short-context rates to the trial's aggregate usage.
+  It does not implement long-context price thresholds. Although supported Codex
+  versions provide per-response usage, the event does not associate a distinct
+  model price with each response.
+- If Codex reroutes a turn, usage is priced using the final reported model. A
+  turn that actually spans differently priced models cannot be reconstructed
+  exactly without a response-to-model association.
+- Tool use is prohibited for these hermetic trials. If a tool-use item is
+  observed, the row is forced to `FAIL` and `API EQ` is `N/A`, even when valid
+  text-token telemetry was also reported.
+- Exact raw-response telemetry is an internal experimental app-server facility
+  and may change independently of Codexometer. The validated cumulative path is
+  retained for compatibility, but it does not preserve a response-by-response
+  ledger.
 - Model-specific Codex instructions and tool descriptions are part of reported
   input usage. That is appropriate when comparing the real Codex experience,
   but it is not a measurement of the challenge prompt in isolation.
@@ -361,16 +377,12 @@ program can still have an unavailable or approximate cost.
 
 #### Future measurement hardening
 
-Future work should make the accounting fail closed: record whether a matching
-usage event was observed, validate that every token field is non-negative and
-internally consistent, and display `N/A` whenever those checks fail. Capturing
-per-response usage would allow long-context thresholds and model reroutes to be
-priced correctly. Tool-call detection should invalidate the cost estimate when
-a separately priced tool is used. Finally, reporting both observed cost and a
-cache-neutral equivalent—or running balanced warm-up and repeated trials—would
-make model/effort comparisons less sensitive to cache order. These changes
-would improve measurement confidence without changing the deterministic
-PASS/FAIL verifier.
+Correct long-context and reroute costing still needs each upstream response to
+be associated with the model and pricing tier that actually served it, including
+the exact threshold semantics. Reporting both observed cost and a cache-neutral
+equivalent—or running balanced warm-up and repeated trials—would also make
+model/effort comparisons less sensitive to cache order. These improvements
+would not change the deterministic PASS/FAIL verifier.
 
 ## Options
 
