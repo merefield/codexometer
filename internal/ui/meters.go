@@ -112,10 +112,21 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 
 	usedText := lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("USED %3d%%", used))
 	freeText := colors.dimmed().Render(fmt.Sprintf("FREE %3d%%", free))
+	if style == styleFuel {
+		usedText = colors.dimmed().Render(fmt.Sprintf("USED %3d%%", used))
+		freeText = lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render(fmt.Sprintf("FREE %3d%%", free))
+	}
 	gap := max(innerWidth-lipgloss.Width(usedText)-lipgloss.Width(freeText), 1)
 	stats := usedText + strings.Repeat(" ", gap) + freeText
+	if style == styleFuel {
+		stats = freeText + strings.Repeat(" ", gap) + usedText
+	}
 	if lipgloss.Width(stats) > innerWidth {
-		stats = usedText
+		if style == styleFuel {
+			stats = freeText
+		} else {
+			stats = usedText
+		}
 	}
 
 	reset := "RESET DATA UNAVAILABLE"

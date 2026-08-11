@@ -173,6 +173,34 @@ func TestFuelTankIsReverseGaugeWithCorrectEndpoints(t *testing.T) {
 	}
 }
 
+func TestFuelTankStatsFollowReverseGaugeDirection(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	meter := codex.Meter{
+		Bucket: "codex",
+		Name:   "1 HOUR",
+		Window: codex.Window{UsedPercent: 25},
+	}
+	rendered := renderMeter(60, meter, styleFuel, colors)
+	wantFree := lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("FREE  75%")
+	wantUsed := colors.dimmed().Render("USED  25%")
+	if !strings.Contains(rendered, wantFree) || !strings.Contains(rendered, wantUsed) {
+		t.Fatalf("fuel stats do not highlight free and dim used: %q", rendered)
+	}
+	output := ansi.Strip(rendered)
+	stats := ""
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "FREE  75%") {
+			stats = line
+			break
+		}
+	}
+	freeAt := strings.Index(stats, "FREE  75%")
+	usedAt := strings.Index(stats, "USED  25%")
+	if freeAt < 0 || usedAt < 0 || freeAt >= usedAt {
+		t.Fatalf("fuel stats do not show free on the left and used on the right: %q", stats)
+	}
+}
+
 func TestConsumptionPaceGaugeUsesSignedHorizontalAxis(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	positive := ansi.Strip(renderConsumptionPaceSized(41, 4, 25, true, colors))
