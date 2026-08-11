@@ -64,6 +64,20 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	if got := lipgloss.Height(output); got != 19 {
 		t.Fatalf("benchmark height = %d, want 19", got)
 	}
+	controls := ansi.Strip(model.renderBenchmarkControls(58, 5, paletteFor(themeHacker)))
+	lines := strings.Split(controls, "\n")
+	selectorLine, runLine := -1, -1
+	for index, line := range lines {
+		if strings.Contains(line, "TASK //") {
+			selectorLine = index
+		}
+		if strings.Contains(line, "(B) RUN SELECTED") {
+			runLine = index
+		}
+	}
+	if selectorLine < 0 || runLine != selectorLine+2 || strings.Trim(lines[selectorLine+1], " │") != "" {
+		t.Fatalf("controls do not contain a blank row between Task and Run:\n%s", controls)
+	}
 }
 
 func TestBenchmarkHotkeyRunsSuiteAndCollectsEvents(t *testing.T) {
@@ -255,6 +269,12 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
 			_ = tableTitleX
 			headerY := tableTitleY + 2
+			if geometry.tableHeight <= 3 {
+				if got, ok := model.benchmarkHeaderAt(4, headerY); ok || got != benchmarkSortNone {
+					t.Errorf("non-rendered compact heading exposed a click surface: (%d,%v)", got, ok)
+				}
+				return
+			}
 			columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
 			for _, column := range columns {
 				for offset := 0; offset < column.width; offset++ {

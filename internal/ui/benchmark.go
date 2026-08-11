@@ -64,9 +64,9 @@ func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 	// longer true, stack it below the controls instead of letting Lip Gloss grow
 	// the row beyond the terminal width.
 	if statusWidth < 12 {
-		controlsHeight := min(4, height)
+		controlsHeight := min(5, height)
 		statusHeight := 0
-		if height-controlsHeight >= 9 {
+		if height-controlsHeight >= 10 {
 			statusHeight = 5
 		}
 		return benchmarkGeometry{
@@ -178,7 +178,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: !running && len(tasks) > 0},
 		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
 	}
-	return [][]benchmarkControlSegment{selector, run}
+	return [][]benchmarkControlSegment{selector, nil, run}
 }
 
 func (m Model) benchmarkFilterLine(width int) []benchmarkControlSegment {
@@ -617,6 +617,9 @@ func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
 	}
 	dashboard := m.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
+	if geometry.tableHeight <= 3 {
+		return benchmarkSortNone, false
+	}
 	tableY := dashboard.meterY + geometry.topHeight
 	if y != tableY+2 {
 		return benchmarkSortNone, false
