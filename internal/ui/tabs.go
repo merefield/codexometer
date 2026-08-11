@@ -14,31 +14,37 @@ type styleTab struct {
 }
 
 func styleTabLayout(width int, recording bool) ([]styleTab, string) {
-	stopwatchFull := "╭ STOPWATCH ╮"
-	stopwatchCompact := "╭TIMER╮"
-	stopwatchMinimal := "[S]"
-	microStopwatch := "S"
+	monitorFull := "╭ MONITOR ╮"
+	monitorCompact := "╭MON╮"
+	monitorMinimal := "[M]"
+	microMonitor := "M"
 	if recording {
-		stopwatchFull = "╭ STOPWATCH ●╮"
-		stopwatchCompact = "╭TIMER●╮"
-		stopwatchMinimal = "[S●]"
-		microStopwatch = "●"
+		monitorFull = "╭ MONITOR ●╮"
+		monitorCompact = "╭MON●╮"
+		monitorMinimal = "[M●]"
+		microMonitor = "●"
 	}
 	tiers := [][]string{
-		{"╭ BARS ╮", stopwatchFull, "╭ PIE ╮", "╭ CONSUMPTION PACE ╮", "╭ FUEL TANK ╮"},
-		{"╭BAR╮", stopwatchCompact, "╭PIE╮", "╭PACE╮", "╭FUEL╮"},
-		{"[B]", stopwatchMinimal, "[P]", "[C]", "[F]"},
-		{"B", microStopwatch, "P", "C", "F"},
+		{"╭ BARS ╮", monitorFull, "╭ PIE ╮", "╭ CONSUMPTION PACE ╮", "╭ FUEL TANK ╮", "╭ BENCHMARK ╮"},
+		{"╭BAR╮", monitorCompact, "╭PIE╮", "╭PACE╮", "╭FUEL╮", "╭TEST╮"},
+		{"[B]", monitorMinimal, "[P]", "[C]", "[F]", "[X]"},
+		{"B", microMonitor, "P", "C", "F", "X"},
 	}
-	separator := " "
+	separator := ""
 	labels := tiers[len(tiers)-1]
 	for _, candidate := range tiers {
+		candidateSeparator := " "
 		total := len(candidate) - 1
 		for _, label := range candidate {
 			total += lipgloss.Width(label)
 		}
+		if total > width {
+			total -= len(candidate) - 1
+			candidateSeparator = ""
+		}
 		if total <= width {
 			labels = candidate
+			separator = candidateSeparator
 			break
 		}
 	}
@@ -57,7 +63,7 @@ func styleTabLayout(width int, recording bool) ([]styleTab, string) {
 }
 
 func (m Model) renderStyleTabs(width int, colors palette) string {
-	recording := m.stopwatchState == stopwatchRunning
+	recording := m.monitorState == monitorRunning
 	tabs, separator := styleTabLayout(width, recording)
 	parts := make([]string, 0, len(tabs))
 	used := 0
@@ -80,7 +86,7 @@ func (m Model) renderStyleTabs(width int, colors palette) string {
 			foreground, background, bold = colors.background, colors.accent, true
 		}
 		base := lipgloss.NewStyle().Foreground(foreground).Background(background).Bold(bold)
-		parts = append(parts, renderStyleTabLabel(tab.label, base, background, recording && tab.style == styleStopwatch, m.phase, colors))
+		parts = append(parts, renderStyleTabLabel(tab.label, base, background, recording && tab.style == styleMonitor, m.phase, colors))
 		used += tab.width
 	}
 	if len(parts) > 1 {
@@ -115,7 +121,7 @@ func (m Model) styleTabAt(x, y int) (meterStyleID, bool) {
 		return styleBars, false
 	}
 	localX := x - 2
-	tabs, _ := styleTabLayout(layout.contentWidth, m.stopwatchState == stopwatchRunning)
+	tabs, _ := styleTabLayout(layout.contentWidth, m.monitorState == monitorRunning)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.style, true

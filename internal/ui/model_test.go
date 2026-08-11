@@ -41,7 +41,7 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 
 func TestTabCyclesStylesAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
-	for want := styleStopwatch; want < styleCount; want++ {
+	for want := styleMonitor; want < styleCount; want++ {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 		model = updated.(Model)
 		if model.meterStyle != want {
@@ -55,8 +55,8 @@ func TestTabCyclesStylesAndShiftTabMovesBack(t *testing.T) {
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	model = updated.(Model)
-	if model.meterStyle != styleFuel {
-		t.Fatalf("reverse style navigation got %d, want %d", model.meterStyle, styleFuel)
+	if model.meterStyle != styleBenchmark {
+		t.Fatalf("reverse style navigation got %d, want %d", model.meterStyle, styleBenchmark)
 	}
 }
 
@@ -203,7 +203,7 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 		{name: "standard", width: 80, height: 24},
 		{name: "large error", width: 120, height: 40, withError: true},
 		{name: "empty quota", width: 80, height: 24, empty: true},
-		{name: "empty stopwatch", width: 80, height: 24, empty: true, style: styleStopwatch},
+		{name: "empty monitor", width: 80, height: 24, empty: true, style: styleMonitor},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			model := New(stubFetcher{snapshot: codex.DemoSnapshot()}, time.Minute)
