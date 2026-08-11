@@ -141,12 +141,12 @@ func TestBenchmarkTableClipsOlderRows(t *testing.T) {
 		})
 	}
 	output := ansi.Strip(model.renderBenchmarkTable(70, 8, paletteFor(themeBlueSteel)))
-	if !strings.Contains(output, "ROWS 18-20/20") || lipgloss.Height(output) != 8 {
+	if !strings.Contains(output, "ROWS 19-20/20") || lipgloss.Height(output) != 8 {
 		t.Fatalf("clipped table is invalid:\n%s", output)
 	}
 	model.benchmarkScroll = 4
 	output = ansi.Strip(model.renderBenchmarkTable(70, 8, paletteFor(themeBlueSteel)))
-	if !strings.Contains(output, "ROWS 14-16/20") {
+	if !strings.Contains(output, "ROWS 15-16/20") {
 		t.Fatalf("scrolled table did not expose older rows:\n%s", output)
 	}
 }
@@ -240,10 +240,21 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 					}
 				}
 			}
+			for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
+				if segment.button == footerButtonNone || !segment.enabled {
+					continue
+				}
+				x, y := renderedTextStart(t, model, segment.text)
+				for offset := 0; offset < lipgloss.Width(segment.text); offset++ {
+					if got := model.benchmarkButtonAt(x+offset, y); got != segment.button {
+						t.Errorf("rendered matrix filter %q cell %d hit button %d, want %d", segment.text, offset, got, segment.button)
+					}
+				}
+			}
 
 			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
 			_ = tableTitleX
-			headerY := tableTitleY + 1
+			headerY := tableTitleY + 2
 			columns := benchmarkTableColumns(max(dashboard.contentWidth-4, 1), model.benchmarkResults)
 			for _, column := range columns {
 				for offset := 0; offset < column.width; offset++ {
@@ -422,6 +433,11 @@ func benchmarkControlCoordinates(t *testing.T, model Model, target footerButtonI
 			if segment.button == target {
 				return renderedTextCoordinates(t, model, segment.text)
 			}
+		}
+	}
+	for _, segment := range model.benchmarkFilterLine(max(dashboard.contentWidth-4, 1)) {
+		if segment.button == target {
+			return renderedTextCoordinates(t, model, segment.text)
 		}
 	}
 	t.Fatalf("benchmark control %d not found", target)

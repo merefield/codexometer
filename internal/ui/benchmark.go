@@ -55,20 +55,19 @@ type benchmarkControlSegment struct {
 func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
-	topHeight := min(max(height/3, 7), 9)
-	if height < 8 {
-		topHeight = max(height/2, 2)
-	}
+	// Controls and status each contain two useful rows. Keep their shared strip
+	// tight and give the result matrix the remaining vertical space.
+	topHeight := min(4, height)
 	controlsWidth := min(max(width*3/5, 38), max(width-1, 1))
 	statusWidth := max(width-controlsWidth-1, 1)
 	// A framed status panel needs enough room for useful content. Once that is no
 	// longer true, stack it below the controls instead of letting Lip Gloss grow
 	// the row beyond the terminal width.
 	if statusWidth < 12 {
-		controlsHeight := min(5, height)
+		controlsHeight := min(4, height)
 		statusHeight := 0
-		if height-controlsHeight >= 6 {
-			statusHeight = min(4, height-controlsHeight-3)
+		if height-controlsHeight >= 8 {
+			statusHeight = 4
 		}
 		return benchmarkGeometry{
 			width: width, height: height, topHeight: controlsHeight + statusHeight,
@@ -107,35 +106,39 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 
 func (m Model) renderBenchmarkControls(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
-	lines := make([]string, 0, 3)
+	lines := make([]string, 0, 2)
 	for _, segments := range m.benchmarkControlLines(innerWidth) {
-		parts := make([]string, 0, len(segments))
-		used := 0
-		for _, segment := range segments {
-			style := colors.dimmed()
-			if segment.button == footerButtonNone {
-				style = lipgloss.NewStyle().Foreground(colors.primary)
-			} else if segment.enabled {
-				style = lipgloss.NewStyle().Foreground(colors.primary)
-				if m.hoveredButton == segment.button {
-					style = style.Bold(true).Foreground(colors.accent)
-				}
-				if m.flashedButton == segment.button {
-					style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
-				}
-			}
-			if segment.active {
-				style = lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.primary)
-			}
-			parts = append(parts, style.Render(segment.text))
-			used += lipgloss.Width(segment.text)
-		}
-		if len(parts) > 1 {
-			used += len(parts) - 1
-		}
-		lines = append(lines, strings.Join(parts, " ")+strings.Repeat(" ", max(innerWidth-used, 0)))
+		lines = append(lines, m.renderBenchmarkSegments(segments, innerWidth, colors))
 	}
 	return frameSized(width, max(height-2, 1), "BENCHMARK CONTROLS", strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func (m Model) renderBenchmarkSegments(segments []benchmarkControlSegment, width int, colors palette) string {
+	parts := make([]string, 0, len(segments))
+	used := 0
+	for _, segment := range segments {
+		style := colors.dimmed()
+		if segment.button == footerButtonNone {
+			style = lipgloss.NewStyle().Foreground(colors.primary)
+		} else if segment.enabled {
+			style = lipgloss.NewStyle().Foreground(colors.primary)
+			if m.hoveredButton == segment.button {
+				style = style.Bold(true).Foreground(colors.accent)
+			}
+			if m.flashedButton == segment.button {
+				style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
+			}
+		}
+		if segment.active {
+			style = lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.primary)
+		}
+		parts = append(parts, style.Render(segment.text))
+		used += lipgloss.Width(segment.text)
+	}
+	if len(parts) > 1 {
+		used += len(parts) - 1
+	}
+	return strings.Join(parts, " ") + strings.Repeat(" ", max(width-used, 0))
 }
 
 func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
@@ -175,6 +178,10 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: !running && len(tasks) > 0},
 		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
 	}
+	return [][]benchmarkControlSegment{selector, run}
+}
+
+func (m Model) benchmarkFilterLine(width int) []benchmarkControlSegment {
 	filter := []benchmarkControlSegment{
 		{text: "SHOW //", enabled: true},
 		{text: "[ ALL ]", button: footerButtonBenchmarkFilterAll, enabled: true, active: m.benchmarkFilter == benchmarkFilterAll},
@@ -196,7 +203,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 			{text: "[FAIL]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
 		}
 	}
-	return [][]benchmarkControlSegment{selector, run, filter}
+	return filter
 }
 
 func benchmarkRunAllAvailable(running bool, combinations, taskCount int) bool {
@@ -261,8 +268,11 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
 	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
 	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending))
-	lines := []string{m.renderBenchmarkHeader(columns, colors)}
+	lines := []string{m.renderBenchmarkSegments(m.benchmarkFilterLine(innerWidth), innerWidth, colors)}
 	if bodyHeight > 1 {
+		lines = append(lines, m.renderBenchmarkHeader(columns, colors))
+	}
+	if bodyHeight > 2 {
 		lines = append(lines, colors.dimmed().Render(strings.Repeat("─", innerWidth)))
 	}
 	available := max(bodyHeight-len(lines), 0)
@@ -573,21 +583,30 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	dashboard := m.dashboardLayout()
 	layout := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
-	if localX < 0 || localX >= layout.controlsWidth {
+	if localX < 0 {
 		return footerButtonNone
 	}
-	for line, segments := range m.benchmarkControlLines(max(layout.controlsWidth-4, 1)) {
-		if localY != line+1 {
-			continue
-		}
-		segmentX := 2
-		for _, segment := range segments {
-			segmentWidth := lipgloss.Width(segment.text)
-			if segment.button != footerButtonNone && segment.enabled && localX >= segmentX && localX < segmentX+segmentWidth {
-				return segment.button
+	if localX < layout.controlsWidth {
+		for line, segments := range m.benchmarkControlLines(max(layout.controlsWidth-4, 1)) {
+			if localY == line+1 {
+				return benchmarkSegmentButtonAt(localX, segments)
 			}
-			segmentX += segmentWidth + 1
 		}
+	}
+	if localX < layout.width && localY == layout.topHeight+1 {
+		return benchmarkSegmentButtonAt(localX, m.benchmarkFilterLine(max(layout.width-4, 1)))
+	}
+	return footerButtonNone
+}
+
+func benchmarkSegmentButtonAt(localX int, segments []benchmarkControlSegment) footerButtonID {
+	segmentX := 2
+	for _, segment := range segments {
+		segmentWidth := lipgloss.Width(segment.text)
+		if segment.button != footerButtonNone && segment.enabled && localX >= segmentX && localX < segmentX+segmentWidth {
+			return segment.button
+		}
+		segmentX += segmentWidth + 1
 	}
 	return footerButtonNone
 }
@@ -599,7 +618,7 @@ func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
 	dashboard := m.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
 	tableY := dashboard.meterY + geometry.topHeight
-	if y != tableY+1 {
+	if y != tableY+2 {
 		return benchmarkSortNone, false
 	}
 	localX := x - 4
