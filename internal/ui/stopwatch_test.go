@@ -195,19 +195,19 @@ func TestStopwatchLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		meterStyle: styleStopwatch, stopwatchState: stopwatchIdle,
 	}
 	colors := paletteFor(model.theme)
-	contentWidth := model.contentWidth()
-	contentHeight := model.height - 2
-	header := renderHeader(contentWidth, model.phase, colors)
-	status := model.renderStatus(contentWidth, colors)
-	footer := model.renderFooter(contentWidth, colors)
-	area := model.renderStopwatchArea(contentWidth, contentHeight-lipgloss.Height(header)-lipgloss.Height(status)-lipgloss.Height(footer), colors)
+	dashboard := model.dashboardLayout()
+	geometry := layoutStopwatchArea(dashboard.contentWidth, dashboard.meterHeight)
+	area := model.renderStopwatchArea(dashboard.contentWidth, dashboard.meterHeight, colors)
+	if area.goRect != geometry.goRect || area.stopRect != geometry.stopRect {
+		t.Fatalf("rendered controls diverged from pure layout: rendered=%#v layout=%#v", area, geometry)
+	}
 	originX := 2
-	originY := 1 + lipgloss.Height(header) + lipgloss.Height(status)
+	originY := dashboard.meterY
 
 	for _, test := range []struct {
 		rect stopwatchRect
 		want footerButtonID
-	}{{area.goRect, footerButtonStopwatchGo}, {area.stopRect, footerButtonStopwatchStop}} {
+	}{{geometry.goRect, footerButtonStopwatchGo}, {geometry.stopRect, footerButtonStopwatchStop}} {
 		// Hit an otherwise blank spot inside the large box, not merely its label.
 		x := originX + test.rect.x + 1
 		y := originY + test.rect.y + 1
@@ -215,8 +215,8 @@ func TestStopwatchLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 			t.Errorf("button hit = %d, want %d at %d,%d", got, test.want, x, y)
 		}
 	}
-	hoverX := originX + area.goRect.x + 1
-	hoverY := originY + area.goRect.y + 1
+	hoverX := originX + geometry.goRect.x + 1
+	hoverY := originY + geometry.goRect.y + 1
 	updated, command := model.Update(tea.MouseMsg{X: hoverX, Y: hoverY, Action: tea.MouseActionMotion})
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonStopwatchGo {
@@ -229,7 +229,7 @@ func TestStopwatchLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	}
 
 	updated, command = model.Update(tea.MouseMsg{
-		X: originX + area.goRect.x + 1, Y: originY + area.goRect.y + 1,
+		X: originX + geometry.goRect.x + 1, Y: originY + geometry.goRect.y + 1,
 		Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
 	})
 	model = updated.(Model)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -282,8 +281,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 	if x < 0 || y < 0 {
 		return footerButtonNone
 	}
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
-	if y >= len(lines) {
+	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
 	if m.meterStyle == styleStopwatch {
@@ -291,14 +289,66 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 			return button
 		}
 	}
-	buttons, _ := footerButtonLayout(m.contentWidth())
+	layout := m.dashboardLayout()
+	if y != layout.footerY+1 {
+		return footerButtonNone
+	}
+	localX := x - 2
+	buttons, separator := footerButtonLayout(layout.contentWidth)
+	buttonX := 0
 	for _, button := range buttons {
-		start := strings.Index(lines[y], button.label)
-		if start >= 0 && x >= start && x < start+len(button.label) {
+		if localX >= buttonX && localX < buttonX+len(button.label) {
 			return button.id
 		}
+		buttonX += len(button.label) + len(separator)
 	}
 	return footerButtonNone
+}
+
+type dashboardGeometry struct {
+	contentWidth int
+	meterHeight  int
+	meterY       int
+	footerY      int
+}
+
+func (m Model) dashboardLayout() dashboardGeometry {
+	width := m.width
+	if width == 0 {
+		width = 80
+	}
+	height := m.height
+	if height == 0 {
+		height = 24
+	}
+	contentWidth := max(width-4, 1)
+	contentHeight := max(height-2, 1)
+	headerHeight := 3
+	if contentWidth < 64 {
+		headerHeight = 2
+	}
+	const statusHeight = 1
+	const framedErrorHeight = 4
+	const footerHeight = 2
+	extraHeight := 0
+	if m.err != nil {
+		extraHeight += framedErrorHeight
+	}
+	if len(m.snapshot.Meters()) == 0 {
+		extraHeight += framedErrorHeight
+	}
+	meterY := 1 + headerHeight + statusHeight + extraHeight
+	meterHeight := max(contentHeight-headerHeight-statusHeight-extraHeight-footerHeight, 1)
+	footerY := meterY
+	if m.meterStyle == styleStopwatch || len(m.snapshot.Meters()) > 0 {
+		footerY += meterHeight
+	}
+	return dashboardGeometry{
+		contentWidth: contentWidth,
+		meterHeight:  meterHeight,
+		meterY:       meterY,
+		footerY:      footerY,
+	}
 }
 
 func (m Model) contentWidth() int {

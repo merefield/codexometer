@@ -13,7 +13,12 @@ import (
 )
 
 func usesMeterGrid(style meterStyleID) bool {
-	return style >= styleBars && style < styleStopwatch
+	switch style {
+	case styleBars, stylePie, styleConsumptionPace, styleFuel:
+		return true
+	default:
+		return false
+	}
 }
 
 func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID, colors palette) string {

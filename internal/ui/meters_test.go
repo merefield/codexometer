@@ -12,6 +12,8 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
+var quotaMeterStyles = []meterStyleID{styleBars, stylePie, styleConsumptionPace, styleFuel}
+
 func TestEveryMeterStyleHasDistinctiveOutput(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	tests := []struct {
@@ -33,7 +35,7 @@ func TestEveryMeterStyleHasDistinctiveOutput(t *testing.T) {
 
 func TestEveryMeterStyleUsesAllocatedRectangle(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	for style := styleBars; style < styleStopwatch; style++ {
+	for _, style := range quotaMeterStyles {
 		output := renderVisualizationSized(50, 12, 62, style, colors.primary, colors)
 		if got := lipgloss.Width(output); got > 50 {
 			t.Errorf("%s width = %d, exceeds allocation 50", style.name(), got)
@@ -53,7 +55,7 @@ func TestEveryStyleIncludesResetCycleGauge(t *testing.T) {
 		Name:   "1 HOUR",
 		Window: codex.Window{UsedPercent: 40, WindowDurationMins: &duration, ResetsAt: &reset},
 	}
-	for style := styleBars; style < styleStopwatch; style++ {
+	for _, style := range quotaMeterStyles {
 		output := ansi.Strip(renderMeterArea(80, 18, meter, style, colors))
 		if !strings.Contains(output, "RESET CYCLE  50%") {
 			t.Errorf("%s missing reset-cycle comparison gauge:\n%s", style.name(), output)

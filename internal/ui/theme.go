@@ -21,10 +21,10 @@ type meterStyleID int
 
 const (
 	styleBars meterStyleID = iota
+	styleStopwatch
 	stylePie
 	styleConsumptionPace
 	styleFuel
-	styleStopwatch
 	styleCount
 )
 
@@ -35,10 +35,10 @@ func (s meterStyleID) next() meterStyleID {
 func (s meterStyleID) name() string {
 	return [...]string{
 		"BARS",
+		"STOPWATCH",
 		"PIE",
 		"CONSUMPTION PACE",
 		"FUEL TANK",
-		"STOPWATCH",
 	}[s]
 }
 

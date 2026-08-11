@@ -73,6 +73,7 @@ func TestLiveUsageReaderHandlesNewOldAndResetSessions(t *testing.T) {
 
 	newPath := testRolloutPath(t, home, now.Add(2*time.Second), "new")
 	writeRollout(t, newPath, tokenCountLine(now.Add(2*time.Second), 40)+"\n")
+	reader.lastDiscovery = time.Time{}
 	usage, err := reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.TotalTokens != 40 {
 		t.Fatalf("new session usage = %#v, %v; want 40", usage, err)
@@ -80,6 +81,7 @@ func TestLiveUsageReaderHandlesNewOldAndResetSessions(t *testing.T) {
 
 	oldPath := testRolloutPath(t, home, now.Add(-2*time.Hour), "resumed")
 	writeRollout(t, oldPath, tokenCountLine(now.Add(-2*time.Hour), 900)+"\n")
+	reader.lastDiscovery = time.Time{}
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.TotalTokens != 40 {
 		t.Fatalf("late-discovered old baseline counted historical usage: %#v, %v", usage, err)
@@ -95,6 +97,37 @@ func TestLiveUsageReaderHandlesNewOldAndResetSessions(t *testing.T) {
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.TotalTokens != 90 {
 		t.Fatalf("counter reset was mishandled: %#v, %v", usage, err)
+	}
+}
+
+func TestLiveUsageReaderThrottlesDiscoveryButConsumesKnownFiles(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	knownPath := testRolloutPath(t, home, now.Add(-time.Hour), "known-throttle")
+	writeRollout(t, knownPath, tokenCountLine(now.Add(-time.Hour), 100)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	appendRollout(t, knownPath, tokenCountLine(now, 150)+"\n")
+	newPath := testRolloutPath(t, home, now.Add(time.Second), "new-throttle")
+	writeRollout(t, newPath, tokenCountLine(now.Add(time.Second), 40)+"\n")
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.TotalTokens != 50 {
+		t.Fatalf("known cursor was not consumed independently of discovery: %#v, %v", usage, err)
+	}
+	if _, exists := reader.files[newPath]; exists {
+		t.Fatal("new rollout was discovered before the discovery interval elapsed")
+	}
+
+	reader.lastDiscovery = time.Now().Add(-discoveryEvery)
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.TotalTokens != 90 {
+		t.Fatalf("due discovery did not add new rollout usage: %#v, %v", usage, err)
 	}
 }
 

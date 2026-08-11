@@ -28,7 +28,19 @@ type stopwatchView struct {
 	stopRect stopwatchRect
 }
 
-func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchView {
+type stopwatchGeometry struct {
+	width        int
+	height       int
+	gap          int
+	topHeight    int
+	graphHeight  int
+	readoutWidth int
+	buttonWidths [2]int
+	goRect       stopwatchRect
+	stopRect     stopwatchRect
+}
+
+func layoutStopwatchArea(width, height int) stopwatchGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
@@ -45,28 +57,38 @@ func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchV
 		readoutWidth = max(width-controlsWidth-gap, 1)
 	}
 	buttonWidths := distributeSpace(max(controlsWidth-gap, 2), 2)
+	goX := readoutWidth + gap
+	return stopwatchGeometry{
+		width:        width,
+		height:       height,
+		gap:          gap,
+		topHeight:    topHeight,
+		graphHeight:  graphHeight,
+		readoutWidth: readoutWidth,
+		buttonWidths: [2]int{buttonWidths[0], buttonWidths[1]},
+		goRect:       stopwatchRect{x: goX, width: buttonWidths[0], height: topHeight},
+		stopRect: stopwatchRect{
+			x: goX + buttonWidths[0] + gap, width: buttonWidths[1], height: topHeight,
+		},
+	}
+}
 
-	readout := m.renderStopwatchReadout(readoutWidth, topHeight, colors)
-	goButton := m.renderStopwatchButton(buttonWidths[0], topHeight, "(G)O", footerButtonStopwatchGo, m.stopwatchGoEnabled(), colors)
-	stopButton := m.renderStopwatchButton(buttonWidths[1], topHeight, "STO(P)", footerButtonStopwatchStop, m.stopwatchStopEnabled(), colors)
-	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", gap), stopButton)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", gap), controls)
-	graph := m.renderStopwatchGraph(width, graphHeight, colors)
-	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", gap-1)+graph)
-	if padding := height - lipgloss.Height(view); padding > 0 {
+func (m Model) renderStopwatchArea(width, height int, colors palette) stopwatchView {
+	layout := layoutStopwatchArea(width, height)
+
+	readout := m.renderStopwatchReadout(layout.readoutWidth, layout.topHeight, colors)
+	goButton := m.renderStopwatchButton(layout.buttonWidths[0], layout.topHeight, "(G)O", footerButtonStopwatchGo, m.stopwatchGoEnabled(), colors)
+	stopButton := m.renderStopwatchButton(layout.buttonWidths[1], layout.topHeight, "STO(P)", footerButtonStopwatchStop, m.stopwatchStopEnabled(), colors)
+	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
+	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
+	graph := m.renderStopwatchGraph(layout.width, layout.graphHeight, colors)
+	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
+	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
 	}
 
-	goX := lipgloss.Width(readout) + gap
 	return stopwatchView{
-		view: view,
-		goRect: stopwatchRect{
-			x: goX, y: 0, width: lipgloss.Width(goButton), height: lipgloss.Height(goButton),
-		},
-		stopRect: stopwatchRect{
-			x: goX + lipgloss.Width(goButton) + gap,
-			y: 0, width: lipgloss.Width(stopButton), height: lipgloss.Height(stopButton),
-		},
+		view: view, goRect: layout.goRect, stopRect: layout.stopRect,
 	}
 }
 
@@ -238,35 +260,9 @@ func (m Model) stopwatchButtonAt(x, y int) footerButtonID {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
-	width := m.width
-	if width == 0 {
-		width = 80
-	}
-	height := m.height
-	if height == 0 {
-		height = 24
-	}
-	contentWidth := max(width-4, 1)
-	contentHeight := max(height-2, 1)
-	colors := paletteFor(m.theme)
-	header := renderHeader(contentWidth, m.phase, colors)
-	status := m.renderStatus(contentWidth, colors)
-	originY := 1 + lipgloss.Height(header) + lipgloss.Height(status)
-	reservedHeight := lipgloss.Height(header) + lipgloss.Height(status)
-	if m.err != nil {
-		errorView := renderError(contentWidth, m.err, colors)
-		originY += lipgloss.Height(errorView)
-		reservedHeight += lipgloss.Height(errorView)
-	}
-	if len(m.snapshot.Meters()) == 0 {
-		emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
-		originY += lipgloss.Height(emptyView)
-		reservedHeight += lipgloss.Height(emptyView)
-	}
-	footer := m.renderFooter(contentWidth, colors)
-	reservedHeight += lipgloss.Height(footer)
-	area := m.renderStopwatchArea(contentWidth, max(contentHeight-reservedHeight, 1), colors)
-	localX, localY := x-2, y-originY
+	dashboard := m.dashboardLayout()
+	area := layoutStopwatchArea(dashboard.contentWidth, dashboard.meterHeight)
+	localX, localY := x-2, y-dashboard.meterY
 	if area.goRect.contains(localX, localY) {
 		return footerButtonStopwatchGo
 	}

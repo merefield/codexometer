@@ -10,7 +10,7 @@ import (
 // checkout. Release automation may override it with:
 //
 //	-X github.com/merefield/codexometer/internal/version.Fallback=1.2.3
-var Fallback = "0.1.0"
+var Fallback = "0.1.1"
 
 // Current returns the module version embedded by Go for tagged installs, or
 // Fallback for ordinary source builds. The leading tag prefix is omitted so

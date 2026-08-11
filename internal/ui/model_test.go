@@ -41,7 +41,7 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 
 func TestStyleHotkeyCyclesAndWraps(t *testing.T) {
 	model := New(nil, time.Minute)
-	for want := stylePie; want < styleCount; want++ {
+	for want := styleStopwatch; want < styleCount; want++ {
 		updated, _ := model.Update(key('s'))
 		model = updated.(Model)
 		if model.meterStyle != want {
@@ -175,8 +175,8 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 
 	updated, _ = model.Update(footerMouseMessage(t, model, footerButtonStyle, tea.MouseActionPress))
 	model = updated.(Model)
-	if model.meterStyle != stylePie {
-		t.Fatalf("style click selected %d, want %d", model.meterStyle, stylePie)
+	if model.meterStyle != styleStopwatch {
+		t.Fatalf("style click selected %d, want %d", model.meterStyle, styleStopwatch)
 	}
 
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
@@ -189,6 +189,46 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 	_, command = model.Update(footerMouseMessage(t, model, footerButtonQuit, tea.MouseActionPress))
 	if command == nil {
 		t.Fatal("quit click returned no command")
+	}
+}
+
+func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		width, height int
+		empty         bool
+		withError     bool
+		style         meterStyleID
+	}{
+		{name: "compact", width: 40, height: 24},
+		{name: "standard", width: 80, height: 24},
+		{name: "large error", width: 120, height: 40, withError: true},
+		{name: "empty quota", width: 80, height: 24, empty: true},
+		{name: "empty stopwatch", width: 80, height: 24, empty: true, style: styleStopwatch},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := New(stubFetcher{snapshot: codex.DemoSnapshot()}, time.Minute)
+			if !test.empty {
+				model.snapshot = codex.DemoSnapshot()
+			}
+			model.loading = false
+			model.width = test.width
+			model.height = test.height
+			model.meterStyle = test.style
+			if test.withError {
+				model.err = errors.New("stale quota signal")
+			}
+			layout := model.dashboardLayout()
+			for _, id := range []footerButtonID{footerButtonTheme, footerButtonStyle, footerButtonRefresh, footerButtonQuit} {
+				mouse := footerMouseMessage(t, model, id, tea.MouseActionMotion)
+				if mouse.Y != layout.footerY+1 {
+					t.Errorf("rendered footer y=%d, calculated y=%d", mouse.Y, layout.footerY+1)
+				}
+				if got := model.footerButtonAt(mouse.X, mouse.Y); got != id {
+					t.Errorf("hit button %d, want %d", got, id)
+				}
+			}
+		})
 	}
 }
 
