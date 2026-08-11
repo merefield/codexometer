@@ -162,7 +162,7 @@ func TestAdditionalBenchmarkVerifiersRejectIncorrectSubmissions(t *testing.T) {
 
 func TestBenchmarkTaskCatalogAndSelection(t *testing.T) {
 	tasks := BenchmarkTasks()
-	if len(tasks) != 4 || tasks[0].ID != BenchmarkMergeRanges || tasks[3].ID != BenchmarkShortestPath {
+	if len(tasks) != 7 || tasks[0].ID != BenchmarkMergeRanges || tasks[3].ID != BenchmarkShortestPath || tasks[6].ID != BenchmarkEventProcessor {
 		t.Fatalf("task catalog = %#v", tasks)
 	}
 	definitions, err := resolveBenchmarkTasks([]BenchmarkTaskID{BenchmarkShortestPath, BenchmarkLRUCache, BenchmarkLRUCache})

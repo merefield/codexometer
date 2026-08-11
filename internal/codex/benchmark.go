@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	benchmarkTurnTimeout      = 5 * time.Minute
-	benchmarkInterruptTimeout = 15 * time.Second
-	benchmarkCodeLimit        = 64 * 1024
-	benchmarkStepLimit        = 250_000
+	benchmarkTurnTimeout       = 5 * time.Minute
+	benchmarkInterruptTimeout  = 15 * time.Second
+	benchmarkCodeLimit         = 64 * 1024
+	benchmarkStepLimit         = 250_000
+	benchmarkExtendedStepLimit = 2_000_000
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -993,6 +994,7 @@ func verifyMergeRanges(code string) error {
 	for index, input := range intervalTestCases() {
 		argument := intervalsToStarlark(input)
 		before := argument.String()
+		renewBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{argument}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
