@@ -197,6 +197,34 @@ timing is unavailable, it conservatively falls back to remaining capacity:
 Watch at 20% and Near at 5%. Scanning and stale-signal states take precedence
 while quota health cannot be evaluated reliably.
 
+For each window with valid duration and reset data, Codexometer calculates:
+
+- `U`, the used quota fraction (`usedPercent / 100`);
+- `E`, the elapsed window fraction, using `reset time - window duration` as the
+  window start;
+- remaining quota `1 - U` and remaining time `1 - E`;
+- projected time to exhaustion, as a fraction of the complete window:
+  `E × (1 - U) / U`.
+
+It then applies these rules in severity order:
+
+1. **Exhausted** if `usedPercent` is 100 or Codex explicitly reports that a
+   rate limit has been reached.
+2. **Clear** if `U <= E`: quota consumption is no further advanced than the
+   reset cycle.
+3. **Limit Near** when over pace and either no more than 5% quota remains, or
+   projected exhaustion is within the first 25% of the time remaining to reset.
+4. **Watch** for every other over-pace window (`U > E`).
+
+This means 10% remaining can correctly stay Clear when less than 10% of the
+window remains: quota is low, but reset is closer than exhaustion at the
+observed average pace. Conversely, a window with plenty remaining can reach
+Watch or Limit Near if it is being consumed very early and projects exhaustion
+well before reset. Percentages are clamped to 0–100 before classification. If
+duration or reset data is missing or invalid, pace cannot be calculated, so the
+fallback is Clear above 20% remaining, Watch at 20% or less, Limit Near at 5%
+or less, and Exhausted at 0%.
+
 ## Themes
 
 Press `t` to cycle:
