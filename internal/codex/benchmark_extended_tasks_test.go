@@ -194,7 +194,7 @@ def process_ledger(accounts, events):
     return [final_balances, frozen_accounts, audit]
 `
 
-func TestExtendedBenchmarkVerifiersAcceptCorrectSubmissions(t *testing.T) {
+func TestHardBenchmarkVerifiersAcceptCorrectSubmissions(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		verify func(string) error
@@ -212,7 +212,7 @@ func TestExtendedBenchmarkVerifiersAcceptCorrectSubmissions(t *testing.T) {
 	}
 }
 
-func TestExtendedBenchmarkVerifiersRejectIncorrectSubmissions(t *testing.T) {
+func TestHardBenchmarkVerifiersRejectIncorrectSubmissions(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		verify func(string) error
@@ -230,7 +230,7 @@ func TestExtendedBenchmarkVerifiersRejectIncorrectSubmissions(t *testing.T) {
 	}
 }
 
-func TestExtendedBenchmarkVerifiersRejectMutation(t *testing.T) {
+func TestHardBenchmarkVerifiersRejectMutation(t *testing.T) {
 	for _, test := range []struct {
 		verify func(string) error
 		code   string
@@ -245,23 +245,19 @@ func TestExtendedBenchmarkVerifiersRejectMutation(t *testing.T) {
 	}
 }
 
-func TestBenchmarkSuitesAndDifficultyLabels(t *testing.T) {
-	core := BenchmarkTasksForSuite(BenchmarkSuiteCore)
-	extended := BenchmarkTasksForSuite(BenchmarkSuiteExtended)
-	if len(core) != 4 || len(extended) != 3 {
-		t.Fatalf("suite sizes = core %d, extended %d", len(core), len(extended))
+func TestBenchmarkCatalogIsUnifiedAndNamesAreCompact(t *testing.T) {
+	tasks := BenchmarkTasks()
+	if len(tasks) != 7 || tasks[0].ID != BenchmarkMergeRanges || tasks[4].ID != BenchmarkDependencyScheduler || tasks[6].ID != BenchmarkEventProcessor {
+		t.Fatalf("unified task order = %#v", tasks)
 	}
-	if core[0].ID != BenchmarkMergeRanges || extended[0].ID != BenchmarkDependencyScheduler || extended[2].ID != BenchmarkEventProcessor {
-		t.Fatalf("suite order = core %#v, extended %#v", core, extended)
-	}
-	for _, task := range BenchmarkTasks() {
-		if !strings.HasSuffix(task.Name, ")") || (!strings.Contains(task.Name, "(EASY)") && !strings.Contains(task.Name, "(MODERATE)") && !strings.Contains(task.Name, "(HARD)")) {
-			t.Errorf("task %q has no difficulty suffix", task.Name)
+	for _, task := range tasks {
+		if strings.ContainsAny(task.Name, "()") {
+			t.Errorf("task %q still contains a difficulty suffix", task.Name)
 		}
 	}
 }
 
-func TestExtendedReferenceOraclesOnHandWrittenCases(t *testing.T) {
+func TestHardReferenceOraclesOnHandWrittenCases(t *testing.T) {
 	wantSchedules := []int{0, 3, 4, 8, 6, 6}
 	for index, want := range wantSchedules {
 		if got := minimumScheduleTime(schedulerTestCases()[index]); got != want {

@@ -27,7 +27,7 @@ func verifyDependencyScheduler(code string) error {
 	for index, test := range schedulerTestCases() {
 		jobs := schedulerJobsToStarlark(test.jobs)
 		before := jobs.String()
-		renewExtendedBenchmarkStepBudget(thread)
+		renewHardBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{starlark.MakeInt(test.workers), jobs}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
@@ -219,7 +219,7 @@ func verifyVersionResolver(code string) error {
 	for index, test := range versionTestCases() {
 		catalog := versionCatalogToStarlark(test.catalog)
 		before := catalog.String()
-		renewExtendedBenchmarkStepBudget(thread)
+		renewHardBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{catalog}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
@@ -415,7 +415,7 @@ func verifyEventProcessor(code string) error {
 		accounts := intervalsToStarlark(test.accounts)
 		events := ledgerEventsToStarlark(test.events)
 		before := accounts.String() + events.String()
-		renewExtendedBenchmarkStepBudget(thread)
+		renewHardBenchmarkStepBudget(thread)
 		value, err := starlark.Call(thread, function, starlark.Tuple{accounts, events}, nil)
 		if err != nil {
 			return fmt.Errorf("case %d raised an error: %w", index+1, err)
