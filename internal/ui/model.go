@@ -439,9 +439,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.monitorFetchActive = false
-		updated, command := m.applyMonitorFetch(message)
+		updated, command, accepted := m.applyMonitorFetch(message)
 		m = updated.(Model)
-		if message.err == nil && message.kind == monitorFetchBoundary && m.monitorState == monitorRunning {
+		if accepted && message.kind == monitorFetchBoundary && m.monitorState == monitorRunning {
 			m.captureMonitorSamples(message.at)
 			m.monitorBoundaryDue = false
 		}
@@ -942,7 +942,7 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 	}
 }
 
-func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd) {
+func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd, bool) {
 	if message.kind == monitorFetchStop {
 		if message.quotaErr == nil {
 			m.syncMonitorQuotaSnapshot(message.quota)
@@ -957,8 +957,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 		} else if message.kind == monitorFetchStart {
 			m.monitorState = monitorStopped
 		}
-		return m, nil
+		return m, nil, false
 	}
+	accepted := true
 	switch message.kind {
 	case monitorFetchStart:
 		m.monitorBaseline = message.usage.TotalTokens
@@ -978,8 +979,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 		m.monitorError = ""
 		m.monitorNextSample = message.at.Add(monitorSampleInterval)
 	case monitorFetchSample, monitorFetchBoundary, monitorFetchStop:
-		if message.usage.TotalTokens < m.monitorLatest {
+		if m.monitorUsageMovesBackwards(message.usage) {
 			m.monitorError = "local Codex token counter moved backwards"
+			accepted = false
 		} else {
 			if message.usage.TotalTokens > m.monitorLatest {
 				m.monitorLastActivity = message.usage.LastActivity
@@ -994,7 +996,19 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 			m.monitorStoppedAt = message.at
 		}
 	}
-	return m, nil
+	return m, nil, accepted
+}
+
+func (m Model) monitorUsageMovesBackwards(usage codex.LiveUsageSnapshot) bool {
+	if usage.TotalTokens < m.monitorLatest {
+		return true
+	}
+	for _, update := range usage.Sessions {
+		if index := m.monitorSessionIndex(update.ID); index >= 0 && update.TotalTokens < m.monitorSessionData[index].latest {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) applyMonitorQuotaResult(message monitorFetchedMsg) {

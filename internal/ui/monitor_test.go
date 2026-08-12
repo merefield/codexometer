@@ -456,6 +456,40 @@ func TestMonitorWaitsForAFreshBoundaryReadWhenOrdinaryFetchIsInFlight(t *testing
 	}
 }
 
+func TestMonitorRejectsBackwardsSessionBoundaryAndRetriesNextTick(t *testing.T) {
+	startedAt := time.Unix(3_100, 0)
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: startedAt,
+		monitorLatest: 100, monitorGraphStart: 100,
+		monitorNextSample: startedAt.Add(time.Minute), monitorBoundaryDue: true,
+		monitorFetchActive: true, monitorRequest: 7,
+		monitorSessionData: []monitorSession{{
+			id: "root", baseline: 100, latest: 100, graphStart: 100,
+			startedAt: startedAt, active: true, displayed: true,
+		}},
+	}
+
+	updated, command := model.Update(monitorFetchedMsg{
+		kind: monitorFetchBoundary, sequence: 7, at: startedAt.Add(30 * time.Second),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 110, Sessions: []codex.LiveUsageSession{{
+			ID: "root", TotalTokens: 90, Active: true,
+		}}},
+	})
+	model = updated.(Model)
+	if command != nil || len(model.monitorSamples) != 0 || !model.monitorBoundaryDue {
+		t.Fatalf("invalid boundary closed its bucket: due=%t samples=%#v command=%v", model.monitorBoundaryDue, model.monitorSamples, command)
+	}
+	if model.monitorLatest != 100 || model.monitorSessionData[0].latest != 100 || model.monitorError == "" {
+		t.Fatalf("invalid boundary mutated accepted telemetry: %#v", model)
+	}
+
+	updated, command = model.Update(secondMsg(startedAt.Add(31 * time.Second)))
+	model = updated.(Model)
+	if command == nil || !model.monitorFetchActive || model.monitorRequest != 8 || !model.monitorBoundaryDue {
+		t.Fatalf("rejected boundary was not retried on the next tick: %#v", model)
+	}
+}
+
 func TestMonitorRendersOneMetricsAndGraphPairPerRootSession(t *testing.T) {
 	model := Model{
 		monitorState: monitorRunning, monitorStartedAt: time.Now().Add(-time.Minute),

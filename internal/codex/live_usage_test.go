@@ -59,6 +59,25 @@ func TestLiveUsageReaderBaselinesAndConsumesAppendedTelemetry(t *testing.T) {
 	}
 }
 
+func TestAppendBoundedRetainsNewestValuesWithoutCopyingOnOverflow(t *testing.T) {
+	history := make([]int, 3, 4)
+	copy(history, []int{1, 2, 3})
+	firstRetained := &history[1]
+
+	history = appendBounded(history, 4, 3)
+	if len(history) != 3 || history[0] != 2 || history[1] != 3 || history[2] != 4 {
+		t.Fatalf("bounded history = %#v; want [2 3 4]", history)
+	}
+	if &history[0] != firstRetained {
+		t.Fatal("bounded history copied its backing array on overflow")
+	}
+
+	history = appendBounded(history, 5, 3)
+	if len(history) != 3 || history[0] != 3 || history[1] != 4 || history[2] != 5 {
+		t.Fatalf("bounded history after reuse = %#v; want [3 4 5]", history)
+	}
+}
+
 func TestLiveUsageReaderHandlesNewOldAndResetSessions(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()

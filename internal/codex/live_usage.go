@@ -388,13 +388,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							r.lastActivity = record.at
 						}
 						r.nextEventSequence++
-						cursor.modelCalls = append(cursor.modelCalls, LiveModelCall{
+						cursor.modelCalls = appendBounded(cursor.modelCalls, LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
 							OutputAvailable: record.outputKnown,
-						})
-						if len(cursor.modelCalls) > telemetryHistoryMax {
-							cursor.modelCalls = append([]LiveModelCall(nil), cursor.modelCalls[len(cursor.modelCalls)-telemetryHistoryMax:]...)
-						}
+						}, telemetryHistoryMax)
 					}
 				}
 				cursor.totalTokens = record.total
@@ -402,12 +399,9 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			if timing, available, ordinal, at, ok := turnTimingRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				r.nextEventSequence++
-				cursor.turnTimings = append(cursor.turnTimings, LiveTurnTiming{
+				cursor.turnTimings = appendBounded(cursor.turnTimings, LiveTurnTiming{
 					Sequence: r.nextEventSequence, At: at, TimeToFirstToken: timing, Available: available,
-				})
-				if len(cursor.turnTimings) > telemetryHistoryMax {
-					cursor.turnTimings = append([]LiveTurnTiming(nil), cursor.turnTimings[len(cursor.turnTimings)-telemetryHistoryMax:]...)
-				}
+				}, telemetryHistoryMax)
 			}
 		}
 		if readErr != nil {
@@ -417,6 +411,17 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return readErr
 		}
 	}
+}
+
+// appendBounded keeps insertion order while discarding the oldest values. The
+// reslice reuses the existing backing array until its remaining capacity is
+// exhausted, avoiding a full allocation and copy for every value after limit.
+func appendBounded[T any](history []T, value T, limit int) []T {
+	history = append(history, value)
+	if limit > 0 && len(history) > limit {
+		history = history[len(history)-limit:]
+	}
+	return history
 }
 
 func latestTokenTotal(path string) (int64, error) {
