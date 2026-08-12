@@ -413,27 +413,7 @@ func renderConsumptionPaceSized(width, height, pace int, available bool, colors 
 	} else if pace < 0 {
 		markerColor = colors.danger
 	}
-	var axis strings.Builder
-	for column := 0; column < width; column++ {
-		r := '─'
-		switch column {
-		case 0:
-			r = '├'
-		case center:
-			r = '┼'
-		case width - 1:
-			r = '┤'
-		}
-		if column == marker {
-			if available {
-				axis.WriteString(lipgloss.NewStyle().Bold(true).Foreground(markerColor).Render("◆"))
-			} else {
-				axis.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colors.warning).Render("?"))
-			}
-			continue
-		}
-		axis.WriteString(colors.dimmed().Render(string(r)))
-	}
+	axis := paceAxis(width, center, marker, pace, available, markerColor, colors)
 
 	status := "PACE DATA UNAVAILABLE"
 	if available {
@@ -450,7 +430,7 @@ func renderConsumptionPaceSized(width, height, pace int, available bool, colors 
 	caption := colors.dimmed().Render(ansi.Truncate("CONSUMPTION PACE // TIME - USAGE", width, ""))
 	labels := colors.dimmed().Render(paceScaleLabels(width))
 
-	lines := []string{caption, labels, axis.String(), status}
+	lines := []string{caption, labels, axis, status}
 	if height <= 0 {
 		height = len(lines)
 	}
@@ -463,6 +443,55 @@ func renderConsumptionPaceSized(width, height, pace int, available bool, colors 
 		lines = lines[1:]
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
+}
+
+func paceAxis(width, center, marker, pace int, available bool, markerColor lipgloss.Color, colors palette) string {
+	if width < 3 {
+		value := "?"
+		color := colors.warning
+		if available {
+			value = "▲"
+			color = markerColor
+		}
+		return lipgloss.PlaceHorizontal(width, lipgloss.Center, lipgloss.NewStyle().Bold(true).Foreground(color).Render(value))
+	}
+
+	carriageStart := min(max(marker-1, 0), width-3)
+	carriageEnd := carriageStart + 2
+	carriage := "[▲]"
+	if !available {
+		carriage = "[?]"
+		markerColor = colors.warning
+	}
+	carriageRunes := []rune(carriage)
+	carriageStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(markerColor)
+	trailStyle := lipgloss.NewStyle().Foreground(markerColor)
+	dimmed := colors.dimmed()
+
+	var axis strings.Builder
+	for column := 0; column < width; column++ {
+		if column >= carriageStart && column <= carriageEnd {
+			axis.WriteString(carriageStyle.Render(string(carriageRunes[column-carriageStart])))
+			continue
+		}
+		r := '─'
+		switch column {
+		case 0:
+			r = '├'
+		case center:
+			r = '┼'
+		case width - 1:
+			r = '┤'
+		}
+		inTrail := available && ((pace > 0 && column > center && column < carriageStart) ||
+			(pace < 0 && column < center && column > carriageEnd))
+		if inTrail {
+			axis.WriteString(trailStyle.Render("━"))
+			continue
+		}
+		axis.WriteString(dimmed.Render(string(r)))
+	}
+	return axis.String()
 }
 
 func paceScaleLabels(width int) string {
