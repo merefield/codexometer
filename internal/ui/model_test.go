@@ -173,10 +173,10 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 		t.Fatalf("theme click selected theme=%d flash=%d, want theme=%d flash=%d", model.theme, model.flashedButton, themeRust, footerButtonTheme)
 	}
 
-	updated, command = model.Update(footerMouseMessage(t, model, footerButtonStyle, tea.MouseActionPress))
+	updated, command = model.Update(footerMouseMessage(t, model, footerButtonView, tea.MouseActionPress))
 	model = updated.(Model)
-	if command == nil || model.meterStyle != stylePie || model.flashedButton != footerButtonStyle {
-		t.Fatalf("style click selected style=%d flash=%d", model.meterStyle, model.flashedButton)
+	if command == nil || model.meterStyle != stylePie || model.flashedButton != footerButtonView {
+		t.Fatalf("view click selected view=%d flash=%d", model.meterStyle, model.flashedButton)
 	}
 
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
@@ -192,16 +192,16 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 	}
 }
 
-func TestStyleFooterButtonOnlyExistsOnQuota(t *testing.T) {
+func TestViewFooterButtonOnlyExistsOnQuota(t *testing.T) {
 	for _, style := range []meterStyleID{styleMonitor, styleBenchmark} {
 		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: style}
-		if _, ok := footerButtonByID(model, footerButtonStyle); ok {
-			t.Fatalf("%s footer exposed the Style button", style.name())
+		if _, ok := footerButtonByID(model, footerButtonView); ok {
+			t.Fatalf("%s footer exposed the View button", style.name())
 		}
 		for y := 0; y < model.height; y++ {
 			for x := 0; x < model.width; x++ {
-				if got := model.footerButtonAt(x, y); got == footerButtonStyle {
-					t.Fatalf("%s exposed hidden Style hit target at %d,%d", style.name(), x, y)
+				if got := model.footerButtonAt(x, y); got == footerButtonView {
+					t.Fatalf("%s exposed hidden View hit target at %d,%d", style.name(), x, y)
 				}
 			}
 		}
@@ -321,13 +321,22 @@ func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 	}
 
 	quota, separator := footerButtonLayout(100, true)
-	quotaWant := []string{"[ (T)HEME ]", "[ (S)TYLE ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
+	quotaWant := []string{"[ (T)HEME ]", "[ (V)IEW ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
 	if separator != "  " || len(quota) != len(quotaWant) {
 		t.Fatalf("unexpected Quota footer layout: separator=%q buttons=%#v", separator, quota)
 	}
 	for index, label := range quotaWant {
 		if quota[index].label != label {
 			t.Errorf("Quota button %d label = %q, want %q", index, quota[index].label, label)
+		}
+	}
+	compactQuota, separator := footerButtonLayout(20, true)
+	if separator != " " {
+		t.Fatalf("compact Quota separator = %q, want one space", separator)
+	}
+	for index, label := range []string{"[T]", "[V]", "[R]", "[Q]"} {
+		if compactQuota[index].label != label {
+			t.Errorf("compact Quota button %d label = %q, want %q", index, compactQuota[index].label, label)
 		}
 	}
 }

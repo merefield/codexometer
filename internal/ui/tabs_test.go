@@ -176,18 +176,24 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 	}
 }
 
-func TestSIsContextualStyleAndMonitorStartHotkey(t *testing.T) {
+func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
 	model := Model{meterStyle: styleBars}
 	for _, want := range []meterStyleID{stylePie, styleConsumptionPace, styleFuel, styleBars} {
-		updated, command := model.Update(key('s'))
+		updated, command := model.Update(key('v'))
 		model = updated.(Model)
-		if command == nil || model.meterStyle != want || model.quotaMeterStyle != want || model.flashedButton != footerButtonStyle {
-			t.Fatalf("S selected style=%d remembered=%d flash=%d, want style=%d", model.meterStyle, model.quotaMeterStyle, model.flashedButton, want)
+		if command == nil || model.meterStyle != want || model.quotaMeterStyle != want || model.flashedButton != footerButtonView {
+			t.Fatalf("V selected view=%d remembered=%d flash=%d, want view=%d", model.meterStyle, model.quotaMeterStyle, model.flashedButton, want)
 		}
+	}
+	sequence := model.flashSequence
+	updated, command := model.Update(key('s'))
+	model = updated.(Model)
+	if command != nil || model.meterStyle != styleBars || model.flashSequence != sequence {
+		t.Fatal("S changed the Quota view")
 	}
 
 	model = Model{meterStyle: styleMonitor, monitorState: monitorIdle}
-	updated, command := model.Update(key('s'))
+	updated, command = model.Update(key('s'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorStarting || model.flashedButton != footerButtonMonitorGo {
 		t.Fatalf("Monitor S did not start: state=%d flash=%d", model.monitorState, model.flashedButton)

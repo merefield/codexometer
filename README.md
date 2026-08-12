@@ -213,7 +213,8 @@ codexometer --codex /path/to/codex
 | `Tab` | Select the next top-level tab: Quota, Monitor, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh quota data immediately |
-| `s` | Cycle presentation style in Quota; start recording in Monitor |
+| `v` | Cycle the active Quota view |
+| `s` | Start recording (Monitor only) |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
 | `b` | Run the selected challenge (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
@@ -228,9 +229,9 @@ codexometer --codex /path/to/codex
 The responsive top rail below the account status selects Quota, Monitor, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
 Pie, Consumption Pace, and Fuel Tank; select these with the mouse or cycle them
-with `s`. Codexometer remembers the selected Quota presentation when you leave
+with `v`. Codexometer remembers the selected Quota view when you leave
 and return. Both rails condense automatically as the terminal narrows.
-The footer presents the remaining actions as clickable buttons, including Style
+The footer presents the remaining actions as clickable buttons, including View
 only while Quota is active. Move the pointer over a tab or button to highlight
 it, or click it to activate it. Controls pulse briefly when activated by mouse
 or keyboard. The keyboard assignments remain available in terminals without
@@ -299,7 +300,7 @@ The default remains the original green hacker-terminal presentation.
 ## Views and quota presentations
 
 The top-level tabs are **Quota**, **Monitor**, and **Benchmark**. Within Quota,
-choose one of these four presentations with its sub-tab or `s`:
+choose one of these four views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
 2. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
@@ -793,8 +794,8 @@ selected font includes block, arrow, and emoji glyphs.
 ### The terminal is too small
 
 Codexometer adapts its header and meter widths, but rich gauges need enough
-rows to display every quota window. Increase the pane height or press `s` in
-Quota to return to the compact default bar style.
+rows to display every quota window. Increase the pane height or press `v` in
+Quota to return to the compact default Bars view.
 
 ### Monitor remains at zero
 
