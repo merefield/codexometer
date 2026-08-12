@@ -1,4 +1,4 @@
-# Codexometer: a retro quota dashboard for Codex
+# Codexometer: a retro companion dashboard for Codex
 
 [Codexometer](https://github.com/merefield/codexometer) is a small, retro terminal dashboard for your current Codex quota. Leave it open in a second terminal window or pane to see every active usage window, its remaining capacity, and its reset time—without repeatedly opening `/status` in the Codex session where you are working.
 
@@ -6,9 +6,15 @@
 
 ## Why use it?
 
-`/status` is useful, but it lives inside your active session. Codexometer turns the same quota information into an always-visible companion display that refreshes automatically and uses your prevailing Codex login.
+`/status` is useful, but it lives inside your active session. Codexometer turns the same quota information into an always-visible companion display that refreshes automatically and uses your prevailing Codex login—without handling your credentials itself.
 
-You can choose from five colour themes and several responsive displays, including a consumption-pace meter that shows whether you are using quota faster or slower than the current window is elapsing. There is also a local token-activity monitor and an opt-in deterministic model benchmark.
+The interface has three responsive tabs:
+
+- **Quota** — switch between Bars, Pie, Consumption Pace, and Fuel Tank presentations. A pace-aware health signal summarises the most pressured quota window as Clear, Watch, Limit Near, or Exhausted, so low remaining quota close to reset is treated differently from quota burning too quickly early in a window.
+- **Monitor** — record locally observed token activity by root Codex session, with scrolling graphs and compact call, activity, output, and time-to-first-token telemetry. Explicitly linked spawned agents are folded into their parent session.
+- **Benchmark** — run deterministic, programmatically checked coding challenges across the available model and reasoning-level combinations. Compare pass/fail results, wall time, tokens, estimated API-equivalent cost, and rankings weighted towards cost, speed, or a balance of both.
+
+There are five colour themes, mouse-clickable controls, keyboard shortcuts, responsive layouts, and automatic support for additional rate-limit windows when Codex returns them.
 
 It works particularly well in:
 
@@ -17,7 +23,13 @@ It works particularly well in:
 - a tmux, Zellij, or other terminal-multiplexer pane;
 - an Ubuntu terminal beside the Codex CLI.
 
-Codexometer is written in Go and builds as a standalone binary for macOS, Windows, and Linux.
+Codexometer is written in Go and builds quickly as a standalone binary for macOS, Windows, and Linux. Install it with:
+
+```sh
+go install github.com/merefield/codexometer@latest
+```
+
+Make sure Go's binary directory—`GOBIN`, or normally `$HOME/go/bin`—is on your `PATH`. The README includes complete macOS, Linux, and Windows installation instructions.
 
 **GitHub:** https://github.com/merefield/codexometer
 
