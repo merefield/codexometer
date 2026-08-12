@@ -641,13 +641,18 @@ func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMo
 	for _, summary := range byKey {
 		summaries = append(summaries, *summary)
 	}
-	costRanks := benchmarkCostRanks(summaries)
-	timeRanks := benchmarkTimeRanks(summaries)
 	costWeight, timeWeight := benchmarkRankWeights(mode)
-	for index := range summaries {
-		summaries[index].costRank = costRanks[summaries[index].key]
-		summaries[index].timeRank = timeRanks[summaries[index].key]
-		summaries[index].weightedScore = summaries[index].costRank*costWeight + summaries[index].timeRank*timeWeight
+	for _, tier := range benchmarkCorrectnessTiers(summaries) {
+		costRanks := benchmarkCostRanks(tier)
+		timeRanks := benchmarkTimeRanks(tier)
+		for index := range summaries {
+			if summaries[index].passes != tier[0].passes || summaries[index].failures != tier[0].failures {
+				continue
+			}
+			summaries[index].costRank = costRanks[summaries[index].key]
+			summaries[index].timeRank = timeRanks[summaries[index].key]
+			summaries[index].weightedScore = summaries[index].costRank*costWeight + summaries[index].timeRank*timeWeight
+		}
 	}
 	sort.Slice(summaries, func(left, right int) bool {
 		if comparison := compareBenchmarkRankSummaries(summaries[left], summaries[right]); comparison != 0 {
@@ -664,6 +669,24 @@ func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMo
 		rankings[summary.key] = rank
 	}
 	return rankings
+}
+
+type benchmarkCorrectnessTier struct {
+	passes   int
+	failures int
+}
+
+func benchmarkCorrectnessTiers(summaries []benchmarkRankSummary) [][]benchmarkRankSummary {
+	byTier := make(map[benchmarkCorrectnessTier][]benchmarkRankSummary)
+	for _, summary := range summaries {
+		key := benchmarkCorrectnessTier{passes: summary.passes, failures: summary.failures}
+		byTier[key] = append(byTier[key], summary)
+	}
+	tiers := make([][]benchmarkRankSummary, 0, len(byTier))
+	for _, tier := range byTier {
+		tiers = append(tiers, tier)
+	}
+	return tiers
 }
 
 func benchmarkRankWeights(mode benchmarkRankMode) (cost, elapsed int) {

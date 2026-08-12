@@ -351,26 +351,56 @@ making the easier inputs larger.
 #### Ranking
 
 The `RANK` column is an overall ranking for each model/reasoning-effort
-combination across every completed row currently in the result matrix. More
-passes always beat fewer passes, then fewer failures win. Within that correctness
-tier, Codexometer independently ranks total API-equivalent cost and total wall
-time, then combines those ordinal ranks using the selected weighting:
+combination across every completed row currently in the result matrix. It uses
+ordinal cost and time positions—not raw dollars and seconds—so the distance
+between first and second place on either axis is always one rank position,
+regardless of the difference in the underlying measurements.
 
-| Mode | Cost-rank weight | Time-rank weight |
-| --- | ---: | ---: |
-| **Cost** | 75% | 25% |
-| **Balanced** | 50% | 50% |
-| **Speed** | 25% | 75% |
+The algorithm is:
+
+1. Group completed rows by requested model ID and reasoning effort. A reported
+   model reroute remains part of the requested combination that produced it.
+2. For each combination, count passes and failures, sum non-negative wall time,
+   and sum API-equivalent cost. Cost is complete only when every row in that
+   combination has a finite, non-negative cost measurement.
+3. Partition combinations into correctness tiers with identical pass and
+   failure counts. Within each tier, rank combinations independently by
+   ascending total cost and ascending total wall time. Equal measurements share
+   a competition rank: for example, `1, 2, 2, 4`. Every incomplete-cost
+   combination ties on the cost axis after every cost-complete peer in its tier.
+4. Calculate a lower-is-better weighted score from cost rank `C` and time rank
+   `T` according to the selected mode:
+
+   | Mode | Formula | Equivalent weighting |
+   | --- | --- | ---: |
+   | **Cost** | `3C + T` | 75% cost / 25% time |
+   | **Balanced** | `C + T` | 50% cost / 50% time |
+   | **Speed** | `C + 3T` | 25% cost / 75% time |
+
+5. Produce the final order lexicographically: more passes first, then fewer
+   failures, then lower weighted score. Correctness therefore always dominates
+   efficiency; a cheap, fast failure cannot outrank a combination with more
+   passes. Combinations equal on all three comparisons share a competition rank.
 
 Click **Cost**, **Bal**, or **Speed** in the Result Matrix control row, or press
 `w` to cycle them. The ranking is recomputed immediately without rerunning any
-trial. A missing or invalid cost measurement receives the last cost-axis rank
-instead of looking artificially cheap. Token counts remain visible diagnostics
-but do not affect rank. The same overall rank is repeated on each task row for
-that combination, and the rank heading is clickable like the other sortable
-headings. Exact weighted-score ties share a rank.
+trial. Token counts remain visible diagnostics but do not affect rank. The same
+overall rank is repeated on each task row for that combination, and the rank
+heading is clickable like the other sortable headings.
+
+Missing cost is penalized on the cost axis, but it does not automatically force
+the combination to the bottom of the final table. A sufficiently strong time
+rank can still compensate in Balanced or Speed mode. If every combination lacks
+cost, they all tie on the cost axis and the final efficiency order is determined
+by time in every mode. If only part of a combination's cost ledger is missing,
+its known costs are not used to infer a partial position: the whole combination
+is treated as cost-incomplete.
 
 Rankings update as results arrive, so they are provisional until a run finishes.
+Cost and time axes are recalculated among peers in the same current correctness
+tier. During a task-major Run All execution, one combination can temporarily
+have one more completed row than the others, so an in-progress rank should not
+be compared with the final result.
 They inherit the API-equivalent caveats below; in particular, unknown prices
 sort behind complete measurements on the cost axis and prompt-cache order can
 affect that axis. Correctness remains the dominant criterion.
@@ -573,9 +603,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.4.0`. The Git tag is the release source of truth. Go automatically embeds
+`v0.5.0`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.4.0`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.5.0`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -588,7 +618,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.4.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.5.0" .
 ```
 
 ## How refresh works

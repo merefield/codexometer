@@ -329,7 +329,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "w":
 			if m.meterStyle == styleBenchmark {
-				return m.pressFooterButton(benchmarkRankButton((m.benchmarkRankMode + 1) % 3))
+				return m.pressFooterButton(benchmarkRankButton(m.benchmarkRankMode.next()))
 			}
 		case "pgup":
 			if m.meterStyle == styleBenchmark {
@@ -819,6 +819,17 @@ func benchmarkRankButton(mode benchmarkRankMode) footerButtonID {
 		return footerButtonBenchmarkRankSpeed
 	default:
 		return footerButtonBenchmarkRankBalanced
+	}
+}
+
+func (mode benchmarkRankMode) next() benchmarkRankMode {
+	switch mode {
+	case benchmarkRankCost:
+		return benchmarkRankBalanced
+	case benchmarkRankBalanced:
+		return benchmarkRankSpeed
+	default:
+		return benchmarkRankCost
 	}
 }
 

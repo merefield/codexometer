@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -471,6 +472,24 @@ func TestBenchmarkRankWeightingSwitchesBetweenCostAndSpeed(t *testing.T) {
 	}
 }
 
+func TestBenchmarkEfficiencyRanksAreIsolatedByCorrectnessTier(t *testing.T) {
+	peers := []codex.BenchmarkResult{
+		{Model: "cheap", Effort: "low", Correct: true, Duration: 30 * time.Second, CostKnown: true, CostUSD: 0.01},
+		{Model: "fast", Effort: "low", Correct: true, Duration: 10 * time.Second, CostKnown: true, CostUSD: 0.03},
+	}
+	baseline := benchmarkRankings(peers, benchmarkRankBalanced)
+	withFailures := append(slices.Clone(peers),
+		codex.BenchmarkResult{Model: "failed-cost", Effort: "low", Duration: 40 * time.Second, CostKnown: true, CostUSD: 0.02},
+		codex.BenchmarkResult{Model: "failed-time", Effort: "low", Duration: 20 * time.Second, CostKnown: true, CostUSD: 0.04},
+	)
+	got := benchmarkRankings(withFailures, benchmarkRankBalanced)
+	for _, key := range []string{"cheap\x00low", "fast\x00low"} {
+		if got[key] != baseline[key] {
+			t.Errorf("lower-correctness combinations changed peer rank %q from %d to %d", key, baseline[key], got[key])
+		}
+	}
+}
+
 func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
 	unknown := benchmarkResultValues(codex.BenchmarkResult{}, nil)
 	if unknown[6] != "N/A" || unknown[7] != "N/A" {
@@ -696,8 +715,13 @@ func TestBenchmarkRankWeightButtonsAndHotkeyRecomputeImmediately(t *testing.T) {
 
 	updated, command = model.Update(key('w'))
 	model = updated.(Model)
+	if command == nil || model.benchmarkRankMode != benchmarkRankBalanced || model.flashedButton != footerButtonBenchmarkRankBalanced {
+		t.Fatalf("weight hotkey did not cycle from Cost to Balanced: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
+	}
+	updated, command = model.Update(key('w'))
+	model = updated.(Model)
 	if command == nil || model.benchmarkRankMode != benchmarkRankSpeed || model.flashedButton != footerButtonBenchmarkRankSpeed {
-		t.Fatalf("weight hotkey did not cycle to Speed: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
+		t.Fatalf("weight hotkey did not cycle from Balanced to Speed: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
 	}
 	if ranks := benchmarkRankings(model.benchmarkResults, model.benchmarkRankMode); ranks["fast\x00low"] != 1 {
 		t.Fatalf("Speed selection did not immediately rank Fast first: %v", ranks)
