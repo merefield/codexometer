@@ -152,6 +152,7 @@ type monitorQuotaWindow struct {
 	latestReset   *int64
 	resetDetected bool
 	partial       bool
+	stale         bool
 }
 
 type monitorFetchedMsg struct {
@@ -901,24 +902,27 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 		}
 		var usage codex.LiveUsageSnapshot
 		var err error
-		if kind == monitorFetchStop {
-			// Read account quota first so the final local telemetry read remains
-			// the end of the measured token interval.
+		if kind == monitorFetchStart {
+			// Bracket the measured local-token interval inside the account-quota
+			// interval: quota first at Start, local telemetry first at Stop.
 			fetchQuota()
+			usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
+		} else if kind == monitorFetchStop {
 			if freshFetcher, ok := m.usageFetcher.(FreshTokenUsageFetcher); ok {
 				usage, err = freshFetcher.FetchTokenUsageFresh(context.Background())
 			} else {
 				usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
 			}
+			observedAt := time.Now()
+			fetchQuota()
+			return monitorFetchedMsg{
+				kind: kind, sequence: sequence, usage: usage, err: err,
+				quota: quota, quotaErr: quotaErr, at: observedAt,
+			}
 		} else {
 			usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
 		}
 		observedAt := time.Now()
-		if kind == monitorFetchStart {
-			// Establish the local baseline immediately, then obtain the quota
-			// baseline. Activity while the app-server responds is still counted.
-			fetchQuota()
-		}
 		return monitorFetchedMsg{
 			kind: kind, sequence: sequence, usage: usage, err: err,
 			quota: quota, quotaErr: quotaErr, at: observedAt,
@@ -927,6 +931,12 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 }
 
 func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd) {
+	if message.kind == monitorFetchStop {
+		if message.quotaErr == nil {
+			m.syncMonitorQuotaSnapshot(message.quota)
+		}
+		m.applyMonitorQuotaResult(message)
+	}
 	if message.err != nil {
 		m.monitorError = message.err.Error()
 		if message.kind == monitorFetchStop {
@@ -956,10 +966,6 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 		m.monitorError = ""
 		m.monitorNextSample = message.at.Add(monitorSampleInterval)
 	case monitorFetchSample, monitorFetchBoundary, monitorFetchStop:
-		if message.kind == monitorFetchStop {
-			m.syncMonitorQuotaSnapshot(message.quota)
-			m.applyMonitorQuotaResult(message)
-		}
 		if message.usage.TotalTokens < m.monitorLatest {
 			m.monitorError = "local Codex token counter moved backwards"
 		} else {
@@ -987,7 +993,10 @@ func (m *Model) applyMonitorQuotaResult(message monitorFetchedMsg) {
 	m.monitorQuotaError = ""
 	if len(message.quota.Meters()) > 0 {
 		m.snapshot = message.quota
-		m.lastRefresh = message.at
+		m.lastRefresh = message.quota.FetchedAt
+		if m.lastRefresh.IsZero() {
+			m.lastRefresh = message.at
+		}
 		m.err = nil
 	}
 }
@@ -1005,8 +1014,10 @@ func (m *Model) startMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 }
 
 func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
+	seen := make(map[string]bool)
 	for _, meter := range snapshot.Meters() {
 		key := monitorQuotaKey(meter)
+		seen[key] = true
 		index := -1
 		for candidate := range m.monitorQuotaWindows {
 			if m.monitorQuotaWindows[candidate].key == key {
@@ -1029,6 +1040,12 @@ func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 		}
 		window.latestUsed = meter.Window.UsedPercent
 		window.latestReset = cloneInt64(meter.Window.ResetsAt)
+		window.stale = false
+	}
+	for index := range m.monitorQuotaWindows {
+		if !seen[m.monitorQuotaWindows[index].key] {
+			m.monitorQuotaWindows[index].stale = true
+		}
 	}
 }
 

@@ -199,8 +199,8 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
    vertical block bar on the same 30-second tick, after a fresh boundary read.
    The companion readout records each account quota window at Start and tracks
    its observed change while recording. Every session row shows its exact share
-   of locally observed tokens and an explicitly labelled estimate of the first
-   quota window's movement, apportioned by that share.
+   of locally observed tokens and an explicitly labelled, local-only estimate
+   of the first quota window's movement, apportioned by that share.
    A root discovered part-way through an interval gets an honestly labelled
    partial first bar and its rate uses that root's own observed lifetime. New
    bars enter on the right, older bars move left, and each Y axis automatically
@@ -277,11 +277,24 @@ The Monitor's per-session quota figure is an estimate, not API attribution.
 Codex exposes account-level quota percentages and local per-session token
 telemetry separately; it does not report which session consumed each percentage
 point. Codexometer therefore multiplies the observed account-wide change by a
-session's share of locally observed tokens. Model choice, reasoning effort,
-cache behavior, and private backend weighting can make equal token counts affect
-quota differently. The UI uses percentage points (`PP`), labels the value
-`EST`, marks a late or stale baseline as partial, and refuses to calculate
-across a detected quota reset.
+session's share of locally observed tokens. This assumes that no activity from
+another computer, cloud session, different `CODEX_HOME`, or otherwise invisible
+client changes the account quota during the recording; if it does, its movement
+cannot be separated and will contaminate the estimate. Model choice, reasoning
+effort, cache behavior, and private backend weighting can also make equal token
+counts affect quota differently.
+
+The UI calls this `EST LOCAL-ONLY`, uses percentage points (`PP`), and never
+presents finer precision than the whole-number quota percentage returned by
+Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessarily
+zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
+missing, late-baseline, and reset-crossing windows do not produce a per-session
+number.
+Start reads quota before establishing the local token baseline, while Stop reads
+local tokens before the final quota snapshot, so the account observation
+brackets the local interval. These operations are not atomic, so unrelated
+account activity during either short boundary read remains another source of
+uncertainty.
 
 ### Deterministic benchmark
 

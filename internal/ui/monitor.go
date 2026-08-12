@@ -319,23 +319,22 @@ func (m Model) monitorQuotaReadout() string {
 	}
 	if len(m.monitorQuotaWindows) == 0 {
 		if m.monitorQuotaError != "" {
-			return "QUOTA USED Δ // UNAVAILABLE"
+			return "ACCOUNT QUOTA Δ // UNAVAILABLE"
 		}
-		return "QUOTA USED Δ // NO WINDOWS"
+		return "ACCOUNT QUOTA Δ // NO WINDOWS"
 	}
-	parts := []string{"QUOTA USED Δ"}
+	parts := []string{"ACCOUNT QUOTA Δ"}
 	for _, window := range m.monitorQuotaWindows {
 		value := "RESET"
-		if !window.resetDetected {
+		if m.monitorQuotaError != "" || window.stale {
+			value = "STALE"
+		} else if !window.resetDetected {
 			value = fmt.Sprintf("%+dPP", window.latestUsed-window.baselineUsed)
 			if window.partial {
 				value += " PARTIAL"
 			}
 		}
 		parts = append(parts, window.label+" "+value)
-	}
-	if m.monitorQuotaError != "" {
-		parts = append(parts, "STALE")
 	}
 	return strings.Join(parts, " // ")
 }
@@ -345,15 +344,44 @@ func (m Model) monitorSessionQuotaEstimate(share float64) string {
 		return ""
 	}
 	window := m.monitorQuotaWindows[0]
+	prefix := "EST LOCAL-ONLY " + compactMonitorQuotaLabel(window.label)
+	if m.monitorError != "" {
+		return prefix + " // LOCAL STALE"
+	}
+	if m.monitorQuotaError != "" || window.stale {
+		return prefix + " // STALE"
+	}
 	if window.resetDetected {
-		return "EST QUOTA // RESET DURING RUN"
+		return prefix + " // RESET"
 	}
-	delta := float64(window.latestUsed-window.baselineUsed) * share
-	label := window.label
 	if window.partial {
-		return "EST " + label + " // PARTIAL"
+		return prefix + " // PARTIAL"
 	}
-	return fmt.Sprintf("EST %s USED %+0.1fPP", label, delta)
+	delta := window.latestUsed - window.baselineUsed
+	if delta == 0 {
+		return prefix + " // NO INTEGER Δ"
+	}
+	estimate := float64(delta) * share
+	switch {
+	case estimate == 0:
+		return prefix + " 0PP"
+	case estimate < 1:
+		return prefix + " <1PP"
+	default:
+		return fmt.Sprintf("%s ~%.0fPP", prefix, math.Round(estimate))
+	}
+}
+
+func compactMonitorQuotaLabel(label string) string {
+	for _, unit := range []struct{ suffix, compact string }{
+		{" MINUTES", "M"}, {" MINUTE", "M"}, {" HOURS", "H"}, {" HOUR", "H"},
+		{" DAYS", "D"}, {" DAY", "D"}, {" WEEKS", "W"}, {" WEEK", "W"},
+	} {
+		if strings.HasSuffix(label, unit.suffix) {
+			return strings.TrimSuffix(label, unit.suffix) + unit.compact
+		}
+	}
+	return label
 }
 
 func shortSessionID(id string) string {

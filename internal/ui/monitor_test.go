@@ -183,7 +183,7 @@ func TestMonitorAttributesObservedQuotaMovementByLocalTokenShare(t *testing.T) {
 	updated, _ = model.Update(fetchedMsg{snapshot: monitorQuotaSnapshot(23, reset)})
 	model = updated.(Model)
 
-	if got := model.monitorQuotaReadout(); got != "QUOTA USED Δ // 5 HOURS +3PP" {
+	if got := model.monitorQuotaReadout(); got != "ACCOUNT QUOTA Δ // 5 HOURS +3PP" {
 		t.Fatalf("quota companion readout = %q", got)
 	}
 	alpha := model.monitorSessionData[model.monitorSessionIndex("alpha")]
@@ -191,14 +191,22 @@ func TestMonitorAttributesObservedQuotaMovementByLocalTokenShare(t *testing.T) {
 	alphaView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, alpha, "", paletteFor(themeHacker)))
 	bravoView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, bravo, "", paletteFor(themeHacker)))
 	for view, wants := range map[string][]string{
-		alphaView: {"60 TOKENS // 60% LOCAL", "EST 5 HOURS USED +1.8PP"},
-		bravoView: {"40 TOKENS // 40% LOCAL", "EST 5 HOURS USED +1.2PP"},
+		alphaView: {"60 TOKENS // 60% LOCAL", "EST LOCAL-ONLY 5H ~2PP"},
+		bravoView: {"40 TOKENS // 40% LOCAL", "EST LOCAL-ONLY 5H ~1PP"},
 	} {
 		for _, want := range wants {
 			if !strings.Contains(view, want) {
 				t.Errorf("session estimate missing %q:\n%s", want, view)
 			}
 		}
+	}
+	model.monitorQuotaWindows[0].latestUsed = 21
+	if got := model.monitorSessionQuotaEstimate(0.4); got != "EST LOCAL-ONLY 5H <1PP" {
+		t.Fatalf("sub-point estimate = %q", got)
+	}
+	model.monitorQuotaWindows[0].latestUsed = 20
+	if got := model.monitorSessionQuotaEstimate(0.4); got != "EST LOCAL-ONLY 5H // NO INTEGER Δ" {
+		t.Fatalf("zero integer movement = %q", got)
 	}
 }
 
@@ -228,8 +236,68 @@ func TestMonitorDoesNotEstimateAcrossAQuotaReset(t *testing.T) {
 		t.Fatalf("resetting quota readout = %q", got)
 	}
 	estimate := model.monitorSessionQuotaEstimate(1)
-	if estimate != "EST QUOTA // RESET DURING RUN" {
+	if estimate != "EST LOCAL-ONLY 5H // RESET" {
 		t.Fatalf("reset-crossing estimate = %q", estimate)
+	}
+}
+
+func TestMonitorSuppressesStaleAndMissingQuotaEstimates(t *testing.T) {
+	startedAt := time.Unix(1_800, 0)
+	reset := startedAt.Add(time.Hour).Unix()
+	model := Model{monitorState: monitorRunning, monitorStartedAt: startedAt, monitorLatest: 200, monitorBaseline: 100}
+	model.startMonitorQuotaSnapshot(monitorQuotaSnapshot(20, reset))
+	model.monitorQuotaWindows[0].latestUsed = 22
+
+	updated, _ := model.Update(fetchedMsg{err: errors.New("quota offline")})
+	model = updated.(Model)
+	if got := model.monitorSessionQuotaEstimate(1); got != "EST LOCAL-ONLY 5H // STALE" {
+		t.Fatalf("failed-refresh estimate = %q", got)
+	}
+	if got := model.monitorQuotaReadout(); got != "ACCOUNT QUOTA Δ // 5 HOURS STALE" {
+		t.Fatalf("failed-refresh account readout = %q", got)
+	}
+
+	updated, _ = model.Update(fetchedMsg{snapshot: codex.Snapshot{}})
+	model = updated.(Model)
+	if !model.monitorQuotaWindows[0].stale {
+		t.Fatal("omitted quota window was not marked stale")
+	}
+	if got := model.monitorSessionQuotaEstimate(1); got != "EST LOCAL-ONLY 5H // STALE" {
+		t.Fatalf("missing-window estimate = %q", got)
+	}
+
+	model.monitorQuotaWindows[0].stale = false
+	model.monitorState = monitorStopping
+	model.monitorRequest = 4
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchStop, sequence: 4, usage: codex.LiveUsageSnapshot{TotalTokens: 200},
+		quotaErr: errors.New("final quota offline"), at: startedAt.Add(time.Minute),
+	})
+	model = updated.(Model)
+	if got := model.monitorSessionQuotaEstimate(1); got != "EST LOCAL-ONLY 5H // STALE" {
+		t.Fatalf("failed-final estimate = %q", got)
+	}
+}
+
+func TestMonitorQuotaReadsBracketTheLocalTokenInterval(t *testing.T) {
+	fetcher := &orderedMonitorFetcher{
+		quota: monitorQuotaSnapshot(20, time.Now().Add(time.Hour).Unix()),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 100},
+	}
+	model := New(fetcher, time.Minute)
+	if message := model.monitorFetch(monitorFetchStart, 1)().(monitorFetchedMsg); message.err != nil {
+		t.Fatal(message.err)
+	}
+	if want := []string{"quota", "usage"}; !reflect.DeepEqual(fetcher.calls, want) {
+		t.Fatalf("Start reads = %v; want %v", fetcher.calls, want)
+	}
+
+	fetcher.calls = nil
+	if message := model.monitorFetch(monitorFetchStop, 2)().(monitorFetchedMsg); message.err != nil {
+		t.Fatal(message.err)
+	}
+	if want := []string{"usage-fresh", "quota"}; !reflect.DeepEqual(fetcher.calls, want) {
+		t.Fatalf("Stop reads = %v; want %v", fetcher.calls, want)
 	}
 }
 
@@ -607,6 +675,27 @@ type stubFreshLiveFetcher struct {
 	fresh         codex.LiveUsageSnapshot
 	ordinaryCalls int
 	freshCalls    int
+}
+
+type orderedMonitorFetcher struct {
+	calls []string
+	quota codex.Snapshot
+	usage codex.LiveUsageSnapshot
+}
+
+func (f *orderedMonitorFetcher) Fetch(context.Context) (codex.Snapshot, error) {
+	f.calls = append(f.calls, "quota")
+	return f.quota, nil
+}
+
+func (f *orderedMonitorFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
+	f.calls = append(f.calls, "usage")
+	return f.usage, nil
+}
+
+func (f *orderedMonitorFetcher) FetchTokenUsageFresh(context.Context) (codex.LiveUsageSnapshot, error) {
+	f.calls = append(f.calls, "usage-fresh")
+	return f.usage, nil
 }
 
 func (f *stubFreshLiveFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
