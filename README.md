@@ -84,6 +84,53 @@ Once a release has been published, Go users can install directly:
 go install github.com/merefield/codexometer@latest
 ```
 
+`go install` places the executable in `GOBIN` when that setting is non-empty;
+otherwise it uses the `bin` directory under `GOPATH` (normally
+`$HOME/go/bin`). That directory must be on `PATH` to run `codexometer` from any
+working directory.
+
+On macOS or Linux, find the directory Go used:
+
+```sh
+go_bin="$(go env GOBIN)"
+if [ -z "$go_bin" ]; then go_bin="$(go env GOPATH)/bin"; fi
+printf '%s\n' "$go_bin"
+```
+
+Add the printed directory to your shell configuration. For a default Go setup,
+add this line to `~/.zshrc` on macOS with Zsh, or `~/.bashrc` on Linux with
+Bash:
+
+```sh
+export PATH="$PATH:$HOME/go/bin"
+```
+
+Restart the terminal, or reload the relevant file with `source ~/.zshrc` or
+`source ~/.bashrc`.
+
+On Windows, PowerShell can discover Go's install directory and add it to the
+current user's persistent `Path` without requiring administrator access:
+
+```powershell
+$goBin = go env GOBIN
+if (-not $goBin) { $goBin = Join-Path (go env GOPATH) "bin" }
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ";") -notcontains $goBin) {
+    $newUserPath = if ($userPath) { "$userPath;$goBin" } else { $goBin }
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+}
+```
+
+Open a new terminal after changing the Windows `Path`. Confirm the command is
+available everywhere:
+
+```sh
+codexometer --version
+```
+
+On macOS/Linux, `command -v codexometer` shows the resolved executable. In
+PowerShell, use `Get-Command codexometer`.
+
 To build the current checkout:
 
 ```sh
@@ -92,8 +139,20 @@ cd codexometer
 go build -trimpath -ldflags="-s -w" -o codexometer .
 ```
 
-Then move `codexometer` somewhere on your `PATH`, or run it directly from the
-project directory.
+On Windows, use `-o codexometer.exe` instead. The compiled executable is
+standalone and does not require Go at runtime. Run it from the project directory
+as `./codexometer` (or `.\codexometer.exe` in PowerShell), or copy it into any
+directory already on `PATH`. A common per-user option on macOS/Linux is:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m 0755 codexometer "$HOME/.local/bin/codexometer"
+```
+
+If you use that location, ensure `$HOME/.local/bin` is also included in `PATH`
+using the same shell-configuration steps above. On Windows, a directory such as
+`$HOME\bin` can be created, added to the user `Path`, and used for
+`codexometer.exe`.
 
 ## Quick start
 
