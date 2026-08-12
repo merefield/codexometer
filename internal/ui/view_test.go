@@ -70,6 +70,51 @@ func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 	}
 }
 
+func TestQuotaViewsAccommodateReintroducedFiveHourAndAdditionalWindows(t *testing.T) {
+	now := time.Now()
+	window := func(used int, durationMinutes int64) *codex.Window {
+		reset := now.Add(time.Duration(durationMinutes/2) * time.Minute).Unix()
+		return &codex.Window{UsedPercent: used, WindowDurationMins: &durationMinutes, ResetsAt: &reset}
+	}
+	snapshot := codex.Snapshot{RateLimitsByLimitID: map[string]codex.RateLimitSnapshot{
+		"codex": {
+			Primary:   window(35, 300),
+			Secondary: window(48, 10_080),
+		},
+		"spark": {
+			LimitName: ptr("spark"),
+			Primary:   window(20, 60),
+			Secondary: window(70, 1_440),
+		},
+	}}
+	if meters := snapshot.Meters(); len(meters) != 4 || meters[0].Name != "5 HOURS" {
+		t.Fatalf("restored snapshot produced meters %#v", meters)
+	}
+
+	for _, size := range []struct{ width, height int }{{40, 24}, {80, 24}, {120, 40}} {
+		for _, style := range quotaMeterStyles {
+			model := Model{
+				snapshot: snapshot, width: size.width, height: size.height,
+				nextRefresh: now.Add(time.Minute), meterStyle: style,
+			}
+			output := ansi.Strip(model.View())
+			if got := lipgloss.Width(output); got > size.width {
+				t.Errorf("%s with four windows at %dx%d rendered width %d", style.name(), size.width, size.height, got)
+			}
+			if got := lipgloss.Height(output); got > size.height {
+				t.Errorf("%s with four windows at %dx%d rendered height %d:\n%s", style.name(), size.width, size.height, got, output)
+			}
+			if size.width >= 80 {
+				for _, title := range []string{"5 HOURS LOOP", "1 WEEK LOOP", "SPARK // 1 HOUR LOOP", "SPARK // 1 DAY LOOP"} {
+					if !strings.Contains(output, title) {
+						t.Errorf("%s at %dx%d omitted %q:\n%s", style.name(), size.width, size.height, title, output)
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	model := Model{
 		snapshot:    codex.DemoSnapshot(),

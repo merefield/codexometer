@@ -345,7 +345,11 @@ The other top-level views are:
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
 available rectangle proportionally. Bars, Consumption Pace, and Fuel Tank flow
-one meter per row.
+one meter per row. Codexometer does not hardcode the currently returned window
+set: it renders every primary and secondary window from every limit bucket,
+including a 300-minute window as `5 HOURS`. When more windows arrive,
+horizontal views remove decorative row gaps before compressing the cards, while
+Pie adds rows or columns only when each radial card retains a useful width.
 Meter rows always use identical heights; indivisible spare rows become quiet
 space above the footer instead of stretching one quota block more than another.
 Pie uses at least two columns when multiple limits exist, adding rows when that

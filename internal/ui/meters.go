@@ -25,14 +25,20 @@ func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID
 	if len(meters) == 0 {
 		return ""
 	}
-	const gap = 1
+	const columnGap = 1
 	columns := meterGridColumns(width, height, len(meters), style)
 	rows := (len(meters) + columns - 1) / columns
-	columnWidths := distributeSpace(width-(columns-1)*gap, columns)
+	rowGap := 1
+	// A framed meter needs at least its title, body, and bottom border. Drop the
+	// decorative blank row before shrinking cards below that useful minimum.
+	if height < rows*3+(rows-1)*rowGap {
+		rowGap = 0
+	}
+	columnWidths := distributeSpace(width-(columns-1)*columnGap, columns)
 	// Keep every meter card exactly the same height. Any indivisible remainder is
 	// left below the grid, immediately above the footer, rather than making the
 	// first card's visualization taller than the others.
-	rowHeight := max((height-(rows-1)*gap)/rows, 1)
+	rowHeight := max((height-(rows-1)*rowGap)/rows, 1)
 
 	renderedRows := make([]string, 0, rows)
 	for row := 0; row < rows; row++ {
@@ -40,7 +46,7 @@ func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID
 		for column := 0; column < columns; column++ {
 			meterIndex := row*columns + column
 			if column > 0 {
-				pieces = append(pieces, strings.Repeat(" ", gap))
+				pieces = append(pieces, strings.Repeat(" ", columnGap))
 			}
 			if meterIndex < len(meters) {
 				pieces = append(pieces, renderMeterArea(columnWidths[column], rowHeight, meters[meterIndex], style, colors))
@@ -50,7 +56,7 @@ func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID
 		}
 		renderedRows = append(renderedRows, lipgloss.JoinHorizontal(lipgloss.Top, pieces...))
 	}
-	grid := strings.Join(renderedRows, "\n\n")
+	grid := strings.Join(renderedRows, strings.Repeat("\n", rowGap+1))
 	if padding := height - lipgloss.Height(grid); padding > 0 {
 		grid += strings.Repeat("\n", padding)
 	}
@@ -62,12 +68,18 @@ func meterGridColumns(width, height, meterCount int, style meterStyleID) int {
 		return 1
 	}
 	minimumColumns := 1
+	maximumColumns := meterCount
 	if isRadialStyle(style) && meterCount > 1 {
 		minimumColumns = 2
+		// Below this width the circular canvas and title both become ambiguous.
+		// Retain at least two columns, then add more only when each card remains
+		// meaningfully readable.
+		const minimumRadialCardWidth = 28
+		maximumColumns = min(meterCount, max(width/minimumRadialCardWidth, minimumColumns))
 	}
 	bestColumns := minimumColumns
 	bestDetail := -1
-	for columns := minimumColumns; columns <= meterCount; columns++ {
+	for columns := minimumColumns; columns <= maximumColumns; columns++ {
 		rows := (meterCount + columns - 1) / columns
 		cellWidth := max((width-(columns-1))/columns, 1)
 		cellHeight := max((height-(rows-1))/rows, 1)
@@ -133,6 +145,7 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 			stats = usedText
 		}
 	}
+	stats = ansi.Truncate(stats, innerWidth, "")
 
 	reset := "RESET DATA UNAVAILABLE"
 	if meter.Window.ResetsAt != nil {
