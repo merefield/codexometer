@@ -235,28 +235,42 @@ func benchmarkSegmentsWidth(segments []benchmarkControlSegment) int {
 }
 
 func (m Model) benchmarkFilterLine(width int) []benchmarkControlSegment {
-	filter := []benchmarkControlSegment{
+	controls := []benchmarkControlSegment{
 		{text: "SHOW //", enabled: true},
 		{text: "[ ALL ]", button: footerButtonBenchmarkFilterAll, enabled: true, active: m.benchmarkFilter == benchmarkFilterAll},
 		{text: "[ PASS ]", button: footerButtonBenchmarkFilterPass, enabled: true, active: m.benchmarkFilter == benchmarkFilterPass},
 		{text: "[ FAIL ]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
+		{text: " RANK //", enabled: true},
+		{text: "[ COST ]", button: footerButtonBenchmarkRankCost, enabled: true, active: m.benchmarkRankMode == benchmarkRankCost},
+		{text: "[ BAL ]", button: footerButtonBenchmarkRankBalanced, enabled: true, active: m.benchmarkRankMode == benchmarkRankBalanced},
+		{text: "[ SPEED ]", button: footerButtonBenchmarkRankSpeed, enabled: true, active: m.benchmarkRankMode == benchmarkRankSpeed},
 	}
-	filterWidth := 0
-	for index, segment := range filter {
-		filterWidth += lipgloss.Width(segment.text)
-		if index > 0 {
-			filterWidth++
-		}
-	}
-	if filterWidth > width {
-		filter = []benchmarkControlSegment{
+	if benchmarkSegmentsWidth(controls) > width {
+		controls = []benchmarkControlSegment{
 			{text: "SHOW", enabled: true},
 			{text: "[ALL]", button: footerButtonBenchmarkFilterAll, enabled: true, active: m.benchmarkFilter == benchmarkFilterAll},
 			{text: "[PASS]", button: footerButtonBenchmarkFilterPass, enabled: true, active: m.benchmarkFilter == benchmarkFilterPass},
 			{text: "[FAIL]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
+			{text: "RANK", enabled: true},
+			{text: "[C]", button: footerButtonBenchmarkRankCost, enabled: true, active: m.benchmarkRankMode == benchmarkRankCost},
+			{text: "[B]", button: footerButtonBenchmarkRankBalanced, enabled: true, active: m.benchmarkRankMode == benchmarkRankBalanced},
+			{text: "[S]", button: footerButtonBenchmarkRankSpeed, enabled: true, active: m.benchmarkRankMode == benchmarkRankSpeed},
 		}
 	}
-	return filter
+	if benchmarkSegmentsWidth(controls) > width {
+		controls = []benchmarkControlSegment{
+			{text: "[A]", button: footerButtonBenchmarkFilterAll, enabled: true, active: m.benchmarkFilter == benchmarkFilterAll},
+			{text: "[P]", button: footerButtonBenchmarkFilterPass, enabled: true, active: m.benchmarkFilter == benchmarkFilterPass},
+			{text: "[F]", button: footerButtonBenchmarkFilterFail, enabled: true, active: m.benchmarkFilter == benchmarkFilterFail},
+			{text: "[C]", button: footerButtonBenchmarkRankCost, enabled: true, active: m.benchmarkRankMode == benchmarkRankCost},
+			{text: "[B]", button: footerButtonBenchmarkRankBalanced, enabled: true, active: m.benchmarkRankMode == benchmarkRankBalanced},
+			{text: "[S]", button: footerButtonBenchmarkRankSpeed, enabled: true, active: m.benchmarkRankMode == benchmarkRankSpeed},
+		}
+	}
+	for benchmarkSegmentsWidth(controls) > width && len(controls) > 0 {
+		controls = controls[:len(controls)-1]
+	}
+	return controls
 }
 
 func benchmarkRunAllAvailable(running bool, combinations, taskCount int) bool {
@@ -335,7 +349,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	bodyHeight := max(height-2, 1)
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
 	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
-	rankings := benchmarkRankings(m.benchmarkResults)
+	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
 	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending, rankings), rankings)
 	lines := []string{m.renderBenchmarkSegments(m.benchmarkFilterLine(innerWidth), innerWidth, colors)}
 	if bodyHeight > 1 {
@@ -575,10 +589,11 @@ type benchmarkRankSummary struct {
 	passes        int
 	failures      int
 	costComplete  bool
-	tokenComplete bool
 	cost          float64
-	tokens        int64
 	duration      time.Duration
+	costRank      int
+	timeRank      int
+	weightedScore int
 }
 
 func benchmarkCombinationKey(result codex.BenchmarkResult) string {
@@ -590,14 +605,19 @@ func benchmarkCombinationKey(result codex.BenchmarkResult) string {
 }
 
 // benchmarkRankings compares model/effort combinations across all completed
-// rows currently in the matrix. Correctness dominates; efficiency breaks ties.
-func benchmarkRankings(results []codex.BenchmarkResult) map[string]int {
+// rows currently in the matrix. Correctness dominates a weighted blend of the
+// independent cost and elapsed-time ranks.
+func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMode) map[string]int {
+	mode := benchmarkRankBalanced
+	if len(modes) > 0 {
+		mode = modes[0]
+	}
 	byKey := make(map[string]*benchmarkRankSummary)
 	for _, result := range results {
 		key := benchmarkCombinationKey(result)
 		summary := byKey[key]
 		if summary == nil {
-			summary = &benchmarkRankSummary{key: key, costComplete: true, tokenComplete: true}
+			summary = &benchmarkRankSummary{key: key, costComplete: true}
 			byKey[key] = summary
 		}
 		if result.Correct {
@@ -605,21 +625,29 @@ func benchmarkRankings(results []codex.BenchmarkResult) map[string]int {
 		} else {
 			summary.failures++
 		}
-		summary.duration += max(result.Duration, time.Duration(0))
+		duration := max(result.Duration, time.Duration(0))
+		if duration > time.Duration(math.MaxInt64)-summary.duration {
+			summary.duration = time.Duration(math.MaxInt64)
+		} else {
+			summary.duration += duration
+		}
 		if result.CostKnown && result.CostUSD >= 0 && !math.IsNaN(result.CostUSD) && !math.IsInf(result.CostUSD, 0) && !math.IsInf(summary.cost+result.CostUSD, 0) {
 			summary.cost += result.CostUSD
 		} else {
 			summary.costComplete = false
 		}
-		if result.UsageKnown && result.Usage.TotalTokens >= 0 && summary.tokens <= math.MaxInt64-result.Usage.TotalTokens {
-			summary.tokens += result.Usage.TotalTokens
-		} else {
-			summary.tokenComplete = false
-		}
 	}
 	summaries := make([]benchmarkRankSummary, 0, len(byKey))
 	for _, summary := range byKey {
 		summaries = append(summaries, *summary)
+	}
+	costRanks := benchmarkCostRanks(summaries)
+	timeRanks := benchmarkTimeRanks(summaries)
+	costWeight, timeWeight := benchmarkRankWeights(mode)
+	for index := range summaries {
+		summaries[index].costRank = costRanks[summaries[index].key]
+		summaries[index].timeRank = timeRanks[summaries[index].key]
+		summaries[index].weightedScore = summaries[index].costRank*costWeight + summaries[index].timeRank*timeWeight
 	}
 	sort.Slice(summaries, func(left, right int) bool {
 		if comparison := compareBenchmarkRankSummaries(summaries[left], summaries[right]); comparison != 0 {
@@ -638,6 +666,66 @@ func benchmarkRankings(results []codex.BenchmarkResult) map[string]int {
 	return rankings
 }
 
+func benchmarkRankWeights(mode benchmarkRankMode) (cost, elapsed int) {
+	switch mode {
+	case benchmarkRankCost:
+		return 3, 1
+	case benchmarkRankSpeed:
+		return 1, 3
+	default:
+		return 1, 1
+	}
+}
+
+func benchmarkCostRanks(summaries []benchmarkRankSummary) map[string]int {
+	ordered := slices.Clone(summaries)
+	sort.Slice(ordered, func(left, right int) bool {
+		if comparison := compareBenchmarkCosts(ordered[left], ordered[right]); comparison != 0 {
+			return comparison < 0
+		}
+		return ordered[left].key < ordered[right].key
+	})
+	return benchmarkAxisRanks(ordered, compareBenchmarkCosts)
+}
+
+func compareBenchmarkCosts(left, right benchmarkRankSummary) int {
+	if left.costComplete != right.costComplete {
+		return compareInt(boolInt(right.costComplete), boolInt(left.costComplete))
+	}
+	if !left.costComplete || left.cost == right.cost {
+		return 0
+	}
+	if left.cost < right.cost {
+		return -1
+	}
+	return 1
+}
+
+func benchmarkTimeRanks(summaries []benchmarkRankSummary) map[string]int {
+	ordered := slices.Clone(summaries)
+	sort.Slice(ordered, func(left, right int) bool {
+		if comparison := compareInt64(int64(ordered[left].duration), int64(ordered[right].duration)); comparison != 0 {
+			return comparison < 0
+		}
+		return ordered[left].key < ordered[right].key
+	})
+	return benchmarkAxisRanks(ordered, func(left, right benchmarkRankSummary) int {
+		return compareInt64(int64(left.duration), int64(right.duration))
+	})
+}
+
+func benchmarkAxisRanks(ordered []benchmarkRankSummary, compare func(benchmarkRankSummary, benchmarkRankSummary) int) map[string]int {
+	ranks := make(map[string]int, len(ordered))
+	rank := 0
+	for index, summary := range ordered {
+		if index == 0 || compare(ordered[index-1], summary) != 0 {
+			rank = index + 1
+		}
+		ranks[summary.key] = rank
+	}
+	return ranks
+}
+
 func compareBenchmarkRankSummaries(left, right benchmarkRankSummary) int {
 	if left.passes != right.passes {
 		return compareInt(right.passes, left.passes)
@@ -645,22 +733,7 @@ func compareBenchmarkRankSummaries(left, right benchmarkRankSummary) int {
 	if left.failures != right.failures {
 		return compareInt(left.failures, right.failures)
 	}
-	if left.costComplete != right.costComplete {
-		return compareInt(boolInt(right.costComplete), boolInt(left.costComplete))
-	}
-	if left.costComplete && left.cost != right.cost {
-		if left.cost < right.cost {
-			return -1
-		}
-		return 1
-	}
-	if left.tokenComplete != right.tokenComplete {
-		return compareInt(boolInt(right.tokenComplete), boolInt(left.tokenComplete))
-	}
-	if left.tokenComplete && left.tokens != right.tokens {
-		return compareInt64(left.tokens, right.tokens)
-	}
-	return compareInt64(int64(left.duration), int64(right.duration))
+	return compareInt(left.weightedScore, right.weightedScore)
 }
 
 func compareBenchmarkResults(left, right codex.BenchmarkResult, column benchmarkSortColumn) int {

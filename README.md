@@ -160,6 +160,7 @@ codexometer --codex /path/to/codex
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
 | `f` | Show all, passed, or failed benchmark results |
+| `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
 | `Esc` | Quit |
@@ -351,17 +352,28 @@ making the easier inputs larger.
 
 The `RANK` column is an overall ranking for each model/reasoning-effort
 combination across every completed row currently in the result matrix. More
-passes always beat fewer passes, then fewer failures win. Ties favor complete
-API-equivalent measurements and lower total API-equivalent cost, followed by
-complete token measurements and fewer total tokens, then lower total wall time.
-The same overall rank is repeated on each task row for that combination, and the
-rank heading is clickable like the other sortable headings. Exact ties share a
-rank.
+passes always beat fewer passes, then fewer failures win. Within that correctness
+tier, Codexometer independently ranks total API-equivalent cost and total wall
+time, then combines those ordinal ranks using the selected weighting:
+
+| Mode | Cost-rank weight | Time-rank weight |
+| --- | ---: | ---: |
+| **Cost** | 75% | 25% |
+| **Balanced** | 50% | 50% |
+| **Speed** | 25% | 75% |
+
+Click **Cost**, **Bal**, or **Speed** in the Result Matrix control row, or press
+`w` to cycle them. The ranking is recomputed immediately without rerunning any
+trial. A missing or invalid cost measurement receives the last cost-axis rank
+instead of looking artificially cheap. Token counts remain visible diagnostics
+but do not affect rank. The same overall rank is repeated on each task row for
+that combination, and the rank heading is clickable like the other sortable
+headings. Exact weighted-score ties share a rank.
 
 Rankings update as results arrive, so they are provisional until a run finishes.
-They inherit the token and API-equivalent caveats below; in particular, unknown
-prices sort behind complete cost measurements and prompt-cache order can affect
-the efficiency tie-breakers. Correctness remains the dominant criterion.
+They inherit the API-equivalent caveats below; in particular, unknown prices
+sort behind complete measurements on the cost axis and prompt-cache order can
+affect that axis. Correctness remains the dominant criterion.
 
 #### How PASS and FAIL are decided
 

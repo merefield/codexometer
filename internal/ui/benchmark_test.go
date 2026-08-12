@@ -426,8 +426,8 @@ func TestBenchmarkRankingPrioritizesCorrectnessThenMeasuredEfficiency(t *testing
 	rankings := benchmarkRankings(results)
 	for key, want := range map[string]int{
 		"terra\x00low":   1,
-		"sol\x00medium":  2,
-		"future\x00high": 3,
+		"future\x00high": 2,
+		"sol\x00medium":  3,
 		"luna\x00low":    4,
 	} {
 		if got := rankings[key]; got != want {
@@ -435,19 +435,39 @@ func TestBenchmarkRankingPrioritizesCorrectnessThenMeasuredEfficiency(t *testing
 		}
 	}
 	values := benchmarkResultValues(results[0], rankings)
-	if values[0] != "#2" {
-		t.Fatalf("rank display = %q, want #2", values[0])
+	if values[0] != "#3" {
+		t.Fatalf("rank display = %q, want #3", values[0])
 	}
 	ordered := sortedBenchmarkResults(results, benchmarkSortRank, false, rankings)
 	if ordered[0].DisplayName != "Terra" || ordered[len(ordered)-1].DisplayName != "Luna" {
 		t.Fatalf("rank sort order starts/ends %q/%q", ordered[0].DisplayName, ordered[len(ordered)-1].DisplayName)
 	}
 	tied := benchmarkRankings([]codex.BenchmarkResult{
-		{Model: "a", Effort: "low", Correct: true, Duration: time.Second, UsageKnown: true, CostKnown: true},
-		{Model: "b", Effort: "low", Correct: true, Duration: time.Second, UsageKnown: true, CostKnown: true},
+		{Model: "a", Effort: "low", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 1}, UsageKnown: true, CostKnown: true},
+		{Model: "b", Effort: "low", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 999_999}, UsageKnown: true, CostKnown: true},
 	})
 	if tied["a\x00low"] != 1 || tied["b\x00low"] != 1 {
-		t.Fatalf("exact tie ranks = %v, want both #1", tied)
+		t.Fatalf("cost/time tie ranks = %v, want both #1 despite different token totals", tied)
+	}
+}
+
+func TestBenchmarkRankWeightingSwitchesBetweenCostAndSpeed(t *testing.T) {
+	results := []codex.BenchmarkResult{
+		{Model: "cheap", Effort: "low", Correct: true, Duration: 30 * time.Second, CostKnown: true, CostUSD: 0.01},
+		{Model: "middle", Effort: "low", Correct: true, Duration: 20 * time.Second, CostKnown: true, CostUSD: 0.02},
+		{Model: "fast", Effort: "low", Correct: true, Duration: 10 * time.Second, CostKnown: true, CostUSD: 0.03},
+	}
+	cost := benchmarkRankings(results, benchmarkRankCost)
+	balanced := benchmarkRankings(results, benchmarkRankBalanced)
+	speed := benchmarkRankings(results, benchmarkRankSpeed)
+	if cost["cheap\x00low"] != 1 || cost["fast\x00low"] != 3 {
+		t.Fatalf("cost-weighted ranks = %v", cost)
+	}
+	if balanced["cheap\x00low"] != 1 || balanced["middle\x00low"] != 1 || balanced["fast\x00low"] != 1 {
+		t.Fatalf("balanced symmetric ranks = %v; want a three-way tie", balanced)
+	}
+	if speed["fast\x00low"] != 1 || speed["cheap\x00low"] != 3 {
+		t.Fatalf("speed-weighted ranks = %v", speed)
 	}
 }
 
@@ -652,6 +672,42 @@ func TestBenchmarkPassFailFilterButtonsAndHotkey(t *testing.T) {
 	model = updated.(Model)
 	if model.benchmarkFilter != benchmarkFilterAll {
 		t.Fatalf("filter hotkey cycled to %d, want ALL", model.benchmarkFilter)
+	}
+}
+
+func TestBenchmarkRankWeightButtonsAndHotkeyRecomputeImmediately(t *testing.T) {
+	model := Model{
+		width: 100, height: 30, snapshot: codex.DemoSnapshot(), meterStyle: styleBenchmark,
+		benchmarkRankMode: benchmarkRankBalanced,
+		benchmarkResults: []codex.BenchmarkResult{
+			{Model: "cheap", DisplayName: "Cheap", Effort: "low", Correct: true, Duration: 30 * time.Second, CostKnown: true, CostUSD: 0.01},
+			{Model: "fast", DisplayName: "Fast", Effort: "low", Correct: true, Duration: 10 * time.Second, CostKnown: true, CostUSD: 0.03},
+		},
+	}
+	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkRankCost)
+	updated, command := model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	model = updated.(Model)
+	if command == nil || model.benchmarkRankMode != benchmarkRankCost || model.flashedButton != footerButtonBenchmarkRankCost {
+		t.Fatalf("Cost rank button did not activate and flash: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
+	}
+	if ranks := benchmarkRankings(model.benchmarkResults, model.benchmarkRankMode); ranks["cheap\x00low"] != 1 {
+		t.Fatalf("Cost selection did not immediately rank Cheap first: %v", ranks)
+	}
+
+	updated, command = model.Update(key('w'))
+	model = updated.(Model)
+	if command == nil || model.benchmarkRankMode != benchmarkRankSpeed || model.flashedButton != footerButtonBenchmarkRankSpeed {
+		t.Fatalf("weight hotkey did not cycle to Speed: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
+	}
+	if ranks := benchmarkRankings(model.benchmarkResults, model.benchmarkRankMode); ranks["fast\x00low"] != 1 {
+		t.Fatalf("Speed selection did not immediately rank Fast first: %v", ranks)
+	}
+
+	x, y = benchmarkControlCoordinates(t, model, footerButtonBenchmarkRankBalanced)
+	updated, _ = model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	model = updated.(Model)
+	if model.benchmarkRankMode != benchmarkRankBalanced {
+		t.Fatalf("Balanced rank button selected mode %d", model.benchmarkRankMode)
 	}
 }
 

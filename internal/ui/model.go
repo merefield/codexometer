@@ -72,6 +72,7 @@ type Model struct {
 	benchmarkSortDescending  bool
 	benchmarkSortHovered     bool
 	benchmarkHoveredSort     benchmarkSortColumn
+	benchmarkRankMode        benchmarkRankMode
 	benchmarkEvents          <-chan codex.BenchmarkEvent
 	benchmarkCancel          context.CancelFunc
 
@@ -217,6 +218,14 @@ const (
 	benchmarkFilterFail
 )
 
+type benchmarkRankMode int
+
+const (
+	benchmarkRankBalanced benchmarkRankMode = iota
+	benchmarkRankCost
+	benchmarkRankSpeed
+)
+
 const footerButtonFlashDuration = 150 * time.Millisecond
 
 type footerButtonID int
@@ -235,6 +244,9 @@ const (
 	footerButtonBenchmarkFilterAll
 	footerButtonBenchmarkFilterPass
 	footerButtonBenchmarkFilterFail
+	footerButtonBenchmarkRankCost
+	footerButtonBenchmarkRankBalanced
+	footerButtonBenchmarkRankSpeed
 )
 
 type footerButton struct {
@@ -254,10 +266,11 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
-		fetcher:      fetcher,
-		refreshEvery: refreshEvery,
-		loading:      true,
-		nextRefresh:  time.Now().Add(refreshEvery),
+		fetcher:           fetcher,
+		refreshEvery:      refreshEvery,
+		loading:           true,
+		nextRefresh:       time.Now().Add(refreshEvery),
+		benchmarkRankMode: benchmarkRankBalanced,
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -313,6 +326,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.meterStyle == styleBenchmark {
 				m.setBenchmarkFilter((m.benchmarkFilter + 1) % 3)
 				return m, nil
+			}
+		case "w":
+			if m.meterStyle == styleBenchmark {
+				return m.pressFooterButton(benchmarkRankButton((m.benchmarkRankMode + 1) % 3))
 			}
 		case "pgup":
 			if m.meterStyle == styleBenchmark {
@@ -614,6 +631,12 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.setBenchmarkFilter(benchmarkFilterPass)
 	case footerButtonBenchmarkFilterFail:
 		m.setBenchmarkFilter(benchmarkFilterFail)
+	case footerButtonBenchmarkRankCost:
+		m.setBenchmarkRankMode(benchmarkRankCost)
+	case footerButtonBenchmarkRankBalanced:
+		m.setBenchmarkRankMode(benchmarkRankBalanced)
+	case footerButtonBenchmarkRankSpeed:
+		m.setBenchmarkRankMode(benchmarkRankSpeed)
 	}
 	return m, nil
 }
@@ -778,6 +801,25 @@ func (m Model) benchmarkTasks() []codex.BenchmarkTask {
 func (m *Model) setBenchmarkFilter(filter benchmarkResultFilter) {
 	m.benchmarkFilter = filter
 	m.benchmarkScroll = 0
+}
+
+func (m *Model) setBenchmarkRankMode(mode benchmarkRankMode) {
+	if mode < benchmarkRankBalanced || mode > benchmarkRankSpeed {
+		return
+	}
+	m.benchmarkRankMode = mode
+	m.benchmarkScroll = 0
+}
+
+func benchmarkRankButton(mode benchmarkRankMode) footerButtonID {
+	switch mode {
+	case benchmarkRankCost:
+		return footerButtonBenchmarkRankCost
+	case benchmarkRankSpeed:
+		return footerButtonBenchmarkRankSpeed
+	default:
+		return footerButtonBenchmarkRankBalanced
+	}
 }
 
 func (m Model) benchmarkPageSize() int {
