@@ -21,12 +21,15 @@ func (m Model) View() string {
 	if !m.loading || len(m.snapshot.Meters()) > 0 {
 		account = m.renderAccount(colors)
 	}
-	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(colors), account, colors)
+	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(contentWidth, colors), account, colors)
 	parts := []string{header}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		parts = append(parts, renderBoot(contentWidth, m.phase, colors))
 	} else {
-		parts = append(parts, strings.Repeat(" ", contentWidth), m.renderStyleTabs(contentWidth, colors))
+		parts = append(parts, strings.Repeat(" ", contentWidth), m.renderMainTabs(contentWidth, colors))
+		if m.meterStyle.isQuota() {
+			parts = append(parts, m.renderQuotaStyleTabs(contentWidth, colors))
+		}
 		if m.err != nil {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
@@ -85,18 +88,27 @@ func (m Model) renderAccount(colors palette) string {
 	return colors.dimmed().Render("ACCOUNT // " + plan)
 }
 
-func (m Model) renderSignalStatus(colors palette) string {
-	status := "ONLINE"
-	color := colors.primary
-	if m.err != nil {
-		status = "STALE SIGNAL"
-		color = colors.warning
-	}
+func (m Model) renderSignalStatus(width int, colors palette) string {
 	if m.loading {
-		status = "SCANNING"
-		color = colors.accent
+		return renderColoredSignal("SCANNING", colors.accent)
 	}
-	return lipgloss.NewStyle().Bold(true).Foreground(color).Render("● " + status)
+	if m.err != nil {
+		return renderColoredSignal("STALE SIGNAL", colors.warning)
+	}
+	health := snapshotQuotaHealth(m.snapshot, time.Now())
+	semantic := lipgloss.NewStyle().Bold(true).Foreground(health.color(colors))
+	online := lipgloss.NewStyle().Bold(true).Foreground(colors.primary)
+	if width < 24 {
+		return semantic.Render("● " + health.compactLabel())
+	}
+	if width < 48 {
+		return semantic.Render("●") + online.Render(" ON // ") + semantic.Render(health.compactLabel())
+	}
+	return semantic.Render("●") + online.Render(" ONLINE // ") + semantic.Render(health.label())
+}
+
+func renderColoredSignal(label string, color lipgloss.Color) string {
+	return lipgloss.NewStyle().Bold(true).Foreground(color).Render("● " + label)
 }
 
 func joinRight(left, right string, width int) string {
@@ -124,7 +136,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 		left += fmt.Sprintf("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
 	status := left
-	buttons, separator := footerButtonLayoutWithTheme(width, colors.name)
+	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterStyle.isQuota())
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		controls = append(controls, footerButtonAppearance(

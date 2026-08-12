@@ -29,12 +29,29 @@ const (
 	styleCount
 )
 
-func (s meterStyleID) next() meterStyleID {
-	return (s + 1) % styleCount
+var quotaStyleOrder = [...]meterStyleID{
+	styleBars,
+	stylePie,
+	styleConsumptionPace,
+	styleFuel,
 }
 
-func (s meterStyleID) previous() meterStyleID {
-	return (s - 1 + styleCount) % styleCount
+func (s meterStyleID) isQuota() bool {
+	for _, style := range quotaStyleOrder {
+		if s == style {
+			return true
+		}
+	}
+	return false
+}
+
+func (s meterStyleID) nextQuota() meterStyleID {
+	for index, style := range quotaStyleOrder {
+		if s == style {
+			return quotaStyleOrder[(index+1)%len(quotaStyleOrder)]
+		}
+	}
+	return styleBars
 }
 
 func (s meterStyleID) name() string {
