@@ -443,6 +443,16 @@ func TestBenchmarkRankingPrioritizesCorrectnessThenMeasuredEfficiency(t *testing
 	if ordered[0].DisplayName != "Terra" || ordered[len(ordered)-1].DisplayName != "Luna" {
 		t.Fatalf("rank sort order starts/ends %q/%q", ordered[0].DisplayName, ordered[len(ordered)-1].DisplayName)
 	}
+	overridden := map[string]int{
+		"terra\x00low":   4,
+		"luna\x00low":    1,
+		"future\x00high": 2,
+		"sol\x00medium":  3,
+	}
+	ordered = sortedBenchmarkResults(results, benchmarkSortRank, false, overridden)
+	if ordered[0].DisplayName != "Luna" || ordered[len(ordered)-1].DisplayName != "Terra" {
+		t.Fatalf("supplied rank sort order starts/ends %q/%q; supplied rankings were not reused", ordered[0].DisplayName, ordered[len(ordered)-1].DisplayName)
+	}
 	tied := benchmarkRankings([]codex.BenchmarkResult{
 		{Model: "a", Effort: "low", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 1}, UsageKnown: true, CostKnown: true},
 		{Model: "b", Effort: "low", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 999_999}, UsageKnown: true, CostKnown: true},

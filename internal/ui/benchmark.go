@@ -348,8 +348,8 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
 	bodyHeight := max(height-2, 1)
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
-	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
 	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
+	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
 	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending, rankings), rankings)
 	lines := []string{m.renderBenchmarkSegments(m.benchmarkFilterLine(innerWidth), innerWidth, colors)}
 	if bodyHeight > 1 {
@@ -408,7 +408,6 @@ type benchmarkTableRow struct {
 func benchmarkTableColumns(width int, results []codex.BenchmarkResult) []benchmarkColumn {
 	titles := []string{"RANK", "MODEL", "EFFORT", "TASK", "RESULT", "TIME", "TOKENS", "API EQ"}
 	sorts := []benchmarkSortColumn{benchmarkSortRank, benchmarkSortModel, benchmarkSortEffort, benchmarkSortTask, benchmarkSortResult, benchmarkSortTime, benchmarkSortTokens, benchmarkSortCost}
-	rankings := benchmarkRankings(results)
 	widths := make([]int, len(titles))
 	idealWidths := make([]int, len(titles))
 	for index, title := range titles {
@@ -416,10 +415,15 @@ func benchmarkTableColumns(width int, results []codex.BenchmarkResult) []benchma
 		widths[index] = lipgloss.Width(title) + 3
 		idealWidths[index] = widths[index]
 	}
+	combinations := make(map[string]struct{})
 	for _, result := range results {
-		for index, value := range benchmarkResultValues(result, rankings) {
+		combinations[benchmarkCombinationKey(result)] = struct{}{}
+		for index, value := range benchmarkResultValues(result, nil) {
 			idealWidths[index] = max(idealWidths[index], lipgloss.Width(value))
 		}
+	}
+	if len(combinations) > 0 {
+		idealWidths[0] = max(idealWidths[0], lipgloss.Width(fmt.Sprintf("#%d", len(combinations))))
 	}
 
 	separatorWidth := len(widths) - 1
@@ -557,9 +561,13 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 	if column == benchmarkSortNone {
 		return ordered
 	}
-	rankings := benchmarkRankings(results)
-	if len(suppliedRankings) > 0 {
-		rankings = suppliedRankings[0]
+	var rankings map[string]int
+	if column == benchmarkSortRank {
+		if len(suppliedRankings) > 0 {
+			rankings = suppliedRankings[0]
+		} else {
+			rankings = benchmarkRankings(results)
+		}
 	}
 	sort.SliceStable(ordered, func(left, right int) bool {
 		if column == benchmarkSortRank {
