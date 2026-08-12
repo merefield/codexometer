@@ -236,7 +236,7 @@ type footerButtonID int
 const (
 	footerButtonNone footerButtonID = iota
 	footerButtonTheme
-	footerButtonStyle
+	footerButtonView
 	footerButtonRefresh
 	footerButtonQuit
 	footerButtonMonitorGo
@@ -267,7 +267,7 @@ var footerButtonDefinitions = []footerButton{
 
 var quotaFooterButtonDefinitions = []footerButton{
 	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
-	{id: footerButtonStyle, label: "[ (S)TYLE ]", compact: "[S]"},
+	{id: footerButtonView, label: "[ (V)IEW ]", compact: "[V]"},
 	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
 	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
 }
@@ -306,11 +306,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			return m.pressFooterButton(footerButtonTheme)
 		case "s":
-			if m.meterStyle.isQuota() {
-				return m.pressFooterButton(footerButtonStyle)
-			}
 			if m.meterStyle == styleMonitor {
 				return m.pressFooterButton(footerButtonMonitorGo)
+			}
+		case "v":
+			if m.meterStyle.isQuota() {
+				return m.pressFooterButton(footerButtonView)
 			}
 		case "tab":
 			return m.pressMainTab(m.currentMainTab().next())
@@ -591,7 +592,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
 		m.theme = m.theme.next()
-	case footerButtonStyle:
+	case footerButtonView:
 		if m.meterStyle.isQuota() {
 			m.meterStyle = m.meterStyle.nextQuota()
 			m.quotaMeterStyle = m.meterStyle
