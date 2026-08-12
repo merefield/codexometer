@@ -197,6 +197,10 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
    descendants with an explicit Codex parent link are recursively aggregated
    into the root row and reported as `ROOT + n AGENTS`. All graphs add one thin
    vertical block bar on the same 30-second tick, after a fresh boundary read.
+   The companion readout records each account quota window at Start and tracks
+   its observed change while recording. Every session row shows its exact share
+   of locally observed tokens and an explicitly labelled estimate of the first
+   quota window's movement, apportioned by that share.
    A root discovered part-way through an interval gets an honestly labelled
    partial first bar and its rate uses that root's own observed lifetime. New
    bars enter on the right, older bars move left, and each Y axis automatically
@@ -268,6 +272,16 @@ Monitor honors its ownership boundary so copied parent telemetry is not counted
 twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
+
+The Monitor's per-session quota figure is an estimate, not API attribution.
+Codex exposes account-level quota percentages and local per-session token
+telemetry separately; it does not report which session consumed each percentage
+point. Codexometer therefore multiplies the observed account-wide change by a
+session's share of locally observed tokens. Model choice, reasoning effort,
+cache behavior, and private backend weighting can make equal token counts affect
+quota differently. The UI uses percentage points (`PP`), labels the value
+`EST`, marks a late or stale baseline as partial, and refuses to calculate
+across a detected quota reset.
 
 ### Deterministic benchmark
 

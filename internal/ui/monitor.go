@@ -143,6 +143,11 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	if height >= 6 {
 		lines = append(lines, colors.label().Render(ansi.Truncate(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
 	}
+	if height >= 5 {
+		if quota := m.monitorQuotaReadout(); quota != "" {
+			lines = append(lines, colors.dimmed().Render(ansi.Truncate(quota, innerWidth, "")))
+		}
+	}
 	if height >= 8 && !m.monitorStartedAt.IsZero() {
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
 	}
@@ -268,23 +273,87 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		memberLabel = "UNLINKED ACTIVITY"
 	}
 	bodyRows := max(height-2, 1)
-	lines := []string{colors.label().Render(ansi.Truncate(formatTokens(total)+" TOKENS", innerWidth, ""))}
-	if bodyRows >= 2 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(status+" // "+memberLabel, innerWidth, "")))
+	share := m.monitorSessionShare(total)
+	usageLine := fmt.Sprintf("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
+	lines := []string{colors.label().Render(ansi.Truncate(usageLine, innerWidth, ""))}
+	appendLine := func(value string) {
+		if len(lines) < bodyRows {
+			lines = append(lines, colors.dimmed().Render(ansi.Truncate(value, innerWidth, "")))
+		}
 	}
-	if bodyRows >= 3 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("RATE "+formatTokens(rate)+"/MIN", innerWidth, "")))
+	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
+		appendLine(estimate)
 	}
-	if bodyRows >= 4 && session.workingDirectory != "" {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("DIR // "+filepath.Base(session.workingDirectory), innerWidth, "")))
+	appendLine(status + " // " + memberLabel)
+	appendLine("RATE " + formatTokens(rate) + "/MIN")
+	if session.workingDirectory != "" {
+		appendLine("DIR // " + filepath.Base(session.workingDirectory))
 	}
-	if bodyRows >= 5 && !session.lastActivity.IsZero() {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("LAST // "+compactDuration(time.Since(session.lastActivity))+" AGO", innerWidth, "")))
+	if !session.lastActivity.IsZero() {
+		appendLine("LAST // " + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
 	if pageLabel != "" {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func (m Model) monitorRecordedTokens() int64 {
+	if m.monitorStartedAt.IsZero() || m.monitorLatest < m.monitorBaseline {
+		return 0
+	}
+	return m.monitorLatest - m.monitorBaseline
+}
+
+func (m Model) monitorSessionShare(tokens int64) float64 {
+	total := m.monitorRecordedTokens()
+	if total <= 0 || tokens <= 0 {
+		return 0
+	}
+	return min(float64(tokens)/float64(total), 1)
+}
+
+func (m Model) monitorQuotaReadout() string {
+	if m.monitorStartedAt.IsZero() {
+		return ""
+	}
+	if len(m.monitorQuotaWindows) == 0 {
+		if m.monitorQuotaError != "" {
+			return "QUOTA USED Δ // UNAVAILABLE"
+		}
+		return "QUOTA USED Δ // NO WINDOWS"
+	}
+	parts := []string{"QUOTA USED Δ"}
+	for _, window := range m.monitorQuotaWindows {
+		value := "RESET"
+		if !window.resetDetected {
+			value = fmt.Sprintf("%+dPP", window.latestUsed-window.baselineUsed)
+			if window.partial {
+				value += " PARTIAL"
+			}
+		}
+		parts = append(parts, window.label+" "+value)
+	}
+	if m.monitorQuotaError != "" {
+		parts = append(parts, "STALE")
+	}
+	return strings.Join(parts, " // ")
+}
+
+func (m Model) monitorSessionQuotaEstimate(share float64) string {
+	if len(m.monitorQuotaWindows) == 0 {
+		return ""
+	}
+	window := m.monitorQuotaWindows[0]
+	if window.resetDetected {
+		return "EST QUOTA // RESET DURING RUN"
+	}
+	delta := float64(window.latestUsed-window.baselineUsed) * share
+	label := window.label
+	if window.partial {
+		return "EST " + label + " // PARTIAL"
+	}
+	return fmt.Sprintf("EST %s USED %+0.1fPP", label, delta)
 }
 
 func shortSessionID(id string) string {

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -91,6 +92,8 @@ type Model struct {
 	monitorSessionData  []monitorSession
 	monitorScroll       int
 	monitorError        string
+	monitorQuotaWindows []monitorQuotaWindow
+	monitorQuotaError   string
 }
 
 type fetchedMsg struct {
@@ -141,11 +144,23 @@ type monitorSession struct {
 	samples          []monitorSample
 }
 
+type monitorQuotaWindow struct {
+	key           string
+	label         string
+	baselineUsed  int
+	latestUsed    int
+	latestReset   *int64
+	resetDetected bool
+	partial       bool
+}
+
 type monitorFetchedMsg struct {
 	kind     monitorFetchKind
 	sequence uint64
 	usage    codex.LiveUsageSnapshot
 	err      error
+	quota    codex.Snapshot
+	quotaErr error
 	at       time.Time
 }
 
@@ -371,6 +386,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
+			if m.monitorState == monitorRunning || m.monitorState == monitorStopping {
+				m.syncMonitorQuotaSnapshot(message.snapshot)
+				m.monitorQuotaError = ""
+			}
+		} else if m.monitorState == monitorRunning || m.monitorState == monitorStopping {
+			m.monitorQuotaError = message.err.Error()
 		}
 	case secondMsg:
 		m.phase++
@@ -536,6 +557,8 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.monitorLastActivity = time.Time{}
 			m.monitorSessions = 0
 			m.monitorError = ""
+			m.monitorQuotaWindows = nil
+			m.monitorQuotaError = ""
 			m.monitorRequest++
 			m.monitorFetchActive = true
 			return m, m.monitorFetch(monitorFetchStart, m.monitorRequest)
@@ -858,14 +881,30 @@ const monitorSampleInterval = 30 * time.Second
 
 func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 	return func() tea.Msg {
+		quota := m.snapshot
+		var quotaErr error
+		fetchQuota := func() {
+			if m.fetcher == nil {
+				return
+			}
+			if freshQuota, err := m.fetcher.Fetch(context.Background()); err != nil {
+				quotaErr = err
+			} else {
+				quota = freshQuota
+			}
+		}
 		if m.usageFetcher == nil {
 			return monitorFetchedMsg{
-				kind: kind, sequence: sequence, err: errors.New("local Codex session telemetry unavailable"), at: time.Now(),
+				kind: kind, sequence: sequence, err: errors.New("local Codex session telemetry unavailable"),
+				quota: quota, quotaErr: quotaErr, at: time.Now(),
 			}
 		}
 		var usage codex.LiveUsageSnapshot
 		var err error
 		if kind == monitorFetchStop {
+			// Read account quota first so the final local telemetry read remains
+			// the end of the measured token interval.
+			fetchQuota()
 			if freshFetcher, ok := m.usageFetcher.(FreshTokenUsageFetcher); ok {
 				usage, err = freshFetcher.FetchTokenUsageFresh(context.Background())
 			} else {
@@ -874,8 +913,15 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 		} else {
 			usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
 		}
+		observedAt := time.Now()
+		if kind == monitorFetchStart {
+			// Establish the local baseline immediately, then obtain the quota
+			// baseline. Activity while the app-server responds is still counted.
+			fetchQuota()
+		}
 		return monitorFetchedMsg{
-			kind: kind, sequence: sequence, usage: usage, err: err, at: time.Now(),
+			kind: kind, sequence: sequence, usage: usage, err: err,
+			quota: quota, quotaErr: quotaErr, at: observedAt,
 		}
 	}
 }
@@ -898,11 +944,22 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 		m.monitorGraphStart = message.usage.TotalTokens
 		m.monitorStartedAt = message.at
 		m.monitorState = monitorRunning
+		m.startMonitorQuotaSnapshot(message.quota)
+		if message.quotaErr != nil {
+			for index := range m.monitorQuotaWindows {
+				m.monitorQuotaWindows[index].partial = true
+			}
+		}
+		m.applyMonitorQuotaResult(message)
 		m.startMonitorSessions(message.usage, message.at)
 		m.monitorSessions = m.visibleMonitorSessionCount()
 		m.monitorError = ""
 		m.monitorNextSample = message.at.Add(monitorSampleInterval)
 	case monitorFetchSample, monitorFetchBoundary, monitorFetchStop:
+		if message.kind == monitorFetchStop {
+			m.syncMonitorQuotaSnapshot(message.quota)
+			m.applyMonitorQuotaResult(message)
+		}
 		if message.usage.TotalTokens < m.monitorLatest {
 			m.monitorError = "local Codex token counter moved backwards"
 		} else {
@@ -920,6 +977,89 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd)
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) applyMonitorQuotaResult(message monitorFetchedMsg) {
+	if message.quotaErr != nil {
+		m.monitorQuotaError = message.quotaErr.Error()
+		return
+	}
+	m.monitorQuotaError = ""
+	if len(message.quota.Meters()) > 0 {
+		m.snapshot = message.quota
+		m.lastRefresh = message.at
+		m.err = nil
+	}
+}
+
+func (m *Model) startMonitorQuotaSnapshot(snapshot codex.Snapshot) {
+	m.monitorQuotaWindows = nil
+	for _, meter := range snapshot.Meters() {
+		reset := cloneInt64(meter.Window.ResetsAt)
+		m.monitorQuotaWindows = append(m.monitorQuotaWindows, monitorQuotaWindow{
+			key: monitorQuotaKey(meter), label: monitorQuotaLabel(meter),
+			baselineUsed: meter.Window.UsedPercent, latestUsed: meter.Window.UsedPercent,
+			latestReset: reset,
+		})
+	}
+}
+
+func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
+	for _, meter := range snapshot.Meters() {
+		key := monitorQuotaKey(meter)
+		index := -1
+		for candidate := range m.monitorQuotaWindows {
+			if m.monitorQuotaWindows[candidate].key == key {
+				index = candidate
+				break
+			}
+		}
+		if index < 0 {
+			m.monitorQuotaWindows = append(m.monitorQuotaWindows, monitorQuotaWindow{
+				key: key, label: monitorQuotaLabel(meter),
+				baselineUsed: meter.Window.UsedPercent, latestUsed: meter.Window.UsedPercent,
+				latestReset: cloneInt64(meter.Window.ResetsAt),
+				partial:     true,
+			})
+			continue
+		}
+		window := &m.monitorQuotaWindows[index]
+		if !sameOptionalInt64(window.latestReset, meter.Window.ResetsAt) || meter.Window.UsedPercent < window.latestUsed {
+			window.resetDetected = true
+		}
+		window.latestUsed = meter.Window.UsedPercent
+		window.latestReset = cloneInt64(meter.Window.ResetsAt)
+	}
+}
+
+func monitorQuotaKey(meter codex.Meter) string {
+	duration := int64(-1)
+	if meter.Window.WindowDurationMins != nil {
+		duration = *meter.Window.WindowDurationMins
+	}
+	return meter.Bucket + "\x00" + meter.Name + "\x00" + fmt.Sprint(duration)
+}
+
+func monitorQuotaLabel(meter codex.Meter) string {
+	if meter.Bucket == "codex" {
+		return meter.Name
+	}
+	return codex.DisplayName(meter.Bucket) + " " + meter.Name
+}
+
+func cloneInt64(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func sameOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {

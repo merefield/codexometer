@@ -158,6 +158,81 @@ func TestMonitorTracksRootSessionsAndSamplesEveryGraphOnOneTick(t *testing.T) {
 	}
 }
 
+func TestMonitorAttributesObservedQuotaMovementByLocalTokenShare(t *testing.T) {
+	startedAt := time.Unix(1_500, 0)
+	reset := startedAt.Add(time.Hour).Unix()
+	model := Model{monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, at: startedAt,
+		quota: monitorQuotaSnapshot(20, reset),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 300, SessionCount: 2, Sessions: []codex.LiveUsageSession{
+			{ID: "alpha", TotalTokens: 100, Active: true},
+			{ID: "bravo", TotalTokens: 200, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	model.monitorRequest++
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, at: startedAt.Add(time.Minute),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 400, SessionCount: 2, Sessions: []codex.LiveUsageSession{
+			{ID: "alpha", TotalTokens: 160, Active: true},
+			{ID: "bravo", TotalTokens: 240, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	updated, _ = model.Update(fetchedMsg{snapshot: monitorQuotaSnapshot(23, reset)})
+	model = updated.(Model)
+
+	if got := model.monitorQuotaReadout(); got != "QUOTA USED Δ // 5 HOURS +3PP" {
+		t.Fatalf("quota companion readout = %q", got)
+	}
+	alpha := model.monitorSessionData[model.monitorSessionIndex("alpha")]
+	bravo := model.monitorSessionData[model.monitorSessionIndex("bravo")]
+	alphaView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, alpha, "", paletteFor(themeHacker)))
+	bravoView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, bravo, "", paletteFor(themeHacker)))
+	for view, wants := range map[string][]string{
+		alphaView: {"60 TOKENS // 60% LOCAL", "EST 5 HOURS USED +1.8PP"},
+		bravoView: {"40 TOKENS // 40% LOCAL", "EST 5 HOURS USED +1.2PP"},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(view, want) {
+				t.Errorf("session estimate missing %q:\n%s", want, view)
+			}
+		}
+	}
+}
+
+func TestMonitorDoesNotEstimateAcrossAQuotaReset(t *testing.T) {
+	startedAt := time.Unix(1_700, 0)
+	model := Model{monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, at: startedAt,
+		quota: monitorQuotaSnapshot(80, startedAt.Add(time.Minute).Unix()),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 100, SessionCount: 1, Sessions: []codex.LiveUsageSession{
+			{ID: "alpha", TotalTokens: 100, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	model.monitorRequest++
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, at: startedAt.Add(2 * time.Minute),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 150, SessionCount: 1, Sessions: []codex.LiveUsageSession{
+			{ID: "alpha", TotalTokens: 150, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	updated, _ = model.Update(fetchedMsg{snapshot: monitorQuotaSnapshot(2, startedAt.Add(6*time.Hour).Unix())})
+	model = updated.(Model)
+
+	if got := model.monitorQuotaReadout(); !strings.Contains(got, "5 HOURS RESET") {
+		t.Fatalf("resetting quota readout = %q", got)
+	}
+	estimate := model.monitorSessionQuotaEstimate(1)
+	if estimate != "EST QUOTA // RESET DURING RUN" {
+		t.Fatalf("reset-crossing estimate = %q", estimate)
+	}
+}
+
 func TestMonitorAddsANewlyDetectedRootWithoutLosingItsFirstUsage(t *testing.T) {
 	startedAt := time.Unix(2_000, 0)
 	model := Model{monitorState: monitorStarting, monitorRequest: 1}
@@ -550,6 +625,13 @@ func (f stubLiveFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapsh
 
 func usageWithTokens(tokens int64) codex.LiveUsageSnapshot {
 	return codex.LiveUsageSnapshot{TotalTokens: tokens, LastActivity: time.Now(), SessionCount: 1}
+}
+
+func monitorQuotaSnapshot(used int, reset int64) codex.Snapshot {
+	duration := int64(300)
+	return codex.Snapshot{RateLimits: codex.RateLimitSnapshot{
+		Primary: &codex.Window{UsedPercent: used, WindowDurationMins: &duration, ResetsAt: &reset},
+	}}
 }
 
 func graphRightmostBar(graph string) int {
