@@ -20,6 +20,7 @@ const (
 	activeRolloutHorizon = 24 * time.Hour
 	discoveryEvery       = 5 * time.Second
 	fullDiscoveryEvery   = 5 * time.Minute
+	telemetryHistoryMax  = 4_096
 )
 
 // LiveUsageSnapshot is a process-local, monotonically increasing count built
@@ -42,6 +43,26 @@ type LiveUsageSession struct {
 	AgentCount       int
 	Active           bool
 	Unattributed     bool
+	ModelCalls       []LiveModelCall
+	TurnTimings      []LiveTurnTiming
+}
+
+// LiveModelCall is the small, content-free usage pulse persisted after one
+// upstream model response.
+type LiveModelCall struct {
+	Sequence        uint64
+	At              time.Time
+	OutputTokens    int64
+	OutputAvailable bool
+}
+
+// LiveTurnTiming contains the persisted latency measurement for one completed
+// Codex turn. Available is false for older rollouts that omit TTFT.
+type LiveTurnTiming struct {
+	Sequence         uint64
+	At               time.Time
+	TimeToFirstToken time.Duration
+	Available        bool
 }
 
 // LiveUsageReader incrementally observes token telemetry written by local Codex
@@ -57,6 +78,7 @@ type LiveUsageReader struct {
 	files             map[string]*rolloutCursor
 	totalTokens       int64
 	lastActivity      time.Time
+	nextEventSequence uint64
 }
 
 type rolloutCursor struct {
@@ -70,6 +92,8 @@ type rolloutCursor struct {
 	startedAt                   time.Time
 	nonRoot                     bool
 	subagentHistoryStartOrdinal *uint64
+	modelCalls                  []LiveModelCall
+	turnTimings                 []LiveTurnTiming
 }
 
 type rolloutEvent struct {
@@ -82,7 +106,21 @@ type rolloutEvent struct {
 			TotalTokenUsage struct {
 				TotalTokens int64 `json:"total_tokens"`
 			} `json:"total_token_usage"`
+			LastTokenUsage struct {
+				OutputTokens *int64 `json:"output_tokens"`
+			} `json:"last_token_usage"`
 		} `json:"info"`
+	} `json:"payload"`
+}
+
+type rolloutTurnEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Ordinal   *uint64   `json:"ordinal"`
+	Type      string    `json:"type"`
+	Payload   struct {
+		Type               string `json:"type"`
+		CompletedAt        *int64 `json:"completed_at"`
+		TimeToFirstTokenMS *int64 `json:"time_to_first_token_ms"`
 	} `json:"payload"`
 }
 
@@ -330,28 +368,46 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
-			if total, at, ordinal, ok := tokenTotalRecord(line); ok {
-				if !tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+			if record, ok := tokenUsageRecord(line); ok {
+				if !tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 					// Legacy child rollouts copy the parent's cumulative token
 					// events. Preserve the latest inherited value as the child's
 					// counter baseline without reporting it as new usage.
-					cursor.totalTokens = total
+					cursor.totalTokens = record.total
 					continue
 				}
-				if total >= cursor.totalTokens {
-					delta := total - cursor.totalTokens
+				if record.total >= cursor.totalTokens {
+					delta := record.total - cursor.totalTokens
 					r.totalTokens += delta
 					cursor.observedTokens += delta
 					if delta > 0 {
-						if at.IsZero() {
-							at = time.Now()
+						if record.at.IsZero() {
+							record.at = time.Now()
 						}
-						if at.After(r.lastActivity) {
-							r.lastActivity = at
+						if record.at.After(r.lastActivity) {
+							r.lastActivity = record.at
+						}
+						r.nextEventSequence++
+						cursor.modelCalls = append(cursor.modelCalls, LiveModelCall{
+							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
+							OutputAvailable: record.outputKnown,
+						})
+						if len(cursor.modelCalls) > telemetryHistoryMax {
+							cursor.modelCalls = append([]LiveModelCall(nil), cursor.modelCalls[len(cursor.modelCalls)-telemetryHistoryMax:]...)
 						}
 					}
 				}
-				cursor.totalTokens = total
+				cursor.totalTokens = record.total
+			}
+			if timing, available, ordinal, at, ok := turnTimingRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				r.nextEventSequence++
+				cursor.turnTimings = append(cursor.turnTimings, LiveTurnTiming{
+					Sequence: r.nextEventSequence, At: at, TimeToFirstToken: timing, Available: available,
+				})
+				if len(cursor.turnTimings) > telemetryHistoryMax {
+					cursor.turnTimings = append([]LiveTurnTiming(nil), cursor.turnTimings[len(cursor.turnTimings)-telemetryHistoryMax:]...)
+				}
 			}
 		}
 		if readErr != nil {
@@ -407,15 +463,56 @@ func tokenTotal(line []byte) (int64, time.Time, bool) {
 }
 
 func tokenTotalRecord(line []byte) (int64, time.Time, *uint64, bool) {
+	record, ok := tokenUsageRecord(line)
+	return record.total, record.at, record.ordinal, ok
+}
+
+type rolloutTokenRecord struct {
+	total        int64
+	outputTokens int64
+	outputKnown  bool
+	at           time.Time
+	ordinal      *uint64
+}
+
+func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 	if !bytes.Contains(line, []byte("token_count")) {
-		return 0, time.Time{}, nil, false
+		return rolloutTokenRecord{}, false
 	}
 	var event rolloutEvent
 	if json.Unmarshal(line, &event) != nil || event.Type != "event_msg" ||
 		event.Payload.Type != "token_count" || event.Payload.Info == nil {
-		return 0, time.Time{}, nil, false
+		return rolloutTokenRecord{}, false
 	}
-	return event.Payload.Info.TotalTokenUsage.TotalTokens, event.Timestamp, event.Ordinal, true
+	outputTokens := int64(0)
+	outputKnown := event.Payload.Info.LastTokenUsage.OutputTokens != nil
+	if outputKnown {
+		outputTokens = *event.Payload.Info.LastTokenUsage.OutputTokens
+	}
+	return rolloutTokenRecord{
+		total:        event.Payload.Info.TotalTokenUsage.TotalTokens,
+		outputTokens: outputTokens, outputKnown: outputKnown,
+		at: event.Timestamp, ordinal: event.Ordinal,
+	}, true
+}
+
+func turnTimingRecord(line []byte) (time.Duration, bool, *uint64, time.Time, bool) {
+	if !bytes.Contains(line, []byte("task_complete")) && !bytes.Contains(line, []byte("turn_complete")) {
+		return 0, false, nil, time.Time{}, false
+	}
+	var event rolloutTurnEvent
+	if json.Unmarshal(line, &event) != nil || event.Type != "event_msg" ||
+		(event.Payload.Type != "task_complete" && event.Payload.Type != "turn_complete") {
+		return 0, false, nil, time.Time{}, false
+	}
+	at := event.Timestamp
+	if at.IsZero() && event.Payload.CompletedAt != nil {
+		at = time.Unix(*event.Payload.CompletedAt, 0)
+	}
+	if event.Payload.TimeToFirstTokenMS == nil || *event.Payload.TimeToFirstTokenMS < 0 {
+		return 0, false, event.Ordinal, at, true
+	}
+	return time.Duration(*event.Payload.TimeToFirstTokenMS) * time.Millisecond, true, event.Ordinal, at, true
 }
 
 func tokenRecordIsOwned(ordinal, boundary *uint64, at time.Time, nonRoot bool, startedAt time.Time) bool {
@@ -509,7 +606,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 	groups := make(map[string]*LiveUsageSession)
 	for _, cursor := range r.files {
 		active := now.Sub(cursor.lastModified) <= 5*time.Minute
-		if !active && cursor.observedTokens == 0 {
+		if !active && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
 		rootID, unattributed := rolloutRoot(cursor, byID)
@@ -519,6 +616,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 			groups[rootID] = group
 		}
 		group.TotalTokens += cursor.observedTokens
+		group.ModelCalls = append(group.ModelCalls, cursor.modelCalls...)
+		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
 		group.Active = group.Active || active
 		if cursor.lastModified.After(group.LastActivity) {
 			group.LastActivity = cursor.lastModified
@@ -532,7 +631,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		if cursor.threadID == rootID {
 			group.WorkingDirectory = cursor.workingDirectory
 			group.StartedAt = cursor.startedAt
-		} else if active || cursor.observedTokens > 0 {
+		} else if active || cursor.observedTokens > 0 || len(cursor.modelCalls) > 0 || len(cursor.turnTimings) > 0 {
 			group.AgentCount++
 		}
 	}
@@ -540,6 +639,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 	sessions := make([]LiveUsageSession, 0, len(groups))
 	activeCount := 0
 	for _, session := range groups {
+		sort.Slice(session.ModelCalls, func(i, j int) bool { return session.ModelCalls[i].Sequence < session.ModelCalls[j].Sequence })
+		sort.Slice(session.TurnTimings, func(i, j int) bool { return session.TurnTimings[i].Sequence < session.TurnTimings[j].Sequence })
 		if session.Active {
 			activeCount++
 		}

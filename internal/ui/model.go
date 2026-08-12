@@ -142,6 +142,18 @@ type monitorSession struct {
 	displayed        bool
 	unattributed     bool
 	samples          []monitorSample
+	callSequence     uint64
+	turnSequence     uint64
+	modelCalls       int
+	lastCallAt       time.Time
+	latestOutput     int64
+	peakOutput       int64
+	latestOutputOK   bool
+	peakOutputOK     bool
+	latestTTFT       time.Duration
+	peakTTFT         time.Duration
+	latestTTFTOK     bool
+	peakTTFTOK       bool
 }
 
 type monitorQuotaWindow struct {
@@ -1088,6 +1100,8 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
 			active: session.Active, displayed: session.Active, unattributed: session.Unattributed,
+			callSequence: latestModelCallSequence(session.ModelCalls),
+			turnSequence: latestTurnTimingSequence(session.TurnTimings),
 		})
 	}
 	if len(m.monitorSessionData) == 0 && usage.SessionCount > 0 {
@@ -1110,13 +1124,15 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			if sessionStart := update.StartedAt; !sessionStart.IsZero() && sessionStart.After(m.monitorStartedAt) && sessionStart.Before(observedAt) {
 				startedAt = sessionStart
 			}
-			m.monitorSessionData = append(m.monitorSessionData, monitorSession{
+			created := monitorSession{
 				id: update.ID, workingDirectory: update.WorkingDirectory,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, displayed: update.Active || update.TotalTokens > 0,
+				active: update.Active, displayed: update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
-			})
+			}
+			applyMonitorSessionTelemetry(&created, update, m.monitorStartedAt)
+			m.monitorSessionData = append(m.monitorSessionData, created)
 			continue
 		}
 		session := &m.monitorSessionData[index]
@@ -1128,10 +1144,12 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
-		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline
+		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
+			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {
 			session.workingDirectory = update.WorkingDirectory
 		}
+		applyMonitorSessionTelemetry(session, update, time.Time{})
 	}
 	if len(usage.Sessions) == 0 && len(m.monitorSessionData) == 1 && m.monitorSessionData[0].id == "local" {
 		session := &m.monitorSessionData[0]
@@ -1140,6 +1158,59 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.active = usage.SessionCount > 0
 		session.displayed = true
 	}
+}
+
+func applyMonitorSessionTelemetry(session *monitorSession, update codex.LiveUsageSession, since time.Time) {
+	for _, call := range update.ModelCalls {
+		if call.Sequence <= session.callSequence {
+			continue
+		}
+		session.callSequence = call.Sequence
+		if !since.IsZero() && !call.At.IsZero() && call.At.Before(since) {
+			continue
+		}
+		session.modelCalls++
+		session.latestOutputOK = call.OutputAvailable
+		if call.OutputAvailable {
+			session.latestOutput = max(call.OutputTokens, int64(0))
+			session.peakOutput = max(session.peakOutput, session.latestOutput)
+			session.peakOutputOK = true
+		}
+		if call.At.After(session.lastCallAt) {
+			session.lastCallAt = call.At
+		}
+	}
+	for _, timing := range update.TurnTimings {
+		if timing.Sequence <= session.turnSequence {
+			continue
+		}
+		session.turnSequence = timing.Sequence
+		if !since.IsZero() && !timing.At.IsZero() && timing.At.Before(since) {
+			continue
+		}
+		session.latestTTFTOK = timing.Available
+		if timing.Available {
+			session.latestTTFT = max(timing.TimeToFirstToken, time.Duration(0))
+			session.peakTTFT = max(session.peakTTFT, session.latestTTFT)
+			session.peakTTFTOK = true
+		}
+	}
+}
+
+func latestModelCallSequence(calls []codex.LiveModelCall) uint64 {
+	var latest uint64
+	for _, call := range calls {
+		latest = max(latest, call.Sequence)
+	}
+	return latest
+}
+
+func latestTurnTimingSequence(timings []codex.LiveTurnTiming) uint64 {
+	var latest uint64
+	for _, timing := range timings {
+		latest = max(latest, timing.Sequence)
+	}
+	return latest
 }
 
 func (m *Model) captureMonitorSamples(at time.Time) {

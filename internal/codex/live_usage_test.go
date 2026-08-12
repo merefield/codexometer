@@ -207,6 +207,59 @@ func TestLiveUsageReaderKeepsNewestActivityAcrossEvents(t *testing.T) {
 	}
 }
 
+func TestLiveUsageReaderCapturesContentFreeModelCallAndTurnTimingPulses(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	path := testRolloutPath(t, home, now.Add(-time.Hour), "response-pulses")
+	writeRollout(t, path, sessionMetaLine("root", `"cli"`, "/work/root", nil)+"\n"+tokenCountLine(now.Add(-time.Hour), 100)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	appendRollout(t, path,
+		tokenCountLineWithOutput(now, 150, 2_013)+"\n"+
+			turnTimingLine(now.Add(time.Second), 11_600)+"\n"+
+			tokenCountLineWithOutput(now.Add(2*time.Second), 225, 842)+"\n"+
+			turnTimingLine(now.Add(3*time.Second), 2_400)+"\n")
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 {
+		t.Fatalf("pulse telemetry fetch = %#v, %v", usage, err)
+	}
+	session := usage.Sessions[0]
+	if len(session.ModelCalls) != 2 || session.ModelCalls[0].OutputTokens != 2_013 || session.ModelCalls[1].OutputTokens != 842 ||
+		!session.ModelCalls[0].OutputAvailable || !session.ModelCalls[1].OutputAvailable {
+		t.Fatalf("model-call pulses = %#v", session.ModelCalls)
+	}
+	if len(session.TurnTimings) != 2 || session.TurnTimings[0].TimeToFirstToken != 11_600*time.Millisecond ||
+		session.TurnTimings[1].TimeToFirstToken != 2_400*time.Millisecond ||
+		!session.TurnTimings[0].Available || !session.TurnTimings[1].Available {
+		t.Fatalf("turn timings = %#v", session.TurnTimings)
+	}
+	if session.ModelCalls[0].Sequence >= session.TurnTimings[0].Sequence ||
+		session.TurnTimings[0].Sequence >= session.ModelCalls[1].Sequence {
+		t.Fatalf("telemetry sequence did not preserve rollout order: calls=%#v turns=%#v", session.ModelCalls, session.TurnTimings)
+	}
+
+	appendRollout(t, path,
+		tokenCountLine(now.Add(4*time.Second), 250)+"\n"+
+			turnTimingUnavailableLine(now.Add(5*time.Second))+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session = usage.Sessions[0]
+	if len(session.ModelCalls) != 3 || session.ModelCalls[2].OutputAvailable {
+		t.Fatalf("legacy model call was not retained as unavailable: %#v", session.ModelCalls)
+	}
+	if len(session.TurnTimings) != 3 || session.TurnTimings[2].Available {
+		t.Fatalf("legacy turn timing was not retained as unavailable: %#v", session.TurnTimings)
+	}
+}
+
 func TestLiveUsageReaderGroupsSpawnedDescendantsUnderIndependentRoots(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()
@@ -251,6 +304,8 @@ func TestLiveUsageReaderGroupsSpawnedDescendantsUnderIndependentRoots(t *testing
 	}
 	if got := byID["root-a"]; got.TotalTokens != 85 || got.AgentCount != 2 || got.WorkingDirectory != "/work/alpha" || got.Unattributed {
 		t.Fatalf("root A grouping = %#v; want root plus two descendants and 85 tokens", got)
+	} else if len(got.ModelCalls) != 3 {
+		t.Fatalf("root A model calls = %#v; want three root/descendant pulses", got.ModelCalls)
 	}
 	if got := byID["root-b"]; got.TotalTokens != 30 || got.AgentCount != 0 || got.WorkingDirectory != "/work/bravo" {
 		t.Fatalf("root B grouping = %#v; want independent 30-token root", got)
@@ -471,6 +526,27 @@ func tokenCountLine(at time.Time, total int64) string {
 	return fmt.Sprintf(
 		`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":%d},"last_token_usage":{"total_tokens":%d}}}}`,
 		at.UTC().Format(time.RFC3339Nano), total, total,
+	)
+}
+
+func tokenCountLineWithOutput(at time.Time, total, output int64) string {
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":%d},"last_token_usage":{"output_tokens":%d,"total_tokens":%d}}}}`,
+		at.UTC().Format(time.RFC3339Nano), total, output, total,
+	)
+}
+
+func turnTimingLine(at time.Time, ttftMS int64) string {
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":"task_complete","completed_at":%d,"duration_ms":12000,"time_to_first_token_ms":%d}}`,
+		at.UTC().Format(time.RFC3339Nano), at.Unix(), ttftMS,
+	)
+}
+
+func turnTimingUnavailableLine(at time.Time) string {
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":"task_complete","completed_at":%d,"duration_ms":12000}}`,
+		at.UTC().Format(time.RFC3339Nano), at.Unix(),
 	)
 }
 

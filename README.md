@@ -133,10 +133,12 @@ Codexometer deliberately does not:
 
 The Monitor additionally reads locally persisted Codex rollout files under
 `$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It decodes `token_count`
-totals and timestamps plus the minimum session metadata needed for grouping:
-thread ID, parent thread ID, source classification, working directory, and the
-inherited-history boundary. Message text, reasoning, commands, tool results,
-and credentials are ignored and never retained by Codexometer.
+totals, last-response output counts, timestamps, and content-free turn timing,
+plus the minimum session metadata needed for grouping: thread ID, parent thread
+ID, source classification, working directory, and the inherited-history
+boundary. Message text—including the final response carried beside timing
+metadata—reasoning, commands, tool results, and credentials are ignored and
+never retained by Codexometer.
 
 If you use a nonstandard Codex executable, pass it explicitly:
 
@@ -195,7 +197,9 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
    average rate; clickable Start and Stop controls sit beside it. Below, every
    independent root session has a metrics box and its own graph. Spawned-agent
    descendants with an explicit Codex parent link are recursively aggregated
-   into the root row and reported as `ROOT + n AGENTS`. All graphs add one thin
+   into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
+   model calls and latest activity, latest/peak time to first token, and
+   latest/peak output size. All graphs add one thin
    vertical block bar on the same 30-second tick, after a fresh boundary read.
    The companion readout records each account quota window at Start and tracks
    its observed change while recording. Every session row shows its exact share
@@ -272,6 +276,14 @@ Monitor honors its ownership boundary so copied parent telemetry is not counted
 twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
+
+`CALLS` counts upstream model-response cycles observed after Monitor Start, not
+complete user turns. A single Codex turn can make several calls while using
+tools or progressing through an agent loop. `LAST OUT` is the provider-reported
+output-token count for the latest such call. `TTFT` comes from the completed
+turn's persisted time-to-first-token measurement; older Codex rollouts that do
+not contain it display `N/A`. Spawned descendants contribute these pulses to
+the same root row as their token activity.
 
 The Monitor's per-session quota figure is an estimate, not API attribution.
 Codex exposes account-level quota percentages and local per-session token
@@ -575,10 +587,12 @@ marks it as stale instead of blanking the dashboard.
 
 While the Monitor is recording it checks appended local token telemetry once per
 second, groups explicit agent descendants under their root, and rolls each
-root's observed deltas into synchronized graph buckets. A bucket closes only
-after the boundary telemetry read completes; its heading reports the actual
-observed duration when scheduling or first-session detection makes it shorter or
-longer than 30 seconds. These reads do not contact OpenAI or invoke a model.
+root's observed deltas into synchronized graph buckets. It also updates the
+three compact response-cycle statistics without retaining response content. A
+bucket closes only after the boundary telemetry read completes; its heading
+reports the actual observed duration when scheduling or first-session detection
+makes it shorter or longer than 30 seconds. These reads do not contact OpenAI or
+invoke a model.
 Pressing Stop performs one immediate final local read and forces complete
 session discovery, including Codex sessions resumed from older rollout
 directories.

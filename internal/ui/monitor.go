@@ -285,6 +285,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		appendLine(estimate)
 	}
 	appendLine(status + " // " + memberLabel)
+	appendLine(formatMonitorCallActivity(session, time.Now()))
+	appendLine(formatMonitorTTFT(session))
+	appendLine(formatMonitorOutput(session))
 	appendLine("RATE " + formatTokens(rate) + "/MIN")
 	if session.workingDirectory != "" {
 		appendLine("DIR // " + filepath.Base(session.workingDirectory))
@@ -296,6 +299,66 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func formatMonitorCallActivity(session monitorSession, now time.Time) string {
+	last := "--"
+	if !session.lastCallAt.IsZero() {
+		last = formatMonitorAge(now.Sub(session.lastCallAt)) + " AGO"
+	}
+	return fmt.Sprintf("CALLS %d // LAST %s", session.modelCalls, last)
+}
+
+func formatMonitorTTFT(session monitorSession) string {
+	latest := "N/A"
+	if session.latestTTFTOK {
+		latest = formatMonitorLatency(session.latestTTFT)
+	}
+	peak := "N/A"
+	if session.peakTTFTOK {
+		peak = formatMonitorLatency(session.peakTTFT)
+	}
+	return "TTFT " + latest + " // PEAK " + peak
+}
+
+func formatMonitorOutput(session monitorSession) string {
+	latest := "N/A"
+	if session.latestOutputOK {
+		latest = formatTokens(session.latestOutput)
+	}
+	peak := "N/A"
+	if session.peakOutputOK {
+		peak = formatTokens(session.peakOutput)
+	}
+	return "LAST OUT " + latest + " // PEAK " + peak
+}
+
+func formatMonitorAge(duration time.Duration) string {
+	if duration < 0 {
+		duration = 0
+	}
+	seconds := int(math.Ceil(duration.Seconds()))
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%dS", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dM%02dS", seconds/60, seconds%60)
+	default:
+		return fmt.Sprintf("%dH%02dM", seconds/3600, seconds/60%60)
+	}
+}
+
+func formatMonitorLatency(duration time.Duration) string {
+	if duration < 0 {
+		duration = 0
+	}
+	if duration < time.Second {
+		return fmt.Sprintf("%dMS", duration.Milliseconds())
+	}
+	if duration < time.Minute {
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", duration.Seconds()), ".0") + "S"
+	}
+	return fmt.Sprintf("%dM%02dS", int(duration/time.Minute), int(duration/time.Second)%60)
 }
 
 func (m Model) monitorRecordedTokens() int64 {

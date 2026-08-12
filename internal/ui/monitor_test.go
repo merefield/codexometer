@@ -158,6 +158,100 @@ func TestMonitorTracksRootSessionsAndSamplesEveryGraphOnOneTick(t *testing.T) {
 	}
 }
 
+func TestMonitorTracksCompactModelCallOutputAndTTFTStatsSinceStart(t *testing.T) {
+	startedAt := time.Unix(1_400, 0)
+	model := Model{monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, at: startedAt,
+		usage: codex.LiveUsageSnapshot{TotalTokens: 100, SessionCount: 1, Sessions: []codex.LiveUsageSession{{
+			ID: "alpha", TotalTokens: 100, Active: true,
+			ModelCalls:  []codex.LiveModelCall{{Sequence: 1, At: startedAt.Add(-time.Second), OutputTokens: 9_999, OutputAvailable: true}},
+			TurnTimings: []codex.LiveTurnTiming{{Sequence: 2, At: startedAt.Add(-time.Second), TimeToFirstToken: 20 * time.Second, Available: true}},
+		}}},
+	})
+	model = updated.(Model)
+	session := model.monitorSessionData[0]
+	if session.modelCalls != 0 || session.latestTTFTOK {
+		t.Fatalf("pre-Start response telemetry was not baselined: %#v", session)
+	}
+
+	model.monitorRequest++
+	latestAt := startedAt.Add(52 * time.Second)
+	usage := codex.LiveUsageSnapshot{TotalTokens: 200, SessionCount: 1, Sessions: []codex.LiveUsageSession{{
+		ID: "alpha", TotalTokens: 200, Active: true,
+		ModelCalls: []codex.LiveModelCall{
+			{Sequence: 1, At: startedAt.Add(-time.Second), OutputTokens: 9_999, OutputAvailable: true},
+			{Sequence: 3, At: startedAt.Add(40 * time.Second), OutputTokens: 2_013, OutputAvailable: true},
+			{Sequence: 4, At: latestAt, OutputTokens: 842, OutputAvailable: true},
+		},
+		TurnTimings: []codex.LiveTurnTiming{
+			{Sequence: 2, At: startedAt.Add(-time.Second), TimeToFirstToken: 20 * time.Second, Available: true},
+			{Sequence: 5, At: startedAt.Add(45 * time.Second), TimeToFirstToken: 11_600 * time.Millisecond, Available: true},
+			{Sequence: 6, At: latestAt, TimeToFirstToken: 2_400 * time.Millisecond, Available: true},
+		},
+	}}}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, at: startedAt.Add(time.Minute), usage: usage,
+	})
+	model = updated.(Model)
+	session = model.monitorSessionData[0]
+	if session.modelCalls != 2 || session.latestOutput != 842 || session.peakOutput != 2_013 {
+		t.Fatalf("model-call output stats = %#v", session)
+	}
+	if !session.latestTTFTOK || !session.peakTTFTOK || session.latestTTFT != 2_400*time.Millisecond || session.peakTTFT != 11_600*time.Millisecond {
+		t.Fatalf("TTFT stats = %#v", session)
+	}
+	if got := formatMonitorCallActivity(session, startedAt.Add(time.Minute)); got != "CALLS 2 // LAST 8S AGO" {
+		t.Fatalf("call activity = %q", got)
+	}
+	if got := formatMonitorTTFT(session); got != "TTFT 2.4S // PEAK 11.6S" {
+		t.Fatalf("TTFT readout = %q", got)
+	}
+	if got := formatMonitorOutput(session); got != "LAST OUT 842 // PEAK 2,013" {
+		t.Fatalf("output readout = %q", got)
+	}
+	partial := session
+	applyMonitorSessionTelemetry(&partial, codex.LiveUsageSession{
+		ModelCalls:  []codex.LiveModelCall{{Sequence: 7, At: startedAt.Add(55 * time.Second)}},
+		TurnTimings: []codex.LiveTurnTiming{{Sequence: 8, At: startedAt.Add(56 * time.Second)}},
+	}, time.Time{})
+	if partial.modelCalls != 3 || partial.latestOutputOK || !partial.peakOutputOK {
+		t.Fatalf("partial output stats = %#v", partial)
+	}
+	if partial.latestTTFTOK || !partial.peakTTFTOK {
+		t.Fatalf("partial TTFT stats = %#v", partial)
+	}
+	if got := formatMonitorTTFT(partial); got != "TTFT N/A // PEAK 11.6S" {
+		t.Fatalf("partial TTFT readout = %q", got)
+	}
+	if got := formatMonitorOutput(partial); got != "LAST OUT N/A // PEAK 2,013" {
+		t.Fatalf("partial output readout = %q", got)
+	}
+	card := ansi.Strip(model.renderMonitorSessionMetrics(64, 12, session, "", paletteFor(themeHacker)))
+	for _, want := range []string{"CALLS 2", "TTFT 2.4S // PEAK 11.6S", "LAST OUT 842 // PEAK 2,013"} {
+		if !strings.Contains(card, want) {
+			t.Errorf("session card missing %q:\n%s", want, card)
+		}
+	}
+
+	model.monitorRequest++
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, at: startedAt.Add(61 * time.Second), usage: usage,
+	})
+	model = updated.(Model)
+	if model.monitorSessionData[0].modelCalls != 2 {
+		t.Fatal("replayed response telemetry was counted twice")
+	}
+
+	legacy := monitorSession{}
+	if got := formatMonitorTTFT(legacy); got != "TTFT N/A // PEAK N/A" {
+		t.Fatalf("legacy TTFT readout = %q", got)
+	}
+	if got := formatMonitorOutput(legacy); got != "LAST OUT N/A // PEAK N/A" {
+		t.Fatalf("legacy output readout = %q", got)
+	}
+}
+
 func TestMonitorAttributesObservedQuotaMovementByLocalTokenShare(t *testing.T) {
 	startedAt := time.Unix(1_500, 0)
 	reset := startedAt.Add(time.Hour).Unix()
