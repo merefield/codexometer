@@ -55,8 +55,9 @@ It works particularly well in:
 - Available earned reset credits when present.
 - Online, refreshing, stale-data, and error states.
 - A countdown to the next automatic refresh.
-- An optional Monitor view that measures token activity observed across local
-  Codex sessions between Go and Stop, with a live 30-second bar chart.
+- An optional Monitor view that measures token activity between Go and Stop.
+  Each independent local root session gets its own metrics and 30-second graph;
+  explicitly linked spawned agents are included with their root.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
   estimated standard API-equivalent cost.
@@ -124,17 +125,20 @@ credential-refresh behavior as the installed Codex CLI.
 
 Codexometer deliberately does not:
 
-- read or copy Codex token files;
+- read or copy Codex credential/token files;
 - implement a separate OAuth flow;
 - store access or refresh tokens;
 - send credentials to another service;
 - invoke a model merely to discover quota information.
 
 The Monitor additionally reads locally persisted Codex rollout files under
-`$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It scans only for
-`token_count` telemetry records and decodes only their token totals and
-timestamps; message text, reasoning, commands, tool results, and credentials are
-ignored and never retained by Codexometer.
+`$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It decodes `token_count`
+totals, last-response output counts, timestamps, and content-free turn timing,
+plus the minimum session metadata needed for grouping: thread ID, parent thread
+ID, source classification, working directory, and the inherited-history
+boundary. Message text—including the final response carried beside timing
+metadata—reasoning, commands, tool results, and credentials are ignored and
+never retained by Codexometer.
 
 If you use a nonstandard Codex executable, pass it explicitly:
 
@@ -157,7 +161,7 @@ codexometer --codex /path/to/codex
 | `a` | Arm, then confirm, Run Suite (Benchmark view only) |
 | `[` / `]`, `Left` / `Right` | Select the previous or next challenge in the active suite |
 | `f` | Show all, passed, or failed benchmark results |
-| `Page Up` / `Page Down` | Scroll through Benchmark result pages |
+| `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
@@ -190,11 +194,24 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
 2. **Monitor** — establishes a zero baseline across locally active Codex
    sessions when you press Start. A large readout follows newly appended token
    telemetry once per second and shows total observed tokens, elapsed time, and
-   average rate; clickable Start and Stop controls sit beside it. The full-width
-   plot adds one thin vertical block bar every 30 seconds for tokens observed in
-   that interval. New bars enter on the right and push older bars left, and the
-   Y axis automatically expands or contracts to fit the visible samples. Stop performs
-   an immediate final local read instead of relying on the latest graph sample.
+   average rate; clickable Start and Stop controls sit beside it. Below, every
+   independent root session has a metrics box and its own graph. Spawned-agent
+   descendants with an explicit Codex parent link are recursively aggregated
+   into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
+   model calls and latest activity, latest/peak time to first token, and
+   latest/peak output size. All graphs add one thin
+   vertical block bar on the same 30-second tick, after a fresh boundary read.
+   The companion readout records each account quota window at Start and tracks
+   its observed change while recording. Every session row shows its exact share
+   of locally observed tokens and an explicitly labelled, local-only estimate
+   of the first quota window's movement, apportioned by that share.
+   A root discovered part-way through an interval gets an honestly labelled
+   partial first bar and its rate uses that root's own observed lifetime. New
+   bars enter on the right, older bars move left, and each Y axis automatically
+   rescales to its visible samples. When the terminal cannot fit every root,
+   use Page Up, Page Down, or the mouse wheel to page through the rows. Stop
+   performs an immediate final local read instead of relying on the latest
+   graph sample.
 3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
    for clean curves at any size.
 4. **Consumption Pace** — a signed horizontal scale comparing elapsed window
@@ -247,6 +264,49 @@ that is not writing locally. Token totals normally appear when Codex emits usage
 for a model response, not token-by-token while a response is streaming. Raw token
 counts also do not reveal or reproduce the backend's quota-weighting rules, so
 they should not be converted directly into the percentage gauges.
+
+Session rows represent recently active rollout roots, not a guaranteed list of
+currently open terminal processes. Two independent CLI tabs have different root
+thread IDs and therefore remain separate rows. `thread_spawn` descendants,
+including nested descendants, are folded into their root by following persisted
+parent IDs. Review, compact, or other internal work that lacks an explicit
+parent is never guessed onto a root; if observed, it appears in an
+`UNATTRIBUTED // INTERNAL` row. When Codex records inherited child history, the
+Monitor honors its ownership boundary so copied parent telemetry is not counted
+twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
+at the child session timestamp: inherited cumulative totals establish the child
+counter baseline but are not reported as new usage.
+
+`CALLS` counts upstream model-response cycles observed after Monitor Start, not
+complete user turns. A single Codex turn can make several calls while using
+tools or progressing through an agent loop. `LAST OUT` is the provider-reported
+output-token count for the latest such call. `TTFT` comes from the completed
+turn's persisted time-to-first-token measurement; older Codex rollouts that do
+not contain it display `N/A`. Spawned descendants contribute these pulses to
+the same root row as their token activity.
+
+The Monitor's per-session quota figure is an estimate, not API attribution.
+Codex exposes account-level quota percentages and local per-session token
+telemetry separately; it does not report which session consumed each percentage
+point. Codexometer therefore multiplies the observed account-wide change by a
+session's share of locally observed tokens. This assumes that no activity from
+another computer, cloud session, different `CODEX_HOME`, or otherwise invisible
+client changes the account quota during the recording; if it does, its movement
+cannot be separated and will contaminate the estimate. Model choice, reasoning
+effort, cache behavior, and private backend weighting can also make equal token
+counts affect quota differently.
+
+The UI calls this `EST LOCAL-ONLY`, uses percentage points (`PP`), and never
+presents finer precision than the whole-number quota percentage returned by
+Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessarily
+zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
+missing, late-baseline, and reset-crossing windows do not produce a per-session
+number.
+Start reads quota before establishing the local token baseline, while Stop reads
+local tokens before the final quota snapshot, so the account observation
+brackets the local interval. These operations are not atomic, so unrelated
+account activity during either short boundary read remains another source of
+uncertainty.
 
 ### Deterministic benchmark
 
@@ -492,9 +552,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.3.0`. The Git tag is the release source of truth. Go automatically embeds
+`v0.4.0`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.3.0`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.4.0`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -507,7 +567,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.3.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.4.0" .
 ```
 
 ## How refresh works
@@ -526,10 +586,16 @@ data has already been displayed, Codexometer retains the last snapshot and
 marks it as stale instead of blanking the dashboard.
 
 While the Monitor is recording it checks appended local token telemetry once per
-second and rolls the observed deltas into 30-second graph buckets. These reads do
-not contact OpenAI or invoke a model. Pressing Stop performs one immediate final
-local read and forces complete session discovery, including Codex sessions
-resumed from older rollout directories.
+second, groups explicit agent descendants under their root, and rolls each
+root's observed deltas into synchronized graph buckets. It also updates the
+three compact response-cycle statistics without retaining response content. A
+bucket closes only after the boundary telemetry read completes; its heading
+reports the actual observed duration when scheduling or first-session detection
+makes it shorter or longer than 30 seconds. These reads do not contact OpenAI or
+invoke a model.
+Pressing Stop performs one immediate final local read and forces complete
+session discovery, including Codex sessions resumed from older rollout
+directories.
 
 ## Troubleshooting
 

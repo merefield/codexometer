@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
-	topHeight := min(max(height/3, 6), 10)
+	topHeight := min(max(height/5, 5), 8)
 	if height < 10 {
 		topHeight = max(height/2, 3)
 	}
@@ -88,7 +89,7 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, stopLabel, footerButtonMonitorStop, m.monitorStopEnabled(), colors)
 	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
-	graph := m.renderMonitorGraph(layout.width, layout.graphHeight, colors)
+	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
@@ -142,6 +143,11 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	if height >= 6 {
 		lines = append(lines, colors.label().Render(ansi.Truncate(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
 	}
+	if height >= 5 {
+		if quota := m.monitorQuotaReadout(); quota != "" {
+			lines = append(lines, colors.dimmed().Render(ansi.Truncate(quota, innerWidth, "")))
+		}
+	}
 	if height >= 8 && !m.monitorStartedAt.IsZero() {
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
 	}
@@ -154,7 +160,7 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
-	return frameSized(width, max(height-2, 1), "SESSION READOUT", strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSized(width, max(height-2, 1), "MONITOR READOUT", strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
@@ -183,10 +189,285 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 }
 
 func (m Model) renderMonitorGraph(width, height int, colors palette) string {
+	return m.renderMonitorGraphSamples(width, height, m.monitorSamples, "LOCAL TOKEN BARS", colors)
+}
+
+func (m Model) renderMonitorSessions(width, height int, colors palette) string {
+	visible := make([]monitorSession, 0, len(m.monitorSessionData))
+	for _, session := range m.monitorSessionData {
+		if session.displayed {
+			visible = append(visible, session)
+		}
+	}
+	if len(visible) == 0 {
+		return m.renderMonitorGraph(width, height, colors)
+	}
+
+	// Every row needs a title, body, and bottom border. When the terminal is too
+	// short, show a scrollable window and report its position.
+	visibleCount := len(visible)
+	rowCount := min(visibleCount, max(height/3, 1))
+	start := min(max(m.monitorScroll, 0), max(visibleCount-rowCount, 0))
+	visible = visible[start : start+rowCount]
+	pageLabel := ""
+	if rowCount < visibleCount {
+		pageLabel = fmt.Sprintf("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
+	}
+	rowHeights := distributeSpace(max(height-(rowCount-1), rowCount), rowCount)
+	rows := make([]string, 0, rowCount)
+	for index, session := range visible {
+		rowPageLabel := ""
+		if index == rowCount-1 {
+			rowPageLabel = pageLabel
+		}
+		rows = append(rows, m.renderMonitorSessionRow(width, rowHeights[index], session, rowPageLabel, colors))
+	}
+	view := strings.Join(rows, "\n")
+	if padding := height - lipgloss.Height(view); padding > 0 {
+		view += strings.Repeat("\n", padding)
+	}
+	return view
+}
+
+func (m Model) renderMonitorSessionRow(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	const gap = 1
+	if width <= gap+1 {
+		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", colors)
+	}
+	available := max(width-gap, 2)
+	metricsWidth := max(available/3, 1)
+	graphWidth := max(available-metricsWidth, 1)
+	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, colors)
+	title := "TOKEN BARS"
+	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, colors)
+	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, strings.Repeat(" ", gap), graph)
+}
+
+func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	title := "SESSION // " + shortSessionID(session.id)
+	if session.workingDirectory != "" {
+		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(session.workingDirectory))
+	}
+	if session.unattributed {
+		title = "UNATTRIBUTED // INTERNAL"
+	}
+	total := max(session.latest-session.baseline, int64(0))
+	elapsed := m.monitorSessionElapsed(session, time.Now())
+	rate := int64(0)
+	if elapsed > 0 {
+		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
+	}
+	status := "IDLE"
+	if session.active {
+		status = "ACTIVE"
+	}
+	innerWidth := max(width-4, 1)
+	memberLabel := "ROOT"
+	if session.agentCount > 0 {
+		memberLabel = fmt.Sprintf("ROOT + %d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
+		if lipgloss.Width(status+" // "+memberLabel) > innerWidth {
+			memberLabel = fmt.Sprintf("%d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
+		}
+	}
+	if session.unattributed {
+		memberLabel = "UNLINKED ACTIVITY"
+	}
+	bodyRows := max(height-2, 1)
+	share := m.monitorSessionShare(total)
+	usageLine := fmt.Sprintf("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
+	lines := []string{colors.label().Render(ansi.Truncate(usageLine, innerWidth, ""))}
+	appendLine := func(value string) {
+		if len(lines) < bodyRows {
+			lines = append(lines, colors.dimmed().Render(ansi.Truncate(value, innerWidth, "")))
+		}
+	}
+	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
+		appendLine(estimate)
+	}
+	appendLine(status + " // " + memberLabel)
+	appendLine(formatMonitorCallActivity(session, time.Now()))
+	appendLine(formatMonitorTTFT(session))
+	appendLine(formatMonitorOutput(session))
+	appendLine("RATE " + formatTokens(rate) + "/MIN")
+	if session.workingDirectory != "" {
+		appendLine("DIR // " + filepath.Base(session.workingDirectory))
+	}
+	if !session.lastActivity.IsZero() {
+		appendLine("LAST // " + compactDuration(time.Since(session.lastActivity)) + " AGO")
+	}
+	if pageLabel != "" {
+		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
+	}
+	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func formatMonitorCallActivity(session monitorSession, now time.Time) string {
+	last := "--"
+	if !session.lastCallAt.IsZero() {
+		last = formatMonitorAge(now.Sub(session.lastCallAt)) + " AGO"
+	}
+	return fmt.Sprintf("CALLS %d // LAST %s", session.modelCalls, last)
+}
+
+func formatMonitorTTFT(session monitorSession) string {
+	latest := "N/A"
+	if session.latestTTFTOK {
+		latest = formatMonitorLatency(session.latestTTFT)
+	}
+	peak := "N/A"
+	if session.peakTTFTOK {
+		peak = formatMonitorLatency(session.peakTTFT)
+	}
+	return "TTFT " + latest + " // PEAK " + peak
+}
+
+func formatMonitorOutput(session monitorSession) string {
+	latest := "N/A"
+	if session.latestOutputOK {
+		latest = formatTokens(session.latestOutput)
+	}
+	peak := "N/A"
+	if session.peakOutputOK {
+		peak = formatTokens(session.peakOutput)
+	}
+	return "LAST OUT " + latest + " // PEAK " + peak
+}
+
+func formatMonitorAge(duration time.Duration) string {
+	if duration < 0 {
+		duration = 0
+	}
+	seconds := int(math.Ceil(duration.Seconds()))
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%dS", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dM%02dS", seconds/60, seconds%60)
+	default:
+		return fmt.Sprintf("%dH%02dM", seconds/3600, seconds/60%60)
+	}
+}
+
+func formatMonitorLatency(duration time.Duration) string {
+	if duration < 0 {
+		duration = 0
+	}
+	if duration < time.Second {
+		return fmt.Sprintf("%dMS", duration.Milliseconds())
+	}
+	if duration < time.Minute {
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", duration.Seconds()), ".0") + "S"
+	}
+	return fmt.Sprintf("%dM%02dS", int(duration/time.Minute), int(duration/time.Second)%60)
+}
+
+func (m Model) monitorRecordedTokens() int64 {
+	if m.monitorStartedAt.IsZero() || m.monitorLatest < m.monitorBaseline {
+		return 0
+	}
+	return m.monitorLatest - m.monitorBaseline
+}
+
+func (m Model) monitorSessionShare(tokens int64) float64 {
+	total := m.monitorRecordedTokens()
+	if total <= 0 || tokens <= 0 {
+		return 0
+	}
+	return min(float64(tokens)/float64(total), 1)
+}
+
+func (m Model) monitorQuotaReadout() string {
+	if m.monitorStartedAt.IsZero() {
+		return ""
+	}
+	if len(m.monitorQuotaWindows) == 0 {
+		if m.monitorQuotaError != "" {
+			return "ACCOUNT QUOTA Δ // UNAVAILABLE"
+		}
+		return "ACCOUNT QUOTA Δ // NO WINDOWS"
+	}
+	parts := []string{"ACCOUNT QUOTA Δ"}
+	for _, window := range m.monitorQuotaWindows {
+		value := "RESET"
+		if m.monitorQuotaError != "" || window.stale {
+			value = "STALE"
+		} else if !window.resetDetected {
+			value = fmt.Sprintf("%+dPP", window.latestUsed-window.baselineUsed)
+			if window.partial {
+				value += " PARTIAL"
+			}
+		}
+		parts = append(parts, window.label+" "+value)
+	}
+	return strings.Join(parts, " // ")
+}
+
+func (m Model) monitorSessionQuotaEstimate(share float64) string {
+	if len(m.monitorQuotaWindows) == 0 {
+		return ""
+	}
+	window := m.monitorQuotaWindows[0]
+	prefix := "EST LOCAL-ONLY " + compactMonitorQuotaLabel(window.label)
+	if m.monitorError != "" {
+		return prefix + " // LOCAL STALE"
+	}
+	if m.monitorQuotaError != "" || window.stale {
+		return prefix + " // STALE"
+	}
+	if window.resetDetected {
+		return prefix + " // RESET"
+	}
+	if window.partial {
+		return prefix + " // PARTIAL"
+	}
+	delta := window.latestUsed - window.baselineUsed
+	if delta == 0 {
+		return prefix + " // NO INTEGER Δ"
+	}
+	estimate := float64(delta) * share
+	switch {
+	case estimate == 0:
+		return prefix + " 0PP"
+	case estimate < 1:
+		return prefix + " <1PP"
+	default:
+		return fmt.Sprintf("%s ~%.0fPP", prefix, math.Round(estimate))
+	}
+}
+
+func compactMonitorQuotaLabel(label string) string {
+	for _, unit := range []struct{ suffix, compact string }{
+		{" MINUTES", "M"}, {" MINUTE", "M"}, {" HOURS", "H"}, {" HOUR", "H"},
+		{" DAYS", "D"}, {" DAY", "D"}, {" WEEKS", "W"}, {" WEEK", "W"},
+	} {
+		if strings.HasSuffix(label, unit.suffix) {
+			return strings.TrimSuffix(label, unit.suffix) + unit.compact
+		}
+	}
+	return label
+}
+
+func shortSessionID(id string) string {
+	if id == "" {
+		return "UNKNOWN"
+	}
+	if len(id) <= 5 {
+		return strings.ToUpper(id)
+	}
+	return strings.ToUpper(id[len(id)-5:])
+}
+
+func plural(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
+func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSample, heading string, colors palette) string {
 	innerWidth := max(width-4, 1)
 	plotHeight := max(height-2, 1)
 	const sampleWidth = 2 // one block-wide bar plus one cell of breathing room
-	samples := m.monitorSamples
 	visibleSamples := max((innerWidth+1)/sampleWidth, 1)
 	if len(samples) > visibleSamples {
 		samples = samples[len(samples)-visibleSamples:]
@@ -196,7 +477,12 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 		maximum = max(maximum, sample.intervalTokens)
 	}
 	yMax := niceTokenCeiling(maximum)
-	title := fmt.Sprintf("30 SEC LOCAL TOKEN BARS // AUTO 0-%s", formatCompactTokens(yMax))
+	span := monitorSampleInterval
+	if len(samples) > 0 && samples[len(samples)-1].duration > 0 {
+		span = samples[len(samples)-1].duration
+	}
+	spanSeconds := max(int(math.Ceil(span.Seconds())), 1)
+	title := fmt.Sprintf("%d SEC %s // AUTO 0-%s", spanSeconds, heading, formatCompactTokens(yMax))
 
 	canvas := make([][]rune, plotHeight)
 	for row := range canvas {
@@ -300,6 +586,21 @@ func (m Model) monitorElapsed(now time.Time) time.Duration {
 		return 0
 	}
 	return end.Sub(m.monitorStartedAt)
+}
+
+func (m Model) monitorSessionElapsed(session monitorSession, now time.Time) time.Duration {
+	start := session.startedAt
+	if start.IsZero() {
+		start = m.monitorStartedAt
+	}
+	end := now
+	if m.monitorState == monitorStopped && !m.monitorStoppedAt.IsZero() {
+		end = m.monitorStoppedAt
+	}
+	if start.IsZero() || end.Before(start) {
+		return 0
+	}
+	return end.Sub(start)
 }
 
 func (m Model) monitorNextLabel() string {

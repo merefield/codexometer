@@ -19,6 +19,11 @@ import (
 type demoFetcher struct {
 	mu             sync.Mutex
 	lifetimeTokens int64
+	eventSequence  uint64
+	alphaCalls     []codex.LiveModelCall
+	alphaTurns     []codex.LiveTurnTiming
+	bravoCalls     []codex.LiveModelCall
+	bravoTurns     []codex.LiveTurnTiming
 }
 
 func (d *demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
@@ -32,9 +37,28 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 		d.lifetimeTokens = 100_000
 	} else {
 		d.lifetimeTokens += 1_234
+		now := time.Now()
+		d.eventSequence++
+		call := codex.LiveModelCall{Sequence: d.eventSequence, At: now, OutputTokens: 420 + int64(d.eventSequence%5)*137, OutputAvailable: true}
+		d.eventSequence++
+		timing := codex.LiveTurnTiming{Sequence: d.eventSequence, At: now, TimeToFirstToken: time.Duration(900+d.eventSequence%7*350) * time.Millisecond, Available: true}
+		if d.eventSequence/2%2 == 0 {
+			d.alphaCalls = append(d.alphaCalls, call)
+			d.alphaTurns = append(d.alphaTurns, timing)
+		} else {
+			d.bravoCalls = append(d.bravoCalls, call)
+			d.bravoTurns = append(d.bravoTurns, timing)
+		}
 	}
+	alphaTokens := d.lifetimeTokens * 3 / 5
 	return codex.LiveUsageSnapshot{
 		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
+		Sessions: []codex.LiveUsageSession{
+			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
+				ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
+			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true,
+				ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
+		},
 	}, nil
 }
 
