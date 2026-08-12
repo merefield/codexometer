@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
-	topHeight := min(max(height/3, 6), 10)
+	topHeight := min(max(height/5, 5), 8)
 	if height < 10 {
 		topHeight = max(height/2, 3)
 	}
@@ -88,7 +89,7 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, stopLabel, footerButtonMonitorStop, m.monitorStopEnabled(), colors)
 	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
-	graph := m.renderMonitorGraph(layout.width, layout.graphHeight, colors)
+	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
@@ -154,7 +155,7 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
-	return frameSized(width, max(height-2, 1), "SESSION READOUT", strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSized(width, max(height-2, 1), "MONITOR READOUT", strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
@@ -183,10 +184,130 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 }
 
 func (m Model) renderMonitorGraph(width, height int, colors palette) string {
+	return m.renderMonitorGraphSamples(width, height, m.monitorSamples, "LOCAL TOKEN BARS", colors)
+}
+
+func (m Model) renderMonitorSessions(width, height int, colors palette) string {
+	visible := make([]monitorSession, 0, len(m.monitorSessionData))
+	for _, session := range m.monitorSessionData {
+		if session.displayed {
+			visible = append(visible, session)
+		}
+	}
+	if len(visible) == 0 {
+		return m.renderMonitorGraph(width, height, colors)
+	}
+
+	// Every row needs a title, body, and bottom border. When the terminal is too
+	// short, show a scrollable window and report its position.
+	visibleCount := len(visible)
+	rowCount := min(visibleCount, max(height/3, 1))
+	start := min(max(m.monitorScroll, 0), max(visibleCount-rowCount, 0))
+	visible = visible[start : start+rowCount]
+	pageLabel := ""
+	if rowCount < visibleCount {
+		pageLabel = fmt.Sprintf("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
+	}
+	rowHeights := distributeSpace(max(height-(rowCount-1), rowCount), rowCount)
+	rows := make([]string, 0, rowCount)
+	for index, session := range visible {
+		rowPageLabel := ""
+		if index == rowCount-1 {
+			rowPageLabel = pageLabel
+		}
+		rows = append(rows, m.renderMonitorSessionRow(width, rowHeights[index], session, rowPageLabel, colors))
+	}
+	view := strings.Join(rows, "\n")
+	if padding := height - lipgloss.Height(view); padding > 0 {
+		view += strings.Repeat("\n", padding)
+	}
+	return view
+}
+
+func (m Model) renderMonitorSessionRow(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	const gap = 1
+	if width <= gap+1 {
+		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", colors)
+	}
+	available := max(width-gap, 2)
+	metricsWidth := max(available/3, 1)
+	graphWidth := max(available-metricsWidth, 1)
+	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, colors)
+	title := "TOKEN BARS"
+	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, colors)
+	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, strings.Repeat(" ", gap), graph)
+}
+
+func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	title := "SESSION // " + shortSessionID(session.id)
+	if session.workingDirectory != "" {
+		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(session.workingDirectory))
+	}
+	if session.unattributed {
+		title = "UNATTRIBUTED // INTERNAL"
+	}
+	total := max(session.latest-session.baseline, int64(0))
+	elapsed := m.monitorSessionElapsed(session, time.Now())
+	rate := int64(0)
+	if elapsed > 0 {
+		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
+	}
+	status := "IDLE"
+	if session.active {
+		status = "ACTIVE"
+	}
+	innerWidth := max(width-4, 1)
+	memberLabel := "ROOT"
+	if session.agentCount > 0 {
+		memberLabel = fmt.Sprintf("ROOT + %d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
+		if lipgloss.Width(status+" // "+memberLabel) > innerWidth {
+			memberLabel = fmt.Sprintf("%d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
+		}
+	}
+	if session.unattributed {
+		memberLabel = "UNLINKED ACTIVITY"
+	}
+	bodyRows := max(height-2, 1)
+	lines := []string{colors.label().Render(ansi.Truncate(formatTokens(total)+" TOKENS", innerWidth, ""))}
+	if bodyRows >= 2 {
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(status+" // "+memberLabel, innerWidth, "")))
+	}
+	if bodyRows >= 3 {
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate("RATE "+formatTokens(rate)+"/MIN", innerWidth, "")))
+	}
+	if bodyRows >= 4 && session.workingDirectory != "" {
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate("DIR // "+filepath.Base(session.workingDirectory), innerWidth, "")))
+	}
+	if bodyRows >= 5 && !session.lastActivity.IsZero() {
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate("LAST // "+compactDuration(time.Since(session.lastActivity))+" AGO", innerWidth, "")))
+	}
+	if pageLabel != "" {
+		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
+	}
+	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func shortSessionID(id string) string {
+	if id == "" {
+		return "UNKNOWN"
+	}
+	if len(id) <= 5 {
+		return strings.ToUpper(id)
+	}
+	return strings.ToUpper(id[len(id)-5:])
+}
+
+func plural(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
+func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSample, heading string, colors palette) string {
 	innerWidth := max(width-4, 1)
 	plotHeight := max(height-2, 1)
 	const sampleWidth = 2 // one block-wide bar plus one cell of breathing room
-	samples := m.monitorSamples
 	visibleSamples := max((innerWidth+1)/sampleWidth, 1)
 	if len(samples) > visibleSamples {
 		samples = samples[len(samples)-visibleSamples:]
@@ -196,7 +317,12 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 		maximum = max(maximum, sample.intervalTokens)
 	}
 	yMax := niceTokenCeiling(maximum)
-	title := fmt.Sprintf("30 SEC LOCAL TOKEN BARS // AUTO 0-%s", formatCompactTokens(yMax))
+	span := monitorSampleInterval
+	if len(samples) > 0 && samples[len(samples)-1].duration > 0 {
+		span = samples[len(samples)-1].duration
+	}
+	spanSeconds := max(int(math.Ceil(span.Seconds())), 1)
+	title := fmt.Sprintf("%d SEC %s // AUTO 0-%s", spanSeconds, heading, formatCompactTokens(yMax))
 
 	canvas := make([][]rune, plotHeight)
 	for row := range canvas {
@@ -300,6 +426,21 @@ func (m Model) monitorElapsed(now time.Time) time.Duration {
 		return 0
 	}
 	return end.Sub(m.monitorStartedAt)
+}
+
+func (m Model) monitorSessionElapsed(session monitorSession, now time.Time) time.Duration {
+	start := session.startedAt
+	if start.IsZero() {
+		start = m.monitorStartedAt
+	}
+	end := now
+	if m.monitorState == monitorStopped && !m.monitorStoppedAt.IsZero() {
+		end = m.monitorStoppedAt
+	}
+	if start.IsZero() || end.Before(start) {
+		return 0
+	}
+	return end.Sub(start)
 }
 
 func (m Model) monitorNextLabel() string {

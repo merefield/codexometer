@@ -33,8 +33,13 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	} else {
 		d.lifetimeTokens += 1_234
 	}
+	alphaTokens := d.lifetimeTokens * 3 / 5
 	return codex.LiveUsageSnapshot{
 		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
+		Sessions: []codex.LiveUsageSession{
+			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true},
+			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true},
+		},
 	}, nil
 }
 

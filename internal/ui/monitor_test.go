@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,10 +52,16 @@ func TestMonitorGoSampleAndStopLifecycle(t *testing.T) {
 	if model.monitorLatest != 1_250 || len(model.monitorSamples) != 0 {
 		t.Fatalf("live read should update the readout without prematurely adding a graph bucket: %#v", model.monitorSamples)
 	}
-	model.monitorFetchActive = true
-	updated, _ = model.Update(secondMsg(startedAt.Add(30 * time.Second)))
+	updated, command = model.Update(secondMsg(startedAt.Add(30 * time.Second)))
 	model = updated.(Model)
-	model.monitorFetchActive = false
+	if command == nil || !model.monitorBoundaryDue || !model.monitorFetchActive {
+		t.Fatal("sample boundary did not request fresh telemetry")
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchBoundary, sequence: model.monitorRequest,
+		usage: usageWithTokens(1_250), at: startedAt.Add(30*time.Second + 100*time.Millisecond),
+	})
+	model = updated.(Model)
 	if len(model.monitorSamples) != 1 || model.monitorSamples[0].intervalTokens != 250 {
 		t.Fatalf("30-second graph bucket was not recorded: %#v", model.monitorSamples)
 	}
@@ -104,6 +111,185 @@ func TestMonitorTickSamplesOnlyWhileRunningAndIgnoresStaleResults(t *testing.T) 
 	}
 }
 
+func TestMonitorTracksRootSessionsAndSamplesEveryGraphOnOneTick(t *testing.T) {
+	startedAt := time.Unix(1_000, 0)
+	model := Model{monitorState: monitorStarting, monitorRequest: 1}
+	started := codex.LiveUsageSnapshot{
+		TotalTokens: 300, SessionCount: 2,
+		Sessions: []codex.LiveUsageSession{
+			{ID: "root-alpha-uuid", WorkingDirectory: "/work/alpha", TotalTokens: 100, AgentCount: 2, Active: true},
+			{ID: "root-bravo-uuid", WorkingDirectory: "/work/bravo", TotalTokens: 200, Active: true},
+		},
+	}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, usage: started, at: startedAt,
+	})
+	model = updated.(Model)
+	if len(model.monitorSessionData) != 2 || model.monitorSessions != 2 {
+		t.Fatalf("root session baselines were not established: %#v", model.monitorSessionData)
+	}
+
+	model.monitorRequest++
+	usage := codex.LiveUsageSnapshot{
+		TotalTokens: 400, SessionCount: 2,
+		Sessions: []codex.LiveUsageSession{
+			{ID: "root-alpha-uuid", WorkingDirectory: "/work/alpha", TotalTokens: 160, AgentCount: 2, Active: true},
+			{ID: "root-bravo-uuid", WorkingDirectory: "/work/bravo", TotalTokens: 240, Active: true},
+		},
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, usage: usage, at: startedAt.Add(29 * time.Second),
+	})
+	model = updated.(Model)
+	updated, command := model.Update(secondMsg(startedAt.Add(30 * time.Second)))
+	model = updated.(Model)
+	if command == nil || !model.monitorFetchActive {
+		t.Fatal("shared graph boundary did not request fresh telemetry")
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchBoundary, sequence: model.monitorRequest, usage: usage, at: startedAt.Add(30 * time.Second),
+	})
+	model = updated.(Model)
+	if len(model.monitorSessionData[0].samples) != 1 || len(model.monitorSessionData[1].samples) != 1 {
+		t.Fatalf("session graphs were not sampled together: %#v", model.monitorSessionData)
+	}
+	if model.monitorSessionData[0].samples[0].intervalTokens != 60 || model.monitorSessionData[1].samples[0].intervalTokens != 40 {
+		t.Fatalf("per-root sample deltas were not isolated: %#v", model.monitorSessionData)
+	}
+}
+
+func TestMonitorAddsANewlyDetectedRootWithoutLosingItsFirstUsage(t *testing.T) {
+	startedAt := time.Unix(2_000, 0)
+	model := Model{monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, at: startedAt,
+		usage: codex.LiveUsageSnapshot{TotalTokens: 100, SessionCount: 1, Sessions: []codex.LiveUsageSession{
+			{ID: "existing", TotalTokens: 100, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	model.monitorRequest++
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest, at: startedAt.Add(time.Second),
+		usage: codex.LiveUsageSnapshot{TotalTokens: 150, SessionCount: 2, Sessions: []codex.LiveUsageSession{
+			{ID: "existing", TotalTokens: 110, Active: true},
+			{ID: "new-root", StartedAt: startedAt.Add(500 * time.Millisecond), TotalTokens: 40, Active: true},
+		}},
+	})
+	model = updated.(Model)
+	index := model.monitorSessionIndex("new-root")
+	if index < 0 || model.monitorSessionData[index].baseline != 0 || model.monitorSessionData[index].latest != 40 {
+		t.Fatalf("new root's first observed usage was lost: %#v", model.monitorSessionData)
+	}
+	if got := model.monitorSessionElapsed(model.monitorSessionData[index], startedAt.Add(time.Second)); got != 500*time.Millisecond {
+		t.Fatalf("new root elapsed time = %s; want its own 500ms lifetime", got)
+	}
+	model.captureMonitorSamples(startedAt.Add(time.Second))
+	if sample := model.monitorSessionData[index].samples[0]; sample.duration != 500*time.Millisecond || sample.intervalTokens != 40 {
+		t.Fatalf("new root partial first sample = %#v; want 500ms and 40 tokens", sample)
+	}
+}
+
+func TestMonitorWaitsForAFreshBoundaryReadWhenOrdinaryFetchIsInFlight(t *testing.T) {
+	startedAt := time.Unix(3_000, 0)
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: startedAt,
+		monitorNextSample: startedAt.Add(30 * time.Second), monitorFetchActive: true,
+		monitorRequest: 5,
+	}
+	updated, _ := model.Update(secondMsg(startedAt.Add(30 * time.Second)))
+	model = updated.(Model)
+	if !model.monitorBoundaryDue || len(model.monitorSamples) != 0 {
+		t.Fatal("boundary was closed from stale telemetry")
+	}
+
+	updated, command := model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: 5, usage: usageWithTokens(100), at: startedAt.Add(30*time.Second + time.Millisecond),
+	})
+	model = updated.(Model)
+	if command == nil || model.monitorRequest != 6 || !model.monitorFetchActive || len(model.monitorSamples) != 0 {
+		t.Fatal("ordinary result did not trigger a dedicated boundary read")
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchBoundary, sequence: 6, usage: usageWithTokens(125), at: startedAt.Add(30*time.Second + 2*time.Millisecond),
+	})
+	model = updated.(Model)
+	if len(model.monitorSamples) != 1 || model.monitorSamples[0].intervalTokens != 125 || model.monitorBoundaryDue {
+		t.Fatalf("fresh boundary result did not close the bucket: %#v", model.monitorSamples)
+	}
+}
+
+func TestMonitorRendersOneMetricsAndGraphPairPerRootSession(t *testing.T) {
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: time.Now().Add(-time.Minute),
+		monitorSessionData: []monitorSession{
+			{id: "019d-alpha-a1b2c", workingDirectory: "/work/alpha", latest: 150, agentCount: 2, active: true, displayed: true, samples: []monitorSample{{intervalTokens: 50}}},
+			{id: "019d-bravo-d4e5f", workingDirectory: "/work/bravo", latest: 75, active: true, displayed: true, samples: []monitorSample{{intervalTokens: 25}}},
+		},
+	}
+	view := ansi.Strip(model.renderMonitorSessions(116, 24, paletteFor(themeHacker)))
+	for _, want := range []string{"A1B2C // ALPHA", "D4E5F // BRAVO", "ROOT + 2 AGENTS", "DIR // alpha", "DIR // bravo"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("per-root monitor view missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Count(view, "30 SEC TOKEN BARS") != 2 {
+		t.Fatalf("wanted one graph beside each root metrics box:\n%s", view)
+	}
+}
+
+func TestMonitorSessionRowsStayInsideResponsiveRectangle(t *testing.T) {
+	sessions := []monitorSession{
+		{id: "root-a", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 10}}},
+		{id: "root-b", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 20}}},
+		{id: "root-c", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 30}}},
+		{id: "root-d", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 40}}},
+	}
+	for _, size := range []struct{ width, height int }{{20, 6}, {40, 9}, {80, 12}, {116, 24}} {
+		model := Model{monitorState: monitorRunning, monitorSessionData: sessions}
+		view := model.renderMonitorSessions(size.width, size.height, paletteFor(themeHacker))
+		if lipgloss.Width(view) > size.width || lipgloss.Height(view) > size.height {
+			t.Errorf("session rows overflowed %dx%d: got %dx%d\n%s", size.width, size.height, lipgloss.Width(view), lipgloss.Height(view), ansi.Strip(view))
+		}
+	}
+	model := Model{monitorState: monitorRunning, monitorSessionData: sessions}
+	firstPage := ansi.Strip(model.renderMonitorSessions(80, 9, paletteFor(themeHacker)))
+	if !strings.Contains(firstPage, "ROWS 1-3/4") || strings.Contains(firstPage, "OOT-D") {
+		t.Fatalf("first constrained page did not expose navigation state:\n%s", firstPage)
+	}
+	model.monitorScroll = 1
+	secondPage := ansi.Strip(model.renderMonitorSessions(80, 9, paletteFor(themeHacker)))
+	if !strings.Contains(secondPage, "ROWS 2-4/4") || !strings.Contains(secondPage, "OOT-D") || strings.Contains(secondPage, "OOT-A") {
+		t.Fatalf("scrolled constrained page did not reveal the final root:\n%s", secondPage)
+	}
+}
+
+func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
+	model := Model{
+		meterStyle: styleMonitor, width: 84, height: 24,
+		monitorSessionData: []monitorSession{
+			{id: "a", displayed: true}, {id: "b", displayed: true},
+			{id: "c", displayed: true}, {id: "d", displayed: true},
+		},
+	}
+	wantLastPage := max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0)
+	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	model = updated.(Model)
+	if command != nil || model.monitorScroll != wantLastPage {
+		t.Fatalf("Page Down monitor scroll = %d; want %d", model.monitorScroll, wantLastPage)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(Model)
+	if model.monitorScroll != 0 {
+		t.Fatalf("Page Up monitor scroll = %d; want 0", model.monitorScroll)
+	}
+	updated, _ = model.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	model = updated.(Model)
+	if model.monitorScroll != 1 {
+		t.Fatalf("mouse wheel monitor scroll = %d; want 1", model.monitorScroll)
+	}
+}
+
 func TestMonitorSurfacesUnavailableAndFailedFinalUsage(t *testing.T) {
 	model := Model{meterStyle: styleMonitor, monitorState: monitorStarting, monitorRequest: 1}
 	updated, _ := model.Update(monitorFetchedMsg{
@@ -129,7 +315,7 @@ func TestMonitorFetchUsesConfiguredLocalSource(t *testing.T) {
 	want := codex.LiveUsageSnapshot{TotalTokens: 321, SessionCount: 2}
 	model := New(stubLiveFetcher{usage: want}, time.Minute)
 	message := model.monitorFetch(monitorFetchStart, 7)().(monitorFetchedMsg)
-	if message.err != nil || message.sequence != 7 || message.usage != want {
+	if message.err != nil || message.sequence != 7 || !reflect.DeepEqual(message.usage, want) {
 		t.Fatalf("live source result = %#v", message)
 	}
 
@@ -164,10 +350,13 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.View()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION READOUT", "6,250 TOKENS", "ELAPSED", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
+		}
+		if size.height >= 40 && !strings.Contains(plain, "ELAPSED") {
+			t.Errorf("%dx%d monitor omitted elapsed telemetry despite available height", size.width, size.height)
 		}
 		if lipgloss.Width(output) > size.width || lipgloss.Height(output) > size.height {
 			t.Errorf("monitor overflowed %dx%d: got %dx%d", size.width, size.height, lipgloss.Width(output), lipgloss.Height(output))
