@@ -81,10 +81,11 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	if account != "ACCOUNT // PLUS" {
 		t.Fatalf("account metadata = %q", account)
 	}
-	header := ansi.Strip(renderHeader(100, 0, model.renderSignalStatus(colors), model.renderAccount(colors), colors))
+	header := ansi.Strip(renderHeader(100, 0, model.renderSignalStatus(100, colors), model.renderAccount(colors), colors))
 	headerLines := strings.Split(header, "\n")
 	firstLine := headerLines[0]
-	if !strings.HasSuffix(firstLine, "● ONLINE") {
+	status := ansi.Strip(model.renderSignalStatus(100, colors))
+	if !strings.HasSuffix(firstLine, status) || !strings.Contains(status, "● ONLINE // QUOTA ") {
 		t.Fatalf("online status is not at the top right of the header: %q", firstLine)
 	}
 	if !strings.HasSuffix(headerLines[len(headerLines)-1], "ACCOUNT // PLUS") {

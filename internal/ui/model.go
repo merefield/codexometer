@@ -43,6 +43,9 @@ type Model struct {
 	phase           int
 	theme           themeID
 	meterStyle      meterStyleID
+	quotaMeterStyle meterStyleID
+	hoveredMainTab  mainTabID
+	mainTabHovered  bool
 	hoveredStyle    meterStyleID
 	styleHovered    bool
 	flashedStyle    meterStyleID
@@ -233,6 +236,7 @@ type footerButtonID int
 const (
 	footerButtonNone footerButtonID = iota
 	footerButtonTheme
+	footerButtonStyle
 	footerButtonRefresh
 	footerButtonQuit
 	footerButtonMonitorGo
@@ -257,6 +261,13 @@ type footerButton struct {
 
 var footerButtonDefinitions = []footerButton{
 	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
+	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
+	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
+}
+
+var quotaFooterButtonDefinitions = []footerButton{
+	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
+	{id: footerButtonStyle, label: "[ (S)TYLE ]", compact: "[S]"},
 	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
 	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
 }
@@ -295,13 +306,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			return m.pressFooterButton(footerButtonTheme)
 		case "s":
+			if m.meterStyle.isQuota() {
+				return m.pressFooterButton(footerButtonStyle)
+			}
 			if m.meterStyle == styleMonitor {
 				return m.pressFooterButton(footerButtonMonitorGo)
 			}
 		case "tab":
-			return m.pressStyleTab(m.meterStyle.next())
+			return m.pressMainTab(m.currentMainTab().next())
 		case "shift+tab":
-			return m.pressStyleTab(m.meterStyle.previous())
+			return m.pressMainTab(m.currentMainTab().previous())
 		case "r":
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
@@ -355,7 +369,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
-		if style, ok := m.styleTabAt(message.X, message.Y); ok {
+		if tab, ok := m.mainTabAt(message.X, message.Y); ok {
+			m.mainTabHovered = true
+			m.hoveredMainTab = tab
+			m.styleHovered = false
+			m.hoveredButton = footerButtonNone
+			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+				return m.pressMainTab(tab)
+			}
+			return m, nil
+		}
+		m.mainTabHovered = false
+		if style, ok := m.quotaStyleTabAt(message.X, message.Y); ok {
 			m.styleHovered = true
 			m.hoveredStyle = style
 			m.hoveredButton = footerButtonNone
@@ -526,6 +551,9 @@ func (m Model) pressStyleTab(style meterStyleID) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.meterStyle = style
+	if style.isQuota() {
+		m.quotaMeterStyle = style
+	}
 	m.styleSequence++
 	m.flashedStyle = style
 	m.styleFlashing = true
@@ -563,6 +591,11 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
 		m.theme = m.theme.next()
+	case footerButtonStyle:
+		if m.meterStyle.isQuota() {
+			m.meterStyle = m.meterStyle.nextQuota()
+			m.quotaMeterStyle = m.meterStyle
+		}
 	case footerButtonRefresh:
 		if !m.loading {
 			m.loading = true
@@ -663,7 +696,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name)
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterStyle.isQuota())
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+len(button.label) {
@@ -677,6 +710,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 type dashboardGeometry struct {
 	contentWidth int
 	tabsY        int
+	quotaTabsY   int
 	meterHeight  int
 	meterY       int
 	footerY      int
@@ -698,7 +732,10 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		headerHeight = 2
 	}
 	const statusHeight = 1
-	const tabsHeight = 1
+	tabsHeight := 1
+	if m.meterStyle.isQuota() {
+		tabsHeight++
+	}
 	const framedErrorHeight = 3
 	const footerHeight = 2
 	extraHeight := 0
@@ -709,6 +746,10 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		extraHeight += framedErrorHeight
 	}
 	tabsY := 1 + headerHeight + statusHeight
+	quotaTabsY := -1
+	if m.meterStyle.isQuota() {
+		quotaTabsY = tabsY + 1
+	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
@@ -718,6 +759,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	return dashboardGeometry{
 		contentWidth: contentWidth,
 		tabsY:        tabsY,
+		quotaTabsY:   quotaTabsY,
 		meterHeight:  meterHeight,
 		meterY:       meterY,
 		footerY:      footerY,
@@ -867,9 +909,13 @@ func (m Model) contentWidth() int {
 	return max(width-4, 1)
 }
 
-func footerButtonLayout(width int) ([]footerButton, string) {
-	buttons := make([]footerButton, len(footerButtonDefinitions))
-	copy(buttons, footerButtonDefinitions)
+func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
+	definitions := footerButtonDefinitions
+	if quota {
+		definitions = quotaFooterButtonDefinitions
+	}
+	buttons := make([]footerButton, len(definitions))
+	copy(buttons, definitions)
 	separator := "  "
 	total := len(separator) * (len(buttons) - 1)
 	for _, button := range buttons {
@@ -885,13 +931,13 @@ func footerButtonLayout(width int) ([]footerButton, string) {
 	return buttons, separator
 }
 
-func footerButtonLayoutWithTheme(width int, themeName string) ([]footerButton, string) {
+func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]footerButton, string) {
 	themeWidth := len("THEME // ") + len(themeName)
 	available := width - themeWidth - 1
 	if available <= 0 {
 		return nil, " "
 	}
-	buttons, separator := footerButtonLayout(available)
+	buttons, separator := footerButtonLayout(available, quota)
 	visible := buttons[:0]
 	used := 0
 	for _, button := range buttons {

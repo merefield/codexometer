@@ -39,24 +39,19 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 	}
 }
 
-func TestTabCyclesStylesAndShiftTabMovesBack(t *testing.T) {
+func TestTabCyclesMainTabsAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
-	for want := styleMonitor; want < styleCount; want++ {
+	for _, want := range []meterStyleID{styleMonitor, styleBenchmark, styleBars} {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 		model = updated.(Model)
 		if model.meterStyle != want {
 			t.Fatalf("got meter style %d, want %d", model.meterStyle, want)
 		}
 	}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	if model.meterStyle != styleBars {
-		t.Fatalf("meter style did not wrap: got %d", model.meterStyle)
-	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	model = updated.(Model)
 	if model.meterStyle != styleBenchmark {
-		t.Fatalf("reverse style navigation got %d, want %d", model.meterStyle, styleBenchmark)
+		t.Fatalf("reverse main-tab navigation got %d, want %d", model.meterStyle, styleBenchmark)
 	}
 }
 
@@ -178,6 +173,12 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 		t.Fatalf("theme click selected theme=%d flash=%d, want theme=%d flash=%d", model.theme, model.flashedButton, themeRust, footerButtonTheme)
 	}
 
+	updated, command = model.Update(footerMouseMessage(t, model, footerButtonStyle, tea.MouseActionPress))
+	model = updated.(Model)
+	if command == nil || model.meterStyle != stylePie || model.flashedButton != footerButtonStyle {
+		t.Fatalf("style click selected style=%d flash=%d", model.meterStyle, model.flashedButton)
+	}
+
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
 	model = updated.(Model)
 	if !model.loading || command == nil {
@@ -188,6 +189,22 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 	_, command = model.Update(footerMouseMessage(t, model, footerButtonQuit, tea.MouseActionPress))
 	if command == nil {
 		t.Fatal("quit click returned no command")
+	}
+}
+
+func TestStyleFooterButtonOnlyExistsOnQuota(t *testing.T) {
+	for _, style := range []meterStyleID{styleMonitor, styleBenchmark} {
+		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: style}
+		if _, ok := footerButtonByID(model, footerButtonStyle); ok {
+			t.Fatalf("%s footer exposed the Style button", style.name())
+		}
+		for y := 0; y < model.height; y++ {
+			for x := 0; x < model.width; x++ {
+				if got := model.footerButtonAt(x, y); got == footerButtonStyle {
+					t.Fatalf("%s exposed hidden Style hit target at %d,%d", style.name(), x, y)
+				}
+			}
+		}
 	}
 }
 
@@ -204,6 +221,7 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 		{name: "large error", width: 120, height: 40, withError: true},
 		{name: "empty quota", width: 80, height: 24, empty: true},
 		{name: "empty monitor", width: 80, height: 24, empty: true, style: styleMonitor},
+		{name: "benchmark", width: 100, height: 30, style: styleBenchmark},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			model := New(stubFetcher{snapshot: codex.DemoSnapshot()}, time.Minute)
@@ -218,7 +236,9 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 				model.err = errors.New("stale quota signal")
 			}
 			layout := model.dashboardLayout()
-			for _, id := range []footerButtonID{footerButtonTheme, footerButtonRefresh, footerButtonQuit} {
+			buttons, _ := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(model.theme).name, model.meterStyle.isQuota())
+			for _, visible := range buttons {
+				id := visible.id
 				mouse := footerMouseMessage(t, model, id, tea.MouseActionMotion)
 				if mouse.Y != layout.footerY+1 {
 					t.Errorf("rendered footer y=%d, calculated y=%d", mouse.Y, layout.footerY+1)
@@ -279,7 +299,7 @@ func TestFooterButtonHotkeyFlashesAndLatestPulseWins(t *testing.T) {
 }
 
 func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
-	buttons, separator := footerButtonLayout(100)
+	buttons, separator := footerButtonLayout(100, false)
 	want := []string{"[ (T)HEME ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
 	if separator != "  " || len(buttons) != len(want) {
 		t.Fatalf("unexpected full footer layout: separator=%q buttons=%#v", separator, buttons)
@@ -290,7 +310,7 @@ func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 		}
 	}
 
-	compact, separator := footerButtonLayout(20)
+	compact, separator := footerButtonLayout(20, false)
 	if separator != " " {
 		t.Fatalf("compact separator = %q, want one space", separator)
 	}
@@ -299,22 +319,35 @@ func TestFooterButtonLabelsEmbedHotkeysWithPadding(t *testing.T) {
 			t.Errorf("compact button %d label = %q, want %q", index, compact[index].label, label)
 		}
 	}
+
+	quota, separator := footerButtonLayout(100, true)
+	quotaWant := []string{"[ (T)HEME ]", "[ (S)TYLE ]", "[ (R)EFRESH ]", "[ (Q)UIT ]"}
+	if separator != "  " || len(quota) != len(quotaWant) {
+		t.Fatalf("unexpected Quota footer layout: separator=%q buttons=%#v", separator, quota)
+	}
+	for index, label := range quotaWant {
+		if quota[index].label != label {
+			t.Errorf("Quota button %d label = %q, want %q", index, quota[index].label, label)
+		}
+	}
 }
 
 func TestFooterLayoutNeverHitTestsControlsTruncatedByTheme(t *testing.T) {
 	for _, themeName := range []string{"HACKER", "BLUE STEEL", "ULTRAVIOLET"} {
 		for width := 1; width <= 60; width++ {
-			buttons, separator := footerButtonLayoutWithTheme(width, themeName)
-			controlsWidth := 0
-			for index, button := range buttons {
-				if index > 0 {
-					controlsWidth += len(separator)
+			for _, quota := range []bool{false, true} {
+				buttons, separator := footerButtonLayoutWithTheme(width, themeName, quota)
+				controlsWidth := 0
+				for index, button := range buttons {
+					if index > 0 {
+						controlsWidth += len(separator)
+					}
+					controlsWidth += len(button.label)
 				}
-				controlsWidth += len(button.label)
-			}
-			available := max(width-len("THEME // ")-len(themeName)-1, 0)
-			if controlsWidth > available {
-				t.Fatalf("theme=%q width=%d exposes %d cells of controls in %d available cells", themeName, width, controlsWidth, available)
+				available := max(width-len("THEME // ")-len(themeName)-1, 0)
+				if controlsWidth > available {
+					t.Fatalf("theme=%q width=%d quota=%v exposes %d cells of controls in %d available cells", themeName, width, quota, controlsWidth, available)
+				}
 			}
 		}
 	}
@@ -336,7 +369,7 @@ func footerMouseMessage(t *testing.T, model Model, id footerButtonID, action tea
 }
 
 func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {
-	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name)
+	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name, model.meterStyle.isQuota())
 	for _, button := range buttons {
 		if button.id == id {
 			return button, true

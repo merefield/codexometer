@@ -151,10 +151,10 @@ codexometer --codex /path/to/codex
 | Key | Action |
 | --- | --- |
 | `t` | Cycle color themes |
-| `Tab` | Select the next meter-style tab |
-| `Shift+Tab` | Select the previous meter-style tab |
+| `Tab` | Select the next top-level tab: Quota, Monitor, or Benchmark |
+| `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh quota data immediately |
-| `s` | Start recording (Monitor view only) |
+| `s` | Cycle presentation style in Quota; start recording in Monitor |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
 | `b` | Run the selected challenge (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
@@ -166,13 +166,36 @@ codexometer --codex /path/to/codex
 | `Esc` | Quit |
 | `Ctrl+C` | Quit |
 
-The responsive tab rail below the account status selects meter styles by mouse,
-`Tab`, or `Shift+Tab`; labels condense automatically as the terminal narrows.
-The footer presents the remaining actions as clickable buttons. Move the pointer
-over a tab or button to highlight it, or click it to activate it. Controls pulse
-briefly when activated by mouse or keyboard. The keyboard assignments remain
-available in terminals without mouse support. Theme and tab changes are
-immediate and do not trigger a network refresh.
+The responsive top rail below the account status selects Quota, Monitor, or
+Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
+Pie, Consumption Pace, and Fuel Tank; select these with the mouse or cycle them
+with `s`. Codexometer remembers the selected Quota presentation when you leave
+and return. Both rails condense automatically as the terminal narrows.
+The footer presents the remaining actions as clickable buttons, including Style
+only while Quota is active. Move the pointer over a tab or button to highlight
+it, or click it to activate it. Controls pulse briefly when activated by mouse
+or keyboard. The keyboard assignments remain available in terminals without
+mouse support. Theme and tab changes are immediate and do not trigger a network
+refresh.
+
+### Quota health signal
+
+The top-right signal keeps `ONLINE` in the selected theme color while its dot
+and quota-health label use fixed semantic colors:
+
+- green `QUOTA CLEAR` — consumption is keeping pace with, or trailing, elapsed
+  window time;
+- blue `QUOTA WATCH` — the current average burn rate would exhaust at least one
+  quota window before it resets;
+- amber `LIMIT NEAR` — excess pace projects exhaustion within the first quarter
+  of the time still remaining, or no more than 5% remains while over pace;
+- red `QUOTA EXHAUSTED` — a window is at 100% or Codex explicitly reports its
+  rate limit reached.
+
+Codexometer reports the worst state among all returned quota windows. If reset
+timing is unavailable, it conservatively falls back to remaining capacity:
+Watch at 20% and Near at 5%. Scanning and stale-signal states take precedence
+while quota health cannot be evaluated reliably.
 
 ## Themes
 
@@ -186,48 +209,51 @@ Press `t` to cycle:
 
 The default remains the original green hacker-terminal presentation.
 
-## Meter styles
+## Views and quota presentations
 
-Select a tab with the mouse, `Tab`, or `Shift+Tab`:
+The top-level tabs are **Quota**, **Monitor**, and **Benchmark**. Within Quota,
+choose one of these four presentations with its sub-tab or `s`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Monitor** — establishes a zero baseline across locally active Codex
-   sessions when you press Start. A large readout follows newly appended token
-   telemetry once per second and shows total observed tokens, elapsed time, and
-   average rate; clickable Start and Stop controls sit beside it. Below, every
-   independent root session has a metrics box and its own graph. Spawned-agent
-   descendants with an explicit Codex parent link are recursively aggregated
-   into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
-   model calls and latest activity, latest/peak time to first token, and
-   latest/peak output size. All graphs add one thin
-   vertical block bar on the same 30-second tick, after a fresh boundary read.
-   The companion readout records each account quota window at Start and tracks
-   its observed change while recording. Every session row shows its exact share
-   of locally observed tokens and an explicitly labelled, local-only estimate
-   of the first quota window's movement, apportioned by that share.
-   A root discovered part-way through an interval gets an honestly labelled
-   partial first bar and its rate uses that root's own observed lifetime. New
-   bars enter on the right, older bars move left, and each Y axis automatically
-   rescales to its visible samples. When the terminal cannot fit every root,
-   use Page Up, Page Down, or the mouse wheel to page through the rows. Stop
-   performs an immediate final local read instead of relying on the latest
-   graph sample.
-3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+2. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
    for clean curves at any size.
-4. **Consumption Pace** — a signed horizontal scale comparing elapsed window
+3. **Consumption Pace** — a signed horizontal scale comparing elapsed window
    time with quota consumed. Positive headroom means consumption is behind
    elapsed time; a negative deficit means quota is being used too quickly.
-5. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
+4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
-6. **Benchmark** — runs a selected hermetic coding challenge, or the complete
-   challenge catalog, against every visible model and each reasoning effort
-   that model advertises. Results arrive sequentially in a ranked table with
-   task, pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
-   Filter the table to all, passed, or failed trials. Scroll a long result matrix
-   with Page Up, Page Down, or the mouse wheel. Click any column-heading button
-   to sort by that field; click it again to reverse the order.
+
+The other top-level views are:
+
+- **Monitor** — establishes a zero baseline across locally active Codex
+  sessions when you press Start. A large readout follows newly appended token
+  telemetry once per second and shows total observed tokens, elapsed time, and
+  average rate; clickable Start and Stop controls sit beside it. Below, every
+  independent root session has a metrics box and its own graph. Spawned-agent
+  descendants with an explicit Codex parent link are recursively aggregated
+  into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
+  model calls and latest activity, latest/peak time to first token, and
+  latest/peak output size. All graphs add one thin vertical block bar on the
+  same 30-second tick, after a fresh boundary read. The companion readout
+  records each account quota window at Start and tracks its observed change
+  while recording. Every session row shows its exact share of locally observed
+  tokens and an explicitly labelled, local-only estimate of the first quota
+  window's movement, apportioned by that share. A root discovered part-way
+  through an interval gets an honestly labelled partial first bar and its rate
+  uses that root's own observed lifetime. New bars enter on the right, older
+  bars move left, and each Y axis automatically rescales to its visible samples.
+  When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
+  wheel to page through the rows. Stop performs an immediate final local read
+  instead of relying on the latest graph sample.
+- **Benchmark** — runs a selected hermetic coding challenge, or the complete
+  challenge catalog, against every visible model and each reasoning effort
+  that model advertises. Results arrive sequentially in a ranked table with
+  task, pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
+  Filter the table to all, passed, or failed trials. Scroll a long result matrix
+  with Page Up, Page Down, or the mouse wheel. Click any column-heading button
+  to sort by that field; click it again to reverse the order.
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
@@ -676,8 +702,8 @@ selected font includes block, arrow, and emoji glyphs.
 ### The terminal is too small
 
 Codexometer adapts its header and meter widths, but rich gauges need enough
-rows to display every quota window. Increase the pane height or use `Tab` to
-return to the compact default bar style.
+rows to display every quota window. Increase the pane height or press `s` in
+Quota to return to the compact default bar style.
 
 ### Monitor remains at zero
 
