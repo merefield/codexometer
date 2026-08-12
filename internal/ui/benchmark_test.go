@@ -118,7 +118,7 @@ func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
 }
 
 func TestBenchmarkControlsStayWithinNarrowAllocations(t *testing.T) {
-	model := Model{benchmarkSuite: codex.BenchmarkSuiteExtended, benchmarkCombinations: 12}
+	model := Model{benchmarkCombinations: 12}
 	for width := 5; width <= 44; width++ {
 		output := ansi.Strip(model.renderBenchmarkControls(width, 5, paletteFor(themeHacker)))
 		if got := lipgloss.Width(output); got != width {
@@ -412,14 +412,53 @@ func TestBenchmarkSortUsesReasoningOrderAndMetrics(t *testing.T) {
 	}
 }
 
-func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
-	unknown := benchmarkResultValues(codex.BenchmarkResult{})
-	if unknown[5] != "N/A" || unknown[6] != "N/A" {
-		t.Fatalf("unknown measurements = tokens %q, cost %q; want N/A", unknown[5], unknown[6])
+func TestBenchmarkRankingPrioritizesCorrectnessThenMeasuredEfficiency(t *testing.T) {
+	results := []codex.BenchmarkResult{
+		{Model: "sol", DisplayName: "Sol", Effort: "medium", TaskName: "A", Correct: true, Duration: 4 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 400}, UsageKnown: true, CostUSD: 0.04, CostKnown: true},
+		{Model: "sol", DisplayName: "Sol", Effort: "medium", TaskName: "B", Correct: true, Duration: 6 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 600}, UsageKnown: true, CostUSD: 0.06, CostKnown: true},
+		{Model: "terra", DisplayName: "Terra", Effort: "low", TaskName: "A", Correct: true, Duration: 3 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 350}, UsageKnown: true, CostUSD: 0.03, CostKnown: true},
+		{Model: "terra", DisplayName: "Terra", Effort: "low", TaskName: "B", Correct: true, Duration: 5 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 550}, UsageKnown: true, CostUSD: 0.05, CostKnown: true},
+		{Model: "future", DisplayName: "Future", Effort: "high", TaskName: "A", Correct: true, Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 200}, UsageKnown: true},
+		{Model: "future", DisplayName: "Future", Effort: "high", TaskName: "B", Correct: true, Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 200}, UsageKnown: true},
+		{Model: "luna", DisplayName: "Luna", Effort: "low", TaskName: "A", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, UsageKnown: true, CostUSD: 0.01, CostKnown: true},
+		{Model: "luna", DisplayName: "Luna", Effort: "low", TaskName: "B", Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}, UsageKnown: true, CostUSD: 0.01, CostKnown: true},
 	}
-	observedZero := benchmarkResultValues(codex.BenchmarkResult{UsageKnown: true, CostKnown: true})
-	if observedZero[5] != "0" || observedZero[6] != "~$0.0000" {
-		t.Fatalf("observed zero measurements = tokens %q, cost %q", observedZero[5], observedZero[6])
+	rankings := benchmarkRankings(results)
+	for key, want := range map[string]int{
+		"terra\x00low":   1,
+		"sol\x00medium":  2,
+		"future\x00high": 3,
+		"luna\x00low":    4,
+	} {
+		if got := rankings[key]; got != want {
+			t.Errorf("rank %q = %d, want %d; all=%v", key, got, want, rankings)
+		}
+	}
+	values := benchmarkResultValues(results[0], rankings)
+	if values[0] != "#2" {
+		t.Fatalf("rank display = %q, want #2", values[0])
+	}
+	ordered := sortedBenchmarkResults(results, benchmarkSortRank, false, rankings)
+	if ordered[0].DisplayName != "Terra" || ordered[len(ordered)-1].DisplayName != "Luna" {
+		t.Fatalf("rank sort order starts/ends %q/%q", ordered[0].DisplayName, ordered[len(ordered)-1].DisplayName)
+	}
+	tied := benchmarkRankings([]codex.BenchmarkResult{
+		{Model: "a", Effort: "low", Correct: true, Duration: time.Second, UsageKnown: true, CostKnown: true},
+		{Model: "b", Effort: "low", Correct: true, Duration: time.Second, UsageKnown: true, CostKnown: true},
+	})
+	if tied["a\x00low"] != 1 || tied["b\x00low"] != 1 {
+		t.Fatalf("exact tie ranks = %v, want both #1", tied)
+	}
+}
+
+func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
+	unknown := benchmarkResultValues(codex.BenchmarkResult{}, nil)
+	if unknown[6] != "N/A" || unknown[7] != "N/A" {
+		t.Fatalf("unknown measurements = tokens %q, cost %q; want N/A", unknown[6], unknown[7])
+	}
+	observedZero := benchmarkResultValues(codex.BenchmarkResult{UsageKnown: true, CostKnown: true}, nil)
+	if observedZero[6] != "0" || observedZero[7] != "~$0.0000" {
+		t.Fatalf("observed zero measurements = tokens %q, cost %q", observedZero[6], observedZero[7])
 	}
 }
 
@@ -430,8 +469,8 @@ func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) 
 		Usage: codex.BenchmarkUsage{TotalTokens: 12_345_678}, UsageKnown: true, CostKnown: true, CostUSD: 12345.6789,
 	}}
 	columns := benchmarkTableColumns(96, results)
-	if len(columns) != 7 {
-		t.Fatalf("column count = %d, want 7", len(columns))
+	if len(columns) != 8 {
+		t.Fatalf("column count = %d, want 8", len(columns))
 	}
 	used := len(columns) - 1
 	for _, column := range columns {
@@ -444,10 +483,10 @@ func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) 
 	if used != 96 {
 		t.Fatalf("responsive columns use %d cells, want 96", used)
 	}
-	if columns[0].width > 24 {
-		t.Fatalf("model column consumed %d cells despite short model values", columns[0].width)
+	if columns[1].width > 24 {
+		t.Fatalf("model column consumed %d cells despite short model values", columns[1].width)
 	}
-	values := benchmarkResultValues(results[0])
+	values := benchmarkResultValues(results[0], benchmarkRankings(results))
 	for index, value := range values {
 		if lipgloss.Width(value) > columns[index].width {
 			t.Errorf("column %s width %d truncates value %q despite ample space", columns[index].title, columns[index].width, value)
@@ -456,7 +495,7 @@ func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) 
 
 	model := Model{benchmarkResults: results, benchmarkSort: benchmarkSortResult}
 	header := ansi.Strip(model.renderBenchmarkHeader(columns, paletteFor(themeHacker)))
-	if !strings.Contains(header, "[RESULT▲]") || !strings.Contains(header, "[MODEL]") {
+	if !strings.Contains(header, "[RESULT▲]") || !strings.Contains(header, "[RANK]") || !strings.Contains(header, "[MODEL]") {
 		t.Fatalf("full headings were truncated despite ample space: %q", header)
 	}
 
@@ -484,72 +523,82 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 		t.Fatalf("right arrow selected task %d, want 1", model.benchmarkSelectedTask)
 	}
 	controls := ansi.Strip(model.renderBenchmarkControls(60, 8, paletteFor(themeHacker)))
-	if !strings.Contains(controls, "LRU CACHE") || !strings.Contains(controls, "132") {
+	if !strings.Contains(controls, "LRU CACHE") || !strings.Contains(controls, "231") {
 		t.Fatalf("selector or exact all-turn count missing:\n%s", controls)
 	}
 
 	updated, command := model.Update(key('a'))
 	model = updated.(Model)
 	if !model.benchmarkAllArmed || model.benchmarkState == benchmarkRunning || command == nil {
-		t.Fatal("first Run Suite press did not arm confirmation without running")
+		t.Fatal("first Run All press did not arm confirmation without running")
 	}
 	controls = ansi.Strip(model.renderBenchmarkControls(60, 8, paletteFor(themeHacker)))
-	if !strings.Contains(controls, "CONFIRM") || !strings.Contains(controls, "132") {
+	if !strings.Contains(controls, "CONFIRM") || !strings.Contains(controls, "231") {
 		t.Fatalf("confirmation label missing exact turn count:\n%s", controls)
 	}
 	updated, command = model.Update(key('a'))
 	model = updated.(Model)
 	if model.benchmarkAllArmed || model.benchmarkState != benchmarkRunning || command == nil {
-		t.Fatal("second Run Suite press did not launch the suite")
+		t.Fatal("second Run All press did not launch all tasks")
 	}
 }
 
-func TestBenchmarkSuiteToggleChangesCatalogAndTurnCount(t *testing.T) {
-	model := New(benchmarkStubFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
-	model.snapshot = codex.DemoSnapshot()
-	model.loading = false
-	model.width, model.height = 100, 30
-	model.meterStyle = styleBenchmark
-	model.benchmarkCombinations = 33
-
-	updated, command := model.Update(key('u'))
-	model = updated.(Model)
-	if command == nil || model.activeBenchmarkSuite() != codex.BenchmarkSuiteExtended || model.benchmarkSelectedTask != 0 {
-		t.Fatalf("suite hotkey did not select Extended: suite=%q task=%d command=%v", model.activeBenchmarkSuite(), model.benchmarkSelectedTask, command != nil)
+func TestBenchmarkSelectorAnchorsButtonsToLongestTaskName(t *testing.T) {
+	model := Model{}
+	buttonX := func(segments []benchmarkControlSegment, target footerButtonID) int {
+		x := 0
+		for _, segment := range segments {
+			if segment.button == target {
+				return x
+			}
+			x += lipgloss.Width(segment.text) + 1
+		}
+		return -1
 	}
-	controls := ansi.Strip(model.renderBenchmarkControls(64, 5, paletteFor(themeHacker)))
-	for _, want := range []string{"EXTENDED", "DEPENDENCY SCHEDULER", "99"} {
-		if !strings.Contains(controls, want) {
-			t.Fatalf("Extended suite controls missing %q:\n%s", want, controls)
+	first := model.benchmarkControlLines(60)[0]
+	previousX, nextX := buttonX(first, footerButtonBenchmarkPrevious), buttonX(first, footerButtonBenchmarkNext)
+	for range model.benchmarkTasks() {
+		model.selectBenchmarkTask(1)
+		selector := model.benchmarkControlLines(60)[0]
+		if got := buttonX(selector, footerButtonBenchmarkPrevious); got != previousX {
+			t.Fatalf("previous button moved from %d to %d", previousX, got)
+		}
+		if got := buttonX(selector, footerButtonBenchmarkNext); got != nextX {
+			t.Fatalf("next button moved from %d to %d", nextX, got)
 		}
 	}
 
-	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkSuite)
-	updated, command = model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	model = updated.(Model)
-	if command == nil || model.activeBenchmarkSuite() != codex.BenchmarkSuiteCore {
-		t.Fatalf("suite mouse button did not return to Core: suite=%q command=%v", model.activeBenchmarkSuite(), command != nil)
+	clickable := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: styleBenchmark}
+	nextX, nextY := benchmarkControlCoordinates(t, clickable, footerButtonBenchmarkNext)
+	for range clickable.benchmarkTasks() {
+		clickable.selectBenchmarkTask(1)
+		if got := clickable.footerButtonAt(nextX, nextY); got != footerButtonBenchmarkNext {
+			t.Fatalf("anchored next-button coordinate hit %d after selecting task %d", got, clickable.benchmarkSelectedTask)
+		}
 	}
 }
 
-func TestBenchmarkRunSuiteLaunchesOnlyActiveSuite(t *testing.T) {
+func TestBenchmarkRunAllLaunchesUnifiedCatalog(t *testing.T) {
 	captured := make(chan []codex.BenchmarkTaskID, 1)
 	fetcher := benchmarkCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, tasks: captured}
 	model := New(fetcher, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.meterStyle = styleBenchmark
-	model.benchmarkSuite = codex.BenchmarkSuiteExtended
 	model.benchmarkCombinations = 1
 
 	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
 	model, command := model.activateFooterButton(footerButtonBenchmarkAll)
 	if command == nil || model.benchmarkState != benchmarkRunning {
-		t.Fatal("confirmed Run Suite did not launch")
+		t.Fatal("confirmed Run All did not launch")
 	}
 	_ = command()
 	got := <-captured
-	want := []codex.BenchmarkTaskID{codex.BenchmarkDependencyScheduler, codex.BenchmarkVersionResolver, codex.BenchmarkEventProcessor}
+	wantTasks := codex.BenchmarkTasks()
+	want := make([]codex.BenchmarkTaskID, 0, len(wantTasks))
+	for _, task := range wantTasks {
+		want = append(want, task.ID)
+	}
 	if len(got) != len(want) {
 		t.Fatalf("launched tasks = %v, want %v", got, want)
 	}

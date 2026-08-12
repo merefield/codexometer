@@ -157,9 +157,8 @@ codexometer --codex /path/to/codex
 | `s` | Start recording (Monitor view only) |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
 | `b` | Run the selected challenge (Benchmark view only) |
-| `u` | Switch between the Core and Extended benchmark suites |
-| `a` | Arm, then confirm, Run Suite (Benchmark view only) |
-| `[` / `]`, `Left` / `Right` | Select the previous or next challenge in the active suite |
+| `a` | Arm, then confirm, Run All (Benchmark view only) |
+| `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
 | `f` | Show all, passed, or failed benchmark results |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
@@ -221,10 +220,10 @@ Select a tab with the mouse, `Tab`, or `Shift+Tab`:
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
-6. **Benchmark** — runs a selected hermetic coding challenge, or the active
-   Core or Extended suite, against every visible model and each reasoning effort
-   that model advertises. Results arrive sequentially in a table with task,
-   pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
+6. **Benchmark** — runs a selected hermetic coding challenge, or the complete
+   challenge catalog, against every visible model and each reasoning effort
+   that model advertises. Results arrive sequentially in a ranked table with
+   task, pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
    Filter the table to all, passed, or failed trials. Scroll a long result matrix
    with Page Up, Page Down, or the mouse wheel. Click any column-heading button
    to sort by that field; click it again to reverse the order.
@@ -311,18 +310,16 @@ uncertainty.
 ### Deterministic benchmark
 
 The Benchmark tab discovers the current account's visible models and their
-supported reasoning efforts through `model/list`. Press `u` or click the suite
-button to switch between **Core** and **Extended**, then select a challenge with
-the arrow buttons. Press `b` or click **Run Selected** to run it against every
-model/effort combination. **Run Suite** runs all challenges in the active suite
-against every combination. Because that means
-`suite challenge count × model/effort count` model turns, Codexometer displays
-the exact total and requires a second confirmation within five seconds. Keeping
-the suites separate prevents the three expensive reasoning challenges from
-silently increasing the cost of the default Core run. A fresh, ephemeral,
-read-only app-server thread is used for each trial, so benchmark history does
-not clutter normal Codex sessions. The turns still consume the same account
-quota shown by Codexometer.
+supported reasoning efforts through `model/list`. Select any challenge with the
+arrow buttons; the selector reserves a stable responsive track for the longest
+name, so its controls do not move as the selection changes. Press `b` or click
+**Run Selected** to run that challenge against every model/effort combination.
+**Run All** runs the complete catalog against every combination. Because that
+means `challenge count × model/effort count` model turns, Codexometer displays
+the exact total and requires a second confirmation within five seconds. A fresh,
+ephemeral, read-only app-server thread is used for each trial, so benchmark
+history does not clutter normal Codex sessions. The turns still consume the
+same account quota shown by Codexometer.
 
 Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
 that deadline, Codexometer requests `turn/interrupt`, waits for the matching
@@ -331,28 +328,40 @@ the remaining combinations. Explicit user cancellation, app-server transport
 failure, or failure to confirm interruption still stops the suite because the
 server's state is then unsafe or unknown.
 
-#### Core challenges
+#### Challenges and difficulty
 
 Every trial asks the model to return one named Starlark function:
 
-| Challenge | Required behavior | Verification set |
-| --- | --- | --- |
-| **Merge Ranges (Easy)** | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
-| **LRU Cache (Moderate)** | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
-| **Expression (Moderate)** | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
-| **Shortest Path (Moderate)** | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
+| Challenge | Difficulty | Required behavior | Verification set |
+| --- | --- | --- | --- |
+| **Merge Ranges** | Easy | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
+| **LRU Cache** | Moderate | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
+| **Expression** | Moderate | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
+| **Shortest Path** | Moderate | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
+| **Dependency Scheduler** | Hard | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
+| **Version Resolver** | Hard | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
+| **Event Processor** | Hard | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
 
-#### Extended challenges
+The difficulty labels are documentation rather than part of the terminal names.
+Hard challenges deliberately combine more rules or require bounded search, which
+should create more separation between models and reasoning efforts than simply
+making the easier inputs larger.
 
-Extended challenges deliberately combine more rules or require bounded search,
-which should create more separation between models and reasoning efforts than
-simply making the Core inputs larger.
+#### Ranking
 
-| Challenge | Required behavior | Verification set |
-| --- | --- | --- |
-| **Dependency Scheduler (Hard)** | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
-| **Version Resolver (Hard)** | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
-| **Event Processor (Hard)** | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
+The `RANK` column is an overall ranking for each model/reasoning-effort
+combination across every completed row currently in the result matrix. More
+passes always beat fewer passes, then fewer failures win. Ties favor complete
+API-equivalent measurements and lower total API-equivalent cost, followed by
+complete token measurements and fewer total tokens, then lower total wall time.
+The same overall rank is repeated on each task row for that combination, and the
+rank heading is clickable like the other sortable headings. Exact ties share a
+rank.
+
+Rankings update as results arrive, so they are provisional until a run finishes.
+They inherit the token and API-equivalent caveats below; in particular, unknown
+prices sort behind complete cost measurements and prompt-cache order can affect
+the efficiency tie-breakers. Correctness remains the dominant criterion.
 
 #### How PASS and FAIL are decided
 
@@ -367,8 +376,8 @@ A row is `PASS` only when all of the following are true:
 - the turn completes and returns the required strict JSON object containing
   Starlark source;
 - the source loads, defines the correctly named callable, and stays within the
-  64 KiB source limit and the per-case execution budget: 250,000 steps for Core
-  or 2,000,000 steps for Extended;
+  64 KiB source limit and the difficulty-appropriate per-case execution budget:
+  250,000 steps for Easy/Moderate challenges or 2,000,000 steps for Hard challenges;
 - every hand-written and generated case returns the exact reference answer with
   the required type and bounded shape; and
 - the turn does not emit a tool-use item; and

@@ -63,7 +63,6 @@ type Model struct {
 	benchmarkError           string
 	benchmarkPlanning        bool
 	benchmarkCombinations    int
-	benchmarkSuite           codex.BenchmarkSuiteID
 	benchmarkSelectedTask    int
 	benchmarkFilter          benchmarkResultFilter
 	benchmarkAllArmed        bool
@@ -229,7 +228,6 @@ const (
 	footerButtonQuit
 	footerButtonMonitorGo
 	footerButtonMonitorStop
-	footerButtonBenchmarkSuite
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
 	footerButtonBenchmarkSelected
@@ -256,11 +254,10 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
-		fetcher:        fetcher,
-		refreshEvery:   refreshEvery,
-		loading:        true,
-		nextRefresh:    time.Now().Add(refreshEvery),
-		benchmarkSuite: codex.BenchmarkSuiteCore,
+		fetcher:      fetcher,
+		refreshEvery: refreshEvery,
+		loading:      true,
+		nextRefresh:  time.Now().Add(refreshEvery),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -303,10 +300,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			if m.meterStyle == styleBenchmark {
 				return m.pressFooterButton(footerButtonBenchmarkAll)
-			}
-		case "u":
-			if m.meterStyle == styleBenchmark {
-				return m.pressFooterButton(footerButtonBenchmarkSuite)
 			}
 		case "left", "[":
 			if m.meterStyle == styleBenchmark {
@@ -583,10 +576,6 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.monitorFetchActive = true
 			return m, m.monitorFetch(monitorFetchStop, m.monitorRequest)
 		}
-	case footerButtonBenchmarkSuite:
-		if m.meterStyle == styleBenchmark && m.benchmarkState != benchmarkRunning {
-			m.toggleBenchmarkSuite()
-		}
 	case footerButtonBenchmarkPrevious:
 		if m.benchmarkState != benchmarkRunning {
 			m.selectBenchmarkTask(-1)
@@ -782,25 +771,8 @@ func (m *Model) selectBenchmarkTask(direction int) {
 	m.benchmarkAllArmed = false
 }
 
-func (m Model) activeBenchmarkSuite() codex.BenchmarkSuiteID {
-	if m.benchmarkSuite == codex.BenchmarkSuiteExtended {
-		return codex.BenchmarkSuiteExtended
-	}
-	return codex.BenchmarkSuiteCore
-}
-
 func (m Model) benchmarkTasks() []codex.BenchmarkTask {
-	return codex.BenchmarkTasksForSuite(m.activeBenchmarkSuite())
-}
-
-func (m *Model) toggleBenchmarkSuite() {
-	if m.activeBenchmarkSuite() == codex.BenchmarkSuiteCore {
-		m.benchmarkSuite = codex.BenchmarkSuiteExtended
-	} else {
-		m.benchmarkSuite = codex.BenchmarkSuiteCore
-	}
-	m.benchmarkSelectedTask = 0
-	m.benchmarkAllArmed = false
+	return codex.BenchmarkTasks()
 }
 
 func (m *Model) setBenchmarkFilter(filter benchmarkResultFilter) {

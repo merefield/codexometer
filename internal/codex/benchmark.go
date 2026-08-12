@@ -21,11 +21,11 @@ import (
 )
 
 const (
-	benchmarkTurnTimeout       = 5 * time.Minute
-	benchmarkInterruptTimeout  = 15 * time.Second
-	benchmarkCodeLimit         = 64 * 1024
-	benchmarkStepLimit         = 250_000
-	benchmarkExtendedStepLimit = 2_000_000
+	benchmarkTurnTimeout      = 5 * time.Minute
+	benchmarkInterruptTimeout = 15 * time.Second
+	benchmarkCodeLimit        = 64 * 1024
+	benchmarkStepLimit        = 250_000
+	benchmarkHardStepLimit    = 2_000_000
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.

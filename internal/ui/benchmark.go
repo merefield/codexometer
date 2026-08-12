@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -29,6 +30,7 @@ type benchmarkSortColumn int
 
 const (
 	benchmarkSortNone benchmarkSortColumn = iota
+	benchmarkSortRank
 	benchmarkSortModel
 	benchmarkSortEffort
 	benchmarkSortTask
@@ -171,38 +173,23 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		selected = tasks[m.benchmarkSelectedTask%len(tasks)]
 	}
 	running := m.benchmarkState == benchmarkRunning
-	suiteName := strings.ToUpper(string(m.activeBenchmarkSuite()))
-	suiteLabel := "[ (U) " + suiteName + " ]"
-	selectorMiddleWidth := max(width-lipgloss.Width(suiteLabel)-11, 1)
-	if selectorMiddleWidth < 12 {
-		if m.activeBenchmarkSuite() == codex.BenchmarkSuiteExtended {
-			suiteLabel = "[U:EXT]"
-		} else {
-			suiteLabel = "[U:CORE]"
-		}
-		selectorMiddleWidth = max(width-lipgloss.Width(suiteLabel)-11, 1)
+	selectorMiddleWidth := 0
+	for _, task := range tasks {
+		selectorMiddleWidth = max(selectorMiddleWidth, lipgloss.Width("TASK // "+task.Name))
 	}
-	selector := []benchmarkControlSegment{
-		{text: suiteLabel, button: footerButtonBenchmarkSuite, enabled: !running},
-		{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running},
-		{text: ansi.Truncate("TASK // "+selected.Name, selectorMiddleWidth, ""), enabled: true},
-		{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running},
-	}
-	if benchmarkSegmentsWidth(selector) > width {
-		selectorMiddleWidth = max(width-8, 1)
+	selectorMiddleWidth = min(selectorMiddleWidth, max(width-8, 1))
+	selector := []benchmarkControlSegment{{text: ansi.Truncate(selected.Name, width, ""), enabled: true}}
+	if width >= 9 {
 		selector = []benchmarkControlSegment{
 			{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running},
-			{text: ansi.Truncate(selected.Name, selectorMiddleWidth, ""), enabled: true},
+			{text: fitTableCell("TASK // "+selected.Name, selectorMiddleWidth), enabled: true},
 			{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running},
 		}
-	}
-	if benchmarkSegmentsWidth(selector) > width {
-		selector = []benchmarkControlSegment{{text: ansi.Truncate(selected.Name, width, ""), enabled: true}}
 	}
 
 	selectedLabel := "[ (B) RUN SELECTED ]"
 	allTurns := m.benchmarkCombinations * len(tasks)
-	allLabel := fmt.Sprintf("[ (A) RUN SUITE // %d ]", allTurns)
+	allLabel := fmt.Sprintf("[ (A) RUN ALL // %d ]", allTurns)
 	if m.benchmarkPlanning {
 		allLabel = "[ DISCOVERING TURNS… ]"
 	}
@@ -316,11 +303,7 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 		colors.dimmed().Render(ansi.Truncate(detail, max(width-4, 1), "")),
 	}
 	if height >= 5 {
-		limit := "250K"
-		if m.activeBenchmarkSuite() == codex.BenchmarkSuiteExtended {
-			limit = "2M"
-		}
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // "+limit+" STEPS PER CASE", max(width-4, 1), "")))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // BOUNDED STEPS PER CASE", max(width-4, 1), "")))
 	}
 	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
@@ -352,7 +335,8 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	bodyHeight := max(height-2, 1)
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
 	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
-	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending))
+	rankings := benchmarkRankings(m.benchmarkResults)
+	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending, rankings), rankings)
 	lines := []string{m.renderBenchmarkSegments(m.benchmarkFilterLine(innerWidth), innerWidth, colors)}
 	if bodyHeight > 1 {
 		lines = append(lines, m.renderBenchmarkHeader(columns, colors))
@@ -384,7 +368,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		lines = append(lines, style.Render(row.text))
 	}
 	if len(visibleResults) == 0 && len(lines) < bodyHeight {
-		message := "RUN SELECTED OR RUN SUITE TO BEGIN // THIS CONSUMES CODEX QUOTA"
+		message := "RUN SELECTED OR RUN ALL TO BEGIN // THIS CONSUMES CODEX QUOTA"
 		if m.benchmarkState == benchmarkRunning {
 			message = "WAITING FOR FIRST RESULT"
 		} else if len(m.benchmarkResults) > 0 {
@@ -408,8 +392,9 @@ type benchmarkTableRow struct {
 }
 
 func benchmarkTableColumns(width int, results []codex.BenchmarkResult) []benchmarkColumn {
-	titles := []string{"MODEL", "EFFORT", "TASK", "RESULT", "TIME", "TOKENS", "API EQ"}
-	sorts := []benchmarkSortColumn{benchmarkSortModel, benchmarkSortEffort, benchmarkSortTask, benchmarkSortResult, benchmarkSortTime, benchmarkSortTokens, benchmarkSortCost}
+	titles := []string{"RANK", "MODEL", "EFFORT", "TASK", "RESULT", "TIME", "TOKENS", "API EQ"}
+	sorts := []benchmarkSortColumn{benchmarkSortRank, benchmarkSortModel, benchmarkSortEffort, benchmarkSortTask, benchmarkSortResult, benchmarkSortTime, benchmarkSortTokens, benchmarkSortCost}
+	rankings := benchmarkRankings(results)
 	widths := make([]int, len(titles))
 	idealWidths := make([]int, len(titles))
 	for index, title := range titles {
@@ -418,7 +403,7 @@ func benchmarkTableColumns(width int, results []codex.BenchmarkResult) []benchma
 		idealWidths[index] = widths[index]
 	}
 	for _, result := range results {
-		for index, value := range benchmarkResultValues(result) {
+		for index, value := range benchmarkResultValues(result, rankings) {
 			idealWidths[index] = max(idealWidths[index], lipgloss.Width(value))
 		}
 	}
@@ -509,18 +494,18 @@ func (m Model) renderBenchmarkHeader(columns []benchmarkColumn, colors palette) 
 	return strings.Join(parts, colors.dimmed().Render(" "))
 }
 
-func benchmarkTableRows(columns []benchmarkColumn, results []codex.BenchmarkResult) []benchmarkTableRow {
+func benchmarkTableRows(columns []benchmarkColumn, results []codex.BenchmarkResult, rankings map[string]int) []benchmarkTableRow {
 	rows := make([]benchmarkTableRow, 0, len(results))
 	for _, result := range results {
 		rows = append(rows, benchmarkTableRow{
-			text: formatBenchmarkColumns(columns, benchmarkResultValues(result)...),
+			text: formatBenchmarkColumns(columns, benchmarkResultValues(result, rankings)...),
 			pass: result.Correct,
 		})
 	}
 	return rows
 }
 
-func benchmarkResultValues(result codex.BenchmarkResult) []string {
+func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int) []string {
 	outcome := "FAIL"
 	if result.Correct {
 		outcome = "PASS"
@@ -537,7 +522,12 @@ func benchmarkResultValues(result codex.BenchmarkResult) []string {
 	if result.ActualModel != "" && result.ActualModel != result.Model {
 		model += "→" + result.ActualModel
 	}
+	rank := "—"
+	if value := rankings[benchmarkCombinationKey(result)]; value > 0 {
+		rank = fmt.Sprintf("#%d", value)
+	}
 	return []string{
+		rank,
 		model,
 		strings.ToUpper(result.Effort),
 		result.TaskName,
@@ -548,12 +538,23 @@ func benchmarkResultValues(result codex.BenchmarkResult) []string {
 	}
 }
 
-func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSortColumn, descending bool) []codex.BenchmarkResult {
+func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSortColumn, descending bool, suppliedRankings ...map[string]int) []codex.BenchmarkResult {
 	ordered := slices.Clone(results)
 	if column == benchmarkSortNone {
 		return ordered
 	}
+	rankings := benchmarkRankings(results)
+	if len(suppliedRankings) > 0 {
+		rankings = suppliedRankings[0]
+	}
 	sort.SliceStable(ordered, func(left, right int) bool {
+		if column == benchmarkSortRank {
+			comparison := compareInt(rankings[benchmarkCombinationKey(ordered[left])], rankings[benchmarkCombinationKey(ordered[right])])
+			if descending {
+				return comparison > 0
+			}
+			return comparison < 0
+		}
 		if column == benchmarkSortCost && ordered[left].CostKnown != ordered[right].CostKnown {
 			return ordered[left].CostKnown
 		}
@@ -567,6 +568,99 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 		return comparison < 0
 	})
 	return ordered
+}
+
+type benchmarkRankSummary struct {
+	key           string
+	passes        int
+	failures      int
+	costComplete  bool
+	tokenComplete bool
+	cost          float64
+	tokens        int64
+	duration      time.Duration
+}
+
+func benchmarkCombinationKey(result codex.BenchmarkResult) string {
+	model := result.Model
+	if model == "" {
+		model = result.DisplayName
+	}
+	return strings.ToLower(model) + "\x00" + strings.ToLower(result.Effort)
+}
+
+// benchmarkRankings compares model/effort combinations across all completed
+// rows currently in the matrix. Correctness dominates; efficiency breaks ties.
+func benchmarkRankings(results []codex.BenchmarkResult) map[string]int {
+	byKey := make(map[string]*benchmarkRankSummary)
+	for _, result := range results {
+		key := benchmarkCombinationKey(result)
+		summary := byKey[key]
+		if summary == nil {
+			summary = &benchmarkRankSummary{key: key, costComplete: true, tokenComplete: true}
+			byKey[key] = summary
+		}
+		if result.Correct {
+			summary.passes++
+		} else {
+			summary.failures++
+		}
+		summary.duration += max(result.Duration, time.Duration(0))
+		if result.CostKnown && result.CostUSD >= 0 && !math.IsNaN(result.CostUSD) && !math.IsInf(result.CostUSD, 0) && !math.IsInf(summary.cost+result.CostUSD, 0) {
+			summary.cost += result.CostUSD
+		} else {
+			summary.costComplete = false
+		}
+		if result.UsageKnown && result.Usage.TotalTokens >= 0 && summary.tokens <= math.MaxInt64-result.Usage.TotalTokens {
+			summary.tokens += result.Usage.TotalTokens
+		} else {
+			summary.tokenComplete = false
+		}
+	}
+	summaries := make([]benchmarkRankSummary, 0, len(byKey))
+	for _, summary := range byKey {
+		summaries = append(summaries, *summary)
+	}
+	sort.Slice(summaries, func(left, right int) bool {
+		if comparison := compareBenchmarkRankSummaries(summaries[left], summaries[right]); comparison != 0 {
+			return comparison < 0
+		}
+		return summaries[left].key < summaries[right].key
+	})
+	rankings := make(map[string]int, len(summaries))
+	rank := 0
+	for index, summary := range summaries {
+		if index == 0 || compareBenchmarkRankSummaries(summaries[index-1], summary) != 0 {
+			rank = index + 1
+		}
+		rankings[summary.key] = rank
+	}
+	return rankings
+}
+
+func compareBenchmarkRankSummaries(left, right benchmarkRankSummary) int {
+	if left.passes != right.passes {
+		return compareInt(right.passes, left.passes)
+	}
+	if left.failures != right.failures {
+		return compareInt(left.failures, right.failures)
+	}
+	if left.costComplete != right.costComplete {
+		return compareInt(boolInt(right.costComplete), boolInt(left.costComplete))
+	}
+	if left.costComplete && left.cost != right.cost {
+		if left.cost < right.cost {
+			return -1
+		}
+		return 1
+	}
+	if left.tokenComplete != right.tokenComplete {
+		return compareInt(boolInt(right.tokenComplete), boolInt(left.tokenComplete))
+	}
+	if left.tokenComplete && left.tokens != right.tokens {
+		return compareInt64(left.tokens, right.tokens)
+	}
+	return compareInt64(int64(left.duration), int64(right.duration))
 }
 
 func compareBenchmarkResults(left, right codex.BenchmarkResult, column benchmarkSortColumn) int {

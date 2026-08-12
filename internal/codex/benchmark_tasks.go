@@ -11,9 +11,6 @@ import (
 // BenchmarkTaskID is the stable identifier for a deterministic benchmark.
 type BenchmarkTaskID string
 
-// BenchmarkSuiteID groups challenges by intended difficulty and run cost.
-type BenchmarkSuiteID string
-
 const (
 	BenchmarkMergeRanges         BenchmarkTaskID = "merge-ranges"
 	BenchmarkLRUCache            BenchmarkTaskID = "lru-cache"
@@ -22,16 +19,12 @@ const (
 	BenchmarkDependencyScheduler BenchmarkTaskID = "dependency-scheduler"
 	BenchmarkVersionResolver     BenchmarkTaskID = "version-resolver"
 	BenchmarkEventProcessor      BenchmarkTaskID = "event-processor"
-
-	BenchmarkSuiteCore     BenchmarkSuiteID = "core"
-	BenchmarkSuiteExtended BenchmarkSuiteID = "extended"
 )
 
 // BenchmarkTask is the public description used by the terminal selector.
 type BenchmarkTask struct {
-	ID    BenchmarkTaskID
-	Name  string
-	Suite BenchmarkSuiteID
+	ID   BenchmarkTaskID
+	Name string
 }
 
 type benchmarkDefinition struct {
@@ -43,7 +36,7 @@ type benchmarkDefinition struct {
 
 var benchmarkTaskDefinitions = []benchmarkDefinition{
 	{
-		task:     BenchmarkTask{ID: BenchmarkMergeRanges, Name: "MERGE RANGES (EASY)", Suite: BenchmarkSuiteCore},
+		task:     BenchmarkTask{ID: BenchmarkMergeRanges, Name: "MERGE RANGES"},
 		function: "merge_ranges",
 		prompt: `Write Starlark code defining this function:
 
@@ -53,7 +46,7 @@ The input is a list of inclusive integer ranges, each represented by a two-item 
 		verify: verifyMergeRanges,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkLRUCache, Name: "LRU CACHE (MODERATE)", Suite: BenchmarkSuiteCore},
+		task:     BenchmarkTask{ID: BenchmarkLRUCache, Name: "LRU CACHE"},
 		function: "lru_cache",
 		prompt: `Write Starlark code defining this function:
 
@@ -63,7 +56,7 @@ Simulate a least-recently-used cache. Each operation is ["put", key, value] or [
 		verify: verifyLRUCache,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkExpressionParser, Name: "EXPRESSION (MODERATE)", Suite: BenchmarkSuiteCore},
+		task:     BenchmarkTask{ID: BenchmarkExpressionParser, Name: "EXPRESSION"},
 		function: "evaluate_expression",
 		prompt: `Write Starlark code defining this function:
 
@@ -73,7 +66,7 @@ The input is a valid token list containing non-negative base-10 integer literals
 		verify: verifyExpressionParser,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkShortestPath, Name: "SHORTEST PATH (MODERATE)", Suite: BenchmarkSuiteCore},
+		task:     BenchmarkTask{ID: BenchmarkShortestPath, Name: "SHORTEST PATH"},
 		function: "shortest_path",
 		prompt: `Write Starlark code defining this function:
 
@@ -83,7 +76,7 @@ The grid is a non-empty rectangular list of lists containing 0 for open cells an
 		verify: verifyShortestPath,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkDependencyScheduler, Name: "DEPENDENCY SCHEDULER (HARD)", Suite: BenchmarkSuiteExtended},
+		task:     BenchmarkTask{ID: BenchmarkDependencyScheduler, Name: "DEPENDENCY SCHEDULER"},
 		function: "minimum_schedule_time",
 		prompt: `Write Starlark code defining this function:
 
@@ -93,7 +86,7 @@ There are at most seven jobs and one to three workers. Each job is [duration, de
 		verify: verifyDependencyScheduler,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkVersionResolver, Name: "VERSION RESOLVER (HARD)", Suite: BenchmarkSuiteExtended},
+		task:     BenchmarkTask{ID: BenchmarkVersionResolver, Name: "VERSION RESOLVER"},
 		function: "resolve_versions",
 		prompt: `Write Starlark code defining this function:
 
@@ -103,7 +96,7 @@ The catalog contains one to five packages, each with two or three version record
 		verify: verifyVersionResolver,
 	},
 	{
-		task:     BenchmarkTask{ID: BenchmarkEventProcessor, Name: "EVENT PROCESSOR (HARD)", Suite: BenchmarkSuiteExtended},
+		task:     BenchmarkTask{ID: BenchmarkEventProcessor, Name: "EVENT PROCESSOR"},
 		function: "process_ledger",
 		prompt: `Write Starlark code defining this function:
 
@@ -123,17 +116,6 @@ func BenchmarkTasks() []BenchmarkTask {
 	tasks := make([]BenchmarkTask, 0, len(benchmarkTaskDefinitions))
 	for _, definition := range benchmarkTaskDefinitions {
 		tasks = append(tasks, definition.task)
-	}
-	return tasks
-}
-
-// BenchmarkTasksForSuite returns the task catalog for one suite in run order.
-func BenchmarkTasksForSuite(suite BenchmarkSuiteID) []BenchmarkTask {
-	tasks := make([]BenchmarkTask, 0, len(benchmarkTaskDefinitions))
-	for _, definition := range benchmarkTaskDefinitions {
-		if definition.task.Suite == suite {
-			tasks = append(tasks, definition.task)
-		}
 	}
 	return tasks
 }
@@ -196,8 +178,8 @@ func renewBenchmarkStepBudget(thread *starlark.Thread) {
 	thread.SetMaxExecutionSteps(thread.ExecutionSteps() + benchmarkStepLimit)
 }
 
-func renewExtendedBenchmarkStepBudget(thread *starlark.Thread) {
-	thread.SetMaxExecutionSteps(thread.ExecutionSteps() + benchmarkExtendedStepLimit)
+func renewHardBenchmarkStepBudget(thread *starlark.Thread) {
+	thread.SetMaxExecutionSteps(thread.ExecutionSteps() + benchmarkHardStepLimit)
 }
 
 type lruOperation struct {
