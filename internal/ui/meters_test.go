@@ -215,10 +215,31 @@ func TestConsumptionPaceGaugeUsesSignedHorizontalAxis(t *testing.T) {
 	if !strings.Contains(negative, "DEFICIT -25 POINTS") {
 		t.Fatalf("negative pace gauge missing deficit: %q", negative)
 	}
-	positiveMarker := runeColumn(lineContainingRune(positive, '◆'), '◆')
-	negativeMarker := runeColumn(lineContainingRune(negative, '◆'), '◆')
+	if !strings.Contains(positive, "[▲]") || !strings.Contains(negative, "[▲]") {
+		t.Fatalf("pace gauges do not use the highlighted sliding carriage: positive=%q negative=%q", positive, negative)
+	}
+	if !strings.Contains(positive, "━") || !strings.Contains(negative, "━") {
+		t.Fatalf("pace gauges do not show a trail from zero: positive=%q negative=%q", positive, negative)
+	}
+	positiveMarker := runeColumn(lineContainingRune(positive, '▲'), '▲')
+	negativeMarker := runeColumn(lineContainingRune(negative, '▲'), '▲')
 	if positiveMarker <= 20 || negativeMarker >= 20 {
 		t.Fatalf("pace markers did not straddle zero: negative=%d positive=%d", negativeMarker, positiveMarker)
+	}
+}
+
+func TestConsumptionPaceCarriageStaysInsideResponsiveAxis(t *testing.T) {
+	colors := paletteFor(themeNightshade)
+	for _, width := range []int{1, 2, 3, 4, 9, 20, 41, 80} {
+		for _, pace := range []int{-100, -25, 0, 25, 100} {
+			output := renderConsumptionPaceSized(width, 1, pace, true, colors)
+			if got := lipgloss.Width(output); got != width {
+				t.Errorf("width %d pace %d rendered width %d: %q", width, pace, got, ansi.Strip(output))
+			}
+			if got := lipgloss.Height(output); got != 1 {
+				t.Errorf("width %d pace %d rendered height %d", width, pace, got)
+			}
+		}
 	}
 }
 
