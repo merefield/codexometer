@@ -29,7 +29,7 @@ func TestPreferencesRestoreAndPersistPresentationChoices(t *testing.T) {
 		Theme: "nightshade", QuotaView: "fuel-tank", BenchmarkFilter: "fail", BenchmarkRank: "cost",
 	}}
 	model := NewWithPreferences(nil, time.Minute, store)
-	if model.theme != themeNightshade || model.meterStyle != styleFuel || model.quotaMeterStyle != styleFuel ||
+	if model.theme != themeNightshade || model.meterView != viewFuel || model.quotaMeterView != viewFuel ||
 		model.benchmarkFilter != benchmarkFilterFail || model.benchmarkRankMode != benchmarkRankCost {
 		t.Fatalf("preferences were not restored: %#v", model)
 	}
@@ -55,7 +55,7 @@ func TestInvalidOrUnreadablePreferencesKeepSafeDefaults(t *testing.T) {
 		{loadErr: errors.New("broken config")},
 	} {
 		model := NewWithPreferences(nil, time.Minute, store)
-		if model.theme != themeHacker || model.meterStyle != styleBars || model.benchmarkFilter != benchmarkFilterAll ||
+		if model.theme != themeHacker || model.meterView != viewBars || model.benchmarkFilter != benchmarkFilterAll ||
 			model.benchmarkRankMode != benchmarkRankBalanced {
 			t.Fatalf("invalid preferences changed defaults: %#v", model)
 		}

@@ -42,15 +42,15 @@ type Model struct {
 	nextRefresh     time.Time
 	phase           int
 	theme           themeID
-	meterStyle      meterStyleID
-	quotaMeterStyle meterStyleID
+	meterView       meterViewID
+	quotaMeterView  meterViewID
 	hoveredMainTab  mainTabID
 	mainTabHovered  bool
-	hoveredStyle    meterStyleID
-	styleHovered    bool
-	flashedStyle    meterStyleID
-	styleFlashing   bool
-	styleSequence   uint64
+	hoveredView     meterViewID
+	viewHovered     bool
+	flashedView     meterViewID
+	viewFlashing    bool
+	viewSequence    uint64
 	hoveredButton   footerButtonID
 	flashedButton   footerButtonID
 	flashSequence   uint64
@@ -196,8 +196,8 @@ type footerButtonFlashExpiredMsg struct {
 	sequence uint64
 }
 
-type styleTabFlashExpiredMsg struct {
-	style    meterStyleID
+type viewTabFlashExpiredMsg struct {
+	view     meterViewID
 	sequence uint64
 }
 
@@ -319,11 +319,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			return m.pressFooterButton(footerButtonTheme)
 		case "s":
-			if m.meterStyle == styleMonitor {
+			if m.meterView == viewMonitor {
 				return m.pressFooterButton(footerButtonMonitorGo)
 			}
 		case "v":
-			if m.meterStyle.isQuota() {
+			if m.meterView.isQuota() {
 				return m.pressFooterButton(footerButtonView)
 			}
 		case "tab":
@@ -335,50 +335,50 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
 		case "b":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				return m.pressFooterButton(footerButtonBenchmarkSelected)
 			}
 		case "a":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				return m.pressFooterButton(footerButtonBenchmarkAll)
 			}
 		case "left", "[":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				return m.pressFooterButton(footerButtonBenchmarkPrevious)
 			}
 		case "right", "]":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				return m.pressFooterButton(footerButtonBenchmarkNext)
 			}
 		case "f":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				m.setBenchmarkFilter((m.benchmarkFilter + 1) % 3)
 				return m, nil
 			}
 		case "w":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				return m.pressFooterButton(benchmarkRankButton(m.benchmarkRankMode.next()))
 			}
 		case "pgup":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				m.scrollBenchmarkPage(1)
 				return m, nil
 			}
-			if m.meterStyle == styleMonitor {
+			if m.meterView == viewMonitor {
 				m.scrollMonitorPage(-1)
 				return m, nil
 			}
 		case "pgdown":
-			if m.meterStyle == styleBenchmark {
+			if m.meterView == viewBenchmark {
 				m.scrollBenchmarkPage(-1)
 				return m, nil
 			}
-			if m.meterStyle == styleMonitor {
+			if m.meterView == viewMonitor {
 				m.scrollMonitorPage(1)
 				return m, nil
 			}
 		case "p":
-			if m.meterStyle == styleMonitor {
+			if m.meterView == viewMonitor {
 				return m.pressFooterButton(footerButtonMonitorStop)
 			}
 		}
@@ -386,7 +386,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if tab, ok := m.mainTabAt(message.X, message.Y); ok {
 			m.mainTabHovered = true
 			m.hoveredMainTab = tab
-			m.styleHovered = false
+			m.viewHovered = false
 			m.hoveredButton = footerButtonNone
 			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
 				return m.pressMainTab(tab)
@@ -394,16 +394,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mainTabHovered = false
-		if style, ok := m.quotaStyleTabAt(message.X, message.Y); ok {
-			m.styleHovered = true
-			m.hoveredStyle = style
+		if view, ok := m.quotaViewTabAt(message.X, message.Y); ok {
+			m.viewHovered = true
+			m.hoveredView = view
 			m.hoveredButton = footerButtonNone
 			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
-				return m.pressStyleTab(style)
+				return m.pressViewTab(view)
 			}
 			return m, nil
 		}
-		m.styleHovered = false
+		m.viewHovered = false
 		if column, ok := m.benchmarkHeaderAt(message.X, message.Y); ok {
 			m.benchmarkSortHovered = true
 			m.benchmarkHoveredSort = column
@@ -414,7 +414,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.benchmarkSortHovered = false
-		if m.meterStyle == styleMonitor {
+		if m.meterView == viewMonitor {
 			switch message.Button {
 			case tea.MouseButtonWheelUp:
 				m.scrollMonitorRows(-1)
@@ -424,7 +424,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if m.meterStyle == styleBenchmark {
+		if m.meterView == viewBenchmark {
 			switch message.Button {
 			case tea.MouseButtonWheelUp:
 				m.scrollBenchmarkRows(3)
@@ -518,9 +518,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.sequence == m.flashSequence && message.button == m.flashedButton {
 			m.flashedButton = footerButtonNone
 		}
-	case styleTabFlashExpiredMsg:
-		if message.sequence == m.styleSequence && message.style == m.flashedStyle {
-			m.styleFlashing = false
+	case viewTabFlashExpiredMsg:
+		if message.sequence == m.viewSequence && message.view == m.flashedView {
+			m.viewFlashing = false
 		}
 	case benchmarkEventMsg:
 		if !message.ok {
@@ -570,23 +570,23 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) pressStyleTab(style meterStyleID) (tea.Model, tea.Cmd) {
-	if style < styleBars || style >= styleCount {
+func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	if view < viewBars || view >= viewCount {
 		return m, nil
 	}
-	m.meterStyle = style
-	if style.isQuota() {
-		m.quotaMeterStyle = style
+	m.meterView = view
+	if view.isQuota() {
+		m.quotaMeterView = view
 	}
 	m.persistPreferences()
-	m.styleSequence++
-	m.flashedStyle = style
-	m.styleFlashing = true
-	sequence := m.styleSequence
+	m.viewSequence++
+	m.flashedView = view
+	m.viewFlashing = true
+	sequence := m.viewSequence
 	commands := []tea.Cmd{tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
-		return styleTabFlashExpiredMsg{style: style, sequence: sequence}
+		return viewTabFlashExpiredMsg{view: view, sequence: sequence}
 	})}
-	if style == styleBenchmark && m.benchmarkRunner != nil && m.benchmarkCombinations == 0 && !m.benchmarkPlanning {
+	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkCombinations == 0 && !m.benchmarkPlanning {
 		m.benchmarkPlanning = true
 		commands = append(commands, planBenchmark(m.benchmarkRunner))
 	}
@@ -618,9 +618,9 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.theme = m.theme.next()
 		m.persistPreferences()
 	case footerButtonView:
-		if m.meterStyle.isQuota() {
-			m.meterStyle = m.meterStyle.nextQuota()
-			m.quotaMeterStyle = m.meterStyle
+		if m.meterView.isQuota() {
+			m.meterView = m.meterView.nextQuota()
+			m.quotaMeterView = m.meterView
 			m.persistPreferences()
 		}
 	case footerButtonRefresh:
@@ -629,7 +629,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			return m, m.fetch()
 		}
 	case footerButtonMonitorGo:
-		if m.meterStyle == styleMonitor && (m.monitorState == monitorIdle || m.monitorState == monitorStopped) {
+		if m.meterView == viewMonitor && (m.monitorState == monitorIdle || m.monitorState == monitorStopped) {
 			m.monitorState = monitorStarting
 			m.monitorStartedAt = time.Time{}
 			m.monitorStoppedAt = time.Time{}
@@ -647,7 +647,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			return m, m.monitorFetch(monitorFetchStart, m.monitorRequest)
 		}
 	case footerButtonMonitorStop:
-		if m.meterStyle == styleMonitor && m.monitorState == monitorRunning {
+		if m.meterView == viewMonitor && m.monitorState == monitorRunning {
 			m.monitorState = monitorStopping
 			m.monitorRequest++
 			m.monitorFetchActive = true
@@ -662,7 +662,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.selectBenchmarkTask(1)
 		}
 	case footerButtonBenchmarkSelected:
-		if m.meterStyle == styleBenchmark && m.benchmarkState != benchmarkRunning {
+		if m.meterView == viewBenchmark && m.benchmarkState != benchmarkRunning {
 			m.benchmarkAllArmed = false
 			tasks := m.benchmarkTasks()
 			if len(tasks) > 0 {
@@ -671,7 +671,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		}
 	case footerButtonBenchmarkAll:
 		tasks := m.benchmarkTasks()
-		if m.meterStyle == styleBenchmark && benchmarkRunAllAvailable(m.benchmarkState == benchmarkRunning, m.benchmarkCombinations, len(tasks)) {
+		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkState == benchmarkRunning, m.benchmarkCombinations, len(tasks)) {
 			if !m.benchmarkAllArmed {
 				m.benchmarkAllArmed = true
 				m.benchmarkConfirmSequence++
@@ -708,12 +708,12 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
-	if m.meterStyle == styleMonitor {
+	if m.meterView == viewMonitor {
 		if button := m.monitorButtonAt(x, y); button != footerButtonNone {
 			return button
 		}
 	}
-	if m.meterStyle == styleBenchmark {
+	if m.meterView == viewBenchmark {
 		if button := m.benchmarkButtonAt(x, y); button != footerButtonNone {
 			return button
 		}
@@ -723,7 +723,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterStyle.isQuota())
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota())
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+len(button.label) {
@@ -761,7 +761,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 	statusHeight := 1
 	tabsHeight := 1
-	if m.meterStyle.isQuota() {
+	if m.meterView.isQuota() {
 		tabsHeight++
 	}
 	const framedErrorHeight = 3
@@ -774,7 +774,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if len(meters) == 0 {
 		extraHeight += framedErrorHeight
 	}
-	if (m.meterStyle == styleBars || m.meterStyle == styleConsumptionPace || m.meterStyle == styleFuel) && len(meters) > 0 {
+	if (m.meterView == viewBars || m.meterView == viewConsumptionPace || m.meterView == viewFuel) && len(meters) > 0 {
 		minimumMeterHeight := len(meters) * 3
 		meterHeightWithSpacer := contentHeight - headerHeight - statusHeight - tabsHeight - extraHeight - footerHeight
 		meterHeightWithoutSpacer := meterHeightWithSpacer + statusHeight
@@ -784,13 +784,13 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 	tabsY := 1 + headerHeight + statusHeight
 	quotaTabsY := -1
-	if m.meterStyle.isQuota() {
+	if m.meterView.isQuota() {
 		quotaTabsY = tabsY + 1
 	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
-	if m.meterStyle == styleMonitor || m.meterStyle == styleBenchmark || len(m.snapshot.Meters()) > 0 {
+	if m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
 		footerY += meterHeight
 	}
 	return dashboardGeometry{

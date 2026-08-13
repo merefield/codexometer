@@ -31,8 +31,8 @@ type mainTab struct {
 	width int
 }
 
-type styleTab struct {
-	style meterStyleID
+type viewTab struct {
+	view  meterViewID
 	label string
 	x     int
 	width int
@@ -91,69 +91,69 @@ func mainTabLayout(width int, recording bool) ([]mainTab, string) {
 	return tabs, separator
 }
 
-func quotaStyleTabLayout(width int) ([]styleTab, string) {
+func quotaViewTabLayout(width int) ([]viewTab, string) {
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"╭ BARS ╮", "╭ PIE ╮", "╭ CONSUMPTION PACE ╮", "╭ FUEL TANK ╮"},
-		{"╭BAR╮", "╭PIE╮", "╭PACE╮", "╭FUEL╮"},
-		{"[B]", "[P]", "[C]", "[F]"},
-		{"B", "P", "C", "F"},
+		{"╭ BARS ╮", "╭ CONSUMPTION PACE ╮", "╭ PIE ╮", "╭ FUEL TANK ╮"},
+		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮"},
+		{"[B]", "[C]", "[P]", "[F]"},
+		{"B", "C", "P", "F"},
 	})
 
-	tabs := make([]styleTab, 0, len(quotaStyleOrder))
+	tabs := make([]viewTab, 0, len(quotaViewOrder))
 	x := 0
 	for index, label := range labels {
 		tabWidth := lipgloss.Width(label)
 		if x+tabWidth > width {
 			break
 		}
-		tabs = append(tabs, styleTab{style: quotaStyleOrder[index], label: label, x: x, width: tabWidth})
+		tabs = append(tabs, viewTab{view: quotaViewOrder[index], label: label, x: x, width: tabWidth})
 		x += tabWidth + len(separator)
 	}
 	return tabs, separator
 }
 
 func (m Model) currentMainTab() mainTabID {
-	switch m.meterStyle {
-	case styleMonitor:
+	switch m.meterView {
+	case viewMonitor:
 		return mainTabMonitor
-	case styleBenchmark:
+	case viewBenchmark:
 		return mainTabBenchmark
 	default:
 		return mainTabQuota
 	}
 }
 
-func (m Model) selectedQuotaStyle() meterStyleID {
-	if m.meterStyle.isQuota() {
-		return m.meterStyle
+func (m Model) selectedQuotaView() meterViewID {
+	if m.meterView.isQuota() {
+		return m.meterView
 	}
-	if m.quotaMeterStyle.isQuota() {
-		return m.quotaMeterStyle
+	if m.quotaMeterView.isQuota() {
+		return m.quotaMeterView
 	}
-	return styleBars
+	return viewBars
 }
 
 func (m Model) pressMainTab(tab mainTabID) (tea.Model, tea.Cmd) {
-	if m.meterStyle.isQuota() {
-		m.quotaMeterStyle = m.meterStyle
+	if m.meterView.isQuota() {
+		m.quotaMeterView = m.meterView
 	}
 	switch tab {
 	case mainTabQuota:
-		return m.pressStyleTab(m.selectedQuotaStyle())
+		return m.pressViewTab(m.selectedQuotaView())
 	case mainTabMonitor:
-		return m.pressStyleTab(styleMonitor)
+		return m.pressViewTab(viewMonitor)
 	case mainTabBenchmark:
-		return m.pressStyleTab(styleBenchmark)
+		return m.pressViewTab(viewBenchmark)
 	default:
 		return m, nil
 	}
 }
 
-func mainTabForStyle(style meterStyleID) mainTabID {
-	switch style {
-	case styleMonitor:
+func mainTabForView(view meterViewID) mainTabID {
+	switch view {
+	case viewMonitor:
 		return mainTabMonitor
-	case styleBenchmark:
+	case viewBenchmark:
 		return mainTabBenchmark
 	default:
 		return mainTabQuota
@@ -168,9 +168,9 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 	for _, tab := range tabs {
 		active := tab.tab == m.currentMainTab()
 		hovered := m.mainTabHovered && tab.tab == m.hoveredMainTab
-		flashed := m.styleFlashing && tab.tab == mainTabForStyle(m.flashedStyle)
+		flashed := m.viewFlashing && tab.tab == mainTabForView(m.flashedView)
 		base, background := tabAppearance(active, hovered, flashed, colors)
-		parts = append(parts, renderStyleTabLabel(tab.label, base, background, recording && tab.tab == mainTabMonitor, m.phase, colors))
+		parts = append(parts, renderViewTabLabel(tab.label, base, background, recording && tab.tab == mainTabMonitor, m.phase, colors))
 		used += tab.width
 	}
 	if len(parts) > 1 {
@@ -179,14 +179,14 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 	return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(width-used, 0))
 }
 
-func (m Model) renderQuotaStyleTabs(width int, colors palette) string {
-	tabs, separator := quotaStyleTabLayout(width)
+func (m Model) renderQuotaViewTabs(width int, colors palette) string {
+	tabs, separator := quotaViewTabLayout(width)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
-		active := tab.style == m.meterStyle
-		hovered := m.styleHovered && tab.style == m.hoveredStyle
-		flashed := m.styleFlashing && tab.style == m.flashedStyle
+		active := tab.view == m.meterView
+		hovered := m.viewHovered && tab.view == m.hoveredView
+		flashed := m.viewFlashing && tab.view == m.flashedView
 		base, _ := tabAppearance(active, hovered, flashed, colors)
 		parts = append(parts, base.Render(tab.label))
 		used += tab.width
@@ -215,7 +215,7 @@ func tabAppearance(active, hovered, flashed bool, colors palette) (lipgloss.Styl
 	return lipgloss.NewStyle().Foreground(foreground).Background(background).Bold(bold), background
 }
 
-func renderStyleTabLabel(label string, base lipgloss.Style, background lipgloss.Color, recording bool, phase int, colors palette) string {
+func renderViewTabLabel(label string, base lipgloss.Style, background lipgloss.Color, recording bool, phase int, colors palette) string {
 	if !recording || !strings.Contains(label, "●") {
 		return base.Render(label)
 	}
@@ -250,20 +250,20 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 	return mainTabQuota, false
 }
 
-func (m Model) quotaStyleTabAt(x, y int) (meterStyleID, bool) {
-	if x < 0 || y < 0 || !m.meterStyle.isQuota() || (m.loading && len(m.snapshot.Meters()) == 0) {
-		return styleBars, false
+func (m Model) quotaViewTabAt(x, y int) (meterViewID, bool) {
+	if x < 0 || y < 0 || !m.meterView.isQuota() || (m.loading && len(m.snapshot.Meters()) == 0) {
+		return viewBars, false
 	}
 	layout := m.dashboardLayout()
 	if y != layout.quotaTabsY {
-		return styleBars, false
+		return viewBars, false
 	}
 	localX := x - 2
-	tabs, _ := quotaStyleTabLayout(layout.contentWidth)
+	tabs, _ := quotaViewTabLayout(layout.contentWidth)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
-			return tab.style, true
+			return tab.view, true
 		}
 	}
-	return styleBars, false
+	return viewBars, false
 }

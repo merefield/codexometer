@@ -225,11 +225,11 @@ func TestEveryQuotaViewDisplaysResponsiveAPIEqReadout(t *testing.T) {
 		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 10,
 		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
-	for _, style := range quotaStyleOrder {
-		model.meterStyle, model.quotaMeterStyle = style, style
-		view := ansi.Strip(model.View())
-		if !strings.Contains(view, "API-EQ") || !strings.Contains(view, "100%") {
-			t.Errorf("%s omitted API-EQ readout:\n%s", style.name(), view)
+	for _, view := range quotaViewOrder {
+		model.meterView, model.quotaMeterView = view, view
+		rendered := ansi.Strip(model.View())
+		if !strings.Contains(rendered, "API-EQ") || !strings.Contains(rendered, "100%") {
+			t.Errorf("%s omitted API-EQ readout:\n%s", view.name(), rendered)
 		}
 	}
 	model.width = 48

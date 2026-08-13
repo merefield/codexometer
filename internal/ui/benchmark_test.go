@@ -60,7 +60,7 @@ func (f benchmarkStubFetcher) RunBenchmarkSuite(ctx context.Context, tasks []cod
 
 func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	model := Model{
-		width: 100, height: 30, meterStyle: styleBenchmark,
+		width: 100, height: 30, meterView: viewBenchmark,
 		benchmarkState: benchmarkFinished,
 		benchmarkResults: []codex.BenchmarkResult{
 			{TaskName: "MERGE RANGES", Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true, Duration: 12500 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4321}, UsageKnown: true, CostKnown: true, CostUSD: 0.0412},
@@ -132,7 +132,7 @@ func TestVeryShortBenchmarkAreaExposesNoHiddenMouseTargets(t *testing.T) {
 	for _, height := range []int{8, 9, 10} {
 		model := Model{
 			snapshot: codex.DemoSnapshot(), width: 40, height: height,
-			meterStyle: styleBenchmark,
+			meterView: viewBenchmark,
 		}
 		dashboard := model.dashboardLayout()
 		if dashboard.meterHeight >= 3 {
@@ -173,7 +173,7 @@ func TestBenchmarkHotkeyRunsSuiteAndCollectsEvents(t *testing.T) {
 	model := New(fetcher, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
-	model.meterStyle = styleBenchmark
+	model.meterView = viewBenchmark
 
 	updated, command := model.Update(key('b'))
 	model = updated.(Model)
@@ -214,7 +214,7 @@ func TestBenchmarkButtonSupportsHoverAndClick(t *testing.T) {
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
-	model.meterStyle = styleBenchmark
+	model.meterView = viewBenchmark
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkSelected)
 	mouse := tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion}
 	updated, command := model.Update(mouse)
@@ -250,7 +250,7 @@ func TestBenchmarkTableClipsOlderRows(t *testing.T) {
 }
 
 func TestBenchmarkPageKeysAndMouseWheelScrollResults(t *testing.T) {
-	model := Model{width: 90, height: 28, meterStyle: styleBenchmark, benchmarkState: benchmarkFinished}
+	model := Model{width: 90, height: 28, meterView: viewBenchmark, benchmarkState: benchmarkFinished}
 	for index := 0; index < 30; index++ {
 		model.benchmarkResults = append(model.benchmarkResults, codex.BenchmarkResult{DisplayName: "Model", Effort: "low"})
 	}
@@ -273,7 +273,7 @@ func TestBenchmarkPageKeysAndMouseWheelScrollResults(t *testing.T) {
 
 func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	model := Model{
-		width: 100, height: 30, meterStyle: styleBenchmark, benchmarkState: benchmarkFinished,
+		width: 100, height: 30, meterView: viewBenchmark, benchmarkState: benchmarkFinished,
 		benchmarkResults: []codex.BenchmarkResult{
 			{DisplayName: "Zulu", Effort: "low", Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 200}},
 			{DisplayName: "Alpha", Effort: "high", Correct: true, Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 100}},
@@ -321,7 +321,7 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
 			model := Model{
 				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
-				meterStyle: styleBenchmark, benchmarkCombinations: 3,
+				meterView: viewBenchmark, benchmarkCombinations: 3,
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
@@ -563,7 +563,7 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
-	model.meterStyle = styleBenchmark
+	model.meterView = viewBenchmark
 	model.benchmarkCombinations = 33
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -617,7 +617,7 @@ func TestBenchmarkSelectorAnchorsButtonsToLongestTaskName(t *testing.T) {
 		}
 	}
 
-	clickable := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: styleBenchmark}
+	clickable := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark}
 	nextX, nextY := benchmarkControlCoordinates(t, clickable, footerButtonBenchmarkNext)
 	for range clickable.benchmarkTasks() {
 		clickable.selectBenchmarkTask(1)
@@ -633,7 +633,7 @@ func TestBenchmarkRunAllLaunchesUnifiedCatalog(t *testing.T) {
 	model := New(fetcher, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
-	model.meterStyle = styleBenchmark
+	model.meterView = viewBenchmark
 	model.benchmarkCombinations = 1
 
 	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
@@ -681,7 +681,7 @@ func TestBenchmarkRunAllAvailabilityRequiresTasksAndCombinations(t *testing.T) {
 
 func TestBenchmarkPassFailFilterButtonsAndHotkey(t *testing.T) {
 	model := Model{
-		width: 100, height: 30, meterStyle: styleBenchmark, benchmarkState: benchmarkFinished,
+		width: 100, height: 30, meterView: viewBenchmark, benchmarkState: benchmarkFinished,
 		benchmarkResults: []codex.BenchmarkResult{
 			{DisplayName: "Passing", TaskName: "LRU CACHE", Correct: true},
 			{DisplayName: "Failing", TaskName: "SHORTEST PATH", Correct: false},
@@ -706,7 +706,7 @@ func TestBenchmarkPassFailFilterButtonsAndHotkey(t *testing.T) {
 
 func TestBenchmarkRankWeightButtonsAndHotkeyRecomputeImmediately(t *testing.T) {
 	model := Model{
-		width: 100, height: 30, snapshot: codex.DemoSnapshot(), meterStyle: styleBenchmark,
+		width: 100, height: 30, snapshot: codex.DemoSnapshot(), meterView: viewBenchmark,
 		benchmarkRankMode: benchmarkRankBalanced,
 		benchmarkResults: []codex.BenchmarkResult{
 			{Model: "cheap", DisplayName: "Cheap", Effort: "low", Correct: true, Duration: 30 * time.Second, CostKnown: true, CostUSD: 0.01},

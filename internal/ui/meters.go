@@ -12,21 +12,21 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-func usesMeterGrid(style meterStyleID) bool {
-	switch style {
-	case styleBars, stylePie, styleConsumptionPace, styleFuel:
+func usesMeterGrid(view meterViewID) bool {
+	switch view {
+	case viewBars, viewPie, viewConsumptionPace, viewFuel:
 		return true
 	default:
 		return false
 	}
 }
 
-func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID, colors palette) string {
+func renderMeterGrid(width, height int, meters []codex.Meter, view meterViewID, colors palette) string {
 	if len(meters) == 0 {
 		return ""
 	}
 	const columnGap = 1
-	columns := meterGridColumns(width, height, len(meters), style)
+	columns := meterGridColumns(width, height, len(meters), view)
 	rows := (len(meters) + columns - 1) / columns
 	rowGap := 1
 	// A framed meter needs at least its title, body, and bottom border. Drop the
@@ -49,7 +49,7 @@ func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID
 				pieces = append(pieces, strings.Repeat(" ", columnGap))
 			}
 			if meterIndex < len(meters) {
-				pieces = append(pieces, renderMeterArea(columnWidths[column], rowHeight, meters[meterIndex], style, colors))
+				pieces = append(pieces, renderMeterArea(columnWidths[column], rowHeight, meters[meterIndex], view, colors))
 			} else {
 				pieces = append(pieces, strings.Repeat(" ", columnWidths[column]))
 			}
@@ -63,13 +63,13 @@ func renderMeterGrid(width, height int, meters []codex.Meter, style meterStyleID
 	return grid
 }
 
-func meterGridColumns(width, height, meterCount int, style meterStyleID) int {
-	if style == styleBars || style == styleConsumptionPace || style == styleFuel {
+func meterGridColumns(width, height, meterCount int, view meterViewID) int {
+	if view == viewBars || view == viewConsumptionPace || view == viewFuel {
 		return 1
 	}
 	minimumColumns := 1
 	maximumColumns := meterCount
-	if isRadialStyle(style) && meterCount > 1 {
+	if isRadialView(view) && meterCount > 1 {
 		minimumColumns = 2
 		// Below this width the circular canvas and title both become ambiguous.
 		// Retain at least two columns, then add more only when each card remains
@@ -87,8 +87,8 @@ func meterGridColumns(width, height, meterCount int, style meterStyleID) int {
 		visualChrome := 6
 		visualHeight := max(cellHeight-visualChrome, 1)
 		detail := innerWidth * visualHeight
-		switch style {
-		case stylePie:
+		switch view {
+		case viewPie:
 			canvasWidth, canvasHeight := radialCanvasSize(innerWidth, visualHeight, 11)
 			detail = canvasWidth * canvasHeight
 		}
@@ -100,8 +100,8 @@ func meterGridColumns(width, height, meterCount int, style meterStyleID) int {
 	return bestColumns
 }
 
-func isRadialStyle(style meterStyleID) bool {
-	return style == stylePie
+func isRadialView(view meterViewID) bool {
+	return view == viewPie
 }
 
 func distributeSpace(total, parts int) []int {
@@ -117,11 +117,11 @@ func distributeSpace(total, parts int) []int {
 	return sizes
 }
 
-func renderMeter(width int, meter codex.Meter, style meterStyleID, colors palette) string {
-	return renderMeterArea(width, 0, meter, style, colors)
+func renderMeter(width int, meter codex.Meter, view meterViewID, colors palette) string {
+	return renderMeterArea(width, 0, meter, view, colors)
 }
 
-func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, colors palette) string {
+func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, colors palette) string {
 	used := min(max(meter.Window.UsedPercent, 0), 100)
 	free := 100 - used
 	color := meterColor(used, colors)
@@ -129,17 +129,17 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 
 	usedText := lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("USED %3d%%", used))
 	freeText := colors.dimmed().Render(fmt.Sprintf("FREE %3d%%", free))
-	if style == styleFuel {
+	if view == viewFuel {
 		usedText = colors.dimmed().Render(fmt.Sprintf("USED %3d%%", used))
 		freeText = lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render(fmt.Sprintf("FREE %3d%%", free))
 	}
 	gap := max(innerWidth-lipgloss.Width(usedText)-lipgloss.Width(freeText), 1)
 	stats := usedText + strings.Repeat(" ", gap) + freeText
-	if style == styleFuel {
+	if view == viewFuel {
 		stats = freeText + strings.Repeat(" ", gap) + usedText
 	}
 	if lipgloss.Width(stats) > innerWidth {
-		if style == styleFuel {
+		if view == viewFuel {
 			stats = freeText
 		} else {
 			stats = usedText
@@ -166,13 +166,13 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 		visualHeight = max(bodyHeight-chromeHeight, 1)
 	}
 	now := time.Now()
-	visual := renderVisualizationSized(innerWidth, visualHeight, used, style, color, colors)
-	if style == styleConsumptionPace {
+	visual := renderVisualizationSized(innerWidth, visualHeight, used, view, color, colors)
+	if view == viewConsumptionPace {
 		visual = renderConsumptionPaceMeterSized(innerWidth, visualHeight, meter.Window, now, colors)
 	}
 	gaugeWidth := min(max(lipgloss.Width(visual), 1), innerWidth)
 	resetGauge := renderResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
-	if style == styleFuel {
+	if view == viewFuel {
 		gaugeWidth = max(innerWidth-6, 1)
 		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
 	}
@@ -290,19 +290,19 @@ func meterColor(used int, colors palette) lipgloss.Color {
 	return colors.primary
 }
 
-func renderVisualization(width, used int, style meterStyleID, color lipgloss.Color, colors palette) string {
-	return renderVisualizationSized(width, 0, used, style, color, colors)
+func renderVisualization(width, used int, view meterViewID, color lipgloss.Color, colors palette) string {
+	return renderVisualizationSized(width, 0, used, view, color, colors)
 }
 
-func renderVisualizationSized(width, height, used int, style meterStyleID, color lipgloss.Color, colors palette) string {
-	switch style {
-	case stylePie:
+func renderVisualizationSized(width, height, used int, view meterViewID, color lipgloss.Color, colors palette) string {
+	switch view {
+	case viewPie:
 		return renderPieSized(width, height, used, color, colors)
-	case styleConsumptionPace:
+	case viewConsumptionPace:
 		return renderConsumptionPaceSized(width, height, 0, false, colors)
-	case styleFuel:
+	case viewFuel:
 		return renderFuelTankSized(width, height, used, color, colors)
-	case styleBars:
+	case viewBars:
 		return renderClassicBarSized(width, height, used, color, colors)
 	default:
 		return renderClassicBarSized(width, height, used, color, colors)

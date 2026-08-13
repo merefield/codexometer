@@ -902,7 +902,7 @@ func benchmarkSegmentButtonAt(localX int, segments []benchmarkControlSegment) fo
 }
 
 func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
-	if m.meterStyle != styleBenchmark || x < 0 || y < 0 {
+	if m.meterView != viewBenchmark || x < 0 || y < 0 {
 		return benchmarkSortNone, false
 	}
 	dashboard := m.dashboardLayout()

@@ -257,7 +257,7 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 	meters := m.snapshot.Meters()
 	lineWidth := max(width-4, 1)
 	if len(meters) > 0 {
-		columns := meterGridColumns(width, m.dashboardLayout().meterHeight, len(meters), m.meterStyle)
+		columns := meterGridColumns(width, m.dashboardLayout().meterHeight, len(meters), m.meterView)
 		lineWidth = max((width-(columns-1))/columns-4, 1)
 	}
 	for index := range meters {
