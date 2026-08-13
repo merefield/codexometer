@@ -16,7 +16,23 @@ import (
 )
 
 func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "app-server.sock")
+	// Darwin limits Unix-domain socket paths to roughly 104 bytes. Go's
+	// descriptive t.TempDir path can exceed that before the socket name is
+	// appended, so reserve a short unique name directly under the system temp
+	// directory instead.
+	socketFile, err := os.CreateTemp("", "cxm-*.sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socketPath := socketFile.Name()
+	if err := socketFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(socketPath); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(socketPath) })
+
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
