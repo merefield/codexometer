@@ -78,9 +78,9 @@ func (m *Model) applyPreferences(preferences Preferences) {
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
 	}
-	if style, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok {
-		m.meterStyle = style
-		m.quotaMeterStyle = style
+	if view, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok {
+		m.meterView = view
+		m.quotaMeterView = view
 	}
 	if filter, ok := benchmarkFilterPreferenceIDs[preferences.BenchmarkFilter]; ok {
 		m.benchmarkFilter = filter
@@ -96,7 +96,7 @@ func (m Model) persistPreferences() {
 	}
 	_ = m.preferenceStore.Save(Preferences{
 		Theme:           themePreferenceNames[m.theme],
-		QuotaView:       quotaViewPreferenceNames[m.selectedQuotaStyle()],
+		QuotaView:       quotaViewPreferenceNames[m.selectedQuotaView()],
 		BenchmarkFilter: benchmarkFilterPreferenceNames[m.benchmarkFilter],
 		BenchmarkRank:   benchmarkRankPreferenceNames[m.benchmarkRankMode],
 	})
@@ -117,14 +117,14 @@ func reverseThemePreferences(values map[themeID]string) map[string]themeID {
 	return reversed
 }
 
-var quotaViewPreferenceNames = map[meterStyleID]string{
-	styleBars: "bars", stylePie: "pie", styleConsumptionPace: "consumption-pace", styleFuel: "fuel-tank",
+var quotaViewPreferenceNames = map[meterViewID]string{
+	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank",
 }
 
-var quotaViewPreferenceIDs = reverseStylePreferences(quotaViewPreferenceNames)
+var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)
 
-func reverseStylePreferences(values map[meterStyleID]string) map[string]meterStyleID {
-	reversed := make(map[string]meterStyleID, len(values))
+func reverseViewPreferences(values map[meterViewID]string) map[string]meterViewID {
+	reversed := make(map[string]meterViewID, len(values))
 	for id, value := range values {
 		reversed[value] = id
 	}

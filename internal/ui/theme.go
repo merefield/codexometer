@@ -17,44 +17,44 @@ func (t themeID) next() themeID {
 	return (t + 1) % themeCount
 }
 
-type meterStyleID int
+type meterViewID int
 
 const (
-	styleBars meterStyleID = iota
-	styleMonitor
-	stylePie
-	styleConsumptionPace
-	styleFuel
-	styleBenchmark
-	styleCount
+	viewBars meterViewID = iota
+	viewMonitor
+	viewPie
+	viewConsumptionPace
+	viewFuel
+	viewBenchmark
+	viewCount
 )
 
-var quotaStyleOrder = [...]meterStyleID{
-	styleBars,
-	stylePie,
-	styleConsumptionPace,
-	styleFuel,
+var quotaViewOrder = [...]meterViewID{
+	viewBars,
+	viewConsumptionPace,
+	viewPie,
+	viewFuel,
 }
 
-func (s meterStyleID) isQuota() bool {
-	for _, style := range quotaStyleOrder {
-		if s == style {
+func (s meterViewID) isQuota() bool {
+	for _, view := range quotaViewOrder {
+		if s == view {
 			return true
 		}
 	}
 	return false
 }
 
-func (s meterStyleID) nextQuota() meterStyleID {
-	for index, style := range quotaStyleOrder {
-		if s == style {
-			return quotaStyleOrder[(index+1)%len(quotaStyleOrder)]
+func (s meterViewID) nextQuota() meterViewID {
+	for index, view := range quotaViewOrder {
+		if s == view {
+			return quotaViewOrder[(index+1)%len(quotaViewOrder)]
 		}
 	}
-	return styleBars
+	return viewBars
 }
 
-func (s meterStyleID) name() string {
+func (s meterViewID) name() string {
 	return [...]string{
 		"BARS",
 		"MONITOR",

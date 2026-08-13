@@ -21,7 +21,7 @@ func TestMonitorGoSampleAndStopLifecycle(t *testing.T) {
 	model := New(stubLiveFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
-	model.meterStyle = styleMonitor
+	model.meterView = viewMonitor
 
 	updated, command := model.Update(key('s'))
 	model = updated.(Model)
@@ -87,7 +87,7 @@ func TestMonitorGoSampleAndStopLifecycle(t *testing.T) {
 
 func TestMonitorTickSamplesOnlyWhileRunningAndIgnoresStaleResults(t *testing.T) {
 	model := New(stubLiveFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
-	model.meterStyle = styleMonitor
+	model.meterView = viewMonitor
 	updated, command := model.Update(secondMsg(time.Now()))
 	model = updated.(Model)
 	if command == nil || model.monitorFetchActive {
@@ -537,7 +537,7 @@ func TestMonitorSessionRowsStayInsideResponsiveRectangle(t *testing.T) {
 
 func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 	model := Model{
-		meterStyle: styleMonitor, width: 84, height: 24,
+		meterView: viewMonitor, width: 84, height: 24,
 		monitorSessionData: []monitorSession{
 			{id: "a", displayed: true}, {id: "b", displayed: true},
 			{id: "c", displayed: true}, {id: "d", displayed: true},
@@ -562,7 +562,7 @@ func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 }
 
 func TestMonitorSurfacesUnavailableAndFailedFinalUsage(t *testing.T) {
-	model := Model{meterStyle: styleMonitor, monitorState: monitorStarting, monitorRequest: 1}
+	model := Model{meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1}
 	updated, _ := model.Update(monitorFetchedMsg{
 		kind: monitorFetchStart, sequence: 1, err: errors.New("local telemetry unavailable"), at: time.Now(),
 	})
@@ -614,7 +614,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{80, 24}, {120, 40}, {200, 60}} {
 		model := Model{
 			snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
-			meterStyle: styleMonitor, monitorState: monitorRunning,
+			meterView: viewMonitor, monitorState: monitorRunning,
 			monitorBaseline: 1_000, monitorLatest: 7_250,
 			monitorStartedAt: time.Now().Add(-time.Minute),
 			monitorSamples:   []monitorSample{{intervalTokens: 250}, {intervalTokens: 6_000}},
@@ -682,7 +682,7 @@ func TestMonitorSessionProminentlyDistinguishesAttentionReason(t *testing.T) {
 func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	model := Model{
 		snapshot: codex.DemoSnapshot(), width: 100, height: 36,
-		meterStyle: styleMonitor, monitorState: monitorIdle,
+		meterView: viewMonitor, monitorState: monitorIdle,
 	}
 	colors := paletteFor(model.theme)
 	dashboard := model.dashboardLayout()
@@ -743,7 +743,7 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 		for _, state := range []monitorState{monitorIdle, monitorRunning} {
 			model := Model{
 				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
-				meterStyle: styleMonitor, monitorState: state,
+				meterView: viewMonitor, monitorState: state,
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)

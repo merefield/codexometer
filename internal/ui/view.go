@@ -30,15 +30,15 @@ func (m Model) View() string {
 			parts = append(parts, strings.Repeat(" ", contentWidth))
 		}
 		parts = append(parts, m.renderMainTabs(contentWidth, colors))
-		if m.meterStyle.isQuota() {
-			parts = append(parts, m.renderQuotaStyleTabs(contentWidth, colors))
+		if m.meterView.isQuota() {
+			parts = append(parts, m.renderQuotaViewTabs(contentWidth, colors))
 		}
 		if m.err != nil {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
 		}
 		meters := m.snapshot.Meters()
-		if m.meterStyle.isQuota() {
+		if m.meterView.isQuota() {
 			meters = m.quotaMetersWithInsights(contentWidth)
 		}
 		if len(meters) == 0 {
@@ -46,14 +46,14 @@ func (m Model) View() string {
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		if m.meterStyle == styleMonitor {
+		if m.meterView == viewMonitor {
 			parts = append(parts, m.renderMonitorArea(contentWidth, layout.meterHeight, colors).view)
-		} else if m.meterStyle == styleBenchmark {
+		} else if m.meterView == viewBenchmark {
 			parts = append(parts, m.renderBenchmarkArea(contentWidth, layout.meterHeight, colors))
 		} else if len(meters) > 1 {
-			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterStyle, colors))
+			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterView, colors))
 		} else if len(meters) == 1 {
-			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterStyle, colors))
+			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterView, colors))
 		}
 		parts = append(parts, footer)
 	}
@@ -154,10 +154,10 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
-	if m.meterStyle == styleBenchmark || m.meterStyle.isQuota() {
+	if m.meterView == viewBenchmark || m.meterView.isQuota() {
 		status = renderPricingFooter(status, width, colors)
 	}
-	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterStyle.isQuota())
+	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota())
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		controls = append(controls, footerButtonAppearance(

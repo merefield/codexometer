@@ -303,7 +303,7 @@ codexometer --codex /path/to/codex
 
 The responsive top rail below the account status selects Quota, Monitor, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
-Pie, Consumption Pace, and Fuel Tank; select these with the mouse or cycle them
+Consumption Pace, Pie, and Fuel Tank; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
 and return. Both rails condense automatically as the terminal narrows.
 The footer presents the remaining actions as clickable buttons, including View

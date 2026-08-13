@@ -41,7 +41,7 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	}
 }
 
-func TestQuotaStyleTabsChooseResponsiveLabels(t *testing.T) {
+func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 	for _, test := range []struct {
 		width int
 		want  string
@@ -52,9 +52,9 @@ func TestQuotaStyleTabsChooseResponsiveLabels(t *testing.T) {
 		{width: 4, want: "C"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
-			tabs, _ := quotaStyleTabLayout(test.width)
-			if len(tabs) != len(quotaStyleOrder) {
-				t.Fatalf("width %d displayed %d quota tabs, want %d", test.width, len(tabs), len(quotaStyleOrder))
+			tabs, _ := quotaViewTabLayout(test.width)
+			if len(tabs) != len(quotaViewOrder) {
+				t.Fatalf("width %d displayed %d quota tabs, want %d", test.width, len(tabs), len(quotaViewOrder))
 			}
 			var labels strings.Builder
 			for _, tab := range tabs {
@@ -65,6 +65,9 @@ func TestQuotaStyleTabsChooseResponsiveLabels(t *testing.T) {
 			}
 			if !strings.Contains(labels.String(), test.want) {
 				t.Fatalf("width %d labels %q do not contain %q", test.width, labels.String(), test.want)
+			}
+			if len(tabs) >= 3 && (tabs[1].view != viewConsumptionPace || !strings.Contains(tabs[1].label, test.want) || tabs[2].view != viewPie) {
+				t.Fatalf("width %d tab order/labels do not match views: %#v", test.width, tabs)
 			}
 		})
 	}
@@ -92,17 +95,17 @@ func TestMainTabsSupportHoverClickAndPulse(t *testing.T) {
 	mouse.Action = tea.MouseActionPress
 	updated, command = model.Update(mouse)
 	model = updated.(Model)
-	if command == nil || model.meterStyle != styleMonitor || !model.styleFlashing || model.flashedStyle != styleMonitor {
-		t.Fatalf("monitor click did not select and pulse: style=%d flashing=%v", model.meterStyle, model.styleFlashing)
+	if command == nil || model.meterView != viewMonitor || !model.viewFlashing || model.flashedView != viewMonitor {
+		t.Fatalf("monitor click did not select and pulse: view=%d flashing=%v", model.meterView, model.viewFlashing)
 	}
 }
 
-func TestQuotaStyleTabsSupportHoverClickAndPulse(t *testing.T) {
+func TestQuotaViewTabsSupportHoverClickAndPulse(t *testing.T) {
 	model := New(stubFetcher{snapshot: codex.DemoSnapshot()}, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
-	tabs, _ := quotaStyleTabLayout(model.contentWidth())
+	tabs, _ := quotaViewTabLayout(model.contentWidth())
 	target := tabs[1]
 	mouse := tea.MouseMsg{
 		X:      2 + target.x + target.width/2,
@@ -112,19 +115,19 @@ func TestQuotaStyleTabsSupportHoverClickAndPulse(t *testing.T) {
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
-	if command != nil || !model.styleHovered || model.hoveredStyle != stylePie {
-		t.Fatalf("pie hover was not recorded: hovered=%v style=%d", model.styleHovered, model.hoveredStyle)
+	if command != nil || !model.viewHovered || model.hoveredView != viewConsumptionPace {
+		t.Fatalf("consumption pace hover was not recorded: hovered=%v view=%d", model.viewHovered, model.hoveredView)
 	}
 
 	mouse.Action = tea.MouseActionPress
 	updated, command = model.Update(mouse)
 	model = updated.(Model)
-	if command == nil || model.meterStyle != stylePie || model.quotaMeterStyle != stylePie || !model.styleFlashing || model.flashedStyle != stylePie {
-		t.Fatalf("pie click did not select, remember, and pulse: style=%d remembered=%d flashing=%v", model.meterStyle, model.quotaMeterStyle, model.styleFlashing)
+	if command == nil || model.meterView != viewConsumptionPace || model.quotaMeterView != viewConsumptionPace || !model.viewFlashing || model.flashedView != viewConsumptionPace {
+		t.Fatalf("consumption pace click did not select, remember, and pulse: view=%d remembered=%d flashing=%v", model.meterView, model.quotaMeterView, model.viewFlashing)
 	}
-	updated, _ = model.Update(styleTabFlashExpiredMsg{style: stylePie, sequence: model.styleSequence})
+	updated, _ = model.Update(viewTabFlashExpiredMsg{view: viewConsumptionPace, sequence: model.viewSequence})
 	model = updated.(Model)
-	if model.styleFlashing {
+	if model.viewFlashing {
 		t.Fatal("current tab pulse did not expire")
 	}
 }
@@ -141,10 +144,10 @@ func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
 				}
 			}
 		}
-		quotaTabs, _ := quotaStyleTabLayout(layout.contentWidth)
+		quotaTabs, _ := quotaViewTabLayout(layout.contentWidth)
 		for _, tab := range quotaTabs {
 			for offset := 0; offset < tab.width; offset++ {
-				if got, ok := model.quotaStyleTabAt(2+tab.x+offset, layout.quotaTabsY); !ok || got != tab.style {
+				if got, ok := model.quotaViewTabAt(2+tab.x+offset, layout.quotaTabsY); !ok || got != tab.view {
 					t.Errorf("width %d quota tab %q cell %d hit (%d,%v)", width, tab.label, offset, got, ok)
 				}
 			}
@@ -153,90 +156,90 @@ func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
 }
 
 func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
-	model := Model{meterStyle: stylePie}
+	model := Model{meterView: viewPie}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
-	if model.meterStyle != styleMonitor {
-		t.Fatalf("Tab selected %s, want Monitor", model.meterStyle.name())
+	if model.meterView != viewMonitor {
+		t.Fatalf("Tab selected %s, want Monitor", model.meterView.name())
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
-	if model.meterStyle != styleBenchmark {
-		t.Fatalf("second Tab selected %s, want Benchmark", model.meterStyle.name())
+	if model.meterView != viewBenchmark {
+		t.Fatalf("second Tab selected %s, want Benchmark", model.meterView.name())
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
-	if model.meterStyle != stylePie {
-		t.Fatalf("return to Quota selected %s, want remembered Pie", model.meterStyle.name())
+	if model.meterView != viewPie {
+		t.Fatalf("return to Quota selected %s, want remembered Pie", model.meterView.name())
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	model = updated.(Model)
-	if model.meterStyle != styleBenchmark {
-		t.Fatalf("Shift+Tab selected %s, want Benchmark", model.meterStyle.name())
+	if model.meterView != viewBenchmark {
+		t.Fatalf("Shift+Tab selected %s, want Benchmark", model.meterView.name())
 	}
 }
 
 func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
-	model := Model{meterStyle: styleBars}
-	for _, want := range []meterStyleID{stylePie, styleConsumptionPace, styleFuel, styleBars} {
+	model := Model{meterView: viewBars}
+	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewBars} {
 		updated, command := model.Update(key('v'))
 		model = updated.(Model)
-		if command == nil || model.meterStyle != want || model.quotaMeterStyle != want || model.flashedButton != footerButtonView {
-			t.Fatalf("V selected view=%d remembered=%d flash=%d, want view=%d", model.meterStyle, model.quotaMeterStyle, model.flashedButton, want)
+		if command == nil || model.meterView != want || model.quotaMeterView != want || model.flashedButton != footerButtonView {
+			t.Fatalf("V selected view=%d remembered=%d flash=%d, want view=%d", model.meterView, model.quotaMeterView, model.flashedButton, want)
 		}
 	}
 	sequence := model.flashSequence
 	updated, command := model.Update(key('s'))
 	model = updated.(Model)
-	if command != nil || model.meterStyle != styleBars || model.flashSequence != sequence {
+	if command != nil || model.meterView != viewBars || model.flashSequence != sequence {
 		t.Fatal("S changed the Quota view")
 	}
 
-	model = Model{meterStyle: styleMonitor, monitorState: monitorIdle}
+	model = Model{meterView: viewMonitor, monitorState: monitorIdle}
 	updated, command = model.Update(key('s'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorStarting || model.flashedButton != footerButtonMonitorGo {
 		t.Fatalf("Monitor S did not start: state=%d flash=%d", model.monitorState, model.flashedButton)
 	}
 
-	model = Model{meterStyle: styleBenchmark}
+	model = Model{meterView: viewBenchmark}
 	updated, command = model.Update(key('s'))
 	model = updated.(Model)
-	if command != nil || model.meterStyle != styleBenchmark || model.flashedButton != footerButtonNone {
+	if command != nil || model.meterView != viewBenchmark || model.flashedButton != footerButtonNone {
 		t.Fatal("S changed state in Benchmark")
 	}
 }
 
 func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	for _, style := range []meterStyleID{styleBars, styleMonitor, styleBenchmark} {
-		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: style}
+	for _, view := range []meterViewID{viewBars, viewMonitor, viewBenchmark} {
+		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: view}
 		output := ansi.Strip(model.View())
 		layout := model.dashboardLayout()
-		if style.isQuota() {
+		if view.isQuota() {
 			if layout.quotaTabsY < 0 || !strings.Contains(output, "CONSUMPTION PACE") {
 				t.Fatalf("Quota did not render its sub-tab rail:\n%s", output)
 			}
 			continue
 		}
 		if layout.quotaTabsY != -1 || strings.Contains(output, "CONSUMPTION PACE") {
-			t.Fatalf("%s exposed Quota sub-tabs", style.name())
+			t.Fatalf("%s exposed Quota sub-tabs", view.name())
 		}
 		for y := 0; y < model.height; y++ {
 			for x := 0; x < model.width; x++ {
-				if _, ok := model.quotaStyleTabAt(x, y); ok {
-					t.Fatalf("%s exposed hidden Quota sub-tab hit target at %d,%d", style.name(), x, y)
+				if _, ok := model.quotaViewTabAt(x, y); ok {
+					t.Fatalf("%s exposed hidden Quota sub-tab hit target at %d,%d", view.name(), x, y)
 				}
 			}
 		}
 		if lipgloss.Width(model.renderMainTabs(model.contentWidth(), colors)) != model.contentWidth() {
-			t.Fatalf("%s main tab rail did not fill available width", style.name())
+			t.Fatalf("%s main tab rail did not fill available width", view.name())
 		}
 	}
 }
 
 func TestMonitorMainTabShowsPulsingRecordingDotWhileQuotaIsActive(t *testing.T) {
-	model := Model{meterStyle: styleBars, monitorState: monitorRunning}
+	model := Model{meterView: viewBars, monitorState: monitorRunning}
 	colors := paletteFor(themeHacker)
 	model.phase = 0
 	bright := model.renderMainTabs(100, colors)

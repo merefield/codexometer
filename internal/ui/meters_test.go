@@ -12,41 +12,41 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-var quotaMeterStyles = []meterStyleID{styleBars, stylePie, styleConsumptionPace, styleFuel}
+var quotaMeterViews = []meterViewID{viewBars, viewConsumptionPace, viewPie, viewFuel}
 
-func TestEveryMeterStyleHasDistinctiveOutput(t *testing.T) {
+func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	tests := []struct {
-		style meterStyleID
-		want  string
+		view meterViewID
+		want string
 	}{
-		{styleBars, "█"},
-		{stylePie, "BRAILLE PIE"},
-		{styleConsumptionPace, "PACE DATA UNAVAILABLE"},
-		{styleFuel, "RANGE"},
+		{viewBars, "█"},
+		{viewPie, "BRAILLE PIE"},
+		{viewConsumptionPace, "PACE DATA UNAVAILABLE"},
+		{viewFuel, "RANGE"},
 	}
 	for _, test := range tests {
-		output := renderVisualization(60, 62, test.style, colors.primary, colors)
+		output := renderVisualization(60, 62, test.view, colors.primary, colors)
 		if !strings.Contains(output, test.want) {
-			t.Errorf("style %s output did not contain %q", test.style.name(), test.want)
+			t.Errorf("view %s output did not contain %q", test.view.name(), test.want)
 		}
 	}
 }
 
-func TestEveryMeterStyleUsesAllocatedRectangle(t *testing.T) {
+func TestEveryMeterViewUsesAllocatedRectangle(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	for _, style := range quotaMeterStyles {
-		output := renderVisualizationSized(50, 12, 62, style, colors.primary, colors)
+	for _, view := range quotaMeterViews {
+		output := renderVisualizationSized(50, 12, 62, view, colors.primary, colors)
 		if got := lipgloss.Width(output); got > 50 {
-			t.Errorf("%s width = %d, exceeds allocation 50", style.name(), got)
+			t.Errorf("%s width = %d, exceeds allocation 50", view.name(), got)
 		}
 		if got := lipgloss.Height(output); got != 12 {
-			t.Errorf("%s height = %d, want allocation 12", style.name(), got)
+			t.Errorf("%s height = %d, want allocation 12", view.name(), got)
 		}
 	}
 }
 
-func TestEveryStyleIncludesResetCycleGauge(t *testing.T) {
+func TestEveryViewIncludesResetCycleGauge(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	duration := int64(60)
 	reset := time.Now().Add(30 * time.Minute).Unix()
@@ -55,24 +55,24 @@ func TestEveryStyleIncludesResetCycleGauge(t *testing.T) {
 		Name:   "1 HOUR",
 		Window: codex.Window{UsedPercent: 40, WindowDurationMins: &duration, ResetsAt: &reset},
 	}
-	for _, style := range quotaMeterStyles {
-		output := ansi.Strip(renderMeterArea(80, 18, meter, style, colors))
+	for _, view := range quotaMeterViews {
+		output := ansi.Strip(renderMeterArea(80, 18, meter, view, colors))
 		if !strings.Contains(output, "RESET CYCLE  50%") {
-			t.Errorf("%s missing reset-cycle comparison gauge:\n%s", style.name(), output)
+			t.Errorf("%s missing reset-cycle comparison gauge:\n%s", view.name(), output)
 		}
-		visual := renderVisualizationSized(50, 10, 40, style, colors.primary, colors)
+		visual := renderVisualizationSized(50, 10, 40, view, colors.primary, colors)
 		visualWidth := min(lipgloss.Width(visual), 50)
 		gauge := ansi.Strip(renderResetGauge(50, visualWidth, meter.Window, time.Unix(reset, 0).Add(-30*time.Minute), "RESET T-00:30:00", colors.primary, colors))
 		lines := strings.Split(gauge, "\n")
 		if len(lines) != 2 {
-			t.Errorf("%s reset gauge used %d lines, want label and bar: %q", style.name(), len(lines), gauge)
+			t.Errorf("%s reset gauge used %d lines, want label and bar: %q", view.name(), len(lines), gauge)
 			continue
 		}
 		if strings.ContainsAny(lines[0], "█░") {
-			t.Errorf("%s reset label shares its line with the bar: %q", style.name(), lines[0])
+			t.Errorf("%s reset label shares its line with the bar: %q", view.name(), lines[0])
 		}
 		if got := lipgloss.Width(strings.TrimRight(lines[1], " ")); got != visualWidth {
-			t.Errorf("%s reset bar width = %d, want main display width %d", style.name(), got, visualWidth)
+			t.Errorf("%s reset bar width = %d, want main display width %d", view.name(), got, visualWidth)
 		}
 	}
 }
@@ -192,7 +192,7 @@ func TestMonthlyCreditMeterShowsDetailsWithoutInventingCycleProgress(t *testing.
 		Details: "8000 OF 25000 CREDITS USED",
 		Window:  codex.Window{UsedPercent: 32, ResetsAt: &reset},
 	}
-	output := ansi.Strip(renderMeterArea(80, 18, meter, styleBars, colors))
+	output := ansi.Strip(renderMeterArea(80, 18, meter, viewBars, colors))
 	for _, want := range []string{"MONTHLY CREDIT LIMIT", "USED  32%", "8000 OF 25000 CREDITS USED", "CYCLE START UNAVAILABLE", "RESET T-"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("monthly meter missing %q:\n%s", want, output)
@@ -233,7 +233,7 @@ func TestFuelTankStatsFollowReverseGaugeDirection(t *testing.T) {
 		Name:   "1 HOUR",
 		Window: codex.Window{UsedPercent: 25},
 	}
-	rendered := renderMeter(60, meter, styleFuel, colors)
+	rendered := renderMeter(60, meter, viewFuel, colors)
 	wantFree := lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("FREE  75%")
 	wantUsed := colors.dimmed().Render("USED  25%")
 	if !strings.Contains(rendered, wantFree) || !strings.Contains(rendered, wantUsed) {
@@ -307,8 +307,8 @@ func TestRadialGraphicsUseLargeCircularCanvases(t *testing.T) {
 
 func TestRadialGraphicsScaleToAllocatedRectangle(t *testing.T) {
 	colors := paletteFor(themeBlueSteel)
-	small := renderVisualizationSized(42, 9, 62, stylePie, colors.primary, colors)
-	large := renderVisualizationSized(70, 20, 62, stylePie, colors.primary, colors)
+	small := renderVisualizationSized(42, 9, 62, viewPie, colors.primary, colors)
+	large := renderVisualizationSized(70, 20, 62, viewPie, colors.primary, colors)
 	if got := lipgloss.Width(small); got != 42 {
 		t.Errorf("pie small width = %d, want 42", got)
 	}

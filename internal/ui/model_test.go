@@ -67,17 +67,17 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 
 func TestTabCyclesMainTabsAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
-	for _, want := range []meterStyleID{styleMonitor, styleBenchmark, styleBars} {
+	for _, want := range []meterViewID{viewMonitor, viewBenchmark, viewBars} {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 		model = updated.(Model)
-		if model.meterStyle != want {
-			t.Fatalf("got meter style %d, want %d", model.meterStyle, want)
+		if model.meterView != want {
+			t.Fatalf("got meter view %d, want %d", model.meterView, want)
 		}
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	model = updated.(Model)
-	if model.meterStyle != styleBenchmark {
-		t.Fatalf("reverse main-tab navigation got %d, want %d", model.meterStyle, styleBenchmark)
+	if model.meterView != viewBenchmark {
+		t.Fatalf("reverse main-tab navigation got %d, want %d", model.meterView, viewBenchmark)
 	}
 }
 
@@ -248,8 +248,8 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonView, tea.MouseActionPress))
 	model = updated.(Model)
-	if command == nil || model.meterStyle != stylePie || model.flashedButton != footerButtonView {
-		t.Fatalf("view click selected view=%d flash=%d", model.meterStyle, model.flashedButton)
+	if command == nil || model.meterView != viewConsumptionPace || model.flashedButton != footerButtonView {
+		t.Fatalf("view click selected view=%d flash=%d", model.meterView, model.flashedButton)
 	}
 
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
@@ -266,15 +266,15 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 }
 
 func TestViewFooterButtonOnlyExistsOnQuota(t *testing.T) {
-	for _, style := range []meterStyleID{styleMonitor, styleBenchmark} {
-		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterStyle: style}
+	for _, view := range []meterViewID{viewMonitor, viewBenchmark} {
+		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: view}
 		if _, ok := footerButtonByID(model, footerButtonView); ok {
-			t.Fatalf("%s footer exposed the View button", style.name())
+			t.Fatalf("%s footer exposed the View button", view.name())
 		}
 		for y := 0; y < model.height; y++ {
 			for x := 0; x < model.width; x++ {
 				if got := model.footerButtonAt(x, y); got == footerButtonView {
-					t.Fatalf("%s exposed hidden View hit target at %d,%d", style.name(), x, y)
+					t.Fatalf("%s exposed hidden View hit target at %d,%d", view.name(), x, y)
 				}
 			}
 		}
@@ -287,14 +287,14 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 		width, height int
 		empty         bool
 		withError     bool
-		style         meterStyleID
+		view          meterViewID
 	}{
 		{name: "compact", width: 40, height: 24},
 		{name: "standard", width: 80, height: 24},
 		{name: "large error", width: 120, height: 40, withError: true},
 		{name: "empty quota", width: 80, height: 24, empty: true},
-		{name: "empty monitor", width: 80, height: 24, empty: true, style: styleMonitor},
-		{name: "benchmark", width: 100, height: 30, style: styleBenchmark},
+		{name: "empty monitor", width: 80, height: 24, empty: true, view: viewMonitor},
+		{name: "benchmark", width: 100, height: 30, view: viewBenchmark},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			model := New(stubFetcher{snapshot: codex.DemoSnapshot()}, time.Minute)
@@ -304,12 +304,12 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 			model.loading = false
 			model.width = test.width
 			model.height = test.height
-			model.meterStyle = test.style
+			model.meterView = test.view
 			if test.withError {
 				model.err = errors.New("stale quota signal")
 			}
 			layout := model.dashboardLayout()
-			buttons, _ := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(model.theme).name, model.meterStyle.isQuota())
+			buttons, _ := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(model.theme).name, model.meterView.isQuota())
 			for _, visible := range buttons {
 				id := visible.id
 				mouse := footerMouseMessage(t, model, id, tea.MouseActionMotion)
@@ -451,7 +451,7 @@ func footerMouseMessage(t *testing.T, model Model, id footerButtonID, action tea
 }
 
 func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {
-	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name, model.meterStyle.isQuota())
+	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name, model.meterView.isQuota())
 	for _, button := range buttons {
 		if button.id == id {
 			return button, true
