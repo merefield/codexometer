@@ -441,6 +441,16 @@ to separate account observations. The email and fingerprint are not persisted.
 If an older app-server cannot provide an account identity, the estimate fails
 closed as `ACCOUNT ATTRIBUTION UNKNOWN` rather than mixing indistinguishable
 accounts.
+
+The privacy trade-off is that quitting Codexometer discards every learned
+sample and quota anchor. On restart it can reconstruct cumulative priced usage
+from local rollout telemetry, but the current quota percentage and cost become
+a new baseline: the display returns to `LEARNING` and needs another five clean
+percentage points of movement before producing an estimate. Medium confidence
+must also be earned again from three qualifying samples spanning at least 15
+percentage points. Frequent restarts can therefore delay an estimate
+substantially, especially for a slowly moving weekly window.
+
 At most 12 samples per account/window are retained in memory and samples older
 than 45 days are ignored. No token event, model-call record, prompt, response,
 session ID, email, or account ID is stored. Run `codexometer --demo`, then
