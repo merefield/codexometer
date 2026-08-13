@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	activeRolloutHorizon = 24 * time.Hour
-	discoveryEvery       = 5 * time.Second
-	fullDiscoveryEvery   = 5 * time.Minute
-	telemetryHistoryMax  = 4_096
+	activeRolloutHorizon   = 24 * time.Hour
+	discoveryEvery         = 5 * time.Second
+	fullDiscoveryEvery     = 5 * time.Minute
+	telemetryHistoryMax    = 4_096
+	fallbackAttentionAfter = 3 * time.Minute
 )
 
 // LiveUsageSnapshot is a process-local, monotonically increasing count built
@@ -42,10 +43,23 @@ type LiveUsageSession struct {
 	LastActivity     time.Time
 	AgentCount       int
 	Active           bool
+	Attention        SessionAttention
 	Unattributed     bool
 	ModelCalls       []LiveModelCall
 	TurnTimings      []LiveTurnTiming
 }
+
+// SessionAttention describes why a local Codex session may need the user.
+// Input and approval are definite signals; Check is deliberately cautious and
+// means only that an open fallback-observed session has remained quiet.
+type SessionAttention int
+
+const (
+	SessionAttentionNone SessionAttention = iota
+	SessionAttentionInput
+	SessionAttentionApproval
+	SessionAttentionCheck
+)
 
 // LiveModelCall is the small, content-free usage pulse persisted after one
 // upstream model response.
@@ -68,7 +82,9 @@ type LiveTurnTiming struct {
 // LiveUsageReader incrementally observes token telemetry written by local Codex
 // sessions. It never interprets message, reasoning, command, or tool contents.
 type LiveUsageReader struct {
-	SessionsRoot string
+	SessionsRoot    string
+	WriterLocksRoot string
+	statusProvider  sessionStatusProvider
 
 	mu                sync.Mutex
 	initialized       bool
@@ -94,7 +110,18 @@ type rolloutCursor struct {
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
+	attention                   sessionAttentionState
 }
+
+type sessionAttentionState int
+
+const (
+	sessionAttentionUnknown sessionAttentionState = iota
+	sessionAttentionWorking
+	sessionAttentionIdle
+	sessionAttentionInput
+	sessionAttentionApproval
+)
 
 type rolloutEvent struct {
 	Timestamp time.Time `json:"timestamp"`
@@ -121,6 +148,16 @@ type rolloutTurnEvent struct {
 		Type               string `json:"type"`
 		CompletedAt        *int64 `json:"completed_at"`
 		TimeToFirstTokenMS *int64 `json:"time_to_first_token_ms"`
+	} `json:"payload"`
+}
+
+type rolloutAttentionEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Ordinal   *uint64   `json:"ordinal"`
+	Type      string    `json:"type"`
+	Payload   struct {
+		Type       string `json:"type"`
+		IsBlocking *bool  `json:"isBlocking"`
 	} `json:"payload"`
 }
 
@@ -171,7 +208,11 @@ func NewLiveUsageReader(codexHome string) (*LiveUsageReader, error) {
 			return nil, err
 		}
 	}
-	return &LiveUsageReader{SessionsRoot: filepath.Join(codexHome, "sessions")}, nil
+	return &LiveUsageReader{
+		SessionsRoot:    filepath.Join(codexHome, "sessions"),
+		WriterLocksRoot: filepath.Join(codexHome, "thread-writer-locks"),
+		statusProvider:  newSessionStatusProvider(codexHome),
+	}, nil
 }
 
 // FetchTokenUsage discovers active rollout files and consumes only complete,
@@ -232,11 +273,32 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		return LiveUsageSnapshot{}, fmt.Errorf("read local Codex token telemetry: %w", firstReadErr)
 	}
 
-	sessions, activeSessions := r.sessionSnapshots(now)
+	liveWriters, writerLocksSupported := r.liveWriterThreads()
+	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	if r.statusProvider != nil {
+		exactStatuses, _ = r.statusProvider.Fetch(ctx, r.observedThreadIDs())
+	}
+	sessions, activeSessions := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
 		SessionCount: activeSessions, Sessions: sessions,
 	}, nil
+}
+
+func (r *LiveUsageReader) observedThreadIDs() []string {
+	seen := make(map[string]struct{}, len(r.files))
+	threadIDs := make([]string, 0, len(r.files))
+	for _, cursor := range r.files {
+		if cursor.threadID == "" {
+			continue
+		}
+		if _, ok := seen[cursor.threadID]; ok {
+			continue
+		}
+		seen[cursor.threadID] = struct{}{}
+		threadIDs = append(threadIDs, cursor.threadID)
+	}
+	return threadIDs
 }
 
 func (r *LiveUsageReader) initialize(ctx context.Context, now time.Time) error {
@@ -325,6 +387,13 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		nonRoot:                     metadata.NonRoot,
 		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
 	}
+	if time.Since(info.ModTime()) <= activeRolloutHorizon {
+		attention, err := latestSessionAttention(path, cursor)
+		if err != nil {
+			return err
+		}
+		cursor.attention = attention
+	}
 	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
 		total, err := latestTokenTotal(path)
 		if err != nil {
@@ -355,6 +424,11 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		}
 		cursor.offset = info.Size()
 		cursor.totalTokens = total
+		attention, attentionErr := latestSessionAttention(path, cursor)
+		if attentionErr != nil {
+			return attentionErr
+		}
+		cursor.attention = attention
 		return nil
 	}
 	if info.Size() == cursor.offset {
@@ -368,6 +442,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if attention, ordinal, at, ok := sessionAttentionRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.attention = attention
+			}
 			if record, ok := tokenUsageRecord(line); ok {
 				if !tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 					// Legacy child rollouts copy the parent's cumulative token
@@ -411,6 +489,74 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return readErr
 		}
 	}
+}
+
+func latestSessionAttention(path string, cursor *rolloutCursor) (sessionAttentionState, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return sessionAttentionUnknown, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return sessionAttentionUnknown, err
+	}
+	const chunkSize = int64(64 * 1024)
+	position := info.Size()
+	var carry []byte
+	for position > 0 {
+		readSize := min(chunkSize, position)
+		position -= readSize
+		chunk := make([]byte, int(readSize))
+		if _, err := file.ReadAt(chunk, position); err != nil && !errors.Is(err, io.EOF) {
+			return sessionAttentionUnknown, err
+		}
+		data := make([]byte, 0, len(chunk)+len(carry))
+		data = append(data, chunk...)
+		data = append(data, carry...)
+		lines := bytes.Split(data, []byte{'\n'})
+		firstComplete := 1
+		if position == 0 {
+			firstComplete = 0
+		}
+		for index := len(lines) - 1; index >= firstComplete; index-- {
+			attention, ordinal, at, ok := sessionAttentionRecord(lines[index])
+			if ok && tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				return attention, nil
+			}
+		}
+		carry = append(carry[:0], lines[0]...)
+	}
+	return sessionAttentionUnknown, nil
+}
+
+func sessionAttentionRecord(line []byte) (sessionAttentionState, *uint64, time.Time, bool) {
+	if !bytes.Contains(line, []byte(`"event_msg"`)) && !bytes.Contains(line, []byte(`"response_item"`)) {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	var event rolloutAttentionEvent
+	if json.Unmarshal(line, &event) != nil {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	if event.Type == "response_item" && event.Payload.Type == "function_call_output" {
+		return sessionAttentionWorking, event.Ordinal, event.Timestamp, true
+	}
+	if event.Type != "event_msg" {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	switch event.Payload.Type {
+	case "request_user_input":
+		if event.Payload.IsBlocking == nil || *event.Payload.IsBlocking {
+			return sessionAttentionInput, event.Ordinal, event.Timestamp, true
+		}
+	case "exec_approval_request", "apply_patch_approval_request", "request_permissions", "elicitation_request":
+		return sessionAttentionApproval, event.Ordinal, event.Timestamp, true
+	case "task_complete", "turn_complete":
+		return sessionAttentionIdle, event.Ordinal, event.Timestamp, true
+	case "task_started", "turn_started", "user_message", "exec_command_begin", "dynamic_tool_call_response":
+		return sessionAttentionWorking, event.Ordinal, event.Timestamp, true
+	}
+	return sessionAttentionUnknown, nil, time.Time{}, false
 }
 
 // appendBounded keeps insertion order while discarding the oldest values. The
@@ -600,7 +746,32 @@ func sessionSourceParent(raw json.RawMessage) (string, bool) {
 
 const unattributedSessionID = "unattributed"
 
-func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, int) {
+func (r *LiveUsageReader) liveWriterThreads() (map[string]struct{}, bool) {
+	if !fileLockSupported {
+		return nil, false
+	}
+	entries, err := os.ReadDir(r.WriterLocksRoot)
+	if err != nil {
+		return nil, false
+	}
+	live := make(map[string]struct{})
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == ".coordination.lock" {
+			continue
+		}
+		threadID, ok := strings.CutSuffix(entry.Name(), ".lock")
+		if !ok || threadID == "" {
+			continue
+		}
+		held, err := fileLockHeld(filepath.Join(r.WriterLocksRoot, entry.Name()))
+		if err == nil && held {
+			live[threadID] = struct{}{}
+		}
+	}
+	return live, true
+}
+
+func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string]struct{}, writerLocksSupported bool, exactStatuses map[string]sessionRuntimeStatus) ([]LiveUsageSession, int) {
 	byID := make(map[string]*rolloutCursor, len(r.files))
 	for _, cursor := range r.files {
 		if cursor.threadID != "" {
@@ -611,7 +782,10 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 	groups := make(map[string]*LiveUsageSession)
 	for _, cursor := range r.files {
 		active := now.Sub(cursor.lastModified) <= 5*time.Minute
-		if !active && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
+		_, writerActive := liveWriters[cursor.threadID]
+		exactStatus, exact := exactStatuses[cursor.threadID]
+		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, now.Sub(cursor.lastModified), exactStatus, exact)
+		if !active && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
 		rootID, unattributed := rolloutRoot(cursor, byID)
@@ -623,7 +797,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		group.TotalTokens += cursor.observedTokens
 		group.ModelCalls = append(group.ModelCalls, cursor.modelCalls...)
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
-		group.Active = group.Active || active
+		group.Active = group.Active || active || attention != SessionAttentionNone
+		group.Attention = mergeSessionAttention(group.Attention, attention)
 		if cursor.lastModified.After(group.LastActivity) {
 			group.LastActivity = cursor.lastModified
 		}
@@ -636,7 +811,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		if cursor.threadID == rootID {
 			group.WorkingDirectory = cursor.workingDirectory
 			group.StartedAt = cursor.startedAt
-		} else if active || cursor.observedTokens > 0 || len(cursor.modelCalls) > 0 || len(cursor.turnTimings) > 0 {
+		} else if active || attention != SessionAttentionNone || cursor.observedTokens > 0 || len(cursor.modelCalls) > 0 || len(cursor.turnTimings) > 0 {
 			group.AgentCount++
 		}
 	}
@@ -661,6 +836,58 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		return sessions[i].ID < sessions[j].ID
 	})
 	return sessions, activeCount
+}
+
+func sessionAttention(state sessionAttentionState, writerActive, writerLocksSupported bool, quietFor time.Duration, exactStatus sessionRuntimeStatus, exact bool) SessionAttention {
+	if exact {
+		switch exactStatus {
+		case sessionRuntimeApproval:
+			return SessionAttentionApproval
+		case sessionRuntimeInput:
+			return SessionAttentionInput
+		}
+		// A status supplied by the shared daemon is authoritative. In
+		// particular, an active thread without a waiting flag must not age into
+		// the fallback inactivity warning while a local tool is still running.
+		return SessionAttentionNone
+	}
+	if writerLocksSupported && !writerActive {
+		return SessionAttentionNone
+	}
+	switch state {
+	case sessionAttentionIdle:
+		if writerActive {
+			return SessionAttentionInput
+		}
+	case sessionAttentionInput:
+		return SessionAttentionInput
+	case sessionAttentionApproval:
+		return SessionAttentionApproval
+	}
+	if writerLocksSupported && writerActive && quietFor >= fallbackAttentionAfter {
+		return SessionAttentionCheck
+	}
+	return SessionAttentionNone
+}
+
+func mergeSessionAttention(current, next SessionAttention) SessionAttention {
+	if sessionAttentionPriority(next) > sessionAttentionPriority(current) {
+		return next
+	}
+	return current
+}
+
+func sessionAttentionPriority(attention SessionAttention) int {
+	switch attention {
+	case SessionAttentionApproval:
+		return 3
+	case SessionAttentionInput:
+		return 2
+	case SessionAttentionCheck:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func firstNonZeroTime(times ...time.Time) time.Time {

@@ -50,10 +50,19 @@ type ResetCredits struct {
 }
 
 type Meter struct {
-	Bucket string
-	Name   string
-	Window Window
+	Bucket  string
+	Name    string
+	Window  Window
+	Kind    MeterKind
+	Details string
 }
+
+type MeterKind int
+
+const (
+	MeterQuotaWindow MeterKind = iota
+	MeterIndividualLimit
+)
 
 // Meters flattens every returned limit bucket and window into display order.
 func (s Snapshot) Meters() []Meter {
@@ -76,7 +85,7 @@ func (s Snapshot) Meters() []Meter {
 		return keys[i] < keys[j]
 	})
 
-	meters := make([]Meter, 0, len(keys)*2)
+	meters := make([]Meter, 0, len(keys)*3)
 	for _, key := range keys {
 		bucket := buckets[key]
 		name := key
@@ -89,8 +98,59 @@ func (s Snapshot) Meters() []Meter {
 		if bucket.Secondary != nil {
 			meters = append(meters, Meter{Bucket: name, Name: windowName(*bucket.Secondary), Window: *bucket.Secondary})
 		}
+		if bucket.IndividualLimit != nil {
+			limit := bucket.IndividualLimit
+			var reset *int64
+			if limit.ResetsAt > 0 {
+				value := limit.ResetsAt
+				reset = &value
+			}
+			details := ""
+			if strings.TrimSpace(limit.Used) != "" && strings.TrimSpace(limit.Limit) != "" {
+				details = fmt.Sprintf("%s OF %s CREDITS USED", strings.TrimSpace(limit.Used), strings.TrimSpace(limit.Limit))
+			}
+			meters = append(meters, Meter{
+				Bucket:  name,
+				Name:    "MONTHLY CREDIT LIMIT",
+				Window:  Window{UsedPercent: 100 - limit.RemainingPercent, ResetsAt: reset},
+				Kind:    MeterIndividualLimit,
+				Details: details,
+			})
+		}
 	}
 	return meters
+}
+
+// CreditStatus returns the first meaningful account credit balance, preferring
+// the primary Codex bucket when the server returns multiple limit buckets.
+func (s Snapshot) CreditStatus() (Credits, bool) {
+	if len(s.RateLimitsByLimitID) == 0 {
+		return meaningfulCredits(s.RateLimits.Credits)
+	}
+	if bucket, ok := s.RateLimitsByLimitID["codex"]; ok {
+		if credits, ok := meaningfulCredits(bucket.Credits); ok {
+			return credits, true
+		}
+	}
+	keys := make([]string, 0, len(s.RateLimitsByLimitID))
+	for key := range s.RateLimitsByLimitID {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if credits, ok := meaningfulCredits(s.RateLimitsByLimitID[key].Credits); ok {
+			return credits, true
+		}
+	}
+	return meaningfulCredits(s.RateLimits.Credits)
+}
+
+func meaningfulCredits(credits *Credits) (Credits, bool) {
+	hasBalance := credits != nil && credits.Balance != nil && strings.TrimSpace(*credits.Balance) != ""
+	if credits == nil || (!credits.HasCredits && !credits.Unlimited && !hasBalance) {
+		return Credits{}, false
+	}
+	return *credits, true
 }
 
 func windowName(window Window) string {

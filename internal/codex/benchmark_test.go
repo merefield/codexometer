@@ -563,6 +563,49 @@ func TestValidateBenchmarkUsageInvariants(t *testing.T) {
 	}
 }
 
+func TestBenchmarkUsageRejectsUnknownTokenFields(t *testing.T) {
+	var usage BenchmarkUsage
+	input := `{
+		"totalTokens": 130,
+		"inputTokens": 100,
+		"cachedInputTokens": 20,
+		"cacheWriteInputTokens": 10,
+		"outputTokens": 30,
+		"reasoningOutputTokens": 15,
+		"vectorTokens": 2,
+		"audioTokens": 1
+	}`
+	if err := json.Unmarshal([]byte(input), &usage); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	want := "unknown usage fields: audioTokens, vectorTokens"
+	if issue := validateBenchmarkUsage(usage); issue != want {
+		t.Fatalf("usage issue = %q, want %q", issue, want)
+	}
+	if _, known, issue := estimateAPICostWithIssue("gpt-5.6-sol", usage); known || !strings.Contains(issue, want) {
+		t.Fatalf("unknown token fields received a cost: known=%v issue=%q", known, issue)
+	}
+
+	state := newBenchmarkTelemetry()
+	state.recordCumulative(usage)
+	var result BenchmarkResult
+	state.apply(&result)
+	if result.UsageKnown || !strings.Contains(result.UsageIssue, want) {
+		t.Fatalf("unknown token fields did not fail telemetry closed: %#v", result)
+	}
+}
+
+func TestBenchmarkUsageAcceptsDocumentedTokenFields(t *testing.T) {
+	var usage BenchmarkUsage
+	input := `{"totalTokens":130,"inputTokens":100,"cachedInputTokens":20,"cacheWriteInputTokens":10,"outputTokens":30,"reasoningOutputTokens":15}`
+	if err := json.Unmarshal([]byte(input), &usage); err != nil {
+		t.Fatalf("decode usage: %v", err)
+	}
+	if issue := validateBenchmarkUsage(usage); issue != "" {
+		t.Fatalf("documented usage fields rejected: %s", issue)
+	}
+}
+
 func TestExperimentalAPIUnsupported(t *testing.T) {
 	for _, test := range []struct {
 		err  error

@@ -55,6 +55,7 @@ type Model struct {
 	flashedButton   footerButtonID
 	flashSequence   uint64
 	benchmarkRunner BenchmarkRunner
+	preferenceStore PreferenceStore
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
@@ -142,6 +143,7 @@ type monitorSession struct {
 	lastActivity     time.Time
 	agentCount       int
 	active           bool
+	attention        codex.SessionAttention
 	displayed        bool
 	unattributed     bool
 	samples          []monitorSample
@@ -555,6 +557,7 @@ func (m Model) pressStyleTab(style meterStyleID) (tea.Model, tea.Cmd) {
 	if style.isQuota() {
 		m.quotaMeterStyle = style
 	}
+	m.persistPreferences()
 	m.styleSequence++
 	m.flashedStyle = style
 	m.styleFlashing = true
@@ -592,10 +595,12 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
 		m.theme = m.theme.next()
+		m.persistPreferences()
 	case footerButtonView:
 		if m.meterStyle.isQuota() {
 			m.meterStyle = m.meterStyle.nextQuota()
 			m.quotaMeterStyle = m.meterStyle
+			m.persistPreferences()
 		}
 	case footerButtonRefresh:
 		if !m.loading {
@@ -715,6 +720,7 @@ type dashboardGeometry struct {
 	meterHeight  int
 	meterY       int
 	footerY      int
+	headerSpacer bool
 }
 
 func (m Model) dashboardLayout() dashboardGeometry {
@@ -732,7 +738,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if contentWidth < 64 {
 		headerHeight = 2
 	}
-	const statusHeight = 1
+	statusHeight := 1
 	tabsHeight := 1
 	if m.meterStyle.isQuota() {
 		tabsHeight++
@@ -743,8 +749,17 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if m.err != nil {
 		extraHeight += framedErrorHeight
 	}
-	if len(m.snapshot.Meters()) == 0 {
+	meters := m.snapshot.Meters()
+	if len(meters) == 0 {
 		extraHeight += framedErrorHeight
+	}
+	if (m.meterStyle == styleBars || m.meterStyle == styleConsumptionPace || m.meterStyle == styleFuel) && len(meters) > 0 {
+		minimumMeterHeight := len(meters) * 3
+		meterHeightWithSpacer := contentHeight - headerHeight - statusHeight - tabsHeight - extraHeight - footerHeight
+		meterHeightWithoutSpacer := meterHeightWithSpacer + statusHeight
+		if meterHeightWithSpacer < minimumMeterHeight && meterHeightWithoutSpacer >= minimumMeterHeight {
+			statusHeight = 0
+		}
 	}
 	tabsY := 1 + headerHeight + statusHeight
 	quotaTabsY := -1
@@ -764,6 +779,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		meterHeight:  meterHeight,
 		meterY:       meterY,
 		footerY:      footerY,
+		headerSpacer: statusHeight > 0,
 	}
 }
 
@@ -844,6 +860,7 @@ func (m Model) benchmarkTasks() []codex.BenchmarkTask {
 func (m *Model) setBenchmarkFilter(filter benchmarkResultFilter) {
 	m.benchmarkFilter = filter
 	m.benchmarkScroll = 0
+	m.persistPreferences()
 }
 
 func (m *Model) setBenchmarkRankMode(mode benchmarkRankMode) {
@@ -852,6 +869,7 @@ func (m *Model) setBenchmarkRankMode(mode benchmarkRankMode) {
 	}
 	m.benchmarkRankMode = mode
 	m.benchmarkScroll = 0
+	m.persistPreferences()
 }
 
 func benchmarkRankButton(mode benchmarkRankMode) footerButtonID {
@@ -1185,7 +1203,8 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
-			active: session.Active, displayed: session.Active, unattributed: session.Unattributed,
+			active: session.Active, attention: session.Attention,
+			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
 			turnSequence: latestTurnTimingSequence(session.TurnTimings),
 		})
@@ -1202,6 +1221,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
+		m.monitorSessionData[index].attention = codex.SessionAttentionNone
 	}
 	for _, update := range usage.Sessions {
 		index := m.monitorSessionIndex(update.ID)
@@ -1214,7 +1234,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 				id: update.ID, workingDirectory: update.WorkingDirectory,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, displayed: update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
+				active: update.Active, attention: update.Attention,
+				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
 			}
 			applyMonitorSessionTelemetry(&created, update, m.monitorStartedAt)
@@ -1230,6 +1251,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
+		session.attention = update.Attention
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {

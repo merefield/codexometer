@@ -161,13 +161,16 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 	visualHeight := 0
 	if height > 0 {
 		bodyHeight = max(height-2, 1)
-		visualHeight = max(bodyHeight-3, 1)
+		chromeHeight := 3
+		if meter.Details != "" {
+			chromeHeight++
+		}
+		visualHeight = max(bodyHeight-chromeHeight, 1)
 	}
 	now := time.Now()
 	visual := renderVisualizationSized(innerWidth, visualHeight, used, style, color, colors)
 	if style == styleConsumptionPace {
-		pace, available := consumptionPace(meter.Window, now)
-		visual = renderConsumptionPaceSized(innerWidth, visualHeight, pace, available, colors)
+		visual = renderConsumptionPaceMeterSized(innerWidth, visualHeight, meter.Window, now, colors)
 	}
 	gaugeWidth := min(max(lipgloss.Width(visual), 1), innerWidth)
 	resetGauge := renderResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
@@ -175,7 +178,11 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 		gaugeWidth = max(innerWidth-6, 1)
 		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
 	}
-	bodyParts := []string{stats, visual, resetGauge}
+	bodyParts := []string{stats}
+	if meter.Details != "" {
+		bodyParts = append(bodyParts, colors.dimmed().Render(ansi.Truncate(meter.Details, innerWidth, "")))
+	}
+	bodyParts = append(bodyParts, visual, resetGauge)
 	if height > 0 && bodyHeight < 4 {
 		switch bodyHeight {
 		case 1:
@@ -186,13 +193,19 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 			resetLine := strings.Split(resetGauge, "\n")[0]
 			bodyParts = []string{stats, visual, resetLine}
 		}
+	} else if height > 0 && bodyHeight == 4 && meter.Details != "" {
+		resetLine := strings.Split(resetGauge, "\n")[0]
+		bodyParts = []string{stats, colors.dimmed().Render(ansi.Truncate(meter.Details, innerWidth, "")), visual, resetLine}
 	}
 	body := strings.Join(bodyParts, "\n")
 	title := meter.Name
 	if meter.Bucket != "codex" {
 		title = codex.DisplayName(meter.Bucket) + " // " + title
 	}
-	title = ansi.Truncate(title+" LOOP", max(innerWidth-4, 1), "")
+	if meter.Kind == codex.MeterQuotaWindow {
+		title += " LOOP"
+	}
+	title = ansi.Truncate(title, max(innerWidth-4, 1), "")
 	frameHeight := 0
 	if height > 0 {
 		frameHeight = max(height-2, 1)
@@ -212,7 +225,11 @@ func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now
 	gaugeWidth = min(max(gaugeWidth, 1), max(width, 1))
 	progress, ok := resetProgress(window, now)
 	if !ok {
-		label := colors.dimmed().Render(ansi.Truncate("RESET CYCLE // RESET DATA UNAVAILABLE", width, ""))
+		message := "RESET CYCLE // RESET DATA UNAVAILABLE"
+		if window.ResetsAt != nil {
+			message = "CYCLE START UNAVAILABLE // " + resetLabel
+		}
+		label := colors.dimmed().Render(ansi.Truncate(message, width, ""))
 		bar := lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", gaugeWidth))
 		return label + "\n" + lipgloss.PlaceHorizontal(width, alignment, bar)
 	}
@@ -399,6 +416,16 @@ func radialCanvasSize(width, height, legendWidth int) (int, int) {
 }
 
 func renderConsumptionPaceSized(width, height, pace int, available bool, colors palette) string {
+	return renderConsumptionPaceWithProjectionSized(width, height, pace, available, "", colors)
+}
+
+func renderConsumptionPaceMeterSized(width, height int, window codex.Window, now time.Time, colors palette) string {
+	pace, available := consumptionPace(window, now)
+	projection := formatConsumptionProjection(consumptionProjectionFor(window, now))
+	return renderConsumptionPaceWithProjectionSized(width, height, pace, available, projection, colors)
+}
+
+func renderConsumptionPaceWithProjectionSized(width, height, pace int, available bool, projection string, colors palette) string {
 	width = max(width, 1)
 	pace = min(max(pace, -100), 100)
 	center := (width - 1) / 2
@@ -431,6 +458,9 @@ func renderConsumptionPaceSized(width, height, pace int, available bool, colors 
 	labels := colors.dimmed().Render(paceScaleLabels(width))
 
 	lines := []string{caption, labels, axis, status}
+	if projection != "" {
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(projection, width, "")))
+	}
 	if height <= 0 {
 		height = len(lines)
 	}
@@ -438,11 +468,109 @@ func renderConsumptionPaceSized(width, height, pace int, available bool, colors 
 	case 1:
 		lines = lines[2:3]
 	case 2:
-		lines = lines[2:]
+		lines = lines[2:4]
 	case 3:
-		lines = lines[1:]
+		if projection != "" {
+			lines = lines[2:]
+		} else {
+			lines = lines[1:]
+		}
+	case 4:
+		if projection != "" {
+			lines = lines[1:]
+		}
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
+}
+
+type consumptionProjectionKind int
+
+const (
+	consumptionProjectionUnavailable consumptionProjectionKind = iota
+	consumptionProjectionNoBurn
+	consumptionProjectionSafe
+	consumptionProjectionEarly
+	consumptionProjectionExhausted
+)
+
+type consumptionProjection struct {
+	kind               consumptionProjectionKind
+	timeToExhaustion   time.Duration
+	earlyBy            time.Duration
+	projectedRemaining int
+}
+
+func consumptionProjectionFor(window codex.Window, now time.Time) consumptionProjection {
+	if window.WindowDurationMins == nil || window.ResetsAt == nil || *window.WindowDurationMins <= 0 {
+		return consumptionProjection{kind: consumptionProjectionUnavailable}
+	}
+	duration := time.Duration(*window.WindowDurationMins) * time.Minute
+	resetAt := time.Unix(*window.ResetsAt, 0)
+	elapsed := now.Sub(resetAt.Add(-duration))
+	if elapsed <= 0 || elapsed >= duration {
+		return consumptionProjection{kind: consumptionProjectionUnavailable}
+	}
+	used := min(max(window.UsedPercent, 0), 100)
+	if used == 0 {
+		return consumptionProjection{kind: consumptionProjectionNoBurn}
+	}
+	if used >= 100 {
+		return consumptionProjection{kind: consumptionProjectionExhausted}
+	}
+	timeToExhaustion := time.Duration(float64(elapsed) * float64(100-used) / float64(used))
+	exhaustsAt := now.Add(timeToExhaustion)
+	if !exhaustsAt.Before(resetAt) {
+		projectedUsed := float64(used) * float64(duration) / float64(elapsed)
+		projectedRemaining := int(math.Round(100 - projectedUsed))
+		return consumptionProjection{
+			kind:               consumptionProjectionSafe,
+			timeToExhaustion:   timeToExhaustion,
+			projectedRemaining: min(max(projectedRemaining, 0), 100),
+		}
+	}
+	return consumptionProjection{
+		kind:             consumptionProjectionEarly,
+		timeToExhaustion: timeToExhaustion,
+		earlyBy:          resetAt.Sub(exhaustsAt),
+	}
+}
+
+func formatConsumptionProjection(projection consumptionProjection) string {
+	switch projection.kind {
+	case consumptionProjectionNoBurn:
+		return "LINEAR PROJECTION // NO BURN YET"
+	case consumptionProjectionSafe:
+		return fmt.Sprintf("LINEAR PROJECTION // SAFE THROUGH RESET // ~%d%% LEFT", projection.projectedRemaining)
+	case consumptionProjectionEarly:
+		return fmt.Sprintf("LINEAR PROJECTION // LIMIT IN ~%s // %s EARLY",
+			projectionDuration(projection.timeToExhaustion), projectionDuration(projection.earlyBy))
+	case consumptionProjectionExhausted:
+		return "LINEAR PROJECTION // LIMIT REACHED"
+	default:
+		return ""
+	}
+}
+
+func projectionDuration(duration time.Duration) string {
+	if duration < time.Minute {
+		return "<1M"
+	}
+	minutes := int(math.Round(duration.Minutes()))
+	days := minutes / (24 * 60)
+	hours := minutes / 60 % 24
+	remainingMinutes := minutes % 60
+	switch {
+	case days > 0 && hours > 0:
+		return fmt.Sprintf("%dD %dH", days, hours)
+	case days > 0:
+		return fmt.Sprintf("%dD", days)
+	case hours > 0 && remainingMinutes > 0:
+		return fmt.Sprintf("%dH %dM", hours, remainingMinutes)
+	case hours > 0:
+		return fmt.Sprintf("%dH", hours)
+	default:
+		return fmt.Sprintf("%dM", remainingMinutes)
+	}
 }
 
 func paceAxis(width, center, marker, pace int, available bool, markerColor lipgloss.Color, colors palette) string {

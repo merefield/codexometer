@@ -30,8 +30,15 @@ func TestFetchUsesAppServerHandshakeAndDecodesSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	meters := snapshot.Meters()
-	if len(meters) != 2 || meters[0].Window.UsedPercent != 42 || meters[1].Window.UsedPercent != 5 {
+	if len(meters) != 3 || meters[0].Window.UsedPercent != 42 || meters[1].Window.UsedPercent != 5 ||
+		meters[2].Kind != MeterIndividualLimit || meters[2].Window.UsedPercent != 32 {
 		t.Fatalf("unexpected fetched meters: %#v", meters)
+	}
+	if snapshot.RateLimits.SpendControlReached == nil || *snapshot.RateLimits.SpendControlReached {
+		t.Fatalf("spend-control state was not decoded: %#v", snapshot.RateLimits)
+	}
+	if credits, ok := snapshot.CreditStatus(); !ok || credits.Balance == nil || *credits.Balance != "17000" {
+		t.Fatalf("credit status was not decoded: %#v, %v", credits, ok)
 	}
 	if snapshot.FetchedAt.IsZero() {
 		t.Fatal("fetch time was not recorded")
@@ -114,8 +121,11 @@ func runFakeAppServer() {
 				"id": *request.ID,
 				"result": map[string]any{
 					"rateLimits": map[string]any{
-						"primary":   map[string]any{"usedPercent": 42, "windowDurationMins": 300},
-						"secondary": map[string]any{"usedPercent": 5, "windowDurationMins": 10_080},
+						"primary":             map[string]any{"usedPercent": 42, "windowDurationMins": 300},
+						"secondary":           map[string]any{"usedPercent": 5, "windowDurationMins": 10_080},
+						"individualLimit":     map[string]any{"limit": "25000", "used": "8000", "remainingPercent": 68, "resetsAt": 1_800_000_000},
+						"spendControlReached": false,
+						"credits":             map[string]any{"hasCredits": true, "unlimited": false, "balance": "17000"},
 					},
 				},
 			})

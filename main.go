@@ -55,9 +55,9 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
 		Sessions: []codex.LiveUsageSession{
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
-				ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
+				Attention: codex.SessionAttentionApproval, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
 			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true,
-				ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
+				Attention: codex.SessionAttentionInput, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
 		},
 	}, nil
 }
@@ -145,7 +145,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			fmt.Fprintln(stderr, "Codex auth check failed:", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "Codex auth OK // %d quota window(s) online\n", len(snapshot.Meters()))
+		fmt.Fprintf(stdout, "Codex auth OK // %d limit meter(s) online\n", len(snapshot.Meters()))
 		return 0
 	}
 
@@ -170,6 +170,10 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
 	if !inline {
 		options = append(options, tea.WithAltScreen())
 	}
-	_, err := tea.NewProgram(ui.New(fetcher, refresh), options...).Run()
+	model := ui.New(fetcher, refresh)
+	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
+		model = ui.NewWithPreferences(fetcher, refresh, store)
+	}
+	_, err := tea.NewProgram(model, options...).Run()
 	return err
 }

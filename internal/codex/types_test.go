@@ -16,7 +16,9 @@ func TestMetersIncludesEveryBucketAndWindow(t *testing.T) {
 			},
 			"codex": {
 				"primary": {"usedPercent": 42, "windowDurationMins": 300},
-				"secondary": {"usedPercent": 5, "windowDurationMins": 10080}
+				"secondary": {"usedPercent": 5, "windowDurationMins": 10080},
+				"individualLimit": {"limit": "25000", "used": "8000", "remainingPercent": 68, "resetsAt": 987654},
+				"credits": {"hasCredits": true, "unlimited": false, "balance": "17000"}
 			}
 		}
 	}`)
@@ -27,8 +29,8 @@ func TestMetersIncludesEveryBucketAndWindow(t *testing.T) {
 	}
 	meters := snapshot.Meters()
 
-	if len(meters) != 3 {
-		t.Fatalf("got %d meters, want 3", len(meters))
+	if len(meters) != 4 {
+		t.Fatalf("got %d meters, want 4", len(meters))
 	}
 	if meters[0].Bucket != "codex" || meters[0].Name != "5 HOURS" || meters[0].Window.UsedPercent != 42 {
 		t.Fatalf("unexpected primary meter: %#v", meters[0])
@@ -36,10 +38,34 @@ func TestMetersIncludesEveryBucketAndWindow(t *testing.T) {
 	if meters[1].Name != "1 WEEK" {
 		t.Fatalf("unexpected secondary name: %q", meters[1].Name)
 	}
-	if meters[2].Bucket != "codex_other" || meters[2].Name != "30 MINUTES" ||
-		meters[2].Window.WindowDurationMins == nil || *meters[2].Window.WindowDurationMins != 30 ||
-		meters[2].Window.ResetsAt == nil || *meters[2].Window.ResetsAt != 123456 {
-		t.Fatalf("unexpected additional meter: %#v", meters[2])
+	if meters[2].Kind != MeterIndividualLimit || meters[2].Name != "MONTHLY CREDIT LIMIT" ||
+		meters[2].Window.UsedPercent != 32 || meters[2].Window.ResetsAt == nil || *meters[2].Window.ResetsAt != 987654 ||
+		meters[2].Details != "8000 OF 25000 CREDITS USED" {
+		t.Fatalf("unexpected individual-limit meter: %#v", meters[2])
+	}
+	if meters[3].Bucket != "codex_other" || meters[3].Name != "30 MINUTES" ||
+		meters[3].Window.WindowDurationMins == nil || *meters[3].Window.WindowDurationMins != 30 ||
+		meters[3].Window.ResetsAt == nil || *meters[3].Window.ResetsAt != 123456 {
+		t.Fatalf("unexpected additional meter: %#v", meters[3])
+	}
+	credits, ok := snapshot.CreditStatus()
+	if !ok || credits.Balance == nil || *credits.Balance != "17000" {
+		t.Fatalf("unexpected credit status: %#v, %v", credits, ok)
+	}
+}
+
+func TestCreditStatusFallsBackDeterministicallyAndIgnoresEmptyData(t *testing.T) {
+	balance := "42"
+	snapshot := Snapshot{RateLimitsByLimitID: map[string]RateLimitSnapshot{
+		"zeta":  {Credits: &Credits{HasCredits: true, Balance: &balance}},
+		"alpha": {},
+	}}
+	credits, ok := snapshot.CreditStatus()
+	if !ok || credits.Balance == nil || *credits.Balance != balance {
+		t.Fatalf("credit fallback = %#v, %v", credits, ok)
+	}
+	if _, ok := (Snapshot{}).CreditStatus(); ok {
+		t.Fatal("empty snapshot reported credits")
 	}
 }
 

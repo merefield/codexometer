@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -12,6 +15,7 @@ type quotaHealth int
 
 const (
 	quotaHealthUnknown quotaHealth = iota
+	quotaHealthFresh
 	quotaHealthClear
 	quotaHealthWatch
 	quotaHealthNear
@@ -21,6 +25,7 @@ const (
 func (h quotaHealth) label() string {
 	return [...]string{
 		"QUOTA UNKNOWN",
+		"RESET FRESH // GO!",
 		"QUOTA CLEAR",
 		"QUOTA WATCH",
 		"LIMIT NEAR",
@@ -31,6 +36,7 @@ func (h quotaHealth) label() string {
 func (h quotaHealth) compactLabel() string {
 	return [...]string{
 		"UNKNOWN",
+		"FRESH // GO!",
 		"CLEAR",
 		"WATCH",
 		"NEAR",
@@ -40,7 +46,7 @@ func (h quotaHealth) compactLabel() string {
 
 func (h quotaHealth) color(colors palette) lipgloss.Color {
 	switch h {
-	case quotaHealthClear:
+	case quotaHealthFresh, quotaHealthClear:
 		return lipgloss.Color("#57FF8A")
 	case quotaHealthWatch:
 		return lipgloss.Color("#67B7FF")
@@ -53,19 +59,54 @@ func (h quotaHealth) color(colors palette) lipgloss.Color {
 	}
 }
 
-func snapshotQuotaHealth(snapshot codex.Snapshot, now time.Time) quotaHealth {
-	if snapshotReportsLimitReached(snapshot) {
-		return quotaHealthExhausted
+type quotaSignal struct {
+	health quotaHealth
+	cause  string
+}
+
+func (s quotaSignal) label() string {
+	if s.health == quotaHealthFresh || s.health == quotaHealthUnknown || s.cause == "" {
+		return s.health.label()
+	}
+	return s.cause + " // " + s.health.compactLabel()
+}
+
+func (s quotaSignal) compactLabel() string {
+	if s.health == quotaHealthFresh || s.health == quotaHealthUnknown || s.cause == "" {
+		return s.health.compactLabel()
+	}
+	return compactQuotaCause(s.cause) + " " + s.health.compactLabel()
+}
+
+func snapshotQuotaSignal(snapshot codex.Snapshot, now time.Time) quotaSignal {
+	if cause, reached := snapshotLimitReachedCause(snapshot); reached {
+		return quotaSignal{health: quotaHealthExhausted, cause: cause}
 	}
 	meters := snapshot.Meters()
 	if len(meters) == 0 {
-		return quotaHealthUnknown
+		return quotaSignal{health: quotaHealthUnknown}
 	}
 	health := quotaHealthClear
+	cause := ""
+	allZero := true
 	for _, meter := range meters {
-		health = max(health, windowQuotaHealth(meter.Window, now))
+		if meter.Window.UsedPercent != 0 {
+			allZero = false
+		}
+		candidate := windowQuotaHealth(meter.Window, now)
+		if candidate > health {
+			health = candidate
+			cause = meterQuotaCause(meter)
+		}
 	}
-	return health
+	if allZero {
+		return quotaSignal{health: quotaHealthFresh}
+	}
+	return quotaSignal{health: health, cause: cause}
+}
+
+func snapshotQuotaHealth(snapshot codex.Snapshot, now time.Time) quotaHealth {
+	return snapshotQuotaSignal(snapshot, now).health
 }
 
 func windowQuotaHealth(window codex.Window, now time.Time) quotaHealth {
@@ -110,17 +151,67 @@ func quotaHealthWithoutPace(used int) quotaHealth {
 	}
 }
 
-func snapshotReportsLimitReached(snapshot codex.Snapshot) bool {
-	reached := func(limit codex.RateLimitSnapshot) bool {
-		return limit.RateLimitReachedType != nil && *limit.RateLimitReachedType != ""
-	}
-	if reached(snapshot.RateLimits) {
-		return true
-	}
-	for _, limit := range snapshot.RateLimitsByLimitID {
-		if reached(limit) {
-			return true
+func snapshotLimitReachedCause(snapshot codex.Snapshot) (string, bool) {
+	reached := func(limit codex.RateLimitSnapshot, fallback string) (string, bool) {
+		if limit.SpendControlReached != nil && *limit.SpendControlReached {
+			return "SPEND", true
+		}
+		if limit.RateLimitReachedType == nil || *limit.RateLimitReachedType == "" {
+			return "", false
+		}
+		switch *limit.RateLimitReachedType {
+		case "workspace_owner_credits_depleted", "workspace_member_credits_depleted":
+			return "CREDITS", true
+		case "workspace_owner_usage_limit_reached", "workspace_member_usage_limit_reached":
+			return "SPEND", true
+		default:
+			return fallback, true
 		}
 	}
-	return false
+	if cause, ok := reached(snapshot.RateLimits, "QUOTA"); ok {
+		return cause, true
+	}
+	keys := make([]string, 0, len(snapshot.RateLimitsByLimitID))
+	for key := range snapshot.RateLimitsByLimitID {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		limit := snapshot.RateLimitsByLimitID[key]
+		fallback := codex.DisplayName(key)
+		if limit.LimitName != nil && *limit.LimitName != "" {
+			fallback = codex.DisplayName(*limit.LimitName)
+		}
+		if cause, ok := reached(limit, fallback); ok {
+			return cause, true
+		}
+	}
+	return "", false
+}
+
+func meterQuotaCause(meter codex.Meter) string {
+	if meter.Kind == codex.MeterIndividualLimit {
+		return "MONTHLY"
+	}
+	if meter.Bucket == "codex" {
+		return meter.Name
+	}
+	return codex.DisplayName(meter.Bucket) + " " + meter.Name
+}
+
+func compactQuotaCause(cause string) string {
+	fields := strings.Fields(cause)
+	if len(fields) == 2 {
+		if value, err := strconv.Atoi(fields[0]); err == nil {
+			unit := map[string]string{"MINUTE": "M", "MINUTES": "M", "HOUR": "H", "HOURS": "H", "DAY": "D", "DAYS": "D", "WEEK": "W", "WEEKS": "W"}[fields[1]]
+			if unit != "" {
+				return strconv.Itoa(value) + unit
+			}
+		}
+	}
+	runes := []rune(cause)
+	if len(runes) > 12 {
+		return string(runes[:12])
+	}
+	return cause
 }

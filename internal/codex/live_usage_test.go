@@ -279,6 +279,230 @@ func TestLiveUsageReaderCapturesContentFreeModelCallAndTurnTimingPulses(t *testi
 	}
 }
 
+func TestLiveUsageReaderTracksDefiniteAwaitingUserLifecycle(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now.Add(-time.Hour), "attention")
+	blocking := true
+	writeRollout(t, path,
+		sessionMetaLine("attention", `"cli"`, "/work/attention", nil)+"\n"+
+			attentionEventLine(now, "request_user_input", &blocking)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("startup blocking attention = %#v, %v; want awaiting user", usage, err)
+	}
+
+	appendRollout(t, path, attentionEventLine(now.Add(time.Second), "task_started", nil)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("started turn attention = %#v, %v; want working", usage, err)
+	}
+
+	nonBlocking := false
+	appendRollout(t, path, attentionEventLine(now.Add(2*time.Second), "request_user_input", &nonBlocking)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("non-blocking input request changed attention: %#v, %v", usage, err)
+	}
+
+	appendRollout(t, path, attentionEventLine(now.Add(3*time.Second), "request_user_input", &blocking)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("blocking input request attention = %#v, %v; want awaiting", usage, err)
+	}
+
+	appendRollout(t, path, responseItemLine(now.Add(4*time.Second), "function_call_output")+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("input response did not clear attention: %#v, %v", usage, err)
+	}
+
+	appendRollout(t, path,
+		attentionEventLine(now.Add(5*time.Second), "request_user_input", &blocking)+"\n"+
+			attentionEventLine(now.Add(6*time.Second), "task_complete", nil)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("turn completion did not clear attention: %#v, %v", usage, err)
+	}
+}
+
+func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	threadID := "open-idle"
+	path := testRolloutPath(t, home, now.Add(-time.Hour), threadID)
+	writeRollout(t, path,
+		sessionMetaLine(threadID, `"cli"`, "/work/open", nil)+"\n"+
+			attentionEventLine(now, "task_complete", nil)+"\n")
+	locks := filepath.Join(home, "thread-writer-locks")
+	if err := os.MkdirAll(locks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	release := holdTestFileLock(t, filepath.Join(locks, threadID+".lock"))
+
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("open completed CLI = %#v, %v; want input needed", usage, err)
+	}
+
+	appendRollout(t, path, attentionEventLine(now.Add(time.Second), "task_started", nil)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("open active CLI = %#v, %v; want no attention", usage, err)
+	}
+
+	appendRollout(t, path, attentionEventLine(now.Add(2*time.Second), "task_complete", nil)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("second completed turn = %#v, %v; want input needed", usage, err)
+	}
+	release()
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("closed CLI = %#v, %v; want no attention", usage, err)
+	}
+}
+
+func TestSessionAttentionUsesExactDaemonStatusBeforeFallback(t *testing.T) {
+	tests := []struct {
+		name   string
+		status sessionRuntimeStatus
+		want   SessionAttention
+	}{
+		{"working", sessionRuntimeWorking, SessionAttentionNone},
+		{"input", sessionRuntimeInput, SessionAttentionInput},
+		{"approval", sessionRuntimeApproval, SessionAttentionApproval},
+		{"idle", sessionRuntimeIdle, SessionAttentionNone},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := sessionAttention(sessionAttentionWorking, true, true, 20*time.Minute, test.status, true)
+			if got != test.want {
+				t.Fatalf("attention = %v; want %v", got, test.want)
+			}
+		})
+	}
+	if got := sessionAttention(sessionAttentionIdle, true, true, time.Hour, sessionRuntimeIdle, true); got != SessionAttentionNone {
+		t.Fatalf("exact idle session attention = %v; want none", got)
+	}
+}
+
+func TestSessionAttentionFallbackChecksOnlyOpenQuietSessions(t *testing.T) {
+	if got := sessionAttention(sessionAttentionWorking, true, true, fallbackAttentionAfter-time.Second, sessionRuntimeUnknown, false); got != SessionAttentionNone {
+		t.Fatalf("early quiet session attention = %v; want none", got)
+	}
+	if got := sessionAttention(sessionAttentionWorking, true, true, fallbackAttentionAfter, sessionRuntimeUnknown, false); got != SessionAttentionCheck {
+		t.Fatalf("quiet session attention = %v; want check", got)
+	}
+	if got := sessionAttention(sessionAttentionWorking, false, true, time.Hour, sessionRuntimeUnknown, false); got != SessionAttentionNone {
+		t.Fatalf("closed quiet session attention = %v; want none", got)
+	}
+	if got := sessionAttention(sessionAttentionIdle, true, true, 0, sessionRuntimeUnknown, false); got != SessionAttentionInput {
+		t.Fatalf("durably completed session attention = %v; want input", got)
+	}
+}
+
+func TestSessionAttentionMergePrefersDefiniteSignals(t *testing.T) {
+	if got := mergeSessionAttention(SessionAttentionCheck, SessionAttentionInput); got != SessionAttentionInput {
+		t.Fatalf("input did not replace inferred check: %v", got)
+	}
+	if got := mergeSessionAttention(SessionAttentionApproval, SessionAttentionCheck); got != SessionAttentionApproval {
+		t.Fatalf("inferred check replaced approval: %v", got)
+	}
+}
+
+func TestLiveUsageReaderUsesPerThreadExactStatuses(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	for _, threadID := range []string{"working", "approval"} {
+		path := testRolloutPath(t, home, now, threadID)
+		writeRollout(t, path,
+			sessionMetaLine(threadID, `"cli"`, "/work/"+threadID, nil)+"\n"+
+				attentionEventLine(now, "task_started", nil)+"\n")
+	}
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{statuses: map[string]sessionRuntimeStatus{
+		"working": sessionRuntimeWorking, "approval": sessionRuntimeApproval,
+	}}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 2 {
+		t.Fatalf("exact status fetch = %#v, %v", usage, err)
+	}
+	got := make(map[string]SessionAttention)
+	for _, session := range usage.Sessions {
+		got[session.ID] = session.Attention
+	}
+	if got["working"] != SessionAttentionNone || got["approval"] != SessionAttentionApproval {
+		t.Fatalf("per-thread exact attention = %#v", got)
+	}
+}
+
+type stubSessionStatusProvider struct {
+	statuses map[string]sessionRuntimeStatus
+}
+
+func (s stubSessionStatusProvider) Fetch(context.Context, []string) (map[string]sessionRuntimeStatus, bool) {
+	return s.statuses, true
+}
+
+func TestLiveUsageReaderPropagatesWaitingAgentToRoot(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	created := now.Add(-time.Hour)
+	rootPath := testRolloutPath(t, home, created, "attention-root")
+	childPath := testRolloutPath(t, home, created, "attention-child")
+	writeRollout(t, rootPath,
+		sessionMetaLine("attention-root", `"cli"`, "/work/root", nil)+"\n"+
+			attentionEventLine(now, "task_started", nil)+"\n")
+	writeRollout(t, childPath,
+		sessionMetaLine("attention-child", threadSpawnSource("attention-root"), "/work/root", nil)+"\n"+
+			attentionEventLine(now, "exec_approval_request", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 {
+		t.Fatalf("grouped attention fetch = %#v, %v", usage, err)
+	}
+	if session := usage.Sessions[0]; session.ID != "attention-root" || session.AgentCount != 1 || session.Attention != SessionAttentionApproval {
+		t.Fatalf("waiting child was not propagated to root: %#v", session)
+	}
+}
+
+func TestLiveUsageReaderKeepsExplicitInputRequestVisibleBeyondRecentActivity(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	waitingAt := now.Add(-10 * time.Minute)
+	path := testRolloutPath(t, home, now.Add(-time.Hour), "long-wait")
+	blocking := true
+	writeRollout(t, path,
+		sessionMetaLine("long-wait", `"cli"`, "/work/waiting", nil)+"\n"+
+			attentionEventLine(waitingAt, "request_user_input", &blocking)+"\n")
+	if err := os.Chtimes(path, waitingAt, waitingAt); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.SessionCount != 1 || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("long-wait attention = %#v, %v; want visible awaiting session", usage, err)
+	}
+}
+
 func TestLiveUsageReaderGroupsSpawnedDescendantsUnderIndependentRoots(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()
@@ -566,6 +790,24 @@ func turnTimingUnavailableLine(at time.Time) string {
 	return fmt.Sprintf(
 		`{"timestamp":%q,"type":"event_msg","payload":{"type":"task_complete","completed_at":%d,"duration_ms":12000}}`,
 		at.UTC().Format(time.RFC3339Nano), at.Unix(),
+	)
+}
+
+func attentionEventLine(at time.Time, eventType string, blocking *bool) string {
+	blockingJSON := ""
+	if blocking != nil {
+		blockingJSON = fmt.Sprintf(`,"isBlocking":%t`, *blocking)
+	}
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":%q%s}}`,
+		at.UTC().Format(time.RFC3339Nano), eventType, blockingJSON,
+	)
+}
+
+func responseItemLine(at time.Time, itemType string) string {
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"response_item","payload":{"type":%q}}`,
+		at.UTC().Format(time.RFC3339Nano), itemType,
 	)
 }
 

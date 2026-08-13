@@ -10,6 +10,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
 
 type monitorRect struct {
@@ -261,6 +263,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.active {
 		status = "ACTIVE"
 	}
+	if session.attention != codex.SessionAttentionNone {
+		status = monitorAttentionStatus(session.attention)
+	}
 	innerWidth := max(width-4, 1)
 	memberLabel := "ROOT"
 	if session.agentCount > 0 {
@@ -275,7 +280,14 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	bodyRows := max(height-2, 1)
 	share := m.monitorSessionShare(total)
 	usageLine := fmt.Sprintf("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
-	lines := []string{colors.label().Render(ansi.Truncate(usageLine, innerWidth, ""))}
+	lines := make([]string, 0, bodyRows)
+	if session.attention != codex.SessionAttentionNone {
+		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning)
+		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorAttentionLabel(session.attention)+" ", innerWidth, "")))
+	}
+	if len(lines) < bodyRows {
+		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
+	}
 	appendLine := func(value string) {
 		if len(lines) < bodyRows {
 			lines = append(lines, colors.dimmed().Render(ansi.Truncate(value, innerWidth, "")))
@@ -295,10 +307,36 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !session.lastActivity.IsZero() {
 		appendLine("LAST // " + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
-	if pageLabel != "" {
+	if pageLabel != "" && (session.attention == codex.SessionAttentionNone || len(lines) > 1) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
-	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+	borderColor := colors.primary
+	if session.attention != codex.SessionAttentionNone {
+		borderColor = colors.warning
+	}
+	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), borderColor, colors)
+}
+
+func monitorAttentionLabel(attention codex.SessionAttention) string {
+	switch attention {
+	case codex.SessionAttentionApproval:
+		return "APPROVAL NEEDED"
+	case codex.SessionAttentionCheck:
+		return "CHECK SESSION"
+	default:
+		return "INPUT NEEDED"
+	}
+}
+
+func monitorAttentionStatus(attention codex.SessionAttention) string {
+	switch attention {
+	case codex.SessionAttentionApproval:
+		return "APPROVAL"
+	case codex.SessionAttentionCheck:
+		return "CHECK"
+	default:
+		return "INPUT"
+	}
 }
 
 func formatMonitorCallActivity(session monitorSession, now time.Time) string {
