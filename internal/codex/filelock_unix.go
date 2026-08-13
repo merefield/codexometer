@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build unix
 
 package codex
 
@@ -8,6 +8,8 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+const fileLockSupported = true
 
 func fileLockHeld(path string) (bool, error) {
 	file, err := os.OpenFile(path, os.O_RDWR, 0)

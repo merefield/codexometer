@@ -9,6 +9,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const fileLockSupported = true
+
 func fileLockHeld(path string) (bool, error) {
 	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {

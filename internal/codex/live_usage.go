@@ -747,6 +747,9 @@ func sessionSourceParent(raw json.RawMessage) (string, bool) {
 const unattributedSessionID = "unattributed"
 
 func (r *LiveUsageReader) liveWriterThreads() (map[string]struct{}, bool) {
+	if !fileLockSupported {
+		return nil, false
+	}
 	entries, err := os.ReadDir(r.WriterLocksRoot)
 	if err != nil {
 		return nil, false
