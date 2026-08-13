@@ -938,9 +938,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.1`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.2`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.1`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.7.2`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -953,7 +953,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.1" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.2" .
 ```
 
 ## How refresh works
