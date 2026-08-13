@@ -42,6 +42,7 @@ type LiveUsageSession struct {
 	LastActivity     time.Time
 	AgentCount       int
 	Active           bool
+	AwaitingInput    bool
 	Unattributed     bool
 	ModelCalls       []LiveModelCall
 	TurnTimings      []LiveTurnTiming
@@ -94,7 +95,16 @@ type rolloutCursor struct {
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
+	attention                   sessionAttentionState
 }
+
+type sessionAttentionState int
+
+const (
+	sessionAttentionUnknown sessionAttentionState = iota
+	sessionAttentionWorking
+	sessionAttentionAwaiting
+)
 
 type rolloutEvent struct {
 	Timestamp time.Time `json:"timestamp"`
@@ -121,6 +131,16 @@ type rolloutTurnEvent struct {
 		Type               string `json:"type"`
 		CompletedAt        *int64 `json:"completed_at"`
 		TimeToFirstTokenMS *int64 `json:"time_to_first_token_ms"`
+	} `json:"payload"`
+}
+
+type rolloutAttentionEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Ordinal   *uint64   `json:"ordinal"`
+	Type      string    `json:"type"`
+	Payload   struct {
+		Type       string `json:"type"`
+		IsBlocking *bool  `json:"isBlocking"`
 	} `json:"payload"`
 }
 
@@ -325,6 +345,13 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		nonRoot:                     metadata.NonRoot,
 		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
 	}
+	if time.Since(info.ModTime()) <= activeRolloutHorizon {
+		attention, err := latestSessionAttention(path, cursor)
+		if err != nil {
+			return err
+		}
+		cursor.attention = attention
+	}
 	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
 		total, err := latestTokenTotal(path)
 		if err != nil {
@@ -355,6 +382,11 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		}
 		cursor.offset = info.Size()
 		cursor.totalTokens = total
+		attention, attentionErr := latestSessionAttention(path, cursor)
+		if attentionErr != nil {
+			return attentionErr
+		}
+		cursor.attention = attention
 		return nil
 	}
 	if info.Size() == cursor.offset {
@@ -368,6 +400,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if attention, ordinal, at, ok := sessionAttentionRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.attention = attention
+			}
 			if record, ok := tokenUsageRecord(line); ok {
 				if !tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 					// Legacy child rollouts copy the parent's cumulative token
@@ -411,6 +447,72 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return readErr
 		}
 	}
+}
+
+func latestSessionAttention(path string, cursor *rolloutCursor) (sessionAttentionState, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return sessionAttentionUnknown, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return sessionAttentionUnknown, err
+	}
+	const chunkSize = int64(64 * 1024)
+	position := info.Size()
+	var carry []byte
+	for position > 0 {
+		readSize := min(chunkSize, position)
+		position -= readSize
+		chunk := make([]byte, int(readSize))
+		if _, err := file.ReadAt(chunk, position); err != nil && !errors.Is(err, io.EOF) {
+			return sessionAttentionUnknown, err
+		}
+		data := make([]byte, 0, len(chunk)+len(carry))
+		data = append(data, chunk...)
+		data = append(data, carry...)
+		lines := bytes.Split(data, []byte{'\n'})
+		firstComplete := 1
+		if position == 0 {
+			firstComplete = 0
+		}
+		for index := len(lines) - 1; index >= firstComplete; index-- {
+			attention, ordinal, at, ok := sessionAttentionRecord(lines[index])
+			if ok && tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				return attention, nil
+			}
+		}
+		carry = append(carry[:0], lines[0]...)
+	}
+	return sessionAttentionUnknown, nil
+}
+
+func sessionAttentionRecord(line []byte) (sessionAttentionState, *uint64, time.Time, bool) {
+	if !bytes.Contains(line, []byte(`"event_msg"`)) && !bytes.Contains(line, []byte(`"response_item"`)) {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	var event rolloutAttentionEvent
+	if json.Unmarshal(line, &event) != nil {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	if event.Type == "response_item" && event.Payload.Type == "function_call_output" {
+		return sessionAttentionWorking, event.Ordinal, event.Timestamp, true
+	}
+	if event.Type != "event_msg" {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
+	switch event.Payload.Type {
+	case "request_user_input":
+		if event.Payload.IsBlocking == nil || *event.Payload.IsBlocking {
+			return sessionAttentionAwaiting, event.Ordinal, event.Timestamp, true
+		}
+	case "exec_approval_request", "apply_patch_approval_request", "request_permissions", "elicitation_request":
+		return sessionAttentionAwaiting, event.Ordinal, event.Timestamp, true
+	case "task_complete", "turn_complete", "task_started", "turn_started", "user_message", "exec_command_begin", "dynamic_tool_call_response":
+		return sessionAttentionWorking, event.Ordinal, event.Timestamp, true
+	}
+	return sessionAttentionUnknown, nil, time.Time{}, false
 }
 
 // appendBounded keeps insertion order while discarding the oldest values. The
@@ -611,7 +713,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 	groups := make(map[string]*LiveUsageSession)
 	for _, cursor := range r.files {
 		active := now.Sub(cursor.lastModified) <= 5*time.Minute
-		if !active && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
+		awaitingInput := now.Sub(cursor.lastModified) <= activeRolloutHorizon && cursor.attention == sessionAttentionAwaiting
+		if !active && !awaitingInput && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
 		rootID, unattributed := rolloutRoot(cursor, byID)
@@ -623,7 +726,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		group.TotalTokens += cursor.observedTokens
 		group.ModelCalls = append(group.ModelCalls, cursor.modelCalls...)
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
-		group.Active = group.Active || active
+		group.Active = group.Active || active || awaitingInput
+		group.AwaitingInput = group.AwaitingInput || awaitingInput
 		if cursor.lastModified.After(group.LastActivity) {
 			group.LastActivity = cursor.lastModified
 		}
@@ -636,7 +740,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time) ([]LiveUsageSession, i
 		if cursor.threadID == rootID {
 			group.WorkingDirectory = cursor.workingDirectory
 			group.StartedAt = cursor.startedAt
-		} else if active || cursor.observedTokens > 0 || len(cursor.modelCalls) > 0 || len(cursor.turnTimings) > 0 {
+		} else if active || awaitingInput || cursor.observedTokens > 0 || len(cursor.modelCalls) > 0 || len(cursor.turnTimings) > 0 {
 			group.AgentCount++
 		}
 	}

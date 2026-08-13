@@ -70,7 +70,7 @@ func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 	}
 }
 
-func TestQuotaViewsAccommodateReintroducedFiveHourAndAdditionalWindows(t *testing.T) {
+func TestQuotaViewsAccommodateFiveHourAdditionalAndMonthlyLimits(t *testing.T) {
 	now := time.Now()
 	window := func(used int, durationMinutes int64) *codex.Window {
 		reset := now.Add(time.Duration(durationMinutes/2) * time.Minute).Unix()
@@ -78,8 +78,9 @@ func TestQuotaViewsAccommodateReintroducedFiveHourAndAdditionalWindows(t *testin
 	}
 	snapshot := codex.Snapshot{RateLimitsByLimitID: map[string]codex.RateLimitSnapshot{
 		"codex": {
-			Primary:   window(35, 300),
-			Secondary: window(48, 10_080),
+			Primary:         window(35, 300),
+			Secondary:       window(48, 10_080),
+			IndividualLimit: &codex.IndividualLimit{Limit: "25000", Used: "8000", RemainingPercent: 68, ResetsAt: now.Add(14 * 24 * time.Hour).Unix()},
 		},
 		"spark": {
 			LimitName: ptr("spark"),
@@ -87,7 +88,7 @@ func TestQuotaViewsAccommodateReintroducedFiveHourAndAdditionalWindows(t *testin
 			Secondary: window(70, 1_440),
 		},
 	}}
-	if meters := snapshot.Meters(); len(meters) != 4 || meters[0].Name != "5 HOURS" {
+	if meters := snapshot.Meters(); len(meters) != 5 || meters[0].Name != "5 HOURS" || meters[2].Name != "MONTHLY CREDIT LIMIT" {
 		t.Fatalf("restored snapshot produced meters %#v", meters)
 	}
 
@@ -99,13 +100,13 @@ func TestQuotaViewsAccommodateReintroducedFiveHourAndAdditionalWindows(t *testin
 			}
 			output := ansi.Strip(model.View())
 			if got := lipgloss.Width(output); got > size.width {
-				t.Errorf("%s with four windows at %dx%d rendered width %d", style.name(), size.width, size.height, got)
+				t.Errorf("%s with five limits at %dx%d rendered width %d", style.name(), size.width, size.height, got)
 			}
 			if got := lipgloss.Height(output); got > size.height {
-				t.Errorf("%s with four windows at %dx%d rendered height %d:\n%s", style.name(), size.width, size.height, got, output)
+				t.Errorf("%s with five limits at %dx%d rendered height %d:\n%s", style.name(), size.width, size.height, got, output)
 			}
 			if size.width >= 80 {
-				for _, title := range []string{"5 HOURS LOOP", "1 WEEK LOOP", "SPARK // 1 HOUR LOOP", "SPARK // 1 DAY LOOP"} {
+				for _, title := range []string{"5 HOURS LOOP", "1 WEEK LOOP", "MONTHLY CREDIT LIMIT", "SPARK // 1 HOUR LOOP", "SPARK // 1 DAY LOOP"} {
 					if !strings.Contains(output, title) {
 						t.Errorf("%s at %dx%d omitted %q:\n%s", style.name(), size.width, size.height, title, output)
 					}
@@ -130,7 +131,7 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	headerLines := strings.Split(header, "\n")
 	firstLine := headerLines[0]
 	status := ansi.Strip(model.renderSignalStatus(100, colors))
-	if !strings.HasSuffix(firstLine, status) || !strings.Contains(status, "● ONLINE // QUOTA ") {
+	if !strings.HasSuffix(firstLine, status) || !strings.Contains(status, "● ONLINE // 5 HOURS // ") {
 		t.Fatalf("online status is not at the top right of the header: %q", firstLine)
 	}
 	if !strings.HasSuffix(headerLines[len(headerLines)-1], "ACCOUNT // PLUS") {
@@ -143,6 +144,17 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	footerLines := strings.Split(footer, "\n")
 	if !strings.HasSuffix(footerLines[len(footerLines)-1], "THEME // HACKER") {
 		t.Fatalf("theme is not at the bottom right of the footer: %q", footerLines[len(footerLines)-1])
+	}
+}
+
+func TestFooterShowsAvailableAccountCredits(t *testing.T) {
+	balance := "17000"
+	snapshot := codex.DemoSnapshot()
+	snapshot.RateLimits.Credits = &codex.Credits{HasCredits: true, Balance: &balance}
+	model := Model{snapshot: snapshot, nextRefresh: time.Now().Add(time.Minute), meterStyle: styleBars}
+	footer := ansi.Strip(model.renderFooter(100, paletteFor(themeHacker)))
+	if !strings.Contains(footer, "CREDITS 17000") {
+		t.Fatalf("account credit balance missing from footer: %q", footer)
 	}
 }
 

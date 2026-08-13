@@ -152,6 +152,57 @@ func TestConsumptionPaceComparesElapsedTimeWithUsage(t *testing.T) {
 	}
 }
 
+func TestConsumptionProjectionDistinguishesSafeEarlyAndUnavailable(t *testing.T) {
+	duration := int64(100)
+	reset := time.Unix(20_000, 0)
+	now := reset.Add(-50 * time.Minute)
+	window := codex.Window{UsedPercent: 25, WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())}
+	projection := consumptionProjectionFor(window, now)
+	if projection.kind != consumptionProjectionSafe || projection.projectedRemaining != 50 {
+		t.Fatalf("safe projection = %#v, want 50%% remaining", projection)
+	}
+	if label := formatConsumptionProjection(projection); !strings.Contains(label, "SAFE THROUGH RESET") || !strings.Contains(label, "~50% LEFT") {
+		t.Fatalf("safe projection label = %q", label)
+	}
+
+	window.UsedPercent = 75
+	projection = consumptionProjectionFor(window, now)
+	if projection.kind != consumptionProjectionEarly || projection.timeToExhaustion < 16*time.Minute || projection.timeToExhaustion > 17*time.Minute ||
+		projection.earlyBy < 33*time.Minute || projection.earlyBy > 34*time.Minute {
+		t.Fatalf("early projection = %#v, want limit in about 17m and 33m early", projection)
+	}
+	if label := formatConsumptionProjection(projection); !strings.Contains(label, "LIMIT IN ~17M") || !strings.Contains(label, "33M EARLY") {
+		t.Fatalf("early projection label = %q", label)
+	}
+
+	window.UsedPercent = 0
+	if label := formatConsumptionProjection(consumptionProjectionFor(window, now)); !strings.Contains(label, "NO BURN YET") {
+		t.Fatalf("zero-burn projection label = %q", label)
+	}
+	if label := formatConsumptionProjection(consumptionProjectionFor(codex.Window{UsedPercent: 25}, now)); label != "" {
+		t.Fatalf("unavailable projection was displayed: %q", label)
+	}
+}
+
+func TestMonthlyCreditMeterShowsDetailsWithoutInventingCycleProgress(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	reset := time.Now().Add(14 * 24 * time.Hour).Unix()
+	meter := codex.Meter{
+		Bucket: "codex", Name: "MONTHLY CREDIT LIMIT", Kind: codex.MeterIndividualLimit,
+		Details: "8000 OF 25000 CREDITS USED",
+		Window:  codex.Window{UsedPercent: 32, ResetsAt: &reset},
+	}
+	output := ansi.Strip(renderMeterArea(80, 18, meter, styleBars, colors))
+	for _, want := range []string{"MONTHLY CREDIT LIMIT", "USED  32%", "8000 OF 25000 CREDITS USED", "CYCLE START UNAVAILABLE", "RESET T-"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("monthly meter missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "MONTHLY CREDIT LIMIT LOOP") || strings.Contains(output, "RESET CYCLE   0%") {
+		t.Fatalf("monthly meter invented a rolling cycle:\n%s", output)
+	}
+}
+
 func ptr[T any](value T) *T { return &value }
 
 func TestFuelTankReachesEmptyEndState(t *testing.T) {

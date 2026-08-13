@@ -16,7 +16,7 @@ func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{flag}, &stdout, &stderr, dependencies{})
-		if code != 0 || stdout.String() != "codexometer v0.5.0\n" || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != "codexometer v0.6.0\n" || stderr.Len() != 0 {
 			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
 		}
 	}
@@ -38,7 +38,7 @@ func TestRunAuthCheckSuccessAndFailure(t *testing.T) {
 		},
 	}
 	code := run([]string{"--check-auth", "--codex", "/custom/codex"}, &stdout, &stderr, deps)
-	if code != 0 || !strings.Contains(stdout.String(), "2 quota window(s) online") {
+	if code != 0 || !strings.Contains(stdout.String(), "2 limit meter(s) online") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 

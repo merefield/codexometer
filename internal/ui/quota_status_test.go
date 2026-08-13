@@ -59,6 +59,9 @@ func TestSnapshotQuotaHealthUsesWorstWindowAndExplicitLimitSignal(t *testing.T) 
 	if got := snapshotQuotaHealth(snapshot, now); got != quotaHealthWatch {
 		t.Fatalf("worst-window health = %s, want %s", got.label(), quotaHealthWatch.label())
 	}
+	if signal := snapshotQuotaSignal(snapshot, now); signal.cause != "100 MINUTES" {
+		t.Fatalf("worst-window cause = %q, want 100 MINUTES", signal.cause)
+	}
 
 	reached := "primary"
 	snapshot.RateLimits.RateLimitReachedType = &reached
@@ -66,8 +69,34 @@ func TestSnapshotQuotaHealthUsesWorstWindowAndExplicitLimitSignal(t *testing.T) 
 		t.Fatalf("explicit reached health = %s, want %s", got.label(), quotaHealthExhausted.label())
 	}
 
+	spendReached := true
+	snapshot.RateLimits.RateLimitReachedType = nil
+	snapshot.RateLimits.SpendControlReached = &spendReached
+	if signal := snapshotQuotaSignal(snapshot, now); signal.health != quotaHealthExhausted || signal.cause != "SPEND" {
+		t.Fatalf("spend-control signal = %#v, want SPEND exhausted", signal)
+	}
+
 	if got := snapshotQuotaHealth(codex.Snapshot{}, now); got != quotaHealthUnknown {
 		t.Fatalf("empty snapshot health = %s, want %s", got.label(), quotaHealthUnknown.label())
+	}
+}
+
+func TestSnapshotQuotaSignalIncludesMonthlyLimitAndFreshReset(t *testing.T) {
+	now := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
+	reset := now.Add(14 * 24 * time.Hour).Unix()
+	snapshot := codex.Snapshot{RateLimits: codex.RateLimitSnapshot{
+		IndividualLimit: &codex.IndividualLimit{Limit: "100", Used: "90", RemainingPercent: 10, ResetsAt: reset},
+	}}
+	if signal := snapshotQuotaSignal(snapshot, now); signal.health != quotaHealthWatch || signal.cause != "MONTHLY" {
+		t.Fatalf("monthly limit signal = %#v, want MONTHLY watch", signal)
+	}
+
+	duration := int64(300)
+	snapshot = codex.Snapshot{RateLimits: codex.RateLimitSnapshot{
+		Primary: &codex.Window{UsedPercent: 0, WindowDurationMins: &duration, ResetsAt: &reset},
+	}}
+	if signal := snapshotQuotaSignal(snapshot, now); signal.health != quotaHealthFresh || signal.label() != "RESET FRESH // GO!" {
+		t.Fatalf("zero-consumption signal = %#v, want fresh reset", signal)
 	}
 }
 
@@ -78,6 +107,7 @@ func TestQuotaHealthUsesSemanticSignalColors(t *testing.T) {
 		want   lipgloss.Color
 	}{
 		{quotaHealthClear, lipgloss.Color("#57FF8A")},
+		{quotaHealthFresh, lipgloss.Color("#57FF8A")},
 		{quotaHealthWatch, lipgloss.Color("#67B7FF")},
 		{quotaHealthNear, lipgloss.Color("#FFB454")},
 		{quotaHealthExhausted, lipgloss.Color("#FF5F6D")},
@@ -97,9 +127,9 @@ func TestQuotaSignalLabelsRemainResponsive(t *testing.T) {
 		width int
 		want  string
 	}{
-		{width: 80, want: "● ONLINE // QUOTA WATCH"},
-		{width: 40, want: "● ON // WATCH"},
-		{width: 20, want: "● WATCH"},
+		{width: 80, want: "● ONLINE // 100 MINUTES // WATCH"},
+		{width: 40, want: "● ON // 100M WATCH"},
+		{width: 20, want: "● 100M WATCH"},
 	} {
 		got := ansi.Strip(model.renderSignalStatus(test.width, colors))
 		if got != test.want {
@@ -107,6 +137,21 @@ func TestQuotaSignalLabelsRemainResponsive(t *testing.T) {
 		}
 		if strings.Contains(got, "EXHAUSTED") {
 			t.Errorf("width %d rendered the wrong health label: %q", test.width, got)
+		}
+	}
+}
+
+func TestFreshResetSignalIsFunAndResponsive(t *testing.T) {
+	duration := int64(60)
+	reset := time.Now().Add(time.Hour).Unix()
+	model := Model{snapshot: codex.Snapshot{RateLimits: codex.RateLimitSnapshot{
+		Primary: &codex.Window{UsedPercent: 0, WindowDurationMins: &duration, ResetsAt: &reset},
+	}}}
+	colors := paletteFor(themeHacker)
+	for _, width := range []int{20, 40, 80} {
+		status := ansi.Strip(model.renderSignalStatus(width, colors))
+		if !strings.Contains(status, "FRESH") || !strings.Contains(status, "GO!") {
+			t.Errorf("width %d fresh status is not celebratory: %q", width, status)
 		}
 	}
 }

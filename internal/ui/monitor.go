@@ -261,6 +261,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.active {
 		status = "ACTIVE"
 	}
+	if session.awaitingInput {
+		status = "AWAITING"
+	}
 	innerWidth := max(width-4, 1)
 	memberLabel := "ROOT"
 	if session.agentCount > 0 {
@@ -275,7 +278,14 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	bodyRows := max(height-2, 1)
 	share := m.monitorSessionShare(total)
 	usageLine := fmt.Sprintf("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
-	lines := []string{colors.label().Render(ansi.Truncate(usageLine, innerWidth, ""))}
+	lines := make([]string, 0, bodyRows)
+	if session.awaitingInput {
+		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning)
+		lines = append(lines, badge.Render(ansi.Truncate(" ● AWAITING YOU ", innerWidth, "")))
+	}
+	if len(lines) < bodyRows {
+		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
+	}
 	appendLine := func(value string) {
 		if len(lines) < bodyRows {
 			lines = append(lines, colors.dimmed().Render(ansi.Truncate(value, innerWidth, "")))
@@ -295,10 +305,14 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !session.lastActivity.IsZero() {
 		appendLine("LAST // " + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
-	if pageLabel != "" {
+	if pageLabel != "" && (!session.awaitingInput || len(lines) > 1) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
-	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), colors.primary, colors)
+	borderColor := colors.primary
+	if session.awaitingInput {
+		borderColor = colors.warning
+	}
+	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), borderColor, colors)
 }
 
 func formatMonitorCallActivity(session monitorSession, now time.Time) string {

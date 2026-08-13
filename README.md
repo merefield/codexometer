@@ -45,19 +45,24 @@ It works particularly well in:
 
 ## What it shows
 
-- Every rate-limit bucket and window returned by the current Codex account.
+- Every rate-limit bucket and window returned by the current Codex account,
+  plus the effective monthly credit limit when supplied.
 - Used and free percentages for each window.
 - The duration of each window, such as five hours or one week.
 - A live countdown and local clock time for each reset.
-- On every style, a separate reset-cycle gauge comparing elapsed window time
+- On every Quota view, a separate reset-cycle gauge comparing elapsed window time
   with quota consumed. It uses the same active colour as its quota meter.
 - The current ChatGPT plan when Codex supplies it.
+- Spend-control hard stops and available account-credit balance when supplied.
 - Available earned reset credits when present.
-- Online, refreshing, stale-data, and error states.
+- Online, refreshing, stale-data, and error states, with the limiting window
+  named in warning states and a celebratory fresh-reset signal at 0% usage.
 - A countdown to the next automatic refresh.
 - An optional Monitor view that measures token activity between Go and Stop.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
+- A highlighted `AWAITING YOU` Monitor badge when a root or linked agent emits
+  an explicit blocking input or approval request.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
   estimated standard API-equivalent cost.
@@ -195,7 +200,9 @@ The Monitor additionally reads locally persisted Codex rollout files under
 totals, last-response output counts, timestamps, and content-free turn timing,
 plus the minimum session metadata needed for grouping: thread ID, parent thread
 ID, source classification, working directory, and the inherited-history
-boundary. Message text—including the final response carried beside timing
+boundary. It also reads lifecycle event names and blocking flags to identify an
+explicit unresolved input or approval request. Message text—including the final
+response carried beside timing
 metadata—reasoning, commands, tool results, and credentials are ignored and
 never retained by Codexometer.
 
@@ -236,26 +243,32 @@ only while Quota is active. Move the pointer over a tab or button to highlight
 it, or click it to activate it. Controls pulse briefly when activated by mouse
 or keyboard. The keyboard assignments remain available in terminals without
 mouse support. Theme and tab changes are immediate and do not trigger a network
-refresh.
+refresh. Theme, Quota view, benchmark result filter, and benchmark ranking
+weight are restored on the next launch.
 
 ### Quota health signal
 
 The top-right signal keeps `ONLINE` in the selected theme color while its dot
-and quota-health label use fixed semantic colors:
+and quota-health label use fixed semantic colors. Warning labels identify the
+meter responsible, for example `5 HOURS // WATCH`, `MONTHLY // NEAR`, or
+`SPEND // EXHAUSTED`:
 
+- green `RESET FRESH // GO!` — every returned meter currently reports 0% used;
 - green `QUOTA CLEAR` — consumption is keeping pace with, or trailing, elapsed
   window time;
 - blue `QUOTA WATCH` — the current average burn rate would exhaust at least one
   quota window before it resets;
 - amber `LIMIT NEAR` — excess pace projects exhaustion within the first quarter
   of the time still remaining, or no more than 5% remains while over pace;
-- red `QUOTA EXHAUSTED` — a window is at 100% or Codex explicitly reports its
-  rate limit reached.
+- red `QUOTA EXHAUSTED` — a window is at 100%, Codex explicitly reports its
+  rate limit reached, or account spend control reports a hard stop.
 
-Codexometer reports the worst state among all returned quota windows. If reset
-timing is unavailable, it conservatively falls back to remaining capacity:
-Watch at 20% and Near at 5%. Scanning and stale-signal states take precedence
-while quota health cannot be evaluated reliably.
+Codexometer reports the worst state among all returned rolling windows and the
+effective monthly credit limit. If reset timing or cycle duration is
+unavailable, it conservatively falls back to remaining capacity: Watch at 20%
+and Near at 5%. The monthly limit supplies a reset time but no cycle start, so
+Codexometer never invents monthly elapsed progress. Scanning and stale-signal
+states take precedence while quota health cannot be evaluated reliably.
 
 For each window with valid duration and reset data, Codexometer calculates:
 
@@ -268,13 +281,14 @@ For each window with valid duration and reset data, Codexometer calculates:
 
 It then applies these rules in severity order:
 
-1. **Exhausted** if `usedPercent` is 100 or Codex explicitly reports that a
-   rate limit has been reached.
-2. **Clear** if `U <= E`: quota consumption is no further advanced than the
+1. **Exhausted** if `usedPercent` is 100, Codex explicitly reports that a rate
+   limit has been reached, or `spendControlReached` is true.
+2. **Fresh** if every returned used percentage is zero.
+3. **Clear** if `U <= E`: quota consumption is no further advanced than the
    reset cycle.
-3. **Limit Near** when over pace and either no more than 5% quota remains, or
+4. **Limit Near** when over pace and either no more than 5% quota remains, or
    projected exhaustion is within the first 25% of the time remaining to reset.
-4. **Watch** for every other over-pace window (`U > E`).
+5. **Watch** for every other over-pace window (`U > E`).
 
 This means 10% remaining can correctly stay Clear when less than 10% of the
 window remains: quota is low, but reset is closer than exhaustion at the
@@ -307,7 +321,9 @@ choose one of these four views with its sub-tab or `v`:
    for clean curves at any size.
 3. **Consumption Pace** — a signed horizontal scale comparing elapsed window
    time with quota consumed. Positive headroom means consumption is behind
-   elapsed time; a negative deficit means quota is being used too quickly.
+   elapsed time; a negative deficit means quota is being used too quickly. A
+   clearly labelled linear projection reports `SAFE THROUGH RESET` or estimates
+   how long remains until exhaustion and how early that is relative to reset.
 4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
@@ -332,6 +348,10 @@ The other top-level views are:
   through an interval gets an honestly labelled partial first bar and its rate
   uses that root's own observed lifetime. New bars enter on the right, older
   bars move left, and each Y axis automatically rescales to its visible samples.
+  A root or linked child with a persisted blocking `request_user_input`,
+  permission, or approval event receives an amber `AWAITING YOU` badge and
+  border until a definite response, continuation, or completion event arrives.
+  Generic inactivity is never treated as a request for attention.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
@@ -348,7 +368,8 @@ returned by Codex. Header, status, errors, footer, and meter grid divide the
 available rectangle proportionally. Bars, Consumption Pace, and Fuel Tank flow
 one meter per row. Codexometer does not hardcode the currently returned window
 set: it renders every primary and secondary window from every limit bucket,
-including a 300-minute window as `5 HOURS`. When more windows arrive,
+including a 300-minute window as `5 HOURS`, plus an effective monthly credit
+limit when present. When more limits arrive,
 horizontal views remove decorative row gaps before compressing the cards, while
 Pie adds rows or columns only when each radial card retains a useful width.
 Meter rows always use identical heights; indivisible spare rows become quiet
@@ -357,11 +378,18 @@ Pie uses at least two columns when multiple limits exist, adding rows when that
 preserves more radial detail and adding columns when the terminal is wide
 enough. Consumption Pace calculates `elapsed window % - quota used %`, placing
 under-budget consumption on the positive side and over-budget consumption on
-the negative side. Every style also shows a `RESET CYCLE` comparison:
+the negative side. Its linear projection assumes the average burn observed
+since the calculated cycle start continues unchanged: remaining time is
+`elapsed time × (1 - U) / U`. It reports safe when the resulting exhaustion
+time falls at or after reset, and hides the projection when timing is
+insufficient. This is a trend estimate, not a backend forecast. Every Quota view
+also shows a `RESET CYCLE` comparison:
 its label and countdown occupy one line, while its progress bar occupies a
 separate line with the same width and active colour as the main visualization.
 Its percentage is elapsed time from the calculated window start
-(`reset - duration`) to the next reset. Every visualization
+(`reset - duration`) to the next reset. When Codex supplies a monthly reset but
+not a cycle start, the card says `CYCLE START UNAVAILABLE`, shows the known
+countdown, and leaves the comparison bar unfilled. Every visualization
 receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
@@ -383,9 +411,11 @@ for a model response, not token-by-token while a response is streaming. Raw toke
 counts also do not reveal or reproduce the backend's quota-weighting rules, so
 they should not be converted directly into the percentage gauges.
 
-Session rows represent recently active rollout roots, not a guaranteed list of
-currently open terminal processes. Two independent CLI tabs have different root
-thread IDs and therefore remain separate rows. `thread_spawn` descendants,
+Session rows represent recently active rollout roots plus explicit unresolved
+input/approval waits observed within the 24-hour rollout horizon, not a
+guaranteed list of currently open terminal processes. Two independent CLI tabs
+have different root thread IDs and therefore remain separate rows.
+`thread_spawn` descendants,
 including nested descendants, are folded into their root by following persisted
 parent IDs. Review, compact, or other internal work that lacks an explicit
 parent is never guessed onto a root; if observed, it appears in an
@@ -394,6 +424,12 @@ Monitor honors its ownership boundary so copied parent telemetry is not counted
 twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
+
+Attention detection reads only content-free lifecycle metadata: event type,
+blocking flag, ordinal, and timestamp. It does not retain the input question,
+approval text, response, or conversation content. A linked child's attention
+state is folded into its root so one remote Monitor row identifies the CLI
+session that needs intervention.
 
 `CALLS` counts upstream model-response cycles observed after Monitor Start, not
 complete user turns. A single Codex turn can make several calls while using
@@ -425,6 +461,21 @@ local tokens before the final quota snapshot, so the account observation
 brackets the local interval. These operations are not atomic, so unrelated
 account activity during either short boundary read remains another source of
 uncertainty.
+
+### Saved presentation preferences
+
+Codexometer stores only the selected theme, Quota view, benchmark filter, and
+benchmark ranking weight. No quota snapshot, session telemetry, benchmark
+result, message content, or credential is written. The small JSON file uses the
+platform-standard user configuration directory:
+
+- Linux: `$XDG_CONFIG_HOME/codexometer/preferences.json`, normally
+  `~/.config/codexometer/preferences.json`;
+- macOS: `~/Library/Application Support/codexometer/preferences.json`;
+- Windows: `%AppData%\codexometer\preferences.json`.
+
+Missing, unreadable, or malformed preferences never prevent startup;
+Codexometer falls back to its safe defaults.
 
 ### Deterministic benchmark
 
@@ -721,9 +772,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.5.0`. The Git tag is the release source of truth. Go automatically embeds
+`v0.6.0`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.5.0`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.6.0`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -736,7 +787,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.5.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.6.0" .
 ```
 
 ## How refresh works

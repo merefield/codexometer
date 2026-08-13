@@ -649,6 +649,24 @@ func TestMonitorRecordingLampPulsesBetweenDarkAndBrightRed(t *testing.T) {
 	}
 }
 
+func TestMonitorSessionProminentlyHighlightsAwaitingUser(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	model := Model{monitorState: monitorRunning, monitorStartedAt: time.Now().Add(-time.Minute)}
+	session := monitorSession{
+		id: "019d-attention", workingDirectory: "/work/attention", startedAt: time.Now().Add(-time.Minute),
+		baseline: 100, latest: 250, active: true, awaitingInput: true,
+	}
+	output := model.renderMonitorSessionMetrics(42, 10, session, "", colors)
+	plain := ansi.Strip(output)
+	if !strings.Contains(plain, "● AWAITING YOU") || !strings.Contains(plain, "AWAITING // ROOT") {
+		t.Fatalf("awaiting session was not prominently labelled:\n%s", plain)
+	}
+	wantBadge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning).Render(" ● AWAITING YOU ")
+	if !strings.Contains(output, wantBadge) {
+		t.Fatal("awaiting label was not highlighted with the warning treatment")
+	}
+}
+
 func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	model := Model{
 		snapshot: codex.DemoSnapshot(), width: 100, height: 36,

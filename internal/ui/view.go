@@ -26,7 +26,10 @@ func (m Model) View() string {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		parts = append(parts, renderBoot(contentWidth, m.phase, colors))
 	} else {
-		parts = append(parts, strings.Repeat(" ", contentWidth), m.renderMainTabs(contentWidth, colors))
+		if layout.headerSpacer {
+			parts = append(parts, strings.Repeat(" ", contentWidth))
+		}
+		parts = append(parts, m.renderMainTabs(contentWidth, colors))
 		if m.meterStyle.isQuota() {
 			parts = append(parts, m.renderQuotaStyleTabs(contentWidth, colors))
 		}
@@ -95,16 +98,18 @@ func (m Model) renderSignalStatus(width int, colors palette) string {
 	if m.err != nil {
 		return renderColoredSignal("STALE SIGNAL", colors.warning)
 	}
-	health := snapshotQuotaHealth(m.snapshot, time.Now())
-	semantic := lipgloss.NewStyle().Bold(true).Foreground(health.color(colors))
+	signal := snapshotQuotaSignal(m.snapshot, time.Now())
+	semantic := lipgloss.NewStyle().Bold(true).Foreground(signal.health.color(colors))
 	online := lipgloss.NewStyle().Bold(true).Foreground(colors.primary)
 	if width < 24 {
-		return semantic.Render("● " + health.compactLabel())
+		return semantic.Render(ansi.Truncate("● "+signal.compactLabel(), width, ""))
 	}
 	if width < 48 {
-		return semantic.Render("●") + online.Render(" ON // ") + semantic.Render(health.compactLabel())
+		label := ansi.Truncate(signal.compactLabel(), max(width-8, 1), "")
+		return semantic.Render("●") + online.Render(" ON // ") + semantic.Render(label)
 	}
-	return semantic.Render("●") + online.Render(" ONLINE // ") + semantic.Render(health.label())
+	label := ansi.Truncate(signal.label(), max(width-12, 1), "")
+	return semantic.Render("●") + online.Render(" ONLINE // ") + semantic.Render(label)
 }
 
 func renderColoredSignal(label string, color lipgloss.Color) string {
@@ -135,7 +140,17 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
 		left += fmt.Sprintf("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
-	status := left
+	if credits, ok := m.snapshot.CreditStatus(); ok {
+		switch {
+		case credits.Unlimited:
+			left += "  //  CREDITS UNLIMITED"
+		case credits.Balance != nil && strings.TrimSpace(*credits.Balance) != "":
+			left += "  //  CREDITS " + strings.TrimSpace(*credits.Balance)
+		case credits.HasCredits:
+			left += "  //  CREDITS AVAILABLE"
+		}
+	}
+	status := ansi.Truncate(left, width, "")
 	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterStyle.isQuota())
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
