@@ -987,6 +987,46 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 	}
 }
 
+func TestEstimateAPICostUsesPublishedLongContextRates(t *testing.T) {
+	usage := BenchmarkUsage{
+		InputTokens: 300_000, CachedInputTokens: 100_000, CacheWriteInputTokens: 20_000,
+		OutputTokens: 10_000, TotalTokens: 310_000,
+	}
+	cost, known, issue := EstimateStandardAPIEqCost("gpt-5.6-terra", usage)
+	want := (180_000*4.00 + 100_000*0.40 + 20_000*5.00 + 10_000*18.00) / 1_000_000.0
+	if !known || issue != "" || math.Abs(cost-want) > 1e-12 {
+		t.Fatalf("long-context cost = %f, %v, %q; want %f", cost, known, issue, want)
+	}
+	olderUsage := usage
+	olderUsage.CacheWriteInputTokens = 0
+	if _, known, issue := EstimateStandardAPIEqCost("gpt-5.4", olderUsage); known || !strings.Contains(issue, "long-context") {
+		t.Fatalf("unpublished long-context rate = known %v, issue %q", known, issue)
+	}
+}
+
+func TestBenchmarkPricesLongContextThresholdPerRawResponse(t *testing.T) {
+	response := BenchmarkUsage{InputTokens: 200_000, OutputTokens: 1_000, TotalTokens: 201_000}
+	telemetry := newBenchmarkTelemetry()
+	telemetry.recordRawResponse("response-1", &response)
+	telemetry.recordRawResponse("response-2", &response)
+	total := BenchmarkUsage{InputTokens: 400_000, OutputTokens: 2_000, TotalTokens: 402_000}
+	telemetry.recordCumulative(total)
+	result := BenchmarkResult{ActualModel: "gpt-5.6-terra"}
+	applyBenchmarkMeasurements(&result, telemetry)
+	want := 2 * (200_000*2.00 + 1_000*12.00) / 1_000_000.0
+	if !result.CostKnown || math.Abs(result.CostUSD-want) > 1e-12 {
+		t.Fatalf("per-response cost = %#v; want %f", result, want)
+	}
+
+	cumulativeOnly := newBenchmarkTelemetry()
+	cumulativeOnly.recordCumulative(total)
+	result = BenchmarkResult{ActualModel: "gpt-5.6-terra"}
+	applyBenchmarkMeasurements(&result, cumulativeOnly)
+	if result.CostKnown || !strings.Contains(result.CostIssue, "per-response") {
+		t.Fatalf("ambiguous cumulative long-context cost = %#v", result)
+	}
+}
+
 func TestEstimateAPICostRequiresPublishedCacheWriteRate(t *testing.T) {
 	usage := BenchmarkUsage{InputTokens: 1_000, CacheWriteInputTokens: 100, OutputTokens: 50, TotalTokens: 1_050}
 	if _, ok := estimateAPICost("gpt-5.5", usage); ok {

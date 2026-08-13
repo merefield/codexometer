@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -63,15 +64,21 @@ func TestInvalidOrUnreadablePreferencesKeepSafeDefaults(t *testing.T) {
 
 func TestFilePreferenceStoreRoundTripAndMissingFile(t *testing.T) {
 	store := FilePreferenceStore{Path: filepath.Join(t.TempDir(), "nested", "preferences.json")}
-	if preferences, err := store.Load(); err != nil || preferences != (Preferences{}) {
+	if preferences, err := store.Load(); err != nil || !reflect.DeepEqual(preferences, Preferences{}) {
 		t.Fatalf("missing preference file = %#v, %v", preferences, err)
 	}
-	want := Preferences{Theme: "rust", QuotaView: "pie", BenchmarkFilter: "pass", BenchmarkRank: "balanced"}
+	want := Preferences{
+		Theme: "rust", QuotaView: "pie", BenchmarkFilter: "pass", BenchmarkRank: "balanced",
+		QuotaAPIEvidence: []quotaAPISample{{
+			Key: "pro|codex|300", CapacityUSD: 12, LowUSD: 10, HighUSD: 15,
+			DeltaPercent: 5, ObservedAtUnix: time.Now().Unix(), PricingRetrievedOn: "2026-08-13",
+		}},
+	}
 	if err := store.Save(want); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Load()
-	if err != nil || got != want {
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("preference round trip = %#v, %v; want %#v", got, err, want)
 	}
 }

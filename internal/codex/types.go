@@ -51,6 +51,7 @@ type ResetCredits struct {
 
 type Meter struct {
 	Bucket  string
+	LimitID string
 	Name    string
 	Window  Window
 	Kind    MeterKind
@@ -93,10 +94,10 @@ func (s Snapshot) Meters() []Meter {
 			name = *bucket.LimitName
 		}
 		if bucket.Primary != nil {
-			meters = append(meters, Meter{Bucket: name, Name: windowName(*bucket.Primary), Window: *bucket.Primary})
+			meters = append(meters, Meter{Bucket: name, LimitID: key, Name: windowName(*bucket.Primary), Window: *bucket.Primary})
 		}
 		if bucket.Secondary != nil {
-			meters = append(meters, Meter{Bucket: name, Name: windowName(*bucket.Secondary), Window: *bucket.Secondary})
+			meters = append(meters, Meter{Bucket: name, LimitID: key, Name: windowName(*bucket.Secondary), Window: *bucket.Secondary})
 		}
 		if bucket.IndividualLimit != nil {
 			limit := bucket.IndividualLimit
@@ -111,6 +112,7 @@ func (s Snapshot) Meters() []Meter {
 			}
 			meters = append(meters, Meter{
 				Bucket:  name,
+				LimitID: key,
 				Name:    "MONTHLY CREDIT LIMIT",
 				Window:  Window{UsedPercent: 100 - limit.RemainingPercent, ResetsAt: reset},
 				Kind:    MeterIndividualLimit,

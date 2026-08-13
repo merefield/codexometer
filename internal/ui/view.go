@@ -38,6 +38,9 @@ func (m Model) View() string {
 			parts = append(parts, errorView)
 		}
 		meters := m.snapshot.Meters()
+		if m.meterStyle.isQuota() {
+			meters = m.quotaMetersWithInsights(contentWidth)
+		}
 		if len(meters) == 0 {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)

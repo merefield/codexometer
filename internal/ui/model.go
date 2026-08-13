@@ -98,11 +98,18 @@ type Model struct {
 	monitorError        string
 	monitorQuotaWindows []monitorQuotaWindow
 	monitorQuotaError   string
+
+	quotaAPIAnchors  map[string]quotaAPIAnchor
+	quotaAPIEvidence []quotaAPISample
+	quotaAPIIssues   map[string]string
 }
 
 type fetchedMsg struct {
 	snapshot codex.Snapshot
 	err      error
+	usage    codex.LiveUsageSnapshot
+	usageErr error
+	at       time.Time
 }
 
 type secondMsg time.Time
@@ -284,6 +291,8 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		loading:           true,
 		nextRefresh:       time.Now().Add(refreshEvery),
 		benchmarkRankMode: benchmarkRankBalanced,
+		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
+		quotaAPIIssues:    make(map[string]string),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -437,6 +446,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
+			if message.usageErr == nil && m.usageFetcher != nil {
+				m.observeQuotaAPIEq(message.snapshot, message.usage, message.at)
+			}
 			if m.monitorState == monitorRunning || m.monitorState == monitorStopping {
 				m.syncMonitorQuotaSnapshot(message.snapshot)
 				m.monitorQuotaError = ""
@@ -976,7 +988,12 @@ func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]foo
 func (m Model) fetch() tea.Cmd {
 	return func() tea.Msg {
 		snapshot, err := m.fetcher.Fetch(context.Background())
-		return fetchedMsg{snapshot: snapshot, err: err}
+		message := fetchedMsg{snapshot: snapshot, err: err, at: time.Now()}
+		if err == nil && m.usageFetcher != nil {
+			message.usage, message.usageErr = m.usageFetcher.FetchTokenUsage(context.Background())
+			message.at = time.Now()
+		}
+		return message
 	}
 }
 

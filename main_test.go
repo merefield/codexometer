@@ -16,7 +16,7 @@ func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{flag}, &stdout, &stderr, dependencies{})
-		if code != 0 || stdout.String() != "codexometer v0.6.0\n" || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != "codexometer v0.7.0\n" || stderr.Len() != 0 {
 			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
 		}
 	}
@@ -74,8 +74,12 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			refreshed, err := fetcher.Fetch(context.Background())
+			if err != nil || refreshed.Meters()[0].Window.UsedPercent-snapshot.Meters()[0].Window.UsedPercent != 5 {
+				t.Fatalf("demo quota did not advance: first=%#v second=%#v err=%v", snapshot, refreshed, err)
+			}
 			second, err := usageFetcher.FetchTokenUsage(context.Background())
-			if err != nil || second.TotalTokens <= first.TotalTokens {
+			if err != nil || second.TotalTokens <= first.TotalTokens || second.APIEqUSD <= 0 || second.APIEqPricedCalls != 1 {
 				t.Fatalf("demo token usage did not advance: first=%#v second=%#v err=%v", first, second, err)
 			}
 			return nil

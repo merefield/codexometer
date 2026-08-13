@@ -8,13 +8,15 @@ import (
 	"time"
 )
 
-// Preferences contains the small set of presentation choices that survive
-// between runs. Operational state and fetched account data are never stored.
+// Preferences contains presentation choices and anonymous aggregate quota
+// evidence that survive between runs. Raw account, session, and token-event
+// data are never stored.
 type Preferences struct {
-	Theme           string `json:"theme,omitempty"`
-	QuotaView       string `json:"quotaView,omitempty"`
-	BenchmarkFilter string `json:"benchmarkFilter,omitempty"`
-	BenchmarkRank   string `json:"benchmarkRank,omitempty"`
+	Theme            string           `json:"theme,omitempty"`
+	QuotaView        string           `json:"quotaView,omitempty"`
+	BenchmarkFilter  string           `json:"benchmarkFilter,omitempty"`
+	BenchmarkRank    string           `json:"benchmarkRank,omitempty"`
+	QuotaAPIEvidence []quotaAPISample `json:"quotaApiEvidence,omitempty"`
 }
 
 type PreferenceStore interface {
@@ -87,6 +89,7 @@ func (m *Model) applyPreferences(preferences Preferences) {
 	if rank, ok := benchmarkRankPreferenceIDs[preferences.BenchmarkRank]; ok {
 		m.benchmarkRankMode = rank
 	}
+	m.quotaAPIEvidence = validQuotaAPISamples(preferences.QuotaAPIEvidence, time.Now())
 }
 
 func (m Model) persistPreferences() {
@@ -94,10 +97,11 @@ func (m Model) persistPreferences() {
 		return
 	}
 	_ = m.preferenceStore.Save(Preferences{
-		Theme:           themePreferenceNames[m.theme],
-		QuotaView:       quotaViewPreferenceNames[m.selectedQuotaStyle()],
-		BenchmarkFilter: benchmarkFilterPreferenceNames[m.benchmarkFilter],
-		BenchmarkRank:   benchmarkRankPreferenceNames[m.benchmarkRankMode],
+		Theme:            themePreferenceNames[m.theme],
+		QuotaView:        quotaViewPreferenceNames[m.selectedQuotaStyle()],
+		BenchmarkFilter:  benchmarkFilterPreferenceNames[m.benchmarkFilter],
+		BenchmarkRank:    benchmarkRankPreferenceNames[m.benchmarkRankMode],
+		QuotaAPIEvidence: append([]quotaAPISample(nil), m.quotaAPIEvidence...),
 	})
 }
 

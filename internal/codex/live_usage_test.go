@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,6 +277,106 @@ func TestLiveUsageReaderCapturesContentFreeModelCallAndTurnTimingPulses(t *testi
 	}
 	if len(session.TurnTimings) != 3 || session.TurnTimings[2].Available {
 		t.Fatalf("legacy turn timing was not retained as unavailable: %#v", session.TurnTimings)
+	}
+}
+
+func TestLiveUsageReaderPricesEachEffectiveModelAndFailsClosed(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	path := testRolloutPath(t, home, now.Add(-time.Hour), "api-eq")
+	writeRollout(t, path,
+		sessionMetaLine("api-eq", `"cli"`, "/work/api-eq", nil)+"\n"+
+			turnContextLine(now.Add(-time.Hour), "gpt-5.6-sol")+"\n"+
+			tokenCountLine(now.Add(-time.Hour), 100)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	appendRollout(t, path,
+		turnContextLine(now, "gpt-5.6-terra")+"\n"+
+			richTokenCountLine(now, 1_200, 1_000, 200, 100, 100)+"\n")
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := (700*2.00 + 200*0.20 + 100*2.50 + 100*12.00) / 1_000_000.0
+	if math.Abs(usage.APIEqUSD-want) > 1e-12 || usage.APIEqPricedCalls != 1 || usage.APIEqUnpricedCalls != 0 {
+		t.Fatalf("priced usage = %#v; want $%f and one priced call", usage, want)
+	}
+	call := usage.Sessions[0].ModelCalls[len(usage.Sessions[0].ModelCalls)-1]
+	if call.Model != "gpt-5.6-terra" || !call.APIEqKnown || math.Abs(call.APIEqUSD-want) > 1e-12 {
+		t.Fatalf("priced model call = %#v", call)
+	}
+
+	appendRollout(t, path,
+		modelRerouteLine(now.Add(time.Second), "future-model")+"\n"+
+			richTokenCountLine(now.Add(2*time.Second), 1_310, 100, 0, 0, 10)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.APIEqPricedCalls != 1 || usage.APIEqUnpricedCalls != 1 || math.Abs(usage.APIEqUSD-want) > 1e-12 {
+		t.Fatalf("unknown rerouted model did not fail closed: %#v, %v", usage, err)
+	}
+}
+
+func TestLiveUsageReaderRecoversModelWhenStartedMidTurn(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	path := testRolloutPath(t, home, now, "mid-turn-model")
+	writeRollout(t, path,
+		sessionMetaLine("mid-turn", `"cli"`, "/work/mid", nil)+"\n"+
+			turnContextLine(now, "gpt-5.6-luna")+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	appendRollout(t, path, richTokenCountLine(now.Add(time.Second), 110, 100, 0, 0, 10)+"\n")
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.APIEqPricedCalls != 1 || len(usage.Sessions) != 1 || usage.Sessions[0].ModelCalls[0].Model != "gpt-5.6-luna" {
+		t.Fatalf("mid-turn model recovery = %#v, %v", usage, err)
+	}
+}
+
+func TestLiveUsageReaderPricesNewRolloutModelsInEventOrder(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	baseline := testRolloutPath(t, home, now.Add(-time.Hour), "existing")
+	writeRollout(t, baseline, sessionMetaLine("existing", `"cli"`, "/work/existing", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	path := testRolloutPath(t, home, now.Add(2*time.Second), "new-model-order")
+	writeRollout(t, path,
+		sessionMetaLine("new-model-order", `"cli"`, "/work/new", nil)+"\n"+
+			turnContextLine(now.Add(2*time.Second), "gpt-5.6-terra")+"\n"+
+			richTokenCountLine(now.Add(3*time.Second), 110, 100, 0, 0, 10)+"\n"+
+			turnContextLine(now.Add(4*time.Second), "gpt-5.6-luna")+"\n"+
+			richTokenCountLine(now.Add(5*time.Second), 220, 100, 0, 0, 10)+"\n")
+	reader.lastDiscovery = time.Time{}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 2 {
+		t.Fatalf("new rollout usage = %#v, %v", usage, err)
+	}
+	want := (100*2.00+10*12.00)/1_000_000.0 + (100*0.20+10*1.20)/1_000_000.0
+	if usage.APIEqPricedCalls != 2 || usage.APIEqUnpricedCalls != 0 || math.Abs(usage.APIEqUSD-want) > 1e-12 {
+		t.Fatalf("event-order pricing = %#v; want %f", usage, want)
+	}
+	var calls []LiveModelCall
+	for _, session := range usage.Sessions {
+		calls = append(calls, session.ModelCalls...)
+	}
+	if len(calls) != 2 || calls[0].Model != "gpt-5.6-terra" || calls[1].Model != "gpt-5.6-luna" {
+		t.Fatalf("event-order models = %#v", calls)
 	}
 }
 
@@ -777,6 +878,22 @@ func tokenCountLineWithOutput(at time.Time, total, output int64) string {
 		`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":%d},"last_token_usage":{"output_tokens":%d,"total_tokens":%d}}}}`,
 		at.UTC().Format(time.RFC3339Nano), total, output, total,
 	)
+}
+
+func richTokenCountLine(at time.Time, cumulative, input, cached, cacheWrite, output int64) string {
+	lastTotal := input + output
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":%d},"last_token_usage":{"input_tokens":%d,"cached_input_tokens":%d,"cache_write_input_tokens":%d,"output_tokens":%d,"total_tokens":%d}}}}`,
+		at.UTC().Format(time.RFC3339Nano), cumulative, input, cached, cacheWrite, output, lastTotal,
+	)
+}
+
+func turnContextLine(at time.Time, model string) string {
+	return fmt.Sprintf(`{"timestamp":%q,"type":"turn_context","payload":{"model":%q}}`, at.UTC().Format(time.RFC3339Nano), model)
+}
+
+func modelRerouteLine(at time.Time, model string) string {
+	return fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"model_reroute","to_model":%q}}`, at.UTC().Format(time.RFC3339Nano), model)
 }
 
 func turnTimingLine(at time.Time, ttftMS int64) string {
