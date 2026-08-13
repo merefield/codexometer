@@ -31,8 +31,8 @@ const (
 
 var quotaStyleOrder = [...]meterStyleID{
 	styleBars,
-	stylePie,
 	styleConsumptionPace,
+	stylePie,
 	styleFuel,
 }
 

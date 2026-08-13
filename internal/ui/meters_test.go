@@ -12,7 +12,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-var quotaMeterStyles = []meterStyleID{styleBars, stylePie, styleConsumptionPace, styleFuel}
+var quotaMeterStyles = []meterStyleID{styleBars, styleConsumptionPace, stylePie, styleFuel}
 
 func TestEveryMeterStyleHasDistinctiveOutput(t *testing.T) {
 	colors := paletteFor(themeHacker)

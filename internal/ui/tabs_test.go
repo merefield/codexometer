@@ -112,17 +112,17 @@ func TestQuotaStyleTabsSupportHoverClickAndPulse(t *testing.T) {
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
-	if command != nil || !model.styleHovered || model.hoveredStyle != stylePie {
-		t.Fatalf("pie hover was not recorded: hovered=%v style=%d", model.styleHovered, model.hoveredStyle)
+	if command != nil || !model.styleHovered || model.hoveredStyle != styleConsumptionPace {
+		t.Fatalf("consumption pace hover was not recorded: hovered=%v style=%d", model.styleHovered, model.hoveredStyle)
 	}
 
 	mouse.Action = tea.MouseActionPress
 	updated, command = model.Update(mouse)
 	model = updated.(Model)
-	if command == nil || model.meterStyle != stylePie || model.quotaMeterStyle != stylePie || !model.styleFlashing || model.flashedStyle != stylePie {
-		t.Fatalf("pie click did not select, remember, and pulse: style=%d remembered=%d flashing=%v", model.meterStyle, model.quotaMeterStyle, model.styleFlashing)
+	if command == nil || model.meterStyle != styleConsumptionPace || model.quotaMeterStyle != styleConsumptionPace || !model.styleFlashing || model.flashedStyle != styleConsumptionPace {
+		t.Fatalf("consumption pace click did not select, remember, and pulse: style=%d remembered=%d flashing=%v", model.meterStyle, model.quotaMeterStyle, model.styleFlashing)
 	}
-	updated, _ = model.Update(styleTabFlashExpiredMsg{style: stylePie, sequence: model.styleSequence})
+	updated, _ = model.Update(styleTabFlashExpiredMsg{style: styleConsumptionPace, sequence: model.styleSequence})
 	model = updated.(Model)
 	if model.styleFlashing {
 		t.Fatal("current tab pulse did not expire")
@@ -178,7 +178,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 
 func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
 	model := Model{meterStyle: styleBars}
-	for _, want := range []meterStyleID{stylePie, styleConsumptionPace, styleFuel, styleBars} {
+	for _, want := range []meterStyleID{styleConsumptionPace, stylePie, styleFuel, styleBars} {
 		updated, command := model.Update(key('v'))
 		model = updated.(Model)
 		if command == nil || model.meterStyle != want || model.quotaMeterStyle != want || model.flashedButton != footerButtonView {
