@@ -10,8 +10,8 @@
 
 The interface has three responsive tabs:
 
-- **Quota** — switch between Bars, Pie, Consumption Pace, and Fuel Tank presentations. A pace-aware health signal summarises the most pressured quota window as Clear, Watch, Limit Near, or Exhausted, so low remaining quota close to reset is treated differently from quota burning too quickly early in a window.
-- **Monitor** — record locally observed token activity by root Codex session, with scrolling graphs and compact call, activity, output, and time-to-first-token telemetry. Explicitly linked spawned agents are folded into their parent session.
+- **Quota** — switch between Bars, Pie, Consumption Pace, and Fuel Tank presentations. A pace-aware health signal distinguishes quota that is safely tracking the reset cycle from quota burning too quickly. Codexometer can also learn an observed standard API-equivalent estimate for primary Codex windows, showing both current consumption and an inferred 100% value with conservative confidence and visible pricing provenance.
+- **Monitor** — record locally observed token activity by root Codex session, with scrolling graphs and compact call, activity, output, and time-to-first-token telemetry. It estimates each session's local share of observed account quota movement and highlights sessions needing input or approval when Codex exposes that state. Explicitly linked spawned agents are folded into their parent session.
 - **Benchmark** — run deterministic, programmatically checked coding challenges across the available model and reasoning-level combinations. Compare pass/fail results, wall time, tokens, estimated API-equivalent cost, and rankings weighted towards cost, speed, or a balance of both.
 
 There are five colour themes, mouse-clickable controls, keyboard shortcuts, responsive layouts, and automatic support for additional rate-limit windows when Codex returns them.
