@@ -103,7 +103,7 @@ func TestQuotaAPIEstimatorKeepsDivergentSamplesAtLowConfidence(t *testing.T) {
 		model.quotaAPIEvidence = append(model.quotaAPIEvidence, quotaAPISample{
 			Key: key, CapacityUSD: capacity, LowUSD: capacity * 5 / 6, HighUSD: capacity * 5 / 4,
 			DeltaPercent: 5, ObservedAtUnix: now.Add(time.Duration(index) * time.Minute).Unix(),
-			PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+			PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 		})
 	}
 	estimate, ok := model.quotaAPIEstimate(snapshot, snapshot.Meters()[0])
@@ -192,7 +192,7 @@ func TestQuotaAPITelemetryIssueTakesPrecedenceOverOldEstimate(t *testing.T) {
 	model.snapshot = snapshot
 	model.quotaAPIEvidence = []quotaAPISample{{
 		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 5,
-		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
 	model.quotaAPITelemetryIssue = "LOCAL TELEMETRY UNAVAILABLE"
 	line := model.quotaAPILine(snapshot.Meters()[0], 100)
@@ -203,7 +203,7 @@ func TestQuotaAPITelemetryIssueTakesPrecedenceOverOldEstimate(t *testing.T) {
 
 func TestQuotaAPIEvidenceRejectsStaleAndDifferentPricing(t *testing.T) {
 	now := time.Now()
-	valid := quotaAPISample{Key: "pro|codex|300", CapacityUSD: 10, LowUSD: 9, HighUSD: 11, DeltaPercent: 5, ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn}
+	valid := quotaAPISample{Key: "pro|codex|300", CapacityUSD: 10, LowUSD: 9, HighUSD: 11, DeltaPercent: 5, ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn}
 	stale := valid
 	stale.ObservedAtUnix = now.Add(-quotaAPIMaxAge - time.Hour).Unix()
 	oldPrice := valid
@@ -223,7 +223,7 @@ func TestEveryQuotaViewDisplaysResponsiveAPIEqReadout(t *testing.T) {
 	model.width, model.height = 120, 44
 	model.quotaAPIEvidence = []quotaAPISample{{
 		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 10,
-		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
 	for _, style := range quotaStyleOrder {
 		model.meterStyle, model.quotaMeterStyle = style, style

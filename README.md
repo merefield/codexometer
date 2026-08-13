@@ -397,6 +397,10 @@ being guessed or treated as free.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 and were retrieved on **2026-08-13**.
+Every Quota presentation repeats that retrieval date and a terminal hyperlink
+to the source in its footer when the terminal is wide enough, matching the
+Benchmark view and making stale compiled pricing conspicuous wherever a priced
+figure appears.
 
 Each refresh brackets the account quota request with local accounting reads.
 If their cost or call counters differ, `OBSERVATION DEFERRED` is shown and no
@@ -806,9 +810,9 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The rates compiled into this version were retrieved from
-that page on **2026-08-13**; the Benchmark footer displays both the retrieval
-date and a terminal hyperlink to the source so stale embedded pricing is
-visible while interpreting results.
+that page on **2026-08-13**; every pricing-bearing Quota or Benchmark footer
+displays both the retrieval date and a terminal hyperlink to the source when
+space permits, so stale embedded pricing is visible while interpreting results.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
@@ -858,7 +862,7 @@ is:
 | **P2** | Reduce cache-order bias with balanced warm-ups, randomized ordering, or repeated trials | Open |
 | **P2** | Report a cache-neutral comparison alongside the observed cached cost | Open |
 | **P2** | Price mixed-model reroutes from a response-to-model association | Open; the current raw event does not expose that association |
-| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Complete; the Benchmark footer shows its source and retrieval date |
+| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Complete; every pricing-bearing Quota or Benchmark footer shows its source and retrieval date when space permits |
 | **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Complete for usage objects; unknown token fields fail closed and older servers retain the cumulative fallback |
 
 Future accounting changes should preserve these rules:

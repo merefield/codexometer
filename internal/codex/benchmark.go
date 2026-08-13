@@ -28,11 +28,11 @@ const (
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
 
-	// BenchmarkPricingSourceURL and BenchmarkPricingRetrievedOn identify the
-	// published rates compiled into this release. Keep both in sync whenever
+	// StandardAPIPricingSourceURL and StandardAPIPricingRetrievedOn identify
+	// the published rates compiled into this release. Keep both in sync whenever
 	// standardAPIPrices changes.
-	BenchmarkPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
-	BenchmarkPricingRetrievedOn = "2026-08-13"
+	StandardAPIPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
+	StandardAPIPricingRetrievedOn = "2026-08-13"
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.

@@ -114,7 +114,7 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		m.quotaAPIEvidence = append(m.quotaAPIEvidence, quotaAPISample{
 			Key: key, CapacityUSD: capacity, LowUSD: low, HighUSD: high,
 			DeltaPercent: deltaPercent, ObservedAtUnix: at.Unix(),
-			PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+			PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 		})
 		m.quotaAPIEvidence = trimQuotaAPISamples(m.quotaAPIEvidence, key)
 		m.quotaAPIAnchors[key] = current
@@ -159,7 +159,7 @@ func validQuotaAPISamples(samples []quotaAPISample, now time.Time) []quotaAPISam
 	valid := make([]quotaAPISample, 0, len(samples))
 	cutoff := now.Add(-quotaAPIMaxAge).Unix()
 	for _, sample := range samples {
-		if sample.Key == "" || sample.PricingRetrievedOn != codex.BenchmarkPricingRetrievedOn ||
+		if sample.Key == "" || sample.PricingRetrievedOn != codex.StandardAPIPricingRetrievedOn ||
 			sample.ObservedAtUnix < cutoff || sample.ObservedAtUnix > now.Add(time.Hour).Unix() ||
 			sample.DeltaPercent < quotaAPIMinimumDelta || !positiveFinite(sample.CapacityUSD) ||
 			!positiveFinite(sample.LowUSD) || !positiveFinite(sample.HighUSD) ||
