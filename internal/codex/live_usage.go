@@ -696,14 +696,10 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 		return rolloutTokenRecord{}, false
 	}
 	lastUsage := event.Payload.Info.LastTokenUsage.benchmarkUsage()
-	outputTokens := lastUsage.OutputTokens
 	outputKnown := event.Payload.Info.LastTokenUsage.OutputTokens != nil
-	if outputKnown {
-		outputTokens = lastUsage.OutputTokens
-	}
 	return rolloutTokenRecord{
 		total:        event.Payload.Info.TotalTokenUsage.TotalTokens,
-		outputTokens: outputTokens, outputKnown: outputKnown,
+		outputTokens: lastUsage.OutputTokens, outputKnown: outputKnown,
 		usage: lastUsage,
 		at:    event.Timestamp, ordinal: event.Ordinal,
 	}, true
