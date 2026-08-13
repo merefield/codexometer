@@ -38,6 +38,9 @@ func (m Model) View() string {
 			parts = append(parts, errorView)
 		}
 		meters := m.snapshot.Meters()
+		if m.meterStyle.isQuota() {
+			meters = m.quotaMetersWithInsights(contentWidth)
+		}
 		if len(meters) == 0 {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)
@@ -151,8 +154,8 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
-	if m.meterStyle == styleBenchmark {
-		status = renderBenchmarkPricingFooter(status, width, colors)
+	if m.meterStyle == styleBenchmark || m.meterStyle.isQuota() {
+		status = renderPricingFooter(status, width, colors)
 	}
 	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterStyle.isQuota())
 	controls := make([]string, 0, len(buttons))
@@ -168,12 +171,12 @@ func (m Model) renderFooter(width int, colors palette) string {
 	return status + "\n" + controlRow
 }
 
-func renderBenchmarkPricingFooter(left string, width int, colors palette) string {
+func renderPricingFooter(left string, width int, colors palette) string {
 	const minimumWidth = 80
 	if width < minimumWidth {
 		return left
 	}
-	label := "PRICES RETRIEVED " + codex.BenchmarkPricingRetrievedOn + " // OPENAI.COM"
+	label := "PRICES RETRIEVED " + codex.StandardAPIPricingRetrievedOn + " // OPENAI.COM"
 	center := pricingHyperlink(label, colors)
 	start := (width - lipgloss.Width(center)) / 2
 	if lipgloss.Width(left)+2 > start {
@@ -184,7 +187,7 @@ func renderBenchmarkPricingFooter(left string, width int, colors palette) string
 
 func pricingHyperlink(label string, colors palette) string {
 	styled := colors.dimmed().Underline(true).Render(label)
-	return ansi.SetHyperlink(codex.BenchmarkPricingSourceURL) + styled + ansi.ResetHyperlink()
+	return ansi.SetHyperlink(codex.StandardAPIPricingSourceURL) + styled + ansi.ResetHyperlink()
 }
 
 func footerButtonAppearance(colors palette, hovered, flashed bool) lipgloss.Style {

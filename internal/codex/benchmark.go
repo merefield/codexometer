@@ -28,11 +28,11 @@ const (
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
 
-	// BenchmarkPricingSourceURL and BenchmarkPricingRetrievedOn identify the
-	// published rates compiled into this release. Keep both in sync whenever
+	// StandardAPIPricingSourceURL and StandardAPIPricingRetrievedOn identify
+	// the published rates compiled into this release. Keep both in sync whenever
 	// standardAPIPrices changes.
-	BenchmarkPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
-	BenchmarkPricingRetrievedOn = "2026-08-13"
+	StandardAPIPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
+	StandardAPIPricingRetrievedOn = "2026-08-13"
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -775,7 +775,19 @@ func applyBenchmarkMeasurements(result *BenchmarkResult, telemetry *benchmarkTel
 	if result.ToolUsed {
 		result.CostIssue = "tool use prohibited: " + result.ToolType
 	} else if result.UsageKnown {
-		result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
+		if result.UsageSource == BenchmarkUsageRawResponses {
+			result.CostKnown = true
+			for _, response := range result.ResponseUsage {
+				cost, known, issue := estimateSingleResponseAPICostWithIssue(result.ActualModel, response.Usage)
+				if !known {
+					result.CostUSD, result.CostKnown, result.CostIssue = 0, false, issue
+					break
+				}
+				result.CostUSD += cost
+			}
+		} else {
+			result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
+		}
 	} else {
 		result.CostIssue = result.UsageIssue
 	}
@@ -1183,14 +1195,19 @@ type apiPrice struct {
 	cacheWrite      float64
 	cacheWriteKnown bool
 	output          float64
+	longInput       float64
+	longCached      float64
+	longCacheWrite  float64
+	longOutput      float64
+	longKnown       bool
 }
 
 var standardAPIPrices = map[string]apiPrice{
-	"gpt-5.6-sol":   {input: 5.00, cached: 0.50, cacheWrite: 6.25, cacheWriteKnown: true, output: 30.00},
-	"gpt-5.6-terra": {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 12.00},
-	"gpt-5.6-luna":  {input: 0.20, cached: 0.02, cacheWrite: 0.25, cacheWriteKnown: true, output: 1.20},
-	"gpt-5.5":       {input: 5.00, cached: 0.50, output: 30.00},
-	"gpt-5.4":       {input: 2.50, cached: 0.25, output: 15.00},
+	"gpt-5.6-sol":   {input: 5.00, cached: 0.50, cacheWrite: 6.25, cacheWriteKnown: true, output: 30.00, longInput: 10.00, longCached: 1.00, longCacheWrite: 12.50, longOutput: 45.00, longKnown: true},
+	"gpt-5.6-terra": {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 12.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 18.00, longKnown: true},
+	"gpt-5.6-luna":  {input: 0.20, cached: 0.02, cacheWrite: 0.25, cacheWriteKnown: true, output: 1.20, longInput: 0.40, longCached: 0.04, longCacheWrite: 0.50, longOutput: 1.80, longKnown: true},
+	"gpt-5.5":       {input: 5.00, cached: 0.50, output: 30.00, longInput: 10.00, longCached: 1.00, longOutput: 45.00, longKnown: true},
+	"gpt-5.4":       {input: 2.50, cached: 0.25, output: 15.00, longInput: 5.00, longCached: 0.50, longOutput: 22.50, longKnown: true},
 	"gpt-5.4-mini":  {input: 0.75, cached: 0.075, output: 4.50},
 	"gpt-5.3-codex": {input: 1.75, cached: 0.175, output: 14.00},
 }
@@ -1201,6 +1218,13 @@ func estimateAPICost(model string, usage BenchmarkUsage) (float64, bool) {
 }
 
 func estimateAPICostWithIssue(model string, usage BenchmarkUsage) (float64, bool, string) {
+	if usage.InputTokens > 272_000 {
+		return 0, false, "long-context pricing requires per-response usage"
+	}
+	return estimateSingleResponseAPICostWithIssue(model, usage)
+}
+
+func estimateSingleResponseAPICostWithIssue(model string, usage BenchmarkUsage) (float64, bool, string) {
 	if issue := validateBenchmarkUsage(usage); issue != "" {
 		return 0, false, "invalid usage: " + issue
 	}
@@ -1211,12 +1235,29 @@ func estimateAPICostWithIssue(model string, usage BenchmarkUsage) (float64, bool
 	if usage.CacheWriteInputTokens > 0 && !price.cacheWriteKnown {
 		return 0, false, "no published cache-write price for model " + strings.TrimSpace(model)
 	}
+	if usage.InputTokens > 272_000 {
+		if !price.longKnown {
+			return 0, false, "no published long-context price for model " + strings.TrimSpace(model)
+		}
+		price.input = price.longInput
+		price.cached = price.longCached
+		price.cacheWrite = price.longCacheWrite
+		price.output = price.longOutput
+	}
 	regularInput := usage.InputTokens - usage.CachedInputTokens - usage.CacheWriteInputTokens
 	cost := float64(regularInput)*price.input +
 		float64(usage.CachedInputTokens)*price.cached +
 		float64(usage.CacheWriteInputTokens)*price.cacheWrite +
 		float64(usage.OutputTokens)*price.output
 	return cost / 1_000_000, true, ""
+}
+
+// EstimateStandardAPIEqCost prices one model response at the published
+// standard API text-token rates embedded in this release. Unknown models,
+// token shapes, or pricing classes fail closed so callers cannot silently
+// understate an aggregate.
+func EstimateStandardAPIEqCost(model string, usage BenchmarkUsage) (float64, bool, string) {
+	return estimateSingleResponseAPICostWithIssue(model, usage)
 }
 
 func priceForModel(model string) (apiPrice, bool) {

@@ -16,7 +16,7 @@ func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{flag}, &stdout, &stderr, dependencies{})
-		if code != 0 || stdout.String() != "codexometer v0.6.0\n" || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != "codexometer v0.7.1\n" || stderr.Len() != 0 {
 			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
 		}
 	}
@@ -62,10 +62,6 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			if refresh != 30*time.Second || !inline {
 				t.Fatalf("refresh=%s inline=%v", refresh, inline)
 			}
-			snapshot, err := fetcher.Fetch(context.Background())
-			if err != nil || len(snapshot.Meters()) != 2 {
-				t.Fatalf("demo fetch returned %#v, %v", snapshot, err)
-			}
 			usageFetcher, ok := fetcher.(ui.TokenUsageFetcher)
 			if !ok {
 				t.Fatal("demo fetcher does not provide live token usage")
@@ -74,9 +70,25 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			snapshot, err := fetcher.Fetch(context.Background())
+			if err != nil || len(snapshot.Meters()) != 2 {
+				t.Fatalf("demo fetch returned %#v, %v", snapshot, err)
+			}
+			stable, err := usageFetcher.FetchTokenUsage(context.Background())
+			if err != nil || !sameDemoAccounting(first, stable) {
+				t.Fatalf("initial demo bracket was unstable: first=%#v second=%#v err=%v", first, stable, err)
+			}
+			advanced, err := usageFetcher.FetchTokenUsage(context.Background())
+			if err != nil || advanced.TotalTokens <= stable.TotalTokens || advanced.APIEqUSD <= 0 {
+				t.Fatalf("demo activity did not advance: before=%#v after=%#v err=%v", stable, advanced, err)
+			}
+			refreshed, err := fetcher.Fetch(context.Background())
+			if err != nil || refreshed.Meters()[0].Window.UsedPercent-snapshot.Meters()[0].Window.UsedPercent != 5 {
+				t.Fatalf("demo quota did not advance: first=%#v second=%#v err=%v", snapshot, refreshed, err)
+			}
 			second, err := usageFetcher.FetchTokenUsage(context.Background())
-			if err != nil || second.TotalTokens <= first.TotalTokens {
-				t.Fatalf("demo token usage did not advance: first=%#v second=%#v err=%v", first, second, err)
+			if err != nil || !sameDemoAccounting(advanced, second) || second.APIEqPricedCalls != 1 {
+				t.Fatalf("second demo bracket was unstable: first=%#v second=%#v err=%v", advanced, second, err)
 			}
 			return nil
 		},
@@ -85,6 +97,11 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	if code != 0 || !called {
 		t.Fatalf("code=%d called=%v stderr=%q", code, called, stderr.String())
 	}
+}
+
+func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
+	return left.APIEqUSD == right.APIEqUSD && left.APIEqPricedCalls == right.APIEqPricedCalls &&
+		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls
 }
 
 func TestRunReportsUIError(t *testing.T) {

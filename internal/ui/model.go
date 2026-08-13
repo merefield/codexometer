@@ -98,11 +98,20 @@ type Model struct {
 	monitorError        string
 	monitorQuotaWindows []monitorQuotaWindow
 	monitorQuotaError   string
+
+	quotaAPIAnchors        map[string]quotaAPIAnchor
+	quotaAPIEvidence       []quotaAPISample
+	quotaAPIIssues         map[string]string
+	quotaAPIAccount        string
+	quotaAPITelemetryIssue string
 }
 
 type fetchedMsg struct {
 	snapshot codex.Snapshot
 	err      error
+	usage    codex.LiveUsageSnapshot
+	usageErr error
+	at       time.Time
 }
 
 type secondMsg time.Time
@@ -284,6 +293,8 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		loading:           true,
 		nextRefresh:       time.Now().Add(refreshEvery),
 		benchmarkRankMode: benchmarkRankBalanced,
+		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
+		quotaAPIIssues:    make(map[string]string),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -437,6 +448,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
+			if message.usageErr == nil && m.usageFetcher != nil {
+				m.quotaAPITelemetryIssue = ""
+				m.observeQuotaAPIEq(message.snapshot, message.usage, message.at)
+			} else if message.usageErr != nil {
+				if errors.Is(message.usageErr, errQuotaObservationChanged) {
+					m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
+				} else {
+					m.quotaAPITelemetryIssue = "LOCAL TELEMETRY UNAVAILABLE"
+				}
+			}
 			if m.monitorState == monitorRunning || m.monitorState == monitorStopping {
 				m.syncMonitorQuotaSnapshot(message.snapshot)
 				m.monitorQuotaError = ""
@@ -975,8 +996,30 @@ func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]foo
 
 func (m Model) fetch() tea.Cmd {
 	return func() tea.Msg {
+		var before codex.LiveUsageSnapshot
+		var beforeErr error
+		if m.usageFetcher != nil {
+			before, beforeErr = m.usageFetcher.FetchTokenUsage(context.Background())
+		}
 		snapshot, err := m.fetcher.Fetch(context.Background())
-		return fetchedMsg{snapshot: snapshot, err: err}
+		message := fetchedMsg{snapshot: snapshot, err: err, at: time.Now()}
+		if err == nil && m.usageFetcher != nil {
+			after, afterErr := m.usageFetcher.FetchTokenUsage(context.Background())
+			switch {
+			case beforeErr != nil:
+				message.usageErr = beforeErr
+			case afterErr != nil:
+				message.usageErr = afterErr
+			case !quotaAPIAccountingEqual(before, after):
+				message.usageErr = errQuotaObservationChanged
+			default:
+				message.usage = after
+			}
+			if !snapshot.FetchedAt.IsZero() {
+				message.at = snapshot.FetchedAt
+			}
+		}
+		return message
 	}
 }
 

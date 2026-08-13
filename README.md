@@ -52,6 +52,9 @@ It works particularly well in:
 - A live countdown and local clock time for each reset.
 - On every Quota view, a separate reset-cycle gauge comparing elapsed window time
   with quota consumed. It uses the same active colour as its quota meter.
+- A learned standard API-equivalent estimate for primary Codex windows of both
+  quota consumed and inferred 100% capacity, including a range, sample count,
+  and deliberately conservative confidence level.
 - The current ChatGPT plan when Codex supplies it.
 - Spend-control hard stops and available account-credit balance when supplied.
 - Available earned reset credits when present.
@@ -242,9 +245,11 @@ for custom socket paths, secure remote connections, and authentication.
 ## Authentication and privacy
 
 Codexometer starts `codex app-server` as a short-lived child process and asks
-its account API for the current rate limits. The child inherits the prevailing
-environment, including `CODEX_HOME`, so it uses the same ChatGPT account and
-credential-refresh behavior as the installed Codex CLI.
+its account API for the current rate limits and account identity. The identity
+is immediately reduced to the process-local fingerprint described below. The
+child inherits the prevailing environment, including `CODEX_HOME`, so it uses
+the same ChatGPT account and credential-refresh behavior as the installed Codex
+CLI.
 
 Codexometer deliberately does not:
 
@@ -254,9 +259,11 @@ Codexometer deliberately does not:
 - send credentials to another service;
 - invoke a model merely to discover quota information.
 
-The Monitor additionally reads locally persisted Codex rollout files under
-`$CODEX_HOME/sessions` (normally `~/.codex/sessions`). It decodes `token_count`
-totals, last-response output counts, timestamps, and content-free turn timing,
+The Monitor and observed quota estimator additionally read locally persisted
+Codex rollout files under `$CODEX_HOME/sessions` (normally
+`~/.codex/sessions`). They decode `token_count` totals, each last response's
+input/cache/cache-write/output counts, requested model name, timestamps, and
+content-free turn timing,
 plus the minimum session metadata needed for grouping: thread ID, parent thread
 ID, source classification, working directory, and the inherited-history
 boundary. It also reads lifecycle event names and blocking flags to identify an
@@ -359,6 +366,85 @@ well before reset. Percentages are clamped to 0–100 before classification. If
 duration or reset data is missing or invalid, pace cannot be calculated, so the
 fallback is Clear above 20% remaining, Watch at 20% or less, Limit Near at 5%
 or less, and Exhausted at 0%.
+
+### Observed quota API equivalent
+
+Every Quota presentation also learns an **observed standard API-equivalent**
+for the primary `codex` rate-limit windows. Additional/model-specific limits
+show `LIMIT ATTRIBUTION UNKNOWN`, because the rate-limit API does not say which
+local model calls consumed those buckets. The primary windows show two estimates:
+
+- `SPEND` / `NOW` — the inferred API-equivalent value of the percentage
+  consumed in the current window;
+- `100%` / `FULL` — the inferred API-equivalent value represented by an entire
+  window under the workload Codexometer observed.
+
+These figures are not an account balance, subscription valuation, token
+allowance, invoice, or claim about OpenAI's private quota formula. They answer a
+narrower question: “At published standard API text-token prices, roughly what
+would this observed mix of model work cost when mapped onto the movement in my
+quota meter?”
+
+Codexometer prices each newly completed local model call using the requested
+model durably recorded in its turn context. Current Codex rollout files do not
+persist transient model-reroute events, so a server-side reroute cannot be
+reconstructed from this local source; this is one reason confidence never rises
+above Medium. Ordinary input, cached input, cache-write input, and output are
+priced separately; requests above the published 272,000-input-token threshold
+use the corresponding long-context rates where OpenAI publishes them. Unknown
+models or missing price classes fail closed as `UNPRICED MODEL MIX` rather than
+being guessed or treated as free.
+The embedded rates come from the
+[official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
+and were retrieved on **2026-08-13**.
+Every Quota presentation repeats that retrieval date and a terminal hyperlink
+to the source in its footer when the terminal is wide enough, matching the
+Benchmark view and making stale compiled pricing conspicuous wherever a priced
+figure appears.
+
+Each refresh brackets the account quota request with local accounting reads.
+If their cost or call counters differ, `OBSERVATION DEFERRED` is shown and no
+sample is taken, preventing a response completed during the request from being
+paired with the wrong quota snapshot. Learning starts with a stable quota
+percentage and cumulative local API-equivalent cost anchor. Once the same
+window advances by at least five displayed percentage points without a reset
+or an unpriced call, a sample is calculated:
+
+```text
+central 100% estimate = observed API-equivalent cost × 100 / percentage-point movement
+lower bound           = observed API-equivalent cost × 100 / (movement + 1)
+upper bound           = observed API-equivalent cost × 100 / (movement - 1)
+current spend range   = 100% range × current used percentage
+```
+
+The `±1` denominator reflects the integer granularity of the quota percentage.
+For multiple samples the UI reports the median lower and upper bounds. One or
+two clean samples are `LOW` confidence; at least three samples spanning 15 or
+more percentage points can reach `MED` only when both their rounding ranges and
+their central capacity estimates agree within conservative spread limits.
+Confidence is intentionally capped at Medium because local telemetry cannot
+prove that no other machine, cloud task, unobserved client, or server-side model
+reroute also affected the account quota.
+
+An interval is discarded and re-anchored if the window resets, the counters
+regress, the quota moves five points without any matching priced local call, or
+an unknown/unpriced model occurs. `LOCAL COVERAGE GAP` signals the unmatched
+movement. Even a valid estimate can still vary with reasoning effort, model
+mix, caching, prompt shape, and backend quota weighting, so compare ranges and
+sample counts rather than treating the midpoint as a fixed entitlement.
+
+Samples remain process-local and are never written to the preferences file, so
+evidence cannot leak from one login into another on a later run. During a run,
+Codexometer requests the current account email from the same local app-server,
+immediately reduces it to an in-memory one-way fingerprint, and uses that only
+to separate account observations. The email and fingerprint are not persisted.
+If an older app-server cannot provide an account identity, the estimate fails
+closed as `ACCOUNT ATTRIBUTION UNKNOWN` rather than mixing indistinguishable
+accounts.
+At most 12 samples per account/window are retained in memory and samples older
+than 45 days are ignored. No token event, model-call record, prompt, response,
+session ID, email, or account ID is stored. Run `codexometer --demo`, then
+refresh once with `r`, to preview a learned estimate without consuming quota.
 
 ## Themes
 
@@ -541,8 +627,9 @@ uncertainty.
 ### Saved presentation preferences
 
 Codexometer stores only the selected theme, Quota view, benchmark filter, and
-benchmark ranking weight. No quota snapshot, session telemetry, benchmark
-result, message content, or credential is written. The small JSON file uses the
+benchmark ranking weight. No quota estimate or snapshot, raw session telemetry,
+benchmark result, message content, credential, session ID, email, account
+fingerprint, or account ID is written. The small JSON file uses the
 platform-standard user configuration directory:
 
 - Linux: `$XDG_CONFIG_HOME/codexometer/preferences.json`, normally
@@ -712,7 +799,7 @@ The displayed total includes all reported input tokens—including cached input
 and cache-write input—and all reported output tokens. Reasoning tokens are
 already included in the output-token total and are not added a second time.
 
-`API EQ` is an estimated **standard, short-context, text-token API equivalent**,
+`API EQ` is an estimated **standard text-token API equivalent**,
 not a bill, a ChatGPT subscription charge, or a prediction of how much account
 quota the turn consumed. Codexometer separates ordinary input, cached input,
 cache-write input, and output, then applies the per-million-token prices known
@@ -723,9 +810,9 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The rates compiled into this version were retrieved from
-that page on **2026-08-13**; the Benchmark footer displays both the retrieval
-date and a terminal hyperlink to the source so stale embedded pricing is
-visible while interpreting results.
+that page on **2026-08-13**; every pricing-bearing Quota or Benchmark footer
+displays both the retrieval date and a terminal hyperlink to the source when
+space permits, so stale embedded pricing is visible while interpreting results.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
@@ -737,10 +824,10 @@ they have important limitations:
   later trial may receive cheaper cached input or incur a cache write that an
   otherwise identical trial would not, so observed API-equivalent cost is not
   a cache-neutral ranking.
-- Current costing applies short-context rates to the trial's aggregate usage.
-  It does not implement long-context price thresholds. Although supported Codex
-  versions provide per-response usage, the event does not associate a distinct
-  model price with each response.
+- When exact per-response usage is present, long-context price thresholds are
+  applied to each response independently. A cumulative-only turn beyond the
+  threshold displays `N/A`, because its response boundaries cannot be proven.
+  The raw event still does not associate a distinct model with each response.
 - If Codex reroutes a turn, usage is priced using the final reported model. A
   turn that actually spans differently priced models cannot be reconstructed
   exactly without a response-to-model association.
@@ -771,11 +858,11 @@ is:
 | **P0** | Track token availability independently from price availability and retain the reason for `N/A` | Complete |
 | **P1** | Prefer a validated per-response ledger, with a validated cumulative compatibility fallback | Complete |
 | **P1** | Detect prohibited tool-use items, force the trial to `FAIL`, and invalidate `API EQ` | Complete |
-| **P1** | Apply the correct pricing tier to long-context responses | Deferred |
+| **P1** | Apply the correct pricing tier to long-context responses | Complete for exact per-response telemetry; ambiguous cumulative-only long contexts fail closed |
 | **P2** | Reduce cache-order bias with balanced warm-ups, randomized ordering, or repeated trials | Open |
 | **P2** | Report a cache-neutral comparison alongside the observed cached cost | Open |
 | **P2** | Price mixed-model reroutes from a response-to-model association | Open; the current raw event does not expose that association |
-| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Complete; the Benchmark footer shows its source and retrieval date |
+| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Complete; every pricing-bearing Quota or Benchmark footer shows its source and retrieval date when space permits |
 | **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Complete for usage objects; unknown token fields fail closed and older servers retain the cumulative fallback |
 
 Future accounting changes should preserve these rules:
@@ -800,11 +887,10 @@ Future accounting changes should preserve these rules:
   event regression, source disagreement, tool use, and experimental-protocol
   fallback in tests. Keep race-enabled CI green on Linux, macOS, and Windows.
 
-Correct long-context and reroute costing will require each upstream response to
-be associated with the model and pricing tier that actually served it, including
-the exact threshold semantics. Cache-neutral or repeated-trial reporting would
-improve comparison quality without changing the deterministic PASS/FAIL
-verifier.
+Correct mixed-model reroute costing will require each upstream response to be
+associated with the model that actually served it. Cache-neutral or
+repeated-trial reporting would improve comparison quality without changing the
+deterministic PASS/FAIL verifier.
 
 ## Options
 
@@ -852,9 +938,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.6.0`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.1`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.6.0`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.7.1`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -867,7 +953,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.6.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.1" .
 ```
 
 ## How refresh works
@@ -942,20 +1028,6 @@ homes unless `CODEX_HOME` is deliberately shared. Cloud activity and sessions on
 other machines are not visible. Usage is generally appended after a model
 response reports its token totals, so a currently streaming response may not
 appear until its next telemetry event.
-
-## Roadmap
-
-- **Observed quota capacity** — investigate an experimental Monitor estimate
-  inspired by [CPA Codex Helper](https://github.com/disaeye/CPA-codex-helper).
-  By comparing locally observed token and API-equivalent usage with movement in
-  an account quota percentage, Codexometer could estimate the full capacity of
-  a quota window. Any implementation should report a range, sample count, and
-  confidence level; require several percentage points of clean observation;
-  and reject intervals that cross a reset. It must remain clearly labelled as
-  an observed workload estimate—not a contractual token allowance, account
-  balance, subscription value, or bill—because account activity outside the
-  local `CODEX_HOME`, percentage rounding, model and reasoning mix, caching, and
-  private backend quota weighting can all affect the result.
 
 ## Development
 

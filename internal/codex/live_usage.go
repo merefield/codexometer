@@ -27,10 +27,13 @@ const (
 // LiveUsageSnapshot is a process-local, monotonically increasing count built
 // from token-count events appended to locally persisted Codex rollouts.
 type LiveUsageSnapshot struct {
-	TotalTokens  int64
-	LastActivity time.Time
-	SessionCount int
-	Sessions     []LiveUsageSession
+	TotalTokens        int64
+	LastActivity       time.Time
+	SessionCount       int
+	Sessions           []LiveUsageSession
+	APIEqUSD           float64
+	APIEqPricedCalls   int64
+	APIEqUnpricedCalls int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -68,6 +71,9 @@ type LiveModelCall struct {
 	At              time.Time
 	OutputTokens    int64
 	OutputAvailable bool
+	Model           string
+	APIEqUSD        float64
+	APIEqKnown      bool
 }
 
 // LiveTurnTiming contains the persisted latency measurement for one completed
@@ -93,6 +99,9 @@ type LiveUsageReader struct {
 	lastFullDiscovery time.Time
 	files             map[string]*rolloutCursor
 	totalTokens       int64
+	apiEqUSD          float64
+	apiEqPricedCalls  int64
+	apiEqUnknownCalls int64
 	lastActivity      time.Time
 	nextEventSequence uint64
 }
@@ -106,6 +115,7 @@ type rolloutCursor struct {
 	parentThreadID              string
 	workingDirectory            string
 	startedAt                   time.Time
+	currentModel                string
 	nonRoot                     bool
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
@@ -130,13 +140,39 @@ type rolloutEvent struct {
 	Payload   struct {
 		Type string `json:"type"`
 		Info *struct {
-			TotalTokenUsage struct {
-				TotalTokens int64 `json:"total_tokens"`
-			} `json:"total_token_usage"`
-			LastTokenUsage struct {
-				OutputTokens *int64 `json:"output_tokens"`
-			} `json:"last_token_usage"`
+			TotalTokenUsage rolloutTokenUsage `json:"total_token_usage"`
+			LastTokenUsage  rolloutTokenUsage `json:"last_token_usage"`
 		} `json:"info"`
+	} `json:"payload"`
+}
+
+type rolloutTokenUsage struct {
+	InputTokens           int64  `json:"input_tokens"`
+	CachedInputTokens     int64  `json:"cached_input_tokens"`
+	CacheWriteInputTokens int64  `json:"cache_write_input_tokens"`
+	OutputTokens          *int64 `json:"output_tokens"`
+	ReasoningOutputTokens int64  `json:"reasoning_output_tokens"`
+	TotalTokens           int64  `json:"total_tokens"`
+}
+
+func (u rolloutTokenUsage) benchmarkUsage() BenchmarkUsage {
+	output := int64(0)
+	if u.OutputTokens != nil {
+		output = *u.OutputTokens
+	}
+	return BenchmarkUsage{
+		InputTokens: u.InputTokens, CachedInputTokens: u.CachedInputTokens,
+		CacheWriteInputTokens: u.CacheWriteInputTokens, OutputTokens: output,
+		ReasoningOutputTokens: u.ReasoningOutputTokens, TotalTokens: u.TotalTokens,
+	}
+}
+
+type rolloutModelEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Ordinal   *uint64   `json:"ordinal"`
+	Type      string    `json:"type"`
+	Payload   struct {
+		Model string `json:"model"`
 	} `json:"payload"`
 }
 
@@ -282,6 +318,8 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
 		SessionCount: activeSessions, Sessions: sessions,
+		APIEqUSD: r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
+		APIEqUnpricedCalls: r.apiEqUnknownCalls,
 	}, nil
 }
 
@@ -395,6 +433,11 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		cursor.attention = attention
 	}
 	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
+		model, modelErr := latestRolloutModel(path, cursor)
+		if modelErr != nil {
+			return modelErr
+		}
+		cursor.currentModel = model
 		total, err := latestTokenTotal(path)
 		if err != nil {
 			return err
@@ -442,6 +485,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if model, ordinal, at, ok := rolloutModelRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.currentModel = model
+			}
 			if attention, ordinal, at, ok := sessionAttentionRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.attention = attention
@@ -466,10 +513,22 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							r.lastActivity = record.at
 						}
 						r.nextEventSequence++
-						cursor.modelCalls = appendBounded(cursor.modelCalls, LiveModelCall{
+						call := LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
-							OutputAvailable: record.outputKnown,
-						}, telemetryHistoryMax)
+							OutputAvailable: record.outputKnown, Model: cursor.currentModel,
+						}
+						if record.usage.TotalTokens == delta {
+							if cost, known, _ := EstimateStandardAPIEqCost(cursor.currentModel, record.usage); known {
+								call.APIEqUSD, call.APIEqKnown = cost, true
+								r.apiEqUSD += cost
+								r.apiEqPricedCalls++
+							} else {
+								r.apiEqUnknownCalls++
+							}
+						} else {
+							r.apiEqUnknownCalls++
+						}
+						cursor.modelCalls = appendBounded(cursor.modelCalls, call, telemetryHistoryMax)
 					}
 				}
 				cursor.totalTokens = record.total
@@ -622,6 +681,7 @@ type rolloutTokenRecord struct {
 	total        int64
 	outputTokens int64
 	outputKnown  bool
+	usage        BenchmarkUsage
 	at           time.Time
 	ordinal      *uint64
 }
@@ -635,16 +695,67 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 		event.Payload.Type != "token_count" || event.Payload.Info == nil {
 		return rolloutTokenRecord{}, false
 	}
-	outputTokens := int64(0)
+	lastUsage := event.Payload.Info.LastTokenUsage.benchmarkUsage()
 	outputKnown := event.Payload.Info.LastTokenUsage.OutputTokens != nil
-	if outputKnown {
-		outputTokens = *event.Payload.Info.LastTokenUsage.OutputTokens
-	}
 	return rolloutTokenRecord{
 		total:        event.Payload.Info.TotalTokenUsage.TotalTokens,
-		outputTokens: outputTokens, outputKnown: outputKnown,
-		at: event.Timestamp, ordinal: event.Ordinal,
+		outputTokens: lastUsage.OutputTokens, outputKnown: outputKnown,
+		usage: lastUsage,
+		at:    event.Timestamp, ordinal: event.Ordinal,
 	}, true
+}
+
+func rolloutModelRecord(line []byte) (string, *uint64, time.Time, bool) {
+	if !bytes.Contains(line, []byte(`"turn_context"`)) {
+		return "", nil, time.Time{}, false
+	}
+	var event rolloutModelEvent
+	if json.Unmarshal(line, &event) != nil {
+		return "", nil, time.Time{}, false
+	}
+	if event.Type == "turn_context" && strings.TrimSpace(event.Payload.Model) != "" {
+		return strings.TrimSpace(event.Payload.Model), event.Ordinal, event.Timestamp, true
+	}
+	return "", nil, time.Time{}, false
+}
+
+func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	const chunkSize = int64(64 * 1024)
+	position := info.Size()
+	var carry []byte
+	for position > 0 {
+		readSize := min(chunkSize, position)
+		position -= readSize
+		chunk := make([]byte, int(readSize))
+		if _, err := file.ReadAt(chunk, position); err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		data := make([]byte, 0, len(chunk)+len(carry))
+		data = append(data, chunk...)
+		data = append(data, carry...)
+		lines := bytes.Split(data, []byte{'\n'})
+		firstComplete := 1
+		if position == 0 {
+			firstComplete = 0
+		}
+		for index := len(lines) - 1; index >= firstComplete; index-- {
+			if model, ordinal, at, ok := rolloutModelRecord(lines[index]); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				return model, nil
+			}
+		}
+		carry = append(carry[:0], lines[0]...)
+	}
+	return "", nil
 }
 
 func turnTimingRecord(line []byte) (time.Duration, bool, *uint64, time.Time, bool) {

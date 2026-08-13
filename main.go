@@ -18,7 +18,12 @@ import (
 
 type demoFetcher struct {
 	mu             sync.Mutex
+	snapshot       codex.Snapshot
+	pendingQuota   int
+	suppressUsage  bool
 	lifetimeTokens int64
+	apiEqUSD       float64
+	apiEqCalls     int64
 	eventSequence  uint64
 	alphaCalls     []codex.LiveModelCall
 	alphaTurns     []codex.LiveTurnTiming
@@ -27,7 +32,37 @@ type demoFetcher struct {
 }
 
 func (d *demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
-	return codex.DemoSnapshot(), nil
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.snapshot.RateLimits.Primary == nil {
+		d.snapshot = codex.DemoSnapshot()
+		d.snapshot.AccountFingerprint = "demo-account"
+	}
+	if d.pendingQuota > 0 {
+		d.snapshot.RateLimits.Primary.UsedPercent = min(97, d.snapshot.RateLimits.Primary.UsedPercent+d.pendingQuota)
+		d.snapshot.RateLimits.Secondary.UsedPercent = min(97, d.snapshot.RateLimits.Secondary.UsedPercent+d.pendingQuota)
+		d.pendingQuota = 0
+	}
+	d.suppressUsage = true
+	d.snapshot.FetchedAt = time.Now()
+	return cloneDemoSnapshot(d.snapshot), nil
+}
+
+func cloneDemoSnapshot(snapshot codex.Snapshot) codex.Snapshot {
+	cloned := snapshot
+	if snapshot.RateLimits.Primary != nil {
+		primary := *snapshot.RateLimits.Primary
+		cloned.RateLimits.Primary = &primary
+	}
+	if snapshot.RateLimits.Secondary != nil {
+		secondary := *snapshot.RateLimits.Secondary
+		cloned.RateLimits.Secondary = &secondary
+	}
+	if snapshot.RateLimitResetCredits != nil {
+		credits := *snapshot.RateLimitResetCredits
+		cloned.RateLimitResetCredits = &credits
+	}
+	return cloned
 }
 
 func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
@@ -35,11 +70,21 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	defer d.mu.Unlock()
 	if d.lifetimeTokens == 0 {
 		d.lifetimeTokens = 100_000
+		d.suppressUsage = false
+	} else if d.suppressUsage {
+		d.suppressUsage = false
 	} else {
 		d.lifetimeTokens += 1_234
+		d.apiEqUSD += 0.18
+		d.apiEqCalls++
+		d.pendingQuota += 5
 		now := time.Now()
 		d.eventSequence++
-		call := codex.LiveModelCall{Sequence: d.eventSequence, At: now, OutputTokens: 420 + int64(d.eventSequence%5)*137, OutputAvailable: true}
+		call := codex.LiveModelCall{
+			Sequence: d.eventSequence, At: now, Model: "gpt-5.6-terra",
+			OutputTokens: 420 + int64(d.eventSequence%5)*137, OutputAvailable: true,
+			APIEqUSD: 0.18, APIEqKnown: true,
+		}
 		d.eventSequence++
 		timing := codex.LiveTurnTiming{Sequence: d.eventSequence, At: now, TimeToFirstToken: time.Duration(900+d.eventSequence%7*350) * time.Millisecond, Available: true}
 		if d.eventSequence/2%2 == 0 {
@@ -52,7 +97,8 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	}
 	alphaTokens := d.lifetimeTokens * 3 / 5
 	return codex.LiveUsageSnapshot{
-		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
+		TotalTokens: d.lifetimeTokens, APIEqUSD: d.apiEqUSD, APIEqPricedCalls: d.apiEqCalls,
+		LastActivity: time.Now(), SessionCount: 2,
 		Sessions: []codex.LiveUsageSession{
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
 				Attention: codex.SessionAttentionApproval, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},

@@ -159,12 +159,10 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 
 	bodyHeight := 0
 	visualHeight := 0
+	detailLines := meterDetailLines(meter.Details)
 	if height > 0 {
 		bodyHeight = max(height-2, 1)
-		chromeHeight := 3
-		if meter.Details != "" {
-			chromeHeight++
-		}
+		chromeHeight := 3 + len(detailLines)
 		visualHeight = max(bodyHeight-chromeHeight, 1)
 	}
 	now := time.Now()
@@ -179,8 +177,8 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
 	}
 	bodyParts := []string{stats}
-	if meter.Details != "" {
-		bodyParts = append(bodyParts, colors.dimmed().Render(ansi.Truncate(meter.Details, innerWidth, "")))
+	for _, detail := range detailLines {
+		bodyParts = append(bodyParts, colors.dimmed().Render(ansi.Truncate(detail, innerWidth, "")))
 	}
 	bodyParts = append(bodyParts, visual, resetGauge)
 	if height > 0 && bodyHeight < 4 {
@@ -193,9 +191,9 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 			resetLine := strings.Split(resetGauge, "\n")[0]
 			bodyParts = []string{stats, visual, resetLine}
 		}
-	} else if height > 0 && bodyHeight == 4 && meter.Details != "" {
+	} else if height > 0 && bodyHeight == 4 && len(detailLines) > 0 {
 		resetLine := strings.Split(resetGauge, "\n")[0]
-		bodyParts = []string{stats, colors.dimmed().Render(ansi.Truncate(meter.Details, innerWidth, "")), visual, resetLine}
+		bodyParts = []string{stats, colors.dimmed().Render(ansi.Truncate(detailLines[0], innerWidth, "")), visual, resetLine}
 	}
 	body := strings.Join(bodyParts, "\n")
 	title := meter.Name
@@ -211,6 +209,20 @@ func renderMeterArea(width, height int, meter codex.Meter, style meterStyleID, c
 		frameHeight = max(height-2, 1)
 	}
 	return frameSized(width, frameHeight, title, body, color, colors)
+}
+
+func meterDetailLines(details string) []string {
+	if strings.TrimSpace(details) == "" {
+		return nil
+	}
+	lines := strings.Split(details, "\n")
+	visible := lines[:0]
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			visible = append(visible, line)
+		}
+	}
+	return visible
 }
 
 func renderResetGauge(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color lipgloss.Color, colors palette) string {

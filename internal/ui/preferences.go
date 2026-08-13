@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// Preferences contains the small set of presentation choices that survive
-// between runs. Operational state and fetched account data are never stored.
+// Preferences contains the presentation choices that survive between runs.
+// Operational, account, quota-estimation, session, and token-event data are
+// never stored.
 type Preferences struct {
 	Theme           string `json:"theme,omitempty"`
 	QuotaView       string `json:"quotaView,omitempty"`

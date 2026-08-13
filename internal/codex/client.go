@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -116,14 +117,25 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 	if err := encoder.Encode(map[string]any{"method": "initialized"}); err != nil {
 		return Snapshot{}, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
+	accountFingerprint := ""
+	if err := encoder.Encode(map[string]any{
+		"method": "account/read",
+		"id":     2,
+		"params": map[string]any{},
+	}); err != nil {
+		return Snapshot{}, fmt.Errorf("request Codex account identity: %w", err)
+	}
+	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
+		accountFingerprint = fingerprintAccount(accountResult)
+	}
 	if err := encoder.Encode(map[string]any{
 		"method": "account/rateLimits/read",
-		"id":     2,
+		"id":     3,
 	}); err != nil {
 		return Snapshot{}, fmt.Errorf("request Codex quotas: %w", err)
 	}
 
-	result, err := responseFor(decoder, 2)
+	result, err := responseFor(decoder, 3)
 	if err != nil {
 		return Snapshot{}, withServerError("read Codex quotas", err, stderr.String())
 	}
@@ -132,8 +144,27 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 	if err := json.Unmarshal(result, &snapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("decode Codex quotas: %w", err)
 	}
+	snapshot.AccountFingerprint = accountFingerprint
 	snapshot.FetchedAt = time.Now()
 	return snapshot, nil
+}
+
+func fingerprintAccount(result json.RawMessage) string {
+	var response struct {
+		Account *struct {
+			Type  string  `json:"type"`
+			Email *string `json:"email"`
+		} `json:"account"`
+	}
+	if json.Unmarshal(result, &response) != nil || response.Account == nil || response.Account.Email == nil {
+		return ""
+	}
+	email := strings.ToLower(strings.TrimSpace(*response.Account.Email))
+	if email == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(response.Account.Type)) + "\x00" + email))
+	return fmt.Sprintf("%x", sum[:16])
 }
 
 func responseFor(decoder *json.Decoder, id int) (json.RawMessage, error) {
