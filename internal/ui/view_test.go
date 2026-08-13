@@ -158,6 +158,52 @@ func TestFooterShowsAvailableAccountCredits(t *testing.T) {
 	}
 }
 
+func TestBenchmarkFooterCentersPricingProvenanceOnlyOnBenchmark(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	model := Model{nextRefresh: time.Now().Add(time.Minute), meterStyle: styleBenchmark}
+	raw := model.renderFooter(100, colors)
+	if !strings.Contains(raw, codex.BenchmarkPricingSourceURL) {
+		t.Fatalf("benchmark footer does not contain pricing hyperlink: %q", raw)
+	}
+	firstLine := strings.Split(ansi.Strip(raw), "\n")[0]
+	label := "PRICES RETRIEVED " + codex.BenchmarkPricingRetrievedOn + " // OPENAI.COM"
+	start := strings.Index(firstLine, label)
+	if start < 0 {
+		t.Fatalf("benchmark footer does not contain pricing provenance: %q", firstLine)
+	}
+	center := start + len(label)/2
+	if center < 49 || center > 51 {
+		t.Fatalf("pricing provenance center = %d, want terminal center 50: %q", center, firstLine)
+	}
+
+	for _, style := range []meterStyleID{styleBars, styleMonitor} {
+		model.meterStyle = style
+		footer := model.renderFooter(100, colors)
+		if strings.Contains(footer, codex.BenchmarkPricingSourceURL) || strings.Contains(ansi.Strip(footer), codex.BenchmarkPricingRetrievedOn) {
+			t.Fatalf("pricing provenance leaked into %s footer: %q", style.name(), footer)
+		}
+	}
+}
+
+func TestBenchmarkPricingFooterRemainsResponsive(t *testing.T) {
+	model := Model{nextRefresh: time.Now().Add(time.Minute), meterStyle: styleBenchmark}
+	for _, width := range []int{12, 24, 40, 60, 79, 80, 100} {
+		footer := model.renderFooter(width, paletteFor(themeHacker))
+		for line, value := range strings.Split(footer, "\n") {
+			if got := lipgloss.Width(value); got > width {
+				t.Errorf("width %d line %d rendered at %d: %q", width, line, got, ansi.Strip(value))
+			}
+		}
+		hasPricing := strings.Contains(footer, codex.BenchmarkPricingSourceURL)
+		if width < 80 && hasPricing {
+			t.Errorf("width %d unexpectedly showed pricing provenance", width)
+		}
+		if width >= 80 && !hasPricing {
+			t.Errorf("width %d omitted responsive pricing provenance", width)
+		}
+	}
+}
+
 func TestFrameTitlesAreIntegratedIntoBorderInsteadOfButtonBrackets(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	output := ansi.Strip(frameSized(36, 3, "SESSION READOUT", "BODY", colors.primary, colors))

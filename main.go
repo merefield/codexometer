@@ -55,9 +55,9 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 		TotalTokens: d.lifetimeTokens, LastActivity: time.Now(), SessionCount: 2,
 		Sessions: []codex.LiveUsageSession{
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
-				ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
+				Attention: codex.SessionAttentionApproval, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
 			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true,
-				ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
+				Attention: codex.SessionAttentionInput, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
 		},
 	}, nil
 }

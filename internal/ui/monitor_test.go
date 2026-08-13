@@ -649,21 +649,33 @@ func TestMonitorRecordingLampPulsesBetweenDarkAndBrightRed(t *testing.T) {
 	}
 }
 
-func TestMonitorSessionProminentlyHighlightsAwaitingUser(t *testing.T) {
+func TestMonitorSessionProminentlyDistinguishesAttentionReason(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	model := Model{monitorState: monitorRunning, monitorStartedAt: time.Now().Add(-time.Minute)}
-	session := monitorSession{
+	base := monitorSession{
 		id: "019d-attention", workingDirectory: "/work/attention", startedAt: time.Now().Add(-time.Minute),
-		baseline: 100, latest: 250, active: true, awaitingInput: true,
+		baseline: 100, latest: 250, active: true,
 	}
-	output := model.renderMonitorSessionMetrics(42, 10, session, "", colors)
-	plain := ansi.Strip(output)
-	if !strings.Contains(plain, "● AWAITING YOU") || !strings.Contains(plain, "AWAITING // ROOT") {
-		t.Fatalf("awaiting session was not prominently labelled:\n%s", plain)
-	}
-	wantBadge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning).Render(" ● AWAITING YOU ")
-	if !strings.Contains(output, wantBadge) {
-		t.Fatal("awaiting label was not highlighted with the warning treatment")
+	for _, test := range []struct {
+		attention codex.SessionAttention
+		badge     string
+		status    string
+	}{
+		{codex.SessionAttentionInput, "INPUT NEEDED", "INPUT // ROOT"},
+		{codex.SessionAttentionApproval, "APPROVAL NEEDED", "APPROVAL // ROOT"},
+		{codex.SessionAttentionCheck, "CHECK SESSION", "CHECK // ROOT"},
+	} {
+		session := base
+		session.attention = test.attention
+		output := model.renderMonitorSessionMetrics(42, 10, session, "", colors)
+		plain := ansi.Strip(output)
+		if !strings.Contains(plain, "● "+test.badge) || !strings.Contains(plain, test.status) {
+			t.Fatalf("attention session was not distinctly labelled:\n%s", plain)
+		}
+		wantBadge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning).Render(" ● " + test.badge + " ")
+		if !strings.Contains(output, wantBadge) {
+			t.Fatalf("%s label was not highlighted with the warning treatment", test.badge)
+		}
 	}
 }
 

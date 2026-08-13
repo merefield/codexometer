@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,12 @@ const (
 	benchmarkCodeLimit        = 64 * 1024
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
+
+	// BenchmarkPricingSourceURL and BenchmarkPricingRetrievedOn identify the
+	// published rates compiled into this release. Keep both in sync whenever
+	// standardAPIPrices changes.
+	BenchmarkPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
+	BenchmarkPricingRetrievedOn = "2026-08-13"
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -36,6 +43,40 @@ type BenchmarkUsage struct {
 	CacheWriteInputTokens int64 `json:"cacheWriteInputTokens"`
 	OutputTokens          int64 `json:"outputTokens"`
 	ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
+	schemaIssue           string
+}
+
+// UnmarshalJSON records unknown fields instead of silently discarding them.
+// A future app-server token class may be billable, so costing must remain
+// unavailable until Codexometer knows how to account for it.
+func (u *BenchmarkUsage) UnmarshalJSON(data []byte) error {
+	type wireUsage BenchmarkUsage
+	var decoded wireUsage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	known := map[string]struct{}{
+		"totalTokens": {}, "inputTokens": {}, "cachedInputTokens": {},
+		"cacheWriteInputTokens": {}, "outputTokens": {}, "reasoningOutputTokens": {},
+	}
+	unknown := make([]string, 0)
+	for name := range fields {
+		if _, ok := known[name]; !ok {
+			unknown = append(unknown, name)
+		}
+	}
+	sort.Strings(unknown)
+	*u = BenchmarkUsage(decoded)
+	if len(unknown) == 1 {
+		u.schemaIssue = "unknown usage field: " + unknown[0]
+	} else if len(unknown) > 1 {
+		u.schemaIssue = "unknown usage fields: " + strings.Join(unknown, ", ")
+	}
+	return nil
 }
 
 // BenchmarkUsageSource identifies the telemetry used for a benchmark result.
@@ -859,6 +900,9 @@ func (u *BenchmarkUsage) add(other BenchmarkUsage) string {
 }
 
 func validateBenchmarkUsage(usage BenchmarkUsage) string {
+	if usage.schemaIssue != "" {
+		return usage.schemaIssue
+	}
 	fields := []struct {
 		name  string
 		value int64

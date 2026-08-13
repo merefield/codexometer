@@ -143,7 +143,7 @@ type monitorSession struct {
 	lastActivity     time.Time
 	agentCount       int
 	active           bool
-	awaitingInput    bool
+	attention        codex.SessionAttention
 	displayed        bool
 	unattributed     bool
 	samples          []monitorSample
@@ -1203,7 +1203,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
-			active: session.Active, awaitingInput: session.AwaitingInput,
+			active: session.Active, attention: session.Attention,
 			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
 			turnSequence: latestTurnTimingSequence(session.TurnTimings),
@@ -1221,7 +1221,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
-		m.monitorSessionData[index].awaitingInput = false
+		m.monitorSessionData[index].attention = codex.SessionAttentionNone
 	}
 	for _, update := range usage.Sessions {
 		index := m.monitorSessionIndex(update.ID)
@@ -1234,7 +1234,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 				id: update.ID, workingDirectory: update.WorkingDirectory,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, awaitingInput: update.AwaitingInput,
+				active: update.Active, attention: update.Attention,
 				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
 			}
@@ -1251,7 +1251,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
-		session.awaitingInput = update.AwaitingInput
+		session.attention = update.Attention
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {

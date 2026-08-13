@@ -61,8 +61,10 @@ It works particularly well in:
 - An optional Monitor view that measures token activity between Go and Stop.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
-- A highlighted `AWAITING YOU` Monitor badge when a root or linked agent emits
-  an explicit blocking input or approval request.
+- Highlighted per-session attention badges. A shared Codex app-server supplies
+  exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
+  open turn is definite `INPUT NEEDED`; an otherwise active session with no
+  rollout activity for three minutes is cautiously labelled `CHECK SESSION`.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
   estimated standard API-equivalent cost.
@@ -180,6 +182,63 @@ Preview all UI features using simulated quota data:
 codexometer --demo
 ```
 
+## Shared Codex daemon for precise Monitor status
+
+Codexometer works without a shared server, but its `CHECK SESSION` fallback
+cannot distinguish every long-running local tool from a prompt. On Unix
+systems, a current standalone Codex installation can instead run one shared
+app-server daemon. Every CLI connected to that daemon exposes its live
+per-thread `waitingOnApproval` and `waitingOnUserInput` flags, allowing the
+Monitor to show definite `APPROVAL NEEDED` and `INPUT NEEDED` badges.
+
+Start the managed daemon and confirm that it is ready:
+
+```sh
+codex app-server daemon start
+codex app-server daemon version
+```
+
+Then launch each Codex CLI terminal against its default Unix control socket:
+
+```sh
+codex --remote unix://
+```
+
+Run that client command in every terminal tab or pane that should share the
+daemon. Start Codexometer normally in another terminal:
+
+```sh
+codexometer
+```
+
+No Codexometer option is required. While Monitor is recording, Codexometer
+automatically probes the same default socket under `CODEX_HOME` and uses exact
+runtime status for threads loaded there. Sessions belonging to ordinary,
+non-daemon Codex processes continue to use the local rollout and writer-lock
+fallback.
+
+Manage or stop the daemon with:
+
+```sh
+codex app-server daemon restart
+codex app-server daemon stop
+```
+
+The managed daemon lifecycle is currently experimental, Unix-only, and expects
+the standalone Codex installation. The app-server also supports a local
+WebSocket listener, including on Windows:
+
+```sh
+codex app-server --listen ws://127.0.0.1:4500
+codex --remote ws://127.0.0.1:4500
+```
+
+Plain WebSockets should be used only on localhost or through an SSH tunnel.
+Codexometer currently auto-detects only the default Unix daemon socket, so
+WebSocket-connected sessions use its fallback attention detection for now. See
+the official [Codex app-server documentation](https://developers.openai.com/codex/app-server)
+for custom socket paths, secure remote connections, and authentication.
+
 ## Authentication and privacy
 
 Codexometer starts `codex app-server` as a short-lived child process and asks
@@ -201,8 +260,10 @@ totals, last-response output counts, timestamps, and content-free turn timing,
 plus the minimum session metadata needed for grouping: thread ID, parent thread
 ID, source classification, working directory, and the inherited-history
 boundary. It also reads lifecycle event names and blocking flags to identify an
-explicit unresolved input or approval request. Message text—including the final
-response carried beside timing
+explicit unresolved input or approval request. To distinguish an open CLI
+waiting at its prompt from a closed historical session, it inspects the lock
+state—not the contents—of Codex's per-thread writer lock. Message text—including
+the final response carried beside timing
 metadata—reasoning, commands, tool results, and credentials are ignored and
 never retained by Codexometer.
 
@@ -348,10 +409,19 @@ The other top-level views are:
   through an interval gets an honestly labelled partial first bar and its rate
   uses that root's own observed lifetime. New bars enter on the right, older
   bars move left, and each Y axis automatically rescales to its visible samples.
-  A root or linked child with a persisted blocking `request_user_input`,
-  permission, or approval event receives an amber `AWAITING YOU` badge and
-  border until a definite response, continuation, or completion event arrives.
-  Generic inactivity is never treated as a request for attention.
+  An open root or linked child whose latest durable lifecycle event says its
+  turn completed receives an amber `INPUT NEEDED` badge and border until a new
+  turn starts or the CLI closes. When Codexometer finds the default shared
+  Codex app-server socket, it reads the server's per-thread runtime status and
+  uses the exact `waitingOnApproval` and `waitingOnUserInput` flags for
+  `APPROVAL NEEDED` and `INPUT NEEDED`. If no shared server is available, an
+  otherwise active open session with no new token or rollout activity for three
+  minutes receives `CHECK SESSION`: a deliberately uncertain prompt that can
+  also mean a long-running local tool. Any subsequent activity clears it.
+  Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
+  releases its per-thread writer lock and clears every attention badge.
+  A session already included in the current Monitor recording can remain as an
+  `IDLE` historical row so its completed metrics and graph are not discarded.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
@@ -411,10 +481,10 @@ for a model response, not token-by-token while a response is streaming. Raw toke
 counts also do not reveal or reproduce the backend's quota-weighting rules, so
 they should not be converted directly into the percentage gauges.
 
-Session rows represent recently active rollout roots plus explicit unresolved
-input/approval waits observed within the 24-hour rollout horizon, not a
-guaranteed list of currently open terminal processes. Two independent CLI tabs
-have different root thread IDs and therefore remain separate rows.
+Session rows represent recently active rollout roots plus open CLI sessions
+waiting for input, not a guaranteed list of every terminal process. Two
+independent CLI tabs have different root thread IDs and therefore remain
+separate rows.
 `thread_spawn` descendants,
 including nested descendants, are folded into their root by following persisted
 parent IDs. Review, compact, or other internal work that lacks an explicit
@@ -425,11 +495,17 @@ twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
 
-Attention detection reads only content-free lifecycle metadata: event type,
-blocking flag, ordinal, and timestamp. It does not retain the input question,
-approval text, response, or conversation content. A linked child's attention
-state is folded into its root so one remote Monitor row identifies the CLI
-session that needs intervention.
+Attention detection reads only content-free lifecycle metadata, per-thread
+writer-lock state, and—when available—the shared app-server's runtime thread
+status. A held writer lock plus a completed turn reliably identifies an open
+CLI waiting at its prompt. Without a shared server, three minutes without any
+new rollout-file activity produces only `CHECK SESSION`, because persisted data
+cannot distinguish an approval wait from every long-running local tool. The
+Monitor does not retain the input question, approval text, response, or
+conversation content. A linked child's attention state is folded into its root
+so one remote Monitor row identifies the CLI session that needs intervention.
+A definite approval signal takes precedence, then definite input, then the
+inferred check state when linked members have mixed states.
 
 `CALLS` counts upstream model-response cycles observed after Monitor Start, not
 complete user turns. A single Codex turn can make several calls while using
@@ -646,7 +722,10 @@ for an unknown model or a token class whose price was not published when the
 release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-for current values.
+for current values. The rates compiled into this version were retrieved from
+that page on **2026-08-13**; the Benchmark footer displays both the retrieval
+date and a terminal hyperlink to the source so stale embedded pricing is
+visible while interpreting results.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
@@ -696,8 +775,8 @@ is:
 | **P2** | Reduce cache-order bias with balanced warm-ups, randomized ordering, or repeated trials | Open |
 | **P2** | Report a cache-neutral comparison alongside the observed cached cost | Open |
 | **P2** | Price mixed-model reroutes from a response-to-model association | Open; the current raw event does not expose that association |
-| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Open |
-| **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Partial; automatic cumulative fallback is already implemented |
+| **P2** | Record pricing-table provenance and make stale compiled pricing conspicuous | Complete; the Benchmark footer shows its source and retrieval date |
+| **P2** | Add explicit compatibility diagnostics for future experimental-event schema changes | Complete for usage objects; unknown token fields fail closed and older servers retain the cumulative fallback |
 
 Future accounting changes should preserve these rules:
 
@@ -711,9 +790,10 @@ Future accounting changes should preserve these rules:
   measurement problem must not change the deterministic Starlark verdict.
 - Prefer exact response telemetry only when response IDs are present and unique;
   retain the cumulative path for compatible older app-servers.
-- Do not infer prices for unknown models or unpublished token classes. Update
-  the compiled table only from published OpenAI pricing and record its source
-  and effective date when provenance support is added.
+- Do not infer prices for unknown models or unpublished token classes. Unknown
+  usage fields must make costing unavailable. Update the compiled table only
+  from published OpenAI pricing, and update its source retrieval date at the
+  same time.
 - Treat any tool-use item as a benchmark protocol violation. Text-token pricing
   alone cannot represent separately priced or externally executed work.
 - Cover missing fields, invalid invariants, integer overflow, duplicate events,
@@ -813,6 +893,10 @@ bucket closes only after the boundary telemetry read completes; its heading
 reports the actual observed duration when scheduling or first-session detection
 makes it shorter or longer than 30 seconds. These reads do not contact OpenAI or
 invoke a model.
+On Unix systems, each read also probes the default shared app-server control
+socket. When present, its loaded-thread runtime statuses make attention badges
+exact; when absent or unreachable, Codexometer silently uses the local rollout
+and writer-lock fallback described above.
 Pressing Stop performs one immediate final local read and forces complete
 session discovery, including Codex sessions resumed from older rollout
 directories.
@@ -858,6 +942,20 @@ homes unless `CODEX_HOME` is deliberately shared. Cloud activity and sessions on
 other machines are not visible. Usage is generally appended after a model
 response reports its token totals, so a currently streaming response may not
 appear until its next telemetry event.
+
+## Roadmap
+
+- **Observed quota capacity** — investigate an experimental Monitor estimate
+  inspired by [CPA Codex Helper](https://github.com/disaeye/CPA-codex-helper).
+  By comparing locally observed token and API-equivalent usage with movement in
+  an account quota percentage, Codexometer could estimate the full capacity of
+  a quota window. Any implementation should report a range, sample count, and
+  confidence level; require several percentage points of clean observation;
+  and reject intervals that cross a reset. It must remain clearly labelled as
+  an observed workload estimate—not a contractual token allowance, account
+  balance, subscription value, or bill—because account activity outside the
+  local `CODEX_HOME`, percentage rounding, model and reasoning mix, caching, and
+  private backend quota weighting can all affect the result.
 
 ## Development
 

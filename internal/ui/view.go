@@ -150,7 +150,10 @@ func (m Model) renderFooter(width int, colors palette) string {
 			left += "  //  CREDITS AVAILABLE"
 		}
 	}
-	status := ansi.Truncate(left, width, "")
+	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
+	if m.meterStyle == styleBenchmark {
+		status = renderBenchmarkPricingFooter(status, width, colors)
+	}
 	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterStyle.isQuota())
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
@@ -162,7 +165,26 @@ func (m Model) renderFooter(width int, colors palette) string {
 	}
 	theme := colors.dimmed().Render(fmt.Sprintf("THEME // %s", colors.name))
 	controlRow := joinRight(strings.Join(controls, separator), theme, width)
-	return colors.dimmed().Render(status) + "\n" + controlRow
+	return status + "\n" + controlRow
+}
+
+func renderBenchmarkPricingFooter(left string, width int, colors palette) string {
+	const minimumWidth = 80
+	if width < minimumWidth {
+		return left
+	}
+	label := "PRICES RETRIEVED " + codex.BenchmarkPricingRetrievedOn + " // OPENAI.COM"
+	center := pricingHyperlink(label, colors)
+	start := (width - lipgloss.Width(center)) / 2
+	if lipgloss.Width(left)+2 > start {
+		return left
+	}
+	return left + strings.Repeat(" ", start-lipgloss.Width(left)) + center
+}
+
+func pricingHyperlink(label string, colors palette) string {
+	styled := colors.dimmed().Underline(true).Render(label)
+	return ansi.SetHyperlink(codex.BenchmarkPricingSourceURL) + styled + ansi.ResetHyperlink()
 }
 
 func footerButtonAppearance(colors palette, hovered, flashed bool) lipgloss.Style {
