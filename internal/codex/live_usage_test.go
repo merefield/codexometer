@@ -280,7 +280,7 @@ func TestLiveUsageReaderCapturesContentFreeModelCallAndTurnTimingPulses(t *testi
 	}
 }
 
-func TestLiveUsageReaderPricesEachEffectiveModelAndFailsClosed(t *testing.T) {
+func TestLiveUsageReaderPricesEachPersistedModelAndFailsClosed(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	path := testRolloutPath(t, home, now.Add(-time.Hour), "api-eq")
@@ -313,7 +313,7 @@ func TestLiveUsageReaderPricesEachEffectiveModelAndFailsClosed(t *testing.T) {
 	}
 
 	appendRollout(t, path,
-		modelRerouteLine(now.Add(time.Second), "future-model")+"\n"+
+		turnContextLine(now.Add(time.Second), "future-model")+"\n"+
 			richTokenCountLine(now.Add(2*time.Second), 1_310, 100, 0, 0, 10)+"\n")
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.APIEqPricedCalls != 1 || usage.APIEqUnpricedCalls != 1 || math.Abs(usage.APIEqUSD-want) > 1e-12 {
@@ -890,10 +890,6 @@ func richTokenCountLine(at time.Time, cumulative, input, cached, cacheWrite, out
 
 func turnContextLine(at time.Time, model string) string {
 	return fmt.Sprintf(`{"timestamp":%q,"type":"turn_context","payload":{"model":%q}}`, at.UTC().Format(time.RFC3339Nano), model)
-}
-
-func modelRerouteLine(at time.Time, model string) string {
-	return fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"model_reroute","to_model":%q}}`, at.UTC().Format(time.RFC3339Nano), model)
 }
 
 func turnTimingLine(at time.Time, ttftMS int64) string {

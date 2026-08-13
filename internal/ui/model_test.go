@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,31 @@ import (
 type stubFetcher struct {
 	snapshot codex.Snapshot
 	err      error
+}
+
+type quotaBracketFetcher struct {
+	snapshot codex.Snapshot
+	usages   []codex.LiveUsageSnapshot
+	usageErr error
+	calls    []string
+}
+
+func (f *quotaBracketFetcher) Fetch(context.Context) (codex.Snapshot, error) {
+	f.calls = append(f.calls, "quota")
+	return f.snapshot, nil
+}
+
+func (f *quotaBracketFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
+	f.calls = append(f.calls, "usage")
+	if f.usageErr != nil {
+		return codex.LiveUsageSnapshot{}, f.usageErr
+	}
+	if len(f.usages) == 0 {
+		return codex.LiveUsageSnapshot{}, nil
+	}
+	usage := f.usages[0]
+	f.usages = f.usages[1:]
+	return usage, nil
 }
 
 func (f stubFetcher) Fetch(context.Context) (codex.Snapshot, error) {
@@ -101,6 +127,53 @@ func TestModelLifecycleMessages(t *testing.T) {
 	model = updated.(Model)
 	if !model.loading || command == nil || model.nextRefresh.Before(time.Now()) {
 		t.Fatal("refresh tick did not fetch and reschedule")
+	}
+}
+
+func TestQuotaFetchRequiresStableAccountingBracket(t *testing.T) {
+	snapshot := codex.DemoSnapshot()
+	stable := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 2}
+	fetcher := &quotaBracketFetcher{snapshot: snapshot, usages: []codex.LiveUsageSnapshot{stable, stable}}
+	model := New(fetcher, time.Minute)
+	message := model.fetch()().(fetchedMsg)
+	if message.err != nil || message.usageErr != nil || message.usage.APIEqUSD != 1 ||
+		!reflect.DeepEqual(fetcher.calls, []string{"usage", "quota", "usage"}) {
+		t.Fatalf("stable quota bracket = %#v, calls=%v", message, fetcher.calls)
+	}
+
+	changed := stable
+	changed.APIEqPricedCalls++
+	fetcher.calls = nil
+	fetcher.usages = []codex.LiveUsageSnapshot{stable, changed}
+	message = model.fetch()().(fetchedMsg)
+	if !errors.Is(message.usageErr, errQuotaObservationChanged) ||
+		!reflect.DeepEqual(fetcher.calls, []string{"usage", "quota", "usage"}) {
+		t.Fatalf("changed quota bracket = %#v, calls=%v", message, fetcher.calls)
+	}
+
+	updated, _ := model.Update(message)
+	model = updated.(Model)
+	if model.quotaAPITelemetryIssue != "OBSERVATION DEFERRED" {
+		t.Fatalf("deferred issue = %q", model.quotaAPITelemetryIssue)
+	}
+	fetcher.usages = []codex.LiveUsageSnapshot{changed, changed}
+	message = model.fetch()().(fetchedMsg)
+	updated, _ = model.Update(message)
+	model = updated.(Model)
+	if model.quotaAPITelemetryIssue != "" {
+		t.Fatalf("stable observation did not clear issue: %q", model.quotaAPITelemetryIssue)
+	}
+}
+
+func TestQuotaFetchSurfacesLocalTelemetryFailure(t *testing.T) {
+	fetcher := &quotaBracketFetcher{snapshot: codex.DemoSnapshot(), usageErr: errors.New("rollout denied")}
+	model := New(fetcher, time.Minute)
+	message := model.fetch()().(fetchedMsg)
+	updated, _ := model.Update(message)
+	model = updated.(Model)
+	if model.quotaAPITelemetryIssue != "LOCAL TELEMETRY UNAVAILABLE" ||
+		!strings.Contains(model.quotaAPILine(model.snapshot.Meters()[0], 80), "LOCAL TELEMETRY UNAVAILABLE") {
+		t.Fatalf("telemetry failure was hidden: issue=%q line=%q", model.quotaAPITelemetryIssue, model.quotaAPILine(model.snapshot.Meters()[0], 80))
 	}
 }
 

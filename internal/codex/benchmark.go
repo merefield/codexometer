@@ -1206,8 +1206,8 @@ var standardAPIPrices = map[string]apiPrice{
 	"gpt-5.6-sol":   {input: 5.00, cached: 0.50, cacheWrite: 6.25, cacheWriteKnown: true, output: 30.00, longInput: 10.00, longCached: 1.00, longCacheWrite: 12.50, longOutput: 45.00, longKnown: true},
 	"gpt-5.6-terra": {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 12.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 18.00, longKnown: true},
 	"gpt-5.6-luna":  {input: 0.20, cached: 0.02, cacheWrite: 0.25, cacheWriteKnown: true, output: 1.20, longInput: 0.40, longCached: 0.04, longCacheWrite: 0.50, longOutput: 1.80, longKnown: true},
-	"gpt-5.5":       {input: 5.00, cached: 0.50, output: 30.00},
-	"gpt-5.4":       {input: 2.50, cached: 0.25, output: 15.00},
+	"gpt-5.5":       {input: 5.00, cached: 0.50, output: 30.00, longInput: 10.00, longCached: 1.00, longOutput: 45.00, longKnown: true},
+	"gpt-5.4":       {input: 2.50, cached: 0.25, output: 15.00, longInput: 5.00, longCached: 0.50, longOutput: 22.50, longKnown: true},
 	"gpt-5.4-mini":  {input: 0.75, cached: 0.075, output: 4.50},
 	"gpt-5.3-codex": {input: 1.75, cached: 0.175, output: 14.00},
 }

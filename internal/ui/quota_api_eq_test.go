@@ -14,8 +14,7 @@ import (
 func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	snapshot := apiEqSnapshot(10, now.Add(4*time.Hour).Unix())
-	store := &memoryPreferenceStore{}
-	model := NewWithPreferences(nil, time.Minute, store)
+	model := New(nil, time.Minute)
 	model.snapshot = snapshot
 	model.observeQuotaAPIEq(snapshot, codex.LiveUsageSnapshot{}, now)
 
@@ -34,9 +33,6 @@ func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 	line := model.quotaAPILine(meter, 100)
 	if !strings.Contains(line, "SPEND") || !strings.Contains(line, "100%") || !strings.Contains(line, "N=1") {
 		t.Fatalf("estimate line = %q", line)
-	}
-	if len(store.saves) != 1 || len(store.saves[0].QuotaAPIEvidence) != 1 {
-		t.Fatalf("persisted evidence = %#v", store.saves)
 	}
 }
 
@@ -98,6 +94,113 @@ func TestQuotaAPIEstimatorResetsAnchorAndCapsConfidence(t *testing.T) {
 	}
 }
 
+func TestQuotaAPIEstimatorKeepsDivergentSamplesAtLowConfidence(t *testing.T) {
+	now := time.Now()
+	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
+	key := quotaAPIKey(snapshot, snapshot.Meters()[0])
+	model := New(nil, time.Minute)
+	for index, capacity := range []float64{1, 100, 10_000} {
+		model.quotaAPIEvidence = append(model.quotaAPIEvidence, quotaAPISample{
+			Key: key, CapacityUSD: capacity, LowUSD: capacity * 5 / 6, HighUSD: capacity * 5 / 4,
+			DeltaPercent: 5, ObservedAtUnix: now.Add(time.Duration(index) * time.Minute).Unix(),
+			PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+		})
+	}
+	estimate, ok := model.quotaAPIEstimate(snapshot, snapshot.Meters()[0])
+	if !ok || estimate.confidence != "LOW" {
+		t.Fatalf("divergent estimate = %#v, %v; want LOW", estimate, ok)
+	}
+}
+
+func TestQuotaAPIEstimatorRestrictsAdditionalLimitsAndIsolatesAccounts(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(4 * time.Hour).Unix()
+	primary := apiEqSnapshot(10, reset)
+	additionalID, additionalName, plan, duration := "spark", "GPT Spark", "pro", int64(300)
+	additional := codex.RateLimitSnapshot{
+		LimitID: &additionalID, LimitName: &additionalName, PlanType: &plan,
+		Primary: &codex.Window{UsedPercent: 10, WindowDurationMins: &duration, ResetsAt: &reset},
+	}
+	primary.RateLimitsByLimitID = map[string]codex.RateLimitSnapshot{
+		"codex": primary.RateLimits, "spark": additional,
+	}
+	model := New(nil, time.Minute)
+	model.snapshot = primary
+	model.observeQuotaAPIEq(primary, codex.LiveUsageSnapshot{}, now)
+	advanced := primary
+	advanced.RateLimitsByLimitID = map[string]codex.RateLimitSnapshot{
+		"codex": primary.RateLimits, "spark": additional,
+	}
+	codexLimit := advanced.RateLimitsByLimitID["codex"]
+	codexWindow := *codexLimit.Primary
+	codexWindow.UsedPercent = 15
+	codexLimit.Primary = &codexWindow
+	advanced.RateLimitsByLimitID["codex"] = codexLimit
+	sparkLimit := advanced.RateLimitsByLimitID["spark"]
+	sparkWindow := *sparkLimit.Primary
+	sparkWindow.UsedPercent = 15
+	sparkLimit.Primary = &sparkWindow
+	advanced.RateLimitsByLimitID["spark"] = sparkLimit
+	model.snapshot = advanced
+	model.observeQuotaAPIEq(advanced, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+	if len(model.quotaAPIEvidence) != 1 || model.quotaAPIEvidence[0].Key != quotaAPIKey(advanced, advanced.Meters()[0]) {
+		t.Fatalf("additional limit received evidence: %#v", model.quotaAPIEvidence)
+	}
+	view := strings.Join([]string{model.quotaAPILine(advanced.Meters()[0], 80), model.quotaMetersWithInsights(100)[1].Details}, "\n")
+	if !strings.Contains(view, "100%") || !strings.Contains(view, "LIMIT ATTRIBUTION UNKNOWN") {
+		t.Fatalf("limit attribution presentation = %q", view)
+	}
+
+	otherAccount := advanced
+	otherAccount.AccountFingerprint = "account-b"
+	if _, ok := model.quotaAPIEstimate(otherAccount, otherAccount.Meters()[0]); ok {
+		t.Fatal("evidence crossed account fingerprints")
+	}
+	model.observeQuotaAPIEq(otherAccount, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(2*time.Minute))
+	if len(model.quotaAPIEvidence) != 0 || len(model.quotaAPIAnchors) != 1 || model.quotaAPIAccount != "account-b" {
+		t.Fatalf("account switch retained prior observations: account=%q anchors=%#v evidence=%#v", model.quotaAPIAccount, model.quotaAPIAnchors, model.quotaAPIEvidence)
+	}
+
+	unknownAccount := apiEqSnapshot(20, reset)
+	unknownAccount.AccountFingerprint = ""
+	unknownModel := New(nil, time.Minute)
+	unknownModel.snapshot = unknownAccount
+	unknownModel.observeQuotaAPIEq(unknownAccount, codex.LiveUsageSnapshot{}, now)
+	if len(unknownModel.quotaAPIAnchors) != 0 ||
+		!strings.Contains(unknownModel.quotaMetersWithInsights(100)[0].Details, "ACCOUNT ATTRIBUTION UNKNOWN") {
+		t.Fatalf("unknown account was not fail-closed: anchors=%#v meters=%#v", unknownModel.quotaAPIAnchors, unknownModel.quotaMetersWithInsights(100))
+	}
+}
+
+func TestQuotaAPIAccountingBracketRequiresStableCounters(t *testing.T) {
+	left := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 2, APIEqUnpricedCalls: 3}
+	if !quotaAPIAccountingEqual(left, left) {
+		t.Fatal("identical accounting was unstable")
+	}
+	right := left
+	right.APIEqPricedCalls++
+	if quotaAPIAccountingEqual(left, right) {
+		t.Fatal("changed accounting was accepted")
+	}
+}
+
+func TestQuotaAPITelemetryIssueTakesPrecedenceOverOldEstimate(t *testing.T) {
+	now := time.Now()
+	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
+	key := quotaAPIKey(snapshot, snapshot.Meters()[0])
+	model := New(nil, time.Minute)
+	model.snapshot = snapshot
+	model.quotaAPIEvidence = []quotaAPISample{{
+		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 5,
+		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn,
+	}}
+	model.quotaAPITelemetryIssue = "LOCAL TELEMETRY UNAVAILABLE"
+	line := model.quotaAPILine(snapshot.Meters()[0], 100)
+	if !strings.Contains(line, "LOCAL TELEMETRY UNAVAILABLE") || strings.Contains(line, "SPEND") {
+		t.Fatalf("telemetry issue was hidden by old estimate: %q", line)
+	}
+}
+
 func TestQuotaAPIEvidenceRejectsStaleAndDifferentPricing(t *testing.T) {
 	now := time.Now()
 	valid := quotaAPISample{Key: "pro|codex|300", CapacityUSD: 10, LowUSD: 9, HighUSD: 11, DeltaPercent: 5, ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.BenchmarkPricingRetrievedOn}
@@ -139,7 +242,7 @@ func apiEqSnapshot(used int, reset int64) codex.Snapshot {
 	duration := int64(300)
 	plan := "pro"
 	limitID := "codex"
-	return codex.Snapshot{RateLimits: codex.RateLimitSnapshot{
+	return codex.Snapshot{AccountFingerprint: "account-a", RateLimits: codex.RateLimitSnapshot{
 		LimitID: &limitID, PlanType: &plan,
 		Primary: &codex.Window{UsedPercent: used, WindowDurationMins: &duration, ResetsAt: &reset},
 	}}

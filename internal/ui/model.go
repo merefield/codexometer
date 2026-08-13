@@ -99,9 +99,11 @@ type Model struct {
 	monitorQuotaWindows []monitorQuotaWindow
 	monitorQuotaError   string
 
-	quotaAPIAnchors  map[string]quotaAPIAnchor
-	quotaAPIEvidence []quotaAPISample
-	quotaAPIIssues   map[string]string
+	quotaAPIAnchors        map[string]quotaAPIAnchor
+	quotaAPIEvidence       []quotaAPISample
+	quotaAPIIssues         map[string]string
+	quotaAPIAccount        string
+	quotaAPITelemetryIssue string
 }
 
 type fetchedMsg struct {
@@ -447,7 +449,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
 			if message.usageErr == nil && m.usageFetcher != nil {
+				m.quotaAPITelemetryIssue = ""
 				m.observeQuotaAPIEq(message.snapshot, message.usage, message.at)
+			} else if message.usageErr != nil {
+				if errors.Is(message.usageErr, errQuotaObservationChanged) {
+					m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
+				} else {
+					m.quotaAPITelemetryIssue = "LOCAL TELEMETRY UNAVAILABLE"
+				}
 			}
 			if m.monitorState == monitorRunning || m.monitorState == monitorStopping {
 				m.syncMonitorQuotaSnapshot(message.snapshot)
@@ -987,11 +996,28 @@ func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]foo
 
 func (m Model) fetch() tea.Cmd {
 	return func() tea.Msg {
+		var before codex.LiveUsageSnapshot
+		var beforeErr error
+		if m.usageFetcher != nil {
+			before, beforeErr = m.usageFetcher.FetchTokenUsage(context.Background())
+		}
 		snapshot, err := m.fetcher.Fetch(context.Background())
 		message := fetchedMsg{snapshot: snapshot, err: err, at: time.Now()}
 		if err == nil && m.usageFetcher != nil {
-			message.usage, message.usageErr = m.usageFetcher.FetchTokenUsage(context.Background())
-			message.at = time.Now()
+			after, afterErr := m.usageFetcher.FetchTokenUsage(context.Background())
+			switch {
+			case beforeErr != nil:
+				message.usageErr = beforeErr
+			case afterErr != nil:
+				message.usageErr = afterErr
+			case !quotaAPIAccountingEqual(before, after):
+				message.usageErr = errQuotaObservationChanged
+			default:
+				message.usage = after
+			}
+			if !snapshot.FetchedAt.IsZero() {
+				message.at = snapshot.FetchedAt
+			}
 		}
 		return message
 	}

@@ -19,7 +19,8 @@ import (
 type demoFetcher struct {
 	mu             sync.Mutex
 	snapshot       codex.Snapshot
-	quotaFetches   int
+	pendingQuota   int
+	suppressUsage  bool
 	lifetimeTokens int64
 	apiEqUSD       float64
 	apiEqCalls     int64
@@ -35,12 +36,14 @@ func (d *demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 	defer d.mu.Unlock()
 	if d.snapshot.RateLimits.Primary == nil {
 		d.snapshot = codex.DemoSnapshot()
+		d.snapshot.AccountFingerprint = "demo-account"
 	}
-	if d.quotaFetches > 0 {
-		d.snapshot.RateLimits.Primary.UsedPercent = min(97, d.snapshot.RateLimits.Primary.UsedPercent+5)
-		d.snapshot.RateLimits.Secondary.UsedPercent = min(97, d.snapshot.RateLimits.Secondary.UsedPercent+5)
+	if d.pendingQuota > 0 {
+		d.snapshot.RateLimits.Primary.UsedPercent = min(97, d.snapshot.RateLimits.Primary.UsedPercent+d.pendingQuota)
+		d.snapshot.RateLimits.Secondary.UsedPercent = min(97, d.snapshot.RateLimits.Secondary.UsedPercent+d.pendingQuota)
+		d.pendingQuota = 0
 	}
-	d.quotaFetches++
+	d.suppressUsage = true
 	d.snapshot.FetchedAt = time.Now()
 	return cloneDemoSnapshot(d.snapshot), nil
 }
@@ -67,10 +70,14 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	defer d.mu.Unlock()
 	if d.lifetimeTokens == 0 {
 		d.lifetimeTokens = 100_000
+		d.suppressUsage = false
+	} else if d.suppressUsage {
+		d.suppressUsage = false
 	} else {
 		d.lifetimeTokens += 1_234
 		d.apiEqUSD += 0.18
 		d.apiEqCalls++
+		d.pendingQuota += 5
 		now := time.Now()
 		d.eventSequence++
 		call := codex.LiveModelCall{

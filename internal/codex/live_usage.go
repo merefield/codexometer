@@ -172,9 +172,7 @@ type rolloutModelEvent struct {
 	Ordinal   *uint64   `json:"ordinal"`
 	Type      string    `json:"type"`
 	Payload   struct {
-		Type    string `json:"type"`
-		Model   string `json:"model"`
-		ToModel string `json:"to_model"`
+		Model string `json:"model"`
 	} `json:"payload"`
 }
 
@@ -712,7 +710,7 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 }
 
 func rolloutModelRecord(line []byte) (string, *uint64, time.Time, bool) {
-	if !bytes.Contains(line, []byte(`"turn_context"`)) && !bytes.Contains(line, []byte(`"model_reroute"`)) {
+	if !bytes.Contains(line, []byte(`"turn_context"`)) {
 		return "", nil, time.Time{}, false
 	}
 	var event rolloutModelEvent
@@ -721,9 +719,6 @@ func rolloutModelRecord(line []byte) (string, *uint64, time.Time, bool) {
 	}
 	if event.Type == "turn_context" && strings.TrimSpace(event.Payload.Model) != "" {
 		return strings.TrimSpace(event.Payload.Model), event.Ordinal, event.Timestamp, true
-	}
-	if event.Type == "event_msg" && event.Payload.Type == "model_reroute" && strings.TrimSpace(event.Payload.ToModel) != "" {
-		return strings.TrimSpace(event.Payload.ToModel), event.Ordinal, event.Timestamp, true
 	}
 	return "", nil, time.Time{}, false
 }

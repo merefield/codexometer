@@ -16,9 +16,17 @@ const (
 	quotaAPIMaxAge       = 45 * 24 * time.Hour
 )
 
-// quotaAPISample is deliberately anonymous: it retains only the inferred
-// standard API-equivalent capacity for one clean observation interval. It has
-// no session, account, model-call, or token-event identifiers.
+var errQuotaObservationChanged = fmt.Errorf("local accounting changed during quota read")
+
+func quotaAPIAccountingEqual(left, right codex.LiveUsageSnapshot) bool {
+	return left.APIEqUSD == right.APIEqUSD &&
+		left.APIEqPricedCalls == right.APIEqPricedCalls &&
+		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls
+}
+
+// quotaAPISample is process-local and content-free. Its key contains only an
+// in-memory account fingerprint plus the quota-window identity; it retains no
+// email, session, model-call, or token-event identifier and is never persisted.
 type quotaAPISample struct {
 	Key                string  `json:"key"`
 	CapacityUSD        float64 `json:"capacityUsd"`
@@ -50,6 +58,16 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 	if at.IsZero() {
 		at = time.Now()
 	}
+	account := strings.TrimSpace(snapshot.AccountFingerprint)
+	if account == "" {
+		return
+	}
+	if m.quotaAPIAccount != "" && m.quotaAPIAccount != account {
+		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
+		m.quotaAPIEvidence = nil
+		m.quotaAPIIssues = make(map[string]string)
+	}
+	m.quotaAPIAccount = account
 	if m.quotaAPIAnchors == nil {
 		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
 	}
@@ -57,9 +75,8 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		m.quotaAPIIssues = make(map[string]string)
 	}
 	m.quotaAPIEvidence = validQuotaAPISamples(m.quotaAPIEvidence, at)
-	changed := false
 	for _, meter := range snapshot.Meters() {
-		if meter.Kind != codex.MeterQuotaWindow {
+		if !quotaAPIMeterEligible(snapshot, meter) {
 			continue
 		}
 		key := quotaAPIKey(snapshot, meter)
@@ -102,11 +119,12 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		m.quotaAPIEvidence = trimQuotaAPISamples(m.quotaAPIEvidence, key)
 		m.quotaAPIAnchors[key] = current
 		m.quotaAPIIssues[key] = ""
-		changed = true
 	}
-	if changed {
-		m.persistPreferences()
-	}
+}
+
+func quotaAPIMeterEligible(snapshot codex.Snapshot, meter codex.Meter) bool {
+	return meter.Kind == codex.MeterQuotaWindow && snapshot.AccountFingerprint != "" &&
+		strings.EqualFold(strings.TrimSpace(meter.LimitID), "codex")
 }
 
 func optionalUnix(value *int64) int64 {
@@ -117,6 +135,7 @@ func optionalUnix(value *int64) int64 {
 }
 
 func quotaAPIKey(snapshot codex.Snapshot, meter codex.Meter) string {
+	account := strings.TrimSpace(snapshot.AccountFingerprint)
 	plan := "unknown"
 	if len(snapshot.RateLimitsByLimitID) > 0 {
 		if limit, ok := snapshot.RateLimitsByLimitID[meter.LimitID]; ok && limit.PlanType != nil {
@@ -133,7 +152,7 @@ func quotaAPIKey(snapshot codex.Snapshot, meter codex.Meter) string {
 	if limitID == "" {
 		limitID = strings.ToLower(strings.TrimSpace(meter.Bucket))
 	}
-	return fmt.Sprintf("%s|%s|%d", plan, limitID, duration)
+	return fmt.Sprintf("%s|%s|%s|%d", account, plan, limitID, duration)
 }
 
 func validQuotaAPISamples(samples []quotaAPISample, now time.Time) []quotaAPISample {
@@ -201,8 +220,10 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 	}
 	fullLow, fullHigh := medianFloat(lows), medianFloat(highs)
 	center := medianFloat(centers)
+	minCenter, maxCenter := slicesMinMax(centers)
 	confidence := "LOW"
-	if len(matching) >= 3 && totalDelta >= 15 && center > 0 && (fullHigh-fullLow)/center <= 0.45 {
+	if len(matching) >= 3 && totalDelta >= 15 && center > 0 &&
+		(fullHigh-fullLow)/center <= 0.45 && (maxCenter-minCenter)/center <= 0.50 {
 		// Local rollout coverage cannot prove that another machine or client did
 		// not consume quota, so the estimator intentionally caps at MEDIUM.
 		confidence = "MED"
@@ -212,6 +233,15 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 		currentLow: fullLow * used, currentHigh: fullHigh * used,
 		fullLow: fullLow, fullHigh: fullHigh, samples: len(matching), confidence: confidence,
 	}, true
+}
+
+func slicesMinMax(values []float64) (float64, float64) {
+	minimum, maximum := values[0], values[0]
+	for _, value := range values[1:] {
+		minimum = min(minimum, value)
+		maximum = max(maximum, value)
+	}
+	return minimum, maximum
 }
 
 func medianFloat(values []float64) float64 {
@@ -234,7 +264,12 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 		if meters[index].Kind != codex.MeterQuotaWindow {
 			continue
 		}
-		line := m.quotaAPILine(meters[index], lineWidth)
+		line := "API-EQ N/A // LIMIT ATTRIBUTION UNKNOWN"
+		if m.snapshot.AccountFingerprint == "" {
+			line = "API-EQ N/A // ACCOUNT ATTRIBUTION UNKNOWN"
+		} else if quotaAPIMeterEligible(m.snapshot, meters[index]) {
+			line = m.quotaAPILine(meters[index], lineWidth)
+		}
 		if meters[index].Details == "" {
 			meters[index].Details = line
 		} else {
@@ -245,6 +280,12 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 }
 
 func (m Model) quotaAPILine(meter codex.Meter, width int) string {
+	if m.quotaAPITelemetryIssue != "" {
+		if width < 44 {
+			return "API-EQ // " + m.quotaAPITelemetryIssue
+		}
+		return "API-EQ LEARNING // " + m.quotaAPITelemetryIssue
+	}
 	if estimate, ok := m.quotaAPIEstimate(m.snapshot, meter); ok {
 		current := formatAPIRange(estimate.currentLow, estimate.currentHigh)
 		full := formatAPIRange(estimate.fullLow, estimate.fullHigh)

@@ -11,6 +11,7 @@ type Snapshot struct {
 	RateLimits            RateLimitSnapshot            `json:"rateLimits"`
 	RateLimitsByLimitID   map[string]RateLimitSnapshot `json:"rateLimitsByLimitId"`
 	RateLimitResetCredits *ResetCredits                `json:"rateLimitResetCredits"`
+	AccountFingerprint    string                       `json:"-"`
 	FetchedAt             time.Time                    `json:"-"`
 }
 

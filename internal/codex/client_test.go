@@ -43,6 +43,9 @@ func TestFetchUsesAppServerHandshakeAndDecodesSnapshot(t *testing.T) {
 	if snapshot.FetchedAt.IsZero() {
 		t.Fatal("fetch time was not recorded")
 	}
+	if snapshot.AccountFingerprint == "" || strings.Contains(snapshot.AccountFingerprint, "user@example.com") {
+		t.Fatalf("account fingerprint was not anonymized: %q", snapshot.AccountFingerprint)
+	}
 }
 
 func TestFetchReportsRPCError(t *testing.T) {
@@ -56,6 +59,19 @@ func TestFetchReportsRPCError(t *testing.T) {
 	_, err = (Client{Binary: executable}).Fetch(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "login required (RPC -32000)") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchToleratesUnavailableAccountIdentity(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	t.Setenv("CODEXOMETER_FAKE_ACCOUNT_ERROR", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := (Client{Binary: executable}).Fetch(context.Background())
+	if err != nil || len(snapshot.Meters()) != 3 || snapshot.AccountFingerprint != "" {
+		t.Fatalf("optional account identity changed quota fetch: %#v, %v", snapshot, err)
 	}
 }
 
@@ -109,6 +125,17 @@ func runFakeAppServer() {
 		switch request.Method {
 		case "initialize":
 			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{}})
+		case "account/read":
+			if os.Getenv("CODEXOMETER_FAKE_ACCOUNT_ERROR") == "1" {
+				_ = encoder.Encode(map[string]any{
+					"id": *request.ID, "error": map[string]any{"code": -32601, "message": "unknown method"},
+				})
+				continue
+			}
+			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{
+				"account":            map[string]any{"type": "chatgpt", "email": "user@example.com", "planType": "pro"},
+				"requiresOpenaiAuth": true,
+			}})
 		case "account/rateLimits/read":
 			if os.Getenv("CODEXOMETER_FAKE_RPC_ERROR") == "1" {
 				_ = encoder.Encode(map[string]any{

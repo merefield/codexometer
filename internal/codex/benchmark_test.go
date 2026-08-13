@@ -999,8 +999,14 @@ func TestEstimateAPICostUsesPublishedLongContextRates(t *testing.T) {
 	}
 	olderUsage := usage
 	olderUsage.CacheWriteInputTokens = 0
-	if _, known, issue := EstimateStandardAPIEqCost("gpt-5.4", olderUsage); known || !strings.Contains(issue, "long-context") {
-		t.Fatalf("unpublished long-context rate = known %v, issue %q", known, issue)
+	for model, want := range map[string]float64{
+		"gpt-5.4": (200_000*5.00 + 100_000*0.50 + 10_000*22.50) / 1_000_000.0,
+		"gpt-5.5": (200_000*10.00 + 100_000*1.00 + 10_000*45.00) / 1_000_000.0,
+	} {
+		cost, known, issue := EstimateStandardAPIEqCost(model, olderUsage)
+		if !known || issue != "" || math.Abs(cost-want) > 1e-12 {
+			t.Errorf("%s long-context cost = %f, %v, %q; want %f", model, cost, known, issue, want)
+		}
 	}
 }
 

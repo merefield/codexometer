@@ -67,13 +67,7 @@ func TestFilePreferenceStoreRoundTripAndMissingFile(t *testing.T) {
 	if preferences, err := store.Load(); err != nil || !reflect.DeepEqual(preferences, Preferences{}) {
 		t.Fatalf("missing preference file = %#v, %v", preferences, err)
 	}
-	want := Preferences{
-		Theme: "rust", QuotaView: "pie", BenchmarkFilter: "pass", BenchmarkRank: "balanced",
-		QuotaAPIEvidence: []quotaAPISample{{
-			Key: "pro|codex|300", CapacityUSD: 12, LowUSD: 10, HighUSD: 15,
-			DeltaPercent: 5, ObservedAtUnix: time.Now().Unix(), PricingRetrievedOn: "2026-08-13",
-		}},
-	}
+	want := Preferences{Theme: "rust", QuotaView: "pie", BenchmarkFilter: "pass", BenchmarkRank: "balanced"}
 	if err := store.Save(want); err != nil {
 		t.Fatal(err)
 	}
