@@ -185,46 +185,73 @@ Preview all UI features using simulated quota data:
 codexometer --demo
 ```
 
-## Shared Codex daemon for live status and model resolution
+## Recommended Codex CLI setup
 
-Codexometer works without a shared server, but its `CHECK SESSION` fallback
-cannot distinguish every long-running local tool from a prompt. On Unix
-systems, a current standalone Codex installation can instead run one shared
-app-server daemon. Every CLI connected to that daemon exposes its live
-per-thread `waitingOnApproval` and `waitingOnUserInput` flags, allowing the
-Monitor to show definite `APPROVAL NEEDED` and `INPUT NEEDED` badges. It also
-lets Codexometer observe live `model/rerouted` and per-response token-usage
-events. When those events match a local rollout response exactly, Quota and
-Monitor API-equivalent figures use the model that actually served the response
-instead of the requested model.
+Codexometer works with an ordinary Codex CLI process, but connecting your CLI
+sessions through one shared app-server daemon unlocks its most accurate live
+telemetry on macOS, Linux, and WSL:
 
-Start the managed daemon and confirm that it is ready:
+- **Definite attention states** — Monitor can distinguish `INPUT NEEDED` from
+  `APPROVAL NEEDED` using live per-thread status instead of eventually showing
+  the cautious `CHECK SESSION` inactivity fallback.
+- **Resolved-model API equivalents** — live model-reroute and response-usage
+  events let Codexometer price a positively matched call using the model that
+  actually served it, rather than relying only on the requested model saved in
+  the rollout.
+- **Better multi-session visibility** — every connected CLI tab or pane remains
+  a separate Monitor session while sharing the same accurate status source;
+  explicitly linked subagents are still folded into their root session.
+- **No extra Codexometer authentication** — the daemon, CLI clients, and
+  Codexometer continue to use the prevailing Codex login under the same
+  `CODEX_HOME`.
+- **Safe degradation** — sessions not connected to the daemon continue to use
+  all core quota features with requested-model pricing, rollout lifecycle
+  signals, and writer-lock attention detection.
 
-```sh
-codex app-server daemon start
-codex app-server daemon version
-```
+Set up the recommended arrangement as follows.
 
-Then launch each Codex CLI terminal against its default Unix control socket:
+1. Confirm that the current standalone Codex CLI and Codexometer see the same
+   login and `CODEX_HOME`:
 
-```sh
-codex --remote unix://
-```
+   ```sh
+   codex --version
+   codexometer --check-auth
+   ```
 
-Run that client command in every terminal tab or pane that should share the
-daemon. Start Codexometer normally in another terminal:
+2. Start the managed daemon and confirm that it is ready:
 
-```sh
-codexometer
-```
+   ```sh
+   codex app-server daemon start
+   codex app-server daemon version
+   ```
 
-No Codexometer option is required. While Monitor is recording, Codexometer
-automatically probes the same default socket under `CODEX_HOME` and uses exact
-runtime status for threads loaded there. Codexometer subscribes only to thread
-IDs that are already loaded by that daemon; it does not load unrelated
-historical sessions. Sessions belonging to ordinary, non-daemon Codex
-processes continue to use the local rollout, requested-model pricing, and
-writer-lock fallback.
+3. Launch each working Codex CLI terminal against the daemon's default Unix
+   control socket:
+
+   ```sh
+   codex --remote unix://
+   ```
+
+   Run this client command separately in every terminal tab or pane that
+   Codexometer should monitor through the shared daemon.
+
+4. Start Codexometer in an adjacent window or split pane before beginning work
+   that you want attributed:
+
+   ```sh
+   codexometer
+   ```
+
+   Starting it first matters because transient model-reroute events cannot be
+   reconstructed after the fact. No additional Codexometer option is required;
+   it automatically probes the same default socket under `CODEX_HOME`.
+
+5. Leave Codexometer running while you work. Use Monitor Start when you want a
+   measured interval, and keep unrelated Codex activity quiet while running
+   Benchmarks if you want the cleanest comparisons.
+
+Codexometer subscribes only to thread IDs that are already loaded by the
+daemon; it does not load unrelated historical sessions.
 
 Manage or stop the daemon with:
 
@@ -234,8 +261,9 @@ codex app-server daemon stop
 ```
 
 The managed daemon lifecycle is currently experimental, Unix-only, and expects
-the standalone Codex installation. The app-server also supports a local
-WebSocket listener, including on Windows:
+the standalone Codex installation. Native Windows and other ordinary CLI
+sessions remain fully usable through the fallback described above. The
+app-server also supports a local WebSocket listener, including on Windows:
 
 ```sh
 codex app-server --listen ws://127.0.0.1:4500
