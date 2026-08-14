@@ -185,40 +185,73 @@ Preview all UI features using simulated quota data:
 codexometer --demo
 ```
 
-## Shared Codex daemon for precise Monitor status
+## Recommended Codex CLI setup
 
-Codexometer works without a shared server, but its `CHECK SESSION` fallback
-cannot distinguish every long-running local tool from a prompt. On Unix
-systems, a current standalone Codex installation can instead run one shared
-app-server daemon. Every CLI connected to that daemon exposes its live
-per-thread `waitingOnApproval` and `waitingOnUserInput` flags, allowing the
-Monitor to show definite `APPROVAL NEEDED` and `INPUT NEEDED` badges.
+Codexometer works with an ordinary Codex CLI process, but connecting your CLI
+sessions through one shared app-server daemon unlocks its most accurate live
+telemetry on macOS, Linux, and WSL:
 
-Start the managed daemon and confirm that it is ready:
+- **Definite attention states** — Monitor can distinguish `INPUT NEEDED` from
+  `APPROVAL NEEDED` using live per-thread status instead of eventually showing
+  the cautious `CHECK SESSION` inactivity fallback.
+- **Resolved-model API equivalents** — live model-reroute and response-usage
+  events let Codexometer price a positively matched call using the model that
+  actually served it, rather than relying only on the requested model saved in
+  the rollout.
+- **Better multi-session visibility** — every connected CLI tab or pane remains
+  a separate Monitor session while sharing the same accurate status source;
+  explicitly linked subagents are still folded into their root session.
+- **No extra Codexometer authentication** — the daemon, CLI clients, and
+  Codexometer continue to use the prevailing Codex login under the same
+  `CODEX_HOME`.
+- **Safe degradation** — sessions not connected to the daemon continue to use
+  all core quota features with requested-model pricing, rollout lifecycle
+  signals, and writer-lock attention detection.
 
-```sh
-codex app-server daemon start
-codex app-server daemon version
-```
+Set up the recommended arrangement as follows.
 
-Then launch each Codex CLI terminal against its default Unix control socket:
+1. Confirm that the current standalone Codex CLI and Codexometer see the same
+   login and `CODEX_HOME`:
 
-```sh
-codex --remote unix://
-```
+   ```sh
+   codex --version
+   codexometer --check-auth
+   ```
 
-Run that client command in every terminal tab or pane that should share the
-daemon. Start Codexometer normally in another terminal:
+2. Start the managed daemon and confirm that it is ready:
 
-```sh
-codexometer
-```
+   ```sh
+   codex app-server daemon start
+   codex app-server daemon version
+   ```
 
-No Codexometer option is required. While Monitor is recording, Codexometer
-automatically probes the same default socket under `CODEX_HOME` and uses exact
-runtime status for threads loaded there. Sessions belonging to ordinary,
-non-daemon Codex processes continue to use the local rollout and writer-lock
-fallback.
+3. Launch each working Codex CLI terminal against the daemon's default Unix
+   control socket:
+
+   ```sh
+   codex --remote unix://
+   ```
+
+   Run this client command separately in every terminal tab or pane that
+   Codexometer should monitor through the shared daemon.
+
+4. Start Codexometer in an adjacent window or split pane before beginning work
+   that you want attributed:
+
+   ```sh
+   codexometer
+   ```
+
+   Starting it first matters because transient model-reroute events cannot be
+   reconstructed after the fact. No additional Codexometer option is required;
+   it automatically probes the same default socket under `CODEX_HOME`.
+
+5. Leave Codexometer running while you work. Use Monitor Start when you want a
+   measured interval, and keep unrelated Codex activity quiet while running
+   Benchmarks if you want the cleanest comparisons.
+
+Codexometer subscribes only to thread IDs that are already loaded by the
+daemon; it does not load unrelated historical sessions.
 
 Manage or stop the daemon with:
 
@@ -228,8 +261,9 @@ codex app-server daemon stop
 ```
 
 The managed daemon lifecycle is currently experimental, Unix-only, and expects
-the standalone Codex installation. The app-server also supports a local
-WebSocket listener, including on Windows:
+the standalone Codex installation. Native Windows and other ordinary CLI
+sessions remain fully usable through the fallback described above. The
+app-server also supports a local WebSocket listener, including on Windows:
 
 ```sh
 codex app-server --listen ws://127.0.0.1:4500
@@ -273,6 +307,13 @@ state—not the contents—of Codex's per-thread writer lock. Message text—inc
 the final response carried beside timing
 metadata—reasoning, commands, tool results, and credentials are ignored and
 never retained by Codexometer.
+
+When the managed shared daemon is available, Codexometer also keeps a local
+app-server subscription for already-loaded thread IDs. From that stream it
+retains only runtime status flags and content-free model-reroute/token-usage
+correlations needed for the features above. It ignores prompts, responses,
+reasoning, tool payloads, and server requests, and never sends a turn or an
+approval response through this connection.
 
 If you use a nonstandard Codex executable, pass it explicitly:
 
@@ -385,15 +426,23 @@ narrower question: “At published standard API text-token prices, roughly what
 would this observed mix of model work cost when mapped onto the movement in my
 quota meter?”
 
-Codexometer prices each newly completed local model call using the requested
-model durably recorded in its turn context. Current Codex rollout files do not
-persist transient model-reroute events, so a server-side reroute cannot be
-reconstructed from this local source; this is one reason confidence never rises
-above Medium. Ordinary input, cached input, cache-write input, and output are
-priced separately; requests above the published 272,000-input-token threshold
-use the corresponding long-context rates where OpenAI publishes them. Unknown
-models or missing price classes fail closed as `UNPRICED MODEL MIX` rather than
-being guessed or treated as free.
+Codexometer normally prices each newly completed local model call using the
+requested model durably recorded in its turn context. Current Codex rollout
+files do not persist transient model-reroute events, so a reroute cannot be
+reconstructed from that source alone. When Codexometer and the CLI share the
+managed daemon described above, Codexometer keeps a live subscription and
+matches reroute and token-usage events to rollout calls by thread ID, turn ID,
+cumulative token checkpoint, and the complete response token breakdown. For a
+subscribed thread, costing waits for one refresh when that exact match is not
+yet available; a matching notification uses the resolved model, otherwise the
+call safely returns to requested-model pricing. Late attachment, disconnects,
+ordinary non-daemon clients, and already historical reroutes also retain
+requested-model pricing rather than being guessed; these remaining coverage
+limits are one reason confidence never rises above Medium. Ordinary input, cached input,
+cache-write input, and output are priced separately; requests above the
+published 272,000-input-token threshold use the corresponding long-context
+rates where OpenAI publishes them. Unknown models or missing price classes fail
+closed as `UNPRICED MODEL MIX` rather than being guessed or treated as free.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 and were retrieved on **2026-08-13**.
@@ -424,7 +473,7 @@ more percentage points can reach `MED` only when both their rounding ranges and
 their central capacity estimates agree within conservative spread limits.
 Confidence is intentionally capped at Medium because local telemetry cannot
 prove that no other machine, cloud task, unobserved client, or server-side model
-reroute also affected the account quota.
+reroute outside the shared-daemon subscription also affected the account quota.
 
 An interval is discarded and re-anchored if the window resets, the counters
 regress, the quota moves five points without any matching priced local call, or
@@ -948,9 +997,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.2`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.3`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.2`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.7.3`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -963,7 +1012,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.2" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.3" .
 ```
 
 ## How refresh works

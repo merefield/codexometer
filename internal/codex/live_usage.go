@@ -92,18 +92,22 @@ type LiveUsageReader struct {
 	WriterLocksRoot string
 	statusProvider  sessionStatusProvider
 
-	mu                sync.Mutex
-	initialized       bool
-	startedAt         time.Time
-	lastDiscovery     time.Time
-	lastFullDiscovery time.Time
-	files             map[string]*rolloutCursor
-	totalTokens       int64
-	apiEqUSD          float64
-	apiEqPricedCalls  int64
-	apiEqUnknownCalls int64
-	lastActivity      time.Time
-	nextEventSequence uint64
+	mu                        sync.Mutex
+	initialized               bool
+	startedAt                 time.Time
+	lastDiscovery             time.Time
+	lastFullDiscovery         time.Time
+	files                     map[string]*rolloutCursor
+	totalTokens               int64
+	apiEqUSD                  float64
+	apiEqPricedCalls          int64
+	apiEqUnknownCalls         int64
+	lastActivity              time.Time
+	nextEventSequence         uint64
+	daemonObservationSequence uint64
+	resolvedObservations      []resolvedModelObservation
+	pendingModelResolutions   []pendingModelResolution
+	daemonSubscribedThreads   map[string]struct{}
 }
 
 type rolloutCursor struct {
@@ -116,11 +120,20 @@ type rolloutCursor struct {
 	workingDirectory            string
 	startedAt                   time.Time
 	currentModel                string
+	currentTurnID               string
 	nonRoot                     bool
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
+}
+
+type pendingModelResolution struct {
+	callSequence    uint64
+	threadID        string
+	turnID          string
+	usage           BenchmarkUsage
+	cumulativeTotal int64
 }
 
 type sessionAttentionState int
@@ -173,6 +186,16 @@ type rolloutModelEvent struct {
 	Type      string    `json:"type"`
 	Payload   struct {
 		Model string `json:"model"`
+	} `json:"payload"`
+}
+
+type rolloutTurnIdentityEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Ordinal   *uint64   `json:"ordinal"`
+	Type      string    `json:"type"`
+	Payload   struct {
+		Type   string `json:"type"`
+		TurnID string `json:"turn_id"`
 	} `json:"payload"`
 }
 
@@ -284,6 +307,17 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		}
 	}
 
+	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	r.daemonSubscribedThreads = nil
+	if r.statusProvider != nil {
+		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
+			exactStatuses = daemonSnapshot.Statuses
+			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
+			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
+		}
+	}
+	r.reconcilePendingModelResolutions()
+
 	var firstReadErr error
 	readableFiles := 0
 	for path, cursor := range r.files {
@@ -310,10 +344,6 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
-	exactStatuses := map[string]sessionRuntimeStatus(nil)
-	if r.statusProvider != nil {
-		exactStatuses, _ = r.statusProvider.Fetch(ctx, r.observedThreadIDs())
-	}
 	sessions, activeSessions := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
@@ -323,11 +353,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}, nil
 }
 
-func (r *LiveUsageReader) observedThreadIDs() []string {
+func (r *LiveUsageReader) observedThreadIDs(now time.Time) []string {
 	seen := make(map[string]struct{}, len(r.files))
 	threadIDs := make([]string, 0, len(r.files))
 	for _, cursor := range r.files {
-		if cursor.threadID == "" {
+		if cursor.threadID == "" || now.Sub(cursor.lastModified) > activeRolloutHorizon {
 			continue
 		}
 		if _, ok := seen[cursor.threadID]; ok {
@@ -438,6 +468,11 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return modelErr
 		}
 		cursor.currentModel = model
+		turnID, turnErr := latestRolloutTurnID(path, cursor)
+		if turnErr != nil {
+			return turnErr
+		}
+		cursor.currentTurnID = turnID
 		total, err := latestTokenTotal(path)
 		if err != nil {
 			return err
@@ -467,6 +502,11 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		}
 		cursor.offset = info.Size()
 		cursor.totalTokens = total
+		turnID, turnErr := latestRolloutTurnID(path, cursor)
+		if turnErr != nil {
+			return turnErr
+		}
+		cursor.currentTurnID = turnID
 		attention, attentionErr := latestSessionAttention(path, cursor)
 		if attentionErr != nil {
 			return attentionErr
@@ -485,6 +525,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if turnID, ordinal, at, ok := rolloutTurnIDRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.currentTurnID = turnID
+			}
 			if model, ordinal, at, ok := rolloutModelRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.currentModel = model
@@ -513,12 +557,23 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							r.lastActivity = record.at
 						}
 						r.nextEventSequence++
+						model := cursor.currentModel
+						pricingUsage := record.usage
+						usageMatchesDelta := record.usage.TotalTokens == delta
+						_, daemonSubscribed := r.daemonSubscribedThreads[cursor.threadID]
+						resolutionPending := daemonSubscribed && cursor.threadID != "" && cursor.currentTurnID != ""
+						resolved := false
+						if usageMatchesDelta {
+							if observation, ok := r.takeResolvedModelObservation(cursor.threadID, cursor.currentTurnID, record.usage, record.total); ok {
+								model, pricingUsage, resolved = observation.Model, observation.Usage, true
+							}
+						}
 						call := LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
-							OutputAvailable: record.outputKnown, Model: cursor.currentModel,
+							OutputAvailable: record.outputKnown, Model: model,
 						}
-						if record.usage.TotalTokens == delta {
-							if cost, known, _ := EstimateStandardAPIEqCost(cursor.currentModel, record.usage); known {
+						if usageMatchesDelta && (!resolutionPending || resolved) {
+							if cost, known, _ := EstimateStandardAPIEqCost(model, pricingUsage); known {
 								call.APIEqUSD, call.APIEqKnown = cost, true
 								r.apiEqUSD += cost
 								r.apiEqPricedCalls++
@@ -529,6 +584,12 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							r.apiEqUnknownCalls++
 						}
 						cursor.modelCalls = appendBounded(cursor.modelCalls, call, telemetryHistoryMax)
+						if usageMatchesDelta && resolutionPending && !resolved {
+							r.pendingModelResolutions = append(r.pendingModelResolutions, pendingModelResolution{
+								callSequence: call.Sequence, threadID: cursor.threadID,
+								turnID: cursor.currentTurnID, usage: record.usage, cumulativeTotal: record.total,
+							})
+						}
 					}
 				}
 				cursor.totalTokens = record.total
@@ -548,6 +609,103 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return readErr
 		}
 	}
+}
+
+func rolloutTurnIDRecord(line []byte) (string, *uint64, time.Time, bool) {
+	if !bytes.Contains(line, []byte(`"turn_id"`)) {
+		return "", nil, time.Time{}, false
+	}
+	var event rolloutTurnIdentityEvent
+	if json.Unmarshal(line, &event) != nil {
+		return "", nil, time.Time{}, false
+	}
+	if (event.Type != "event_msg" || (event.Payload.Type != "task_started" && event.Payload.Type != "turn_started")) &&
+		event.Type != "turn_context" {
+		return "", nil, time.Time{}, false
+	}
+	turnID := strings.TrimSpace(event.Payload.TurnID)
+	return turnID, event.Ordinal, event.Timestamp, turnID != ""
+}
+
+func (r *LiveUsageReader) ingestResolvedModelObservations(observations []resolvedModelObservation) {
+	for _, observation := range observations {
+		if observation.Sequence <= r.daemonObservationSequence {
+			continue
+		}
+		r.daemonObservationSequence = observation.Sequence
+		r.resolvedObservations = appendBounded(r.resolvedObservations, observation, telemetryHistoryMax)
+	}
+}
+
+func (r *LiveUsageReader) reconcilePendingModelResolutions() {
+	for _, pending := range r.pendingModelResolutions {
+		observation, ok := r.takeResolvedModelObservation(pending.threadID, pending.turnID, pending.usage, pending.cumulativeTotal)
+		if !ok {
+			call := r.modelCall(pending.callSequence)
+			if call != nil {
+				r.apiEqUnknownCalls--
+				call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(call.Model, pending.usage)
+				if call.APIEqKnown {
+					r.apiEqUSD += call.APIEqUSD
+					r.apiEqPricedCalls++
+				} else {
+					r.apiEqUnknownCalls++
+				}
+			}
+			continue
+		}
+		call := r.modelCall(pending.callSequence)
+		if call == nil {
+			continue
+		}
+		if call.APIEqKnown {
+			r.apiEqUSD -= call.APIEqUSD
+			r.apiEqPricedCalls--
+		} else {
+			r.apiEqUnknownCalls--
+		}
+		call.Model = observation.Model
+		call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(observation.Model, observation.Usage)
+		if call.APIEqKnown {
+			r.apiEqUSD += call.APIEqUSD
+			r.apiEqPricedCalls++
+		} else {
+			r.apiEqUnknownCalls++
+		}
+	}
+	r.pendingModelResolutions = nil
+}
+
+func (r *LiveUsageReader) takeResolvedModelObservation(threadID, turnID string, usage BenchmarkUsage, cumulativeTotal int64) (resolvedModelObservation, bool) {
+	for index, observation := range r.resolvedObservations {
+		if observation.ThreadID != threadID || observation.TurnID != turnID ||
+			observation.CumulativeTotal != cumulativeTotal || !sameBenchmarkUsage(observation.Usage, usage) {
+			continue
+		}
+		r.resolvedObservations = append(r.resolvedObservations[:index], r.resolvedObservations[index+1:]...)
+		return observation, true
+	}
+	return resolvedModelObservation{}, false
+}
+
+func (r *LiveUsageReader) modelCall(sequence uint64) *LiveModelCall {
+	for _, cursor := range r.files {
+		for index := range cursor.modelCalls {
+			if cursor.modelCalls[index].Sequence == sequence {
+				return &cursor.modelCalls[index]
+			}
+		}
+	}
+	return nil
+}
+
+func sameBenchmarkUsage(left, right BenchmarkUsage) bool {
+	return left.TotalTokens == right.TotalTokens &&
+		left.InputTokens == right.InputTokens &&
+		left.CachedInputTokens == right.CachedInputTokens &&
+		left.CacheWriteInputTokens == right.CacheWriteInputTokens &&
+		left.OutputTokens == right.OutputTokens &&
+		left.ReasoningOutputTokens == right.ReasoningOutputTokens
 }
 
 func latestSessionAttention(path string, cursor *rolloutCursor) (sessionAttentionState, error) {
@@ -751,6 +909,45 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 			if model, ordinal, at, ok := rolloutModelRecord(lines[index]); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				return model, nil
+			}
+		}
+		carry = append(carry[:0], lines[0]...)
+	}
+	return "", nil
+}
+
+func latestRolloutTurnID(path string, cursor *rolloutCursor) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	const chunkSize = int64(64 * 1024)
+	position := info.Size()
+	var carry []byte
+	for position > 0 {
+		readSize := min(chunkSize, position)
+		position -= readSize
+		chunk := make([]byte, int(readSize))
+		if _, err := file.ReadAt(chunk, position); err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		data := make([]byte, 0, len(chunk)+len(carry))
+		data = append(data, chunk...)
+		data = append(data, carry...)
+		lines := bytes.Split(data, []byte{'\n'})
+		firstComplete := 1
+		if position == 0 {
+			firstComplete = 0
+		}
+		for index := len(lines) - 1; index >= firstComplete; index-- {
+			if turnID, ordinal, at, ok := rolloutTurnIDRecord(lines[index]); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				return turnID, nil
 			}
 		}
 		carry = append(carry[:0], lines[0]...)

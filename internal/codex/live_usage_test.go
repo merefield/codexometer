@@ -549,12 +549,112 @@ func TestLiveUsageReaderUsesPerThreadExactStatuses(t *testing.T) {
 	}
 }
 
-type stubSessionStatusProvider struct {
-	statuses map[string]sessionRuntimeStatus
+func TestLiveUsageReaderCorrectsRequestedModelFromDelayedDaemonReroute(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now, "rerouted-thread")
+	writeRollout(t, path, sessionMetaLine("rerouted-thread", `"cli"`, "/work/rerouted", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{}
+	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	usage := BenchmarkUsage{
+		TotalTokens: 130, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 30,
+	}
+	appendRollout(t, path,
+		turnContextWithTurnIDLine(now, "turn-1", "gpt-5.6-sol")+"\n"+
+			richTokenCountLine(now.Add(time.Second), 130, 100, 20, 0, 30)+"\n")
+	reader.statusProvider = stubSessionStatusProvider{subscribed: map[string]struct{}{"rerouted-thread": {}}}
+	first, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(first.Sessions) != 1 || len(first.Sessions[0].ModelCalls) != 1 {
+		t.Fatalf("requested-model reading = %#v, %v", first, err)
+	}
+	_, requestedKnown, _ := EstimateStandardAPIEqCost("gpt-5.6-sol", usage)
+	if call := first.Sessions[0].ModelCalls[0]; call.Model != "gpt-5.6-sol" ||
+		!requestedKnown || call.APIEqKnown || call.APIEqUSD != 0 || first.APIEqUnpricedCalls != 1 {
+		t.Fatalf("pending reroute call = %#v snapshot %#v", call, first)
+	}
+
+	reader.statusProvider = stubSessionStatusProvider{
+		subscribed: map[string]struct{}{"rerouted-thread": {}}, observations: []resolvedModelObservation{{
+			Sequence: 1, ThreadID: "rerouted-thread", TurnID: "turn-1", Model: "gpt-5.6-terra", Usage: usage, CumulativeTotal: 130,
+		}}}
+	corrected, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(corrected.Sessions) != 1 || len(corrected.Sessions[0].ModelCalls) != 1 {
+		t.Fatalf("reroute-corrected reading = %#v, %v", corrected, err)
+	}
+	resolvedCost, resolvedKnown, _ := EstimateStandardAPIEqCost("gpt-5.6-terra", usage)
+	call := corrected.Sessions[0].ModelCalls[0]
+	if call.Model != "gpt-5.6-terra" || !resolvedKnown || !call.APIEqKnown || call.APIEqUSD != resolvedCost {
+		t.Fatalf("reroute-corrected call = %#v", call)
+	}
+	if corrected.APIEqUSD != resolvedCost || corrected.APIEqPricedCalls != 1 || corrected.APIEqUnpricedCalls != 0 {
+		t.Fatalf("reroute-corrected aggregate = %#v", corrected)
+	}
 }
 
-func (s stubSessionStatusProvider) Fetch(context.Context, []string) (map[string]sessionRuntimeStatus, bool) {
-	return s.statuses, true
+func TestLiveUsageReaderRerouteCorrectionFailsClosedOnUnpriceableUsage(t *testing.T) {
+	usage := BenchmarkUsage{TotalTokens: 130, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 30}
+	reader := &LiveUsageReader{
+		files: map[string]*rolloutCursor{"rollout": {modelCalls: []LiveModelCall{{
+			Sequence: 1, Model: "gpt-5.6-sol",
+		}}}},
+		apiEqUnknownCalls: 1,
+		pendingModelResolutions: []pendingModelResolution{{
+			callSequence: 1, threadID: "thread", turnID: "turn", usage: usage, cumulativeTotal: 130,
+		}},
+		resolvedObservations: []resolvedModelObservation{{
+			Sequence: 1, ThreadID: "thread", TurnID: "turn", Model: "gpt-5.6-terra",
+			Usage: BenchmarkUsage{
+				TotalTokens: 130, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 30,
+				schemaIssue: "unknown usage field: futureTokens",
+			},
+			CumulativeTotal: 130,
+		}},
+	}
+	reader.reconcilePendingModelResolutions()
+	call := reader.files["rollout"].modelCalls[0]
+	if call.Model != "gpt-5.6-terra" || call.APIEqKnown || reader.apiEqUSD != 0 ||
+		reader.apiEqPricedCalls != 0 || reader.apiEqUnknownCalls != 1 {
+		t.Fatalf("unpriceable reroute correction = call %#v reader %#v", call, reader)
+	}
+}
+
+func TestLiveUsageReaderFinalizesRequestedModelWhenDaemonHasNoReroute(t *testing.T) {
+	usage := BenchmarkUsage{TotalTokens: 110, InputTokens: 100, OutputTokens: 10}
+	reader := &LiveUsageReader{
+		files: map[string]*rolloutCursor{"rollout": {modelCalls: []LiveModelCall{{
+			Sequence: 1, Model: "gpt-5.6-sol",
+		}}}},
+		apiEqUnknownCalls: 1,
+		pendingModelResolutions: []pendingModelResolution{{
+			callSequence: 1, threadID: "thread", turnID: "turn", usage: usage, cumulativeTotal: 110,
+		}},
+	}
+	reader.reconcilePendingModelResolutions()
+	want, known, _ := EstimateStandardAPIEqCost("gpt-5.6-sol", usage)
+	call := reader.files["rollout"].modelCalls[0]
+	if !known || !call.APIEqKnown || call.APIEqUSD != want || reader.apiEqUSD != want ||
+		reader.apiEqPricedCalls != 1 || reader.apiEqUnknownCalls != 0 || len(reader.pendingModelResolutions) != 0 {
+		t.Fatalf("requested-model fallback = call %#v reader %#v", call, reader)
+	}
+}
+
+type stubSessionStatusProvider struct {
+	statuses     map[string]sessionRuntimeStatus
+	observations []resolvedModelObservation
+	subscribed   map[string]struct{}
+}
+
+func (s stubSessionStatusProvider) Fetch(context.Context, []string) (sessionDaemonSnapshot, bool) {
+	return sessionDaemonSnapshot{
+		Statuses: s.statuses, ModelObservations: s.observations, SubscribedThreads: s.subscribed,
+	}, true
 }
 
 func TestLiveUsageReaderPropagatesWaitingAgentToRoot(t *testing.T) {
@@ -890,6 +990,13 @@ func richTokenCountLine(at time.Time, cumulative, input, cached, cacheWrite, out
 
 func turnContextLine(at time.Time, model string) string {
 	return fmt.Sprintf(`{"timestamp":%q,"type":"turn_context","payload":{"model":%q}}`, at.UTC().Format(time.RFC3339Nano), model)
+}
+
+func turnContextWithTurnIDLine(at time.Time, turnID, model string) string {
+	return fmt.Sprintf(
+		`{"timestamp":%q,"type":"turn_context","payload":{"turn_id":%q,"model":%q}}`,
+		at.UTC().Format(time.RFC3339Nano), turnID, model,
+	)
 }
 
 func turnTimingLine(at time.Time, ttftMS int64) string {
