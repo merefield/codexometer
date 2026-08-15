@@ -520,6 +520,52 @@ func TestSessionAttentionMergePrefersDefiniteSignals(t *testing.T) {
 	}
 }
 
+func TestSessionSnapshotsSuppressesQuietChildCheckWhileGroupIsActive(t *testing.T) {
+	now := time.Now()
+	reader := &LiveUsageReader{files: map[string]*rolloutCursor{
+		"root": {
+			threadID: "root", lastModified: now, attention: sessionAttentionWorking,
+		},
+		"child": {
+			threadID: "child", parentThreadID: "root", nonRoot: true,
+			lastModified: now.Add(-8 * time.Hour), attention: sessionAttentionWorking,
+		},
+	}}
+	writers := map[string]struct{}{"root": {}, "child": {}}
+
+	sessions, active := reader.sessionSnapshots(now, writers, true, nil)
+	if len(sessions) != 1 || active != 1 {
+		t.Fatalf("grouped sessions = %#v, active %d; want one active root", sessions, active)
+	}
+	if got := sessions[0].Attention; got != SessionAttentionNone {
+		t.Fatalf("fresh root inherited quiet child's uncertain attention = %v", got)
+	}
+}
+
+func TestSessionSnapshotsExactWorkingStatusSuppressesGroupedFallback(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-8 * time.Hour)
+	reader := &LiveUsageReader{files: map[string]*rolloutCursor{
+		"root": {
+			threadID: "root", lastModified: old, attention: sessionAttentionWorking,
+		},
+		"child": {
+			threadID: "child", parentThreadID: "root", nonRoot: true,
+			lastModified: old, attention: sessionAttentionWorking,
+		},
+	}}
+	writers := map[string]struct{}{"root": {}, "child": {}}
+	statuses := map[string]sessionRuntimeStatus{"root": sessionRuntimeWorking}
+
+	sessions, active := reader.sessionSnapshots(now, writers, true, statuses)
+	if len(sessions) != 1 || active != 1 {
+		t.Fatalf("daemon-working group = %#v, active %d; want one active root", sessions, active)
+	}
+	if got := sessions[0].Attention; got != SessionAttentionNone {
+		t.Fatalf("daemon-working root inherited quiet child's fallback = %v", got)
+	}
+}
+
 func TestLiveUsageReaderUsesPerThreadExactStatuses(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()
@@ -576,7 +622,8 @@ func TestLiveUsageReaderCorrectsRequestedModelFromDelayedDaemonReroute(t *testin
 	}
 	_, requestedKnown, _ := EstimateStandardAPIEqCost("gpt-5.6-sol", usage)
 	if call := first.Sessions[0].ModelCalls[0]; call.Model != "gpt-5.6-sol" ||
-		!requestedKnown || call.APIEqKnown || call.APIEqUSD != 0 || first.APIEqUnpricedCalls != 1 {
+		!requestedKnown || call.APIEqKnown || call.APIEqUSD != 0 || call.apiEqFinalized ||
+		first.APIEqUnpricedCalls != 0 || first.APIEqPendingCalls != 1 {
 		t.Fatalf("pending reroute call = %#v snapshot %#v", call, first)
 	}
 
@@ -593,7 +640,8 @@ func TestLiveUsageReaderCorrectsRequestedModelFromDelayedDaemonReroute(t *testin
 	if call.Model != "gpt-5.6-terra" || !resolvedKnown || !call.APIEqKnown || call.APIEqUSD != resolvedCost {
 		t.Fatalf("reroute-corrected call = %#v", call)
 	}
-	if corrected.APIEqUSD != resolvedCost || corrected.APIEqPricedCalls != 1 || corrected.APIEqUnpricedCalls != 0 {
+	if corrected.APIEqUSD != resolvedCost || corrected.APIEqPricedCalls != 1 ||
+		corrected.APIEqUnpricedCalls != 0 || corrected.APIEqPendingCalls != 0 {
 		t.Fatalf("reroute-corrected aggregate = %#v", corrected)
 	}
 }
@@ -604,7 +652,6 @@ func TestLiveUsageReaderRerouteCorrectionFailsClosedOnUnpriceableUsage(t *testin
 		files: map[string]*rolloutCursor{"rollout": {modelCalls: []LiveModelCall{{
 			Sequence: 1, Model: "gpt-5.6-sol",
 		}}}},
-		apiEqUnknownCalls: 1,
 		pendingModelResolutions: []pendingModelResolution{{
 			callSequence: 1, threadID: "thread", turnID: "turn", usage: usage, cumulativeTotal: 130,
 		}},
@@ -631,7 +678,6 @@ func TestLiveUsageReaderFinalizesRequestedModelWhenDaemonHasNoReroute(t *testing
 		files: map[string]*rolloutCursor{"rollout": {modelCalls: []LiveModelCall{{
 			Sequence: 1, Model: "gpt-5.6-sol",
 		}}}},
-		apiEqUnknownCalls: 1,
 		pendingModelResolutions: []pendingModelResolution{{
 			callSequence: 1, threadID: "thread", turnID: "turn", usage: usage, cumulativeTotal: 110,
 		}},
@@ -679,6 +725,48 @@ func TestLiveUsageReaderPropagatesWaitingAgentToRoot(t *testing.T) {
 	}
 	if session := usage.Sessions[0]; session.ID != "attention-root" || session.AgentCount != 1 || session.Attention != SessionAttentionApproval {
 		t.Fatalf("waiting child was not propagated to root: %#v", session)
+	}
+}
+
+func TestLiveUsageReaderClearsQuietChildFallbackWhenRootResumes(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	idleSince := now.Add(-8 * time.Hour)
+	rootPath := testRolloutPath(t, home, idleSince, "resumed-root")
+	childPath := testRolloutPath(t, home, idleSince, "quiet-child")
+	writeRollout(t, rootPath,
+		sessionMetaLine("resumed-root", `"cli"`, "/work/root", nil)+"\n"+
+			attentionEventLine(idleSince, "task_started", nil)+"\n")
+	writeRollout(t, childPath,
+		sessionMetaLine("quiet-child", threadSpawnSource("resumed-root"), "/work/root", nil)+"\n"+
+			attentionEventLine(idleSince, "task_started", nil)+"\n")
+	for _, path := range []string{rootPath, childPath} {
+		if err := os.Chtimes(path, idleSince, idleSince); err != nil {
+			t.Fatal(err)
+		}
+	}
+	locks := filepath.Join(home, "thread-writer-locks")
+	if err := os.MkdirAll(locks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	releaseRoot := holdTestFileLock(t, filepath.Join(locks, "resumed-root.lock"))
+	defer releaseRoot()
+	releaseChild := holdTestFileLock(t, filepath.Join(locks, "quiet-child.lock"))
+	defer releaseChild()
+
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionCheck {
+		t.Fatalf("idle grouped session = %#v, %v; want cautious check", usage, err)
+	}
+
+	appendRollout(t, rootPath, attentionEventLine(now, "task_started", nil)+"\n")
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionNone {
+		t.Fatalf("resumed grouped session = %#v, %v; want stale child check cleared", usage, err)
 	}
 }
 

@@ -68,6 +68,9 @@ It works particularly well in:
   exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
   open turn is definite `INPUT NEEDED`; an otherwise active session with no
   rollout activity for three minutes is cautiously labelled `CHECK SESSION`.
+  For a root with linked agents, fresh activity from any member suppresses that
+  uncertain fallback; definite input or approval signals still propagate from
+  the member that raised them.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
   estimated standard API-equivalent cost.
@@ -435,7 +438,11 @@ matches reroute and token-usage events to rollout calls by thread ID, turn ID,
 cumulative token checkpoint, and the complete response token breakdown. For a
 subscribed thread, costing waits for one refresh when that exact match is not
 yet available; a matching notification uses the resolved model, otherwise the
-call safely returns to requested-model pricing. Late attachment, disconnects,
+call safely returns to requested-model pricing. A call awaiting that decision
+is kept in a separate pending count and does not enter the cumulative priced or
+unpriced totals. This makes finalized accounting monotonic; a quota observation
+that overlaps pending or newly finalized accounting is deferred instead of
+silently moving its learning baseline. Late attachment, disconnects,
 ordinary non-daemon clients, and already historical reroutes also retain
 requested-model pricing rather than being guessed; these remaining coverage
 limits are one reason confidence never rises above Medium. Ordinary input, cached input,
@@ -452,12 +459,16 @@ Benchmark view and making stale compiled pricing conspicuous wherever a priced
 figure appears.
 
 Each refresh brackets the account quota request with local accounting reads.
-If their cost or call counters differ, `OBSERVATION DEFERRED` is shown and no
-sample is taken, preventing a response completed during the request from being
-paired with the wrong quota snapshot. Learning starts with a stable quota
-percentage and cumulative local API-equivalent cost anchor. Once the same
-window advances by at least five displayed percentage points without a reset
-or an unpriced call, a sample is calculated:
+If their cost, finalized-call, or pending-call counters differ—or a call is
+still pending—`OBSERVATION DEFERRED` is shown and no sample is taken, preventing
+a response completed during the request from being paired with the wrong quota
+snapshot. Learning starts with a stable quota percentage and cumulative local
+API-equivalent cost anchor. A pause in activity does not expire or reduce clean
+movement. The backend may revise an upcoming rolling-window reset timestamp;
+Codexometer retains the earliest observed boundary and does not restart merely
+because that future timestamp moved. Once the same window advances by at least
+five displayed percentage points without a reset or an unpriced call, a sample
+is calculated:
 
 ```text
 central 100% estimate = observed API-equivalent cost × 100 / percentage-point movement
@@ -475,12 +486,16 @@ Confidence is intentionally capped at Medium because local telemetry cannot
 prove that no other machine, cloud task, unobserved client, or server-side model
 reroute outside the shared-daemon subscription also affected the account quota.
 
-An interval is discarded and re-anchored if the window resets, the counters
+An interval is discarded and re-anchored if its earliest reset boundary passes,
+used quota falls, the account or window definition changes, finalized counters
 regress, the quota moves five points without any matching priced local call, or
-an unknown/unpriced model occurs. `LOCAL COVERAGE GAP` signals the unmatched
-movement. Even a valid estimate can still vary with reasoning effort, model
-mix, caching, prompt shape, and backend quota weighting, so compare ranges and
-sample counts rather than treating the midpoint as a fixed entitlement.
+an unknown/unpriced model occurs. The learning readout retains the reason, for
+example `RESTARTED: WINDOW RESET`, `WINDOW DEFINITION CHANGED`, `LOCAL
+ACCOUNTING REBASED`, `UNPRICED MODEL MIX`, or `LOCAL COVERAGE GAP`, while new
+clean movement accumulates. It never silently returns to `0/5PP`. Even a valid
+estimate can still vary with reasoning effort, model mix, caching, prompt
+shape, and backend quota weighting, so compare ranges and sample counts rather
+than treating the midpoint as a fixed entitlement.
 
 Samples remain process-local and are never written to the preferences file, so
 evidence cannot leak from one login into another on a later run. During a run,
@@ -562,7 +577,8 @@ The other top-level views are:
   `APPROVAL NEEDED` and `INPUT NEEDED`. If no shared server is available, an
   otherwise active open session with no new token or rollout activity for three
   minutes receives `CHECK SESSION`: a deliberately uncertain prompt that can
-  also mean a long-running local tool. Any subsequent activity clears it.
+  also mean a long-running local tool. Subsequent activity from the root or any
+  linked agent clears the uncertain group-level warning.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Monitor recording can remain as an
@@ -650,7 +666,10 @@ Monitor does not retain the input question, approval text, response, or
 conversation content. A linked child's attention state is folded into its root
 so one remote Monitor row identifies the CLI session that needs intervention.
 A definite approval signal takes precedence, then definite input, then the
-inferred check state when linked members have mixed states.
+inferred check state when linked members have mixed states. Because `CHECK
+SESSION` is only an inactivity inference, fresh activity anywhere in the group
+suppresses a stale sibling's check; definite input and approval are never
+suppressed this way.
 
 `CALLS` counts upstream model-response cycles observed after Monitor Start, not
 complete user turns. A single Codex turn can make several calls while using
@@ -997,9 +1016,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.3`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.4`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.3`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.7.4`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -1012,7 +1031,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.3" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.4" .
 ```
 
 ## How refresh works

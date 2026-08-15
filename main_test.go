@@ -16,7 +16,7 @@ func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{flag}, &stdout, &stderr, dependencies{})
-		if code != 0 || stdout.String() != "codexometer v0.7.3\n" || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != "codexometer v0.7.4\n" || stderr.Len() != 0 {
 			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
 		}
 	}
@@ -101,7 +101,8 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 
 func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 	return left.APIEqUSD == right.APIEqUSD && left.APIEqPricedCalls == right.APIEqPricedCalls &&
-		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls
+		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls &&
+		left.APIEqPendingCalls == right.APIEqPendingCalls
 }
 
 func TestRunReportsUIError(t *testing.T) {
