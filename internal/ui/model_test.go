@@ -156,6 +156,14 @@ func TestQuotaFetchRequiresStableAccountingBracket(t *testing.T) {
 	if model.quotaAPITelemetryIssue != "OBSERVATION DEFERRED" {
 		t.Fatalf("deferred issue = %q", model.quotaAPITelemetryIssue)
 	}
+
+	pending := changed
+	pending.APIEqPendingCalls = 1
+	fetcher.usages = []codex.LiveUsageSnapshot{pending, pending}
+	message = model.fetch()().(fetchedMsg)
+	if !errors.Is(message.usageErr, errQuotaObservationChanged) {
+		t.Fatalf("pending quota accounting was accepted: %#v", message)
+	}
 	fetcher.usages = []codex.LiveUsageSnapshot{changed, changed}
 	message = model.fetch()().(fetchedMsg)
 	updated, _ = model.Update(message)

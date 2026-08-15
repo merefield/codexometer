@@ -24,8 +24,10 @@ const (
 	fallbackAttentionAfter = 3 * time.Minute
 )
 
-// LiveUsageSnapshot is a process-local, monotonically increasing count built
-// from token-count events appended to locally persisted Codex rollouts.
+// LiveUsageSnapshot is a process-local accounting view built from token-count
+// events appended to locally persisted Codex rollouts. Finalized API-equivalent
+// totals increase monotonically; APIEqPendingCalls is an instantaneous count
+// kept separate until daemon model resolution or requested-model fallback.
 type LiveUsageSnapshot struct {
 	TotalTokens        int64
 	LastActivity       time.Time
@@ -34,6 +36,7 @@ type LiveUsageSnapshot struct {
 	APIEqUSD           float64
 	APIEqPricedCalls   int64
 	APIEqUnpricedCalls int64
+	APIEqPendingCalls  int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -74,6 +77,7 @@ type LiveModelCall struct {
 	Model           string
 	APIEqUSD        float64
 	APIEqKnown      bool
+	apiEqFinalized  bool
 }
 
 // LiveTurnTiming contains the persisted latency measurement for one completed
@@ -350,6 +354,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		SessionCount: activeSessions, Sessions: sessions,
 		APIEqUSD: r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
 		APIEqUnpricedCalls: r.apiEqUnknownCalls,
+		APIEqPendingCalls:  int64(len(r.pendingModelResolutions)),
 	}, nil
 }
 
@@ -568,23 +573,26 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 								model, pricingUsage, resolved = observation.Model, observation.Usage, true
 							}
 						}
+						resolutionDeferred := usageMatchesDelta && resolutionPending && !resolved
 						call := LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
 							OutputAvailable: record.outputKnown, Model: model,
 						}
 						if usageMatchesDelta && (!resolutionPending || resolved) {
 							if cost, known, _ := EstimateStandardAPIEqCost(model, pricingUsage); known {
-								call.APIEqUSD, call.APIEqKnown = cost, true
+								call.APIEqUSD, call.APIEqKnown, call.apiEqFinalized = cost, true, true
 								r.apiEqUSD += cost
 								r.apiEqPricedCalls++
 							} else {
+								call.apiEqFinalized = true
 								r.apiEqUnknownCalls++
 							}
-						} else {
+						} else if !resolutionDeferred {
+							call.apiEqFinalized = true
 							r.apiEqUnknownCalls++
 						}
 						cursor.modelCalls = appendBounded(cursor.modelCalls, call, telemetryHistoryMax)
-						if usageMatchesDelta && resolutionPending && !resolved {
+						if resolutionDeferred {
 							r.pendingModelResolutions = append(r.pendingModelResolutions, pendingModelResolution{
 								callSequence: call.Sequence, threadID: cursor.threadID,
 								turnID: cursor.currentTurnID, usage: record.usage, cumulativeTotal: record.total,
@@ -639,33 +647,24 @@ func (r *LiveUsageReader) ingestResolvedModelObservations(observations []resolve
 
 func (r *LiveUsageReader) reconcilePendingModelResolutions() {
 	for _, pending := range r.pendingModelResolutions {
-		observation, ok := r.takeResolvedModelObservation(pending.threadID, pending.turnID, pending.usage, pending.cumulativeTotal)
-		if !ok {
-			call := r.modelCall(pending.callSequence)
-			if call != nil {
-				r.apiEqUnknownCalls--
-				call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(call.Model, pending.usage)
-				if call.APIEqKnown {
-					r.apiEqUSD += call.APIEqUSD
-					r.apiEqPricedCalls++
-				} else {
-					r.apiEqUnknownCalls++
-				}
-			}
-			continue
-		}
 		call := r.modelCall(pending.callSequence)
 		if call == nil {
+			// The call aged out of the bounded per-session history before it
+			// could be finalized. Preserve fail-closed monotonic accounting.
+			r.apiEqUnknownCalls++
 			continue
 		}
-		if call.APIEqKnown {
-			r.apiEqUSD -= call.APIEqUSD
-			r.apiEqPricedCalls--
-		} else {
-			r.apiEqUnknownCalls--
+		if call.apiEqFinalized {
+			continue
 		}
-		call.Model = observation.Model
-		call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(observation.Model, observation.Usage)
+		observation, ok := r.takeResolvedModelObservation(pending.threadID, pending.turnID, pending.usage, pending.cumulativeTotal)
+		pricingUsage := pending.usage
+		if ok {
+			call.Model = observation.Model
+			pricingUsage = observation.Usage
+		}
+		call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(call.Model, pricingUsage)
+		call.apiEqFinalized = true
 		if call.APIEqKnown {
 			r.apiEqUSD += call.APIEqUSD
 			r.apiEqPricedCalls++
@@ -1088,12 +1087,15 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	}
 
 	groups := make(map[string]*LiveUsageSession)
+	groupHasFreshActivity := make(map[string]bool)
 	for _, cursor := range r.files {
-		active := now.Sub(cursor.lastModified) <= 5*time.Minute
+		quietFor := now.Sub(cursor.lastModified)
+		active := quietFor <= 5*time.Minute
 		_, writerActive := liveWriters[cursor.threadID]
 		exactStatus, exact := exactStatuses[cursor.threadID]
-		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, now.Sub(cursor.lastModified), exactStatus, exact)
-		if !active && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
+		exactWorking := exact && exactStatus == sessionRuntimeWorking
+		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, quietFor, exactStatus, exact)
+		if !active && !exactWorking && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
 		rootID, unattributed := rolloutRoot(cursor, byID)
@@ -1105,8 +1107,13 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		group.TotalTokens += cursor.observedTokens
 		group.ModelCalls = append(group.ModelCalls, cursor.modelCalls...)
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
-		group.Active = group.Active || active || attention != SessionAttentionNone
+		group.Active = group.Active || active || exactWorking || attention != SessionAttentionNone
 		group.Attention = mergeSessionAttention(group.Attention, attention)
+		// CHECK SESSION is only an inactivity inference. A freshly writing
+		// member—or an authoritatively working daemon thread—means the grouped
+		// root is demonstrably active, even if a linked child was left quiet
+		// overnight. Definite input and approval signals still propagate.
+		groupHasFreshActivity[rootID] = groupHasFreshActivity[rootID] || quietFor < fallbackAttentionAfter || exactWorking
 		if cursor.lastModified.After(group.LastActivity) {
 			group.LastActivity = cursor.lastModified
 		}
@@ -1127,6 +1134,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	sessions := make([]LiveUsageSession, 0, len(groups))
 	activeCount := 0
 	for _, session := range groups {
+		if session.Attention == SessionAttentionCheck && groupHasFreshActivity[session.ID] {
+			session.Attention = SessionAttentionNone
+		}
 		sort.Slice(session.ModelCalls, func(i, j int) bool { return session.ModelCalls[i].Sequence < session.ModelCalls[j].Sequence })
 		sort.Slice(session.TurnTimings, func(i, j int) bool { return session.TurnTimings[i].Sequence < session.TurnTimings[j].Sequence })
 		if session.Active {

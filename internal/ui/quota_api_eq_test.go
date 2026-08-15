@@ -94,6 +94,92 @@ func TestQuotaAPIEstimatorResetsAnchorAndCapsConfidence(t *testing.T) {
 	}
 }
 
+func TestQuotaAPIEstimatorPreservesProgressAcrossUpcomingResetTimeRevisionAndInactivity(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	reset := now.Add(4 * time.Hour).Unix()
+	model := New(nil, time.Minute)
+	initial := apiEqSnapshot(10, reset)
+	model.snapshot = initial
+	model.observeQuotaAPIEq(initial, codex.LiveUsageSnapshot{}, now)
+
+	advanced := apiEqSnapshot(12, reset+1)
+	usage := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}
+	model.snapshot = advanced
+	model.observeQuotaAPIEq(advanced, usage, now.Add(2*time.Hour))
+	key := quotaAPIKey(advanced, advanced.Meters()[0])
+	anchor := model.quotaAPIAnchors[key]
+	if anchor.usedPercent != 10 || anchor.resetAt != reset || anchor.restartReason != "" {
+		t.Fatalf("benign reset-time revision moved anchor = %#v", anchor)
+	}
+	if line := model.quotaAPILine(advanced.Meters()[0], 100); !strings.Contains(line, "2/5PP CLEAN MOVEMENT") || strings.Contains(line, "RESTARTED") {
+		t.Fatalf("progress after reset-time revision = %q", line)
+	}
+
+	model.observeQuotaAPIEq(advanced, usage, now.Add(3*time.Hour))
+	if line := model.quotaAPILine(advanced.Meters()[0], 100); !strings.Contains(line, "2/5PP CLEAN MOVEMENT") {
+		t.Fatalf("inactivity changed progress = %q", line)
+	}
+}
+
+func TestQuotaAPIEstimatorRestartsWhenPreviousResetBoundaryPassed(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	reset := now.Add(time.Minute).Unix()
+	model := New(nil, time.Minute)
+	initial := apiEqSnapshot(10, reset)
+	model.observeQuotaAPIEq(initial, codex.LiveUsageSnapshot{}, now)
+
+	rolled := apiEqSnapshot(10, reset+int64((7*24*time.Hour).Seconds()))
+	model.snapshot = rolled
+	model.observeQuotaAPIEq(rolled, codex.LiveUsageSnapshot{}, now.Add(2*time.Minute))
+	key := quotaAPIKey(rolled, rolled.Meters()[0])
+	anchor := model.quotaAPIAnchors[key]
+	if anchor.usedPercent != 10 || anchor.resetAt != *rolled.Meters()[0].Window.ResetsAt ||
+		anchor.restartReason != quotaAPIRestartWindowReset {
+		t.Fatalf("rolled-window anchor = %#v", anchor)
+	}
+	if line := model.quotaAPILine(rolled.Meters()[0], 100); !strings.Contains(line, "RESTARTED: WINDOW RESET") {
+		t.Fatalf("rolled-window reason = %q", line)
+	}
+}
+
+func TestQuotaAPIEstimatorExplainsAccountingRebase(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	reset := now.Add(4 * time.Hour).Unix()
+	model := New(nil, time.Minute)
+	initial := apiEqSnapshot(10, reset)
+	model.observeQuotaAPIEq(initial, codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqPricedCalls: 2}, now)
+
+	advanced := apiEqSnapshot(12, reset)
+	model.snapshot = advanced
+	model.observeQuotaAPIEq(advanced, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+	line := model.quotaAPILine(advanced.Meters()[0], 100)
+	if !strings.Contains(line, "0/5PP CLEAN MOVEMENT") || !strings.Contains(line, "RESTARTED: LOCAL ACCOUNTING REBASED") {
+		t.Fatalf("accounting rebase line = %q", line)
+	}
+	if compact := model.quotaAPILine(advanced.Meters()[0], 40); len(compact) > 40 ||
+		!strings.Contains(compact, "0/5PP") || !strings.Contains(compact, "REBASED") {
+		t.Fatalf("compact accounting rebase line = %q", compact)
+	}
+}
+
+func TestQuotaAPIEstimatorExplainsWindowDefinitionChange(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	reset := now.Add(4 * time.Hour).Unix()
+	model := New(nil, time.Minute)
+	initial := apiEqSnapshot(10, reset)
+	model.observeQuotaAPIEq(initial, codex.LiveUsageSnapshot{}, now)
+
+	changed := apiEqSnapshot(12, reset)
+	plan := "business"
+	changed.RateLimits.PlanType = &plan
+	model.snapshot = changed
+	model.observeQuotaAPIEq(changed, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+	line := model.quotaAPILine(changed.Meters()[0], 100)
+	if !strings.Contains(line, "0/5PP CLEAN MOVEMENT") || !strings.Contains(line, "RESTARTED: WINDOW DEFINITION CHANGED") {
+		t.Fatalf("window-definition line = %q", line)
+	}
+}
+
 func TestQuotaAPIEstimatorKeepsDivergentSamplesAtLowConfidence(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
@@ -181,6 +267,11 @@ func TestQuotaAPIAccountingBracketRequiresStableCounters(t *testing.T) {
 	right.APIEqPricedCalls++
 	if quotaAPIAccountingEqual(left, right) {
 		t.Fatal("changed accounting was accepted")
+	}
+	right = left
+	right.APIEqPendingCalls++
+	if quotaAPIAccountingEqual(left, right) {
+		t.Fatal("pending accounting was accepted")
 	}
 }
 
