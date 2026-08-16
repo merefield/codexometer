@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -68,21 +68,29 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 func TestTabCyclesMainTabsAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
 	for _, want := range []meterViewID{viewMonitor, viewBenchmark, viewBars} {
-		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+		updated, _ := model.Update(specialKey(tea.KeyTab))
 		model = updated.(Model)
 		if model.meterView != want {
 			t.Fatalf("got meter view %d, want %d", model.meterView, want)
 		}
 	}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	updated, _ := model.Update(modifiedKey(tea.KeyTab, tea.ModShift))
 	model = updated.(Model)
 	if model.meterView != viewBenchmark {
 		t.Fatalf("reverse main-tab navigation got %d, want %d", model.meterView, viewBenchmark)
 	}
 }
 
-func key(r rune) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+func key(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: r, Text: string(r)}
+}
+
+func specialKey(code rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: code}
+}
+
+func modifiedKey(code rune, mod tea.KeyMod) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: code, Mod: mod}
 }
 
 func TestModelLifecycleMessages(t *testing.T) {
@@ -205,10 +213,10 @@ func TestModelManualRefreshAndQuitKeys(t *testing.T) {
 		t.Fatal("refresh action started a second fetch while one was already active")
 	}
 
-	for _, quitKey := range []tea.KeyMsg{
+	for _, quitKey := range []tea.KeyPressMsg{
 		key('q'),
-		{Type: tea.KeyEsc},
-		{Type: tea.KeyCtrlC},
+		specialKey(tea.KeyEsc),
+		modifiedKey('c', tea.ModCtrl),
 	} {
 		_, command = model.Update(quitKey)
 		if command == nil {
@@ -227,47 +235,47 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 	button, _ := footerButtonByID(model, footerButtonTheme)
 	colors := paletteFor(model.theme)
 	wantDefault := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background).Render(button.label)
-	if !strings.Contains(model.View(), wantDefault) {
+	if !strings.Contains(model.render(), wantDefault) {
 		t.Fatal("idle theme button did not use the subdued theme colour")
 	}
 
-	hover := footerMouseMessage(t, model, footerButtonTheme, tea.MouseActionMotion)
+	hover := footerMouseMessage(t, model, footerButtonTheme, false)
 	updated, command := model.Update(hover)
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonTheme {
 		t.Fatalf("theme hover was not recorded: button=%d command=%v", model.hoveredButton, command)
 	}
 	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Background(colors.background).Render(button.label)
-	if !strings.Contains(model.View(), wantHover) {
+	if !strings.Contains(model.render(), wantHover) {
 		t.Fatal("hovered theme button was not highlighted")
 	}
 
-	updated, _ = model.Update(tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionMotion})
+	updated, _ = model.Update(tea.MouseMotionMsg{X: 0, Y: 0})
 	model = updated.(Model)
 	if model.hoveredButton != footerButtonNone {
 		t.Fatalf("moving outside buttons left button %d hovered", model.hoveredButton)
 	}
 
-	updated, _ = model.Update(footerMouseMessage(t, model, footerButtonTheme, tea.MouseActionPress))
+	updated, _ = model.Update(footerMouseMessage(t, model, footerButtonTheme, true))
 	model = updated.(Model)
 	if model.theme != themeRust || model.flashedButton != footerButtonTheme {
 		t.Fatalf("theme click selected theme=%d flash=%d, want theme=%d flash=%d", model.theme, model.flashedButton, themeRust, footerButtonTheme)
 	}
 
-	updated, command = model.Update(footerMouseMessage(t, model, footerButtonView, tea.MouseActionPress))
+	updated, command = model.Update(footerMouseMessage(t, model, footerButtonView, true))
 	model = updated.(Model)
 	if command == nil || model.meterView != viewConsumptionPace || model.flashedButton != footerButtonView {
 		t.Fatalf("view click selected view=%d flash=%d", model.meterView, model.flashedButton)
 	}
 
-	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, tea.MouseActionPress))
+	updated, command = model.Update(footerMouseMessage(t, model, footerButtonRefresh, true))
 	model = updated.(Model)
 	if !model.loading || command == nil {
 		t.Fatal("refresh click did not start a fetch")
 	}
 
 	model.loading = false
-	_, command = model.Update(footerMouseMessage(t, model, footerButtonQuit, tea.MouseActionPress))
+	_, command = model.Update(footerMouseMessage(t, model, footerButtonQuit, true))
 	if command == nil {
 		t.Fatal("quit click returned no command")
 	}
@@ -320,7 +328,8 @@ func TestFooterHitGeometryMatchesRenderedButtonsAcrossSizes(t *testing.T) {
 			buttons, _ := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(model.theme).name, model.meterView.isQuota())
 			for _, visible := range buttons {
 				id := visible.id
-				mouse := footerMouseMessage(t, model, id, tea.MouseActionMotion)
+				message := footerMouseMessage(t, model, id, false)
+				mouse := message.Mouse()
 				if mouse.Y != layout.footerY+1 {
 					t.Errorf("rendered footer y=%d, calculated y=%d", mouse.Y, layout.footerY+1)
 				}
@@ -355,7 +364,7 @@ func TestFooterButtonHotkeyFlashesAndLatestPulseWins(t *testing.T) {
 	button, _ := footerButtonByID(model, footerButtonTheme)
 	colors := paletteFor(model.theme)
 	wantFlash := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.primary).Render(button.label)
-	if !strings.Contains(model.View(), wantFlash) {
+	if !strings.Contains(model.render(), wantFlash) {
 		t.Fatal("theme hotkey pulse was not rendered")
 	}
 
@@ -443,19 +452,23 @@ func TestFooterLayoutNeverHitTestsControlsTruncatedByTheme(t *testing.T) {
 	}
 }
 
-func footerMouseMessage(t *testing.T, model Model, id footerButtonID, action tea.MouseAction) tea.MouseMsg {
+func footerMouseMessage(t *testing.T, model Model, id footerButtonID, clicked bool) tea.MouseMsg {
 	t.Helper()
 	button, ok := footerButtonByID(model, id)
 	if !ok {
 		t.Fatalf("button %d is not in the current footer layout", id)
 	}
-	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+	for y, line := range strings.Split(ansi.Strip(model.render()), "\n") {
 		if x := strings.Index(line, button.label); x >= 0 {
-			return tea.MouseMsg{X: x + len(button.label)/2, Y: y, Button: tea.MouseButtonLeft, Action: action}
+			mouse := tea.Mouse{X: x + len(button.label)/2, Y: y, Button: tea.MouseLeft}
+			if clicked {
+				return tea.MouseClickMsg(mouse)
+			}
+			return tea.MouseMotionMsg(mouse)
 		}
 	}
 	t.Fatalf("button %q was not rendered", button.label)
-	return tea.MouseMsg{}
+	return tea.MouseMotionMsg{}
 }
 
 func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -544,17 +544,17 @@ func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 		},
 	}
 	wantLastPage := max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0)
-	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	updated, command := model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if command != nil || model.monitorScroll != wantLastPage {
 		t.Fatalf("Page Down monitor scroll = %d; want %d", model.monitorScroll, wantLastPage)
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	updated, _ = model.Update(specialKey(tea.KeyPgUp))
 	model = updated.(Model)
 	if model.monitorScroll != 0 {
 		t.Fatalf("Page Up monitor scroll = %d; want 0", model.monitorScroll)
 	}
-	updated, _ = model.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	updated, _ = model.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	model = updated.(Model)
 	if model.monitorScroll != 1 {
 		t.Fatalf("mouse wheel monitor scroll = %d; want 1", model.monitorScroll)
@@ -619,7 +619,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 			monitorStartedAt: time.Now().Add(-time.Minute),
 			monitorSamples:   []monitorSample{{intervalTokens: 250}, {intervalTokens: 6_000}},
 		}
-		output := model.View()
+		output := model.render()
 		plain := ansi.Strip(output)
 		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
@@ -717,7 +717,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		t.Errorf("disabled Start button hit = %d, want none", got)
 	}
 	model.monitorState = monitorIdle
-	updated, command := model.Update(tea.MouseMsg{X: hoverX, Y: hoverY, Action: tea.MouseActionMotion})
+	updated, command := model.Update(tea.MouseMotionMsg{X: hoverX, Y: hoverY})
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonMonitorGo {
 		t.Fatal("hovering the Go box did not select it")
@@ -728,9 +728,9 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		t.Fatal("hovering the Go box did not highlight its label")
 	}
 
-	updated, command = model.Update(tea.MouseMsg{
+	updated, command = model.Update(tea.MouseClickMsg{
 		X: originX + geometry.goRect.x + 1, Y: originY + geometry.goRect.y + 1,
-		Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+		Button: tea.MouseLeft,
 	})
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorStarting {

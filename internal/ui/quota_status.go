@@ -1,12 +1,13 @@
 package ui
 
 import (
+	imagecolor "image/color"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -44,7 +45,7 @@ func (h quotaHealth) compactLabel() string {
 	}[h]
 }
 
-func (h quotaHealth) color(colors palette) lipgloss.Color {
+func (h quotaHealth) color(colors palette) imagecolor.Color {
 	switch h {
 	case quotaHealthFresh, quotaHealthClear:
 		return lipgloss.Color("#57FF8A")

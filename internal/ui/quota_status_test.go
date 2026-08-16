@@ -1,11 +1,12 @@
 package ui
 
 import (
+	imagecolor "image/color"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -104,7 +105,7 @@ func TestQuotaHealthUsesSemanticSignalColors(t *testing.T) {
 	colors := paletteFor(themeNightshade)
 	for _, test := range []struct {
 		health quotaHealth
-		want   lipgloss.Color
+		want   imagecolor.Color
 	}{
 		{quotaHealthClear, lipgloss.Color("#57FF8A")},
 		{quotaHealthFresh, lipgloss.Color("#57FF8A")},

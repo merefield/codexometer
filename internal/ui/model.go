@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -37,6 +37,7 @@ type Model struct {
 	err             error
 	width           int
 	height          int
+	inline          bool
 	loading         bool
 	lastRefresh     time.Time
 	nextRefresh     time.Time
@@ -305,13 +306,19 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 	return model
 }
 
+// SetInline controls whether the dashboard renders in the current terminal
+// buffer instead of Bubble Tea's alternate screen.
+func (m *Model) SetInline(inline bool) {
+	m.inline = inline
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery))
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch strings.ToLower(message.String()) {
 		case "ctrl+c", "esc":
 			m.cancelBenchmark()
@@ -383,60 +390,62 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
-		if tab, ok := m.mainTabAt(message.X, message.Y); ok {
+		mouse := message.Mouse()
+		_, clicked := message.(tea.MouseClickMsg)
+		if tab, ok := m.mainTabAt(mouse.X, mouse.Y); ok {
 			m.mainTabHovered = true
 			m.hoveredMainTab = tab
 			m.viewHovered = false
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				return m.pressMainTab(tab)
 			}
 			return m, nil
 		}
 		m.mainTabHovered = false
-		if view, ok := m.quotaViewTabAt(message.X, message.Y); ok {
+		if view, ok := m.quotaViewTabAt(mouse.X, mouse.Y); ok {
 			m.viewHovered = true
 			m.hoveredView = view
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				return m.pressViewTab(view)
 			}
 			return m, nil
 		}
 		m.viewHovered = false
-		if column, ok := m.benchmarkHeaderAt(message.X, message.Y); ok {
+		if column, ok := m.benchmarkHeaderAt(mouse.X, mouse.Y); ok {
 			m.benchmarkSortHovered = true
 			m.benchmarkHoveredSort = column
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				m.sortBenchmarkBy(column)
 			}
 			return m, nil
 		}
 		m.benchmarkSortHovered = false
 		if m.meterView == viewMonitor {
-			switch message.Button {
-			case tea.MouseButtonWheelUp:
+			switch mouse.Button {
+			case tea.MouseWheelUp:
 				m.scrollMonitorRows(-1)
 				return m, nil
-			case tea.MouseButtonWheelDown:
+			case tea.MouseWheelDown:
 				m.scrollMonitorRows(1)
 				return m, nil
 			}
 		}
 		if m.meterView == viewBenchmark {
-			switch message.Button {
-			case tea.MouseButtonWheelUp:
+			switch mouse.Button {
+			case tea.MouseWheelUp:
 				m.scrollBenchmarkRows(3)
 				return m, nil
-			case tea.MouseButtonWheelDown:
+			case tea.MouseWheelDown:
 				m.scrollBenchmarkRows(-3)
 				return m, nil
 			}
 		}
-		button := m.footerButtonAt(message.X, message.Y)
+		button := m.footerButtonAt(mouse.X, mouse.Y)
 		m.hoveredButton = button
-		if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress && button != footerButtonNone {
+		if mouse.Button == tea.MouseLeft && clicked && button != footerButtonNone {
 			return m.pressFooterButton(button)
 		}
 	case tea.WindowSizeMsg:

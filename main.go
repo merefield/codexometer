@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/ui"
@@ -212,14 +212,11 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 }
 
 func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
-	options := []tea.ProgramOption{tea.WithMouseAllMotion()}
-	if !inline {
-		options = append(options, tea.WithAltScreen())
-	}
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
 	}
-	_, err := tea.NewProgram(model, options...).Run()
+	model.SetInline(inline)
+	_, err := tea.NewProgram(model).Run()
 	return err
 }

@@ -1,10 +1,11 @@
 package ui
 
 import (
+	imagecolor "image/color"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type mainTabID int
@@ -197,7 +198,7 @@ func (m Model) renderQuotaViewTabs(width int, colors palette) string {
 	return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(width-used, 0))
 }
 
-func tabAppearance(active, hovered, flashed bool, colors palette) (lipgloss.Style, lipgloss.Color) {
+func tabAppearance(active, hovered, flashed bool, colors palette) (lipgloss.Style, imagecolor.Color) {
 	foreground, background := colors.dim, colors.background
 	bold := false
 	if active {
@@ -215,7 +216,7 @@ func tabAppearance(active, hovered, flashed bool, colors palette) (lipgloss.Styl
 	return lipgloss.NewStyle().Foreground(foreground).Background(background).Bold(bold), background
 }
 
-func renderViewTabLabel(label string, base lipgloss.Style, background lipgloss.Color, recording bool, phase int, colors palette) string {
+func renderViewTabLabel(label string, base lipgloss.Style, background imagecolor.Color, recording bool, phase int, colors palette) string {
 	if !recording || !strings.Contains(label, "●") {
 		return base.Render(label)
 	}
@@ -225,7 +226,7 @@ func renderViewTabLabel(label string, base lipgloss.Style, background lipgloss.C
 	return base.Render(pieces[0]) + dot + base.Render(pieces[1])
 }
 
-func recordingDotColor(phase int, colors palette) lipgloss.Color {
+func recordingDotColor(phase int, colors palette) imagecolor.Color {
 	if phase%2 == 0 {
 		return colors.danger
 	}

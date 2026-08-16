@@ -318,13 +318,13 @@ func TestEveryQuotaViewDisplaysResponsiveAPIEqReadout(t *testing.T) {
 	}}
 	for _, view := range quotaViewOrder {
 		model.meterView, model.quotaMeterView = view, view
-		rendered := ansi.Strip(model.View())
+		rendered := ansi.Strip(model.render())
 		if !strings.Contains(rendered, "API-EQ") || !strings.Contains(rendered, "100%") {
 			t.Errorf("%s omitted API-EQ readout:\n%s", view.name(), rendered)
 		}
 	}
 	model.width = 48
-	if view := ansi.Strip(model.View()); !strings.Contains(view, "EQ NOW") || !strings.Contains(view, "FULL") {
+	if view := ansi.Strip(model.render()); !strings.Contains(view, "EQ NOW") || !strings.Contains(view, "FULL") {
 		t.Fatalf("narrow API-EQ readout was not responsive:\n%s", view)
 	}
 }

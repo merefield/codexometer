@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -216,15 +216,14 @@ func TestBenchmarkButtonSupportsHoverAndClick(t *testing.T) {
 	model.width, model.height = 100, 30
 	model.meterView = viewBenchmark
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkSelected)
-	mouse := tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion}
+	mouse := tea.MouseMotionMsg{X: x, Y: y}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonBenchmarkSelected {
 		t.Fatal("benchmark button hover was not recorded")
 	}
-	mouse.Action = tea.MouseActionPress
-	mouse.Button = tea.MouseButtonLeft
-	updated, command = model.Update(mouse)
+	mouse.Button = tea.MouseLeft
+	updated, command = model.Update(tea.MouseClickMsg(mouse))
 	model = updated.(Model)
 	if command == nil || model.benchmarkState != benchmarkRunning {
 		t.Fatal("benchmark button click did not start suite")
@@ -254,17 +253,17 @@ func TestBenchmarkPageKeysAndMouseWheelScrollResults(t *testing.T) {
 	for index := 0; index < 30; index++ {
 		model.benchmarkResults = append(model.benchmarkResults, codex.BenchmarkResult{DisplayName: "Model", Effort: "low"})
 	}
-	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	updated, command := model.Update(specialKey(tea.KeyPgUp))
 	model = updated.(Model)
 	if command != nil || model.benchmarkScroll == 0 {
 		t.Fatalf("Page Up did not scroll: offset=%d command=%v", model.benchmarkScroll, command != nil)
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	updated, _ = model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if model.benchmarkScroll != 0 {
 		t.Fatalf("Page Down offset = %d, want 0", model.benchmarkScroll)
 	}
-	updated, _ = model.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp})
+	updated, _ = model.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
 	model = updated.(Model)
 	if model.benchmarkScroll != 3 {
 		t.Fatalf("mouse-wheel offset = %d, want 3", model.benchmarkScroll)
@@ -282,18 +281,18 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	dashboard := model.dashboardLayout()
 	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
 	headerX, headerY := renderedTextCoordinates(t, model, "[MODEL]")
-	mouse := tea.MouseMsg{
-		X:      headerX,
-		Y:      headerY,
-		Action: tea.MouseActionMotion,
+	mouse := tea.MouseMotionMsg{
+		X: headerX,
+		Y: headerY,
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
 	if command != nil || !model.benchmarkSortHovered || model.benchmarkHoveredSort != benchmarkSortModel {
 		t.Fatal("model heading did not highlight on hover")
 	}
-	mouse.Button, mouse.Action = tea.MouseButtonLeft, tea.MouseActionPress
-	updated, command = model.Update(mouse)
+	mouse.Button = tea.MouseLeft
+	click := tea.MouseClickMsg(mouse)
+	updated, command = model.Update(click)
 	model = updated.(Model)
 	if command != nil || model.benchmarkSort != benchmarkSortModel || model.benchmarkSortDescending {
 		t.Fatalf("first heading click did not select ascending model sort: %#v", model)
@@ -302,7 +301,7 @@ func TestBenchmarkHeadingButtonsSortAndReverse(t *testing.T) {
 	if ordered[0].DisplayName != "Alpha" {
 		t.Fatalf("ascending model order = %q first, want Alpha", ordered[0].DisplayName)
 	}
-	updated, _ = model.Update(mouse)
+	updated, _ = model.Update(click)
 	model = updated.(Model)
 	ordered = sortedBenchmarkResults(model.benchmarkResults, model.benchmarkSort, model.benchmarkSortDescending)
 	if !model.benchmarkSortDescending || ordered[0].DisplayName != "Zulu" {
@@ -566,7 +565,7 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	model.meterView = viewBenchmark
 	model.benchmarkCombinations = 33
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ := model.Update(specialKey(tea.KeyRight))
 	model = updated.(Model)
 	if model.benchmarkSelectedTask != 1 {
 		t.Fatalf("right arrow selected task %d, want 1", model.benchmarkSelectedTask)
@@ -688,7 +687,7 @@ func TestBenchmarkPassFailFilterButtonsAndHotkey(t *testing.T) {
 		},
 	}
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkFilterFail)
-	updated, command := model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	updated, command := model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 	model = updated.(Model)
 	if command == nil || model.benchmarkFilter != benchmarkFilterFail {
 		t.Fatal("FAIL filter button did not activate")
@@ -714,7 +713,7 @@ func TestBenchmarkRankWeightButtonsAndHotkeyRecomputeImmediately(t *testing.T) {
 		},
 	}
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkRankCost)
-	updated, command := model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	updated, command := model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 	model = updated.(Model)
 	if command == nil || model.benchmarkRankMode != benchmarkRankCost || model.flashedButton != footerButtonBenchmarkRankCost {
 		t.Fatalf("Cost rank button did not activate and flash: mode=%d flash=%d", model.benchmarkRankMode, model.flashedButton)
@@ -738,7 +737,7 @@ func TestBenchmarkRankWeightButtonsAndHotkeyRecomputeImmediately(t *testing.T) {
 	}
 
 	x, y = benchmarkControlCoordinates(t, model, footerButtonBenchmarkRankBalanced)
-	updated, _ = model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	updated, _ = model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 	model = updated.(Model)
 	if model.benchmarkRankMode != benchmarkRankBalanced {
 		t.Fatalf("Balanced rank button selected mode %d", model.benchmarkRankMode)
@@ -773,7 +772,7 @@ func renderedTextCoordinates(t *testing.T, model Model, text string) (int, int) 
 
 func renderedTextStart(t *testing.T, model Model, text string) (int, int) {
 	t.Helper()
-	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+	for y, line := range strings.Split(ansi.Strip(model.render()), "\n") {
 		if byteX := strings.Index(line, text); byteX >= 0 {
 			return lipgloss.Width(line[:byteX]), y
 		}

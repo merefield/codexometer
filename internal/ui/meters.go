@@ -2,11 +2,12 @@ package ui
 
 import (
 	"fmt"
+	imagecolor "image/color"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -225,15 +226,15 @@ func meterDetailLines(details string) []string {
 	return visible
 }
 
-func renderResetGauge(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color lipgloss.Color, colors palette) string {
+func renderResetGauge(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color imagecolor.Color, colors palette) string {
 	return renderResetGaugeWithOptions(width, gaugeWidth, window, now, resetLabel, color, colors, false, lipgloss.Left)
 }
 
-func renderReverseResetGauge(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color lipgloss.Color, colors palette) string {
+func renderReverseResetGauge(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color imagecolor.Color, colors palette) string {
 	return renderResetGaugeWithOptions(width, gaugeWidth, window, now, resetLabel, color, colors, true, lipgloss.Center)
 }
 
-func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color lipgloss.Color, colors palette, reverse bool, alignment lipgloss.Position) string {
+func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color imagecolor.Color, colors palette, reverse bool, alignment lipgloss.Position) string {
 	gaugeWidth = min(max(gaugeWidth, 1), max(width, 1))
 	progress, ok := resetProgress(window, now)
 	if !ok {
@@ -280,7 +281,7 @@ func consumptionPace(window codex.Window, now time.Time) (int, bool) {
 	return min(max(elapsed-used, -100), 100), true
 }
 
-func meterColor(used int, colors palette) lipgloss.Color {
+func meterColor(used int, colors palette) imagecolor.Color {
 	if used >= 90 {
 		return colors.danger
 	}
@@ -290,11 +291,11 @@ func meterColor(used int, colors palette) lipgloss.Color {
 	return colors.primary
 }
 
-func renderVisualization(width, used int, view meterViewID, color lipgloss.Color, colors palette) string {
+func renderVisualization(width, used int, view meterViewID, color imagecolor.Color, colors palette) string {
 	return renderVisualizationSized(width, 0, used, view, color, colors)
 }
 
-func renderVisualizationSized(width, height, used int, view meterViewID, color lipgloss.Color, colors palette) string {
+func renderVisualizationSized(width, height, used int, view meterViewID, color imagecolor.Color, colors palette) string {
 	switch view {
 	case viewPie:
 		return renderPieSized(width, height, used, color, colors)
@@ -309,11 +310,11 @@ func renderVisualizationSized(width, height, used int, view meterViewID, color l
 	}
 }
 
-func renderClassicBar(width, used int, color lipgloss.Color, colors palette) string {
+func renderClassicBar(width, used int, color imagecolor.Color, colors palette) string {
 	return renderClassicBarSized(width, 0, used, color, colors)
 }
 
-func renderClassicBarSized(width, height, used int, color lipgloss.Color, colors palette) string {
+func renderClassicBarSized(width, height, used int, color imagecolor.Color, colors palette) string {
 	filled := int(math.Round(float64(width) * float64(used) / 100))
 	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) +
 		lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", width-filled))
@@ -332,11 +333,11 @@ func renderClassicBarSized(width, height, used int, color lipgloss.Color, colors
 	return strings.Join(rows, "\n")
 }
 
-func renderPie(width, used int, color lipgloss.Color, colors palette) string {
+func renderPie(width, used int, color imagecolor.Color, colors palette) string {
 	return renderPieSized(width, 0, used, color, colors)
 }
 
-func renderPieSized(width, height, used int, color lipgloss.Color, colors palette) string {
+func renderPieSized(width, height, used int, color imagecolor.Color, colors palette) string {
 	const legendWidth = 11
 	showLegend := width >= legendWidth+8
 	reservedLegendWidth := 0
@@ -585,7 +586,7 @@ func projectionDuration(duration time.Duration) string {
 	}
 }
 
-func paceAxis(width, center, marker, pace int, available bool, markerColor lipgloss.Color, colors palette) string {
+func paceAxis(width, center, marker, pace int, available bool, markerColor imagecolor.Color, colors palette) string {
 	if width < 3 {
 		value := "?"
 		color := colors.warning
@@ -667,11 +668,11 @@ func verticallyCenterLines(lines []string, height int) []string {
 	return centered
 }
 
-func renderFuelTank(width, used int, color lipgloss.Color, colors palette) string {
+func renderFuelTank(width, used int, color imagecolor.Color, colors palette) string {
 	return renderFuelTankSized(width, 6, used, color, colors)
 }
 
-func renderFuelTankSized(width, height, used int, color lipgloss.Color, colors palette) string {
+func renderFuelTankSized(width, height, used int, color imagecolor.Color, colors palette) string {
 	height = max(height, 1)
 	remaining := 100 - used
 	tankWidth := max(width-6, 1)
