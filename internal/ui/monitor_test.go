@@ -738,6 +738,25 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	}
 }
 
+func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
+	model := Model{snapshot: codex.DemoSnapshot(), meterView: viewMonitor, monitorState: monitorIdle}
+	colors := paletteFor(themeHacker)
+	for _, size := range []struct{ width, height int }{{36, 10}, {56, 12}, {96, 18}, {156, 30}} {
+		geometry := layoutMonitorArea(size.width, size.height)
+		readout := model.renderMonitorReadout(geometry.readoutWidth, geometry.topHeight, colors)
+		if gotWidth, gotHeight := lipgloss.Width(readout), lipgloss.Height(readout); gotWidth != geometry.readoutWidth || gotHeight != geometry.topHeight {
+			t.Errorf("%dx%d readout rendered %dx%d, want %dx%d", size.width, size.height, gotWidth, gotHeight, geometry.readoutWidth, geometry.topHeight)
+		}
+
+		for index, width := range geometry.buttonWidths {
+			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorGo, true, colors)
+			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
+				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
+			}
+		}
+	}
+}
+
 func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{40, 16}, {40, 24}, {60, 24}, {100, 36}, {160, 45}} {
 		for _, state := range []monitorState{monitorIdle, monitorRunning} {

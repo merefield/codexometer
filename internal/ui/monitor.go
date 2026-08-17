@@ -173,8 +173,8 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 		foreground = colors.primary
 	}
 	style := lipgloss.NewStyle().
-		Width(max(width-2, 1)).
-		Height(max(height-2, 1)).
+		Width(width).
+		Height(height).
 		Align(lipgloss.Center).
 		AlignVertical(lipgloss.Center).
 		Border(lipgloss.RoundedBorder()).
