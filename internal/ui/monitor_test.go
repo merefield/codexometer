@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -544,20 +544,180 @@ func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 		},
 	}
 	wantLastPage := max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0)
-	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	updated, command := model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if command != nil || model.monitorScroll != wantLastPage {
 		t.Fatalf("Page Down monitor scroll = %d; want %d", model.monitorScroll, wantLastPage)
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	updated, _ = model.Update(specialKey(tea.KeyPgUp))
 	model = updated.(Model)
 	if model.monitorScroll != 0 {
 		t.Fatalf("Page Up monitor scroll = %d; want 0", model.monitorScroll)
 	}
-	updated, _ = model.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	updated, _ = model.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	model = updated.(Model)
 	if model.monitorScroll != 1 {
 		t.Fatalf("mouse wheel monitor scroll = %d; want 1", model.monitorScroll)
+	}
+}
+
+func TestDismissedMonitorSessionReturnsOnlyAfterRenewedActivity(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+	base := codex.LiveUsageSession{ID: "alpha", TotalTokens: 100, LastActivity: now, Active: true}
+	newDismissed := func(t *testing.T) Model {
+		t.Helper()
+		model := Model{monitorState: monitorRunning, monitorStartedAt: now, monitorLatest: 100, monitorGraphStart: 100}
+		model.startMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{base}}, now)
+		model.dismissMonitorSession(base.ID)
+		if model.visibleMonitorSessionCount() != 0 {
+			t.Fatal("dismissed session remained visible")
+		}
+		return model
+	}
+
+	unchanged := newDismissed(t)
+	unchanged.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{base}}, now.Add(time.Second))
+	if unchanged.visibleMonitorSessionCount() != 0 {
+		t.Fatal("an unchanged refresh restored the dismissed session")
+	}
+	unchanged.captureMonitorSamples(now.Add(monitorSampleInterval))
+	if len(unchanged.monitorSessionData[0].samples) != 1 {
+		t.Fatal("dismissed session stopped collecting graph telemetry")
+	}
+
+	alerted := base
+	alerted.Attention = codex.SessionAttentionCheck
+	withCurrentAlert := Model{monitorState: monitorRunning, monitorStartedAt: now, monitorLatest: 100, monitorGraphStart: 100}
+	withCurrentAlert.startMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now)
+	withCurrentAlert.dismissMonitorSession(alerted.ID)
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now.Add(time.Second))
+	if withCurrentAlert.visibleMonitorSessionCount() != 0 {
+		t.Fatal("the alert present when the session was dismissed immediately restored its row")
+	}
+	cleared := alerted
+	cleared.Attention = codex.SessionAttentionNone
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{cleared}}, now.Add(2*time.Second))
+	if !withCurrentAlert.monitorDismissed[alerted.ID].attentionCleared {
+		t.Fatal("dismissal did not remember that the original alert cleared")
+	}
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now.Add(3*time.Second))
+	if withCurrentAlert.visibleMonitorSessionCount() != 1 {
+		t.Fatal("a newly raised alert did not regenerate the dismissed row")
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*codex.LiveUsageSession)
+	}{
+		{"tokens", func(session *codex.LiveUsageSession) { session.TotalTokens++ }},
+		{"activity", func(session *codex.LiveUsageSession) { session.LastActivity = now.Add(time.Second) }},
+		{"model call", func(session *codex.LiveUsageSession) {
+			session.ModelCalls = []codex.LiveModelCall{{Sequence: 1, At: now.Add(time.Second)}}
+		}},
+		{"turn timing", func(session *codex.LiveUsageSession) {
+			session.TurnTimings = []codex.LiveTurnTiming{{Sequence: 1, At: now.Add(time.Second), Available: true}}
+		}},
+		{"attention", func(session *codex.LiveUsageSession) { session.Attention = codex.SessionAttentionApproval }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := newDismissed(t)
+			update := base
+			test.mutate(&update)
+			model.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{update}}, now.Add(time.Second))
+			if model.visibleMonitorSessionCount() != 1 {
+				t.Fatalf("%s did not restore the dismissed session", test.name)
+			}
+			if _, dismissed := model.monitorDismissed[base.ID]; dismissed {
+				t.Fatalf("%s left a stale dismissal watermark", test.name)
+			}
+		})
+	}
+
+	restarted := newDismissed(t)
+	inactive := base
+	inactive.Active = false
+	restarted.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{inactive}}, now.Add(time.Second))
+	if restarted.visibleMonitorSessionCount() != 0 || !restarted.monitorDismissed[base.ID].inactiveObserved {
+		t.Fatal("inactive dismissed session lost its restart watermark")
+	}
+	restarted.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{base}}, now.Add(2*time.Second))
+	if restarted.visibleMonitorSessionCount() != 1 {
+		t.Fatal("restarted session did not regenerate its row")
+	}
+}
+
+func TestMonitorSessionDismissControlRendersAndMatchesClickSurface(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{40, 24}, {60, 24}, {100, 36}, {160, 45}} {
+		model := Model{
+			snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
+			meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: time.Now(),
+			monitorSessionData: []monitorSession{{id: "session-alpha", active: true, displayed: true}},
+		}
+		x, y := renderedTextStart(t, model, monitorDismissLabel)
+		for offset := 0; offset < lipgloss.Width(monitorDismissLabel); offset++ {
+			if id, ok := model.monitorSessionDismissAt(x+offset, y); !ok || id != "session-alpha" {
+				t.Errorf("%dx%d dismiss cell %d hit (%q,%v)", size.width, size.height, offset, id, ok)
+			}
+		}
+	}
+
+	multiple := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 36,
+		meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: time.Now(),
+		monitorSessionData: []monitorSession{
+			{id: "session-alpha", active: true, displayed: true},
+			{id: "session-beta", active: true, displayed: true},
+			{id: "session-gamma", active: true, displayed: true},
+		},
+	}
+	var dismissRows []struct {
+		x, y int
+	}
+	for y, line := range strings.Split(ansi.Strip(multiple.render()), "\n") {
+		if byteX := strings.Index(line, monitorDismissLabel); byteX >= 0 {
+			dismissRows = append(dismissRows, struct{ x, y int }{lipgloss.Width(line[:byteX]), y})
+		}
+	}
+	if len(dismissRows) != 3 {
+		t.Fatalf("multi-session dismiss controls = %d, want 3", len(dismissRows))
+	}
+	for index, position := range dismissRows {
+		wantID := multiple.monitorSessionData[index].id
+		if id, ok := multiple.monitorSessionDismissAt(position.x+1, position.y); !ok || id != wantID {
+			t.Errorf("multi-session dismiss row %d hit (%q,%v), want %q", index, id, ok, wantID)
+		}
+	}
+
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 36,
+		meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: time.Now(),
+		monitorSessionData: []monitorSession{{id: "session-alpha", active: true, displayed: true}},
+	}
+	x, y := renderedTextStart(t, model, monitorDismissLabel)
+	updated, command := model.Update(tea.MouseMotionMsg{X: x + 1, Y: y})
+	model = updated.(Model)
+	if command != nil || model.monitorDismissHover != "session-alpha" {
+		t.Fatal("dismiss control did not highlight on hover")
+	}
+	colors := paletteFor(model.theme)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render(monitorDismissLabel)
+	if got := model.renderMonitorSessionDismiss("session-alpha", colors); got != wantHover {
+		t.Fatalf("hovered dismiss control = %q, want %q", got, wantHover)
+	}
+
+	updated, command = model.Update(tea.MouseClickMsg{X: x + 1, Y: y, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.monitorDismissFlash != "session-alpha" || model.visibleMonitorSessionCount() != 1 {
+		t.Fatal("dismiss click did not begin its confirmation flash")
+	}
+	wantFlash := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.primary).Render(monitorDismissLabel)
+	if got := model.renderMonitorSessionDismiss("session-alpha", colors); got != wantFlash {
+		t.Fatalf("flashed dismiss control = %q, want %q", got, wantFlash)
+	}
+	updated, _ = model.Update(monitorSessionDismissMsg{id: "session-alpha", sequence: model.monitorDismissSeq})
+	model = updated.(Model)
+	if model.visibleMonitorSessionCount() != 0 || model.monitorDismissFlash != "" {
+		t.Fatal("dismiss control did not hide the session after flashing")
 	}
 }
 
@@ -619,7 +779,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 			monitorStartedAt: time.Now().Add(-time.Minute),
 			monitorSamples:   []monitorSample{{intervalTokens: 250}, {intervalTokens: 6_000}},
 		}
-		output := model.View()
+		output := model.render()
 		plain := ansi.Strip(output)
 		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
@@ -717,7 +877,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		t.Errorf("disabled Start button hit = %d, want none", got)
 	}
 	model.monitorState = monitorIdle
-	updated, command := model.Update(tea.MouseMsg{X: hoverX, Y: hoverY, Action: tea.MouseActionMotion})
+	updated, command := model.Update(tea.MouseMotionMsg{X: hoverX, Y: hoverY})
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonMonitorGo {
 		t.Fatal("hovering the Go box did not select it")
@@ -728,13 +888,32 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		t.Fatal("hovering the Go box did not highlight its label")
 	}
 
-	updated, command = model.Update(tea.MouseMsg{
+	updated, command = model.Update(tea.MouseClickMsg{
 		X: originX + geometry.goRect.x + 1, Y: originY + geometry.goRect.y + 1,
-		Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+		Button: tea.MouseLeft,
 	})
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorStarting {
 		t.Fatal("clicking the Go box did not start the monitor")
+	}
+}
+
+func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
+	model := Model{snapshot: codex.DemoSnapshot(), meterView: viewMonitor, monitorState: monitorIdle}
+	colors := paletteFor(themeHacker)
+	for _, size := range []struct{ width, height int }{{36, 10}, {56, 12}, {96, 18}, {156, 30}} {
+		geometry := layoutMonitorArea(size.width, size.height)
+		readout := model.renderMonitorReadout(geometry.readoutWidth, geometry.topHeight, colors)
+		if gotWidth, gotHeight := lipgloss.Width(readout), lipgloss.Height(readout); gotWidth != geometry.readoutWidth || gotHeight != geometry.topHeight {
+			t.Errorf("%dx%d readout rendered %dx%d, want %dx%d", size.width, size.height, gotWidth, gotHeight, geometry.readoutWidth, geometry.topHeight)
+		}
+
+		for index, width := range geometry.buttonWidths {
+			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorGo, true, colors)
+			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
+				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
+			}
+		}
 	}
 }
 

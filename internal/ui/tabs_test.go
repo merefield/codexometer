@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -80,11 +80,10 @@ func TestMainTabsSupportHoverClickAndPulse(t *testing.T) {
 	model.width, model.height = 100, 30
 	tabs, _ := mainTabLayout(model.contentWidth(), false)
 	target := tabs[mainTabMonitor]
-	mouse := tea.MouseMsg{
+	mouse := tea.MouseMotionMsg{
 		X:      2 + target.x + target.width/2,
 		Y:      model.dashboardLayout().tabsY,
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionMotion,
+		Button: tea.MouseLeft,
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
@@ -92,8 +91,7 @@ func TestMainTabsSupportHoverClickAndPulse(t *testing.T) {
 		t.Fatalf("monitor hover was not recorded: hovered=%v tab=%d", model.mainTabHovered, model.hoveredMainTab)
 	}
 
-	mouse.Action = tea.MouseActionPress
-	updated, command = model.Update(mouse)
+	updated, command = model.Update(tea.MouseClickMsg(mouse))
 	model = updated.(Model)
 	if command == nil || model.meterView != viewMonitor || !model.viewFlashing || model.flashedView != viewMonitor {
 		t.Fatalf("monitor click did not select and pulse: view=%d flashing=%v", model.meterView, model.viewFlashing)
@@ -107,11 +105,10 @@ func TestQuotaViewTabsSupportHoverClickAndPulse(t *testing.T) {
 	model.width, model.height = 100, 30
 	tabs, _ := quotaViewTabLayout(model.contentWidth())
 	target := tabs[1]
-	mouse := tea.MouseMsg{
+	mouse := tea.MouseMotionMsg{
 		X:      2 + target.x + target.width/2,
 		Y:      model.dashboardLayout().quotaTabsY,
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionMotion,
+		Button: tea.MouseLeft,
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
@@ -119,8 +116,7 @@ func TestQuotaViewTabsSupportHoverClickAndPulse(t *testing.T) {
 		t.Fatalf("consumption pace hover was not recorded: hovered=%v view=%d", model.viewHovered, model.hoveredView)
 	}
 
-	mouse.Action = tea.MouseActionPress
-	updated, command = model.Update(mouse)
+	updated, command = model.Update(tea.MouseClickMsg(mouse))
 	model = updated.(Model)
 	if command == nil || model.meterView != viewConsumptionPace || model.quotaMeterView != viewConsumptionPace || !model.viewFlashing || model.flashedView != viewConsumptionPace {
 		t.Fatalf("consumption pace click did not select, remember, and pulse: view=%d remembered=%d flashing=%v", model.meterView, model.quotaMeterView, model.viewFlashing)
@@ -157,22 +153,22 @@ func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
 
 func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 	model := Model{meterView: viewPie}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ := model.Update(specialKey(tea.KeyTab))
 	model = updated.(Model)
 	if model.meterView != viewMonitor {
 		t.Fatalf("Tab selected %s, want Monitor", model.meterView.name())
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = model.Update(specialKey(tea.KeyTab))
 	model = updated.(Model)
 	if model.meterView != viewBenchmark {
 		t.Fatalf("second Tab selected %s, want Benchmark", model.meterView.name())
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = model.Update(specialKey(tea.KeyTab))
 	model = updated.(Model)
 	if model.meterView != viewPie {
 		t.Fatalf("return to Quota selected %s, want remembered Pie", model.meterView.name())
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	updated, _ = model.Update(modifiedKey(tea.KeyTab, tea.ModShift))
 	model = updated.(Model)
 	if model.meterView != viewBenchmark {
 		t.Fatalf("Shift+Tab selected %s, want Benchmark", model.meterView.name())
@@ -214,7 +210,7 @@ func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	for _, view := range []meterViewID{viewBars, viewMonitor, viewBenchmark} {
 		model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: view}
-		output := ansi.Strip(model.View())
+		output := ansi.Strip(model.render())
 		layout := model.dashboardLayout()
 		if view.isQuota() {
 			if layout.quotaTabsY < 0 || !strings.Contains(output, "CONSUMPTION PACE") {

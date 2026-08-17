@@ -2,17 +2,26 @@ package ui
 
 import (
 	"fmt"
+	imagecolor "image/color"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	view := tea.NewView(m.render())
+	view.AltScreen = !m.inline
+	view.MouseMode = tea.MouseModeAllMotion
+	return view
+}
+
+func (m Model) render() string {
 	colors := paletteFor(m.theme)
 	layout := m.dashboardLayout()
 	contentWidth := layout.contentWidth
@@ -115,7 +124,7 @@ func (m Model) renderSignalStatus(width int, colors palette) string {
 	return semantic.Render("●") + online.Render(" ONLINE // ") + semantic.Render(label)
 }
 
-func renderColoredSignal(label string, color lipgloss.Color) string {
+func renderColoredSignal(label string, color imagecolor.Color) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(color).Render("● " + label)
 }
 
@@ -209,14 +218,18 @@ func renderError(width int, err error, colors palette) string {
 	return frame(width, "SIGNAL FAULT", lipgloss.NewStyle().Foreground(colors.danger).Render(message), colors.danger, colors)
 }
 
-func frame(width int, title, body string, color lipgloss.Color, colors palette) string {
+func frame(width int, title, body string, color imagecolor.Color, colors palette) string {
 	return frameSized(width, 0, title, body, color, colors)
 }
 
-func frameSized(width, height int, title, body string, color lipgloss.Color, colors palette) string {
+func frameSized(width, height int, title, body string, color imagecolor.Color, colors palette) string {
+	return frameSizedWithTitleAction(width, height, title, "", body, color, colors)
+}
+
+func frameSizedWithTitleAction(width, height int, title, action, body string, color imagecolor.Color, colors palette) string {
 	width = max(width, 1)
 	style := lipgloss.NewStyle().
-		Width(max(width-2, 1)).
+		Width(width).
 		Padding(0, 1).
 		Border(lipgloss.RoundedBorder()).
 		BorderTop(false).
@@ -224,12 +237,19 @@ func frameSized(width, height int, title, body string, color lipgloss.Color, col
 		Foreground(colors.primary).
 		Background(colors.background)
 	if height > 0 {
-		style = style.Height(height)
+		// Lip Gloss v2 includes the bottom border in Height. The title is
+		// rendered separately, so preserve the existing body allocation by
+		// reserving one extra row for that border.
+		style = style.Height(height + 1)
 	}
-	return renderFrameTitle(width, title, color, colors) + "\n" + style.Render(body)
+	return renderFrameTitleWithAction(width, title, action, color, colors) + "\n" + style.Render(body)
 }
 
-func renderFrameTitle(width int, title string, color lipgloss.Color, colors palette) string {
+func renderFrameTitle(width int, title string, color imagecolor.Color, colors palette) string {
+	return renderFrameTitleWithAction(width, title, "", color, colors)
+}
+
+func renderFrameTitleWithAction(width int, title, action string, color imagecolor.Color, colors palette) string {
 	width = max(width, 1)
 	border := lipgloss.RoundedBorder()
 	borderStyle := lipgloss.NewStyle().Foreground(color).Background(colors.background)
@@ -240,15 +260,31 @@ func renderFrameTitle(width int, title string, color lipgloss.Color, colors pale
 		return borderStyle.Render(border.TopLeft + border.TopRight)
 	}
 
-	title = strings.TrimSpace(ansi.Truncate(title, max(width-6, 0), ""))
+	actionWidth := lipgloss.Width(action)
+	if actionWidth > 0 && width < actionWidth+8 {
+		action = ""
+		actionWidth = 0
+	}
+	titleWidth := max(width-6, 0)
+	if actionWidth > 0 {
+		titleWidth = max(width-actionWidth-6, 0)
+	}
+	title = strings.TrimSpace(ansi.Truncate(title, titleWidth, ""))
 	if title == "" {
 		return borderStyle.Render(border.TopLeft + strings.Repeat(border.Top, width-2) + border.TopRight)
 	}
 	prefix := border.TopLeft + border.Top + " "
-	suffixWidth := max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-1, 1)
-	suffix := " " + strings.Repeat(border.Top, suffixWidth-1) + border.TopRight
+	suffix := borderStyle.Render(" " + border.TopRight)
+	if actionWidth > 0 {
+		suffix = borderStyle.Render(" ") + action + borderStyle.Render(" "+border.TopRight)
+	}
+	middleWidth := max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-lipgloss.Width(suffix), 0)
+	middle := ""
+	if middleWidth > 0 {
+		middle = " " + strings.Repeat(border.Top, middleWidth-1)
+	}
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color).Background(colors.background)
-	return borderStyle.Render(prefix) + titleStyle.Render(title) + borderStyle.Render(suffix)
+	return borderStyle.Render(prefix) + titleStyle.Render(title) + borderStyle.Render(middle) + suffix
 }
 
 func countdown(at time.Time) string {

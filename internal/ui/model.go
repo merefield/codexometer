@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -37,6 +37,7 @@ type Model struct {
 	err             error
 	width           int
 	height          int
+	inline          bool
 	loading         bool
 	lastRefresh     time.Time
 	nextRefresh     time.Time
@@ -94,6 +95,10 @@ type Model struct {
 	monitorLastActivity time.Time
 	monitorSessions     int
 	monitorSessionData  []monitorSession
+	monitorDismissed    map[string]monitorSessionDismissal
+	monitorDismissHover string
+	monitorDismissFlash string
+	monitorDismissSeq   uint64
 	monitorScroll       int
 	monitorError        string
 	monitorQuotaWindows []monitorQuotaWindow
@@ -140,6 +145,16 @@ type monitorSample struct {
 	at             time.Time
 	duration       time.Duration
 	intervalTokens int64
+}
+
+type monitorSessionDismissal struct {
+	latest           int64
+	lastActivity     time.Time
+	callSequence     uint64
+	turnSequence     uint64
+	attention        codex.SessionAttention
+	attentionCleared bool
+	inactiveObserved bool
 }
 
 type monitorSession struct {
@@ -198,6 +213,11 @@ type footerButtonFlashExpiredMsg struct {
 
 type viewTabFlashExpiredMsg struct {
 	view     meterViewID
+	sequence uint64
+}
+
+type monitorSessionDismissMsg struct {
+	id       string
 	sequence uint64
 }
 
@@ -305,13 +325,19 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 	return model
 }
 
+// SetInline controls whether the dashboard renders in the current terminal
+// buffer instead of Bubble Tea's alternate screen.
+func (m *Model) SetInline(inline bool) {
+	m.inline = inline
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery))
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch strings.ToLower(message.String()) {
 		case "ctrl+c", "esc":
 			m.cancelBenchmark()
@@ -383,60 +409,71 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
-		if tab, ok := m.mainTabAt(message.X, message.Y); ok {
+		mouse := message.Mouse()
+		_, clicked := message.(tea.MouseClickMsg)
+		if tab, ok := m.mainTabAt(mouse.X, mouse.Y); ok {
 			m.mainTabHovered = true
 			m.hoveredMainTab = tab
 			m.viewHovered = false
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				return m.pressMainTab(tab)
 			}
 			return m, nil
 		}
 		m.mainTabHovered = false
-		if view, ok := m.quotaViewTabAt(message.X, message.Y); ok {
+		if view, ok := m.quotaViewTabAt(mouse.X, mouse.Y); ok {
 			m.viewHovered = true
 			m.hoveredView = view
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				return m.pressViewTab(view)
 			}
 			return m, nil
 		}
 		m.viewHovered = false
-		if column, ok := m.benchmarkHeaderAt(message.X, message.Y); ok {
+		if column, ok := m.benchmarkHeaderAt(mouse.X, mouse.Y); ok {
 			m.benchmarkSortHovered = true
 			m.benchmarkHoveredSort = column
 			m.hoveredButton = footerButtonNone
-			if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress {
+			if mouse.Button == tea.MouseLeft && clicked {
 				m.sortBenchmarkBy(column)
 			}
 			return m, nil
 		}
 		m.benchmarkSortHovered = false
+		if id, ok := m.monitorSessionDismissAt(mouse.X, mouse.Y); ok {
+			m.monitorDismissHover = id
+			m.hoveredButton = footerButtonNone
+			if mouse.Button == tea.MouseLeft && clicked {
+				return m.pressMonitorSessionDismiss(id)
+			}
+			return m, nil
+		}
+		m.monitorDismissHover = ""
 		if m.meterView == viewMonitor {
-			switch message.Button {
-			case tea.MouseButtonWheelUp:
+			switch mouse.Button {
+			case tea.MouseWheelUp:
 				m.scrollMonitorRows(-1)
 				return m, nil
-			case tea.MouseButtonWheelDown:
+			case tea.MouseWheelDown:
 				m.scrollMonitorRows(1)
 				return m, nil
 			}
 		}
 		if m.meterView == viewBenchmark {
-			switch message.Button {
-			case tea.MouseButtonWheelUp:
+			switch mouse.Button {
+			case tea.MouseWheelUp:
 				m.scrollBenchmarkRows(3)
 				return m, nil
-			case tea.MouseButtonWheelDown:
+			case tea.MouseWheelDown:
 				m.scrollBenchmarkRows(-3)
 				return m, nil
 			}
 		}
-		button := m.footerButtonAt(message.X, message.Y)
+		button := m.footerButtonAt(mouse.X, mouse.Y)
 		m.hoveredButton = button
-		if message.Button == tea.MouseButtonLeft && message.Action == tea.MouseActionPress && button != footerButtonNone {
+		if mouse.Button == tea.MouseLeft && clicked && button != footerButtonNone {
 			return m.pressFooterButton(button)
 		}
 	case tea.WindowSizeMsg:
@@ -521,6 +558,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case viewTabFlashExpiredMsg:
 		if message.sequence == m.viewSequence && message.view == m.flashedView {
 			m.viewFlashing = false
+		}
+	case monitorSessionDismissMsg:
+		if message.sequence == m.monitorDismissSeq && message.id == m.monitorDismissFlash {
+			m.dismissMonitorSession(message.id)
+			m.monitorDismissFlash = ""
+			m.monitorDismissHover = ""
 		}
 	case benchmarkEventMsg:
 		if !message.ok {
@@ -612,6 +655,18 @@ func (m Model) pressFooterButton(button footerButtonID) (tea.Model, tea.Cmd) {
 	return updated, tea.Batch(action, expire)
 }
 
+func (m Model) pressMonitorSessionDismiss(id string) (tea.Model, tea.Cmd) {
+	if m.monitorSessionIndex(id) < 0 {
+		return m, nil
+	}
+	m.monitorDismissSeq++
+	m.monitorDismissFlash = id
+	sequence := m.monitorDismissSeq
+	return m, tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
+		return monitorSessionDismissMsg{id: id, sequence: sequence}
+	})
+}
+
 func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
@@ -635,6 +690,10 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.monitorStoppedAt = time.Time{}
 			m.monitorSamples = nil
 			m.monitorSessionData = nil
+			m.monitorDismissed = nil
+			m.monitorDismissHover = ""
+			m.monitorDismissFlash = ""
+			m.monitorDismissSeq++
 			m.monitorScroll = 0
 			m.monitorBoundaryDue = false
 			m.monitorLastActivity = time.Time{}
@@ -1240,6 +1299,7 @@ func sameOptionalInt64(left, right *int64) bool {
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	m.monitorSessionData = nil
+	m.monitorDismissed = nil
 	for _, session := range usage.Sessions {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
@@ -1301,6 +1361,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			session.workingDirectory = update.WorkingDirectory
 		}
 		applyMonitorSessionTelemetry(session, update, time.Time{})
+		m.restoreMonitorSessionOnActivity(session)
 	}
 	if len(usage.Sessions) == 0 && len(m.monitorSessionData) == 1 && m.monitorSessionData[0].id == "local" {
 		session := &m.monitorSessionData[0]
@@ -1308,7 +1369,68 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = usage.LastActivity
 		session.active = usage.SessionCount > 0
 		session.displayed = true
+		m.restoreMonitorSessionOnActivity(session)
 	}
+	for index := range m.monitorSessionData {
+		session := &m.monitorSessionData[index]
+		dismissal, dismissed := m.monitorDismissed[session.id]
+		if !dismissed {
+			continue
+		}
+		if !session.active {
+			dismissal.inactiveObserved = true
+		}
+		if dismissal.attention != codex.SessionAttentionNone && session.attention == codex.SessionAttentionNone {
+			dismissal.attentionCleared = true
+		}
+		m.monitorDismissed[session.id] = dismissal
+	}
+}
+
+func (m *Model) dismissMonitorSession(id string) {
+	index := m.monitorSessionIndex(id)
+	if index < 0 {
+		return
+	}
+	if m.monitorDismissed == nil {
+		m.monitorDismissed = make(map[string]monitorSessionDismissal)
+	}
+	session := m.monitorSessionData[index]
+	m.monitorDismissed[id] = monitorSessionDismissal{
+		latest:       session.latest,
+		lastActivity: session.lastActivity,
+		callSequence: session.callSequence,
+		turnSequence: session.turnSequence,
+		attention:    session.attention,
+	}
+	m.monitorSessions = m.visibleMonitorSessionCount()
+	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
+	m.monitorScroll = min(m.monitorScroll, maximumScroll)
+}
+
+func (m *Model) restoreMonitorSessionOnActivity(session *monitorSession) {
+	dismissal, dismissed := m.monitorDismissed[session.id]
+	if !dismissed {
+		return
+	}
+	newAttention := session.attention != codex.SessionAttentionNone &&
+		(session.attention != dismissal.attention || dismissal.attentionCleared)
+	if session.latest > dismissal.latest ||
+		session.lastActivity.After(dismissal.lastActivity) ||
+		session.callSequence > dismissal.callSequence ||
+		session.turnSequence > dismissal.turnSequence ||
+		newAttention ||
+		(dismissal.inactiveObserved && session.active) {
+		delete(m.monitorDismissed, session.id)
+	}
+}
+
+func (m Model) monitorSessionVisible(session monitorSession) bool {
+	if !session.displayed {
+		return false
+	}
+	_, dismissed := m.monitorDismissed[session.id]
+	return !dismissed
 }
 
 func applyMonitorSessionTelemetry(session *monitorSession, update codex.LiveUsageSession, since time.Time) {
@@ -1405,7 +1527,7 @@ func (m *Model) monitorSessionIndex(id string) int {
 func (m Model) visibleMonitorSessionCount() int {
 	count := 0
 	for _, session := range m.monitorSessionData {
-		if session.displayed {
+		if m.monitorSessionVisible(session) {
 			count++
 		}
 	}

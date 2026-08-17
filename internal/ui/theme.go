@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	imagecolor "image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 type themeID int
 
@@ -67,12 +71,12 @@ func (s meterViewID) name() string {
 
 type palette struct {
 	name       string
-	primary    lipgloss.Color
-	dim        lipgloss.Color
-	accent     lipgloss.Color
-	warning    lipgloss.Color
-	danger     lipgloss.Color
-	background lipgloss.Color
+	primary    imagecolor.Color
+	dim        imagecolor.Color
+	accent     imagecolor.Color
+	warning    imagecolor.Color
+	danger     imagecolor.Color
+	background imagecolor.Color
 }
 
 func paletteFor(theme themeID) palette {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -42,6 +42,8 @@ type monitorGeometry struct {
 	goRect       monitorRect
 	stopRect     monitorRect
 }
+
+const monitorDismissLabel = "[×]"
 
 func layoutMonitorArea(width, height int) monitorGeometry {
 	width = max(width, 1)
@@ -173,8 +175,8 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 		foreground = colors.primary
 	}
 	style := lipgloss.NewStyle().
-		Width(max(width-2, 1)).
-		Height(max(height-2, 1)).
+		Width(width).
+		Height(height).
 		Align(lipgloss.Center).
 		AlignVertical(lipgloss.Center).
 		Border(lipgloss.RoundedBorder()).
@@ -195,14 +197,34 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 }
 
 func (m Model) renderMonitorSessions(width, height int, colors palette) string {
+	visible, rowHeights, pageLabel := m.monitorSessionPage(height)
+	if len(visible) == 0 {
+		return m.renderMonitorGraph(width, height, colors)
+	}
+	rows := make([]string, 0, len(visible))
+	for index, session := range visible {
+		rowPageLabel := ""
+		if index == len(visible)-1 {
+			rowPageLabel = pageLabel
+		}
+		rows = append(rows, m.renderMonitorSessionRow(width, rowHeights[index], session, rowPageLabel, colors))
+	}
+	view := strings.Join(rows, "\n")
+	if padding := height - lipgloss.Height(view); padding > 0 {
+		view += strings.Repeat("\n", padding)
+	}
+	return view
+}
+
+func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) {
 	visible := make([]monitorSession, 0, len(m.monitorSessionData))
 	for _, session := range m.monitorSessionData {
-		if session.displayed {
+		if m.monitorSessionVisible(session) {
 			visible = append(visible, session)
 		}
 	}
 	if len(visible) == 0 {
-		return m.renderMonitorGraph(width, height, colors)
+		return nil, nil, ""
 	}
 
 	// Every row needs a title, body, and bottom border. When the terminal is too
@@ -216,33 +238,28 @@ func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 		pageLabel = fmt.Sprintf("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
 	}
 	rowHeights := distributeSpace(max(height-(rowCount-1), rowCount), rowCount)
-	rows := make([]string, 0, rowCount)
-	for index, session := range visible {
-		rowPageLabel := ""
-		if index == rowCount-1 {
-			rowPageLabel = pageLabel
-		}
-		rows = append(rows, m.renderMonitorSessionRow(width, rowHeights[index], session, rowPageLabel, colors))
-	}
-	view := strings.Join(rows, "\n")
-	if padding := height - lipgloss.Height(view); padding > 0 {
-		view += strings.Repeat("\n", padding)
-	}
-	return view
+	return visible, rowHeights, pageLabel
 }
 
 func (m Model) renderMonitorSessionRow(width, height int, session monitorSession, pageLabel string, colors palette) string {
-	const gap = 1
-	if width <= gap+1 {
+	metricsWidth, graphWidth, ok := monitorSessionColumnWidths(width)
+	if !ok {
 		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", colors)
 	}
-	available := max(width-gap, 2)
-	metricsWidth := max(available/3, 1)
-	graphWidth := max(available-metricsWidth, 1)
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, colors)
 	title := "TOKEN BARS"
 	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, colors)
-	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, strings.Repeat(" ", gap), graph)
+	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
+}
+
+func monitorSessionColumnWidths(width int) (int, int, bool) {
+	const gap = 1
+	if width <= gap+1 {
+		return 0, width, false
+	}
+	available := max(width-gap, 2)
+	metricsWidth := max(available/3, 1)
+	return metricsWidth, max(available-metricsWidth, 1), true
 }
 
 func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
@@ -314,7 +331,31 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.attention != codex.SessionAttentionNone {
 		borderColor = colors.warning
 	}
-	return frameSized(width, max(height-2, 1), title, strings.Join(lines, "\n"), borderColor, colors)
+	action := ""
+	if _, ok := monitorSessionDismissRect(width, 0); ok {
+		action = m.renderMonitorSessionDismiss(session.id, colors)
+	}
+	return frameSizedWithTitleAction(width, max(height-2, 1), title, action, strings.Join(lines, "\n"), borderColor, colors)
+}
+
+func (m Model) renderMonitorSessionDismiss(id string, colors palette) string {
+	style := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background)
+	if m.monitorDismissHover == id {
+		style = style.Bold(true).Foreground(colors.accent)
+	}
+	if m.monitorDismissFlash == id {
+		style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
+	}
+	return style.Render(monitorDismissLabel)
+}
+
+func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
+	const minimumTitleWidth = 2
+	labelWidth := lipgloss.Width(monitorDismissLabel)
+	if metricsWidth < labelWidth+6+minimumTitleWidth {
+		return monitorRect{}, false
+	}
+	return monitorRect{x: metricsWidth - labelWidth - 2, y: rowY, width: labelWidth, height: 1}, true
 }
 
 func monitorAttentionLabel(attention codex.SessionAttention) string {
@@ -602,6 +643,33 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 		return footerButtonMonitorStop
 	}
 	return footerButtonNone
+}
+
+func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
+	if m.meterView != viewMonitor || (m.loading && len(m.snapshot.Meters()) == 0) {
+		return "", false
+	}
+	dashboard := m.dashboardLayout()
+	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+	metricsWidth, _, ok := monitorSessionColumnWidths(area.width)
+	if !ok {
+		return "", false
+	}
+	localX := x - 2
+	localY := y - dashboard.meterY - area.topHeight - area.gap + 1
+	if localY < 0 {
+		return "", false
+	}
+	sessions, rowHeights, _ := m.monitorSessionPage(area.graphHeight)
+	rowY := 0
+	for index, session := range sessions {
+		rect, visible := monitorSessionDismissRect(metricsWidth, rowY)
+		if visible && rect.contains(localX, localY) {
+			return session.id, true
+		}
+		rowY += rowHeights[index]
+	}
+	return "", false
 }
 
 func (m Model) monitorGoEnabled() bool {

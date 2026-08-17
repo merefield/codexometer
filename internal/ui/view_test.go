@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -23,7 +24,7 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 				theme:       theme,
 				meterView:   view,
 			}
-			output := ansi.Strip(model.View())
+			output := ansi.Strip(model.render())
 			if !strings.Contains(output, paletteFor(theme).name) {
 				t.Errorf("theme %d name missing from view", theme)
 			}
@@ -48,6 +49,20 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 	}
 }
 
+func TestViewDeclaresTerminalModes(t *testing.T) {
+	model := Model{snapshot: codex.DemoSnapshot(), width: 80, height: 24}
+	view := model.View()
+	if !view.AltScreen || view.MouseMode != tea.MouseModeAllMotion {
+		t.Fatalf("default view modes = alt:%v mouse:%v", view.AltScreen, view.MouseMode)
+	}
+
+	model.SetInline(true)
+	view = model.View()
+	if view.AltScreen || view.MouseMode != tea.MouseModeAllMotion {
+		t.Fatalf("inline view modes = alt:%v mouse:%v", view.AltScreen, view.MouseMode)
+	}
+}
+
 func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 	sizes := []struct{ width, height int }{{40, 16}, {40, 24}, {45, 24}, {60, 24}, {80, 24}, {120, 40}, {200, 60}}
 	for _, size := range sizes {
@@ -59,7 +74,7 @@ func TestViewReflowsAcrossTerminalDimensions(t *testing.T) {
 				nextRefresh: time.Now().Add(time.Minute),
 				meterView:   view,
 			}
-			output := model.View()
+			output := model.render()
 			if got := lipgloss.Width(output); got > size.width {
 				t.Errorf("%s at %dx%d rendered width %d", view.name(), size.width, size.height, got)
 			}
@@ -98,7 +113,7 @@ func TestQuotaViewsAccommodateFiveHourAdditionalAndMonthlyLimits(t *testing.T) {
 				snapshot: snapshot, width: size.width, height: size.height,
 				nextRefresh: now.Add(time.Minute), meterView: view,
 			}
-			output := ansi.Strip(model.View())
+			output := ansi.Strip(model.render())
 			if got := lipgloss.Width(output); got > size.width {
 				t.Errorf("%s with five limits at %dx%d rendered width %d", view.name(), size.width, size.height, got)
 			}
@@ -249,7 +264,7 @@ func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 		nextRefresh: time.Now().Add(time.Minute),
 		meterView:   viewPie,
 	}
-	output := ansi.Strip(model.View())
+	output := ansi.Strip(model.render())
 	foundSharedRow := false
 	for _, line := range strings.Split(output, "\n") {
 		if strings.Contains(line, "5 HOURS LOOP") && strings.Contains(line, "1 WEEK LOOP") {
@@ -383,7 +398,7 @@ func TestRadialViewsPlaceQuotaWindowsSideBySide(t *testing.T) {
 			nextRefresh: time.Now().Add(time.Minute),
 			meterView:   view,
 		}
-		output := ansi.Strip(model.View())
+		output := ansi.Strip(model.render())
 		foundSharedRow := false
 		for _, line := range strings.Split(output, "\n") {
 			if strings.Contains(line, "5 HOURS LOOP") && strings.Contains(line, "1 WEEK LOOP") {
@@ -398,7 +413,7 @@ func TestRadialViewsPlaceQuotaWindowsSideBySide(t *testing.T) {
 }
 
 func TestViewCoversBootCompactErrorAndEmptyStates(t *testing.T) {
-	boot := ansi.Strip((Model{width: 50, loading: true, theme: themeRust}).View())
+	boot := ansi.Strip((Model{width: 50, loading: true, theme: themeRust}).render())
 	if !strings.Contains(boot, "▰ CODEXOMETER ▰") || !strings.Contains(boot, "ACQUIRING SIGNAL") {
 		t.Fatalf("compact boot view missing content: %q", boot)
 	}
@@ -410,12 +425,12 @@ func TestViewCoversBootCompactErrorAndEmptyStates(t *testing.T) {
 		nextRefresh: time.Now().Add(time.Minute),
 		theme:       themeBlueSteel,
 	}
-	staleOutput := ansi.Strip(stale.View())
+	staleOutput := ansi.Strip(stale.render())
 	if !strings.Contains(staleOutput, "STALE SIGNAL") || !strings.Contains(staleOutput, "connection lost") {
 		t.Fatalf("stale view missing error: %q", staleOutput)
 	}
 
-	empty := ansi.Strip((Model{width: 80}).View())
+	empty := ansi.Strip((Model{width: 80}).render())
 	if !strings.Contains(empty, "no quota windows returned") {
 		t.Fatalf("empty view missing diagnostic: %q", empty)
 	}
@@ -453,7 +468,7 @@ func TestPalettesAndFallback(t *testing.T) {
 	wants := []string{"HACKER", "RUST", "BLUE STEEL", "ULTRAVIOLET", "NIGHTSHADE"}
 	for theme, want := range wants {
 		colors := paletteFor(themeID(theme))
-		if colors.name != want || colors.primary == "" || colors.dim == "" || colors.accent == "" || colors.background == "" {
+		if colors.name != want || colors.primary == nil || colors.dim == nil || colors.accent == nil || colors.background == nil {
 			t.Fatalf("invalid palette %d: %#v", theme, colors)
 		}
 		if colors.header().GetForeground() != colors.primary || colors.label().GetForeground() != colors.accent {

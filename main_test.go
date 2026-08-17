@@ -16,7 +16,7 @@ func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{flag}, &stdout, &stderr, dependencies{})
-		if code != 0 || stdout.String() != "codexometer v0.7.5\n" || stderr.Len() != 0 {
+		if code != 0 || stdout.String() != "codexometer v0.7.6\n" || stderr.Len() != 0 {
 			t.Errorf("flag=%s code=%d stdout=%q stderr=%q", flag, code, stdout.String(), stderr.String())
 		}
 	}

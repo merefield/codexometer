@@ -583,6 +583,14 @@ The other top-level views are:
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Monitor recording can remain as an
   `IDLE` historical row so its completed metrics and graph are not discarded.
+  Click the themed `[×]` in a session metrics box to hide that row for the
+  current run without closing or altering the Codex session. Codexometer keeps
+  collecting its telemetry while hidden and restores the row automatically
+  when tokens, model calls, turn timing, durable activity, or attention moves
+  forward, or when an inactive session becomes active again. An alert already
+  visible when `[×]` is clicked is dismissed with its row; a later new or
+  changed alert restores it. Starting a new Monitor recording also restores
+  every dismissed row.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
@@ -1016,9 +1024,9 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.5`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.6`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.5`; direct source builds fall
+`go install github.com/merefield/codexometer@v0.7.6`; direct source builds fall
 back to the maintained value in `internal/version/version.go`.
 
 Both forms report the embedded version and exit without starting the interface:
@@ -1031,7 +1039,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.5" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.6" .
 ```
 
 ## How refresh works
@@ -1126,8 +1134,8 @@ go test -cover ./...
 Codexometer uses:
 
 - Go 1.26.6+
-- Bubble Tea for the terminal event loop
-- Lip Gloss for adaptive ANSI styling
+- Bubble Tea v2 for the terminal event loop and declarative terminal modes
+- Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation
 - Codex app-server JSON-RPC for authenticated quota data
 - Local Codex rollout `token_count` records for live Monitor telemetry
