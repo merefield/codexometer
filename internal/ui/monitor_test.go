@@ -585,6 +585,26 @@ func TestDismissedMonitorSessionReturnsOnlyAfterRenewedActivity(t *testing.T) {
 		t.Fatal("dismissed session stopped collecting graph telemetry")
 	}
 
+	alerted := base
+	alerted.Attention = codex.SessionAttentionCheck
+	withCurrentAlert := Model{monitorState: monitorRunning, monitorStartedAt: now, monitorLatest: 100, monitorGraphStart: 100}
+	withCurrentAlert.startMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now)
+	withCurrentAlert.dismissMonitorSession(alerted.ID)
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now.Add(time.Second))
+	if withCurrentAlert.visibleMonitorSessionCount() != 0 {
+		t.Fatal("the alert present when the session was dismissed immediately restored its row")
+	}
+	cleared := alerted
+	cleared.Attention = codex.SessionAttentionNone
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{cleared}}, now.Add(2*time.Second))
+	if !withCurrentAlert.monitorDismissed[alerted.ID].attentionCleared {
+		t.Fatal("dismissal did not remember that the original alert cleared")
+	}
+	withCurrentAlert.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{alerted}}, now.Add(3*time.Second))
+	if withCurrentAlert.visibleMonitorSessionCount() != 1 {
+		t.Fatal("a newly raised alert did not regenerate the dismissed row")
+	}
+
 	for _, test := range []struct {
 		name   string
 		mutate func(*codex.LiveUsageSession)

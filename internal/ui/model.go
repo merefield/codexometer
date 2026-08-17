@@ -152,6 +152,8 @@ type monitorSessionDismissal struct {
 	lastActivity     time.Time
 	callSequence     uint64
 	turnSequence     uint64
+	attention        codex.SessionAttention
+	attentionCleared bool
 	inactiveObserved bool
 }
 
@@ -1372,10 +1374,16 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 	for index := range m.monitorSessionData {
 		session := &m.monitorSessionData[index]
 		dismissal, dismissed := m.monitorDismissed[session.id]
-		if dismissed && !session.active {
-			dismissal.inactiveObserved = true
-			m.monitorDismissed[session.id] = dismissal
+		if !dismissed {
+			continue
 		}
+		if !session.active {
+			dismissal.inactiveObserved = true
+		}
+		if dismissal.attention != codex.SessionAttentionNone && session.attention == codex.SessionAttentionNone {
+			dismissal.attentionCleared = true
+		}
+		m.monitorDismissed[session.id] = dismissal
 	}
 }
 
@@ -1393,6 +1401,7 @@ func (m *Model) dismissMonitorSession(id string) {
 		lastActivity: session.lastActivity,
 		callSequence: session.callSequence,
 		turnSequence: session.turnSequence,
+		attention:    session.attention,
 	}
 	m.monitorSessions = m.visibleMonitorSessionCount()
 	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
@@ -1404,11 +1413,13 @@ func (m *Model) restoreMonitorSessionOnActivity(session *monitorSession) {
 	if !dismissed {
 		return
 	}
-	if session.attention != codex.SessionAttentionNone ||
-		session.latest > dismissal.latest ||
+	newAttention := session.attention != codex.SessionAttentionNone &&
+		(session.attention != dismissal.attention || dismissal.attentionCleared)
+	if session.latest > dismissal.latest ||
 		session.lastActivity.After(dismissal.lastActivity) ||
 		session.callSequence > dismissal.callSequence ||
 		session.turnSequence > dismissal.turnSequence ||
+		newAttention ||
 		(dismissal.inactiveObserved && session.active) {
 		delete(m.monitorDismissed, session.id)
 	}
@@ -1419,7 +1430,7 @@ func (m Model) monitorSessionVisible(session monitorSession) bool {
 		return false
 	}
 	_, dismissed := m.monitorDismissed[session.id]
-	return !dismissed || session.attention != codex.SessionAttentionNone
+	return !dismissed
 }
 
 func applyMonitorSessionTelemetry(session *monitorSession, update codex.LiveUsageSession, since time.Time) {
