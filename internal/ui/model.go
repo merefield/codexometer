@@ -95,6 +95,10 @@ type Model struct {
 	monitorLastActivity time.Time
 	monitorSessions     int
 	monitorSessionData  []monitorSession
+	monitorDismissed    map[string]monitorSessionDismissal
+	monitorDismissHover string
+	monitorDismissFlash string
+	monitorDismissSeq   uint64
 	monitorScroll       int
 	monitorError        string
 	monitorQuotaWindows []monitorQuotaWindow
@@ -141,6 +145,14 @@ type monitorSample struct {
 	at             time.Time
 	duration       time.Duration
 	intervalTokens int64
+}
+
+type monitorSessionDismissal struct {
+	latest           int64
+	lastActivity     time.Time
+	callSequence     uint64
+	turnSequence     uint64
+	inactiveObserved bool
 }
 
 type monitorSession struct {
@@ -199,6 +211,11 @@ type footerButtonFlashExpiredMsg struct {
 
 type viewTabFlashExpiredMsg struct {
 	view     meterViewID
+	sequence uint64
+}
+
+type monitorSessionDismissMsg struct {
+	id       string
 	sequence uint64
 }
 
@@ -423,6 +440,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.benchmarkSortHovered = false
+		if id, ok := m.monitorSessionDismissAt(mouse.X, mouse.Y); ok {
+			m.monitorDismissHover = id
+			m.hoveredButton = footerButtonNone
+			if mouse.Button == tea.MouseLeft && clicked {
+				return m.pressMonitorSessionDismiss(id)
+			}
+			return m, nil
+		}
+		m.monitorDismissHover = ""
 		if m.meterView == viewMonitor {
 			switch mouse.Button {
 			case tea.MouseWheelUp:
@@ -531,6 +557,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.sequence == m.viewSequence && message.view == m.flashedView {
 			m.viewFlashing = false
 		}
+	case monitorSessionDismissMsg:
+		if message.sequence == m.monitorDismissSeq && message.id == m.monitorDismissFlash {
+			m.dismissMonitorSession(message.id)
+			m.monitorDismissFlash = ""
+			m.monitorDismissHover = ""
+		}
 	case benchmarkEventMsg:
 		if !message.ok {
 			m.benchmarkState = benchmarkFinished
@@ -621,6 +653,18 @@ func (m Model) pressFooterButton(button footerButtonID) (tea.Model, tea.Cmd) {
 	return updated, tea.Batch(action, expire)
 }
 
+func (m Model) pressMonitorSessionDismiss(id string) (tea.Model, tea.Cmd) {
+	if m.monitorSessionIndex(id) < 0 {
+		return m, nil
+	}
+	m.monitorDismissSeq++
+	m.monitorDismissFlash = id
+	sequence := m.monitorDismissSeq
+	return m, tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
+		return monitorSessionDismissMsg{id: id, sequence: sequence}
+	})
+}
+
 func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
@@ -644,6 +688,10 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.monitorStoppedAt = time.Time{}
 			m.monitorSamples = nil
 			m.monitorSessionData = nil
+			m.monitorDismissed = nil
+			m.monitorDismissHover = ""
+			m.monitorDismissFlash = ""
+			m.monitorDismissSeq++
 			m.monitorScroll = 0
 			m.monitorBoundaryDue = false
 			m.monitorLastActivity = time.Time{}
@@ -1249,6 +1297,7 @@ func sameOptionalInt64(left, right *int64) bool {
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	m.monitorSessionData = nil
+	m.monitorDismissed = nil
 	for _, session := range usage.Sessions {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
@@ -1310,6 +1359,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			session.workingDirectory = update.WorkingDirectory
 		}
 		applyMonitorSessionTelemetry(session, update, time.Time{})
+		m.restoreMonitorSessionOnActivity(session)
 	}
 	if len(usage.Sessions) == 0 && len(m.monitorSessionData) == 1 && m.monitorSessionData[0].id == "local" {
 		session := &m.monitorSessionData[0]
@@ -1317,7 +1367,59 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = usage.LastActivity
 		session.active = usage.SessionCount > 0
 		session.displayed = true
+		m.restoreMonitorSessionOnActivity(session)
 	}
+	for index := range m.monitorSessionData {
+		session := &m.monitorSessionData[index]
+		dismissal, dismissed := m.monitorDismissed[session.id]
+		if dismissed && !session.active {
+			dismissal.inactiveObserved = true
+			m.monitorDismissed[session.id] = dismissal
+		}
+	}
+}
+
+func (m *Model) dismissMonitorSession(id string) {
+	index := m.monitorSessionIndex(id)
+	if index < 0 {
+		return
+	}
+	if m.monitorDismissed == nil {
+		m.monitorDismissed = make(map[string]monitorSessionDismissal)
+	}
+	session := m.monitorSessionData[index]
+	m.monitorDismissed[id] = monitorSessionDismissal{
+		latest:       session.latest,
+		lastActivity: session.lastActivity,
+		callSequence: session.callSequence,
+		turnSequence: session.turnSequence,
+	}
+	m.monitorSessions = m.visibleMonitorSessionCount()
+	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
+	m.monitorScroll = min(m.monitorScroll, maximumScroll)
+}
+
+func (m *Model) restoreMonitorSessionOnActivity(session *monitorSession) {
+	dismissal, dismissed := m.monitorDismissed[session.id]
+	if !dismissed {
+		return
+	}
+	if session.attention != codex.SessionAttentionNone ||
+		session.latest > dismissal.latest ||
+		session.lastActivity.After(dismissal.lastActivity) ||
+		session.callSequence > dismissal.callSequence ||
+		session.turnSequence > dismissal.turnSequence ||
+		(dismissal.inactiveObserved && session.active) {
+		delete(m.monitorDismissed, session.id)
+	}
+}
+
+func (m Model) monitorSessionVisible(session monitorSession) bool {
+	if !session.displayed {
+		return false
+	}
+	_, dismissed := m.monitorDismissed[session.id]
+	return !dismissed || session.attention != codex.SessionAttentionNone
 }
 
 func applyMonitorSessionTelemetry(session *monitorSession, update codex.LiveUsageSession, since time.Time) {
@@ -1414,7 +1516,7 @@ func (m *Model) monitorSessionIndex(id string) int {
 func (m Model) visibleMonitorSessionCount() int {
 	count := 0
 	for _, session := range m.monitorSessionData {
-		if session.displayed {
+		if m.monitorSessionVisible(session) {
 			count++
 		}
 	}

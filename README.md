@@ -583,6 +583,12 @@ The other top-level views are:
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Monitor recording can remain as an
   `IDLE` historical row so its completed metrics and graph are not discarded.
+  Click the themed `[×]` in a session metrics box to hide that row for the
+  current run without closing or altering the Codex session. Codexometer keeps
+  collecting its telemetry while hidden and restores the row automatically
+  when tokens, model calls, turn timing, durable activity, or attention moves
+  forward, or when an inactive session becomes active again. Starting a new
+  Monitor recording also restores every dismissed row.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
