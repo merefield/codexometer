@@ -77,6 +77,23 @@ func TestEveryViewIncludesResetCycleGauge(t *testing.T) {
 	}
 }
 
+func TestResetDeadlineUsesActualLocalWeekday(t *testing.T) {
+	reset := time.Date(2026, time.August, 13, 9, 36, 35, 0, time.Local)
+	if got := formatResetDeadline(reset); got != "THU 09:36:35" {
+		t.Fatalf("reset deadline = %q, want THU 09:36:35", got)
+	}
+	duration := int64((7 * 24 * time.Hour) / time.Minute)
+	meter := codex.Meter{
+		Bucket: "codex",
+		Name:   "1 WEEK",
+		Window: codex.Window{WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())},
+	}
+	output := ansi.Strip(renderMeterArea(100, 18, meter, viewBars, paletteFor(themeHacker)))
+	if !strings.Contains(output, "//  THU 09:36:35") {
+		t.Fatalf("rendered reset deadline did not contain its actual weekday:\n%s", output)
+	}
+}
+
 func TestResetGaugeUsesSameActiveColorAsMeter(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	duration := int64(60)

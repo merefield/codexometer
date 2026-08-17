@@ -151,7 +151,7 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	reset := "RESET DATA UNAVAILABLE"
 	if meter.Window.ResetsAt != nil {
 		at := time.Unix(*meter.Window.ResetsAt, 0)
-		reset = fmt.Sprintf("RESET T-%s  //  %s", countdown(at), at.Local().Format("MON 15:04:05"))
+		reset = fmt.Sprintf("RESET T-%s  //  %s", countdown(at), formatResetDeadline(at))
 		if lipgloss.Width(reset) > innerWidth {
 			reset = fmt.Sprintf("RESET T-%s", countdown(at))
 		}
@@ -210,6 +210,10 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 		frameHeight = max(height-2, 1)
 	}
 	return frameSized(width, frameHeight, title, body, color, colors)
+}
+
+func formatResetDeadline(at time.Time) string {
+	return strings.ToUpper(at.Local().Format("Mon 15:04:05"))
 }
 
 func meterDetailLines(details string) []string {
