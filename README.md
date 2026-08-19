@@ -1,5 +1,7 @@
 # Codexometer
 
+[![Version](https://img.shields.io/github/v/tag/merefield/codexometer?sort=semver&label=version)](https://github.com/merefield/codexometer/tags)
+
 Codexometer is a small, retro terminal dashboard for your current
 [Codex](https://github.com/openai/codex) quota.
 Keep it open in a second terminal window or pane and you can see every active
