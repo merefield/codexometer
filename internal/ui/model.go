@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/version"
 )
 
 type Fetcher interface {
@@ -57,6 +58,7 @@ type Model struct {
 	flashSequence   uint64
 	benchmarkRunner BenchmarkRunner
 	preferenceStore PreferenceStore
+	appVersion      string
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
@@ -315,6 +317,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		benchmarkRankMode: benchmarkRankBalanced,
 		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
 		quotaAPIIssues:    make(map[string]string),
+		appVersion:        version.Current(),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher

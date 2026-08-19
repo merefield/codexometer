@@ -30,7 +30,7 @@ func (m Model) render() string {
 	if !m.loading || len(m.snapshot.Meters()) > 0 {
 		account = m.renderAccount(colors)
 	}
-	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(contentWidth, colors), account, colors)
+	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(contentWidth, colors), account, m.appVersion, colors)
 	parts := []string{header}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		parts = append(parts, renderBoot(contentWidth, m.phase, colors))
@@ -71,10 +71,14 @@ func (m Model) render() string {
 	return lipgloss.NewStyle().Margin(1, 2).Render(panel)
 }
 
-func renderHeader(width, phase int, signal, account string, colors palette) string {
+func renderHeader(width, phase int, signal, account, appVersion string, colors palette) string {
+	displayedVersion := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(appVersion, "v")))
+	if displayedVersion == "" {
+		displayedVersion = "DEVELOPMENT"
+	}
 	if width < 64 {
 		title := colors.header().Render("▰ CODEXOMETER ▰")
-		subtitle := colors.dimmed().Render("QUOTA TELEMETRY CONSOLE // CRT-01")
+		subtitle := colors.dimmed().Render(ansi.Truncate("QUOTA TELEMETRY // VERSION "+displayedVersion, width, ""))
 		return joinRight(title, signal, width) + "\n" + joinRight(subtitle, account, width)
 	}
 	logo := []string{
@@ -82,7 +86,7 @@ func renderHeader(width, phase int, signal, account string, colors palette) stri
 		"█▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄",
 	}
 	beacon := []string{"◉", "◎", "◌", "◎"}[phase%4]
-	subtitle := colors.dimmed().Render(fmt.Sprintf("%s QUOTA TELEMETRY CONSOLE // CRT-01 // SIGNAL LOCKED", beacon))
+	subtitle := colors.dimmed().Render(fmt.Sprintf("%s QUOTA TELEMETRY CONSOLE · VERSION %s", beacon, displayedVersion))
 	return joinRight(colors.header().Render(logo[0]), signal, width) + "\n" +
 		colors.header().Render(logo[1]) + "\n" +
 		joinRight(subtitle, account, width)

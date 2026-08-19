@@ -136,13 +136,14 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 		snapshot:    codex.DemoSnapshot(),
 		nextRefresh: time.Now().Add(time.Minute),
 		meterView:   viewBars,
+		appVersion:  "0.7.8-dev+abc123.dirty",
 	}
 	colors := paletteFor(themeHacker)
 	account := ansi.Strip(model.renderAccount(colors))
 	if account != "ACCOUNT // PLUS" {
 		t.Fatalf("account metadata = %q", account)
 	}
-	header := ansi.Strip(renderHeader(100, 0, model.renderSignalStatus(100, colors), model.renderAccount(colors), colors))
+	header := ansi.Strip(renderHeader(100, 0, model.renderSignalStatus(100, colors), model.renderAccount(colors), model.appVersion, colors))
 	headerLines := strings.Split(header, "\n")
 	firstLine := headerLines[0]
 	status := ansi.Strip(model.renderSignalStatus(100, colors))
@@ -151,6 +152,9 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	}
 	if !strings.HasSuffix(headerLines[len(headerLines)-1], "ACCOUNT // PLUS") {
 		t.Fatalf("account is not aligned with the subtitle: %q", headerLines[len(headerLines)-1])
+	}
+	if !strings.Contains(headerLines[len(headerLines)-1], "VERSION 0.7.8-DEV+ABC123.DIRTY") {
+		t.Fatalf("resolved build version is absent from the masthead: %q", headerLines[len(headerLines)-1])
 	}
 	footer := ansi.Strip(model.renderFooter(100, colors))
 	if !strings.Contains(footer, "THEME // HACKER") || strings.Contains(footer, "VIEW") {

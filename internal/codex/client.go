@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/merefield/codexometer/internal/version"
 )
 
 const requestTimeout = 15 * time.Second
@@ -100,13 +98,7 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 	if err := encoder.Encode(map[string]any{
 		"method": "initialize",
 		"id":     1,
-		"params": map[string]any{
-			"clientInfo": map[string]string{
-				"name":    "codexometer",
-				"title":   "Codexometer",
-				"version": version.Current(),
-			},
-		},
+		"params": map[string]any{"clientInfo": codexometerClientInfo()},
 	}); err != nil {
 		return Snapshot{}, fmt.Errorf("initialize Codex app-server: %w", err)
 	}

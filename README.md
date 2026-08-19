@@ -9,7 +9,7 @@ opening `/status` in your working Codex session.
 ```text
 █▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█
 █▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄
-◉ QUOTA TELEMETRY CONSOLE // CRT-01 // SIGNAL LOCKED
+◉ QUOTA TELEMETRY CONSOLE · VERSION 0.7.8
 ```
 
 ![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
@@ -149,8 +149,11 @@ To build the current checkout:
 ```sh
 git clone https://github.com/merefield/codexometer.git
 cd codexometer
-go build -trimpath -ldflags="-s -w" -o codexometer .
+go build -trimpath -o codexometer .
 ```
+
+On systems with Make, `make build` is an equivalent convenience target that
+also injects the nearest reachable Git tag when one exists.
 
 On Windows, use `-o codexometer.exe` instead. The compiled executable is
 standalone and does not require Go at runtime. Run it from the project directory
@@ -1024,12 +1027,18 @@ need Go or Codexometer's source dependencies.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.7`. The Git tag is the release source of truth. Go automatically embeds
+`v0.7.8`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.7`; direct source builds fall
-back to the maintained value in `internal/version/version.go`.
+`go install github.com/merefield/codexometer@v0.7.8`. The Makefile injects the
+nearest reachable Git tag when one exists. Direct development builds use Go's
+embedded module and VCS settings, including its pseudo-version and dirty suffix.
+An exact release tag reports that semantic version; later untagged commits can
+report the next-patch Go pseudo-version, as in
+`0.7.9-0.<timestamp>-<commit>`.
 
-Both forms report the embedded version and exit without starting the interface:
+The dashboard masthead, app-server client metadata, and both CLI flags all use
+that one resolved value. The flags report it and exit without starting the
+interface:
 
 ```sh
 codexometer -v
@@ -1039,7 +1048,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.Fallback=0.7.7" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.buildVersion=v0.7.8" .
 ```
 
 ## How refresh works

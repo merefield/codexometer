@@ -182,7 +182,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 
 	if printVersion {
-		fmt.Fprintln(stdout, "codexometer v"+version.Current())
+		fmt.Fprintln(stdout, "codexometer "+version.Current())
 		return 0
 	}
 	if *checkAuth {
