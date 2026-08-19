@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/version"
 )
 
 type stubFetcher struct {
@@ -47,6 +48,12 @@ func (f *quotaBracketFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageS
 
 func (f stubFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 	return f.snapshot, f.err
+}
+
+func TestNewUsesResolvedApplicationVersion(t *testing.T) {
+	if got := New(nil, time.Minute).appVersion; got != version.Current() {
+		t.Fatalf("model version = %q, want %q", got, version.Current())
+	}
 }
 
 func TestThemeHotkeyCyclesAndWraps(t *testing.T) {

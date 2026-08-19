@@ -1,31 +1,44 @@
 package version
 
-import "testing"
+import (
+	"runtime/debug"
+	"testing"
+)
 
-func TestCurrentReportsMaintainedFallbackForSourceBuild(t *testing.T) {
-	got := Current()
-	if got != "0.7.7" {
-		t.Fatalf("Current() = %q, want 0.7.7", got)
+func TestCurrentUsesBuildOverride(t *testing.T) {
+	previous := buildVersion
+	buildVersion = "v0.7.8"
+	t.Cleanup(func() { buildVersion = previous })
+
+	if got := Current(); got != "0.7.8" {
+		t.Fatalf("Current() = %q, want 0.7.8", got)
 	}
 }
 
-func TestSelectVersion(t *testing.T) {
-	tests := []struct {
-		name     string
-		module   string
-		fallback string
-		want     string
-	}{
-		{name: "tagged install", module: "v1.2.3", fallback: "0.2.0", want: "1.2.3"},
-		{name: "development build", module: "(devel)", fallback: "v0.2.0", want: "0.2.0"},
-		{name: "source pseudo-version", module: "v0.0.0-20260811151632-815179a0b2e7+dirty", fallback: "0.2.0", want: "0.2.0"},
-		{name: "pre-release tag", module: "v1.2.3-rc.1", fallback: "0.2.0", want: "1.2.3-rc.1"},
+func TestNormalizeRejectsDevelopmentMarker(t *testing.T) {
+	if got := normalize("(devel)"); got != "" {
+		t.Fatalf("normalize((devel)) = %q", got)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := selectVersion(test.module, test.fallback); got != test.want {
-				t.Fatalf("selectVersion(%q, %q) = %q, want %q", test.module, test.fallback, got, test.want)
-			}
-		})
+}
+
+func TestNormalizeStripsTagPrefix(t *testing.T) {
+	if got := normalize(" v1.2.3 "); got != "1.2.3" {
+		t.Fatalf("normalize(v1.2.3) = %q", got)
+	}
+}
+
+func TestVCSFallbackIncludesRevisionAndDirtyState(t *testing.T) {
+	got := vcsFallback([]debug.BuildSetting{
+		{Key: "vcs.revision", Value: "0123456789abcdef"},
+		{Key: "vcs.modified", Value: "true"},
+	})
+	if got != "0.7.8-dev+0123456789ab.dirty" {
+		t.Fatalf("vcsFallback() = %q", got)
+	}
+}
+
+func TestVCSFallbackNeedsARevision(t *testing.T) {
+	if got := vcsFallback([]debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}); got != "" {
+		t.Fatalf("vcsFallback() without revision = %q", got)
 	}
 }

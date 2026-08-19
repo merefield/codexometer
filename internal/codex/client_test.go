@@ -8,7 +8,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/merefield/codexometer/internal/version"
 )
+
+func TestCodexometerClientInfoUsesResolvedVersion(t *testing.T) {
+	info := codexometerClientInfo()
+	if info["name"] != "codexometer" || info["title"] != "Codexometer" || info["version"] != version.Current() {
+		t.Fatalf("client info = %#v", info)
+	}
+}
 
 func TestMain(m *testing.M) {
 	if os.Getenv("CODEXOMETER_FAKE_APP_SERVER") == "1" {

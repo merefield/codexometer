@@ -4,52 +4,64 @@ package version
 import (
 	"runtime/debug"
 	"strings"
-	"time"
 )
 
-// Fallback is the version reported by binaries built directly from a source
-// checkout. Release automation may override it with:
-//
-//	-X github.com/merefield/codexometer/internal/version.Fallback=1.2.3
-var Fallback = "0.7.7"
+// Version is the source fallback. Tagged module installs and builds made with
+// an injected buildVersion use their embedded version instead.
+const Version = "0.7.8"
 
-// Current returns the module version embedded by Go for tagged installs, or
-// Fallback for ordinary source builds. The leading tag prefix is omitted so
-// callers can choose how to present it.
+// buildVersion may be populated at link time from the nearest Git tag.
+var buildVersion string
+
+// Current returns a display-ready version without the conventional v prefix
+// used by Go module tags. It prefers an injected version, then Go's embedded
+// module version, then a VCS-based development identity.
 func Current() string {
+	if value := normalize(buildVersion); value != "" {
+		return value
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
-		return selectVersion(info.Main.Version, Fallback)
-	}
-	return selectVersion("", Fallback)
-}
-
-func selectVersion(moduleVersion, fallback string) string {
-	moduleVersion = strings.TrimSpace(moduleVersion)
-	if moduleVersion != "" && moduleVersion != "(devel)" && !isPseudoVersion(moduleVersion) {
-		return strings.TrimPrefix(moduleVersion, "v")
-	}
-	return strings.TrimPrefix(strings.TrimSpace(fallback), "v")
-}
-
-func isPseudoVersion(value string) bool {
-	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(value), "v"), "-")
-	if len(parts) < 3 {
-		return false
-	}
-	timestamp, revision := parts[len(parts)-2], parts[len(parts)-1]
-	if clean, _, found := strings.Cut(revision, "+"); found {
-		revision = clean
-	}
-	if len(timestamp) != 14 || len(revision) < 7 {
-		return false
-	}
-	if _, err := time.Parse("20060102150405", timestamp); err != nil {
-		return false
-	}
-	for _, character := range revision {
-		if !strings.ContainsRune("0123456789abcdef", character) {
-			return false
+		if value := normalize(info.Main.Version); value != "" {
+			return value
+		}
+		if value := vcsFallback(info.Settings); value != "" {
+			return value
 		}
 	}
-	return true
+	return Version
+}
+
+// vcsFallback identifies a local checkout when Go reports Main.Version as
+// "(devel)". It is intentionally distinct from a Go pseudo-version: Go's own
+// embedded module version remains authoritative whenever one is available.
+func vcsFallback(settings []debug.BuildSetting) string {
+	revision := ""
+	modified := false
+	for _, setting := range settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	if revision == "" {
+		return ""
+	}
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+	value := Version + "-dev+" + revision
+	if modified {
+		value += ".dirty"
+	}
+	return value
+}
+
+func normalize(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "(devel)" {
+		return ""
+	}
+	return strings.TrimPrefix(value, "v")
 }

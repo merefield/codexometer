@@ -175,7 +175,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		UserAgent string `json:"userAgent"`
 	}
 	if err := p.request(ctx, "initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "codexometer", "title": "Codexometer", "version": "monitor"},
+		"clientInfo":   codexometerClientInfo(),
 		"capabilities": map[string]any{"experimentalApi": true},
 	}, &initialized); err != nil {
 		p.disconnect(connection)

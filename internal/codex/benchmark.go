@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"go.starlark.net/starlark"
-
-	"github.com/merefield/codexometer/internal/version"
 )
 
 const (
@@ -314,9 +312,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	}
 	go server.readLoop(json.NewDecoder(bufio.NewReader(stdout)))
 	initialize := map[string]any{
-		"clientInfo": map[string]string{
-			"name": "codexometer", "title": "Codexometer", "version": version.Current(),
-		},
+		"clientInfo": codexometerClientInfo(),
 	}
 	if experimental {
 		initialize["capabilities"] = map[string]bool{"experimentalApi": true}
