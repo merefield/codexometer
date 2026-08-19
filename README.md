@@ -1,6 +1,9 @@
 # Codexometer
 
 [![Version](https://img.shields.io/github/v/tag/merefield/codexometer?sort=semver&label=version)](https://github.com/merefield/codexometer/tags)
+[![CI](https://github.com/merefield/codexometer/actions/workflows/ci.yml/badge.svg)](https://github.com/merefield/codexometer/actions/workflows/ci.yml)
+[![Go version](https://img.shields.io/github/go-mod/go-version/merefield/codexometer)](go.mod)
+[![License](https://img.shields.io/github/license/merefield/codexometer)](LICENSE)
 
 Codexometer is a small, retro terminal dashboard for your current
 [Codex](https://github.com/openai/codex) quota.
