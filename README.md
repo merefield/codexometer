@@ -1029,12 +1029,23 @@ need Go or Codexometer's source dependencies.
 Codexometer follows semantic versioning; the current source version is
 `v0.7.8`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.8`. The Makefile injects the
-nearest reachable Git tag when one exists. Direct development builds use Go's
-embedded module and VCS settings, including its pseudo-version and dirty suffix.
-An exact release tag reports that semantic version; later untagged commits can
-report the next-patch Go pseudo-version, as in
-`0.7.9-0.<timestamp>-<commit>`.
+`go install github.com/merefield/codexometer@v0.7.8`.
+
+The resolver uses the first version available in this order:
+
+1. a link-time value, such as the nearest Git description injected by
+   `make build`;
+2. Go's embedded module version—an exact tag for a release build or, when Go
+   supplies one, a pseudo-version such as
+   `0.7.9-0.<timestamp>-<commit>[+dirty]`;
+3. for a local checkout whose module version is `(devel)`, a VCS fallback in
+   the explicit form `0.7.8-dev+<commit>[.dirty]`;
+4. the maintained source version, `0.7.8`, when no build or VCS identity is
+   available.
+
+The leading `v` used by Git tags and Go module versions is removed in every
+case. The VCS fallback is a Codexometer development identity, not a Go
+pseudo-version.
 
 The dashboard masthead, app-server client metadata, and both CLI flags all use
 that one resolved value. The flags report it and exit without starting the

@@ -21,18 +21,24 @@ func TestNormalizeRejectsDevelopmentMarker(t *testing.T) {
 	}
 }
 
-func TestDevelopmentIncludesRevisionAndDirtyState(t *testing.T) {
-	got := development([]debug.BuildSetting{
+func TestNormalizeStripsTagPrefix(t *testing.T) {
+	if got := normalize(" v1.2.3 "); got != "1.2.3" {
+		t.Fatalf("normalize(v1.2.3) = %q", got)
+	}
+}
+
+func TestVCSFallbackIncludesRevisionAndDirtyState(t *testing.T) {
+	got := vcsFallback([]debug.BuildSetting{
 		{Key: "vcs.revision", Value: "0123456789abcdef"},
 		{Key: "vcs.modified", Value: "true"},
 	})
 	if got != "0.7.8-dev+0123456789ab.dirty" {
-		t.Fatalf("development() = %q", got)
+		t.Fatalf("vcsFallback() = %q", got)
 	}
 }
 
-func TestDevelopmentNeedsARevision(t *testing.T) {
-	if got := development([]debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}); got != "" {
-		t.Fatalf("development() without revision = %q", got)
+func TestVCSFallbackNeedsARevision(t *testing.T) {
+	if got := vcsFallback([]debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}); got != "" {
+		t.Fatalf("vcsFallback() without revision = %q", got)
 	}
 }

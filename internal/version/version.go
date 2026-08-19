@@ -6,16 +6,16 @@ import (
 	"strings"
 )
 
-// Version is the development fallback. Tagged module installs and builds made
-// with an injected buildVersion use their embedded semantic version instead.
+// Version is the source fallback. Tagged module installs and builds made with
+// an injected buildVersion use their embedded version instead.
 const Version = "0.7.8"
 
 // buildVersion may be populated at link time from the nearest Git tag.
 var buildVersion string
 
 // Current returns a display-ready version without the conventional v prefix
-// used by Go module tags. Untagged source builds include their VCS revision and
-// dirty state when Go embeds that information.
+// used by Go module tags. It prefers an injected version, then Go's embedded
+// module version, then a VCS-based development identity.
 func Current() string {
 	if value := normalize(buildVersion); value != "" {
 		return value
@@ -24,14 +24,17 @@ func Current() string {
 		if value := normalize(info.Main.Version); value != "" {
 			return value
 		}
-		if value := development(info.Settings); value != "" {
+		if value := vcsFallback(info.Settings); value != "" {
 			return value
 		}
 	}
 	return Version
 }
 
-func development(settings []debug.BuildSetting) string {
+// vcsFallback identifies a local checkout when Go reports Main.Version as
+// "(devel)". It is intentionally distinct from a Go pseudo-version: Go's own
+// embedded module version remains authoritative whenever one is available.
+func vcsFallback(settings []debug.BuildSetting) string {
 	revision := ""
 	modified := false
 	for _, setting := range settings {
