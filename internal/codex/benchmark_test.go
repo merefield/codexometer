@@ -320,7 +320,7 @@ func TestRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
 	}()
 
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
 	var results []BenchmarkResult
@@ -622,10 +622,11 @@ func TestExperimentalAPIUnsupported(t *testing.T) {
 	}
 }
 
-func TestEnvironmentWithoutScrubsDigBenchTokenOnly(t *testing.T) {
-	environment := []string{"PATH=/usr/bin", "DIGBENCH_API_TOKEN=secret", "OTHER=value", "malformed"}
-	filtered := environmentWithout(environment, "digbench_api_token")
-	want := []string{"PATH=/usr/bin", "OTHER=value", "malformed"}
+func TestEnvironmentHelpersReplaceAndScrubSecrets(t *testing.T) {
+	environment := []string{"PATH=/usr/bin", "DIGBENCH_API_TOKEN=secret", "OPENAI_API_KEY=secret", "CODEX_HOME=/old", "OTHER=value", "malformed"}
+	filtered := environmentWithout(environment, "digbench_api_token", "openai_api_key")
+	filtered = environmentWith(filtered, "CODEX_HOME", "/isolated")
+	want := []string{"PATH=/usr/bin", "OTHER=value", "malformed", "CODEX_HOME=/isolated"}
 	if len(filtered) != len(want) {
 		t.Fatalf("filtered environment = %#v", filtered)
 	}
@@ -666,7 +667,7 @@ func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 		})},
 	)
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
 	var events []BenchmarkEvent
@@ -719,7 +720,7 @@ func TestRunBenchmarkSuiteMultipliesSelectedTasksByCombinations(t *testing.T) {
 		})},
 	)
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
 	var results []BenchmarkResult
@@ -740,7 +741,7 @@ func TestRunBenchmarkSuiteMultipliesSelectedTasksByCombinations(t *testing.T) {
 
 func TestRunBenchmarkSuiteReportsStartupFailure(t *testing.T) {
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) {
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) {
 		return nil, errors.New("offline")
 	}
 	t.Cleanup(func() { openBenchmarkAppServer = original })
@@ -761,14 +762,50 @@ func TestBenchmarkCombinationCountUsesVisibleCatalogWithoutTurns(t *testing.T) {
 		})},
 	)
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	var receivedAPIKey string
+	openBenchmarkAppServer = func(_ context.Context, _, apiKey string) (*appServerSession, error) {
+		receivedAPIKey = apiKey
+		return server, nil
+	}
 	t.Cleanup(func() { openBenchmarkAppServer = original })
-	count, err := (Client{}).BenchmarkCombinationCount(context.Background())
+	count, err := (Client{BenchmarkAPIKey: "benchmark-secret"}).BenchmarkCombinationCount(context.Background())
 	if err != nil || count != 3 {
 		t.Fatalf("combination count = %d, %v; want 3", count, err)
 	}
+	if receivedAPIKey != "benchmark-secret" {
+		t.Fatal("benchmark API key was not routed to the app-server")
+	}
 	if strings.Contains(requests.String(), `"method":"turn/start"`) {
 		t.Fatalf("catalog planning unexpectedly started a model turn: %s", requests.String())
+	}
+}
+
+func TestStartAppServerUsesEphemeralIsolatedAPIKeyLogin(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	t.Setenv("CODEXOMETER_FAKE_EXPECT_BENCHMARK_LOGIN", "1")
+	t.Setenv("CODEXOMETER_BENCHMARK_API_KEY", "environment-secret")
+	t.Setenv("OPENAI_API_KEY", "environment-openai-secret")
+	t.Setenv("DIGBENCH_API_TOKEN", "digbench-secret")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := startAppServer(context.Background(), executable, "benchmark-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporaryHome := server.temporaryCodexHome
+	if temporaryHome == "" {
+		server.close()
+		t.Fatal("benchmark API login did not create an isolated Codex home")
+	}
+	if _, err := os.Stat(temporaryHome); err != nil {
+		server.close()
+		t.Fatalf("isolated Codex home was unavailable during the session: %v", err)
+	}
+	server.close()
+	if _, err := os.Stat(temporaryHome); !os.IsNotExist(err) {
+		t.Fatalf("isolated Codex home survived session close: %v", err)
 	}
 }
 
@@ -838,7 +875,7 @@ func TestLiveBenchmarkModelCatalog(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	server, err := startAppServer(ctx, "codex")
+	server, err := startAppServer(ctx, "codex", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +900,7 @@ func TestLiveBenchmarkThreadStart(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	server, err := startAppServer(ctx, "codex")
+	server, err := startAppServer(ctx, "codex", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -886,7 +923,7 @@ func TestLiveBenchmarkSingleLunaTrial(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), benchmarkTurnTimeout)
 	defer cancel()
-	server, err := startAppServer(ctx, "codex")
+	server, err := startAppServer(ctx, "codex", "")
 	if err != nil {
 		t.Fatal(err)
 	}

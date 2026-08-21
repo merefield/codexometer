@@ -188,6 +188,7 @@ type appServerSession struct {
 	experimentalRawEvents bool
 	turnTimeout           time.Duration
 	interruptTimeout      time.Duration
+	temporaryCodexHome    string
 }
 
 type lockedBuffer struct {
@@ -210,7 +211,7 @@ func (b *lockedBuffer) String() string {
 // BenchmarkCombinationCount returns the number of visible model/effort pairs
 // without starting a model turn.
 func (c Client) BenchmarkCombinationCount(ctx context.Context) (int, error) {
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
 		return 0, err
 	}
@@ -235,7 +236,7 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 		emit(BenchmarkEvent{Done: true, Err: err})
 		return
 	}
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
 		emit(BenchmarkEvent{Done: true, Err: err})
 		return
@@ -281,27 +282,48 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 	emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Done: true})
 }
 
-func startAppServer(ctx context.Context, binary string) (*appServerSession, error) {
-	return startAppServerWithExperimentalUsage(ctx, binary, true)
+func startAppServer(ctx context.Context, binary, apiKey string) (*appServerSession, error) {
+	return startAppServerWithExperimentalUsage(ctx, binary, strings.TrimSpace(apiKey), true)
 }
 
-func startAppServerWithExperimentalUsage(ctx context.Context, binary string, experimental bool) (*appServerSession, error) {
+func startAppServerWithExperimentalUsage(ctx context.Context, binary, apiKey string, experimental bool) (*appServerSession, error) {
 	if strings.TrimSpace(binary) == "" {
 		binary = "codex"
 	}
-	cmd := exec.CommandContext(ctx, binary, "app-server", "--stdio")
-	cmd.Env = environmentWithout(os.Environ(), "DIGBENCH_API_TOKEN")
+	args := []string{"app-server", "--stdio"}
+	temporaryCodexHome := ""
+	if apiKey != "" {
+		var err error
+		temporaryCodexHome, err = os.MkdirTemp("", "codexometer-benchmark-auth-")
+		if err != nil {
+			return nil, fmt.Errorf("create isolated benchmark Codex home: %w", err)
+		}
+		args = append(args, "-c", `cli_auth_credentials_store="ephemeral"`)
+	}
+	removeTemporaryHome := func() {
+		if temporaryCodexHome != "" {
+			_ = os.RemoveAll(temporaryCodexHome)
+		}
+	}
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = environmentWithout(os.Environ(), "DIGBENCH_API_TOKEN", "CODEXOMETER_BENCHMARK_API_KEY", "OPENAI_API_KEY")
+	if temporaryCodexHome != "" {
+		cmd.Env = environmentWith(cmd.Env, "CODEX_HOME", temporaryCodexHome)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		removeTemporaryHome()
 		return nil, fmt.Errorf("open Codex input: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		removeTemporaryHome()
 		return nil, fmt.Errorf("open Codex output: %w", err)
 	}
 	stderr := &lockedBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		removeTemporaryHome()
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("Codex CLI not found; install it or pass --codex PATH")
 		}
@@ -312,6 +334,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 		stderr: stderr, envelopes: make(chan benchmarkEnvelope, 64), readErrors: make(chan error, 1), done: make(chan struct{}),
 		experimentalAPI:       experimental,
 		experimentalRawEvents: experimental,
+		temporaryCodexHome:    temporaryCodexHome,
 	}
 	go server.readLoop(json.NewDecoder(bufio.NewReader(stdout)))
 	initialize := map[string]any{
@@ -323,7 +346,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	if _, err := server.call(ctx, "initialize", initialize, nil); err != nil {
 		server.close()
 		if experimental && experimentalAPIUnsupported(err) {
-			return startAppServerWithExperimentalUsage(ctx, binary, false)
+			return startAppServerWithExperimentalUsage(ctx, binary, apiKey, false)
 		}
 		return nil, fmt.Errorf("initialize Codex app-server: %w", err)
 	}
@@ -331,19 +354,45 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 		server.close()
 		return nil, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
+	if apiKey != "" {
+		result, loginErr := server.call(ctx, "account/login/start", map[string]any{
+			"type": "apiKey", "apiKey": apiKey,
+		}, nil)
+		if loginErr != nil {
+			server.close()
+			return nil, fmt.Errorf("authenticate benchmark Codex app-server with API key: %w", loginErr)
+		}
+		var login struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(result, &login) != nil || login.Type != "apiKey" {
+			server.close()
+			return nil, errors.New("Codex returned an invalid API-key login response")
+		}
+	}
 	return server, nil
 }
 
-func environmentWithout(environment []string, name string) []string {
+func environmentWithout(environment []string, names ...string) []string {
+	excluded := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		excluded[strings.ToUpper(name)] = struct{}{}
+	}
 	filtered := make([]string, 0, len(environment))
 	for _, entry := range environment {
 		key, _, found := strings.Cut(entry, "=")
-		if found && strings.EqualFold(key, name) {
-			continue
+		if found {
+			if _, remove := excluded[strings.ToUpper(key)]; remove {
+				continue
+			}
 		}
 		filtered = append(filtered, entry)
 	}
 	return filtered
+}
+
+func environmentWith(environment []string, name, value string) []string {
+	return append(environmentWithout(environment, name), name+"="+value)
 }
 
 func experimentalAPIUnsupported(err error) bool {
@@ -417,6 +466,10 @@ func (s *appServerSession) close() {
 			_ = s.cmd.Wait()
 		}
 	})
+	if s.temporaryCodexHome != "" {
+		_ = os.RemoveAll(s.temporaryCodexHome)
+		s.temporaryCodexHome = ""
+	}
 }
 
 func (s *appServerSession) call(

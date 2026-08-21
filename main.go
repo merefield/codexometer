@@ -154,7 +154,7 @@ func main() {
 
 type dependencies struct {
 	checkAuth   func(context.Context, string) (codex.Snapshot, error)
-	runDigBench func(context.Context, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
+	runDigBench func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
 	startUI     func(ui.Fetcher, time.Duration, bool) error
 }
 
@@ -163,8 +163,8 @@ func defaultDependencies() dependencies {
 		checkAuth: func(ctx context.Context, binary string) (codex.Snapshot, error) {
 			return (codex.Client{Binary: binary}).Fetch(ctx)
 		},
-		runDigBench: func(ctx context.Context, binary, token string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
-			return (codex.Client{Binary: binary}).RunDigBench(ctx, digbench.Client{Token: token}, options)
+		runDigBench: func(ctx context.Context, binary, token, apiKey string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
+			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
 		},
 		startUI: startUI,
 	}
@@ -218,12 +218,21 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			fmt.Fprintln(stderr, "codexometer: remove DIGBENCH_API_TOKEN from child environment:", err)
 			return 1
 		}
+		benchmarkAPIKey, benchmarkAPIKeySource, err := takeBenchmarkAPIKey()
+		if err != nil {
+			fmt.Fprintln(stderr, "codexometer:", err)
+			return 1
+		}
 		if deps.runDigBench == nil {
 			fmt.Fprintln(stderr, "codexometer: DigBench runner unavailable")
 			return 1
 		}
-		fmt.Fprintf(stderr, "Starting DigBench %s; this creates a persisted remote session and consumes Codex quota.\n", strings.TrimSpace(*digBenchGame))
-		result, err := deps.runDigBench(context.Background(), *codexPath, token, codex.DigBenchOptions{
+		billing := "the prevailing Codex login and quota"
+		if benchmarkAPIKey != "" {
+			billing = "API-key usage-based billing from " + benchmarkAPIKeySource
+		}
+		fmt.Fprintf(stderr, "Starting DigBench %s; this creates a persisted remote session and uses %s.\n", strings.TrimSpace(*digBenchGame), billing)
+		result, err := deps.runDigBench(context.Background(), *codexPath, token, benchmarkAPIKey, codex.DigBenchOptions{
 			Game: strings.TrimSpace(*digBenchGame), Model: strings.TrimSpace(*digBenchModel),
 			Effort: strings.TrimSpace(*digBenchEffort), Timeout: *digBenchTimeout, ClientVersion: version.Current(),
 		})
@@ -238,7 +247,12 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 0
 	}
 
-	client := codex.Client{Binary: *codexPath}
+	benchmarkAPIKey, _, err := takeBenchmarkAPIKey()
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer:", err)
+		return 1
+	}
+	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
 	}
@@ -252,6 +266,19 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 1
 	}
 	return 0
+}
+
+func takeBenchmarkAPIKey() (key, source string, err error) {
+	for _, candidate := range []string{"CODEXOMETER_BENCHMARK_API_KEY", "OPENAI_API_KEY"} {
+		value := strings.TrimSpace(os.Getenv(candidate))
+		if unsetErr := os.Unsetenv(candidate); unsetErr != nil {
+			return "", "", fmt.Errorf("remove %s from child environment: %w", candidate, unsetErr)
+		}
+		if key == "" && value != "" {
+			key, source = value, candidate
+		}
+	}
+	return key, source, nil
 }
 
 func formatDigBenchResult(result codex.DigBenchResult) string {

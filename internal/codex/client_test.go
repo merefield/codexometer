@@ -125,15 +125,34 @@ func runFakeAppServer() {
 	encoder := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
 		var request struct {
-			ID     *int   `json:"id"`
-			Method string `json:"method"`
+			ID     *int            `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 		}
 		if json.Unmarshal(scanner.Bytes(), &request) != nil || request.ID == nil {
 			continue
 		}
 		switch request.Method {
 		case "initialize":
+			if os.Getenv("CODEXOMETER_FAKE_EXPECT_BENCHMARK_LOGIN") == "1" {
+				args := strings.Join(os.Args, " ")
+				if !strings.Contains(args, `cli_auth_credentials_store="ephemeral"`) || os.Getenv("CODEX_HOME") == "" ||
+					os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("CODEXOMETER_BENCHMARK_API_KEY") != "" || os.Getenv("DIGBENCH_API_TOKEN") != "" {
+					_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32000, "message": "benchmark auth was not isolated"}})
+					continue
+				}
+			}
 			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{}})
+		case "account/login/start":
+			var params struct {
+				Type   string `json:"type"`
+				APIKey string `json:"apiKey"`
+			}
+			if json.Unmarshal(request.Params, &params) != nil || params.Type != "apiKey" || params.APIKey != "benchmark-secret" {
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32602, "message": "invalid benchmark login"}})
+				continue
+			}
+			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{"type": "apiKey"}})
 		case "account/read":
 			if os.Getenv("CODEXOMETER_FAKE_ACCOUNT_ERROR") == "1" {
 				_ = encoder.Encode(map[string]any{

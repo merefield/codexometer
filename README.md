@@ -744,7 +744,8 @@ Codexometer falls back to its safe defaults.
 > benchmark service backed by one person's subscription. You remain responsible
 > for complying with the terms and policies of OpenAI and each external
 > benchmark provider; this project cannot guarantee that guidance or enforcement
-> will remain unchanged.
+> will remain unchanged. If you choose to run a benchmark with **Sign in with
+> ChatGPT** subscription authentication, you do so at your own risk.
 
 The justification for supporting the prevailing Codex login is that OpenAI's
 [authentication documentation](https://learn.chatgpt.com/docs/auth) expressly
@@ -769,6 +770,26 @@ key authentication for programmatic Codex CLI workflows and the
 [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) for automated jobs and CI.
 The separate DigBench token described below authorizes only DigBench and does
 not change how Codex itself is authenticated.
+
+For a clearer billing boundary, supply your own OpenAI API key. A dedicated key
+takes precedence over the prevailing ChatGPT login for **all** benchmark model
+discovery and runs, including DigBench:
+
+```sh
+export CODEXOMETER_BENCHMARK_API_KEY="<openai-api-key>"
+codexometer
+```
+
+`OPENAI_API_KEY` is accepted as a fallback when the dedicated variable is not
+set. Codexometer removes both variables from its normal child environment and
+passes the selected value only in the documented `account/login/start` request
+to a benchmark-only app-server. That server uses a temporary `CODEX_HOME` and
+ephemeral in-memory credential storage, so it neither replaces the normal Codex
+login nor persists the key. API-authenticated trials use standard usage-based
+API billing; quota monitoring continues to use the prevailing Codex login.
+Environment variables may still be visible to other processes running as the
+same operating-system user, so supply secrets only on a trusted local machine.
+Neither key is written to preferences or accepted as a command-line argument.
 
 ### Experimental DigBench agentic run
 
@@ -798,8 +819,10 @@ codexometer --digbench-game P-3 \
 ```
 
 The command creates a fresh remote DigBench session, so invoking it is an
-external write as well as a Codex-quota-consuming model run. DigBench persists
-sessions and currently exposes no deletion endpoint. The token is read only
+external write as well as a model run that consumes either Codex subscription
+quota or usage-billed API tokens, according to the authentication choice above.
+DigBench persists sessions and currently exposes no deletion endpoint. The
+token is read only
 from `DIGBENCH_API_TOKEN`, is never written to Codexometer preferences, and is
 removed from the process environment before Codex is spawned. It is used only
 by Codexometer's native HTTPS client to start the session. Codex sees only
@@ -822,9 +845,10 @@ fair deterministic cross-model ranking.
 
 ### Deterministic benchmark
 
-The Benchmark tab discovers the current account's visible models and their
-supported reasoning efforts through `model/list`. Select any challenge with the
-arrow buttons; the selector reserves a stable responsive track for the longest
+The Benchmark tab discovers models visible to the active benchmark
+authentication and their supported reasoning efforts through `model/list`.
+Select any challenge with the arrow buttons; the selector reserves a stable
+responsive track for the longest
 name, so its controls do not move as the selection changes. Press `b` or click
 **Run Selected** to run that challenge against every model/effort combination.
 **Run All** runs the complete catalog against every combination. Because that
@@ -832,7 +856,8 @@ means `challenge count × model/effort count` model turns, Codexometer displays
 the exact total and requires a second confirmation within five seconds. A fresh,
 ephemeral, read-only app-server thread is used for each trial, so benchmark
 history does not clutter normal Codex sessions. The turns still consume the
-same account quota shown by Codexometer.
+same account quota shown by Codexometer unless a benchmark API key is supplied;
+with a key, they use standard usage-based API billing instead.
 
 Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
 that deadline, Codexometer requests `turn/interrupt`, waits for the matching

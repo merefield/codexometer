@@ -72,7 +72,7 @@ func (c Client) RunDigBench(ctx context.Context, service digBenchService, option
 		options.Timeout = defaultDigBenchTimeout
 	}
 
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
 		return DigBenchResult{}, err
 	}

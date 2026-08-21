@@ -124,13 +124,13 @@ func TestRunDigBenchUsesExplicitSingleGameOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
 	deps := dependencies{
-		runDigBench: func(_ context.Context, binary, token string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
+		runDigBench: func(_ context.Context, binary, token, apiKey string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
 			called = true
 			if value := os.Getenv("DIGBENCH_API_TOKEN"); value != "" {
 				t.Fatalf("DigBench token remained in child environment: %q", value)
 			}
-			if binary != "/custom/codex" || token != "secret" || options.Game != "P-3" || options.Model != "gpt-5.6-terra" || options.Effort != "medium" || options.Timeout != 2*time.Minute {
-				t.Fatalf("binary=%q token=%q options=%#v", binary, token, options)
+			if binary != "/custom/codex" || token != "secret" || apiKey != "" || options.Game != "P-3" || options.Model != "gpt-5.6-terra" || options.Effort != "medium" || options.Timeout != 2*time.Minute {
+				t.Fatalf("binary=%q token=%q apiKeyPresent=%v options=%#v", binary, token, apiKey != "", options)
 			}
 			return codex.DigBenchResult{
 				Game: "P-3", Won: true, Status: "completed", LevelsBeaten: 4, MaxLevel: 4, Steps: 17,
@@ -145,6 +145,51 @@ func TestRunDigBenchUsesExplicitSingleGameOptions(t *testing.T) {
 	}, &stdout, &stderr, deps)
 	if code != 0 || !called || !strings.Contains(stdout.String(), "DIGBENCH P-3 // WIN // LEVELS 4/4") || !strings.Contains(stderr.String(), "persisted remote session") {
 		t.Fatalf("code=%d called=%v stdout=%q stderr=%q", code, called, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunDigBenchPrefersDedicatedBenchmarkAPIKey(t *testing.T) {
+	t.Setenv("DIGBENCH_API_TOKEN", "digbench-secret")
+	t.Setenv("CODEXOMETER_BENCHMARK_API_KEY", "benchmark-secret")
+	t.Setenv("OPENAI_API_KEY", "fallback-secret")
+	var stdout, stderr bytes.Buffer
+	deps := dependencies{
+		runDigBench: func(_ context.Context, _, _, apiKey string, _ codex.DigBenchOptions) (codex.DigBenchResult, error) {
+			if apiKey != "benchmark-secret" {
+				t.Fatalf("benchmark API key preference was not honored")
+			}
+			if os.Getenv("CODEXOMETER_BENCHMARK_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" {
+				t.Fatal("benchmark API key remained in the inherited environment")
+			}
+			return codex.DigBenchResult{Game: "P-1", Won: true}, nil
+		},
+	}
+	if code := run([]string{"--digbench-game", "P-1"}, &stdout, &stderr, deps); code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "API-key usage-based billing from CODEXOMETER_BENCHMARK_API_KEY") {
+		t.Fatalf("missing API billing notice: %q", stderr.String())
+	}
+}
+
+func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
+	t.Setenv("CODEXOMETER_BENCHMARK_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	var stdout, stderr bytes.Buffer
+	deps := dependencies{
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool) error {
+			client, ok := fetcher.(codex.Client)
+			if !ok || client.BenchmarkAPIKey != "openai-secret" {
+				t.Fatalf("benchmark API key was not attached to Codex client")
+			}
+			if os.Getenv("OPENAI_API_KEY") != "" {
+				t.Fatal("OPENAI_API_KEY remained in the inherited environment")
+			}
+			return nil
+		},
+	}
+	if code := run(nil, &stdout, &stderr, deps); code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

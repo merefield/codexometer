@@ -70,14 +70,21 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	server.experimentalAPI = true
 
 	original := openBenchmarkAppServer
-	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	var receivedAPIKey string
+	openBenchmarkAppServer = func(_ context.Context, _, apiKey string) (*appServerSession, error) {
+		receivedAPIKey = apiKey
+		return server, nil
+	}
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
-	result, err := (Client{}).RunDigBench(context.Background(), service, DigBenchOptions{
+	result, err := (Client{BenchmarkAPIKey: "benchmark-secret"}).RunDigBench(context.Background(), service, DigBenchOptions{
 		Game: "P-1", Model: "gpt-5.6-sol", Effort: "high", Timeout: time.Minute, ClientVersion: "test",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if receivedAPIKey != "benchmark-secret" {
+		t.Fatal("DigBench did not route the benchmark API key to app-server")
 	}
 	if !result.Won || result.Failure != "" || result.Status != "completed" || result.LevelsBeaten != 3 || result.MaxLevel != 3 || result.Steps != 1 {
 		t.Fatalf("result = %#v", result)
