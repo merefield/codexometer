@@ -77,8 +77,10 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	}
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
+	var progress []DigBenchProgress
 	result, err := (Client{BenchmarkAPIKey: "benchmark-secret"}).RunDigBench(context.Background(), service, DigBenchOptions{
 		Game: "P-1", Model: "gpt-5.6-sol", Effort: "high", Timeout: time.Minute, ClientVersion: "test",
+		Progress: func(event DigBenchProgress) { progress = append(progress, event) },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,11 +97,27 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	if !result.UsageKnown || result.Usage != usage || !result.CostKnown {
 		t.Fatalf("telemetry = %#v", result)
 	}
+	if len(progress) != 3 || progress[0].Phase != DigBenchProgressSession || progress[1].Phase != DigBenchProgressTurn || progress[2].Phase != DigBenchProgressUpdate {
+		t.Fatalf("progress phases = %#v", progress)
+	}
+	if final := progress[2]; final.Level != 3 || final.LevelsBeaten != 3 || final.MaxLevel != 3 || final.Steps != 1 || final.Status != "completed" || final.Elapsed < 0 {
+		t.Fatalf("final progress = %#v", final)
+	}
 	requestLog := requests.String()
 	for _, expected := range []string{`"dynamicTools"`, `"sandbox":"workspace-write"`, `"method":"turn/start"`, `"id":50`, `"success":true`, `\"status\":\"completed\"`} {
 		if !strings.Contains(requestLog, expected) {
 			t.Fatalf("request log missing %q: %s", expected, requestLog)
 		}
+	}
+}
+
+func TestNextPendingEnvelopeCanReportHeartbeat(t *testing.T) {
+	server, _ := newFakeBenchmarkServer()
+	heartbeat := make(chan time.Time, 1)
+	heartbeat <- time.Now()
+	envelope, pulsed, err := server.nextPendingEnvelopeOrHeartbeat(context.Background(), heartbeat)
+	if err != nil || !pulsed || len(envelope.ID) != 0 || envelope.Method != "" || len(envelope.Params) != 0 || len(envelope.Result) != 0 || envelope.Error != nil {
+		t.Fatalf("envelope=%#v pulsed=%v error=%v", envelope, pulsed, err)
 	}
 }
 

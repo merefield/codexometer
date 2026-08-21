@@ -132,6 +132,13 @@ func TestRunDigBenchUsesExplicitSingleGameOptions(t *testing.T) {
 			if binary != "/custom/codex" || token != "secret" || apiKey != "" || options.Game != "P-3" || options.Model != "gpt-5.6-terra" || options.Effort != "medium" || options.Timeout != 2*time.Minute {
 				t.Fatalf("binary=%q token=%q apiKeyPresent=%v options=%#v", binary, token, apiKey != "", options)
 			}
+			if options.Progress == nil {
+				t.Fatal("DigBench progress callback was not configured")
+			}
+			options.Progress(codex.DigBenchProgress{
+				Phase: codex.DigBenchProgressUpdate, Level: 2, MaxLevel: 4,
+				LevelsBeaten: 1, Steps: 9, Status: "in_progress", Elapsed: 1250 * time.Millisecond,
+			})
 			return codex.DigBenchResult{
 				Game: "P-3", Won: true, Status: "completed", LevelsBeaten: 4, MaxLevel: 4, Steps: 17,
 				DisplayName: "GPT-5.6 Terra", Effort: "medium", Duration: 3 * time.Second,
@@ -143,8 +150,26 @@ func TestRunDigBenchUsesExplicitSingleGameOptions(t *testing.T) {
 		"--digbench-game", "P-3", "--digbench-model", "gpt-5.6-terra", "--digbench-effort", "medium",
 		"--digbench-timeout", "2m", "--codex", "/custom/codex",
 	}, &stdout, &stderr, deps)
-	if code != 0 || !called || !strings.Contains(stdout.String(), "DIGBENCH P-3 // WIN // LEVELS 4/4") || !strings.Contains(stderr.String(), "persisted remote session") {
+	if code != 0 || !called || !strings.Contains(stdout.String(), "DIGBENCH P-3 // WIN // LEVELS 4/4") ||
+		!strings.Contains(stderr.String(), "Starting DigBench P-3 with gpt-5.6-terra/medium") ||
+		!strings.Contains(stderr.String(), "DIGBENCH PROGRESS // LEVEL 2/4 // BEATEN 1 // STEPS 9 // STATUS in_progress // ELAPSED 1.3s") {
 		t.Fatalf("code=%d called=%v stdout=%q stderr=%q", code, called, stdout.String(), stderr.String())
+	}
+}
+
+func TestFormatDigBenchProgressMilestones(t *testing.T) {
+	tests := []struct {
+		progress codex.DigBenchProgress
+		want     string
+	}{
+		{progress: codex.DigBenchProgress{Phase: codex.DigBenchProgressSession, Level: 1, MaxLevel: 3}, want: "DIGBENCH SESSION CREATED // LEVEL 1/3"},
+		{progress: codex.DigBenchProgress{Phase: codex.DigBenchProgressTurn, Level: 1, ActualModel: "gpt-5.6-sol"}, want: "CODEX TURN STARTED // LEVEL 1 // BEATEN 0 // STEPS 0 // MODEL gpt-5.6-sol"},
+		{progress: codex.DigBenchProgress{Phase: codex.DigBenchProgressHeartbeat, Elapsed: 15 * time.Second}, want: "DIGBENCH WORKING // LEVEL 0 // BEATEN 0 // STEPS 0 // ELAPSED 15s"},
+	}
+	for _, test := range tests {
+		if got := formatDigBenchProgress(test.progress); !strings.Contains(got, test.want) {
+			t.Errorf("formatDigBenchProgress(%#v) = %q, want containing %q", test.progress, got, test.want)
+		}
 	}
 }
 

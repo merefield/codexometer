@@ -424,31 +424,38 @@ func (s *appServerSession) readLoop(decoder *json.Decoder) {
 }
 
 func (s *appServerSession) nextEnvelope(ctx context.Context) (benchmarkEnvelope, error) {
+	envelope, _, err := s.nextEnvelopeOrHeartbeat(ctx, nil)
+	return envelope, err
+}
+
+func (s *appServerSession) nextEnvelopeOrHeartbeat(ctx context.Context, heartbeat <-chan time.Time) (benchmarkEnvelope, bool, error) {
 	// Drain decoded protocol messages before observing a terminal decoder error.
 	// A short-lived server may write its final response and close stdout so close
 	// together that both channels are ready at once.
 	select {
 	case envelope := <-s.envelopes:
-		return envelope, nil
+		return envelope, false, nil
 	default:
 	}
 	select {
 	case <-ctx.Done():
-		return benchmarkEnvelope{}, ctx.Err()
+		return benchmarkEnvelope{}, false, ctx.Err()
+	case <-heartbeat:
+		return benchmarkEnvelope{}, true, nil
 	case <-s.done:
-		return benchmarkEnvelope{}, errors.New("Codex app-server session closed")
+		return benchmarkEnvelope{}, false, errors.New("Codex app-server session closed")
 	case err := <-s.readErrors:
 		select {
 		case envelope := <-s.envelopes:
-			return envelope, nil
+			return envelope, false, nil
 		default:
 		}
 		if errors.Is(err, io.EOF) {
-			return benchmarkEnvelope{}, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
+			return benchmarkEnvelope{}, false, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
 		}
-		return benchmarkEnvelope{}, err
+		return benchmarkEnvelope{}, false, err
 	case envelope := <-s.envelopes:
-		return envelope, nil
+		return envelope, false, nil
 	}
 }
 
@@ -1057,12 +1064,17 @@ func (s *appServerSession) readUntilNotification(ctx context.Context, accept fun
 }
 
 func (s *appServerSession) nextPendingEnvelope(ctx context.Context) (benchmarkEnvelope, error) {
+	envelope, _, err := s.nextPendingEnvelopeOrHeartbeat(ctx, nil)
+	return envelope, err
+}
+
+func (s *appServerSession) nextPendingEnvelopeOrHeartbeat(ctx context.Context, heartbeat <-chan time.Time) (benchmarkEnvelope, bool, error) {
 	if len(s.pending) > 0 {
 		envelope := s.pending[0]
 		s.pending = s.pending[1:]
-		return envelope, nil
+		return envelope, false, nil
 	}
-	return s.nextEnvelope(ctx)
+	return s.nextEnvelopeOrHeartbeat(ctx, heartbeat)
 }
 
 func (s *appServerSession) respond(id json.RawMessage, result any) error {

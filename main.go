@@ -231,10 +231,14 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		if benchmarkAPIKey != "" {
 			billing = "API-key usage-based billing from " + benchmarkAPIKeySource
 		}
-		fmt.Fprintf(stderr, "Starting DigBench %s; this creates a persisted remote session and uses %s.\n", strings.TrimSpace(*digBenchGame), billing)
+		fmt.Fprintf(stderr, "Starting DigBench %s with %s/%s; this creates a persisted remote session and uses %s.\n",
+			strings.TrimSpace(*digBenchGame), strings.TrimSpace(*digBenchModel), strings.TrimSpace(*digBenchEffort), billing)
 		result, err := deps.runDigBench(context.Background(), *codexPath, token, benchmarkAPIKey, codex.DigBenchOptions{
 			Game: strings.TrimSpace(*digBenchGame), Model: strings.TrimSpace(*digBenchModel),
 			Effort: strings.TrimSpace(*digBenchEffort), Timeout: *digBenchTimeout, ClientVersion: version.Current(),
+			Progress: func(progress codex.DigBenchProgress) {
+				fmt.Fprintln(stderr, formatDigBenchProgress(progress))
+			},
 		})
 		if err != nil {
 			fmt.Fprintln(stderr, "codexometer: DigBench run failed:", err)
@@ -266,6 +270,31 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 1
 	}
 	return 0
+}
+
+func formatDigBenchProgress(progress codex.DigBenchProgress) string {
+	label := "DIGBENCH PROGRESS"
+	switch progress.Phase {
+	case codex.DigBenchProgressSession:
+		label = "DIGBENCH SESSION CREATED"
+	case codex.DigBenchProgressTurn:
+		label = "CODEX TURN STARTED"
+	case codex.DigBenchProgressHeartbeat:
+		label = "DIGBENCH WORKING"
+	}
+	level := fmt.Sprintf("%d", progress.Level)
+	if progress.MaxLevel > 0 {
+		level = fmt.Sprintf("%d/%d", progress.Level, progress.MaxLevel)
+	}
+	parts := []string{label, "LEVEL " + level, fmt.Sprintf("BEATEN %d", progress.LevelsBeaten), fmt.Sprintf("STEPS %d", progress.Steps)}
+	if progress.Status != "" {
+		parts = append(parts, "STATUS "+progress.Status)
+	}
+	if progress.ActualModel != "" && progress.Phase == codex.DigBenchProgressTurn {
+		parts = append(parts, "MODEL "+progress.ActualModel)
+	}
+	parts = append(parts, "ELAPSED "+progress.Elapsed.Round(100*time.Millisecond).String())
+	return strings.Join(parts, " // ")
 }
 
 func takeBenchmarkAPIKey() (key, source string, err error) {

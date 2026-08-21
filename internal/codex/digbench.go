@@ -12,7 +12,33 @@ import (
 	"github.com/merefield/codexometer/internal/digbench"
 )
 
-const defaultDigBenchTimeout = 30 * time.Minute
+const (
+	defaultDigBenchTimeout          = 30 * time.Minute
+	defaultDigBenchProgressInterval = 15 * time.Second
+)
+
+// DigBenchProgressPhase identifies a safe, content-free runner milestone.
+type DigBenchProgressPhase string
+
+const (
+	DigBenchProgressSession   DigBenchProgressPhase = "session"
+	DigBenchProgressTurn      DigBenchProgressPhase = "turn"
+	DigBenchProgressUpdate    DigBenchProgressPhase = "update"
+	DigBenchProgressHeartbeat DigBenchProgressPhase = "heartbeat"
+)
+
+// DigBenchProgress reports authoritative game counters without exposing the
+// session ID, observations, actions, reasoning, or credentials.
+type DigBenchProgress struct {
+	Phase        DigBenchProgressPhase
+	Level        int
+	LevelsBeaten int
+	MaxLevel     int
+	Steps        int
+	Status       string
+	Elapsed      time.Duration
+	ActualModel  string
+}
 
 // DigBenchOptions selects one deliberately bounded external benchmark run.
 type DigBenchOptions struct {
@@ -21,6 +47,7 @@ type DigBenchOptions struct {
 	Effort        string
 	Timeout       time.Duration
 	ClientVersion string
+	Progress      func(DigBenchProgress)
 }
 
 // DigBenchResult is the terminal state and Codex telemetry for one game.
@@ -32,6 +59,7 @@ type DigBenchResult struct {
 	ActualModel      string
 	Won              bool
 	Status           string
+	CurrentLevel     int
 	LevelsBeaten     int
 	MaxLevel         int
 	Steps            int
@@ -165,6 +193,7 @@ func (s *appServerSession) runDigBench(
 	applyDigBenchSession(&result, session)
 
 	startedAt := time.Now()
+	emitDigBenchProgress(options.Progress, DigBenchProgressSession, result, startedAt)
 	turnParams := map[string]any{
 		"threadId": startedThread.Thread.ID,
 		"input":    []map[string]any{{"type": "text", "text": digBenchPrompt(session)}},
@@ -184,12 +213,19 @@ func (s *appServerSession) runDigBench(
 	if err := json.Unmarshal(turnResponse, &startedTurn); err != nil || startedTurn.Turn.ID == "" {
 		return result, errors.New("Codex returned an invalid DigBench turn")
 	}
+	emitDigBenchProgress(options.Progress, DigBenchProgressTurn, result, startedAt)
 
 	telemetry := newBenchmarkTelemetry()
 	completed := false
 	turnFailure := ""
+	progressTicker := time.NewTicker(defaultDigBenchProgressInterval)
+	defer progressTicker.Stop()
 	for !completed {
-		envelope, envelopeErr := s.nextPendingEnvelope(runCtx)
+		envelope, heartbeat, envelopeErr := s.nextPendingEnvelopeOrHeartbeat(runCtx, progressTicker.C)
+		if heartbeat {
+			emitDigBenchProgress(options.Progress, DigBenchProgressHeartbeat, result, startedAt)
+			continue
+		}
 		if envelopeErr != nil {
 			result.Duration = time.Since(startedAt)
 			if recoverableBenchmarkTimeout(ctx, runCtx, envelopeErr) {
@@ -222,6 +258,9 @@ func (s *appServerSession) runDigBench(
 				session.SessionID, envelope.Params, &session,
 			)
 			applyDigBenchSession(&result, session)
+			if response["success"] == true {
+				emitDigBenchProgress(options.Progress, DigBenchProgressUpdate, result, startedAt)
+			}
 			if err := s.respond(envelope.ID, response); err != nil {
 				return result, fmt.Errorf("respond to DigBench tool call: %w", err)
 			}
@@ -275,6 +314,17 @@ func (s *appServerSession) runDigBench(
 	}
 	result.Failure = "Codex stopped before the DigBench game ended"
 	return result, nil
+}
+
+func emitDigBenchProgress(callback func(DigBenchProgress), phase DigBenchProgressPhase, result DigBenchResult, startedAt time.Time) {
+	if callback == nil {
+		return
+	}
+	callback(DigBenchProgress{
+		Phase: phase, Level: result.CurrentLevel, LevelsBeaten: result.LevelsBeaten,
+		MaxLevel: result.MaxLevel, Steps: result.Steps, Status: result.Status, Elapsed: time.Since(startedAt),
+		ActualModel: result.ActualModel,
+	})
 }
 
 func digBenchDynamicTools() []map[string]any {
@@ -399,6 +449,7 @@ func digBenchToolResponse(value any, err error) map[string]any {
 func applyDigBenchSession(result *DigBenchResult, session digbench.Session) {
 	result.Game = session.Game
 	result.Status = session.State.Status
+	result.CurrentLevel = session.State.Level
 	result.LevelsBeaten = session.LevelsBeaten
 	result.Steps = session.StepIndex
 	result.Seed = session.Seed

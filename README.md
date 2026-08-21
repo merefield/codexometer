@@ -835,6 +835,13 @@ the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
 idempotent `step_index` protocol; session creation is never automatically
 retried because that endpoint does not document idempotency.
 
+The command prints the selected game, model, effort, and billing source before
+connecting. It then reports remote-session creation, Codex-turn startup,
+authoritative level/step/status updates after successful game-tool calls, and a
+content-free elapsed-time heartbeat every 15 seconds while Codex is working.
+Progress output never includes the DigBench session ID, observations, available
+actions, model reasoning, or credentials.
+
 The final line reports `WIN`, `LOSS`, or `INCOMPLETE`, levels beaten, total game
 steps, duration, tokens, and estimated standard API-equivalent cost. A win
 requires the authoritative terminal combination `done: true` and
