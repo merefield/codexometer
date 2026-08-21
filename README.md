@@ -752,9 +752,10 @@ supported reasoning efforts through `model/list`. Initially every compatible
 model/effort pair is selected. Press `s` or click **Scope** to open a separate
 selection screen: every model and reasoning level has its own checkbox, and
 each group has a **Check All** control that changes to **Clear All** when the
-whole group is selected. Click a row, or use `Up`/`Down` and `Space`/`Enter`,
-then click **Done** or press `d`/`Esc` to return. Unsupported model/effort intersections are never
-counted or run.
+whole group is selected. The supported reasoning levels shown beside each
+model dim immediately when they fall outside the selected scope. Click a row,
+or use `Up`/`Down` and `Space`/`Enter`, then click **Done** or press `d`/`Esc`
+to return. Unsupported model/effort intersections are never counted or run.
 
 Select any challenge with the arrow buttons; the selector reserves a stable
 responsive track for the longest name, so its controls do not move as the

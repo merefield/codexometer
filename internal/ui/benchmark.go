@@ -366,6 +366,7 @@ type benchmarkScopeItem struct {
 	kind     benchmarkScopeItemKind
 	value    string
 	label    string
+	efforts  []string
 	selected bool
 }
 
@@ -374,22 +375,12 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
 	bodyHeight := max(height-2, 1)
 	items := m.benchmarkScopeItems()
+	selectedEfforts := stringSetUI(m.benchmarkScope.Efforts)
 	start := min(max(m.benchmarkScopeScroll, 0), max(len(items)-bodyHeight, 0))
 	end := min(start+bodyHeight, len(items))
 	lines := make([]string, 0, bodyHeight)
 	for index := start; index < end; index++ {
-		item := items[index]
-		style := colors.dimmed()
-		if item.selected {
-			style = lipgloss.NewStyle().Foreground(colors.primary)
-		}
-		if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts {
-			style = style.Bold(true).Foreground(colors.accent)
-		}
-		if index == m.benchmarkScopeCursor || index == m.benchmarkScopeHover {
-			style = style.Bold(true).Foreground(colors.background).Background(colors.accent)
-		}
-		lines = append(lines, style.Render(fitTableCell(item.label, innerWidth)))
+		lines = append(lines, m.renderBenchmarkScopeItem(items[index], index, innerWidth, colors, selectedEfforts))
 	}
 	for len(lines) < bodyHeight {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
@@ -397,6 +388,45 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	title := fmt.Sprintf("BENCHMARK SCOPE // %d MODELS // %d EFFORTS // %d PAIRS // SPACE TOGGLE // ESC DONE",
 		len(m.benchmarkScope.Models), len(m.benchmarkScope.Efforts), m.benchmarkCombinations)
 	return frameSized(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width int, colors palette, selectedEfforts map[string]bool) string {
+	label := item.label
+	if len(item.efforts) > 0 {
+		label += " // " + strings.ToUpper(strings.Join(item.efforts, ", "))
+	}
+	if index == m.benchmarkScopeCursor || index == m.benchmarkScopeHover {
+		style := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.accent)
+		return style.Render(fitTableCell(label, width))
+	}
+
+	if item.kind == benchmarkScopeModel && len(item.efforts) > 0 {
+		modelStyle := colors.dimmed()
+		if item.selected {
+			modelStyle = lipgloss.NewStyle().Foreground(colors.primary)
+		}
+		line := modelStyle.Render(item.label) + colors.dimmed().Render(" // ")
+		for effortIndex, effort := range item.efforts {
+			if effortIndex > 0 {
+				line += colors.dimmed().Render(", ")
+			}
+			effortStyle := colors.dimmed()
+			if item.selected && selectedEfforts[effort] {
+				effortStyle = lipgloss.NewStyle().Foreground(colors.primary)
+			}
+			line += effortStyle.Render(strings.ToUpper(effort))
+		}
+		return fitTableCell(line, width)
+	}
+
+	style := colors.dimmed()
+	if item.selected {
+		style = lipgloss.NewStyle().Foreground(colors.primary)
+	}
+	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts {
+		style = style.Bold(true).Foreground(colors.accent)
+	}
+	return style.Render(fitTableCell(label, width))
 }
 
 func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
@@ -412,10 +442,10 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	for _, model := range m.benchmarkPlan.Models {
 		selected := selectedModels[model.Model]
 		label := "  " + scopeCheckLabel(selected) + " " + model.DisplayName
-		if len(model.Efforts) > 0 {
-			label += " // " + strings.ToUpper(strings.Join(model.Efforts, ", "))
-		}
-		items = append(items, benchmarkScopeItem{kind: benchmarkScopeModel, value: model.Model, label: label, selected: selected})
+		items = append(items, benchmarkScopeItem{
+			kind: benchmarkScopeModel, value: model.Model, label: label,
+			efforts: append([]string(nil), model.Efforts...), selected: selected,
+		})
 	}
 	items = append(items, benchmarkScopeItem{
 		kind: benchmarkScopeAllEfforts, selected: allEfforts,

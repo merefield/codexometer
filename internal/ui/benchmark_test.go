@@ -525,9 +525,18 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	if model.benchmarkCombinations != 2 || len(model.benchmarkScope.Models) != 1 || model.benchmarkScope.Models[0] != "model-a" {
 		t.Fatalf("model checkbox did not narrow scope: %#v", model.benchmarkScope)
 	}
+	colors := paletteFor(themeHacker)
+	modelARow := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[2], 2, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
+	if !strings.Contains(modelARow, lipgloss.NewStyle().Foreground(colors.primary).Render("HIGH")) {
+		t.Fatalf("selected reasoning level was not active in model row: %q", modelARow)
+	}
 	clickScopeItem(6) // High off: Model A/low remains.
 	if model.benchmarkCombinations != 1 || slices.Contains(model.benchmarkScope.Efforts, "high") {
 		t.Fatalf("effort checkbox did not narrow scope: %#v", model.benchmarkScope)
+	}
+	modelARow = model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[2], 2, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
+	if !strings.Contains(modelARow, colors.dimmed().Render("HIGH")) || strings.Contains(modelARow, lipgloss.NewStyle().Foreground(colors.primary).Render("HIGH")) {
+		t.Fatalf("out-of-scope reasoning level was not dimmed in model row: %q", modelARow)
 	}
 	model.benchmarkScopeCursor = 4
 	updated, _ = model.Update(specialKey(tea.KeySpace)) // Check All reasoning levels.
