@@ -30,35 +30,42 @@ type BenchmarkRunner interface {
 	RunBenchmarkSuite(context.Context, []codex.BenchmarkTaskID, func(codex.BenchmarkEvent))
 }
 
+type ScopedBenchmarkRunner interface {
+	BenchmarkRunner
+	BenchmarkPlan(context.Context) (codex.BenchmarkPlan, error)
+	RunBenchmarkSuiteScoped(context.Context, []codex.BenchmarkTaskID, codex.BenchmarkScope, func(codex.BenchmarkEvent))
+}
+
 type Model struct {
-	fetcher         Fetcher
-	usageFetcher    TokenUsageFetcher
-	refreshEvery    time.Duration
-	snapshot        codex.Snapshot
-	err             error
-	width           int
-	height          int
-	inline          bool
-	loading         bool
-	lastRefresh     time.Time
-	nextRefresh     time.Time
-	phase           int
-	theme           themeID
-	meterView       meterViewID
-	quotaMeterView  meterViewID
-	hoveredMainTab  mainTabID
-	mainTabHovered  bool
-	hoveredView     meterViewID
-	viewHovered     bool
-	flashedView     meterViewID
-	viewFlashing    bool
-	viewSequence    uint64
-	hoveredButton   footerButtonID
-	flashedButton   footerButtonID
-	flashSequence   uint64
-	benchmarkRunner BenchmarkRunner
-	preferenceStore PreferenceStore
-	appVersion      string
+	fetcher               Fetcher
+	usageFetcher          TokenUsageFetcher
+	refreshEvery          time.Duration
+	snapshot              codex.Snapshot
+	err                   error
+	width                 int
+	height                int
+	inline                bool
+	loading               bool
+	lastRefresh           time.Time
+	nextRefresh           time.Time
+	phase                 int
+	theme                 themeID
+	meterView             meterViewID
+	quotaMeterView        meterViewID
+	hoveredMainTab        mainTabID
+	mainTabHovered        bool
+	hoveredView           meterViewID
+	viewHovered           bool
+	flashedView           meterViewID
+	viewFlashing          bool
+	viewSequence          uint64
+	hoveredButton         footerButtonID
+	flashedButton         footerButtonID
+	flashSequence         uint64
+	benchmarkRunner       BenchmarkRunner
+	benchmarkScopedRunner ScopedBenchmarkRunner
+	preferenceStore       PreferenceStore
+	appVersion            string
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
@@ -70,6 +77,12 @@ type Model struct {
 	benchmarkError           string
 	benchmarkPlanning        bool
 	benchmarkCombinations    int
+	benchmarkPlan            codex.BenchmarkPlan
+	benchmarkScope           codex.BenchmarkScope
+	benchmarkScopeOpen       bool
+	benchmarkScopeCursor     int
+	benchmarkScopeScroll     int
+	benchmarkScopeHover      int
 	benchmarkSelectedTask    int
 	benchmarkFilter          benchmarkResultFilter
 	benchmarkAllArmed        bool
@@ -236,6 +249,8 @@ type benchmarkState int
 const (
 	benchmarkIdle benchmarkState = iota
 	benchmarkRunning
+	benchmarkStopping
+	benchmarkStopped
 	benchmarkFinished
 )
 
@@ -246,6 +261,7 @@ type benchmarkEventMsg struct {
 }
 
 type benchmarkPlanMsg struct {
+	plan         codex.BenchmarkPlan
 	combinations int
 	err          error
 }
@@ -293,6 +309,8 @@ const (
 	footerButtonBenchmarkRankBalanced
 	footerButtonBenchmarkRankSpeed
 	footerButtonBenchmarkCopy
+	footerButtonBenchmarkScope
+	footerButtonBenchmarkStop
 )
 
 type footerButton struct {
@@ -319,20 +337,24 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
-		fetcher:           fetcher,
-		refreshEvery:      refreshEvery,
-		loading:           true,
-		nextRefresh:       time.Now().Add(refreshEvery),
-		benchmarkRankMode: benchmarkRankBalanced,
-		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:    make(map[string]string),
-		appVersion:        version.Current(),
+		fetcher:             fetcher,
+		refreshEvery:        refreshEvery,
+		loading:             true,
+		nextRefresh:         time.Now().Add(refreshEvery),
+		benchmarkRankMode:   benchmarkRankBalanced,
+		benchmarkScopeHover: -1,
+		quotaAPIAnchors:     make(map[string]quotaAPIAnchor),
+		quotaAPIIssues:      make(map[string]string),
+		appVersion:          version.Current(),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
 	}
 	if runner, ok := fetcher.(BenchmarkRunner); ok {
 		model.benchmarkRunner = runner
+	}
+	if runner, ok := fetcher.(ScopedBenchmarkRunner); ok {
+		model.benchmarkScopedRunner = runner
 	}
 	return model
 }
@@ -355,6 +377,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelBenchmark()
 			return m, tea.Quit
 		case "esc":
+			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+				m.closeBenchmarkScope()
+				return m, nil
+			}
 			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
 				m.closeBenchmarkDetail()
 				return m, nil
@@ -366,6 +392,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "s":
 			if m.meterView == viewMonitor {
 				return m.pressFooterButton(footerButtonMonitorGo)
+			}
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && len(m.benchmarkPlan.Models) > 0 {
+				return m.pressFooterButton(footerButtonBenchmarkScope)
+			}
+		case "x":
+			if m.meterView == viewBenchmark {
+				return m.pressFooterButton(footerButtonBenchmarkStop)
+			}
+		case "d":
+			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+				m.closeBenchmarkScope()
+				return m, nil
 			}
 		case "v":
 			if m.meterView.isQuota() {
@@ -380,7 +418,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
 		case "b":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkSelected)
 			}
 		case "c":
@@ -388,17 +426,28 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonBenchmarkCopy)
 			}
 		case "a":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkAll)
 			}
 		case "enter":
+			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+				m.toggleBenchmarkScopeCursor()
+				return m, nil
+			}
 			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				m.openSelectedBenchmarkDetail()
 				return m, nil
 			}
+		case "space", " ":
+			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+				m.toggleBenchmarkScopeCursor()
+				return m, nil
+			}
 		case "up":
 			if m.meterView == viewBenchmark {
-				if m.benchmarkDetail != nil {
+				if m.benchmarkScopeOpen {
+					m.moveBenchmarkScopeCursor(-1)
+				} else if m.benchmarkDetail != nil {
 					m.scrollBenchmarkDetail(-1)
 				} else {
 					m.selectBenchmarkRun(-1)
@@ -407,7 +456,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "down":
 			if m.meterView == viewBenchmark {
-				if m.benchmarkDetail != nil {
+				if m.benchmarkScopeOpen {
+					m.moveBenchmarkScopeCursor(1)
+				} else if m.benchmarkDetail != nil {
 					m.scrollBenchmarkDetail(1)
 				} else {
 					m.selectBenchmarkRun(1)
@@ -415,25 +466,27 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "left", "[":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkPrevious)
 			}
 		case "right", "]":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkNext)
 			}
 		case "f":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				m.setBenchmarkFilter((m.benchmarkFilter + 1) % 3)
 				return m, nil
 			}
 		case "w":
-			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(benchmarkRankButton(m.benchmarkRankMode.next()))
 			}
 		case "pgup":
 			if m.meterView == viewBenchmark {
-				if m.benchmarkDetail != nil {
+				if m.benchmarkScopeOpen {
+					m.moveBenchmarkScopeCursor(-m.benchmarkScopePageSize())
+				} else if m.benchmarkDetail != nil {
 					m.scrollBenchmarkDetailPage(-1)
 				} else {
 					m.scrollBenchmarkPage(1)
@@ -446,7 +499,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "pgdown":
 			if m.meterView == viewBenchmark {
-				if m.benchmarkDetail != nil {
+				if m.benchmarkScopeOpen {
+					m.moveBenchmarkScopeCursor(m.benchmarkScopePageSize())
+				} else if m.benchmarkDetail != nil {
 					m.scrollBenchmarkDetailPage(1)
 				} else {
 					m.scrollBenchmarkPage(-1)
@@ -486,6 +541,26 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.viewHovered = false
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			if item, ok := m.benchmarkScopeItemAt(mouse.X, mouse.Y); ok {
+				m.benchmarkScopeHover = item
+				m.hoveredButton = footerButtonNone
+				if mouse.Button == tea.MouseLeft && clicked {
+					m.benchmarkScopeCursor = item
+					m.toggleBenchmarkScopeCursor()
+				}
+				return m, nil
+			}
+			m.benchmarkScopeHover = -1
+			switch mouse.Button {
+			case tea.MouseWheelUp:
+				m.moveBenchmarkScopeCursor(-1)
+				return m, nil
+			case tea.MouseWheelDown:
+				m.moveBenchmarkScopeCursor(1)
+				return m, nil
+			}
+		}
 		if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
 			m.benchmarkRunHovered = false
 			m.benchmarkHoveredRun = ""
@@ -644,7 +719,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case benchmarkEventMsg:
 		if !message.ok {
-			m.benchmarkState = benchmarkFinished
+			if m.benchmarkState == benchmarkStopping {
+				m.benchmarkState = benchmarkStopped
+			} else {
+				m.benchmarkState = benchmarkFinished
+			}
 			m.benchmarkActive = nil
 			m.benchmarkActiveSince = time.Time{}
 			m.benchmarkEvents = nil
@@ -652,7 +731,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		event := message.event
-		m.benchmarkTotal = event.Total
+		if event.Total > 0 || !event.Stopped {
+			m.benchmarkTotal = event.Total
+		}
 		m.benchmarkCompleted = event.Completed
 		m.benchmarkCurrentModel = event.CurrentModel
 		m.benchmarkCurrentEffort = event.CurrentEffort
@@ -692,7 +773,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.benchmarkError = event.Err.Error()
 		}
 		if event.Done {
-			m.benchmarkState = benchmarkFinished
+			if event.Stopped {
+				m.benchmarkState = benchmarkStopped
+			} else {
+				m.benchmarkState = benchmarkFinished
+			}
 			m.benchmarkActive = nil
 			m.benchmarkActiveSince = time.Time{}
 			m.benchmarkEvents = nil
@@ -706,6 +791,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.benchmarkError = message.err.Error()
 		} else {
 			m.benchmarkError = ""
+			if len(message.plan.Models) > 0 {
+				m.benchmarkPlan = message.plan
+				m.benchmarkScope = message.plan.AllScope()
+			}
 			m.benchmarkCombinations = message.combinations
 		}
 	case benchmarkConfirmExpiredMsg:
@@ -732,7 +821,7 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	commands := []tea.Cmd{tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
 		return viewTabFlashExpiredMsg{view: view, sequence: sequence}
 	})}
-	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkCombinations == 0 && !m.benchmarkPlanning {
+	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
 		m.benchmarkPlanning = true
 		commands = append(commands, planBenchmark(m.benchmarkRunner))
 	}
@@ -816,15 +905,15 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			return m, m.monitorFetch(monitorFetchStop, m.monitorRequest)
 		}
 	case footerButtonBenchmarkPrevious:
-		if m.benchmarkState != benchmarkRunning {
+		if !m.benchmarkRunActive() {
 			m.selectBenchmarkTask(-1)
 		}
 	case footerButtonBenchmarkNext:
-		if m.benchmarkState != benchmarkRunning {
+		if !m.benchmarkRunActive() {
 			m.selectBenchmarkTask(1)
 		}
 	case footerButtonBenchmarkSelected:
-		if m.meterView == viewBenchmark && m.benchmarkState != benchmarkRunning {
+		if m.meterView == viewBenchmark && m.benchmarkCanRunSelected() {
 			m.benchmarkAllArmed = false
 			tasks := m.benchmarkTasks()
 			if len(tasks) > 0 {
@@ -833,7 +922,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		}
 	case footerButtonBenchmarkAll:
 		tasks := m.benchmarkTasks()
-		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkState == benchmarkRunning, m.benchmarkCombinations, len(tasks)) {
+		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkRunActive(), m.benchmarkCombinations, len(tasks)) {
 			if !m.benchmarkAllArmed {
 				m.benchmarkAllArmed = true
 				m.benchmarkConfirmSequence++
@@ -862,6 +951,16 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonBenchmarkCopy:
 		if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
 			return m, tea.SetClipboard(m.benchmarkDetailClipboardText())
+		}
+	case footerButtonBenchmarkScope:
+		if m.meterView == viewBenchmark && !m.benchmarkRunActive() && len(m.benchmarkPlan.Models) > 0 {
+			m.openBenchmarkScope()
+		}
+	case footerButtonBenchmarkStop:
+		if m.meterView == viewBenchmark && m.benchmarkState == benchmarkRunning {
+			m.benchmarkState = benchmarkStopping
+			m.benchmarkAllArmed = false
+			m.cancelBenchmark()
 		}
 	}
 	return m, nil
@@ -970,16 +1069,25 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 }
 
-func launchBenchmark(ctx context.Context, runner BenchmarkRunner, tasks []codex.BenchmarkTaskID, events chan codex.BenchmarkEvent) tea.Cmd {
+func launchBenchmark(ctx context.Context, runner BenchmarkRunner, tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope, events chan codex.BenchmarkEvent) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
 			defer close(events)
-			runner.RunBenchmarkSuite(ctx, tasks, func(event codex.BenchmarkEvent) {
+			emit := func(event codex.BenchmarkEvent) {
+				if event.Stopped {
+					events <- event
+					return
+				}
 				select {
 				case events <- event:
 				case <-ctx.Done():
 				}
-			})
+			}
+			if scoped, ok := runner.(ScopedBenchmarkRunner); ok {
+				scoped.RunBenchmarkSuiteScoped(ctx, tasks, scope, emit)
+			} else {
+				runner.RunBenchmarkSuite(ctx, tasks, emit)
+			}
 		}()
 		event, ok := <-events
 		return benchmarkEventMsg{event: event, events: events, ok: ok}
@@ -990,6 +1098,10 @@ func planBenchmark(runner BenchmarkRunner) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
+		if scoped, ok := runner.(ScopedBenchmarkRunner); ok {
+			plan, err := scoped.BenchmarkPlan(ctx)
+			return benchmarkPlanMsg{plan: plan, combinations: plan.CombinationCount(plan.AllScope()), err: err}
+		}
 		combinations, err := runner.BenchmarkCombinationCount(ctx)
 		return benchmarkPlanMsg{combinations: combinations, err: err}
 	}
@@ -1009,6 +1121,21 @@ func (m *Model) cancelBenchmark() {
 	}
 }
 
+func (m Model) benchmarkRunActive() bool {
+	return m.benchmarkState == benchmarkRunning || m.benchmarkState == benchmarkStopping
+}
+
+func (m Model) benchmarkCanRunSelected() bool {
+	return !m.benchmarkRunActive() && (m.benchmarkScopedRunner == nil || m.benchmarkCombinations > 0)
+}
+
+func (m Model) benchmarkPlanNeeded() bool {
+	if m.benchmarkScopedRunner != nil {
+		return len(m.benchmarkPlan.Models) == 0
+	}
+	return m.benchmarkCombinations == 0
+}
+
 func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	if m.benchmarkRunner == nil {
 		m.benchmarkState = benchmarkFinished
@@ -1016,7 +1143,7 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.benchmarkResults = nil
-	m.benchmarkTotal = 0
+	m.benchmarkTotal = m.benchmarkCombinations * len(tasks)
 	m.benchmarkCompleted = 0
 	m.benchmarkCurrentModel = ""
 	m.benchmarkCurrentEffort = ""
@@ -1031,12 +1158,14 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	m.benchmarkDetail = nil
 	m.benchmarkDetailActive = false
 	m.benchmarkDetailScroll = 0
+	m.benchmarkScopeOpen = false
+	m.benchmarkScopeHover = -1
 	m.benchmarkState = benchmarkRunning
 	ctx, cancel := context.WithCancel(context.Background())
 	m.benchmarkCancel = cancel
 	events := make(chan codex.BenchmarkEvent, 2)
 	m.benchmarkEvents = events
-	return m, launchBenchmark(ctx, m.benchmarkRunner, tasks, events)
+	return m, launchBenchmark(ctx, m.benchmarkRunner, tasks, m.benchmarkScope, events)
 }
 
 func (m *Model) selectBenchmarkTask(direction int) {

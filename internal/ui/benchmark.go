@@ -97,6 +97,9 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 		}
 		return colors.dimmed().Render(strings.Join(lines, "\n"))
 	}
+	if m.benchmarkScopeOpen {
+		return m.renderBenchmarkScope(width, height, colors)
+	}
 	if m.benchmarkDetail != nil {
 		return m.renderBenchmarkDetail(width, height, colors)
 	}
@@ -158,7 +161,10 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 	}
 	outcome := "FAIL"
 	outcomeStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.danger)
-	if m.benchmarkDetailActive {
+	if result.Stopped {
+		outcome = "STOPPED"
+		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.warning)
+	} else if m.benchmarkDetailActive {
 		outcome = "IN PROGRESS"
 		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.accent)
 	} else if result.Correct {
@@ -183,7 +189,11 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 	}
 	lines = append(lines, colors.dimmed().Render(fitTableCell(cost, width)))
 	if result.Failure != "" {
-		lines = append(lines, lipgloss.NewStyle().Foreground(colors.danger).Render(fitTableCell("FAILURE // "+result.Failure, width)))
+		label := "FAILURE // "
+		if result.Stopped {
+			label = "STOP ISSUE // "
+		}
+		lines = append(lines, lipgloss.NewStyle().Foreground(colors.danger).Render(fitTableCell(label+result.Failure, width)))
 	}
 	lines = append(lines, colors.dimmed().Render(strings.Repeat("─", width)))
 	if len(result.Interactions) == 0 {
@@ -244,7 +254,9 @@ func (m Model) benchmarkDetailClipboardText() string {
 		return ""
 	}
 	status := "FAIL"
-	if m.benchmarkDetailActive {
+	if result.Stopped {
+		status = "STOPPED"
+	} else if m.benchmarkDetailActive {
 		status = "IN PROGRESS"
 	} else if result.Correct {
 		status = "PASS"
@@ -278,7 +290,11 @@ func (m Model) benchmarkDetailClipboardText() string {
 		output.WriteString("API EQ: N/A\n")
 	}
 	if result.Failure != "" {
-		fmt.Fprintf(&output, "FAILURE: %s\n", result.Failure)
+		label := "FAILURE"
+		if result.Stopped {
+			label = "STOP ISSUE"
+		}
+		fmt.Fprintf(&output, "%s: %s\n", label, result.Failure)
 	}
 	if len(result.Interactions) == 0 {
 		output.WriteString("\nBENCHMARK TRANSCRIPT: UNAVAILABLE\n")
@@ -336,6 +352,203 @@ func (m Model) benchmarkDetailMaximumScroll() int {
 	return max(len(lines)-max(layout.meterHeight-2, 1), 0)
 }
 
+type benchmarkScopeItemKind int
+
+const (
+	benchmarkScopeDone benchmarkScopeItemKind = iota
+	benchmarkScopeAllModels
+	benchmarkScopeModel
+	benchmarkScopeAllEfforts
+	benchmarkScopeEffort
+)
+
+type benchmarkScopeItem struct {
+	kind     benchmarkScopeItemKind
+	value    string
+	label    string
+	selected bool
+}
+
+func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
+	width, height = max(width, 1), max(height, 1)
+	innerWidth := max(width-4, 1)
+	bodyHeight := max(height-2, 1)
+	items := m.benchmarkScopeItems()
+	start := min(max(m.benchmarkScopeScroll, 0), max(len(items)-bodyHeight, 0))
+	end := min(start+bodyHeight, len(items))
+	lines := make([]string, 0, bodyHeight)
+	for index := start; index < end; index++ {
+		item := items[index]
+		style := colors.dimmed()
+		if item.selected {
+			style = lipgloss.NewStyle().Foreground(colors.primary)
+		}
+		if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts {
+			style = style.Bold(true).Foreground(colors.accent)
+		}
+		if index == m.benchmarkScopeCursor || index == m.benchmarkScopeHover {
+			style = style.Bold(true).Foreground(colors.background).Background(colors.accent)
+		}
+		lines = append(lines, style.Render(fitTableCell(item.label, innerWidth)))
+	}
+	for len(lines) < bodyHeight {
+		lines = append(lines, strings.Repeat(" ", innerWidth))
+	}
+	title := fmt.Sprintf("BENCHMARK SCOPE // %d MODELS // %d EFFORTS // %d PAIRS // SPACE TOGGLE // ESC DONE",
+		len(m.benchmarkScope.Models), len(m.benchmarkScope.Efforts), m.benchmarkCombinations)
+	return frameSized(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
+	allModels := len(m.benchmarkPlan.Models) > 0 && len(m.benchmarkScope.Models) == len(m.benchmarkPlan.Models)
+	allEfforts := len(m.benchmarkPlan.Efforts) > 0 && len(m.benchmarkScope.Efforts) == len(m.benchmarkPlan.Efforts)
+	items := []benchmarkScopeItem{{
+		kind: benchmarkScopeDone, label: "[ (D) DONE ] // RETURN TO BENCHMARK", selected: true,
+	}, {
+		kind: benchmarkScopeAllModels, selected: allModels,
+		label: scopeCheckLabel(allModels) + " MODELS // " + scopeAllAction(allModels),
+	}}
+	selectedModels := stringSetUI(m.benchmarkScope.Models)
+	for _, model := range m.benchmarkPlan.Models {
+		selected := selectedModels[model.Model]
+		label := "  " + scopeCheckLabel(selected) + " " + model.DisplayName
+		if len(model.Efforts) > 0 {
+			label += " // " + strings.ToUpper(strings.Join(model.Efforts, ", "))
+		}
+		items = append(items, benchmarkScopeItem{kind: benchmarkScopeModel, value: model.Model, label: label, selected: selected})
+	}
+	items = append(items, benchmarkScopeItem{
+		kind: benchmarkScopeAllEfforts, selected: allEfforts,
+		label: scopeCheckLabel(allEfforts) + " REASONING LEVELS // " + scopeAllAction(allEfforts),
+	})
+	selectedEfforts := stringSetUI(m.benchmarkScope.Efforts)
+	for _, effort := range m.benchmarkPlan.Efforts {
+		selected := selectedEfforts[effort]
+		items = append(items, benchmarkScopeItem{
+			kind: benchmarkScopeEffort, value: effort, selected: selected,
+			label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort),
+		})
+	}
+	return items
+}
+
+func scopeCheckLabel(selected bool) string {
+	if selected {
+		return "[x]"
+	}
+	return "[ ]"
+}
+
+func scopeAllAction(selected bool) string {
+	if selected {
+		return "CLEAR ALL"
+	}
+	return "CHECK ALL"
+}
+
+func stringSetUI(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
+}
+
+func (m *Model) openBenchmarkScope() {
+	if m.benchmarkRunActive() || len(m.benchmarkPlan.Models) == 0 {
+		return
+	}
+	m.benchmarkScopeOpen = true
+	m.benchmarkScopeHover = -1
+	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor, 0), max(len(m.benchmarkScopeItems())-1, 0))
+	m.revealBenchmarkScopeCursor()
+}
+
+func (m *Model) closeBenchmarkScope() {
+	m.benchmarkScopeOpen = false
+	m.benchmarkScopeHover = -1
+}
+
+func (m *Model) moveBenchmarkScopeCursor(direction int) {
+	items := m.benchmarkScopeItems()
+	if len(items) == 0 {
+		return
+	}
+	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor+direction, 0), len(items)-1)
+	m.benchmarkScopeHover = -1
+	m.revealBenchmarkScopeCursor()
+}
+
+func (m *Model) revealBenchmarkScopeCursor() {
+	pageSize := m.benchmarkScopePageSize()
+	if m.benchmarkScopeCursor < m.benchmarkScopeScroll {
+		m.benchmarkScopeScroll = m.benchmarkScopeCursor
+	} else if m.benchmarkScopeCursor >= m.benchmarkScopeScroll+pageSize {
+		m.benchmarkScopeScroll = m.benchmarkScopeCursor - pageSize + 1
+	}
+	m.benchmarkScopeScroll = min(max(m.benchmarkScopeScroll, 0), max(len(m.benchmarkScopeItems())-pageSize, 0))
+}
+
+func (m Model) benchmarkScopePageSize() int {
+	return max(m.dashboardLayout().meterHeight-2, 1)
+}
+
+func (m *Model) toggleBenchmarkScopeCursor() {
+	items := m.benchmarkScopeItems()
+	if m.benchmarkScopeCursor < 0 || m.benchmarkScopeCursor >= len(items) {
+		return
+	}
+	item := items[m.benchmarkScopeCursor]
+	switch item.kind {
+	case benchmarkScopeDone:
+		m.closeBenchmarkScope()
+		return
+	case benchmarkScopeAllModels:
+		if item.selected {
+			m.benchmarkScope.Models = nil
+		} else {
+			m.benchmarkScope.Models = m.benchmarkPlan.AllScope().Models
+		}
+	case benchmarkScopeModel:
+		m.benchmarkScope.Models = toggleScopeValue(m.benchmarkScope.Models, item.value)
+	case benchmarkScopeAllEfforts:
+		if item.selected {
+			m.benchmarkScope.Efforts = nil
+		} else {
+			m.benchmarkScope.Efforts = m.benchmarkPlan.AllScope().Efforts
+		}
+	case benchmarkScopeEffort:
+		m.benchmarkScope.Efforts = toggleScopeValue(m.benchmarkScope.Efforts, item.value)
+	}
+	m.benchmarkCombinations = m.benchmarkPlan.CombinationCount(m.benchmarkScope)
+	m.benchmarkAllArmed = false
+}
+
+func toggleScopeValue(values []string, value string) []string {
+	for index, existing := range values {
+		if existing == value {
+			return append(append([]string(nil), values[:index]...), values[index+1:]...)
+		}
+	}
+	return append(append([]string(nil), values...), value)
+}
+
+func (m Model) benchmarkScopeItemAt(x, y int) (int, bool) {
+	if m.meterView != viewBenchmark || !m.benchmarkScopeOpen || x < 0 || y < 0 {
+		return 0, false
+	}
+	dashboard := m.dashboardLayout()
+	localY := y - dashboard.meterY - 1
+	if x < 4 || x >= dashboard.contentWidth || localY < 0 || localY >= m.benchmarkScopePageSize() {
+		return 0, false
+	}
+	index := m.benchmarkScopeScroll + localY
+	if index < 0 || index >= len(m.benchmarkScopeItems()) {
+		return 0, false
+	}
+	return index, true
+}
+
 func (m Model) renderBenchmarkControls(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
 	lines := make([]string, 0, max(height-2, 0))
@@ -352,8 +565,10 @@ func (m Model) benchmarkVisibleControlLines(width, height int) [][]benchmarkCont
 		return lines
 	}
 	if capacity == 2 && len(lines) >= 3 {
-		// Drop the decorative spacer before dropping an actionable row.
-		return [][]benchmarkControlSegment{lines[0], lines[2]}
+		if m.benchmarkRunActive() {
+			return [][]benchmarkControlSegment{lines[0], lines[2]}
+		}
+		return lines[:2]
 	}
 	return lines[:min(len(lines), capacity)]
 }
@@ -392,7 +607,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	if len(tasks) > 0 {
 		selected = tasks[m.benchmarkSelectedTask%len(tasks)]
 	}
-	running := m.benchmarkState == benchmarkRunning
+	running := m.benchmarkRunActive()
 	selectorMiddleWidth := 0
 	for _, task := range tasks {
 		selectorMiddleWidth = max(selectorMiddleWidth, lipgloss.Width("TASK // "+task.Name))
@@ -410,6 +625,8 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	selectedLabel := "[ (B) RUN SELECTED ]"
 	allTurns := m.benchmarkCombinations * len(tasks)
 	allLabel := fmt.Sprintf("[ (A) RUN ALL // %d ]", allTurns)
+	scopeLabel := fmt.Sprintf("[ (S) SCOPE // %d ]", m.benchmarkCombinations)
+	stopLabel := "[ (X) STOP ]"
 	if m.benchmarkPlanning {
 		allLabel = "[ DISCOVERING TURNS… ]"
 	}
@@ -427,8 +644,8 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		}
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
-		selectedLabel = "[B]"
-		allLabel = fmt.Sprintf("[A:%d]", allTurns)
+		selectedLabel = "[RUN]"
+		allLabel = fmt.Sprintf("[ALL:%d]", allTurns)
 		if m.benchmarkPlanning {
 			allLabel = "[A:…]"
 		}
@@ -436,14 +653,32 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 			allLabel = fmt.Sprintf("[A:%d?]", allTurns)
 		}
 	}
-	run := []benchmarkControlSegment{
-		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: !running && len(tasks) > 0},
+	if lipgloss.Width(scopeLabel)+lipgloss.Width(stopLabel)+1 > width {
+		scopeLabel = fmt.Sprintf("[S:SCOPE %d]", m.benchmarkCombinations)
+		stopLabel = "[X:STOP]"
+	}
+	if lipgloss.Width(scopeLabel)+lipgloss.Width(stopLabel)+1 > width {
+		scopeLabel = fmt.Sprintf("[SCOPE:%d]", m.benchmarkCombinations)
+		stopLabel = "[STOP]"
+	}
+	primary := []benchmarkControlSegment{
+		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(tasks) > 0},
 		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
 	}
-	if benchmarkSegmentsWidth(run) > width {
-		run = run[:1]
+	secondary := []benchmarkControlSegment{
+		{text: scopeLabel, button: footerButtonBenchmarkScope, enabled: !running && len(m.benchmarkPlan.Models) > 0},
+		{text: stopLabel, button: footerButtonBenchmarkStop, enabled: m.benchmarkState == benchmarkRunning},
 	}
-	return [][]benchmarkControlSegment{selector, nil, run}
+	if running {
+		secondary[0], secondary[1] = secondary[1], secondary[0]
+	}
+	for benchmarkSegmentsWidth(primary) > width && len(primary) > 1 {
+		primary = primary[:len(primary)-1]
+	}
+	for benchmarkSegmentsWidth(secondary) > width && len(secondary) > 1 {
+		secondary = secondary[:len(secondary)-1]
+	}
+	return [][]benchmarkControlSegment{selector, primary, secondary}
 }
 
 func benchmarkSegmentsWidth(segments []benchmarkControlSegment) int {
@@ -499,7 +734,10 @@ func benchmarkRunAllAvailable(running bool, combinations, taskCount int) bool {
 
 func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 	state := "READY"
-	detail := "USES QUOTA // EVERY VISIBLE MODEL + EFFORT"
+	detail := fmt.Sprintf("USES QUOTA // %d SELECTED MODEL + EFFORT PAIRS", m.benchmarkCombinations)
+	if m.benchmarkPlanning {
+		detail = "DISCOVERING VISIBLE MODELS + EFFORTS"
+	}
 	color := colors.primary
 	switch m.benchmarkState {
 	case benchmarkRunning:
@@ -512,6 +750,17 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 			detail = "QUERYING LOCAL CODEX APP-SERVER"
 		}
 		color = colors.accent
+	case benchmarkStopping:
+		state = fmt.Sprintf("STOPPING // %d/%d COMPLETE", m.benchmarkCompleted, m.benchmarkTotal)
+		detail = "INTERRUPTING CURRENT BENCHMARK TRIAL"
+		color = colors.warning
+	case benchmarkStopped:
+		state = fmt.Sprintf("STOPPED // %d/%d COMPLETE", m.benchmarkCompleted, m.benchmarkTotal)
+		detail = "COMPLETED RESULTS RETAINED // PRESS B TO RUN AGAIN"
+		if issue := latestBenchmarkStopIssue(m.benchmarkResults); issue != "" {
+			detail = "STOP ISSUE // " + issue
+		}
+		color = colors.warning
 	case benchmarkFinished:
 		passed := benchmarkPassCount(m.benchmarkResults)
 		state = fmt.Sprintf("COMPLETE // %d/%d PASS", passed, len(m.benchmarkResults))
@@ -527,7 +776,7 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 			color = colors.danger
 		}
 	}
-	if m.benchmarkError != "" && m.benchmarkState != benchmarkRunning {
+	if m.benchmarkError != "" && !m.benchmarkRunActive() {
 		state = "BENCHMARK FAULT"
 		detail = m.benchmarkError
 		color = colors.danger
@@ -546,6 +795,15 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
 	for index := len(results) - 1; index >= 0; index-- {
 		if !results[index].Correct && results[index].Failure != "" {
+			return results[index].Failure
+		}
+	}
+	return ""
+}
+
+func latestBenchmarkStopIssue(results []codex.BenchmarkResult) string {
+	for index := len(results) - 1; index >= 0; index-- {
+		if results[index].Stopped && results[index].Failure != "" {
 			return results[index].Failure
 		}
 	}
@@ -589,6 +847,8 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		style := colors.dimmed()
 		if row.active {
 			style = lipgloss.NewStyle().Bold(true).Foreground(colors.accent)
+		} else if row.stopped {
+			style = lipgloss.NewStyle().Bold(true).Foreground(colors.warning)
 		} else if row.pass {
 			style = lipgloss.NewStyle().Foreground(colors.primary)
 		} else {
@@ -602,7 +862,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	}
 	if len(visibleResults) == 0 && m.benchmarkActive == nil && len(lines) < bodyHeight {
 		message := "RUN SELECTED OR RUN ALL TO BEGIN // THIS CONSUMES CODEX QUOTA"
-		if m.benchmarkState == benchmarkRunning {
+		if m.benchmarkRunActive() {
 			message = "WAITING FOR FIRST RESULT"
 		} else if len(m.benchmarkResults) > 0 {
 			message = "NO RESULTS MATCH THE ACTIVE FILTER"
@@ -620,10 +880,11 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 }
 
 type benchmarkTableRow struct {
-	text   string
-	pass   bool
-	active bool
-	result codex.BenchmarkResult
+	text    string
+	pass    bool
+	active  bool
+	stopped bool
+	result  codex.BenchmarkResult
 }
 
 func (m Model) orderedBenchmarkResults() []codex.BenchmarkResult {
@@ -825,10 +1086,11 @@ func benchmarkTableRows(columns []benchmarkColumn, results []codex.BenchmarkResu
 	for _, result := range results {
 		active := len(activeKeys) > 0 && activeKeys[0] != "" && activeKeys[0] == benchmarkRunKey(result)
 		rows = append(rows, benchmarkTableRow{
-			text:   formatBenchmarkColumns(columns, benchmarkResultValues(result, rankings, active)...),
-			pass:   result.Correct,
-			active: active,
-			result: result,
+			text:    formatBenchmarkColumns(columns, benchmarkResultValues(result, rankings, active)...),
+			pass:    result.Correct,
+			active:  active,
+			stopped: result.Stopped,
+			result:  result,
 		})
 	}
 	return rows
@@ -839,6 +1101,8 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 	outcome := "FAIL"
 	if inProgress {
 		outcome = "IN PROGRESS"
+	} else if result.Stopped {
+		outcome = "STOPPED"
 	} else if result.Correct {
 		outcome = "PASS"
 	}
@@ -855,7 +1119,7 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 		model += "→" + result.ActualModel
 	}
 	rank := "—"
-	if value := rankings[benchmarkCombinationKey(result)]; !inProgress && value > 0 {
+	if value := rankings[benchmarkCombinationKey(result)]; !inProgress && !result.Stopped && value > 0 {
 		rank = fmt.Sprintf("#%d", value)
 	}
 	return []string{
@@ -936,6 +1200,9 @@ func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMo
 	}
 	byKey := make(map[string]*benchmarkRankSummary)
 	for _, result := range results {
+		if result.Stopped {
+			continue
+		}
 		key := benchmarkCombinationKey(result)
 		summary := byKey[key]
 		if summary == nil {
@@ -1148,7 +1415,7 @@ func filterBenchmarkResults(results []codex.BenchmarkResult, filter benchmarkRes
 	}
 	filtered := make([]codex.BenchmarkResult, 0, len(results))
 	for _, result := range results {
-		if (filter == benchmarkFilterPass && result.Correct) || (filter == benchmarkFilterFail && !result.Correct) {
+		if (filter == benchmarkFilterPass && result.Correct) || (filter == benchmarkFilterFail && !result.Correct && !result.Stopped) {
 			filtered = append(filtered, result)
 		}
 	}
@@ -1182,6 +1449,9 @@ func benchmarkPassCount(results []codex.BenchmarkResult) int {
 
 func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
+		return footerButtonNone
+	}
+	if m.benchmarkScopeOpen {
 		return footerButtonNone
 	}
 	if m.benchmarkDetail != nil {

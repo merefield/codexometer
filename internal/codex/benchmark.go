@@ -123,6 +123,7 @@ type BenchmarkResult struct {
 	Effort        string
 	ActualModel   string
 	Correct       bool
+	Stopped       bool
 	Duration      time.Duration
 	Usage         BenchmarkUsage
 	UsageObserved bool
@@ -150,8 +151,57 @@ type BenchmarkEvent struct {
 	CurrentEffort string
 	Active        *BenchmarkResult
 	Result        *BenchmarkResult
+	Stopped       bool
 	Done          bool
 	Err           error
+}
+
+// BenchmarkPlan describes the model and reasoning-effort choices currently
+// advertised by the user's Codex account.
+type BenchmarkPlan struct {
+	Models  []BenchmarkModelOption
+	Efforts []string
+}
+
+// BenchmarkModelOption is one selectable model and its supported efforts.
+type BenchmarkModelOption struct {
+	Model       string
+	DisplayName string
+	Efforts     []string
+}
+
+// BenchmarkScope selects the model/effort intersections included in a suite.
+// Empty selections intentionally produce no combinations.
+type BenchmarkScope struct {
+	Models  []string
+	Efforts []string
+}
+
+// AllScope selects every model and effort in the plan.
+func (p BenchmarkPlan) AllScope() BenchmarkScope {
+	scope := BenchmarkScope{Efforts: append([]string(nil), p.Efforts...)}
+	for _, model := range p.Models {
+		scope.Models = append(scope.Models, model.Model)
+	}
+	return scope
+}
+
+// CombinationCount returns the compatible model/effort pairs in scope.
+func (p BenchmarkPlan) CombinationCount(scope BenchmarkScope) int {
+	models := stringSet(scope.Models)
+	efforts := stringSet(scope.Efforts)
+	count := 0
+	for _, model := range p.Models {
+		if !models[model.Model] {
+			continue
+		}
+		for _, effort := range model.Efforts {
+			if efforts[effort] {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 type benchmarkModel struct {
@@ -232,16 +282,26 @@ func (b *lockedBuffer) String() string {
 // BenchmarkCombinationCount returns the number of visible model/effort pairs
 // without starting a model turn.
 func (c Client) BenchmarkCombinationCount(ctx context.Context) (int, error) {
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	plan, err := c.BenchmarkPlan(ctx)
 	if err != nil {
 		return 0, err
+	}
+	return plan.CombinationCount(plan.AllScope()), nil
+}
+
+// BenchmarkPlan returns the visible model/effort catalog without starting a
+// model turn.
+func (c Client) BenchmarkPlan(ctx context.Context) (BenchmarkPlan, error) {
+	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	if err != nil {
+		return BenchmarkPlan{}, err
 	}
 	defer server.close()
 	models, err := server.models(ctx)
 	if err != nil {
-		return 0, err
+		return BenchmarkPlan{}, err
 	}
-	return len(benchmarkCombinations(models)), nil
+	return benchmarkPlan(models), nil
 }
 
 // RunBenchmarkSuite runs each selected deterministic task once for every
@@ -249,29 +309,40 @@ func (c Client) BenchmarkCombinationCount(ctx context.Context) (int, error) {
 var openBenchmarkAppServer = startAppServer
 
 func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID, emit func(BenchmarkEvent)) {
+	c.runBenchmarkSuite(ctx, taskIDs, emit)
+}
+
+// RunBenchmarkSuiteScoped runs the selected tasks only for compatible pairs in
+// scope. It is separate from RunBenchmarkSuite to preserve the all-model
+// behavior for callers that do not expose scope controls.
+func (c Client) RunBenchmarkSuiteScoped(ctx context.Context, taskIDs []BenchmarkTaskID, scope BenchmarkScope, emit func(BenchmarkEvent)) {
+	c.runBenchmarkSuite(ctx, taskIDs, emit, scope)
+}
+
+func (c Client) runBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID, emit func(BenchmarkEvent), scopes ...BenchmarkScope) {
 	if emit == nil {
 		emit = func(BenchmarkEvent) {}
 	}
 	definitions, err := resolveBenchmarkTasks(taskIDs)
 	if err != nil {
-		emit(BenchmarkEvent{Done: true, Err: err})
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
 		return
 	}
 	server, err := openBenchmarkAppServer(ctx, c.Binary)
 	if err != nil {
-		emit(BenchmarkEvent{Done: true, Err: err})
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
 		return
 	}
 	defer server.close()
 
 	models, err := server.models(ctx)
 	if err != nil {
-		emit(BenchmarkEvent{Done: true, Err: err})
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
 		return
 	}
-	combinations := benchmarkCombinations(models)
+	combinations := benchmarkCombinations(models, scopes...)
 	if len(combinations) == 0 {
-		emit(BenchmarkEvent{Done: true, Err: errors.New("Codex returned no benchmarkable models")})
+		emit(BenchmarkEvent{Done: true, Err: errors.New("selected benchmark scope has no compatible model/effort pairs")})
 		return
 	}
 	total := len(combinations) * len(definitions)
@@ -281,7 +352,7 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 	for _, definition := range definitions {
 		for _, combination := range combinations {
 			if err := ctx.Err(); err != nil {
-				emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Done: true, Err: err})
+				emit(benchmarkTerminalEvent(ctx, total, completed, len(combinations), err))
 				return
 			}
 			event := BenchmarkEvent{
@@ -294,6 +365,13 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 				event.Active, event.Result = &active, nil
 				emit(event)
 			})
+			if fatalErr != nil && errors.Is(ctx.Err(), context.Canceled) {
+				markBenchmarkStopped(&result)
+				event.Active, event.Result, event.Stopped = nil, &result, true
+				emit(event)
+				emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Stopped: true, Done: true})
+				return
+			}
 			completed++
 			event.Completed, event.Active, event.Result = completed, nil, &result
 			emit(event)
@@ -306,6 +384,30 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 	emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Done: true})
 }
 
+func benchmarkTerminalEvent(ctx context.Context, total, completed, combinations int, err error) BenchmarkEvent {
+	stopped := errors.Is(ctx.Err(), context.Canceled)
+	if stopped {
+		err = nil
+	}
+	return BenchmarkEvent{
+		Total: total, Completed: completed, Combinations: combinations,
+		Stopped: stopped, Done: true, Err: err,
+	}
+}
+
+func markBenchmarkStopped(result *BenchmarkResult) {
+	if result == nil {
+		return
+	}
+	result.Correct = false
+	result.Stopped = true
+	if !strings.HasPrefix(result.Failure, "remote interruption could not be confirmed") {
+		result.Failure = ""
+	}
+	startedAt := time.Now().Add(-result.Duration)
+	appendBenchmarkInteraction(result, startedAt, BenchmarkInteractionVerifier, "Benchmark stopped before completion.")
+}
+
 func startAppServer(ctx context.Context, binary string) (*appServerSession, error) {
 	return startAppServerWithExperimentalUsage(ctx, binary, true)
 }
@@ -314,7 +416,10 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	if strings.TrimSpace(binary) == "" {
 		binary = "codex"
 	}
-	cmd := exec.CommandContext(ctx, binary, "app-server", "--stdio")
+	// Calls remain context-bound, but the short-lived process is closed
+	// explicitly so a cancelled benchmark still has a chance to send and confirm
+	// turn/interrupt before teardown.
+	cmd := exec.Command(binary, "app-server", "--stdio")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open Codex input: %w", err)
@@ -504,10 +609,18 @@ func (s *appServerSession) models(ctx context.Context) ([]benchmarkModel, error)
 	return models, nil
 }
 
-func benchmarkCombinations(models []benchmarkModel) []benchmarkCombination {
+func benchmarkCombinations(models []benchmarkModel, scopes ...BenchmarkScope) []benchmarkCombination {
+	var selectedModels, selectedEfforts map[string]bool
+	if len(scopes) > 0 {
+		selectedModels = stringSet(scopes[0].Models)
+		selectedEfforts = stringSet(scopes[0].Efforts)
+	}
 	var combinations []benchmarkCombination
 	for _, model := range models {
 		if strings.TrimSpace(model.Model) == "" {
+			continue
+		}
+		if selectedModels != nil && !selectedModels[model.Model] {
 			continue
 		}
 		if strings.TrimSpace(model.DisplayName) == "" {
@@ -518,16 +631,49 @@ func benchmarkCombinations(models []benchmarkModel) []benchmarkCombination {
 			if effort == "" {
 				effort = "default"
 			}
-			combinations = append(combinations, benchmarkCombination{model: model, effort: effort})
+			if selectedEfforts == nil || selectedEfforts[effort] {
+				combinations = append(combinations, benchmarkCombination{model: model, effort: effort})
+			}
 			continue
 		}
 		for _, option := range model.SupportedReasoningEfforts {
-			if effort := strings.TrimSpace(option.ReasoningEffort); effort != "" {
+			if effort := strings.TrimSpace(option.ReasoningEffort); effort != "" && (selectedEfforts == nil || selectedEfforts[effort]) {
 				combinations = append(combinations, benchmarkCombination{model: model, effort: effort})
 			}
 		}
 	}
 	return combinations
+}
+
+func benchmarkPlan(models []benchmarkModel) BenchmarkPlan {
+	combinations := benchmarkCombinations(models)
+	plan := BenchmarkPlan{}
+	modelIndexes := make(map[string]int)
+	efforts := make(map[string]bool)
+	for _, combination := range combinations {
+		index, ok := modelIndexes[combination.model.Model]
+		if !ok {
+			index = len(plan.Models)
+			modelIndexes[combination.model.Model] = index
+			plan.Models = append(plan.Models, BenchmarkModelOption{
+				Model: combination.model.Model, DisplayName: combination.model.DisplayName,
+			})
+		}
+		plan.Models[index].Efforts = append(plan.Models[index].Efforts, combination.effort)
+		if !efforts[combination.effort] {
+			efforts[combination.effort] = true
+			plan.Efforts = append(plan.Efforts, combination.effort)
+		}
+	}
+	return plan
+}
+
+func stringSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
 }
 
 func (s *appServerSession) runBenchmark(
@@ -737,6 +883,17 @@ func (s *appServerSession) runBenchmark(
 		_, err = s.readUntilNotification(turnCtx, handleNotification)
 		if err != nil {
 			result.Duration = time.Since(startedAt)
+			if errors.Is(ctx.Err(), context.Canceled) {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), s.benchmarkInterruptTimeout())
+				interruptErr := s.interruptBenchmarkTurn(cleanupCtx, startedThread.Thread.ID, startedTurn.Turn.ID, &completed, handleNotification)
+				cancel()
+				applyBenchmarkMeasurements(&result, telemetry)
+				if interruptErr != nil {
+					result.Failure = "remote interruption could not be confirmed: " + interruptErr.Error()
+					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Stop requested; "+result.Failure)
+				}
+				return result, ctx.Err()
+			}
 			if recoverableBenchmarkTimeout(ctx, turnCtx, err) {
 				result.Failure = fmt.Sprintf("turn timed out after %s", turnTimeout)
 				if interruptErr := s.interruptBenchmarkTurn(ctx, startedThread.Thread.ID, startedTurn.Turn.ID, &completed, handleNotification); interruptErr != nil {
