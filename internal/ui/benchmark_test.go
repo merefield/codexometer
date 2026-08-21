@@ -123,7 +123,7 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 		t.Fatal("benchmark row click did not open its detail")
 	}
 	output := ansi.Strip(model.render())
-	for _, want := range []string{"RUN DETAIL", "RESULT // PASS", "Detail Model", "TOTAL 4321", "PROMPT //", "Solve the benchmark-only prompt", "RESPONSE //", "safe benchmark response"} {
+	for _, want := range []string{"RUN DETAIL", benchmarkDetailCopyLabel, "RESULT // PASS", "Detail Model", "TOTAL 4321", "PROMPT //", "Solve the benchmark-only prompt", "RESPONSE //", "safe benchmark response"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("benchmark detail missing %q:\n%s", want, output)
 		}
@@ -134,6 +134,26 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 	if got := lipgloss.Height(output); got != model.height {
 		t.Fatalf("benchmark detail height = %d, want %d", got, model.height)
 	}
+	copyX, copyY := renderedTextStart(t, model, benchmarkDetailCopyLabel)
+	updated, command = model.Update(tea.MouseMotionMsg{X: copyX, Y: copyY})
+	model = updated.(Model)
+	if command != nil || model.hoveredButton != footerButtonBenchmarkCopy {
+		t.Fatal("benchmark detail Copy hover was not recorded")
+	}
+	updated, command = model.Update(tea.MouseClickMsg{X: copyX, Y: copyY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.flashedButton != footerButtonBenchmarkCopy {
+		t.Fatal("benchmark detail Copy click did not issue a clipboard command")
+	}
+	clipboard := model.benchmarkDetailClipboardText()
+	for _, want := range []string{"CODEXOMETER BENCHMARK RUN DETAIL", "RESULT: PASS", "MODEL: Detail Model", "[PROMPT +0.0s]", "Solve the benchmark-only prompt.", "[VERIFIER +2.0s]", "Submission passed the deterministic verifier."} {
+		if !strings.Contains(clipboard, want) {
+			t.Fatalf("full clipboard export missing %q:\n%s", want, clipboard)
+		}
+	}
+	if ansi.Strip(clipboard) != clipboard || strings.Contains(clipboard, "╭") {
+		t.Fatalf("clipboard export contains terminal styling or frame decoration:\n%q", clipboard)
+	}
 	updated, _ = model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if model.benchmarkDetailScroll == 0 {
@@ -143,6 +163,78 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 	model = updated.(Model)
 	if command != nil || model.benchmarkDetail != nil || model.benchmarkSelectedRun != benchmarkRunKey(result) {
 		t.Fatal("Escape did not return to the selected matrix row")
+	}
+}
+
+func TestBenchmarkDetailCopyShortcutExportsContentOutsideViewport(t *testing.T) {
+	result := codex.BenchmarkResult{
+		TaskName: "LONG DETAIL", Model: "model", DisplayName: "Model", Effort: "medium", Correct: true,
+		Interactions: []codex.BenchmarkInteraction{
+			{Kind: codex.BenchmarkInteractionPrompt, Content: strings.Repeat("prompt line\n", 50)},
+			{Elapsed: time.Second, Kind: codex.BenchmarkInteractionVerifier, Content: "final offscreen verifier"},
+		},
+	}
+	model := Model{snapshot: codex.DemoSnapshot(), width: 80, height: 20, meterView: viewBenchmark, benchmarkDetail: &result}
+	if strings.Contains(ansi.Strip(model.render()), "final offscreen verifier") {
+		t.Fatal("test fixture verifier unexpectedly fits in the visible viewport")
+	}
+	updated, command := model.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	model = updated.(Model)
+	if command == nil || model.flashedButton != footerButtonBenchmarkCopy {
+		t.Fatal("c did not activate benchmark detail Copy")
+	}
+	if clipboard := model.benchmarkDetailClipboardText(); !strings.Contains(clipboard, "final offscreen verifier") {
+		t.Fatalf("clipboard omitted content outside viewport:\n%s", clipboard)
+	}
+}
+
+func TestInProgressBenchmarkRowOpensAndUpdatesLiveDetail(t *testing.T) {
+	active := codex.BenchmarkResult{
+		TaskID: "merge-ranges", TaskName: "MERGE RANGES", Model: "live-model", DisplayName: "Live Model", Effort: "medium",
+		Interactions: []codex.BenchmarkInteraction{{Kind: codex.BenchmarkInteractionPrompt, Content: "Live benchmark prompt"}},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkRunning, benchmarkActive: &active, benchmarkActiveSince: time.Now().Add(-2 * time.Second),
+	}
+	table := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
+	if !strings.Contains(table, "IN PROGRESS") || !strings.Contains(table, "Live Model") {
+		t.Fatalf("active benchmark row is missing:\n%s", table)
+	}
+	x, y := benchmarkRunCoordinates(t, model, benchmarkRunKey(active))
+	updated, command := model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command != nil || model.benchmarkDetail == nil || !model.benchmarkDetailActive {
+		t.Fatal("active benchmark row did not open a live detail")
+	}
+	detail := ansi.Strip(model.render())
+	if !strings.Contains(detail, "LIVE RUN DETAIL") || !strings.Contains(detail, "RESULT // IN PROGRESS") || !strings.Contains(detail, "Live benchmark prompt") {
+		t.Fatalf("live detail is incomplete:\n%s", detail)
+	}
+
+	progress := active
+	progress.Duration = 3 * time.Second
+	progress.Interactions = append(progress.Interactions, codex.BenchmarkInteraction{
+		Elapsed: 3 * time.Second, Kind: codex.BenchmarkInteractionResponse, Content: "{\"code\":\"live response\"}",
+	})
+	updated, _ = model.Update(benchmarkEventMsg{ok: true, event: codex.BenchmarkEvent{Active: &progress, Total: 1}})
+	model = updated.(Model)
+	if model.benchmarkDetail == nil || !strings.Contains(model.benchmarkDetail.Interactions[1].Content, "live response") {
+		t.Fatal("active event did not update the open detail")
+	}
+
+	result := progress
+	result.Correct = true
+	result.Interactions = append(result.Interactions, codex.BenchmarkInteraction{
+		Elapsed: 4 * time.Second, Kind: codex.BenchmarkInteractionVerifier, Content: "Submission passed the deterministic verifier.",
+	})
+	updated, _ = model.Update(benchmarkEventMsg{ok: true, event: codex.BenchmarkEvent{Result: &result, Total: 1, Completed: 1}})
+	model = updated.(Model)
+	if model.benchmarkActive != nil || model.benchmarkDetailActive || model.benchmarkDetail == nil || !model.benchmarkDetail.Correct {
+		t.Fatal("completed result did not replace the live row and finalize its open detail")
+	}
+	if output := ansi.Strip(model.render()); !strings.Contains(output, "RESULT // PASS") || !strings.Contains(output, "VERIFIER //") {
+		t.Fatalf("finalized live detail is incomplete:\n%s", output)
 	}
 }
 
@@ -837,7 +929,7 @@ func benchmarkRunCoordinates(t *testing.T, model Model, key string) (int, int) {
 	t.Helper()
 	for y := 0; y < model.height; y++ {
 		for x := 0; x < model.width; x++ {
-			if result, ok := model.benchmarkRunAt(x, y); ok && benchmarkRunKey(result) == key {
+			if row, ok := model.benchmarkRunAt(x, y); ok && benchmarkRunKey(row.result) == key {
 				return x, y
 			}
 		}

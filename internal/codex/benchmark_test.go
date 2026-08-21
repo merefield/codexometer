@@ -698,8 +698,22 @@ func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 		events = append(events, event)
 	})
 	var efforts []string
-	for _, event := range events {
+	activeEfforts := make(map[string]bool)
+	firstActive, firstResult := -1, -1
+	for index, event := range events {
+		if event.Active != nil {
+			activeEfforts[event.Active.Effort] = true
+			if firstActive < 0 {
+				firstActive = index
+			}
+			if len(event.Active.Interactions) == 0 || event.Active.Interactions[0].Kind != BenchmarkInteractionPrompt {
+				t.Fatalf("active event omitted the benchmark prompt: %#v", event.Active)
+			}
+		}
 		if event.Result != nil {
+			if firstResult < 0 {
+				firstResult = index
+			}
 			if !event.Result.Correct {
 				t.Fatalf("suite result failed: %#v", event.Result)
 			}
@@ -708,6 +722,9 @@ func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 	}
 	if len(efforts) != 2 || efforts[0] != "low" || efforts[1] != "high" {
 		t.Fatalf("suite efforts = %v, want [low high]", efforts)
+	}
+	if !activeEfforts["low"] || !activeEfforts["high"] || firstActive < 0 || firstActive >= firstResult {
+		t.Fatalf("suite active events = %v, first active/result = %d/%d", activeEfforts, firstActive, firstResult)
 	}
 	last := events[len(events)-1]
 	if !last.Done || last.Err != nil || last.Total != 2 || last.Completed != 2 {

@@ -78,9 +78,9 @@ It works particularly well in:
   the member that raised them.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
-  estimated standard API-equivalent cost. Select or click a completed row to
-  inspect its benchmark-only prompt, structured response, verifier outcome,
-  and telemetry.
+  estimated standard API-equivalent cost. The current trial appears immediately
+  as an `IN PROGRESS` row; select or click any row to inspect its benchmark-only
+  prompt, structured response, verifier outcome, and telemetry.
 
 Codexometer does not assume that every account has the same windows. Some
 accounts expose a shorter rolling window and a weekly window; plans and backend
@@ -354,8 +354,9 @@ codexometer --codex /path/to/codex
 | `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a completed Benchmark row, or scroll its open detail |
+| `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
 | `Enter` | Open the selected Benchmark result detail |
+| `c` | Copy the complete open Benchmark detail to the terminal clipboard |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
 | `Esc` | Return from Benchmark detail; otherwise quit |
@@ -763,13 +764,19 @@ the remaining combinations. Explicit user cancellation, app-server transport
 failure, or failure to confirm interruption still stops the suite because the
 server's state is then unsafe or unknown.
 
-Completed rows in the existing Result Matrix are selectable. Click a row, or
-use `Up`/`Down` followed by `Enter`, to replace the matrix with that run's
-scrollable detail. It shows the requested and actual model, effort, task,
-outcome, duration, token classes, API-equivalent cost, exact benchmark prompt,
-visible structured response (including the submitted Starlark), policy events,
-and deterministic-verifier result. `Esc` returns to the same selected matrix
-row. Page keys, arrow keys, and the mouse wheel scroll a long detail.
+The current trial appears in the existing Result Matrix immediately as an
+`IN PROGRESS` row, before any result has completed. Click that or any completed
+row, or use `Up`/`Down` followed by `Enter`, to replace the matrix with the
+run's scrollable detail. An open live detail updates as safe benchmark events
+arrive, then changes in place to the final `PASS` or `FAIL` result. It shows the
+requested and actual model, effort, task, outcome, live duration, token classes,
+API-equivalent cost, exact benchmark prompt, visible structured response
+(including the submitted Starlark), policy events, and deterministic-verifier
+result. `Esc` returns to the same selected matrix row. Page keys, arrow keys,
+and the mouse wheel scroll a long detail. Press `c` or click **Copy** in the
+detail title to copy the complete unstyled detail, including interactions below
+the visible scroll window. Copy uses the terminal's OSC 52 clipboard support,
+which is not available in every terminal.
 
 This transcript is deliberately benchmark-only. It is populated directly by
 the ephemeral thread that Codexometer created for that trial, bounded to 16
@@ -777,6 +784,9 @@ entries of at most 64 KiB each and 128 KiB total, retained only in process
 memory, and discarded when a new suite starts or Codexometer exits. It does not
 subscribe to or read ordinary Codex conversations, and it excludes reasoning
 events, credentials, request headers, and internal app-server IDs.
+Codexometer sends that bounded transcript to the system clipboard only when you
+explicitly press `c` or click **Copy**; the clipboard then falls under your
+operating system and terminal's normal retention behavior.
 
 #### Challenges and difficulty
 

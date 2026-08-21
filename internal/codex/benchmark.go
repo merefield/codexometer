@@ -148,6 +148,7 @@ type BenchmarkEvent struct {
 	CurrentTask   string
 	CurrentModel  string
 	CurrentEffort string
+	Active        *BenchmarkResult
 	Result        *BenchmarkResult
 	Done          bool
 	Err           error
@@ -288,10 +289,13 @@ func (c Client) RunBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 				CurrentTaskID: definition.task.ID, CurrentTask: definition.task.Name,
 				CurrentModel: combination.model.DisplayName, CurrentEffort: combination.effort,
 			}
-			emit(event)
-			result, fatalErr := server.runBenchmark(ctx, combination, definition)
+			result, fatalErr := server.runBenchmark(ctx, combination, definition, func(active BenchmarkResult) {
+				active = benchmarkResultSnapshot(active)
+				event.Active, event.Result = &active, nil
+				emit(event)
+			})
 			completed++
-			event.Completed, event.Result = completed, &result
+			event.Completed, event.Active, event.Result = completed, nil, &result
 			emit(event)
 			if fatalErr != nil {
 				emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Done: true, Err: fatalErr})
@@ -526,12 +530,24 @@ func benchmarkCombinations(models []benchmarkModel) []benchmarkCombination {
 	return combinations
 }
 
-func (s *appServerSession) runBenchmark(ctx context.Context, combination benchmarkCombination, definition benchmarkDefinition) (BenchmarkResult, error) {
-	result := BenchmarkResult{
-		TaskID: definition.task.ID, TaskName: definition.task.Name,
-		Model: combination.model.Model, DisplayName: combination.model.DisplayName,
-		Effort: combination.effort, ActualModel: combination.model.Model,
+func (s *appServerSession) runBenchmark(
+	ctx context.Context,
+	combination benchmarkCombination,
+	definition benchmarkDefinition,
+	progressCallbacks ...func(BenchmarkResult),
+) (BenchmarkResult, error) {
+	result := benchmarkPendingResult(combination, definition)
+	var startedAt time.Time
+	publish := func() {
+		if len(progressCallbacks) > 0 && progressCallbacks[0] != nil {
+			snapshot := benchmarkResultSnapshot(result)
+			if !startedAt.IsZero() {
+				snapshot.Duration = time.Since(startedAt)
+			}
+			progressCallbacks[0](snapshot)
+		}
 	}
+	publish()
 	turnTimeout := s.benchmarkTurnTimeout()
 	turnCtx, cancel := context.WithTimeout(ctx, turnTimeout)
 	defer cancel()
@@ -580,10 +596,10 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	}
 	if startedThread.Model != "" {
 		result.ActualModel = startedThread.Model
+		publish()
 	}
-	startedAt := time.Now()
+	startedAt = time.Now()
 	prompt := benchmarkPrompt(definition)
-	appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionPrompt, prompt)
 	turnParams := map[string]any{
 		"threadId":     startedThread.Thread.ID,
 		"input":        []map[string]any{{"type": "text", "text": prompt}},
@@ -597,6 +613,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		result.Duration = time.Since(startedAt)
 		result.Failure = fmt.Sprintf("start turn: %v", err)
 		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Run failed before the model turn started.")
+		publish()
 		return result, fatalBenchmarkError(turnCtx, err)
 	}
 	var startedTurn struct {
@@ -608,6 +625,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		result.Duration = time.Since(startedAt)
 		result.Failure = "Codex returned an invalid turn"
 		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
+		publish()
 		return result, nil
 	}
 
@@ -626,6 +644,12 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 			}
 			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
 				telemetry.recordCumulative(event.TokenUsage.Total)
+				preview := benchmarkResultSnapshot(result)
+				preview.Duration = time.Since(startedAt)
+				applyBenchmarkMeasurements(&preview, telemetry)
+				if len(progressCallbacks) > 0 && progressCallbacks[0] != nil {
+					progressCallbacks[0](preview)
+				}
 			}
 		case "rawResponse/completed":
 			var event struct {
@@ -645,6 +669,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 			}
 			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID && event.ToModel != "" {
 				result.ActualModel = event.ToModel
+				publish()
 			}
 		case "item/started", "item/completed":
 			var event struct {
@@ -656,13 +681,19 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 				} `json:"item"`
 			}
 			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
+				changed := false
 				if benchmarkToolItem(event.Item.Type) && !result.ToolUsed {
 					result.ToolUsed, result.ToolType = true, event.Item.Type
 					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionPolicy, "Prohibited tool event observed: "+event.Item.Type)
+					changed = true
 				}
 				if method == "item/completed" && event.Item.Type == "agentMessage" {
 					finalMessage = event.Item.Text
 					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionResponse, finalMessage)
+					changed = true
+				}
+				if changed {
+					publish()
 				}
 			}
 		case "turn/completed":
@@ -693,6 +724,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 						if item.Type == "agentMessage" {
 							finalMessage = item.Text
 							appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionResponse, finalMessage)
+							publish()
 						}
 					}
 				}
@@ -747,6 +779,22 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	result.Correct = true
 	appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Submission passed the deterministic verifier.")
 	return result, nil
+}
+
+func benchmarkPendingResult(combination benchmarkCombination, definition benchmarkDefinition) BenchmarkResult {
+	result := BenchmarkResult{
+		TaskID: definition.task.ID, TaskName: definition.task.Name,
+		Model: combination.model.Model, DisplayName: combination.model.DisplayName,
+		Effort: combination.effort, ActualModel: combination.model.Model,
+	}
+	appendBenchmarkInteraction(&result, time.Time{}, BenchmarkInteractionPrompt, benchmarkPrompt(definition))
+	return result
+}
+
+func benchmarkResultSnapshot(result BenchmarkResult) BenchmarkResult {
+	result.Interactions = append([]BenchmarkInteraction(nil), result.Interactions...)
+	result.ResponseUsage = append([]BenchmarkResponseUsage(nil), result.ResponseUsage...)
+	return result
 }
 
 func appendBenchmarkInteraction(result *BenchmarkResult, startedAt time.Time, kind BenchmarkInteractionKind, content string) {
