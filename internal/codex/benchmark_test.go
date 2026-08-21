@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const correctStarlarkSubmission = `
@@ -249,6 +250,43 @@ func TestRunBenchmarkConsumesStreamedResultAndUsage(t *testing.T) {
 	}
 	if !strings.Contains(requests.String(), `"sandbox":"read-only"`) {
 		t.Fatalf("thread request did not use the app-server sandbox spelling: %s", requests.String())
+	}
+	if len(result.Interactions) != 3 || result.Interactions[0].Kind != BenchmarkInteractionPrompt || result.Interactions[1].Kind != BenchmarkInteractionResponse || result.Interactions[2].Kind != BenchmarkInteractionVerifier {
+		t.Fatalf("benchmark interaction transcript = %#v", result.Interactions)
+	}
+	if !strings.Contains(result.Interactions[0].Content, "Starlark language contract") || result.Interactions[1].Content != message || !strings.Contains(result.Interactions[2].Content, "passed") {
+		t.Fatalf("benchmark interaction content = %#v", result.Interactions)
+	}
+	for _, interaction := range result.Interactions {
+		if strings.Contains(interaction.Content, "thread-1") || strings.Contains(interaction.Content, "turn-1") {
+			t.Fatalf("internal app-server ID leaked into benchmark transcript: %#v", result.Interactions)
+		}
+	}
+}
+
+func TestBenchmarkInteractionCaptureIsBoundedAndValidUTF8(t *testing.T) {
+	countBounded := BenchmarkResult{}
+	for index := 0; index < benchmarkInteractionCount+4; index++ {
+		appendBenchmarkInteraction(&countBounded, time.Time{}, BenchmarkInteractionPolicy, "event")
+	}
+	if len(countBounded.Interactions) != benchmarkInteractionCount {
+		t.Fatalf("captured %d interactions, want %d", len(countBounded.Interactions), benchmarkInteractionCount)
+	}
+
+	result := BenchmarkResult{}
+	content := strings.Repeat("x", benchmarkInteractionLimit-1) + "£" + strings.Repeat("y", 10)
+	for index := 0; index < benchmarkInteractionCount+4; index++ {
+		appendBenchmarkInteraction(&result, time.Time{}, BenchmarkInteractionResponse, content)
+	}
+	total := 0
+	for _, interaction := range result.Interactions {
+		total += len(interaction.Content)
+		if !strings.Contains(interaction.Content, "[truncated by Codexometer]") || !utf8.ValidString(interaction.Content) {
+			t.Fatalf("bounded interaction was not valid, visibly truncated UTF-8: %q", interaction.Content[len(interaction.Content)-64:])
+		}
+	}
+	if total > benchmarkTranscriptLimit {
+		t.Fatalf("transcript captured %d bytes, limit is %d", total, benchmarkTranscriptLimit)
 	}
 }
 

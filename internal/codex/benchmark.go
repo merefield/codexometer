@@ -23,6 +23,9 @@ const (
 	benchmarkTurnTimeout      = 5 * time.Minute
 	benchmarkInterruptTimeout = 15 * time.Second
 	benchmarkCodeLimit        = 64 * 1024
+	benchmarkInteractionLimit = 64 * 1024
+	benchmarkTranscriptLimit  = 128 * 1024
+	benchmarkInteractionCount = 16
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
 
@@ -93,6 +96,24 @@ type BenchmarkResponseUsage struct {
 	Usage      BenchmarkUsage
 }
 
+type BenchmarkInteractionKind string
+
+const (
+	BenchmarkInteractionPrompt   BenchmarkInteractionKind = "prompt"
+	BenchmarkInteractionResponse BenchmarkInteractionKind = "response"
+	BenchmarkInteractionPolicy   BenchmarkInteractionKind = "policy"
+	BenchmarkInteractionVerifier BenchmarkInteractionKind = "verifier"
+)
+
+// BenchmarkInteraction is content emitted only by a benchmark turn that
+// Codexometer created. Codexometer never adds app-server IDs, credentials,
+// request headers, or reasoning events to this transcript.
+type BenchmarkInteraction struct {
+	Elapsed time.Duration
+	Kind    BenchmarkInteractionKind
+	Content string
+}
+
 // BenchmarkResult contains one model/reasoning-effort run.
 type BenchmarkResult struct {
 	TaskID        BenchmarkTaskID
@@ -115,6 +136,7 @@ type BenchmarkResult struct {
 	ToolUsed      bool
 	ToolType      string
 	Failure       string
+	Interactions  []BenchmarkInteraction
 }
 
 // BenchmarkEvent incrementally reports discovery, execution, and results.
@@ -560,9 +582,11 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 		result.ActualModel = startedThread.Model
 	}
 	startedAt := time.Now()
+	prompt := benchmarkPrompt(definition)
+	appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionPrompt, prompt)
 	turnParams := map[string]any{
 		"threadId":     startedThread.Thread.ID,
-		"input":        []map[string]any{{"type": "text", "text": benchmarkPrompt(definition)}},
+		"input":        []map[string]any{{"type": "text", "text": prompt}},
 		"outputSchema": benchmarkOutputSchema,
 	}
 	if combination.effort != "default" && combination.effort != "" {
@@ -572,6 +596,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	if err != nil {
 		result.Duration = time.Since(startedAt)
 		result.Failure = fmt.Sprintf("start turn: %v", err)
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Run failed before the model turn started.")
 		return result, fatalBenchmarkError(turnCtx, err)
 	}
 	var startedTurn struct {
@@ -582,6 +607,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	if err := json.Unmarshal(turnResponse, &startedTurn); err != nil || startedTurn.Turn.ID == "" {
 		result.Duration = time.Since(startedAt)
 		result.Failure = "Codex returned an invalid turn"
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
 		return result, nil
 	}
 
@@ -632,9 +658,11 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 			if json.Unmarshal(params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
 				if benchmarkToolItem(event.Item.Type) && !result.ToolUsed {
 					result.ToolUsed, result.ToolType = true, event.Item.Type
+					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionPolicy, "Prohibited tool event observed: "+event.Item.Type)
 				}
 				if method == "item/completed" && event.Item.Type == "agentMessage" {
 					finalMessage = event.Item.Text
+					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionResponse, finalMessage)
 				}
 			}
 		case "turn/completed":
@@ -664,6 +692,7 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 					for _, item := range event.Turn.Items {
 						if item.Type == "agentMessage" {
 							finalMessage = item.Text
+							appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionResponse, finalMessage)
 						}
 					}
 				}
@@ -680,12 +709,15 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 				result.Failure = fmt.Sprintf("turn timed out after %s", turnTimeout)
 				if interruptErr := s.interruptBenchmarkTurn(ctx, startedThread.Thread.ID, startedTurn.Turn.ID, &completed, handleNotification); interruptErr != nil {
 					result.Failure += "; cleanup failed: " + interruptErr.Error()
+					appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Turn timed out and interruption could not be confirmed.")
 					return result, fmt.Errorf("recover timed-out benchmark turn: %w", interruptErr)
 				}
 				applyBenchmarkMeasurements(&result, telemetry)
+				appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
 				return result, nil
 			}
 			result.Failure = fmt.Sprintf("wait for turn: %v", err)
+			appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "App-server transport failed before benchmark completion.")
 			return result, err
 		}
 	}
@@ -693,23 +725,57 @@ func (s *appServerSession) runBenchmark(ctx context.Context, combination benchma
 	applyBenchmarkMeasurements(&result, telemetry)
 	if turnFailure != "" {
 		result.Failure = turnFailure
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Codex turn did not complete successfully.")
 		return result, nil
 	}
 	if result.ToolUsed {
 		result.Failure = "tool use prohibited: " + result.ToolType
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
 		return result, nil
 	}
 	code, err := benchmarkCode(finalMessage)
 	if err != nil {
 		result.Failure = err.Error()
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
 		return result, nil
 	}
 	if err := definition.verify(code); err != nil {
 		result.Failure = err.Error()
+		appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, result.Failure)
 		return result, nil
 	}
 	result.Correct = true
+	appendBenchmarkInteraction(&result, startedAt, BenchmarkInteractionVerifier, "Submission passed the deterministic verifier.")
 	return result, nil
+}
+
+func appendBenchmarkInteraction(result *BenchmarkResult, startedAt time.Time, kind BenchmarkInteractionKind, content string) {
+	if result == nil || len(result.Interactions) >= benchmarkInteractionCount {
+		return
+	}
+	used := 0
+	for _, interaction := range result.Interactions {
+		used += len(interaction.Content)
+	}
+	remaining := benchmarkTranscriptLimit - used
+	if remaining <= 0 {
+		return
+	}
+	content = strings.ToValidUTF8(content, "�")
+	limit := min(benchmarkInteractionLimit, remaining)
+	if len(content) > limit {
+		const marker = "\n… [truncated by Codexometer]"
+		contentLimit := max(limit-len(marker), 0)
+		content = strings.ToValidUTF8(content[:contentLimit], "")
+		if len(marker) <= limit {
+			content += marker
+		}
+	}
+	elapsed := time.Duration(0)
+	if !startedAt.IsZero() {
+		elapsed = time.Since(startedAt)
+	}
+	result.Interactions = append(result.Interactions, BenchmarkInteraction{Elapsed: elapsed, Kind: kind, Content: content})
 }
 
 func (s *appServerSession) benchmarkTurnTimeout() time.Duration {

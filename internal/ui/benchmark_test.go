@@ -95,6 +95,75 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	}
 }
 
+func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
+	result := codex.BenchmarkResult{
+		TaskID: "merge-ranges", TaskName: "MERGE RANGES", Model: "detail-model", DisplayName: "Detail Model", Effort: "high",
+		Correct: true, Duration: 12500 * time.Millisecond,
+		Usage:      codex.BenchmarkUsage{TotalTokens: 4321, InputTokens: 3000, CachedInputTokens: 1000, OutputTokens: 1321, ReasoningOutputTokens: 500},
+		UsageKnown: true, UsageSource: codex.BenchmarkUsageRawResponses, CostKnown: true, CostUSD: 0.0412,
+		Interactions: []codex.BenchmarkInteraction{
+			{Kind: codex.BenchmarkInteractionPrompt, Content: "Solve the benchmark-only prompt."},
+			{Elapsed: time.Second, Kind: codex.BenchmarkInteractionResponse, Content: strings.Repeat("{\"code\":\"safe benchmark response\"}\n", 40)},
+			{Elapsed: 2 * time.Second, Kind: codex.BenchmarkInteractionVerifier, Content: "Submission passed the deterministic verifier."},
+		},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkFinished, benchmarkResults: []codex.BenchmarkResult{result},
+	}
+	x, y := benchmarkRunCoordinates(t, model, benchmarkRunKey(result))
+	updated, command := model.Update(tea.MouseMotionMsg{X: x, Y: y})
+	model = updated.(Model)
+	if command != nil || !model.benchmarkRunHovered || model.benchmarkHoveredRun != benchmarkRunKey(result) {
+		t.Fatal("benchmark row hover was not recorded")
+	}
+	updated, command = model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command != nil || model.benchmarkDetail == nil {
+		t.Fatal("benchmark row click did not open its detail")
+	}
+	output := ansi.Strip(model.render())
+	for _, want := range []string{"RUN DETAIL", "RESULT // PASS", "Detail Model", "TOTAL 4321", "PROMPT //", "Solve the benchmark-only prompt", "RESPONSE //", "safe benchmark response"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("benchmark detail missing %q:\n%s", want, output)
+		}
+	}
+	if got := lipgloss.Width(output); got != model.width {
+		t.Fatalf("benchmark detail width = %d, want %d", got, model.width)
+	}
+	if got := lipgloss.Height(output); got != model.height {
+		t.Fatalf("benchmark detail height = %d, want %d", got, model.height)
+	}
+	updated, _ = model.Update(specialKey(tea.KeyPgDown))
+	model = updated.(Model)
+	if model.benchmarkDetailScroll == 0 {
+		t.Fatal("Page Down did not scroll a long benchmark detail")
+	}
+	updated, command = model.Update(specialKey(tea.KeyEscape))
+	model = updated.(Model)
+	if command != nil || model.benchmarkDetail != nil || model.benchmarkSelectedRun != benchmarkRunKey(result) {
+		t.Fatal("Escape did not return to the selected matrix row")
+	}
+}
+
+func TestBenchmarkKeyboardSelectsAndOpensResultRow(t *testing.T) {
+	results := []codex.BenchmarkResult{
+		{TaskName: "FIRST", Model: "first", DisplayName: "First", Effort: "low"},
+		{TaskName: "SECOND", Model: "second", DisplayName: "Second", Effort: "high", Correct: true},
+	}
+	model := Model{width: 100, height: 30, meterView: viewBenchmark, benchmarkState: benchmarkFinished, benchmarkResults: results}
+	updated, _ := model.Update(specialKey(tea.KeyUp))
+	model = updated.(Model)
+	if model.benchmarkSelectedRun != benchmarkRunKey(results[1]) {
+		t.Fatalf("Up selected %q, want newest visible row", model.benchmarkSelectedRun)
+	}
+	updated, command := model.Update(specialKey(tea.KeyEnter))
+	model = updated.(Model)
+	if command != nil || model.benchmarkDetail == nil || model.benchmarkDetail.DisplayName != "Second" {
+		t.Fatal("Enter did not open the keyboard-selected benchmark detail")
+	}
+}
+
 func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
 	model := Model{benchmarkState: benchmarkFinished}
 	for height := 1; height <= 12; height++ {
@@ -761,6 +830,19 @@ func benchmarkControlCoordinates(t *testing.T, model Model, target footerButtonI
 		}
 	}
 	t.Fatalf("benchmark control %d not found", target)
+	return 0, 0
+}
+
+func benchmarkRunCoordinates(t *testing.T, model Model, key string) (int, int) {
+	t.Helper()
+	for y := 0; y < model.height; y++ {
+		for x := 0; x < model.width; x++ {
+			if result, ok := model.benchmarkRunAt(x, y); ok && benchmarkRunKey(result) == key {
+				return x, y
+			}
+		}
+	}
+	t.Fatalf("benchmark run %q was not clickable", key)
 	return 0, 0
 }
 

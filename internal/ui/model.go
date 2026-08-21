@@ -82,6 +82,11 @@ type Model struct {
 	benchmarkRankMode        benchmarkRankMode
 	benchmarkEvents          <-chan codex.BenchmarkEvent
 	benchmarkCancel          context.CancelFunc
+	benchmarkSelectedRun     string
+	benchmarkHoveredRun      string
+	benchmarkRunHovered      bool
+	benchmarkDetail          *codex.BenchmarkResult
+	benchmarkDetailScroll    int
 
 	monitorState        monitorState
 	monitorStartedAt    time.Time
@@ -342,7 +347,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyPressMsg:
 		switch strings.ToLower(message.String()) {
-		case "ctrl+c", "esc":
+		case "ctrl+c":
+			m.cancelBenchmark()
+			return m, tea.Quit
+		case "esc":
+			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
+				m.closeBenchmarkDetail()
+				return m, nil
+			}
 			m.cancelBenchmark()
 			return m, tea.Quit
 		case "t":
@@ -364,33 +376,60 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
 		case "b":
-			if m.meterView == viewBenchmark {
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkSelected)
 			}
 		case "a":
-			if m.meterView == viewBenchmark {
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkAll)
 			}
-		case "left", "[":
+		case "enter":
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
+				m.openSelectedBenchmarkDetail()
+				return m, nil
+			}
+		case "up":
 			if m.meterView == viewBenchmark {
+				if m.benchmarkDetail != nil {
+					m.scrollBenchmarkDetail(-1)
+				} else {
+					m.selectBenchmarkRun(-1)
+				}
+				return m, nil
+			}
+		case "down":
+			if m.meterView == viewBenchmark {
+				if m.benchmarkDetail != nil {
+					m.scrollBenchmarkDetail(1)
+				} else {
+					m.selectBenchmarkRun(1)
+				}
+				return m, nil
+			}
+		case "left", "[":
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkPrevious)
 			}
 		case "right", "]":
-			if m.meterView == viewBenchmark {
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkNext)
 			}
 		case "f":
-			if m.meterView == viewBenchmark {
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				m.setBenchmarkFilter((m.benchmarkFilter + 1) % 3)
 				return m, nil
 			}
 		case "w":
-			if m.meterView == viewBenchmark {
+			if m.meterView == viewBenchmark && m.benchmarkDetail == nil {
 				return m.pressFooterButton(benchmarkRankButton(m.benchmarkRankMode.next()))
 			}
 		case "pgup":
 			if m.meterView == viewBenchmark {
-				m.scrollBenchmarkPage(1)
+				if m.benchmarkDetail != nil {
+					m.scrollBenchmarkDetailPage(-1)
+				} else {
+					m.scrollBenchmarkPage(1)
+				}
 				return m, nil
 			}
 			if m.meterView == viewMonitor {
@@ -399,7 +438,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "pgdown":
 			if m.meterView == viewBenchmark {
-				m.scrollBenchmarkPage(-1)
+				if m.benchmarkDetail != nil {
+					m.scrollBenchmarkDetailPage(1)
+				} else {
+					m.scrollBenchmarkPage(-1)
+				}
 				return m, nil
 			}
 			if m.meterView == viewMonitor {
@@ -435,6 +478,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.viewHovered = false
+		if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
+			m.benchmarkRunHovered = false
+			m.benchmarkHoveredRun = ""
+			switch mouse.Button {
+			case tea.MouseWheelUp:
+				m.scrollBenchmarkDetail(-3)
+				return m, nil
+			case tea.MouseWheelDown:
+				m.scrollBenchmarkDetail(3)
+				return m, nil
+			}
+		}
 		if column, ok := m.benchmarkHeaderAt(mouse.X, mouse.Y); ok {
 			m.benchmarkSortHovered = true
 			m.benchmarkHoveredSort = column
@@ -445,6 +500,17 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.benchmarkSortHovered = false
+		if result, ok := m.benchmarkRunAt(mouse.X, mouse.Y); ok {
+			m.benchmarkRunHovered = true
+			m.benchmarkHoveredRun = benchmarkRunKey(result)
+			m.hoveredButton = footerButtonNone
+			if mouse.Button == tea.MouseLeft && clicked {
+				m.openBenchmarkDetail(result)
+			}
+			return m, nil
+		}
+		m.benchmarkRunHovered = false
+		m.benchmarkHoveredRun = ""
 		if id, ok := m.monitorSessionDismissAt(mouse.X, mouse.Y); ok {
 			m.monitorDismissHover = id
 			m.hoveredButton = footerButtonNone
@@ -919,6 +985,11 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	m.benchmarkCurrentTask = ""
 	m.benchmarkError = ""
 	m.benchmarkScroll = 0
+	m.benchmarkSelectedRun = ""
+	m.benchmarkHoveredRun = ""
+	m.benchmarkRunHovered = false
+	m.benchmarkDetail = nil
+	m.benchmarkDetailScroll = 0
 	m.benchmarkState = benchmarkRunning
 	ctx, cancel := context.WithCancel(context.Background())
 	m.benchmarkCancel = cancel
@@ -943,6 +1014,7 @@ func (m Model) benchmarkTasks() []codex.BenchmarkTask {
 func (m *Model) setBenchmarkFilter(filter benchmarkResultFilter) {
 	m.benchmarkFilter = filter
 	m.benchmarkScroll = 0
+	m.benchmarkSelectedRun = ""
 	m.persistPreferences()
 }
 
@@ -993,6 +1065,97 @@ func (m *Model) scrollBenchmarkRows(rows int) {
 	m.benchmarkScroll = min(max(m.benchmarkScroll+rows, 0), maximum)
 }
 
+func (m *Model) selectBenchmarkRun(direction int) {
+	results := m.orderedBenchmarkResults()
+	if len(results) == 0 {
+		m.benchmarkSelectedRun = ""
+		return
+	}
+	selected := -1
+	for index, result := range results {
+		if benchmarkRunKey(result) == m.benchmarkSelectedRun {
+			selected = index
+			break
+		}
+	}
+	if selected < 0 {
+		selected = len(results) - 1
+		if direction > 0 {
+			selected = 0
+		}
+	} else {
+		selected = min(max(selected+direction, 0), len(results)-1)
+	}
+	m.benchmarkSelectedRun = benchmarkRunKey(results[selected])
+	m.revealBenchmarkRun(selected, len(results))
+}
+
+func (m *Model) revealBenchmarkRun(index, total int) {
+	layout := m.dashboardLayout()
+	geometry := layoutBenchmarkArea(layout.contentWidth, layout.meterHeight)
+	bodyHeight := max(geometry.tableHeight-2, 1)
+	baseLines := 1
+	if bodyHeight > 1 {
+		baseLines++
+	}
+	if bodyHeight > 2 {
+		baseLines++
+	}
+	available := max(bodyHeight-baseLines, 0)
+	start, end, banner := benchmarkVisibleResultRange(total, available, m.benchmarkScroll)
+	pageSize := available
+	if banner {
+		pageSize--
+	}
+	pageSize = max(pageSize, 1)
+	if index < start {
+		m.benchmarkScroll = min(max(total-(index+pageSize), 0), max(total-pageSize, 0))
+	} else if index >= end {
+		m.benchmarkScroll = max(total-index-1, 0)
+	}
+}
+
+func (m *Model) openSelectedBenchmarkDetail() {
+	results := m.orderedBenchmarkResults()
+	if len(results) == 0 {
+		return
+	}
+	if m.benchmarkSelectedRun == "" {
+		m.selectBenchmarkRun(-1)
+	}
+	for _, result := range results {
+		if benchmarkRunKey(result) == m.benchmarkSelectedRun {
+			m.openBenchmarkDetail(result)
+			return
+		}
+	}
+}
+
+func (m *Model) openBenchmarkDetail(result codex.BenchmarkResult) {
+	m.benchmarkSelectedRun = benchmarkRunKey(result)
+	m.benchmarkDetail = &result
+	m.benchmarkDetailScroll = 0
+	m.benchmarkRunHovered = false
+	m.benchmarkHoveredRun = ""
+}
+
+func (m *Model) closeBenchmarkDetail() {
+	m.benchmarkDetail = nil
+	m.benchmarkDetailScroll = 0
+}
+
+func (m *Model) scrollBenchmarkDetail(rows int) {
+	if m.benchmarkDetail == nil {
+		return
+	}
+	maximum := m.benchmarkDetailMaximumScroll()
+	m.benchmarkDetailScroll = min(max(m.benchmarkDetailScroll+rows, 0), maximum)
+}
+
+func (m *Model) scrollBenchmarkDetailPage(direction int) {
+	m.scrollBenchmarkDetail(direction * m.benchmarkDetailPageSize())
+}
+
 func (m *Model) sortBenchmarkBy(column benchmarkSortColumn) {
 	if m.benchmarkSort == column {
 		m.benchmarkSortDescending = !m.benchmarkSortDescending
@@ -1001,6 +1164,7 @@ func (m *Model) sortBenchmarkBy(column benchmarkSortColumn) {
 		m.benchmarkSortDescending = false
 	}
 	m.benchmarkScroll = 0
+	m.benchmarkSelectedRun = ""
 }
 
 func (m Model) contentWidth() int {

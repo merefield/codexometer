@@ -78,7 +78,9 @@ It works particularly well in:
   the member that raised them.
 - An opt-in deterministic coding benchmark comparing every visible Codex model
   and supported reasoning effort by correctness, elapsed time, token use, and
-  estimated standard API-equivalent cost.
+  estimated standard API-equivalent cost. Select or click a completed row to
+  inspect its benchmark-only prompt, structured response, verifier outcome,
+  and telemetry.
 
 Codexometer does not assume that every account has the same windows. Some
 accounts expose a shorter rolling window and a weekly window; plans and backend
@@ -315,9 +317,13 @@ boundary. It also reads lifecycle event names and blocking flags to identify an
 explicit unresolved input or approval request. To distinguish an open CLI
 waiting at its prompt from a closed historical session, it inspects the lock
 state—not the contents—of Codex's per-thread writer lock. Message text—including
-the final response carried beside timing
-metadata—reasoning, commands, tool results, and credentials are ignored and
-never retained by Codexometer.
+the final response carried beside timing metadata—reasoning, commands, tool
+results, and credentials are ignored and never retained from ordinary Codex
+sessions. The sole content-reading exception is a benchmark turn explicitly
+started by Codexometer: its known prompt and visible structured response are
+kept in bounded process memory for the Benchmark run detail view. Reasoning
+events, credentials, request headers, and internal thread, turn, or response
+IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
@@ -348,9 +354,11 @@ codexometer --codex /path/to/codex
 | `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
+| `Up` / `Down` | Select a completed Benchmark row, or scroll its open detail |
+| `Enter` | Open the selected Benchmark result detail |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
-| `Esc` | Quit |
+| `Esc` | Return from Benchmark detail; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, or
@@ -754,6 +762,21 @@ that deadline, Codexometer requests `turn/interrupt`, waits for the matching
 the remaining combinations. Explicit user cancellation, app-server transport
 failure, or failure to confirm interruption still stops the suite because the
 server's state is then unsafe or unknown.
+
+Completed rows in the existing Result Matrix are selectable. Click a row, or
+use `Up`/`Down` followed by `Enter`, to replace the matrix with that run's
+scrollable detail. It shows the requested and actual model, effort, task,
+outcome, duration, token classes, API-equivalent cost, exact benchmark prompt,
+visible structured response (including the submitted Starlark), policy events,
+and deterministic-verifier result. `Esc` returns to the same selected matrix
+row. Page keys, arrow keys, and the mouse wheel scroll a long detail.
+
+This transcript is deliberately benchmark-only. It is populated directly by
+the ephemeral thread that Codexometer created for that trial, bounded to 16
+entries of at most 64 KiB each and 128 KiB total, retained only in process
+memory, and discarded when a new suite starts or Codexometer exits. It does not
+subscribe to or read ordinary Codex conversations, and it excludes reasoning
+events, credentials, request headers, and internal app-server IDs.
 
 #### Challenges and difficulty
 

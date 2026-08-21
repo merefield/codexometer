@@ -95,6 +95,9 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 		}
 		return colors.dimmed().Render(strings.Join(lines, "\n"))
 	}
+	if m.benchmarkDetail != nil {
+		return m.renderBenchmarkDetail(width, height, colors)
+	}
 	layout := layoutBenchmarkArea(width, height)
 	controls := m.renderBenchmarkControls(layout.controlsWidth, layout.controlsHeight, colors)
 	top := controls
@@ -114,6 +117,122 @@ func (m Model) renderBenchmarkArea(width, height int, colors palette) string {
 		view += strings.Repeat("\n", padding)
 	}
 	return view
+}
+
+func (m Model) renderBenchmarkDetail(width, height int, colors palette) string {
+	width, height = max(width, 1), max(height, 1)
+	if m.benchmarkDetail == nil {
+		return ""
+	}
+	innerWidth := max(width-4, 1)
+	bodyHeight := max(height-2, 1)
+	lines := m.benchmarkDetailLines(innerWidth, colors)
+	maximum := max(len(lines)-bodyHeight, 0)
+	scroll := min(max(m.benchmarkDetailScroll, 0), maximum)
+	end := min(scroll+bodyHeight, len(lines))
+	visible := lines[scroll:end]
+	for len(visible) < bodyHeight {
+		visible = append(visible, strings.Repeat(" ", innerWidth))
+	}
+	title := fmt.Sprintf("RUN DETAIL // BENCHMARK-ONLY // LINES %d-%d/%d // ESC BACK", min(scroll+1, len(lines)), end, len(lines))
+	return frameSized(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(visible, "\n"), colors.primary, colors)
+}
+
+func (m Model) benchmarkDetailLines(width int, colors palette) []string {
+	if m.benchmarkDetail == nil {
+		return nil
+	}
+	result := *m.benchmarkDetail
+	model := result.DisplayName
+	if model == "" {
+		model = result.Model
+	}
+	if result.ActualModel != "" && result.ActualModel != result.Model {
+		model += " → " + result.ActualModel
+	}
+	outcome := "FAIL"
+	outcomeStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.danger)
+	if result.Correct {
+		outcome = "PASS"
+		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.primary)
+	}
+	lines := []string{
+		outcomeStyle.Render(fitTableCell("RESULT // "+outcome, width)),
+		colors.label().Render(fitTableCell("MODEL // "+model+" // EFFORT // "+strings.ToUpper(result.Effort), width)),
+		colors.label().Render(fitTableCell("TASK // "+result.TaskName+" // TIME // "+formatBenchmarkDuration(result.Duration), width)),
+	}
+	usage := "TOKENS // N/A"
+	if result.UsageKnown {
+		usage = fmt.Sprintf("TOKENS // TOTAL %d // INPUT %d // CACHED %d // OUTPUT %d // REASONING %d // SOURCE %s",
+			result.Usage.TotalTokens, result.Usage.InputTokens, result.Usage.CachedInputTokens,
+			result.Usage.OutputTokens, result.Usage.ReasoningOutputTokens, result.UsageSource)
+	}
+	lines = append(lines, colors.dimmed().Render(fitTableCell(usage, width)))
+	cost := "API EQ // N/A"
+	if result.CostKnown {
+		cost = fmt.Sprintf("API EQ // ~$%.4f", result.CostUSD)
+	} else if result.CostIssue != "" {
+		cost += " // " + result.CostIssue
+	}
+	lines = append(lines, colors.dimmed().Render(fitTableCell(cost, width)))
+	if result.Failure != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colors.danger).Render(fitTableCell("FAILURE // "+result.Failure, width)))
+	}
+	lines = append(lines, colors.dimmed().Render(strings.Repeat("─", width)))
+	if len(result.Interactions) == 0 {
+		lines = append(lines,
+			colors.label().Render(fitTableCell("BENCHMARK TRANSCRIPT // UNAVAILABLE", width)),
+			colors.dimmed().Render(fitTableCell("This result predates detail capture or was supplied by demo data.", width)),
+		)
+		return lines
+	}
+	for index, interaction := range result.Interactions {
+		if index > 0 {
+			lines = append(lines, colors.dimmed().Render(strings.Repeat("─", width)))
+		}
+		heading := fmt.Sprintf("%s // +%s", strings.ToUpper(string(interaction.Kind)), formatBenchmarkDuration(interaction.Elapsed))
+		headingStyle := colors.label()
+		if interaction.Kind == codex.BenchmarkInteractionVerifier && !result.Correct {
+			headingStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.danger)
+		}
+		lines = append(lines, headingStyle.Render(fitTableCell(heading, width)))
+		contentStyle := lipgloss.NewStyle().Foreground(colors.primary)
+		if interaction.Kind == codex.BenchmarkInteractionPolicy {
+			contentStyle = lipgloss.NewStyle().Foreground(colors.warning)
+		}
+		for _, line := range benchmarkDetailWrap(interaction.Content, width) {
+			lines = append(lines, contentStyle.Render(fitTableCell(line, width)))
+		}
+	}
+	return lines
+}
+
+func benchmarkDetailWrap(content string, width int) []string {
+	width = max(width, 1)
+	content = strings.ReplaceAll(content, "\t", "    ")
+	if content == "" {
+		return []string{"(empty)"}
+	}
+	wrapped := ansi.Wrap(content, width, " \t")
+	lines := strings.Split(wrapped, "\n")
+	for index := range lines {
+		lines[index] = ansi.Truncate(lines[index], width, "")
+	}
+	return lines
+}
+
+func (m Model) benchmarkDetailPageSize() int {
+	layout := m.dashboardLayout()
+	return max(layout.meterHeight-2, 1)
+}
+
+func (m Model) benchmarkDetailMaximumScroll() int {
+	if m.benchmarkDetail == nil {
+		return 0
+	}
+	layout := m.dashboardLayout()
+	lines := m.benchmarkDetailLines(max(layout.contentWidth-4, 1), paletteFor(m.theme))
+	return max(len(lines)-max(layout.meterHeight-2, 1), 0)
 }
 
 func (m Model) renderBenchmarkControls(width, height int, colors palette) string {
@@ -350,7 +469,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	visibleResults := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
 	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
 	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
-	rows := benchmarkTableRows(columns, sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending, rankings), rankings)
+	rows, _, clipped := m.benchmarkVisibleRows(width, height)
 	lines := []string{m.renderBenchmarkSegments(m.benchmarkFilterLine(innerWidth), innerWidth, colors)}
 	if bodyHeight > 1 {
 		lines = append(lines, m.renderBenchmarkHeader(columns, colors))
@@ -358,19 +477,12 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 	if bodyHeight > 2 {
 		lines = append(lines, colors.dimmed().Render(strings.Repeat("─", innerWidth)))
 	}
-	available := max(bodyHeight-len(lines), 0)
-	if len(rows) > available && available >= 2 {
-		pageSize := available - 1
-		maximumScroll := max(len(rows)-pageSize, 0)
-		scroll := min(max(m.benchmarkScroll, 0), maximumScroll)
-		end := len(rows) - scroll
-		start := max(end-pageSize, 0)
+	if clipped {
+		ordered := sortedBenchmarkResults(visibleResults, m.benchmarkSort, m.benchmarkSortDescending, rankings)
+		start, end, _ := benchmarkVisibleResultRange(len(ordered), max(bodyHeight-len(lines), 0), m.benchmarkScroll)
 		lines = append(lines, colors.dimmed().Render(fitTableCell(
-			fmt.Sprintf("ROWS %d-%d/%d // PGUP PGDN // MOUSE WHEEL", start+1, end, len(rows)), innerWidth,
+			fmt.Sprintf("ROWS %d-%d/%d // ↑ ↓ SELECT // ENTER OR CLICK DETAILS", start+1, end, len(ordered)), innerWidth,
 		)))
-		rows = rows[start:end]
-	} else if len(rows) > available {
-		rows = rows[len(rows)-available:]
 	}
 	for _, row := range rows {
 		style := colors.dimmed()
@@ -378,6 +490,10 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 			style = lipgloss.NewStyle().Foreground(colors.primary)
 		} else {
 			style = lipgloss.NewStyle().Foreground(colors.danger)
+		}
+		key := benchmarkRunKey(row.result)
+		if m.benchmarkSelectedRun == key || (m.benchmarkRunHovered && m.benchmarkHoveredRun == key) {
+			style = style.Bold(true).Foreground(colors.background).Background(colors.accent)
 		}
 		lines = append(lines, style.Render(row.text))
 	}
@@ -401,8 +517,64 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 }
 
 type benchmarkTableRow struct {
-	text string
-	pass bool
+	text   string
+	pass   bool
+	result codex.BenchmarkResult
+}
+
+func (m Model) orderedBenchmarkResults() []codex.BenchmarkResult {
+	visible := filterBenchmarkResults(m.benchmarkResults, m.benchmarkFilter)
+	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
+	return sortedBenchmarkResults(visible, m.benchmarkSort, m.benchmarkSortDescending, rankings)
+}
+
+func benchmarkVisibleResultRange(total, available, scroll int) (start, end int, banner bool) {
+	available = max(available, 0)
+	if total > available && available >= 2 {
+		pageSize := available - 1
+		maximumScroll := max(total-pageSize, 0)
+		scroll = min(max(scroll, 0), maximumScroll)
+		end = total - scroll
+		start = max(end-pageSize, 0)
+		return start, end, true
+	}
+	end = total
+	start = max(end-available, 0)
+	return start, end, false
+}
+
+// benchmarkVisibleRows is shared by rendering and hit testing so only rows
+// actually drawn on screen can open a detail view.
+func (m Model) benchmarkVisibleRows(width, height int) (rows []benchmarkTableRow, firstBodyLine int, banner bool) {
+	innerWidth := max(width-4, 1)
+	bodyHeight := max(height-2, 1)
+	firstBodyLine = 1
+	if bodyHeight > 1 {
+		firstBodyLine++
+	}
+	if bodyHeight > 2 {
+		firstBodyLine++
+	}
+	ordered := m.orderedBenchmarkResults()
+	start, end, banner := benchmarkVisibleResultRange(len(ordered), max(bodyHeight-firstBodyLine, 0), m.benchmarkScroll)
+	if banner {
+		firstBodyLine++
+	}
+	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
+	columns := benchmarkTableColumns(innerWidth, m.benchmarkResults)
+	return benchmarkTableRows(columns, ordered[start:end], rankings), firstBodyLine, banner
+}
+
+func benchmarkRunKey(result codex.BenchmarkResult) string {
+	model := result.Model
+	if model == "" {
+		model = result.DisplayName
+	}
+	task := string(result.TaskID)
+	if task == "" {
+		task = result.TaskName
+	}
+	return strings.ToLower(model) + "\x00" + strings.ToLower(result.Effort) + "\x00" + strings.ToLower(task)
 }
 
 func benchmarkTableColumns(width int, results []codex.BenchmarkResult) []benchmarkColumn {
@@ -516,8 +688,9 @@ func benchmarkTableRows(columns []benchmarkColumn, results []codex.BenchmarkResu
 	rows := make([]benchmarkTableRow, 0, len(results))
 	for _, result := range results {
 		rows = append(rows, benchmarkTableRow{
-			text: formatBenchmarkColumns(columns, benchmarkResultValues(result, rankings)...),
-			pass: result.Correct,
+			text:   formatBenchmarkColumns(columns, benchmarkResultValues(result, rankings)...),
+			pass:   result.Correct,
+			result: result,
 		})
 	}
 	return rows
@@ -867,7 +1040,7 @@ func benchmarkPassCount(results []codex.BenchmarkResult) int {
 }
 
 func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
-	if m.loading && len(m.snapshot.Meters()) == 0 {
+	if m.benchmarkDetail != nil || (m.loading && len(m.snapshot.Meters()) == 0) {
 		return footerButtonNone
 	}
 	dashboard := m.dashboardLayout()
@@ -902,7 +1075,7 @@ func benchmarkSegmentButtonAt(localX int, segments []benchmarkControlSegment) fo
 }
 
 func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
-	if m.meterView != viewBenchmark || x < 0 || y < 0 {
+	if m.meterView != viewBenchmark || m.benchmarkDetail != nil || x < 0 || y < 0 {
 		return benchmarkSortNone, false
 	}
 	dashboard := m.dashboardLayout()
@@ -921,4 +1094,25 @@ func (m Model) benchmarkHeaderAt(x, y int) (benchmarkSortColumn, bool) {
 		}
 	}
 	return benchmarkSortNone, false
+}
+
+func (m Model) benchmarkRunAt(x, y int) (codex.BenchmarkResult, bool) {
+	if m.meterView != viewBenchmark || m.benchmarkDetail != nil || x < 0 || y < 0 {
+		return codex.BenchmarkResult{}, false
+	}
+	dashboard := m.dashboardLayout()
+	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
+	if geometry.tableHeight < 4 {
+		return codex.BenchmarkResult{}, false
+	}
+	tableY := dashboard.meterY + geometry.topHeight
+	if x < 4 || x >= 2+dashboard.contentWidth-2 {
+		return codex.BenchmarkResult{}, false
+	}
+	rows, firstBodyLine, _ := m.benchmarkVisibleRows(dashboard.contentWidth, geometry.tableHeight)
+	index := y - (tableY + 1 + firstBodyLine)
+	if index < 0 || index >= len(rows) {
+		return codex.BenchmarkResult{}, false
+	}
+	return rows[index].result, true
 }
