@@ -734,6 +734,42 @@ platform-standard user configuration directory:
 Missing, unreadable, or malformed preferences never prevent startup;
 Codexometer falls back to its safe defaults.
 
+### Benchmark authentication and usage boundary
+
+> [!IMPORTANT]
+> Codexometer's benchmarks are intended for a person running the local client
+> with their own Codex authentication and quota. They are not a way to convert
+> a ChatGPT subscription into general API traffic, re-serve model access, or
+> share one person's included usage with other users. Do not deploy a shared
+> benchmark service backed by one person's subscription. You remain responsible
+> for complying with the terms and policies of OpenAI and each external
+> benchmark provider; this project cannot guarantee that guidance or enforcement
+> will remain unchanged.
+
+The justification for supporting the prevailing Codex login is that OpenAI's
+[authentication documentation](https://learn.chatgpt.com/docs/auth) expressly
+distinguishes **Sign in with ChatGPT** for subscription access from API-key
+authentication for usage-based access. OpenAI also documents
+[Codex app-server](https://learn.chatgpt.com/docs/app-server) as the interface
+for embedding Codex into another product, including its ChatGPT login flows. A
+[public clarification from OpenAI's Codex and ChatGPT lead](https://x.com/thsottiaux/status/2090675027670978569)
+further says that using included subscription usage through **Sign in with
+ChatGPT** is fine in official or OSS clients; it identifies converting a
+subscription into API traffic for re-serving or sharing across users as the
+unsupported pattern. That post is useful operational guidance, not a
+contractual guarantee.
+
+Codexometer stays on the client side of that boundary: it invokes the official
+local Codex app-server for the authenticated user, runs bounded user-triggered
+trials, and reports results locally. It does not expose an inference API,
+forward ChatGPT credentials, or offer another user access to the account. For
+unattended automation, CI, or a centrally hosted benchmark service, use an
+appropriately owned API-key-authenticated setup instead; OpenAI recommends API
+key authentication for programmatic Codex CLI workflows and the
+[Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) for automated jobs and CI.
+The separate DigBench token described below authorizes only DigBench and does
+not change how Codex itself is authenticated.
+
 ### Experimental DigBench agentic run
 
 Codexometer includes a deliberately narrow command-line proof of concept for
