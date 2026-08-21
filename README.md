@@ -301,7 +301,7 @@ Codexometer deliberately does not:
 - read or copy Codex credential/token files;
 - implement a separate OAuth flow;
 - store access or refresh tokens;
-- send credentials to another service;
+- send Codex credentials to another service;
 - invoke a model merely to discover quota information.
 
 The Monitor and observed quota estimator additionally read locally persisted
@@ -733,6 +733,56 @@ platform-standard user configuration directory:
 
 Missing, unreadable, or malformed preferences never prevent startup;
 Codexometer falls back to its safe defaults.
+
+### Experimental DigBench agentic run
+
+Codexometer includes a deliberately narrow command-line proof of concept for
+[DigBench](https://digbench.ai/), an external benchmark of discovering unknown
+rules in interactive text games. It runs exactly one named game with exactly
+one Codex model/reasoning-effort combination; it is not included in the
+Benchmark tab's deterministic Run Selected or Run All actions.
+
+Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
+(sign-in is a passwordless email link), place it in the environment, and select
+one of the 21 public game names returned by the API, such as `P-1`:
+
+```sh
+export DIGBENCH_API_TOKEN="<token>"
+codexometer --digbench-game P-1
+```
+
+The published Codex condition is the default: `gpt-5.6-sol` with `high`
+reasoning effort. Override it or the 30-minute hard limit explicitly:
+
+```sh
+codexometer --digbench-game P-3 \
+  --digbench-model gpt-5.6-terra \
+  --digbench-effort medium \
+  --digbench-timeout 20m
+```
+
+The command creates a fresh remote DigBench session, so invoking it is an
+external write as well as a Codex-quota-consuming model run. DigBench persists
+sessions and currently exposes no deletion endpoint. The token is read only
+from `DIGBENCH_API_TOKEN`, is never written to Codexometer preferences, and is
+removed from the process environment before Codex is spawned. It is used only
+by Codexometer's native HTTPS client to start the session. Codex sees only
+session-scoped `get_session` and `step` tools, not the account token.
+
+The game runs in one ephemeral Codex app-server thread with a writable temporary
+workspace and no approval prompts. The model may use its normal local tools for
+notes, matching DigBench's agentic-harness design, but its only game access is
+the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
+idempotent `step_index` protocol; session creation is never automatically
+retried because that endpoint does not document idempotency.
+
+The final line reports `WIN`, `LOSS`, or `INCOMPLETE`, levels beaten, total game
+steps, duration, tokens, and estimated standard API-equivalent cost. A win
+requires the authoritative terminal combination `done: true` and
+`state.status: "completed"`; `game_over` is a loss. Contradictory terminal
+fields fail as a protocol error. DigBench assigns a random game seed and does
+not currently accept a requested seed, so one run is exploratory rather than a
+fair deterministic cross-model ranking.
 
 ### Deterministic benchmark
 

@@ -184,6 +184,7 @@ type appServerSession struct {
 	readErrors            chan error
 	done                  chan struct{}
 	stop                  sync.Once
+	experimentalAPI       bool
 	experimentalRawEvents bool
 	turnTimeout           time.Duration
 	interruptTimeout      time.Duration
@@ -289,6 +290,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 		binary = "codex"
 	}
 	cmd := exec.CommandContext(ctx, binary, "app-server", "--stdio")
+	cmd.Env = environmentWithout(os.Environ(), "DIGBENCH_API_TOKEN")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open Codex input: %w", err)
@@ -308,6 +310,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	server := &appServerSession{
 		cmd: cmd, stdin: stdin, encoder: json.NewEncoder(stdin),
 		stderr: stderr, envelopes: make(chan benchmarkEnvelope, 64), readErrors: make(chan error, 1), done: make(chan struct{}),
+		experimentalAPI:       experimental,
 		experimentalRawEvents: experimental,
 	}
 	go server.readLoop(json.NewDecoder(bufio.NewReader(stdout)))
@@ -329,6 +332,18 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 		return nil, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
 	return server, nil
+}
+
+func environmentWithout(environment []string, name string) []string {
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		key, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(key, name) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func experimentalAPIUnsupported(err error) bool {
@@ -978,21 +993,30 @@ func (s *appServerSession) readUntilNotification(ctx context.Context, accept fun
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		var envelope benchmarkEnvelope
-		if len(s.pending) > 0 {
-			envelope = s.pending[0]
-			s.pending = s.pending[1:]
-		} else {
-			var err error
-			envelope, err = s.nextEnvelope(ctx)
-			if err != nil {
-				return nil, err
-			}
+		envelope, err := s.nextPendingEnvelope(ctx)
+		if err != nil {
+			return nil, err
 		}
 		if envelope.Method != "" && accept(envelope.Method, envelope.Params) {
 			return envelope.Params, nil
 		}
 	}
+}
+
+func (s *appServerSession) nextPendingEnvelope(ctx context.Context) (benchmarkEnvelope, error) {
+	if len(s.pending) > 0 {
+		envelope := s.pending[0]
+		s.pending = s.pending[1:]
+		return envelope, nil
+	}
+	return s.nextEnvelope(ctx)
+}
+
+func (s *appServerSession) respond(id json.RawMessage, result any) error {
+	if len(id) == 0 {
+		return errors.New("app-server request omitted id")
+	}
+	return s.encoder.Encode(map[string]any{"id": id, "result": result})
 }
 
 var benchmarkOutputSchema = map[string]any{

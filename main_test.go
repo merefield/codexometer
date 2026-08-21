@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -118,9 +119,47 @@ func TestRunReportsUIError(t *testing.T) {
 	}
 }
 
+func TestRunDigBenchUsesExplicitSingleGameOptions(t *testing.T) {
+	t.Setenv("DIGBENCH_API_TOKEN", "secret")
+	var stdout, stderr bytes.Buffer
+	called := false
+	deps := dependencies{
+		runDigBench: func(_ context.Context, binary, token string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
+			called = true
+			if value := os.Getenv("DIGBENCH_API_TOKEN"); value != "" {
+				t.Fatalf("DigBench token remained in child environment: %q", value)
+			}
+			if binary != "/custom/codex" || token != "secret" || options.Game != "P-3" || options.Model != "gpt-5.6-terra" || options.Effort != "medium" || options.Timeout != 2*time.Minute {
+				t.Fatalf("binary=%q token=%q options=%#v", binary, token, options)
+			}
+			return codex.DigBenchResult{
+				Game: "P-3", Won: true, Status: "completed", LevelsBeaten: 4, MaxLevel: 4, Steps: 17,
+				DisplayName: "GPT-5.6 Terra", Effort: "medium", Duration: 3 * time.Second,
+				UsageKnown: true, Usage: codex.BenchmarkUsage{TotalTokens: 1234}, CostKnown: true, CostUSD: 0.0123,
+			}, nil
+		},
+	}
+	code := run([]string{
+		"--digbench-game", "P-3", "--digbench-model", "gpt-5.6-terra", "--digbench-effort", "medium",
+		"--digbench-timeout", "2m", "--codex", "/custom/codex",
+	}, &stdout, &stderr, deps)
+	if code != 0 || !called || !strings.Contains(stdout.String(), "DIGBENCH P-3 // WIN // LEVELS 4/4") || !strings.Contains(stderr.String(), "persisted remote session") {
+		t.Fatalf("code=%d called=%v stdout=%q stderr=%q", code, called, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunDigBenchRequiresToken(t *testing.T) {
+	t.Setenv("DIGBENCH_API_TOKEN", "")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--digbench-game", "P-1"}, &stdout, &stderr, dependencies{})
+	if code != 1 || !strings.Contains(stderr.String(), "DIGBENCH_API_TOKEN is required") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestDefaultDependenciesAreConfigured(t *testing.T) {
 	deps := defaultDependencies()
-	if deps.checkAuth == nil || deps.startUI == nil {
+	if deps.checkAuth == nil || deps.runDigBench == nil || deps.startUI == nil {
 		t.Fatal("default dependencies are incomplete")
 	}
 }

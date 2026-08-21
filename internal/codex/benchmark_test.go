@@ -622,6 +622,20 @@ func TestExperimentalAPIUnsupported(t *testing.T) {
 	}
 }
 
+func TestEnvironmentWithoutScrubsDigBenchTokenOnly(t *testing.T) {
+	environment := []string{"PATH=/usr/bin", "DIGBENCH_API_TOKEN=secret", "OTHER=value", "malformed"}
+	filtered := environmentWithout(environment, "digbench_api_token")
+	want := []string{"PATH=/usr/bin", "OTHER=value", "malformed"}
+	if len(filtered) != len(want) {
+		t.Fatalf("filtered environment = %#v", filtered)
+	}
+	for index := range want {
+		if filtered[index] != want[index] {
+			t.Fatalf("filtered environment = %#v", filtered)
+		}
+	}
+}
+
 func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
 	server, _ := newFakeBenchmarkServer(
