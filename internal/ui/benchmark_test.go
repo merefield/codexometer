@@ -188,6 +188,26 @@ func TestBenchmarkDetailCopyShortcutExportsContentOutsideViewport(t *testing.T) 
 	}
 }
 
+func TestBenchmarkDetailOmitsEmptyUsageSource(t *testing.T) {
+	result := codex.BenchmarkResult{
+		TaskName: "DEMO", Model: "model", DisplayName: "Model", Effort: "low", Correct: true,
+		UsageKnown: true, Usage: codex.BenchmarkUsage{TotalTokens: 100, InputTokens: 70, OutputTokens: 30},
+	}
+	model := Model{benchmarkDetail: &result}
+	screen := ansi.Strip(strings.Join(model.benchmarkDetailLines(200, paletteFor(themeHacker)), "\n"))
+	clipboard := model.benchmarkDetailClipboardText()
+	if strings.Contains(screen, "SOURCE") || strings.Contains(clipboard, "SOURCE") {
+		t.Fatalf("empty usage source left a dangling label:\nscreen: %s\nclipboard: %s", screen, clipboard)
+	}
+
+	result.UsageSource = codex.BenchmarkUsageCumulative
+	screen = ansi.Strip(strings.Join(model.benchmarkDetailLines(200, paletteFor(themeHacker)), "\n"))
+	clipboard = model.benchmarkDetailClipboardText()
+	if !strings.Contains(screen, "SOURCE cumulative") || !strings.Contains(clipboard, "SOURCE cumulative") {
+		t.Fatalf("known usage source was omitted:\nscreen: %s\nclipboard: %s", screen, clipboard)
+	}
+}
+
 func TestInProgressBenchmarkRowOpensAndUpdatesLiveDetail(t *testing.T) {
 	active := codex.BenchmarkResult{
 		TaskID: "merge-ranges", TaskName: "MERGE RANGES", Model: "live-model", DisplayName: "Live Model", Effort: "medium",

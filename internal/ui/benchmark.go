@@ -172,9 +172,7 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 	}
 	usage := "TOKENS // N/A"
 	if result.UsageKnown {
-		usage = fmt.Sprintf("TOKENS // TOTAL %d // INPUT %d // CACHED %d // OUTPUT %d // REASONING %d // SOURCE %s",
-			result.Usage.TotalTokens, result.Usage.InputTokens, result.Usage.CachedInputTokens,
-			result.Usage.OutputTokens, result.Usage.ReasoningOutputTokens, result.UsageSource)
+		usage = "TOKENS // " + benchmarkUsageDetail(result)
 	}
 	lines = append(lines, colors.dimmed().Render(fitTableCell(usage, width)))
 	cost := "API EQ // N/A"
@@ -268,9 +266,7 @@ func (m Model) benchmarkDetailClipboardText() string {
 	fmt.Fprintf(&output, "TASK: %s\n", result.TaskName)
 	fmt.Fprintf(&output, "TIME: %s\n", formatBenchmarkDuration(result.Duration))
 	if result.UsageKnown {
-		fmt.Fprintf(&output, "TOKENS: TOTAL %d // INPUT %d // CACHED %d // OUTPUT %d // REASONING %d // SOURCE %s\n",
-			result.Usage.TotalTokens, result.Usage.InputTokens, result.Usage.CachedInputTokens,
-			result.Usage.OutputTokens, result.Usage.ReasoningOutputTokens, result.UsageSource)
+		fmt.Fprintf(&output, "TOKENS: %s\n", benchmarkUsageDetail(result))
 	} else {
 		output.WriteString("TOKENS: N/A\n")
 	}
@@ -300,6 +296,16 @@ func (m Model) benchmarkDetailClipboardText() string {
 		}
 	}
 	return output.String()
+}
+
+func benchmarkUsageDetail(result codex.BenchmarkResult) string {
+	detail := fmt.Sprintf("TOTAL %d // INPUT %d // CACHED %d // OUTPUT %d // REASONING %d",
+		result.Usage.TotalTokens, result.Usage.InputTokens, result.Usage.CachedInputTokens,
+		result.Usage.OutputTokens, result.Usage.ReasoningOutputTokens)
+	if result.UsageSource != "" {
+		detail += " // SOURCE " + string(result.UsageSource)
+	}
+	return detail
 }
 
 func benchmarkDetailWrap(content string, width int) []string {
