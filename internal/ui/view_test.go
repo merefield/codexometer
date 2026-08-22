@@ -240,8 +240,11 @@ func TestFrameTitlesAreIntegratedIntoBorderInsteadOfButtonBrackets(t *testing.T)
 	if len(lines) != 5 {
 		t.Fatalf("frame height = %d, want 5:\n%s", len(lines), output)
 	}
-	if !strings.HasPrefix(lines[0], "╭─ SESSION READOUT ") || !strings.HasSuffix(lines[0], "╮") {
+	if !strings.HasPrefix(lines[0], "╭─ SESSION READOUT ") || !strings.HasSuffix(lines[0], "─╮") {
 		t.Fatalf("title was not integrated into the top border: %q", lines[0])
+	}
+	if strings.HasSuffix(lines[0], " ╮") {
+		t.Fatalf("title frame left a gap before the top-right corner: %q", lines[0])
 	}
 	if strings.Contains(output, "[ SESSION READOUT ]") {
 		t.Fatalf("frame title still looks like a button:\n%s", output)
@@ -256,6 +259,18 @@ func TestFrameTitlesAreIntegratedIntoBorderInsteadOfButtonBrackets(t *testing.T)
 	for index, line := range strings.Split(narrow, "\n") {
 		if width := lipgloss.Width(line); width != 5 {
 			t.Errorf("narrow line %d width = %d, want 5: %q", index, width, line)
+		}
+	}
+
+	const closeAction = "[ (X) CLOSE ]"
+	withAction := ansi.Strip(frameSizedWithTitleAction(48, 3, "RUN DETAIL", closeAction, "BODY", colors.primary, colors))
+	actionLines := strings.Split(withAction, "\n")
+	if !strings.HasSuffix(actionLines[0], closeAction+"─╮") {
+		t.Fatalf("title action did not reconnect to the top-right corner: %q", actionLines[0])
+	}
+	for index, line := range actionLines {
+		if width := lipgloss.Width(line); width != 48 {
+			t.Errorf("action frame line %d width = %d, want 48: %q", index, width, line)
 		}
 	}
 }

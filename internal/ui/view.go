@@ -288,9 +288,11 @@ func renderFrameTitleWithAction(width int, title, action string, color imagecolo
 		return borderStyle.Render(border.TopLeft + strings.Repeat(border.Top, width-2) + border.TopRight)
 	}
 	prefix := border.TopLeft + border.Top + " "
-	suffix := borderStyle.Render(" " + border.TopRight)
+	// Join the horizontal rule directly into the corner. Optional title actions
+	// retain their leading padding, but must not leave a visual hole after them.
+	suffix := borderStyle.Render(border.Top + border.TopRight)
 	if actionWidth > 0 {
-		suffix = borderStyle.Render(" ") + action + borderStyle.Render(" "+border.TopRight)
+		suffix = borderStyle.Render(" ") + action + borderStyle.Render(border.Top+border.TopRight)
 	}
 	middleWidth := max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-lipgloss.Width(suffix), 0)
 	middle := ""
