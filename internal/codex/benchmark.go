@@ -99,12 +99,15 @@ type BenchmarkResponseUsage struct {
 type BenchmarkInteractionKind string
 
 const (
-	BenchmarkInteractionPrompt   BenchmarkInteractionKind = "prompt"
-	BenchmarkInteractionResponse BenchmarkInteractionKind = "response"
-	BenchmarkInteractionPolicy   BenchmarkInteractionKind = "policy"
-	BenchmarkInteractionVerifier BenchmarkInteractionKind = "verifier"
-	BenchmarkInteractionMove     BenchmarkInteractionKind = "move"
-	BenchmarkInteractionState    BenchmarkInteractionKind = "state"
+	BenchmarkInteractionPrompt       BenchmarkInteractionKind = "prompt"
+	BenchmarkInteractionResponse     BenchmarkInteractionKind = "response"
+	BenchmarkInteractionPolicy       BenchmarkInteractionKind = "policy"
+	BenchmarkInteractionTools        BenchmarkInteractionKind = "tools"
+	BenchmarkInteractionTool         BenchmarkInteractionKind = "tool request"
+	BenchmarkInteractionToolResponse BenchmarkInteractionKind = "tool response"
+	BenchmarkInteractionVerifier     BenchmarkInteractionKind = "verifier"
+	BenchmarkInteractionMove         BenchmarkInteractionKind = "move"
+	BenchmarkInteractionState        BenchmarkInteractionKind = "state"
 )
 
 // BenchmarkInteraction is content emitted only by a benchmark turn that

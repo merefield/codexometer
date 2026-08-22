@@ -235,6 +235,10 @@ func benchmarkDetailHeaderLines(result codex.BenchmarkResult, active bool, width
 			"DIGBENCH // LEVEL %s // BEATEN %d // STEPS %d // STATUS %s",
 			level, result.LevelsBeaten, result.Steps, result.GameStatus,
 		), width)))
+		lines = append(lines, colors.dimmed().Render(fitTableCell(
+			"WORKFLOW // POLICY → PROMPT → TOOLS → TOOL REQUEST/RESPONSE → MOVE → STATE → FINAL RESPONSE",
+			width,
+		)))
 	}
 	usage := "TOKENS // N/A"
 	if result.UsageKnown {
@@ -398,6 +402,7 @@ func (m Model) benchmarkDetailClipboardText() string {
 		}
 		fmt.Fprintf(&output, "DIGBENCH: LEVEL %s // BEATEN %d // STEPS %d // STATUS %s\n",
 			level, result.LevelsBeaten, result.Steps, result.GameStatus)
+		output.WriteString("WORKFLOW: POLICY -> PROMPT -> TOOLS -> TOOL REQUEST/RESPONSE -> MOVE -> STATE -> FINAL RESPONSE\n")
 	}
 	if result.UsageKnown {
 		fmt.Fprintf(&output, "TOKENS: %s\n", benchmarkUsageDetail(result))

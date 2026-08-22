@@ -862,13 +862,18 @@ idempotent `step_index` protocol; session creation is never automatically
 retried because that endpoint does not document idempotency.
 
 In the TUI, each selected game run appears immediately in the existing result
-table and can be opened while it is in progress. Its benchmark-only detail view reports
-authoritative level, beaten-level, step, and status counters, followed by every
-captured move and the sanitized DigBench state returned for that move. The
-**Copy** control exports that complete captured view. DigBench session IDs,
-credentials, request headers, and Codex reasoning are never included. **Stop**
-requests interruption of the active Codex turn, retains the captured moves, and
-marks the row stopped.
+table and can be opened while it is in progress. Its benchmark-only detail view
+shows every Codexometer-authored developer instruction, the complete game prompt
+with the session ID redacted, and the dynamic-tool definitions. It then presents
+each game exchange as a sanitized **Tool Request** and full **Tool Response**,
+followed by the concise **Move** and authoritative **State** representation, so
+the solving workflow remains readable without losing protocol detail. The final
+model response completes the transcript. The **Copy** control exports that
+complete captured view. DigBench session IDs, credentials, request headers,
+temporary paths, local scratch-work commands, internal app-server context, Codex
+platform instructions, and Codex reasoning are never included. **Stop** requests
+interruption of the active Codex turn, retains the captured transcript, and marks
+the row stopped.
 
 The headless command prints the selected game, model, effort, and billing source
 before connecting. It then reports remote-session creation, Codex-turn startup,
@@ -951,8 +956,8 @@ the visible scroll window. Copy uses the terminal's OSC 52 clipboard support,
 which is not available in every terminal.
 
 This transcript is deliberately benchmark-only. It is populated directly by
-the ephemeral thread that Codexometer created for that trial, bounded to 16
-entries of at most 64 KiB each and 128 KiB total, retained only in process
+the ephemeral thread that Codexometer created for that trial, bounded to 4,096
+entries of at most 64 KiB each and 1 MiB total, retained only in process
 memory, and discarded when a new suite starts or Codexometer exits. It does not
 subscribe to or read ordinary Codex conversations, and it excludes reasoning
 events, credentials, request headers, and internal app-server IDs.

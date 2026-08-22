@@ -108,8 +108,28 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	if final := progress[2]; final.Level != 3 || final.LevelsBeaten != 3 || final.MaxLevel != 3 || final.Steps != 1 || final.Status != "completed" || final.Elapsed < 0 {
 		t.Fatalf("final progress = %#v", final)
 	}
-	if len(snapshots) < 3 || len(result.Interactions) != 4 || result.Interactions[1].Kind != BenchmarkInteractionMove || result.Interactions[1].Content != "b" || result.Interactions[2].Kind != BenchmarkInteractionState || result.Interactions[3].Kind != BenchmarkInteractionResponse {
+	if len(snapshots) < 3 || len(result.Interactions) != 9 ||
+		result.Interactions[0].Kind != BenchmarkInteractionPolicy ||
+		result.Interactions[1].Kind != BenchmarkInteractionPrompt ||
+		result.Interactions[2].Kind != BenchmarkInteractionTools ||
+		result.Interactions[3].Kind != BenchmarkInteractionState ||
+		result.Interactions[4].Kind != BenchmarkInteractionTool ||
+		result.Interactions[5].Kind != BenchmarkInteractionToolResponse ||
+		result.Interactions[6].Kind != BenchmarkInteractionMove || result.Interactions[6].Content != "b" ||
+		result.Interactions[7].Kind != BenchmarkInteractionState ||
+		result.Interactions[8].Kind != BenchmarkInteractionResponse {
 		t.Fatalf("DigBench snapshots/interactions = %d / %#v", len(snapshots), result.Interactions)
+	}
+	if !strings.Contains(result.Interactions[0].Content, "Play only the assigned DigBench session") ||
+		!strings.Contains(result.Interactions[1].Content, `session_id="[REDACTED]"`) ||
+		!strings.Contains(result.Interactions[1].Content, "Creative mode") ||
+		!strings.Contains(result.Interactions[2].Content, `"get_session"`) ||
+		!strings.Contains(result.Interactions[2].Content, `"inputSchema"`) ||
+		result.Interactions[4].Content != `STEP // SESSION_ID [REDACTED] // STEP_INDEX 1 // ACTION "b"` ||
+		!strings.Contains(result.Interactions[5].Content, "ACCEPTED") ||
+		!strings.Contains(result.Interactions[5].Content, `"session_id": "[REDACTED]"`) ||
+		!strings.Contains(result.Interactions[5].Content, `"framework_version": "engine-1"`) {
+		t.Fatalf("DigBench authored context = %#v", result.Interactions[:6])
 	}
 	for _, interaction := range result.Interactions {
 		if strings.Contains(interaction.Content, "session-1") {
@@ -121,6 +141,61 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 		if !strings.Contains(requestLog, expected) {
 			t.Fatalf("request log missing %q: %s", expected, requestLog)
 		}
+	}
+}
+
+func TestDigBenchTranscriptPromptRedactsOnlyRuntimeSessionID(t *testing.T) {
+	maxLevel := 3
+	session := digbench.Session{
+		Game: "P-1", SessionID: "session-secret", StepIndex: 4,
+		State: digbench.State{Status: "in_progress", Level: 2, MaxLevel: &maxLevel, Observation: "session-secret sees ___", Actions: []string{"b", "session-secret-action"}},
+	}
+	runtimePrompt := digBenchPrompt(session)
+	transcriptPrompt := digBenchTranscriptPrompt(session)
+	if !strings.Contains(runtimePrompt, `session_id="session-secret"`) {
+		t.Fatalf("runtime prompt lost assigned session: %q", runtimePrompt)
+	}
+	if strings.Contains(transcriptPrompt, "session-secret") || !strings.Contains(transcriptPrompt, `session_id="[REDACTED]"`) {
+		t.Fatalf("transcript prompt did not safely redact session: %q", transcriptPrompt)
+	}
+	for _, shared := range []string{`game="P-1"`, "Starting step_index: 4", "Your first move must use step_index 5"} {
+		if !strings.Contains(runtimePrompt, shared) || !strings.Contains(transcriptPrompt, shared) {
+			t.Fatalf("prompt variants do not share %q", shared)
+		}
+	}
+	if !strings.Contains(runtimePrompt, `"observation":"session-secret sees ___"`) || !strings.Contains(transcriptPrompt, `"observation":"[REDACTED] sees ___"`) || !strings.Contains(transcriptPrompt, `"[REDACTED]-action"`) {
+		t.Fatalf("state strings were not safely represented: %q", transcriptPrompt)
+	}
+	state := formatDigBenchState(session)
+	if strings.Contains(state, "session-secret") || !strings.Contains(state, `"observation": "[REDACTED] sees ___"`) {
+		t.Fatalf("state transcript leaked session ID: %s", state)
+	}
+}
+
+func TestDigBenchToolResponseTranscriptRedactsSensitiveIdentifiers(t *testing.T) {
+	response := digBenchToolResponse(map[string]any{
+		"session_id": "session-secret",
+		"threadId":   "thread-secret",
+		"token":      "token-secret",
+		"state": map[string]any{
+			"observation": "session-secret reached the door",
+			"actions":     []any{"left", "right"},
+		},
+	}, nil)
+	formatted := formatDigBenchToolResponse(response, true, "session-secret")
+	for _, secret := range []string{"session-secret", "thread-secret", "token-secret"} {
+		if strings.Contains(formatted, secret) {
+			t.Fatalf("tool response leaked %q: %s", secret, formatted)
+		}
+	}
+	for _, visible := range []string{"ACCEPTED", `"session_id": "[REDACTED]"`, `"threadId": "[REDACTED]"`, `"token": "[REDACTED]"`, `"actions"`, `"left"`} {
+		if !strings.Contains(formatted, visible) {
+			t.Fatalf("sanitized tool response missing %q: %s", visible, formatted)
+		}
+	}
+	rejected := formatDigBenchToolResponse(digBenchToolResponse(nil, errors.New("session-secret was rejected")), false, "session-secret")
+	if !strings.Contains(rejected, "REJECTED") || !strings.Contains(rejected, "[REDACTED] was rejected") || strings.Contains(rejected, "session-secret") {
+		t.Fatalf("rejected tool response was not safely documented: %s", rejected)
 	}
 }
 

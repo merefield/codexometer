@@ -962,18 +962,23 @@ func TestDigBenchDetailShowsProgressAndTranscript(t *testing.T) {
 		Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true,
 		CurrentLevel: 14, LevelsBeaten: 14, MaxLevel: 14, Steps: 553, GameStatus: "completed",
 		Interactions: []codex.BenchmarkInteraction{
+			{Kind: codex.BenchmarkInteractionPolicy, Content: "Play only the assigned DigBench session."},
+			{Kind: codex.BenchmarkInteractionPrompt, Content: `session_id="[REDACTED]"; infer the rules`},
+			{Kind: codex.BenchmarkInteractionTools, Content: `[{"name":"step"}]`},
+			{Kind: codex.BenchmarkInteractionTool, Content: `STEP // SESSION_ID [REDACTED] // STEP_INDEX 553 // ACTION "move_right"`},
+			{Kind: codex.BenchmarkInteractionToolResponse, Content: "ACCEPTED\n{\"session_id\":\"[REDACTED]\"}"},
 			{Kind: codex.BenchmarkInteractionMove, Content: "move_right"},
 			{Kind: codex.BenchmarkInteractionState, Content: `{"observation":"WIN"}`},
 		},
 	}
 	model := Model{benchmarkDetail: &result}
 	output := ansi.Strip(strings.Join(model.benchmarkDetailLines(100, paletteFor(themeHacker)), "\n"))
-	for _, want := range []string{"RESULT // WIN", "LEVEL 14/14", "BEATEN 14", "STEPS 553", "MOVE //", "move_right", `"observation":"WIN"`} {
+	for _, want := range []string{"RESULT // WIN", "LEVEL 14/14", "BEATEN 14", "STEPS 553", "WORKFLOW //", "POLICY //", "PROMPT //", "TOOLS //", "TOOL REQUEST //", "TOOL RESPONSE //", "[REDACTED]", "MOVE //", "move_right", `"observation":"WIN"`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("DigBench detail missing %q:\n%s", want, output)
 		}
 	}
-	if copied := model.benchmarkDetailClipboardText(); !strings.Contains(copied, "RESULT: WIN") || !strings.Contains(copied, "DIGBENCH: LEVEL 14/14") {
+	if copied := model.benchmarkDetailClipboardText(); !strings.Contains(copied, "RESULT: WIN") || !strings.Contains(copied, "DIGBENCH: LEVEL 14/14") || !strings.Contains(copied, "WORKFLOW: POLICY -> PROMPT") || !strings.Contains(copied, "[PROMPT +0.0s]") || !strings.Contains(copied, "[TOOLS +0.0s]") {
 		t.Fatalf("DigBench clipboard text missing progress:\n%s", copied)
 	}
 }

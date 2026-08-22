@@ -15,6 +15,7 @@ import (
 const (
 	defaultDigBenchTimeout          = 30 * time.Minute
 	defaultDigBenchProgressInterval = 15 * time.Second
+	digBenchDeveloperInstructions   = "Play only the assigned DigBench session. Use its scoped tools for game access, keep useful notes in the isolated workspace if needed, and stop calling tools as soon as the game is done."
 )
 
 // DigBenchProgressPhase identifies a safe, content-free runner milestone.
@@ -273,7 +274,7 @@ func (s *appServerSession) runDigBench(
 		"model": combination.model.Model, "cwd": temporary,
 		"approvalPolicy": "never", "sandbox": "workspace-write", "ephemeral": true,
 		"serviceName":           "codexometer-digbench",
-		"developerInstructions": "Play only the assigned DigBench session. Use its scoped tools for game access, keep useful notes in the isolated workspace if needed, and stop calling tools as soon as the game is done.",
+		"developerInstructions": digBenchDeveloperInstructions,
 		"dynamicTools":          digBenchDynamicTools(),
 	}
 	if s.experimentalRawEvents {
@@ -311,10 +312,14 @@ func (s *appServerSession) runDigBench(
 	if err != nil {
 		return result, fmt.Errorf("start DigBench game: %w", err)
 	}
+	assignedSessionID := session.SessionID
 	applyDigBenchSession(&result, session)
 
 	startedAt := time.Now()
-	appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session))
+	appendDigBenchInteraction(&result, time.Time{}, BenchmarkInteractionPolicy, digBenchDeveloperInstructions)
+	appendDigBenchInteraction(&result, time.Time{}, BenchmarkInteractionPrompt, digBenchTranscriptPrompt(session))
+	appendDigBenchInteraction(&result, time.Time{}, BenchmarkInteractionTools, formatDigBenchTools())
+	appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session, assignedSessionID))
 	publishDigBenchSnapshot(options.Snapshot, result)
 	emitDigBenchProgress(options.Progress, DigBenchProgressSession, result, startedAt)
 	turnParams := map[string]any{
@@ -397,17 +402,20 @@ func (s *appServerSession) runDigBench(
 			if envelope.Method != "item/tool/call" {
 				return result, fmt.Errorf("unsupported Codex app-server request %q", envelope.Method)
 			}
-			tool, action := digBenchToolSummary(envelope.Params)
+			tool, action, stepIndex := digBenchToolSummary(envelope.Params)
 			response := handleDigBenchToolCall(
 				runCtx, service, startedThread.Thread.ID, startedTurn.Turn.ID,
-				session.SessionID, envelope.Params, &session,
+				assignedSessionID, envelope.Params, &session,
 			)
 			applyDigBenchSession(&result, session)
-			if response["success"] == true {
+			success := response["success"] == true
+			appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionTool, formatDigBenchToolInteraction(tool, action, stepIndex, assignedSessionID, session.SessionID))
+			appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionToolResponse, formatDigBenchToolResponse(response, success, assignedSessionID, session.SessionID))
+			if success {
 				if tool == "step" {
-					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionMove, action)
+					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionMove, redactDigBenchText(action, assignedSessionID, session.SessionID))
 				}
-				appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session))
+				appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session, assignedSessionID))
 				emitDigBenchProgress(options.Progress, DigBenchProgressUpdate, result, startedAt)
 				publishDigBenchSnapshot(options.Snapshot, result)
 			}
@@ -450,7 +458,7 @@ func (s *appServerSession) runDigBench(
 		case "turn/completed":
 			completed = digBenchTurnCompleted(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure)
 			if completed {
-				if final := digBenchFinalResponse(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, session.SessionID); final != "" {
+				if final := digBenchFinalResponse(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, assignedSessionID); final != "" {
 					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionResponse, final)
 					publishDigBenchSnapshot(options.Snapshot, result)
 				}
@@ -489,26 +497,111 @@ func appendDigBenchInteraction(result *DigBenchResult, startedAt time.Time, kind
 	result.Interactions = proxy.Interactions
 }
 
-func digBenchToolSummary(params json.RawMessage) (tool, action string) {
+func digBenchToolSummary(params json.RawMessage) (tool, action string, stepIndex int) {
 	var call struct {
 		Tool      string `json:"tool"`
 		Arguments struct {
-			Action string `json:"action"`
+			Action    string `json:"action"`
+			StepIndex int    `json:"step_index"`
 		} `json:"arguments"`
 	}
 	if json.Unmarshal(params, &call) != nil {
-		return "", ""
+		return "", "", 0
 	}
-	return call.Tool, call.Arguments.Action
+	return call.Tool, call.Arguments.Action, call.Arguments.StepIndex
 }
 
-func formatDigBenchState(session digbench.Session) string {
-	state := struct {
-		StepIndex    int            `json:"step_index"`
-		LevelsBeaten int            `json:"levels_beaten"`
-		State        digbench.State `json:"state"`
-	}{StepIndex: session.StepIndex, LevelsBeaten: session.LevelsBeaten, State: session.State}
-	encoded, err := json.MarshalIndent(state, "", "  ")
+func formatDigBenchToolInteraction(tool, action string, stepIndex int, sensitiveValues ...string) string {
+	action = redactDigBenchText(action, sensitiveValues...)
+	switch tool {
+	case "step":
+		return fmt.Sprintf("STEP // SESSION_ID [REDACTED] // STEP_INDEX %d // ACTION %q", stepIndex, action)
+	case "get_session":
+		return "GET_SESSION // SESSION_ID [REDACTED] // AUTHORITATIVE STATE REFRESH"
+	default:
+		label := strings.ToUpper(tool)
+		if label == "" {
+			label = "UNKNOWN_TOOL"
+		}
+		return label
+	}
+}
+
+func formatDigBenchToolResponse(response map[string]any, success bool, sensitiveValues ...string) string {
+	status := "REJECTED"
+	if success {
+		status = "ACCEPTED"
+	}
+	items, ok := response["contentItems"].([]map[string]string)
+	if !ok || len(items) == 0 {
+		return status + "\n(response unavailable)"
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(items[0]["text"]), &payload); err != nil {
+		return status + "\n(response could not be safely decoded)"
+	}
+	payload = redactDigBenchTranscriptValue(payload, sensitiveValues...)
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return status + "\n(response could not be safely encoded)"
+	}
+	return status + "\n" + string(encoded)
+}
+
+func redactDigBenchTranscriptValue(value any, sensitiveValues ...string) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		redacted := make(map[string]any, len(typed))
+		for key, child := range typed {
+			normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+			switch normalized {
+			case "sessionid", "threadid", "turnid", "callid", "responseid", "token", "apikey", "authorization":
+				redacted[key] = "[REDACTED]"
+			default:
+				redacted[key] = redactDigBenchTranscriptValue(child, sensitiveValues...)
+			}
+		}
+		return redacted
+	case []any:
+		redacted := make([]any, len(typed))
+		for index, child := range typed {
+			redacted[index] = redactDigBenchTranscriptValue(child, sensitiveValues...)
+		}
+		return redacted
+	case string:
+		return redactDigBenchText(typed, sensitiveValues...)
+	default:
+		return value
+	}
+}
+
+func redactDigBenchJSONValue(value any, sensitiveValues ...string) any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "(value could not be safely encoded)"
+	}
+	var generic any
+	if err := json.Unmarshal(encoded, &generic); err != nil {
+		return "(value could not be safely decoded)"
+	}
+	return redactDigBenchTranscriptValue(generic, sensitiveValues...)
+}
+
+func redactDigBenchText(value string, sensitiveValues ...string) string {
+	for _, sensitive := range sensitiveValues {
+		if sensitive != "" {
+			value = strings.ReplaceAll(value, sensitive, "[REDACTED]")
+		}
+	}
+	return value
+}
+
+func formatDigBenchState(session digbench.Session, sensitiveValues ...string) string {
+	state := map[string]any{
+		"step_index": session.StepIndex, "levels_beaten": session.LevelsBeaten, "state": session.State,
+	}
+	sensitiveValues = append(sensitiveValues, session.SessionID)
+	encoded, err := json.MarshalIndent(redactDigBenchJSONValue(state, sensitiveValues...), "", "  ")
 	if err != nil {
 		return "DigBench state could not be encoded."
 	}
@@ -554,7 +647,27 @@ func digBenchDynamicTools() []map[string]any {
 }
 
 func digBenchPrompt(session digbench.Session) string {
-	state, _ := json.Marshal(session.State)
+	return formatDigBenchPrompt(session, session.SessionID, false)
+}
+
+func digBenchTranscriptPrompt(session digbench.Session) string {
+	return formatDigBenchPrompt(session, "[REDACTED]", true)
+}
+
+func formatDigBenchTools() string {
+	encoded, err := json.MarshalIndent(digBenchDynamicTools(), "", "  ")
+	if err != nil {
+		return "DigBench dynamic tool definitions could not be encoded."
+	}
+	return string(encoded)
+}
+
+func formatDigBenchPrompt(session digbench.Session, sessionID string, redactState bool) string {
+	stateValue := any(session.State)
+	if redactState {
+		stateValue = redactDigBenchJSONValue(stateValue, session.SessionID)
+	}
+	state, _ := json.Marshal(stateValue)
 	return fmt.Sprintf(`We are not going to tell you the rules of this game—you have to figure them out for yourself.
 
 The aim is to reach as high a level as possible. You advance by reaching unknown states. Each level has a limited number of steps; exhausting them or reaching certain states can cost a life. Losing all lives ends the game.
@@ -568,7 +681,7 @@ Initial state:
 %s
 
 Each move must use exactly one string from the latest state's actions list and the latest returned step_index plus one. Infer the rules from state changes, keep useful notes if helpful, and continue at a deliberate but efficient pace until state.done is true. Then stop making moves and give a concise debrief of the mechanics, objective, strategy, and uncertainties.`,
-		session.SessionID, session.Game, session.StepIndex, session.StepIndex+1, state)
+		sessionID, session.Game, session.StepIndex, session.StepIndex+1, state)
 }
 
 func handleDigBenchToolCall(
@@ -700,10 +813,7 @@ func digBenchFinalResponse(params json.RawMessage, threadID, turnID, sessionID s
 	}
 	for _, item := range event.Turn.Items {
 		if item.Type == "agentMessage" && strings.TrimSpace(item.Text) != "" {
-			if sessionID != "" {
-				return strings.ReplaceAll(item.Text, sessionID, "[digbench-session]")
-			}
-			return item.Text
+			return redactDigBenchText(item.Text, sessionID, threadID, turnID)
 		}
 	}
 	return ""
