@@ -24,8 +24,8 @@ const (
 	benchmarkInterruptTimeout = 15 * time.Second
 	benchmarkCodeLimit        = 64 * 1024
 	benchmarkInteractionLimit = 64 * 1024
-	benchmarkTranscriptLimit  = 128 * 1024
-	benchmarkInteractionCount = 16
+	benchmarkTranscriptLimit  = 1024 * 1024
+	benchmarkInteractionCount = 4096
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
 
@@ -103,6 +103,8 @@ const (
 	BenchmarkInteractionResponse BenchmarkInteractionKind = "response"
 	BenchmarkInteractionPolicy   BenchmarkInteractionKind = "policy"
 	BenchmarkInteractionVerifier BenchmarkInteractionKind = "verifier"
+	BenchmarkInteractionMove     BenchmarkInteractionKind = "move"
+	BenchmarkInteractionState    BenchmarkInteractionKind = "state"
 )
 
 // BenchmarkInteraction is content emitted only by a benchmark turn that
@@ -138,6 +140,12 @@ type BenchmarkResult struct {
 	ToolType      string
 	Failure       string
 	Interactions  []BenchmarkInteraction
+	Provider      string
+	GameStatus    string
+	CurrentLevel  int
+	LevelsBeaten  int
+	MaxLevel      int
+	Steps         int
 }
 
 // BenchmarkEvent incrementally reports discovery, execution, and results.
@@ -324,6 +332,18 @@ func (c Client) RunBenchmarkSuiteScoped(ctx context.Context, taskIDs []Benchmark
 func (c Client) runBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID, emit func(BenchmarkEvent), scopes ...BenchmarkScope) {
 	if emit == nil {
 		emit = func(BenchmarkEvent) {}
+	}
+	if len(taskIDs) == 1 {
+		if game, ok := digBenchGame(taskIDs[0]); ok {
+			c.runDigBenchBenchmarkSuite(ctx, taskIDs[0], game, emit, scopes...)
+			return
+		}
+	}
+	for _, id := range taskIDs {
+		if _, external := digBenchGame(id); external {
+			emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("DigBench must be run separately from deterministic benchmarks")))
+			return
+		}
 	}
 	definitions, err := resolveBenchmarkTasks(taskIDs)
 	if err != nil {

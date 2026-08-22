@@ -171,10 +171,29 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 		outcome = "PASS"
 		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.primary)
 	}
+	if result.Provider == "digbench" && !m.benchmarkDetailActive && !result.Stopped {
+		if result.Correct {
+			outcome = "WIN"
+		} else if result.Failure != "" {
+			outcome = "INCOMPLETE"
+		} else {
+			outcome = "LOSS"
+		}
+	}
 	lines := []string{
 		outcomeStyle.Render(fitTableCell("RESULT // "+outcome, width)),
 		colors.label().Render(fitTableCell("MODEL // "+model+" // EFFORT // "+strings.ToUpper(result.Effort), width)),
 		colors.label().Render(fitTableCell("TASK // "+result.TaskName+" // TIME // "+formatBenchmarkDuration(result.Duration), width)),
+	}
+	if result.Provider == "digbench" {
+		level := fmt.Sprintf("%d", result.CurrentLevel)
+		if result.MaxLevel > 0 {
+			level = fmt.Sprintf("%d/%d", result.CurrentLevel, result.MaxLevel)
+		}
+		lines = append(lines, colors.label().Render(fitTableCell(fmt.Sprintf(
+			"DIGBENCH // LEVEL %s // BEATEN %d // STEPS %d // STATUS %s",
+			level, result.LevelsBeaten, result.Steps, result.GameStatus,
+		), width)))
 	}
 	usage := "TOKENS // N/A"
 	if result.UsageKnown {
@@ -261,6 +280,15 @@ func (m Model) benchmarkDetailClipboardText() string {
 	} else if result.Correct {
 		status = "PASS"
 	}
+	if result.Provider == "digbench" && !m.benchmarkDetailActive && !result.Stopped {
+		if result.Correct {
+			status = "WIN"
+		} else if result.Failure != "" {
+			status = "INCOMPLETE"
+		} else {
+			status = "LOSS"
+		}
+	}
 	model := result.DisplayName
 	if model == "" {
 		model = result.Model
@@ -277,6 +305,14 @@ func (m Model) benchmarkDetailClipboardText() string {
 	fmt.Fprintf(&output, "EFFORT: %s\n", strings.ToUpper(result.Effort))
 	fmt.Fprintf(&output, "TASK: %s\n", result.TaskName)
 	fmt.Fprintf(&output, "TIME: %s\n", formatBenchmarkDuration(result.Duration))
+	if result.Provider == "digbench" {
+		level := fmt.Sprintf("%d", result.CurrentLevel)
+		if result.MaxLevel > 0 {
+			level = fmt.Sprintf("%d/%d", result.CurrentLevel, result.MaxLevel)
+		}
+		fmt.Fprintf(&output, "DIGBENCH: LEVEL %s // BEATEN %d // STEPS %d // STATUS %s\n",
+			level, result.LevelsBeaten, result.Steps, result.GameStatus)
+	}
 	if result.UsageKnown {
 		fmt.Fprintf(&output, "TOKENS: %s\n", benchmarkUsageDetail(result))
 	} else {
@@ -633,6 +669,7 @@ func (m Model) renderBenchmarkSegments(segments []benchmarkControlSegment, width
 
 func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	tasks := m.benchmarkTasks()
+	allTasks := m.benchmarkRunAllTasks()
 	selected := codex.BenchmarkTask{Name: "NO TASKS"}
 	if len(tasks) > 0 {
 		selected = tasks[m.benchmarkSelectedTask%len(tasks)]
@@ -653,12 +690,15 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 
 	selectedLabel := "[ (B) RUN SELECTED ]"
-	allTurns := m.benchmarkCombinations * len(tasks)
+	allTurns := m.benchmarkCombinations * len(allTasks)
 	allLabel := fmt.Sprintf("[ (A) RUN ALL // %d ]", allTurns)
 	scopeLabel := fmt.Sprintf("[ (S) SCOPE // %d ]", m.benchmarkCombinations)
 	stopLabel := "[ (X) STOP ]"
 	if m.benchmarkPlanning {
 		allLabel = "[ DISCOVERING TURNS… ]"
+	}
+	if selected.External && m.benchmarkCombinations != 1 {
+		selectedLabel = "[ SELECT 1 PAIR IN SCOPE ]"
 	}
 	if m.benchmarkAllArmed {
 		allLabel = fmt.Sprintf("[ CONFIRM // %d TURNS ]", allTurns)
@@ -693,7 +733,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	primary := []benchmarkControlSegment{
 		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(tasks) > 0},
-		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(tasks))},
+		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(allTasks))},
 	}
 	secondary := []benchmarkControlSegment{
 		{text: scopeLabel, button: footerButtonBenchmarkScope, enabled: !running && len(m.benchmarkPlan.Models) > 0},
@@ -816,10 +856,19 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 		colors.dimmed().Render(ansi.Truncate(detail, max(width-4, 1), "")),
 	}
 	if height >= 5 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate("HERMETIC STARLARK // BOUNDED STEPS PER CASE", max(width-4, 1), "")))
+		boundary := "HERMETIC STARLARK // BOUNDED STEPS PER CASE"
+		if m.benchmarkSelectedTaskExternal() || strings.HasPrefix(m.benchmarkCurrentTask, "DIGBENCH") {
+			boundary = "EXTERNAL DIGBENCH // PERSISTED REMOTE SESSION // RANDOM SEED"
+		}
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(boundary, max(width-4, 1), "")))
 	}
 	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
+}
+
+func (m Model) benchmarkSelectedTaskExternal() bool {
+	tasks := m.benchmarkTasks()
+	return len(tasks) > 0 && tasks[m.benchmarkSelectedTask%len(tasks)].External
 }
 
 func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
@@ -1136,6 +1185,15 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 	} else if result.Correct {
 		outcome = "PASS"
 	}
+	if result.Provider == "digbench" && !inProgress && !result.Stopped {
+		if result.Correct {
+			outcome = "WIN"
+		} else if result.Failure != "" {
+			outcome = "INCOMPLETE"
+		} else {
+			outcome = "LOSS"
+		}
+	}
 	cost := "N/A"
 	if result.CostKnown {
 		cost = fmt.Sprintf("~$%.4f", result.CostUSD)
@@ -1149,7 +1207,7 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 		model += "→" + result.ActualModel
 	}
 	rank := "—"
-	if value := rankings[benchmarkCombinationKey(result)]; !inProgress && !result.Stopped && value > 0 {
+	if value := rankings[benchmarkCombinationKey(result)]; result.Provider == "" && !inProgress && !result.Stopped && value > 0 {
 		rank = fmt.Sprintf("#%d", value)
 	}
 	return []string{

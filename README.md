@@ -804,18 +804,27 @@ Neither key is written to preferences or accepted as a command-line argument.
 
 ### Experimental DigBench agentic run
 
-Codexometer includes a deliberately narrow command-line proof of concept for
+Codexometer includes a deliberately narrow integration for
 [DigBench](https://digbench.ai/), an external benchmark of discovering unknown
-rules in interactive text games. It runs exactly one named game with exactly
-one Codex model/reasoning-effort combination; it is not included in the
-Benchmark tab's deterministic Run Selected or Run All actions.
+rules in interactive text games. Supplying `DIGBENCH_API_TOKEN` adds
+**DIGBENCH P-1** to the Benchmark tab's task selector. Select exactly one
+compatible model/reasoning-effort pair on the **Scope** screen, choose that
+task, and use **Run Selected**. DigBench is deliberately excluded from **Run
+All** because every invocation creates a persisted remote session with a random
+seed.
 
 Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
-(sign-in is a passwordless email link), place it in the environment, and select
-one of the 21 public game names returned by the API, such as `P-1`:
+(sign-in is a passwordless email link) and place it in the environment. The TUI
+currently exposes the proof-of-concept game `P-1`:
 
 ```sh
 export DIGBENCH_API_TOKEN="<token>"
+codexometer
+```
+
+The existing headless form remains available for a named exploratory game:
+
+```sh
 codexometer --digbench-game P-1
 ```
 
@@ -846,12 +855,19 @@ the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
 idempotent `step_index` protocol; session creation is never automatically
 retried because that endpoint does not document idempotency.
 
-The command prints the selected game, model, effort, and billing source before
-connecting. It then reports remote-session creation, Codex-turn startup,
+In the TUI, the run appears immediately in the existing result table and can be
+opened while it is in progress. Its benchmark-only detail view reports
+authoritative level, beaten-level, step, and status counters, followed by every
+captured move and the sanitized DigBench state returned for that move. The
+**Copy** control exports that complete captured view. DigBench session IDs,
+credentials, request headers, and Codex reasoning are never included. **Stop**
+requests interruption of the active Codex turn, retains the captured moves, and
+marks the row stopped.
+
+The headless command prints the selected game, model, effort, and billing source
+before connecting. It then reports remote-session creation, Codex-turn startup,
 authoritative level/step/status updates after successful game-tool calls, and a
 content-free elapsed-time heartbeat every 15 seconds while Codex is working.
-Progress output never includes the DigBench session ID, observations, available
-actions, model reasoning, or credentials.
 
 The final line reports `WIN`, `LOSS`, or `INCOMPLETE`, levels beaten, total game
 steps, duration, tokens, and estimated standard API-equivalent cost. A win

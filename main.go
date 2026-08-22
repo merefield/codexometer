@@ -249,13 +249,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			fmt.Fprintln(stderr, "codexometer: --digbench-game cannot be combined with --demo")
 			return 2
 		}
-		token := strings.TrimSpace(os.Getenv("DIGBENCH_API_TOKEN"))
-		if token == "" {
-			fmt.Fprintln(stderr, "codexometer: DIGBENCH_API_TOKEN is required for --digbench-game")
+		token, tokenErr := takeDigBenchToken()
+		if tokenErr != nil {
+			fmt.Fprintln(stderr, "codexometer:", tokenErr)
 			return 1
 		}
-		if err := os.Unsetenv("DIGBENCH_API_TOKEN"); err != nil {
-			fmt.Fprintln(stderr, "codexometer: remove DIGBENCH_API_TOKEN from child environment:", err)
+		if token == "" {
+			fmt.Fprintln(stderr, "codexometer: DIGBENCH_API_TOKEN is required for --digbench-game")
 			return 1
 		}
 		benchmarkAPIKey, benchmarkAPIKeySource, err := takeBenchmarkAPIKey()
@@ -296,7 +296,12 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}
-	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey}
+	digBenchToken, err := takeDigBenchToken()
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer:", err)
+		return 1
+	}
+	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
 	}
@@ -348,6 +353,14 @@ func takeBenchmarkAPIKey() (key, source string, err error) {
 		}
 	}
 	return key, source, nil
+}
+
+func takeDigBenchToken() (string, error) {
+	token := strings.TrimSpace(os.Getenv("DIGBENCH_API_TOKEN"))
+	if err := os.Unsetenv("DIGBENCH_API_TOKEN"); err != nil {
+		return "", fmt.Errorf("remove DIGBENCH_API_TOKEN from child environment: %w", err)
+	}
+	return token, nil
 }
 
 func formatDigBenchResult(result codex.DigBenchResult) string {

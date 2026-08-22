@@ -36,6 +36,10 @@ type ScopedBenchmarkRunner interface {
 	RunBenchmarkSuiteScoped(context.Context, []codex.BenchmarkTaskID, codex.BenchmarkScope, func(codex.BenchmarkEvent))
 }
 
+type BenchmarkTaskProvider interface {
+	BenchmarkTasks() []codex.BenchmarkTask
+}
+
 type Model struct {
 	fetcher               Fetcher
 	usageFetcher          TokenUsageFetcher
@@ -921,7 +925,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			}
 		}
 	case footerButtonBenchmarkAll:
-		tasks := m.benchmarkTasks()
+		tasks := m.benchmarkRunAllTasks()
 		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkRunActive(), m.benchmarkCombinations, len(tasks)) {
 			if !m.benchmarkAllArmed {
 				m.benchmarkAllArmed = true
@@ -1126,7 +1130,15 @@ func (m Model) benchmarkRunActive() bool {
 }
 
 func (m Model) benchmarkCanRunSelected() bool {
-	return !m.benchmarkRunActive() && (m.benchmarkScopedRunner == nil || m.benchmarkCombinations > 0)
+	if m.benchmarkRunActive() || (m.benchmarkScopedRunner != nil && m.benchmarkCombinations == 0) {
+		return false
+	}
+	tasks := m.benchmarkTasks()
+	if len(tasks) == 0 {
+		return false
+	}
+	selected := tasks[m.benchmarkSelectedTask%len(tasks)]
+	return !selected.External || m.benchmarkCombinations == 1
 }
 
 func (m Model) benchmarkPlanNeeded() bool {
@@ -1178,7 +1190,21 @@ func (m *Model) selectBenchmarkTask(direction int) {
 }
 
 func (m Model) benchmarkTasks() []codex.BenchmarkTask {
+	if provider, ok := m.benchmarkRunner.(BenchmarkTaskProvider); ok {
+		return provider.BenchmarkTasks()
+	}
 	return codex.BenchmarkTasks()
+}
+
+func (m Model) benchmarkRunAllTasks() []codex.BenchmarkTask {
+	tasks := m.benchmarkTasks()
+	selected := make([]codex.BenchmarkTask, 0, len(tasks))
+	for _, task := range tasks {
+		if !task.External {
+			selected = append(selected, task)
+		}
+	}
+	return selected
 }
 
 func (m *Model) setBenchmarkFilter(filter benchmarkResultFilter) {

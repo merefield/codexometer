@@ -19,12 +19,14 @@ const (
 	BenchmarkDependencyScheduler BenchmarkTaskID = "dependency-scheduler"
 	BenchmarkVersionResolver     BenchmarkTaskID = "version-resolver"
 	BenchmarkEventProcessor      BenchmarkTaskID = "event-processor"
+	BenchmarkDigBenchP1          BenchmarkTaskID = "digbench-p-1"
 )
 
 // BenchmarkTask is the public description used by the terminal selector.
 type BenchmarkTask struct {
-	ID   BenchmarkTaskID
-	Name string
+	ID       BenchmarkTaskID
+	Name     string
+	External bool
 }
 
 type benchmarkDefinition struct {
@@ -118,6 +120,20 @@ func BenchmarkTasks() []BenchmarkTask {
 		tasks = append(tasks, definition.task)
 	}
 	return tasks
+}
+
+// DigBenchTask returns the deliberately narrow external game exposed by the
+// current integration. It is omitted from Run All because every invocation
+// creates a persisted remote session with a random seed.
+func DigBenchTask() BenchmarkTask {
+	return BenchmarkTask{ID: BenchmarkDigBenchP1, Name: "DIGBENCH P-1", External: true}
+}
+
+func digBenchGame(id BenchmarkTaskID) (string, bool) {
+	if id == BenchmarkDigBenchP1 {
+		return "P-1", true
+	}
+	return "", false
 }
 
 func resolveBenchmarkTasks(ids []BenchmarkTaskID) ([]benchmarkDefinition, error) {

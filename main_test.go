@@ -218,6 +218,26 @@ func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
 	}
 }
 
+func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
+	t.Setenv("DIGBENCH_API_TOKEN", "digbench-secret")
+	var stdout, stderr bytes.Buffer
+	deps := dependencies{
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool) error {
+			client, ok := fetcher.(codex.Client)
+			if !ok || client.DigBenchToken != "digbench-secret" {
+				t.Fatalf("DigBench token was not attached to Codex client")
+			}
+			if os.Getenv("DIGBENCH_API_TOKEN") != "" {
+				t.Fatal("DIGBENCH_API_TOKEN remained in the inherited environment")
+			}
+			return nil
+		},
+	}
+	if code := run(nil, &stdout, &stderr, deps); code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunDigBenchRequiresToken(t *testing.T) {
 	t.Setenv("DIGBENCH_API_TOKEN", "")
 	var stdout, stderr bytes.Buffer

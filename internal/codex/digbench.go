@@ -48,6 +48,7 @@ type DigBenchOptions struct {
 	Timeout       time.Duration
 	ClientVersion string
 	Progress      func(DigBenchProgress)
+	Snapshot      func(DigBenchResult)
 }
 
 // DigBenchResult is the terminal state and Codex telemetry for one game.
@@ -76,12 +77,107 @@ type DigBenchResult struct {
 	CostKnown        bool
 	CostIssue        string
 	Failure          string
+	Interactions     []BenchmarkInteraction
 }
 
 type digBenchService interface {
 	StartSession(context.Context, digbench.StartRequest) (digbench.Session, error)
 	GetSession(context.Context, string) (digbench.Session, error)
 	Step(context.Context, string, digbench.StepRequest) (digbench.StepResponse, error)
+}
+
+var newDigBenchService = func(token string) digBenchService {
+	return digbench.Client{Token: token}
+}
+
+// BenchmarkTasks exposes the external proof-of-concept only when this process
+// received a DigBench token. Run All continues to use deterministic tasks only.
+func (c Client) BenchmarkTasks() []BenchmarkTask {
+	tasks := BenchmarkTasks()
+	if strings.TrimSpace(c.DigBenchToken) != "" {
+		tasks = append(tasks, DigBenchTask())
+	}
+	return tasks
+}
+
+func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkTaskID, game string, emit func(BenchmarkEvent), scopes ...BenchmarkScope) {
+	if strings.TrimSpace(c.DigBenchToken) == "" {
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("DIGBENCH_API_TOKEN is required for DigBench")))
+		return
+	}
+	plan, err := c.BenchmarkPlan(ctx)
+	if err != nil {
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
+		return
+	}
+	scope := plan.AllScope()
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
+	models, efforts := stringSet(scope.Models), stringSet(scope.Efforts)
+	var selected []struct{ model, name, effort string }
+	for _, model := range plan.Models {
+		if !models[model.Model] {
+			continue
+		}
+		for _, effort := range model.Efforts {
+			if efforts[effort] {
+				selected = append(selected, struct{ model, name, effort string }{model.Model, model.DisplayName, effort})
+			}
+		}
+	}
+	if len(selected) != 1 {
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, fmt.Errorf("DigBench requires exactly one selected model/effort pair; scope contains %d", len(selected))))
+		return
+	}
+	choice := selected[0]
+	event := BenchmarkEvent{Total: 1, Combinations: 1, CurrentTaskID: taskID, CurrentTask: "DIGBENCH " + game, CurrentModel: choice.name, CurrentEffort: choice.effort}
+	pending := BenchmarkResult{
+		TaskID: taskID, TaskName: "DIGBENCH " + game, Provider: "digbench",
+		Model: choice.model, DisplayName: choice.name, ActualModel: choice.model, Effort: choice.effort,
+		GameStatus: "connecting",
+	}
+	event.Active = &pending
+	emit(event)
+	result, runErr := c.RunDigBench(ctx, newDigBenchService(c.DigBenchToken), DigBenchOptions{
+		Game: game, Model: choice.model, Effort: choice.effort,
+		Snapshot: func(snapshot DigBenchResult) {
+			active := benchmarkResultFromDigBench(taskID, snapshot)
+			event.Active = &active
+			emit(event)
+		},
+	})
+	if result.Game == "" {
+		result.Game = game
+	}
+	if result.Model == "" {
+		result.Model, result.DisplayName, result.ActualModel, result.Effort = choice.model, choice.name, choice.model, choice.effort
+	}
+	converted := benchmarkResultFromDigBench(taskID, result)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		markBenchmarkStopped(&converted)
+		event.Active, event.Result, event.Stopped = nil, &converted, true
+		emit(event)
+		emit(BenchmarkEvent{Total: 1, Combinations: 1, Stopped: true, Done: true})
+		return
+	}
+	event.Completed, event.Active, event.Result = 1, nil, &converted
+	emit(event)
+	emit(BenchmarkEvent{Total: 1, Completed: 1, Combinations: 1, Done: true, Err: runErr})
+}
+
+func benchmarkResultFromDigBench(taskID BenchmarkTaskID, result DigBenchResult) BenchmarkResult {
+	return BenchmarkResult{
+		TaskID: taskID, TaskName: "DIGBENCH " + result.Game,
+		Model: result.Model, DisplayName: result.DisplayName, Effort: result.Effort, ActualModel: result.ActualModel,
+		Correct: result.Won, Duration: result.Duration, Usage: result.Usage, UsageObserved: result.UsageObserved,
+		UsageKnown: result.UsageKnown, UsageIssue: result.UsageIssue, UsageSource: result.UsageSource,
+		ResponseUsage: append([]BenchmarkResponseUsage(nil), result.ResponseUsage...), CostUSD: result.CostUSD,
+		CostKnown: result.CostKnown, CostIssue: result.CostIssue, Failure: result.Failure,
+		Interactions: append([]BenchmarkInteraction(nil), result.Interactions...), Provider: "digbench",
+		GameStatus: result.Status, CurrentLevel: result.CurrentLevel, LevelsBeaten: result.LevelsBeaten,
+		MaxLevel: result.MaxLevel, Steps: result.Steps,
+	}
 }
 
 // RunDigBench runs one game through Codex's agentic tool loop. The remote game
@@ -193,6 +289,8 @@ func (s *appServerSession) runDigBench(
 	applyDigBenchSession(&result, session)
 
 	startedAt := time.Now()
+	appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session))
+	publishDigBenchSnapshot(options.Snapshot, result)
 	emitDigBenchProgress(options.Progress, DigBenchProgressSession, result, startedAt)
 	turnParams := map[string]any{
 		"threadId": startedThread.Thread.ID,
@@ -214,6 +312,7 @@ func (s *appServerSession) runDigBench(
 		return result, errors.New("Codex returned an invalid DigBench turn")
 	}
 	emitDigBenchProgress(options.Progress, DigBenchProgressTurn, result, startedAt)
+	publishDigBenchSnapshot(options.Snapshot, result)
 
 	telemetry := newBenchmarkTelemetry()
 	completed := false
@@ -228,6 +327,25 @@ func (s *appServerSession) runDigBench(
 		}
 		if envelopeErr != nil {
 			result.Duration = time.Since(startedAt)
+			if errors.Is(ctx.Err(), context.Canceled) {
+				cleanupCompleted := false
+				handle := func(method string, params json.RawMessage) bool {
+					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure) {
+						cleanupCompleted = true
+						return true
+					}
+					return false
+				}
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), s.benchmarkInterruptTimeout())
+				interruptErr := s.interruptBenchmarkTurn(cleanupCtx, startedThread.Thread.ID, startedTurn.Turn.ID, &cleanupCompleted, handle)
+				cleanupCancel()
+				applyDigBenchMeasurements(&result, telemetry)
+				if interruptErr != nil {
+					result.Failure = "remote interruption could not be confirmed: " + interruptErr.Error()
+				}
+				publishDigBenchSnapshot(options.Snapshot, result)
+				return result, ctx.Err()
+			}
 			if recoverableBenchmarkTimeout(ctx, runCtx, envelopeErr) {
 				result.Failure = fmt.Sprintf("DigBench run timed out after %s", options.Timeout)
 				cleanupCompleted := false
@@ -245,6 +363,7 @@ func (s *appServerSession) runDigBench(
 				if session.Done {
 					result.Failure = ""
 				}
+				publishDigBenchSnapshot(options.Snapshot, result)
 				return result, nil
 			}
 			return result, envelopeErr
@@ -253,13 +372,19 @@ func (s *appServerSession) runDigBench(
 			if envelope.Method != "item/tool/call" {
 				return result, fmt.Errorf("unsupported Codex app-server request %q", envelope.Method)
 			}
+			tool, action := digBenchToolSummary(envelope.Params)
 			response := handleDigBenchToolCall(
 				runCtx, service, startedThread.Thread.ID, startedTurn.Turn.ID,
 				session.SessionID, envelope.Params, &session,
 			)
 			applyDigBenchSession(&result, session)
 			if response["success"] == true {
+				if tool == "step" {
+					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionMove, action)
+				}
+				appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionState, formatDigBenchState(session))
 				emitDigBenchProgress(options.Progress, DigBenchProgressUpdate, result, startedAt)
+				publishDigBenchSnapshot(options.Snapshot, result)
 			}
 			if err := s.respond(envelope.ID, response); err != nil {
 				return result, fmt.Errorf("respond to DigBench tool call: %w", err)
@@ -299,6 +424,12 @@ func (s *appServerSession) runDigBench(
 			}
 		case "turn/completed":
 			completed = digBenchTurnCompleted(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure)
+			if completed {
+				if final := digBenchFinalResponse(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, session.SessionID); final != "" {
+					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionResponse, final)
+					publishDigBenchSnapshot(options.Snapshot, result)
+				}
+			}
 		}
 	}
 
@@ -306,6 +437,7 @@ func (s *appServerSession) runDigBench(
 	applyDigBenchMeasurements(&result, telemetry)
 	if session.Done {
 		result.Won = session.State.Status == "completed"
+		publishDigBenchSnapshot(options.Snapshot, result)
 		return result, nil
 	}
 	if turnFailure != "" {
@@ -313,7 +445,49 @@ func (s *appServerSession) runDigBench(
 		return result, nil
 	}
 	result.Failure = "Codex stopped before the DigBench game ended"
+	publishDigBenchSnapshot(options.Snapshot, result)
 	return result, nil
+}
+
+func publishDigBenchSnapshot(callback func(DigBenchResult), result DigBenchResult) {
+	if callback == nil {
+		return
+	}
+	result.Interactions = append([]BenchmarkInteraction(nil), result.Interactions...)
+	result.ResponseUsage = append([]BenchmarkResponseUsage(nil), result.ResponseUsage...)
+	callback(result)
+}
+
+func appendDigBenchInteraction(result *DigBenchResult, startedAt time.Time, kind BenchmarkInteractionKind, content string) {
+	proxy := BenchmarkResult{Interactions: result.Interactions}
+	appendBenchmarkInteraction(&proxy, startedAt, kind, content)
+	result.Interactions = proxy.Interactions
+}
+
+func digBenchToolSummary(params json.RawMessage) (tool, action string) {
+	var call struct {
+		Tool      string `json:"tool"`
+		Arguments struct {
+			Action string `json:"action"`
+		} `json:"arguments"`
+	}
+	if json.Unmarshal(params, &call) != nil {
+		return "", ""
+	}
+	return call.Tool, call.Arguments.Action
+}
+
+func formatDigBenchState(session digbench.Session) string {
+	state := struct {
+		StepIndex    int            `json:"step_index"`
+		LevelsBeaten int            `json:"levels_beaten"`
+		State        digbench.State `json:"state"`
+	}{StepIndex: session.StepIndex, LevelsBeaten: session.LevelsBeaten, State: session.State}
+	encoded, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return "DigBench state could not be encoded."
+	}
+	return string(encoded)
 }
 
 func emitDigBenchProgress(callback func(DigBenchProgress), phase DigBenchProgressPhase, result DigBenchResult, startedAt time.Time) {
@@ -483,6 +657,31 @@ func digBenchTurnCompleted(params json.RawMessage, threadID, turnID string, fail
 		}
 	}
 	return true
+}
+
+func digBenchFinalResponse(params json.RawMessage, threadID, turnID, sessionID string) string {
+	var event struct {
+		ThreadID string `json:"threadId"`
+		Turn     struct {
+			ID    string `json:"id"`
+			Items []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"items"`
+		} `json:"turn"`
+	}
+	if json.Unmarshal(params, &event) != nil || event.ThreadID != threadID || event.Turn.ID != turnID {
+		return ""
+	}
+	for _, item := range event.Turn.Items {
+		if item.Type == "agentMessage" && strings.TrimSpace(item.Text) != "" {
+			if sessionID != "" {
+				return strings.ReplaceAll(item.Text, sessionID, "[digbench-session]")
+			}
+			return item.Text
+		}
+	}
+	return ""
 }
 
 func applyDigBenchMeasurements(result *DigBenchResult, telemetry *benchmarkTelemetry) {

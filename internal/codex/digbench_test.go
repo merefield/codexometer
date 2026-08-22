@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,7 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
 			"threadId": "thread-1", "turn": map[string]any{
 				"id": "turn-1", "status": "failed", "error": map[string]string{"message": "debrief failed after terminal move"},
+				"items": []any{map[string]string{"type": "agentMessage", "text": "The winning rule for session-1 was discovered."}},
 			},
 		})},
 	)
@@ -78,9 +80,11 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	t.Cleanup(func() { openBenchmarkAppServer = original })
 
 	var progress []DigBenchProgress
+	var snapshots []DigBenchResult
 	result, err := (Client{BenchmarkAPIKey: "benchmark-secret"}).RunDigBench(context.Background(), service, DigBenchOptions{
 		Game: "P-1", Model: "gpt-5.6-sol", Effort: "high", Timeout: time.Minute, ClientVersion: "test",
 		Progress: func(event DigBenchProgress) { progress = append(progress, event) },
+		Snapshot: func(result DigBenchResult) { snapshots = append(snapshots, result) },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,11 +107,27 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	if final := progress[2]; final.Level != 3 || final.LevelsBeaten != 3 || final.MaxLevel != 3 || final.Steps != 1 || final.Status != "completed" || final.Elapsed < 0 {
 		t.Fatalf("final progress = %#v", final)
 	}
+	if len(snapshots) < 3 || len(result.Interactions) != 4 || result.Interactions[1].Kind != BenchmarkInteractionMove || result.Interactions[1].Content != "b" || result.Interactions[2].Kind != BenchmarkInteractionState || result.Interactions[3].Kind != BenchmarkInteractionResponse {
+		t.Fatalf("DigBench snapshots/interactions = %d / %#v", len(snapshots), result.Interactions)
+	}
+	for _, interaction := range result.Interactions {
+		if strings.Contains(interaction.Content, "session-1") {
+			t.Fatalf("session id leaked into transcript: %#v", interaction)
+		}
+	}
 	requestLog := requests.String()
 	for _, expected := range []string{`"dynamicTools"`, `"sandbox":"workspace-write"`, `"method":"turn/start"`, `"id":50`, `"success":true`, `\"status\":\"completed\"`} {
 		if !strings.Contains(requestLog, expected) {
 			t.Fatalf("request log missing %q: %s", expected, requestLog)
 		}
+	}
+}
+
+func TestClientBenchmarkTasksRequireDigBenchToken(t *testing.T) {
+	plain := (Client{}).BenchmarkTasks()
+	enabled := (Client{DigBenchToken: "secret"}).BenchmarkTasks()
+	if len(enabled) != len(plain)+1 || enabled[len(enabled)-1] != DigBenchTask() {
+		t.Fatalf("plain=%#v enabled=%#v", plain, enabled)
 	}
 }
 
@@ -118,6 +138,51 @@ func TestNextPendingEnvelopeCanReportHeartbeat(t *testing.T) {
 	envelope, pulsed, err := server.nextPendingEnvelopeOrHeartbeat(context.Background(), heartbeat)
 	if err != nil || !pulsed || len(envelope.ID) != 0 || envelope.Method != "" || len(envelope.Params) != 0 || len(envelope.Result) != 0 || envelope.Error != nil {
 		t.Fatalf("envelope=%#v pulsed=%v error=%v", envelope, pulsed, err)
+	}
+}
+
+func TestRunDigBenchInterruptsTurnWhenStopped(t *testing.T) {
+	maxLevel := 3
+	service := &fakeDigBenchService{session: digbench.Session{
+		Game: "P-1", SessionID: "session-1",
+		State: digbench.State{Status: "in_progress", Level: 1, MaxLevel: &maxLevel, Observation: "___", Actions: []string{"b"}},
+	}}
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{"data": []any{map[string]any{
+			"model": "gpt-5.6-sol", "displayName": "GPT-5.6 Sol",
+			"supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "high"}},
+		}}})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.6-sol",
+		})},
+		benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-1"}})},
+	)
+	server.experimentalAPI = true
+	original := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = original })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result, err := (Client{}).RunDigBench(ctx, service, DigBenchOptions{
+		Game: "P-1", Model: "gpt-5.6-sol", Effort: "high", Timeout: time.Minute,
+		Progress: func(progress DigBenchProgress) {
+			if progress.Phase == DigBenchProgressTurn {
+				cancel()
+				go func() {
+					time.Sleep(time.Millisecond)
+					server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+						"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "interrupted"},
+					})}
+					server.envelopes <- benchmarkEnvelope{ID: rawJSON(4), Result: rawJSON(map[string]any{})}
+				}()
+			}
+		},
+	})
+	if !errors.Is(err, context.Canceled) || result.Failure != "" {
+		t.Fatalf("result=%#v error=%v", result, err)
+	}
+	if !strings.Contains(requests.String(), `"method":"turn/interrupt"`) {
+		t.Fatalf("turn interrupt was not requested: %s", requests.String())
 	}
 }
 
