@@ -230,6 +230,148 @@ func TestBenchmarkDetailCopyShortcutExportsContentOutsideViewport(t *testing.T) 
 	}
 }
 
+func TestBenchmarkDetailTranscriptCacheScrollsAppendsAndInvalidates(t *testing.T) {
+	interactions := make([]codex.BenchmarkInteraction, 0, 128)
+	for index := range 128 {
+		interactions = append(interactions, codex.BenchmarkInteraction{
+			Elapsed: time.Duration(index) * time.Second,
+			Kind:    codex.BenchmarkInteractionState,
+			Content: fmt.Sprintf(`{"step":%d,"observation":%q}`, index, strings.Repeat("terrain ", 12)),
+		})
+	}
+	active := codex.BenchmarkResult{
+		TaskID: "digbench", TaskName: "DIGBENCH P-9", Model: "model", DisplayName: "Model", Effort: "high",
+		Provider: "digbench", Interactions: interactions,
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkActive: &active,
+	}
+	model.openBenchmarkDetail(active, true)
+	cache := model.benchmarkDetailCache
+	if !cache.valid || cache.interactionCount != len(interactions) || len(cache.lines) == 0 {
+		t.Fatalf("initial transcript cache = %#v", cache)
+	}
+
+	model.scrollBenchmarkDetail(3)
+	_ = model.renderBenchmarkDetail(model.dashboardLayout().contentWidth, model.dashboardLayout().meterHeight, paletteFor(model.theme))
+	if !slices.Equal(model.benchmarkDetailCache.lines, cache.lines) {
+		t.Fatal("scroll rebuilt or changed the prepared transcript")
+	}
+
+	progress := active
+	progress.Interactions = append(append([]codex.BenchmarkInteraction(nil), active.Interactions...), codex.BenchmarkInteraction{
+		Elapsed: 129 * time.Second,
+		Kind:    codex.BenchmarkInteractionMove,
+		Content: "move_north",
+	})
+	updated, _ := model.Update(benchmarkEventMsg{ok: true, event: codex.BenchmarkEvent{Active: &progress, Total: 1}})
+	model = updated.(Model)
+	if model.benchmarkDetailCache.interactionCount != len(progress.Interactions) {
+		t.Fatalf("incremental cache interactions = %d, want %d", model.benchmarkDetailCache.interactionCount, len(progress.Interactions))
+	}
+	if len(model.benchmarkDetailCache.lines) <= len(cache.lines) || !slices.Equal(model.benchmarkDetailCache.lines[:len(cache.lines)], cache.lines) {
+		t.Fatal("live update did not append to the prepared transcript")
+	}
+	assertBenchmarkDetailCacheMatchesFullFormat(t, model)
+
+	oldWidth := model.benchmarkDetailCache.width
+	updated, _ = model.Update(tea.WindowSizeMsg{Width: model.width + 20, Height: model.height})
+	model = updated.(Model)
+	if !model.benchmarkDetailCache.valid || model.benchmarkDetailCache.width == oldWidth {
+		t.Fatal("terminal resize did not rebuild the transcript cache for the new width")
+	}
+	assertBenchmarkDetailCacheMatchesFullFormat(t, model)
+
+	oldTheme := model.theme
+	model, _ = model.activateFooterButton(footerButtonTheme)
+	if model.theme == oldTheme || model.benchmarkDetailCache.theme != model.theme {
+		t.Fatal("theme change did not rebuild the transcript cache")
+	}
+	assertBenchmarkDetailCacheMatchesFullFormat(t, model)
+
+	finished := progress
+	finished.Correct = true
+	finished.Interactions = append(append([]codex.BenchmarkInteraction(nil), progress.Interactions...), codex.BenchmarkInteraction{
+		Elapsed: 130 * time.Second,
+		Kind:    codex.BenchmarkInteractionVerifier,
+		Content: "Game won.",
+	})
+	updated, _ = model.Update(benchmarkEventMsg{ok: true, event: codex.BenchmarkEvent{Result: &finished, Total: 1, Completed: 1}})
+	model = updated.(Model)
+	if model.benchmarkDetailActive || !model.benchmarkDetailCache.correct || model.benchmarkDetailCache.interactionCount != len(finished.Interactions) {
+		t.Fatal("final result did not refresh pass-sensitive transcript styling")
+	}
+	assertBenchmarkDetailCacheMatchesFullFormat(t, model)
+}
+
+func TestBenchmarkDetailLineRangeMatchesCombinedSections(t *testing.T) {
+	header := []string{"h0", "h1", "h2"}
+	transcript := []string{"t0", "t1", "t2", "t3"}
+	combined := append(append([]string(nil), header...), transcript...)
+	for start := 0; start <= len(combined); start++ {
+		for end := start; end <= len(combined); end++ {
+			if got, want := benchmarkDetailLineRange(header, transcript, start, end), combined[start:end]; !slices.Equal(got, want) {
+				t.Fatalf("range %d:%d = %#v, want %#v", start, end, got, want)
+			}
+		}
+	}
+}
+
+func assertBenchmarkDetailCacheMatchesFullFormat(t *testing.T, model Model) {
+	t.Helper()
+	layout := model.dashboardLayout()
+	width := max(layout.contentWidth-4, 1)
+	colors := paletteFor(model.theme)
+	got := model.benchmarkDetailLines(width, colors)
+	uncached := model
+	uncached.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+	want := uncached.benchmarkDetailLines(width, colors)
+	if !slices.Equal(got, want) {
+		t.Fatal("cached transcript differs from a complete format")
+	}
+}
+
+func BenchmarkBenchmarkDetailLongTranscript(b *testing.B) {
+	interactions := make([]codex.BenchmarkInteraction, 0, 512)
+	for index := range 512 {
+		interactions = append(interactions, codex.BenchmarkInteraction{
+			Elapsed: time.Duration(index) * time.Second,
+			Kind:    codex.BenchmarkInteractionState,
+			Content: fmt.Sprintf(`{"step":%d,"observation":%q}`, index, strings.Repeat("unknown terrain ", 24)),
+		})
+	}
+	result := codex.BenchmarkResult{
+		TaskID: "digbench", TaskName: "DIGBENCH P-9", Model: "model", DisplayName: "Model", Effort: "high",
+		Provider: "digbench", Interactions: interactions,
+	}
+	model := Model{snapshot: codex.DemoSnapshot(), width: 120, height: 36, meterView: viewBenchmark}
+	model.openBenchmarkDetail(result)
+	layout := model.dashboardLayout()
+	colors := paletteFor(model.theme)
+
+	b.Run("cached_viewport", func(b *testing.B) {
+		b.ReportAllocs()
+		for index := 0; index < b.N; index++ {
+			model.benchmarkDetailScroll = index % max(model.benchmarkDetailMaximumScroll(), 1)
+			if output := model.renderBenchmarkDetail(layout.contentWidth, layout.meterHeight, colors); output == "" {
+				b.Fatal("empty detail")
+			}
+		}
+	})
+	b.Run("complete_format_baseline", func(b *testing.B) {
+		uncached := model
+		uncached.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+		width := max(layout.contentWidth-4, 1)
+		b.ReportAllocs()
+		for range b.N {
+			if lines := uncached.benchmarkDetailLines(width, colors); len(lines) == 0 {
+				b.Fatal("empty detail")
+			}
+		}
+	})
+}
+
 func TestBenchmarkDetailOmitsEmptyUsageSource(t *testing.T) {
 	result := codex.BenchmarkResult{
 		TaskName: "DEMO", Model: "model", DisplayName: "Model", Effort: "low", Correct: true,

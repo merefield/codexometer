@@ -108,6 +108,7 @@ type Model struct {
 	benchmarkDetail          *codex.BenchmarkResult
 	benchmarkDetailActive    bool
 	benchmarkDetailScroll    int
+	benchmarkDetailCache     benchmarkDetailTranscriptCache
 
 	monitorState        monitorState
 	monitorStartedAt    time.Time
@@ -640,6 +641,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height
+		m.prepareBenchmarkDetailTranscript()
 	case fetchedMsg:
 		m.loading = false
 		m.err = message.err
@@ -762,6 +764,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.benchmarkDetailActive && m.benchmarkDetail != nil && benchmarkRunKey(*m.benchmarkDetail) == benchmarkRunKey(active) {
 				m.benchmarkDetail = &active
+				m.prepareBenchmarkDetailTranscript()
 			}
 		}
 		if event.Result != nil {
@@ -774,6 +777,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.benchmarkDetailActive && m.benchmarkDetail != nil && benchmarkRunKey(*m.benchmarkDetail) == benchmarkRunKey(result) {
 				m.benchmarkDetail = &result
 				m.benchmarkDetailActive = false
+				m.prepareBenchmarkDetailTranscript()
 			}
 			m.benchmarkActive = nil
 			m.benchmarkActiveSince = time.Time{}
@@ -873,6 +877,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
 	case footerButtonTheme:
 		m.theme = m.theme.next()
+		m.prepareBenchmarkDetailTranscript()
 		m.persistPreferences()
 	case footerButtonView:
 		if m.meterView.isQuota() {
@@ -1192,6 +1197,7 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	m.benchmarkDetail = nil
 	m.benchmarkDetailActive = false
 	m.benchmarkDetailScroll = 0
+	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
 	m.benchmarkScopeOpen = false
 	m.benchmarkScopeHover = -1
 	m.benchmarkState = benchmarkRunning
@@ -1358,6 +1364,7 @@ func (m *Model) openBenchmarkDetail(result codex.BenchmarkResult, active ...bool
 	m.benchmarkDetail = &result
 	m.benchmarkDetailActive = len(active) > 0 && active[0]
 	m.benchmarkDetailScroll = 0
+	m.prepareBenchmarkDetailTranscript()
 	m.benchmarkRunHovered = false
 	m.benchmarkHoveredRun = ""
 }
@@ -1366,14 +1373,53 @@ func (m *Model) closeBenchmarkDetail() {
 	m.benchmarkDetail = nil
 	m.benchmarkDetailActive = false
 	m.benchmarkDetailScroll = 0
+	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
 }
 
 func (m *Model) scrollBenchmarkDetail(rows int) {
 	if m.benchmarkDetail == nil {
 		return
 	}
+	m.prepareBenchmarkDetailTranscript()
 	maximum := m.benchmarkDetailMaximumScroll()
 	m.benchmarkDetailScroll = min(max(m.benchmarkDetailScroll+rows, 0), maximum)
+}
+
+func (m *Model) prepareBenchmarkDetailTranscript() {
+	if m.benchmarkDetail == nil {
+		m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+		return
+	}
+	result, ok := m.benchmarkDetailResult()
+	if !ok {
+		m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+		return
+	}
+	layout := m.dashboardLayout()
+	width := max(layout.contentWidth-4, 1)
+	cache := &m.benchmarkDetailCache
+	run := benchmarkDetailCacheKey(result)
+	canAppend := cache.valid && cache.run == run && cache.width == width && cache.theme == m.theme && cache.correct == result.Correct && cache.interactionCount <= len(result.Interactions)
+	if canAppend && cache.interactionCount > 0 && cache.lastInteraction != result.Interactions[cache.interactionCount-1] {
+		canAppend = false
+	}
+	colors := paletteFor(m.theme)
+	if !canAppend {
+		cache.lines = buildBenchmarkDetailTranscriptLines(result.Interactions, 0, width, colors, result.Correct)
+		cache.interactionCount = len(result.Interactions)
+	} else if cache.interactionCount < len(result.Interactions) {
+		cache.lines = append(cache.lines, buildBenchmarkDetailTranscriptLines(result.Interactions, cache.interactionCount, width, colors, result.Correct)...)
+		cache.interactionCount = len(result.Interactions)
+	}
+	cache.valid = true
+	cache.run = run
+	cache.width = width
+	cache.theme = m.theme
+	cache.correct = result.Correct
+	cache.lastInteraction = codex.BenchmarkInteraction{}
+	if cache.interactionCount > 0 {
+		cache.lastInteraction = result.Interactions[cache.interactionCount-1]
+	}
 }
 
 func (m *Model) scrollBenchmarkDetailPage(direction int) {

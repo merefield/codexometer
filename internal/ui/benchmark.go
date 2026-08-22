@@ -54,6 +54,17 @@ type benchmarkControlSegment struct {
 	active  bool
 }
 
+type benchmarkDetailTranscriptCache struct {
+	valid            bool
+	run              string
+	width            int
+	theme            themeID
+	correct          bool
+	interactionCount int
+	lastInteraction  codex.BenchmarkInteraction
+	lines            []string
+}
+
 const (
 	benchmarkDetailCopyLabel  = "[ (C) COPY ]"
 	benchmarkDetailCloseLabel = "[ (X) CLOSE ]"
@@ -134,11 +145,12 @@ func (m Model) renderBenchmarkDetail(width, height int, colors palette) string {
 	}
 	innerWidth := max(width-4, 1)
 	bodyHeight := max(height-2, 1)
-	lines := m.benchmarkDetailLines(innerWidth, colors)
-	maximum := max(len(lines)-bodyHeight, 0)
+	header, transcript := m.benchmarkDetailSections(innerWidth, colors)
+	lineCount := len(header) + len(transcript)
+	maximum := max(lineCount-bodyHeight, 0)
 	scroll := min(max(m.benchmarkDetailScroll, 0), maximum)
-	end := min(scroll+bodyHeight, len(lines))
-	visible := lines[scroll:end]
+	end := min(scroll+bodyHeight, lineCount)
+	visible := benchmarkDetailLineRange(header, transcript, scroll, end)
 	for len(visible) < bodyHeight {
 		visible = append(visible, strings.Repeat(" ", innerWidth))
 	}
@@ -146,7 +158,7 @@ func (m Model) renderBenchmarkDetail(width, height int, colors palette) string {
 	if m.benchmarkDetailActive {
 		detailState = "LIVE RUN DETAIL // IN PROGRESS"
 	}
-	title := fmt.Sprintf("%s // BENCHMARK-ONLY // LINES %d-%d/%d", detailState, min(scroll+1, len(lines)), end, len(lines))
+	title := fmt.Sprintf("%s // BENCHMARK-ONLY // LINES %d-%d/%d", detailState, min(scroll+1, lineCount), end, lineCount)
 	return frameSizedWithActions(
 		width,
 		bodyHeight,
@@ -164,6 +176,23 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 	if !ok {
 		return nil
 	}
+	header := benchmarkDetailHeaderLines(result, m.benchmarkDetailActive, width, colors)
+	transcript := m.benchmarkDetailTranscriptLines(result, width, colors)
+	lines := make([]string, 0, len(header)+len(transcript))
+	lines = append(lines, header...)
+	lines = append(lines, transcript...)
+	return lines
+}
+
+func (m Model) benchmarkDetailSections(width int, colors palette) ([]string, []string) {
+	result, ok := m.benchmarkDetailResult()
+	if !ok {
+		return nil, nil
+	}
+	return benchmarkDetailHeaderLines(result, m.benchmarkDetailActive, width, colors), m.benchmarkDetailTranscriptLines(result, width, colors)
+}
+
+func benchmarkDetailHeaderLines(result codex.BenchmarkResult, active bool, width int, colors palette) []string {
 	model := result.DisplayName
 	if model == "" {
 		model = result.Model
@@ -176,14 +205,14 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 	if result.Stopped {
 		outcome = "STOPPED"
 		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.warning)
-	} else if m.benchmarkDetailActive {
+	} else if active {
 		outcome = "IN PROGRESS"
 		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.accent)
 	} else if result.Correct {
 		outcome = "PASS"
 		outcomeStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.primary)
 	}
-	if result.Provider == "digbench" && !m.benchmarkDetailActive && !result.Stopped {
+	if result.Provider == "digbench" && !active && !result.Stopped {
 		if result.Correct {
 			outcome = "WIN"
 		} else if result.Failure != "" {
@@ -227,20 +256,37 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colors.danger).Render(fitTableCell(label+result.Failure, width)))
 	}
 	lines = append(lines, colors.dimmed().Render(strings.Repeat("─", width)))
+	return lines
+}
+
+func (m Model) benchmarkDetailTranscriptLines(result codex.BenchmarkResult, width int, colors palette) []string {
 	if len(result.Interactions) == 0 {
-		lines = append(lines,
-			colors.label().Render(fitTableCell("BENCHMARK TRANSCRIPT // UNAVAILABLE", width)),
-			colors.dimmed().Render(fitTableCell("This result predates detail capture or was supplied by demo data.", width)),
-		)
-		return lines
+		return benchmarkDetailUnavailableLines(width, colors)
 	}
-	for index, interaction := range result.Interactions {
+	cache := m.benchmarkDetailCache
+	if cache.matches(result, width, m.theme) {
+		return cache.lines
+	}
+	return buildBenchmarkDetailTranscriptLines(result.Interactions, 0, width, colors, result.Correct)
+}
+
+func benchmarkDetailUnavailableLines(width int, colors palette) []string {
+	return []string{
+		colors.label().Render(fitTableCell("BENCHMARK TRANSCRIPT // UNAVAILABLE", width)),
+		colors.dimmed().Render(fitTableCell("This result predates detail capture or was supplied by demo data.", width)),
+	}
+}
+
+func buildBenchmarkDetailTranscriptLines(interactions []codex.BenchmarkInteraction, start, width int, colors palette, correct bool) []string {
+	lines := make([]string, 0, max(len(interactions)-start, 0)*3)
+	for index := start; index < len(interactions); index++ {
+		interaction := interactions[index]
 		if index > 0 {
 			lines = append(lines, colors.dimmed().Render(strings.Repeat("─", width)))
 		}
 		heading := fmt.Sprintf("%s // +%s", strings.ToUpper(string(interaction.Kind)), formatBenchmarkDuration(interaction.Elapsed))
 		headingStyle := colors.label()
-		if interaction.Kind == codex.BenchmarkInteractionVerifier && !result.Correct {
+		if interaction.Kind == codex.BenchmarkInteractionVerifier && !correct {
 			headingStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.danger)
 		}
 		lines = append(lines, headingStyle.Render(fitTableCell(heading, width)))
@@ -253,6 +299,34 @@ func (m Model) benchmarkDetailLines(width int, colors palette) []string {
 		}
 	}
 	return lines
+}
+
+func (cache benchmarkDetailTranscriptCache) matches(result codex.BenchmarkResult, width int, theme themeID) bool {
+	if !cache.valid || cache.run != benchmarkDetailCacheKey(result) || cache.width != width || cache.theme != theme || cache.correct != result.Correct || cache.interactionCount != len(result.Interactions) {
+		return false
+	}
+	return cache.interactionCount == 0 || cache.lastInteraction == result.Interactions[cache.interactionCount-1]
+}
+
+func benchmarkDetailCacheKey(result codex.BenchmarkResult) string {
+	return benchmarkRunKey(result) + "\x00" + strings.ToLower(result.Provider) + "\x00" + strings.ToLower(result.TaskName)
+}
+
+func benchmarkDetailLineRange(header, transcript []string, start, end int) []string {
+	if start >= end {
+		return nil
+	}
+	visible := make([]string, 0, end-start)
+	if start < len(header) {
+		headerEnd := min(end, len(header))
+		visible = append(visible, header[start:headerEnd]...)
+	}
+	transcriptStart := max(start-len(header), 0)
+	transcriptEnd := min(max(end-len(header), 0), len(transcript))
+	if transcriptStart < transcriptEnd {
+		visible = append(visible, transcript[transcriptStart:transcriptEnd]...)
+	}
+	return visible
 }
 
 func (m Model) benchmarkDetailResult() (codex.BenchmarkResult, bool) {
@@ -396,8 +470,8 @@ func (m Model) benchmarkDetailMaximumScroll() int {
 		return 0
 	}
 	layout := m.dashboardLayout()
-	lines := m.benchmarkDetailLines(max(layout.contentWidth-4, 1), paletteFor(m.theme))
-	return max(len(lines)-max(layout.meterHeight-2, 1), 0)
+	header, transcript := m.benchmarkDetailSections(max(layout.contentWidth-4, 1), paletteFor(m.theme))
+	return max(len(header)+len(transcript)-max(layout.meterHeight-2, 1), 0)
 }
 
 type benchmarkScopeItemKind int
