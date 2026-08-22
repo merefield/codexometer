@@ -942,6 +942,27 @@ func TestDigBenchSuiteSupportsScopedAndAllCombinations(t *testing.T) {
 	}
 }
 
+func TestDigBenchScopeLabelsPublishedAndEnhancedEfforts(t *testing.T) {
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "gpt-5.6-sol", Efforts: []string{"high", "xhigh"}}},
+		Efforts: []string{"high", "xhigh"}, Games: []string{"P-1"},
+	}
+	model := Model{benchmarkRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkSelectedSuite: 2}
+	labels := map[string]string{}
+	for _, item := range model.benchmarkScopeItems() {
+		if item.kind == benchmarkScopeEffort {
+			labels[item.value] = item.label
+		}
+	}
+	if !strings.Contains(labels["high"], "PUBLISHED GPT-5.6-SOL SETTING") {
+		t.Fatalf("high effort label = %q", labels["high"])
+	}
+	if !strings.Contains(labels["xhigh"], "ENHANCED") || !strings.Contains(labels["xhigh"], "NOT PAPER CONDITION") {
+		t.Fatalf("xhigh effort label = %q", labels["xhigh"])
+	}
+}
+
 func TestBenchmarkSuitesSplitBuiltInCatalogAndConditionallyAddDigBench(t *testing.T) {
 	plain := Model{benchmarkRunner: codex.Client{}}
 	suites := plain.benchmarkSuites()

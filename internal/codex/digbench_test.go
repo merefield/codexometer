@@ -166,9 +166,20 @@ func TestRunDigBenchTimeoutIncludesAppServerStartup(t *testing.T) {
 
 func TestDigBenchTranscriptPromptRedactsOnlyRuntimeSessionID(t *testing.T) {
 	maxLevel := 3
+	maxSteps := 100
+	startingLives := 8
+	mode := "creative"
+	creativeToggle := "/"
+	transition := "session-secret advanced"
 	session := digbench.Session{
 		Game: "P-1", SessionID: "session-secret", StepIndex: 4,
-		State: digbench.State{Status: "in_progress", Level: 2, MaxLevel: &maxLevel, Observation: "session-secret sees ___", Actions: []string{"b", "session-secret-action"}},
+		Description: "Reach the marked state for session-secret using the special action.",
+		State: digbench.State{
+			Status: "in_progress", Level: 2, MaxLevel: &maxLevel, MaxSteps: &maxSteps,
+			StartingLives: &startingLives, Mode: &mode, CreativeToggle: &creativeToggle,
+			Transition: &transition, Observation: "session-secret sees ___",
+			Actions: []string{"b", "session-secret-action"},
+		},
 	}
 	runtimePrompt := digBenchPrompt(session)
 	transcriptPrompt := digBenchTranscriptPrompt(session)
@@ -178,17 +189,74 @@ func TestDigBenchTranscriptPromptRedactsOnlyRuntimeSessionID(t *testing.T) {
 	if strings.Contains(transcriptPrompt, "session-secret") || !strings.Contains(transcriptPrompt, `session_id="[REDACTED]"`) {
 		t.Fatalf("transcript prompt did not safely redact session: %q", transcriptPrompt)
 	}
-	for _, shared := range []string{`game="P-1"`, "Starting step_index: 4", "Your first move must use step_index 5"} {
+	for _, shared := range []string{
+		`game="P-1"`, "starting state (step_index=4)", "first move uses step_index=5",
+		"TASK DESCRIPTION (objective + any special actions, NOT the rules)",
+		"After each successful \"step\" call, wait for and inspect its returned authoritative state",
+		"Never queue or precompute multiple future step calls against an unobserved state",
+		`"creative_toggle":"/"`, `"max_steps":100`, `"starting_lives":8`,
+	} {
 		if !strings.Contains(runtimePrompt, shared) || !strings.Contains(transcriptPrompt, shared) {
 			t.Fatalf("prompt variants do not share %q", shared)
 		}
 	}
-	if !strings.Contains(runtimePrompt, `"observation":"session-secret sees ___"`) || !strings.Contains(transcriptPrompt, `"observation":"[REDACTED] sees ___"`) || !strings.Contains(transcriptPrompt, `"[REDACTED]-action"`) {
+	if !strings.Contains(runtimePrompt, "Reach the marked state for session-secret") ||
+		!strings.Contains(runtimePrompt, `"observation":"session-secret sees ___"`) ||
+		!strings.Contains(transcriptPrompt, "Reach the marked state for [REDACTED]") ||
+		!strings.Contains(transcriptPrompt, `"observation":"[REDACTED] sees ___"`) ||
+		!strings.Contains(transcriptPrompt, `"[REDACTED]-action"`) {
 		t.Fatalf("state strings were not safely represented: %q", transcriptPrompt)
 	}
 	state := formatDigBenchState(session)
 	if strings.Contains(state, "session-secret") || !strings.Contains(state, `"observation": "[REDACTED] sees ___"`) {
 		t.Fatalf("state transcript leaked session ID: %s", state)
+	}
+}
+
+func TestDigBenchPromptMarksMissingTaskDescription(t *testing.T) {
+	prompt := digBenchPrompt(digbench.Session{Game: "P-1", SessionID: "session-1"})
+	if !strings.Contains(prompt, "TASK DESCRIPTION") || !strings.Contains(prompt, "(none provided)") {
+		t.Fatalf("missing description was not represented explicitly: %q", prompt)
+	}
+}
+
+func TestDigBenchAgentResponseIsCompactWhileTranscriptRetainsFullPayload(t *testing.T) {
+	framework := "engine-1"
+	seed := int64(42)
+	maxLevel := 5
+	invalid := false
+	response := digbench.StepResponse{
+		Session: digbench.Session{
+			Description: "objective", FrameworkVersion: &framework, Game: "P-2",
+			MoveSchema: json.RawMessage(`{"type":"object"}`), Seed: &seed,
+			SessionID: "session-secret", StepIndex: 7, LevelsBeaten: 1,
+			State: digbench.State{Observation: "abc", Actions: []string{"x"}, Level: 2, MaxLevel: &maxLevel, Status: "in_progress"},
+		},
+		InvalidAction: &invalid,
+	}
+	handled := digBenchSuccessfulToolCall(response, digBenchCompactStep(response), nil)
+	agent := handled.agent["contentItems"].([]map[string]string)[0]["text"]
+	transcript := handled.transcript["contentItems"].([]map[string]string)[0]["text"]
+	for _, expected := range []string{`"step_index":7`, `"levels_beaten":1`, `"observation":"abc"`, `"actions":["x"]`, `"invalid_action":false`} {
+		if !strings.Contains(agent, expected) {
+			t.Fatalf("compact agent response missing %q: %s", expected, agent)
+		}
+	}
+	for _, excluded := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`} {
+		if strings.Contains(agent, excluded) {
+			t.Fatalf("compact agent response retained %q: %s", excluded, agent)
+		}
+	}
+	for _, retained := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`} {
+		if !strings.Contains(transcript, retained) {
+			t.Fatalf("full transcript response lost %q: %s", retained, transcript)
+		}
+	}
+}
+
+func TestDefaultDigBenchTimeoutAllowsLongDiscoveryRuns(t *testing.T) {
+	if DefaultDigBenchTimeout != 2*time.Hour {
+		t.Fatalf("default timeout = %s", DefaultDigBenchTimeout)
 	}
 }
 
@@ -443,10 +511,10 @@ func TestDigBenchToolRejectsAnotherSession(t *testing.T) {
 		"arguments": map[string]any{"session_id": "session-2", "step_index": 1, "action": "a"},
 	})
 	response := handleDigBenchToolCall(context.Background(), service, "thread-1", "turn-1", "session-1", params, &current)
-	if response["success"] != false || service.stepCalls != 0 {
+	if response.agent["success"] != false || service.stepCalls != 0 {
 		t.Fatalf("response = %#v, calls = %d", response, service.stepCalls)
 	}
-	content := response["contentItems"].([]map[string]string)
+	content := response.agent["contentItems"].([]map[string]string)
 	if !strings.Contains(content[0]["text"], "access denied") {
 		t.Fatalf("response = %#v", response)
 	}

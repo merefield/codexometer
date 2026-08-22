@@ -838,13 +838,17 @@ codexometer --digbench-game P-1
 ```
 
 The published Codex condition is the default: `gpt-5.6-sol` with `high`
-reasoning effort. Override it or the 30-minute hard limit explicitly:
+reasoning effort. In DigBench Scope, `high` is labelled as that published Sol
+setting, while `xhigh` is identified as an enhanced Codexometer experiment and
+not a paper condition. Codexometer allows two hours per game by default because
+discovery runs can be substantially longer than ordinary coding benchmarks.
+The headless form can set another finite boundary explicitly; for example:
 
 ```sh
 codexometer --digbench-game P-3 \
   --digbench-model gpt-5.6-terra \
   --digbench-effort medium \
-  --digbench-timeout 20m
+  --digbench-timeout 12h
 ```
 
 The command creates a fresh remote DigBench session, so invoking it is an
@@ -864,13 +868,27 @@ the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
 idempotent `step_index` protocol; session creation is never automatically
 retried because that endpoint does not document idempotency.
 
+The model-facing instructions retain Codexometer's session-isolation and useful
+scratch-note guidance while following the agentic prompt published in the
+[DigBench paper](https://arxiv.org/abs/2608.12593). Codex receives the API's task
+description, including any objective or special-action guidance that does not
+reveal the rules, plus `creative_toggle` when the state supplies it. Every move
+is explicitly an observe → reason → one-action cycle: Codex is told to wait for
+and inspect the authoritative result before choosing another move, including
+when deliberately testing a sequence. Tool results sent back into the model are
+compact game-state slices so repeated session metadata and schemas do not crowd
+out useful history. This compaction does not discard game observations, legal
+actions, limits, transitions, progress, or creative-mode state.
+
 In the TUI, each selected game run appears immediately in the existing result
 table and can be opened while it is in progress. Its benchmark-only detail view
 shows every Codexometer-authored developer instruction, the complete game prompt
 with the session ID redacted, and the dynamic-tool definitions. It then presents
 each game exchange as a sanitized **Tool Request** and full **Tool Response**,
 followed by the concise **Move** and authoritative **State** representation, so
-the solving workflow remains readable without losing protocol detail. The final
+the solving workflow remains readable without losing protocol detail. The full
+recorded response intentionally remains richer than the compact state returned
+to the model. The final
 model response completes the visible
 `Policy → Prompt → Tools → Tool Request → Tool Response → Move → State → Final Response`
 workflow. The **Copy** control exports that complete captured view. DigBench

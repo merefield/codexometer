@@ -605,9 +605,18 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	selectedEfforts := stringSetUI(m.benchmarkScope.Efforts)
 	for _, effort := range m.benchmarkPlan.Efforts {
 		selected := selectedEfforts[effort]
+		label := "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort)
+		if m.benchmarkSelectedSuiteExternal() {
+			switch strings.ToLower(effort) {
+			case "high":
+				label += " // PUBLISHED GPT-5.6-SOL SETTING"
+			case "xhigh":
+				label += " // ENHANCED // NOT PAPER CONDITION"
+			}
+		}
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeEffort, value: effort, selected: selected,
-			label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort),
+			label: label,
 		})
 	}
 	if m.benchmarkSelectedSuiteExternal() {

@@ -45,6 +45,7 @@ type State struct {
 	MaxLevel       *int     `json:"max_level"`
 	MaxSteps       *int     `json:"max_steps"`
 	Mode           *string  `json:"mode"`
+	CreativeToggle *string  `json:"creative_toggle"`
 	Observation    string   `json:"observation"`
 	StartingLives  *int     `json:"starting_lives"`
 	Status         string   `json:"status"`
