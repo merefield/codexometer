@@ -161,17 +161,13 @@ func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkT
 			result, runErr := runDigBenchTrial(ctx, c, newDigBenchService(c.DigBenchToken), DigBenchOptions{
 				Game: game, Model: choice.model, Effort: choice.effort,
 				Snapshot: func(snapshot DigBenchResult) {
+					fillDigBenchIdentity(&snapshot, game, choice.model, choice.name, choice.effort)
 					active := benchmarkResultFromDigBench(taskID, snapshot)
 					event.Active = &active
 					emit(event)
 				},
 			})
-			if result.Game == "" {
-				result.Game = game
-			}
-			if result.Model == "" {
-				result.Model, result.DisplayName, result.ActualModel, result.Effort = choice.model, choice.name, choice.model, choice.effort
-			}
+			fillDigBenchIdentity(&result, game, choice.model, choice.name, choice.effort)
 			converted := benchmarkResultFromDigBench(taskID, result)
 			if errors.Is(ctx.Err(), context.Canceled) {
 				markBenchmarkStopped(&converted)
@@ -190,6 +186,24 @@ func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkT
 		}
 	}
 	emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(selected), Done: true})
+}
+
+func fillDigBenchIdentity(result *DigBenchResult, game, model, displayName, effort string) {
+	if strings.TrimSpace(result.Game) == "" {
+		result.Game = game
+	}
+	if strings.TrimSpace(result.Model) == "" {
+		result.Model = model
+	}
+	if strings.TrimSpace(result.DisplayName) == "" {
+		result.DisplayName = displayName
+	}
+	if strings.TrimSpace(result.ActualModel) == "" {
+		result.ActualModel = model
+	}
+	if strings.TrimSpace(result.Effort) == "" {
+		result.Effort = effort
+	}
 }
 
 func benchmarkResultFromDigBench(taskID BenchmarkTaskID, result DigBenchResult) BenchmarkResult {
@@ -759,12 +773,19 @@ func digBenchToolResponse(value any, err error) map[string]any {
 }
 
 func applyDigBenchSession(result *DigBenchResult, session digbench.Session) {
-	result.Game = session.Game
+	// Step responses may omit identity and other session-static metadata. Treat
+	// those fields as incremental updates so a valid initial session cannot lose
+	// the game name used by live UI snapshots.
+	if strings.TrimSpace(session.Game) != "" {
+		result.Game = session.Game
+	}
 	result.Status = session.State.Status
 	result.CurrentLevel = session.State.Level
 	result.LevelsBeaten = session.LevelsBeaten
 	result.Steps = session.StepIndex
-	result.Seed = session.Seed
+	if session.Seed != nil {
+		result.Seed = session.Seed
+	}
 	if session.State.MaxLevel != nil {
 		result.MaxLevel = *session.State.MaxLevel
 	}

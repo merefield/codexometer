@@ -223,6 +223,9 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	var trials []string
 	runDigBenchTrial = func(_ context.Context, _ Client, _ digBenchService, options DigBenchOptions) (DigBenchResult, error) {
 		trials = append(trials, options.Game+"/"+options.Effort)
+		// DigBench step payloads do not need to repeat session-static identity.
+		// The suite must still publish a stable active row for this snapshot.
+		options.Snapshot(DigBenchResult{Status: "in_progress", CurrentLevel: 2})
 		result := DigBenchResult{Game: options.Game, Model: options.Model, DisplayName: "Model", ActualModel: options.Model, Effort: options.Effort, Won: true, Status: "completed"}
 		options.Snapshot(result)
 		return result, nil
@@ -240,6 +243,11 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	}
 	results := 0
 	for _, event := range events {
+		if event.Active != nil {
+			if event.Active.Provider != "digbench" || !strings.HasPrefix(event.Active.TaskName, "DIGBENCH P-") || event.Active.Model == "" || event.Active.DisplayName == "" || event.Active.Effort == "" {
+				t.Fatalf("active DigBench identity was not preserved: %#v", *event.Active)
+			}
+		}
 		if event.Result != nil {
 			results++
 		}
@@ -247,6 +255,25 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	final := events[len(events)-1]
 	if results != 4 || !final.Done || final.Total != 4 || final.Completed != 4 || final.Combinations != 2 || final.Err != nil {
 		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestApplyDigBenchSessionPreservesStaticMetadataFromInitialSession(t *testing.T) {
+	seed := int64(42)
+	framework := "engine-1"
+	maxLevel := 14
+	result := DigBenchResult{Game: "P-1", Seed: &seed, FrameworkVersion: framework, MaxLevel: maxLevel}
+
+	applyDigBenchSession(&result, digbench.Session{
+		SessionID: "session-1", StepIndex: 211, LevelsBeaten: 6,
+		State: digbench.State{Status: "in_progress", Level: 7},
+	})
+
+	if result.Game != "P-1" || result.Seed == nil || *result.Seed != seed || result.FrameworkVersion != framework || result.MaxLevel != maxLevel {
+		t.Fatalf("partial session erased static metadata: %#v", result)
+	}
+	if result.Status != "in_progress" || result.CurrentLevel != 7 || result.LevelsBeaten != 6 || result.Steps != 211 {
+		t.Fatalf("partial session did not update progress: %#v", result)
 	}
 }
 
