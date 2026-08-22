@@ -320,10 +320,12 @@ state—not the contents—of Codex's per-thread writer lock. Message text—inc
 the final response carried beside timing metadata—reasoning, commands, tool
 results, and credentials are ignored and never retained from ordinary Codex
 sessions. The sole content-reading exception is a benchmark turn explicitly
-started by Codexometer: its known prompt and visible structured response are
-kept in bounded process memory for the Benchmark run detail view. Reasoning
-events, credentials, request headers, and internal thread, turn, or response
-IDs are not captured.
+started by Codexometer. Its Codexometer-authored policy and prompt, visible
+structured response, and—only for DigBench—sanitized game-tool requests and
+responses are kept in bounded process memory for the Benchmark run detail view.
+Reasoning events, platform instructions, credentials, request headers,
+temporary paths, local scratch-work commands, and internal thread, turn, call,
+or response IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
@@ -353,7 +355,7 @@ codexometer --codex /path/to/codex
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Stop the active benchmark suite and retain its incomplete trial |
 | `d` | Close the Benchmark Scope screen |
-| `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
+| `[` / `]`, `Left` / `Right` | Select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
@@ -613,10 +615,11 @@ The other top-level views are:
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
-- **Benchmark** — runs a selected hermetic coding challenge, or the complete
-  challenge catalog, against every visible model and each reasoning effort
-  that model advertises. Results arrive sequentially in a ranked table with
-  task, pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
+- **Benchmark** — runs the selected scope from the active Core, Extended, or
+  conditional DigBench suite, or the active suite's complete catalog, against
+  the selected or complete set of compatible model/reasoning-effort pairs.
+  Results arrive sequentially in a ranked table with task, outcome, wall time,
+  tokens, and estimated standard API-equivalent cost.
   Filter the table to all, passed, or failed trials. Scroll a long result matrix
   with Page Up, Page Down, or the mouse wheel. Click any column-heading button
   to sort by that field; click it again to reverse the order.
@@ -868,8 +871,10 @@ with the session ID redacted, and the dynamic-tool definitions. It then presents
 each game exchange as a sanitized **Tool Request** and full **Tool Response**,
 followed by the concise **Move** and authoritative **State** representation, so
 the solving workflow remains readable without losing protocol detail. The final
-model response completes the transcript. The **Copy** control exports that
-complete captured view. DigBench session IDs, credentials, request headers,
+model response completes the visible
+`Policy → Prompt → Tools → Tool Request → Tool Response → Move → State → Final Response`
+workflow. The **Copy** control exports that complete captured view. DigBench
+session IDs, credentials, request headers,
 temporary paths, local scratch-work commands, internal app-server context, Codex
 platform instructions, and Codex reasoning are never included. **Stop** requests
 interruption of the active Codex turn, retains the captured transcript, and marks
