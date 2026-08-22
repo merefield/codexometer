@@ -4,49 +4,88 @@
 
 ![codexometer|690x454](upload://xcWugpZYodk0zuFVYsDzluTemtf.png)
 
+## Why use it?
+
+`/status` is useful, but it lives inside the session where you are working. Codexometer turns the same quota information into an always-visible companion display, then adds local session monitoring and a benchmark runner around it.
+
+It is useful when you want to:
+
+- keep quota and reset timing visible without interrupting your current task;
+- see whether local Codex sessions are active, waiting for input, or awaiting approval;
+- understand locally observed token activity and API-equivalent cost;
+- compare available models and reasoning levels on the same checked tasks; or
+- inspect how a benchmark was solved rather than seeing only a final score.
+
+Everything runs locally in a terminal, with mouse controls, keyboard shortcuts, responsive layouts, five colour themes, and support for additional rate-limit windows when Codex returns them.
+
 ## What does it show?
 
-The responsive interface has three main tabs:
+The interface has three main tabs:
 
 - **Quota** — switch between Bars, Consumption Pace, Pie, and Fuel Tank presentations. A pace-aware health signal distinguishes quota that is safely tracking the reset cycle from quota burning too quickly. Codexometer can also learn an observed standard API-equivalent estimate for primary Codex windows, with conservative confidence and visible pricing provenance.
-- **Monitor** — record locally observed token activity by root Codex session, with scrolling graphs and compact call, activity, output, and time-to-first-token telemetry. Explicitly linked spawned agents are folded into their parent session.
+- **Monitor** — record locally observed token activity by root Codex session, with scrolling graphs and compact call, activity, output, and time-to-first-token telemetry. It estimates each session’s local share of observed account activity, highlights sessions needing input or approval when Codex exposes that state, and folds explicitly linked spawned agents into their parent session.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
 
-There are five colour themes, mouse-clickable controls, keyboard shortcuts, responsive layouts, and automatic support for additional rate-limit windows when Codex returns them.
+## Benchmarking
 
-## A much richer benchmarking system
+The Benchmark tab is a scoped runner with live, inspectable run details.
 
-The last two releases have developed the Benchmark tab from a result matrix into a scoped runner with live, inspectable run details.
+The always-available benchmark catalogue is divided into:
 
-[Codexometer v0.8.0](https://github.com/merefield/codexometer/releases/tag/v0.8.0) added:
+- **Codexometer Core** — the original easy and moderate deterministic coding tasks; and
+- **Codexometer Extended** — the later, harder deterministic tasks.
 
-- clickable details for completed and in-progress benchmark runs;
-- live progress, model responses, moves, and benchmark results;
-- one-key copying of the complete run detail;
-- the ability to stop an active suite while retaining completed work; and
-- model and reasoning-level scope controls with bulk selection and compatibility cues.
+Open **Scope** to select individual tasks, models, and reasoning levels. Compatibility cues show which efforts each model supports, while bulk controls make it easy to check or clear a complete group. **Run Scope** executes the selected intersections; **Run All** runs the active suite’s complete catalogue across every compatible model and reasoning level.
 
-[Codexometer v0.9.0](https://github.com/merefield/codexometer/releases/tag/v0.9.0) adds:
+Each trial appears in the result matrix as soon as it starts and remains clickable while in progress. The detail view includes:
 
-- separate **Codexometer Core** and **Codexometer Extended** suites;
-- per-task selection alongside model and reasoning-level scope;
-- clearer **Run Scope** and **Run All** workflows;
-- richer benchmark transcripts covering safe prompts, tool exchanges, moves, states, final responses, token usage, and API-equivalent cost; and
-- stronger timeout, interruption, redaction, and credential-isolation safeguards.
+- the benchmark prompt and safe context supplied to the model;
+- model responses and verifier results;
+- live progress, elapsed time, tokens, and API-equivalent cost;
+- tool requests and responses where the benchmark uses them;
+- move and state transitions for interactive games; and
+- a complete copy-to-clipboard action for sharing or further analysis.
 
-Detailed interaction capture is restricted to benchmark-created turns. Ordinary Codex session message content remains excluded.
+You can enter and leave a live detail view without interrupting the run, navigate long transcripts with the keyboard, and stop an active suite while retaining completed work and the captured incomplete result.
+
+Deterministic suites can be ranked with cost-, speed-, or balanced weighting. External randomized suites remain deliberately unranked.
 
 ## Optional DigBench integration
 
-Version 0.9.0 also adds an optional suite powered by [DigBench](https://digbench.ai/), or “Discovery in Games”. DigBench is a scientific-discovery benchmark containing 70 interactive games with undisclosed rules. Humans and AI agents receive the same states, available actions, and step budgets, and must discover each game’s mechanics through experimentation.
+Codexometer also includes an experimental integration with [DigBench](https://digbench.ai/), or “Discovery in Games”. DigBench is a scientific-discovery benchmark containing 70 interactive games with undisclosed rules. Humans and AI agents receive the same states, available actions, and step budgets, and must discover each game’s mechanics through experimentation.
 
-When a `DIGBENCH_API_TOKEN` is supplied, Codexometer discovers the current game catalogue at launch and exposes a dedicated DigBench suite. You can select particular `P-x` games, models, and reasoning levels, then follow the agent through each tool request, move, resulting state, and final response. Runs report live level and step progress and use the remote game state for win detection.
+Supplying a `DIGBENCH_API_TOKEN` adds **DigBench** to the suite selector. Codexometer fetches the current game catalogue at launch rather than compiling a fixed list, so Scope can expose every game returned by DigBench alongside the model and reasoning controls.
 
-Without a DigBench token, the integration remains hidden and the normal Codexometer experience is unchanged. The token is kept out of spawned Codex environments, and captured benchmark content is bounded and sanitized to remove credentials, runtime identifiers, temporary paths, and terminal controls.
+Before a run, Codexometer shows the planned number of persisted remote sessions and asks for confirmation. During each game, the result table reports live game and level progress. Its detail view documents the solving workflow as safe prompts and tool definitions followed by each tool request, tool response, move, authoritative state, and final response. Win detection comes from the remote DigBench state rather than from interpreting the model’s prose.
 
-## Install or upgrade
+Without a DigBench token, the integration remains hidden and the normal Codexometer experience is unchanged. Tokens can be created from the [DigBench account page](https://digbench.ai/account/tokens).
 
-Codexometer is written in Go and builds as a standalone binary for macOS, Windows, and Linux. The easiest installation or upgrade is:
+## Privacy, authentication, and cost
+
+Quota monitoring uses the prevailing Codex login and does not inspect ordinary conversation content. Detailed interaction capture is restricted to isolated benchmark turns created by Codexometer; ordinary Codex session messages remain excluded.
+
+Benchmark transcripts are bounded and sanitized. Credentials, request headers, known runtime identifiers, temporary paths, terminal controls, Codex reasoning, and unrelated local session content are not retained in the detail view.
+
+By default, benchmark model calls use the prevailing Codex login and quota. If you choose to benchmark with **Sign in with ChatGPT** subscription authentication, you remain responsible for the applicable terms and policies and do so at your own risk. Codexometer is a local client for user-triggered trials; it is not intended to re-serve or share one person’s subscription access.
+
+For a clearer usage-based billing boundary, set `CODEXOMETER_BENCHMARK_API_KEY` to your own OpenAI API key. `OPENAI_API_KEY` is accepted as a fallback. The selected key is isolated in a benchmark-only Codex app-server and takes precedence for all benchmark model discovery and runs, while quota monitoring continues to use the prevailing login.
+
+The DigBench token authorizes only the external game service. Codexometer removes it from the environment before spawning Codex and gives the model only session-scoped game tools. DigBench sessions are persisted remotely, and benchmark model calls consume either Codex subscription quota or usage-billed API tokens according to the authentication choice above.
+
+## Where does it fit?
+
+Codexometer works particularly well in:
+
+- another Windows Terminal tab or split pane;
+- a second Terminal or iTerm window on macOS;
+- a tmux, Zellij, or other terminal-multiplexer pane; or
+- an Ubuntu terminal beside the Codex CLI.
+
+It is written in Go and builds as a standalone binary for macOS, Windows, and Linux.
+
+## Install and upgrade
+
+The easiest installation is also the easiest way to upgrade an existing Go-installed copy:
 
 ```sh
 go install github.com/merefield/codexometer@latest
@@ -55,9 +94,9 @@ codexometer --version
 
 Go installs the executable into `GOBIN`, or normally `$HOME/go/bin`. Ensure that directory is on `PATH`. If the version command still finds an older installation, `command -v codexometer` on macOS/Linux or `Get-Command codexometer` in PowerShell will show which executable is being run.
 
-Codexometer uses the prevailing Codex login for quota monitoring and, by default, benchmark turns. Users who prefer usage-based API billing can provide a dedicated benchmark API key, which Codexometer isolates from the normal Codex environment.
+If you installed a manually built binary, pull the latest source and rebuild it, or replace the existing executable with a newly compiled copy.
 
-Full installation, authentication, privacy, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
+Full installation, authentication, privacy, monitoring, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
 
 **GitHub:** https://github.com/merefield/codexometer
 
