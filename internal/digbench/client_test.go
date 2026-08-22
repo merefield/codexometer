@@ -107,6 +107,46 @@ func TestStartSessionDoesNotRetryAnAmbiguousFailure(t *testing.T) {
 	}
 }
 
+func TestStartSessionKeepsValidResponseWhenBodyCloseFails(t *testing.T) {
+	client := Client{
+		BaseURL: "https://digbench.test", Token: "secret",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodPost || request.URL.Path != "/sessions" {
+				t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: closeErrorBody{Reader: strings.NewReader(`{
+					"session_id":"session-1","game":"P-1","step_index":0,
+					"done":false,"levels_beaten":0,
+					"state":{"status":"in_progress","done":false,"level":1}
+				}`)},
+				Request: request,
+			}, nil
+		})},
+	}
+
+	session, err := client.StartSession(context.Background(), StartRequest{Game: "P-1"})
+	if err != nil || session.SessionID != "session-1" || session.Game != "P-1" {
+		t.Fatalf("session=%#v error=%v", session, err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
+type closeErrorBody struct {
+	io.Reader
+}
+
+func (closeErrorBody) Close() error {
+	return errors.New("simulated response close failure")
+}
+
 func TestSessionValidationRejectsContradictoryOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte(`{

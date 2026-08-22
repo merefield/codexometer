@@ -206,15 +206,16 @@ func (c Client) do(ctx context.Context, method, path string, body any, bearer, r
 			return fmt.Errorf("call DigBench API: %w", err)
 		}
 		data, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseSize+1))
-		closeErr := response.Body.Close()
+		// Once the complete response has been read, a transport-level Close error
+		// cannot invalidate the status or body. In particular, StartSession is not
+		// retryable: discarding its decoded response here could orphan a remote
+		// session whose creation already succeeded.
+		_ = response.Body.Close()
 		if readErr != nil {
 			if retry && attempt+1 < attempts {
 				continue
 			}
 			return fmt.Errorf("read DigBench response: %w", readErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close DigBench response: %w", closeErr)
 		}
 		if len(data) > maxResponseSize {
 			return errors.New("DigBench response exceeds 1 MiB")
