@@ -405,6 +405,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "x":
 			if m.meterView == viewBenchmark {
+				if m.benchmarkScopeOpen {
+					return m.pressFooterButton(footerButtonBenchmarkClose)
+				}
 				if m.benchmarkDetail != nil {
 					return m.pressFooterButton(footerButtonBenchmarkClose)
 				}
@@ -987,8 +990,12 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			return m, tea.SetClipboard(m.benchmarkDetailClipboardText())
 		}
 	case footerButtonBenchmarkClose:
-		if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
-			m.closeBenchmarkDetail()
+		if m.meterView == viewBenchmark {
+			if m.benchmarkScopeOpen {
+				m.closeBenchmarkScope()
+			} else if m.benchmarkDetail != nil {
+				m.closeBenchmarkDetail()
+			}
 		}
 	case footerButtonBenchmarkScope:
 		if m.meterView == viewBenchmark && !m.benchmarkRunActive() && len(m.benchmarkPlan.Models) > 0 {

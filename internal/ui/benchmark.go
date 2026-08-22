@@ -515,7 +515,15 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 		title += fmt.Sprintf(" // %d/%d GAMES", len(m.benchmarkScope.Games), len(m.benchmarkPlan.Games))
 	}
 	title += " // SPACE TOGGLE // ESC DONE"
-	return frameSized(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithTitleAction(
+		width,
+		bodyHeight,
+		ansi.Truncate(title, max(innerWidth-4, 1), ""),
+		m.renderBenchmarkDetailControl(benchmarkDetailCloseLabel, footerButtonBenchmarkClose, colors),
+		strings.Join(lines, "\n"),
+		colors.primary,
+		colors,
+	)
 }
 
 func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width int, colors palette, selectedEfforts map[string]bool) string {
@@ -1685,6 +1693,9 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	if m.benchmarkScopeOpen {
+		if m.benchmarkCloseButtonAt(x, y) {
+			return footerButtonBenchmarkClose
+		}
 		return footerButtonNone
 	}
 	if m.benchmarkDetail != nil {
@@ -1714,18 +1725,27 @@ func (m Model) benchmarkDetailButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	dashboard := m.dashboardLayout()
-	localX := x - 2
-	closeWidth := lipgloss.Width(benchmarkDetailCloseLabel)
-	closeStart := dashboard.contentWidth - closeWidth - 2
-	if dashboard.contentWidth >= closeWidth+8 && y == dashboard.meterY && localX >= closeStart && localX < closeStart+closeWidth {
+	if m.benchmarkCloseButtonAt(x, y) {
 		return footerButtonBenchmarkClose
 	}
+	localX := x - 2
 	copyWidth := lipgloss.Width(benchmarkDetailCopyLabel)
 	copyStart := dashboard.contentWidth - copyWidth - 2
 	if dashboard.contentWidth >= copyWidth+4 && y == dashboard.meterY+dashboard.meterHeight-1 && localX >= copyStart && localX < copyStart+copyWidth {
 		return footerButtonBenchmarkCopy
 	}
 	return footerButtonNone
+}
+
+func (m Model) benchmarkCloseButtonAt(x, y int) bool {
+	if m.meterView != viewBenchmark || (!m.benchmarkScopeOpen && m.benchmarkDetail == nil) || x < 0 || y < 0 {
+		return false
+	}
+	dashboard := m.dashboardLayout()
+	labelWidth := lipgloss.Width(benchmarkDetailCloseLabel)
+	localX := x - 2
+	start := dashboard.contentWidth - labelWidth - 2
+	return dashboard.contentWidth >= labelWidth+8 && y == dashboard.meterY && localX >= start && localX < start+labelWidth
 }
 
 func benchmarkSegmentButtonAt(localX int, segments []benchmarkControlSegment) footerButtonID {

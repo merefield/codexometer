@@ -677,11 +677,29 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		t.Fatal("Scope hotkey did not open the all-selected scope screen")
 	}
 	screen := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"BENCHMARK SCOPE", "(D) DONE", "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH"} {
+	for _, want := range []string{"BENCHMARK SCOPE", benchmarkDetailCloseLabel, "(D) DONE", "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH"} {
 		if !strings.Contains(screen, want) {
 			t.Fatalf("scope screen missing %q:\n%s", want, screen)
 		}
 	}
+	closeX, closeY := renderedTextStart(t, model, benchmarkDetailCloseLabel)
+	if closeY != model.dashboardLayout().meterY {
+		t.Fatalf("Scope Close y = %d, want top frame y = %d", closeY, model.dashboardLayout().meterY)
+	}
+	updated, command = model.Update(tea.MouseClickMsg{X: closeX, Y: closeY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.benchmarkScopeOpen {
+		t.Fatal("Scope Close control did not return to Benchmark")
+	}
+	updated, _ = model.Update(key('s'))
+	model = updated.(Model)
+	updated, command = model.Update(key('x'))
+	model = updated.(Model)
+	if command == nil || model.benchmarkScopeOpen {
+		t.Fatal("X did not close Scope")
+	}
+	updated, _ = model.Update(key('s'))
+	model = updated.(Model)
 
 	clickScopeItem := func(index int) {
 		t.Helper()
