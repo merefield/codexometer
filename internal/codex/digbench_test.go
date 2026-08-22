@@ -144,6 +144,26 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	}
 }
 
+func TestRunDigBenchTimeoutIncludesAppServerStartup(t *testing.T) {
+	original := openBenchmarkAppServer
+	openBenchmarkAppServer = func(ctx context.Context, _, _ string) (*appServerSession, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	t.Cleanup(func() { openBenchmarkAppServer = original })
+
+	startedAt := time.Now()
+	_, err := (Client{}).RunDigBench(context.Background(), &fakeDigBenchService{}, DigBenchOptions{
+		Game: "P-1", Model: "model", Effort: "high", Timeout: 10 * time.Millisecond,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("startup timeout error = %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("startup exceeded configured timeout by too much: %s", elapsed)
+	}
+}
+
 func TestDigBenchTranscriptPromptRedactsOnlyRuntimeSessionID(t *testing.T) {
 	maxLevel := 3
 	session := digbench.Session{
@@ -196,6 +216,52 @@ func TestDigBenchToolResponseTranscriptRedactsSensitiveIdentifiers(t *testing.T)
 	rejected := formatDigBenchToolResponse(digBenchToolResponse(nil, errors.New("session-secret was rejected")), false, "session-secret")
 	if !strings.Contains(rejected, "REJECTED") || !strings.Contains(rejected, "[REDACTED] was rejected") || strings.Contains(rejected, "session-secret") {
 		t.Fatalf("rejected tool response was not safely documented: %s", rejected)
+	}
+}
+
+func TestDigBenchRuntimeTextSanitizationCoversFailuresAndFinalResponse(t *testing.T) {
+	const (
+		sessionID = "session-secret"
+		threadID  = "thread-secret"
+		turnID    = "turn-secret"
+		workspace = "/tmp/codexometer-digbench-secret"
+	)
+	unsafe := sessionID + " " + threadID + " " + turnID + " " + workspace + "\x1b]52;c;payload\a\nkept\tformat"
+
+	redacted := redactDigBenchText(unsafe, sessionID, threadID, turnID, workspace)
+	assertSafeDigBenchText(t, redacted, sessionID, threadID, turnID, workspace)
+	if !strings.Contains(redacted, "\nkept\tformat") {
+		t.Fatalf("intentional formatting whitespace was removed: %q", redacted)
+	}
+
+	completed := rawJSON(map[string]any{
+		"threadId": threadID,
+		"turn": map[string]any{
+			"id": turnID, "status": "failed",
+			"error": map[string]string{"message": unsafe},
+			"items": []any{map[string]string{"type": "agentMessage", "text": unsafe}},
+		},
+	})
+	failure := ""
+	if !digBenchTurnCompleted(completed, threadID, turnID, &failure, sessionID, threadID, turnID, workspace) {
+		t.Fatal("matching failed turn was not recognized")
+	}
+	assertSafeDigBenchText(t, failure, sessionID, threadID, turnID, workspace)
+	final := digBenchFinalResponse(completed, threadID, turnID, sessionID, threadID, turnID, workspace)
+	assertSafeDigBenchText(t, final, sessionID, threadID, turnID, workspace)
+}
+
+func assertSafeDigBenchText(t *testing.T, value string, sensitiveValues ...string) {
+	t.Helper()
+	for _, sensitive := range sensitiveValues {
+		if strings.Contains(value, sensitive) {
+			t.Fatalf("runtime value %q leaked in %q", sensitive, value)
+		}
+	}
+	for _, character := range value {
+		if character != '\n' && character != '\t' && (character < 0x20 || (character >= 0x7f && character <= 0x9f)) {
+			t.Fatalf("terminal control U+%04X remained in %q", character, value)
+		}
 	}
 }
 
@@ -256,6 +322,43 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	if results != 4 || !final.Done || final.Total != 4 || final.Completed != 4 || final.Combinations != 2 || final.Err != nil {
 		t.Fatalf("events = %#v", events)
 	}
+}
+
+func TestDigBenchBenchmarkSuitePersistsSanitizedRunnerErrorsAsIncomplete(t *testing.T) {
+	server, _ := newFakeBenchmarkServer(benchmarkEnvelope{
+		ID: rawJSON(1),
+		Result: rawJSON(map[string]any{"data": []any{map[string]any{
+			"model": "model", "displayName": "Model",
+			"supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "high"}},
+		}}}),
+	})
+	originalOpen := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = originalOpen })
+
+	originalRun := runDigBenchTrial
+	runDigBenchTrial = func(_ context.Context, _ Client, _ digBenchService, options DigBenchOptions) (DigBenchResult, error) {
+		return DigBenchResult{Game: options.Game, Model: options.Model, Effort: options.Effort}, errors.New("transport \x1b]52;c;payload\a failed")
+	}
+	t.Cleanup(func() { runDigBenchTrial = originalRun })
+
+	var events []BenchmarkEvent
+	client := Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}
+	client.RunBenchmarkSuiteScoped(context.Background(), []BenchmarkTaskID{BenchmarkDigBench}, BenchmarkScope{
+		Models: []string{"model"}, Efforts: []string{"high"}, Games: []string{"P-1"},
+	}, func(event BenchmarkEvent) { events = append(events, event) })
+
+	var result *BenchmarkResult
+	for _, event := range events {
+		if event.Result != nil {
+			copy := *event.Result
+			result = &copy
+		}
+	}
+	if result == nil || result.Correct || result.Failure == "" {
+		t.Fatalf("failed trial was not persisted as incomplete: %#v", result)
+	}
+	assertSafeDigBenchText(t, result.Failure)
 }
 
 func TestApplyDigBenchSessionPreservesStaticMetadataFromInitialSession(t *testing.T) {

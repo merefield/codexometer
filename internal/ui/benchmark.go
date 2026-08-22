@@ -1395,7 +1395,7 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 		model += "→" + result.ActualModel
 	}
 	rank := "—"
-	if value := rankings[benchmarkCombinationKey(result)]; result.Provider == "" && !inProgress && !result.Stopped && value > 0 {
+	if value, ranked := benchmarkResultRank(result, rankings); ranked && !inProgress && !result.Stopped {
 		rank = fmt.Sprintf("#%d", value)
 	}
 	return []string{
@@ -1425,7 +1425,18 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 	}
 	sort.SliceStable(ordered, func(left, right int) bool {
 		if column == benchmarkSortRank {
-			comparison := compareInt(rankings[benchmarkCombinationKey(ordered[left])], rankings[benchmarkCombinationKey(ordered[right])])
+			leftRank, leftRanked := benchmarkResultRank(ordered[left], rankings)
+			rightRank, rightRanked := benchmarkResultRank(ordered[right], rankings)
+			if leftRanked != rightRanked {
+				// Rank is not meaningful for external/randomized suites. Keep those
+				// rows unranked and after ranked deterministic results regardless of
+				// sort direction.
+				return leftRanked
+			}
+			if !leftRanked {
+				return false
+			}
+			comparison := compareInt(leftRank, rightRank)
 			if descending {
 				return comparison > 0
 			}
@@ -1444,6 +1455,14 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 		return comparison < 0
 	})
 	return ordered
+}
+
+func benchmarkResultRank(result codex.BenchmarkResult, rankings map[string]int) (int, bool) {
+	if result.Provider != "" || result.Stopped {
+		return 0, false
+	}
+	value := rankings[benchmarkCombinationKey(result)]
+	return value, value > 0
 }
 
 type benchmarkRankSummary struct {
@@ -1476,7 +1495,7 @@ func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMo
 	}
 	byKey := make(map[string]*benchmarkRankSummary)
 	for _, result := range results {
-		if result.Stopped {
+		if result.Stopped || result.Provider != "" {
 			continue
 		}
 		key := benchmarkCombinationKey(result)

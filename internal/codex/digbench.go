@@ -18,6 +18,8 @@ const (
 	digBenchDeveloperInstructions   = "Play only the assigned DigBench session. Use its scoped tools for game access, keep useful notes in the isolated workspace if needed, and stop calling tools as soon as the game is done."
 )
 
+var errDigBenchTimeout = errors.New("DigBench timeout reached")
+
 // DigBenchProgressPhase identifies a safe, content-free runner milestone.
 type DigBenchProgressPhase string
 
@@ -168,6 +170,10 @@ func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkT
 				},
 			})
 			fillDigBenchIdentity(&result, game, choice.model, choice.name, choice.effort)
+			if runErr != nil && result.Failure == "" && !errors.Is(ctx.Err(), context.Canceled) {
+				result.Failure = redactDigBenchText(runErr.Error())
+			}
+			result.Failure = redactDigBenchText(result.Failure)
 			converted := benchmarkResultFromDigBench(taskID, result)
 			if errors.Is(ctx.Err(), context.Canceled) {
 				markBenchmarkStopped(&converted)
@@ -235,24 +241,26 @@ func (c Client) RunDigBench(ctx context.Context, service digBenchService, option
 	if options.Timeout <= 0 {
 		options.Timeout = defaultDigBenchTimeout
 	}
+	runCtx, cancel := context.WithTimeoutCause(ctx, options.Timeout, errDigBenchTimeout)
+	defer cancel()
 
-	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
+	server, err := openBenchmarkAppServer(runCtx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
-		return DigBenchResult{}, err
+		return DigBenchResult{}, sanitizeDigBenchError(err)
 	}
 	defer server.close()
 	if !server.experimentalAPI {
 		return DigBenchResult{}, errors.New("DigBench requires a Codex CLI with experimental dynamic-tool support")
 	}
-	models, err := server.models(ctx)
+	models, err := server.models(runCtx)
 	if err != nil {
-		return DigBenchResult{}, err
+		return DigBenchResult{}, sanitizeDigBenchError(err)
 	}
 	combination, err := findDigBenchCombination(models, options.Model, options.Effort)
 	if err != nil {
 		return DigBenchResult{}, err
 	}
-	return server.runDigBench(ctx, service, combination, options)
+	return server.runDigBench(runCtx, service, combination, options)
 }
 
 func findDigBenchCombination(models []benchmarkModel, modelID, effort string) (benchmarkCombination, error) {
@@ -269,20 +277,29 @@ func (s *appServerSession) runDigBench(
 	service digBenchService,
 	combination benchmarkCombination,
 	options DigBenchOptions,
-) (DigBenchResult, error) {
-	result := DigBenchResult{
+) (result DigBenchResult, runErr error) {
+	result = DigBenchResult{
 		Game: options.Game, Model: combination.model.Model,
 		DisplayName: combination.model.DisplayName, Effort: combination.effort,
 		ActualModel: combination.model.Model,
 	}
-	runCtx, cancel := context.WithTimeout(ctx, options.Timeout)
-	defer cancel()
+	sensitiveValues := make([]string, 0, 5)
+	defer func() {
+		if runErr != nil {
+			runErr = sanitizeDigBenchError(runErr, sensitiveValues...)
+			if result.Failure == "" && !errors.Is(runErr, context.Canceled) {
+				result.Failure = runErr.Error()
+			}
+		}
+		result.Failure = redactDigBenchText(result.Failure, sensitiveValues...)
+	}()
 
 	temporary, err := os.MkdirTemp("", "codexometer-digbench-")
 	if err != nil {
 		return result, fmt.Errorf("create isolated DigBench workspace: %w", err)
 	}
 	defer os.RemoveAll(temporary)
+	sensitiveValues = append(sensitiveValues, temporary)
 
 	threadParams := map[string]any{
 		"model": combination.model.Model, "cwd": temporary,
@@ -294,11 +311,11 @@ func (s *appServerSession) runDigBench(
 	if s.experimentalRawEvents {
 		threadParams["experimentalRawEvents"] = true
 	}
-	threadResult, err := s.call(runCtx, "thread/start", threadParams, nil)
+	threadResult, err := s.call(ctx, "thread/start", threadParams, nil)
 	if err != nil && s.experimentalRawEvents && experimentalAPIUnsupported(err) {
 		s.experimentalRawEvents = false
 		delete(threadParams, "experimentalRawEvents")
-		threadResult, err = s.call(runCtx, "thread/start", threadParams, nil)
+		threadResult, err = s.call(ctx, "thread/start", threadParams, nil)
 	}
 	if err != nil {
 		return result, fmt.Errorf("start DigBench Codex thread: %w", err)
@@ -312,6 +329,7 @@ func (s *appServerSession) runDigBench(
 	if err := json.Unmarshal(threadResult, &startedThread); err != nil || startedThread.Thread.ID == "" {
 		return result, errors.New("Codex returned an invalid DigBench thread")
 	}
+	sensitiveValues = append(sensitiveValues, startedThread.Thread.ID)
 	if startedThread.Model != "" {
 		result.ActualModel = startedThread.Model
 	}
@@ -322,11 +340,12 @@ func (s *appServerSession) runDigBench(
 	if modelVersion != "" {
 		startRequest.ModelVersion = &modelVersion
 	}
-	session, err := service.StartSession(runCtx, startRequest)
+	session, err := service.StartSession(ctx, startRequest)
 	if err != nil {
 		return result, fmt.Errorf("start DigBench game: %w", err)
 	}
 	assignedSessionID := session.SessionID
+	sensitiveValues = append(sensitiveValues, assignedSessionID)
 	applyDigBenchSession(&result, session)
 
 	startedAt := time.Now()
@@ -343,7 +362,7 @@ func (s *appServerSession) runDigBench(
 	if combination.effort != "default" && combination.effort != "" {
 		turnParams["effort"] = combination.effort
 	}
-	turnResponse, err := s.call(runCtx, "turn/start", turnParams, nil)
+	turnResponse, err := s.call(ctx, "turn/start", turnParams, nil)
 	if err != nil {
 		return result, fmt.Errorf("start DigBench turn: %w", err)
 	}
@@ -355,6 +374,7 @@ func (s *appServerSession) runDigBench(
 	if err := json.Unmarshal(turnResponse, &startedTurn); err != nil || startedTurn.Turn.ID == "" {
 		return result, errors.New("Codex returned an invalid DigBench turn")
 	}
+	sensitiveValues = append(sensitiveValues, startedTurn.Turn.ID)
 	emitDigBenchProgress(options.Progress, DigBenchProgressTurn, result, startedAt)
 	publishDigBenchSnapshot(options.Snapshot, result)
 
@@ -364,17 +384,41 @@ func (s *appServerSession) runDigBench(
 	progressTicker := time.NewTicker(defaultDigBenchProgressInterval)
 	defer progressTicker.Stop()
 	for !completed {
-		envelope, heartbeat, envelopeErr := s.nextPendingEnvelopeOrHeartbeat(runCtx, progressTicker.C)
+		envelope, heartbeat, envelopeErr := s.nextPendingEnvelopeOrHeartbeat(ctx, progressTicker.C)
 		if heartbeat {
 			emitDigBenchProgress(options.Progress, DigBenchProgressHeartbeat, result, startedAt)
 			continue
 		}
 		if envelopeErr != nil {
 			result.Duration = time.Since(startedAt)
-			if errors.Is(ctx.Err(), context.Canceled) {
+			if errors.Is(context.Cause(ctx), errDigBenchTimeout) {
+				result.Failure = fmt.Sprintf("DigBench run timed out after %s", options.Timeout)
 				cleanupCompleted := false
 				handle := func(method string, params json.RawMessage) bool {
-					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure) {
+					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure, sensitiveValues...) {
+						cleanupCompleted = true
+						return true
+					}
+					return false
+				}
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), s.benchmarkInterruptTimeout())
+				interruptErr := s.interruptBenchmarkTurn(cleanupCtx, startedThread.Thread.ID, startedTurn.Turn.ID, &cleanupCompleted, handle)
+				cleanupCancel()
+				if interruptErr != nil {
+					result.Failure += "; cleanup failed: " + redactDigBenchText(interruptErr.Error(), sensitiveValues...)
+					return result, fmt.Errorf("interrupt timed-out DigBench turn: %w", interruptErr)
+				}
+				applyDigBenchMeasurements(&result, telemetry)
+				if session.Done {
+					result.Failure = ""
+				}
+				publishDigBenchSnapshot(options.Snapshot, result)
+				return result, nil
+			}
+			if ctx.Err() != nil {
+				cleanupCompleted := false
+				handle := func(method string, params json.RawMessage) bool {
+					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure, sensitiveValues...) {
 						cleanupCompleted = true
 						return true
 					}
@@ -385,30 +429,10 @@ func (s *appServerSession) runDigBench(
 				cleanupCancel()
 				applyDigBenchMeasurements(&result, telemetry)
 				if interruptErr != nil {
-					result.Failure = "remote interruption could not be confirmed: " + interruptErr.Error()
+					result.Failure = "remote interruption could not be confirmed: " + redactDigBenchText(interruptErr.Error(), sensitiveValues...)
 				}
 				publishDigBenchSnapshot(options.Snapshot, result)
 				return result, ctx.Err()
-			}
-			if recoverableBenchmarkTimeout(ctx, runCtx, envelopeErr) {
-				result.Failure = fmt.Sprintf("DigBench run timed out after %s", options.Timeout)
-				cleanupCompleted := false
-				handle := func(method string, params json.RawMessage) bool {
-					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure) {
-						cleanupCompleted = true
-						return true
-					}
-					return false
-				}
-				if interruptErr := s.interruptBenchmarkTurn(ctx, startedThread.Thread.ID, startedTurn.Turn.ID, &cleanupCompleted, handle); interruptErr != nil {
-					return result, fmt.Errorf("interrupt timed-out DigBench turn: %w", interruptErr)
-				}
-				applyDigBenchMeasurements(&result, telemetry)
-				if session.Done {
-					result.Failure = ""
-				}
-				publishDigBenchSnapshot(options.Snapshot, result)
-				return result, nil
 			}
 			return result, envelopeErr
 		}
@@ -418,7 +442,7 @@ func (s *appServerSession) runDigBench(
 			}
 			tool, action, stepIndex := digBenchToolSummary(envelope.Params)
 			response := handleDigBenchToolCall(
-				runCtx, service, startedThread.Thread.ID, startedTurn.Turn.ID,
+				ctx, service, startedThread.Thread.ID, startedTurn.Turn.ID,
 				assignedSessionID, envelope.Params, &session,
 			)
 			applyDigBenchSession(&result, session)
@@ -470,9 +494,9 @@ func (s *appServerSession) runDigBench(
 				result.ActualModel = event.ToModel
 			}
 		case "turn/completed":
-			completed = digBenchTurnCompleted(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure)
+			completed = digBenchTurnCompleted(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure, sensitiveValues...)
 			if completed {
-				if final := digBenchFinalResponse(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, assignedSessionID); final != "" {
+				if final := digBenchFinalResponse(envelope.Params, startedThread.Thread.ID, startedTurn.Turn.ID, sensitiveValues...); final != "" {
 					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionResponse, final)
 					publishDigBenchSnapshot(options.Snapshot, result)
 				}
@@ -607,7 +631,37 @@ func redactDigBenchText(value string, sensitiveValues ...string) string {
 			value = strings.ReplaceAll(value, sensitive, "[REDACTED]")
 		}
 	}
-	return value
+	return strings.Map(func(character rune) rune {
+		// Preserve formatting whitespace, but neutralize terminal C0/C1 control
+		// bytes so benchmark content cannot inject ANSI or OSC sequences into the
+		// detail renderer or clipboard output.
+		if character == '\n' || character == '\t' {
+			return character
+		}
+		if character < 0x20 || (character >= 0x7f && character <= 0x9f) {
+			return -1
+		}
+		return character
+	}, value)
+}
+
+type sanitizedDigBenchError struct {
+	cause   error
+	message string
+}
+
+func (e *sanitizedDigBenchError) Error() string { return e.message }
+func (e *sanitizedDigBenchError) Unwrap() error { return e.cause }
+
+func sanitizeDigBenchError(err error, sensitiveValues ...string) error {
+	if err == nil {
+		return nil
+	}
+	message := redactDigBenchText(err.Error(), sensitiveValues...)
+	if message == err.Error() {
+		return err
+	}
+	return &sanitizedDigBenchError{cause: err, message: message}
 }
 
 func formatDigBenchState(session digbench.Session, sensitiveValues ...string) string {
@@ -795,7 +849,7 @@ func applyDigBenchSession(result *DigBenchResult, session digbench.Session) {
 	result.Won = session.Done && session.State.Done && session.State.Status == "completed"
 }
 
-func digBenchTurnCompleted(params json.RawMessage, threadID, turnID string, failure *string) bool {
+func digBenchTurnCompleted(params json.RawMessage, threadID, turnID string, failure *string, sensitiveValues ...string) bool {
 	var event struct {
 		ThreadID string `json:"threadId"`
 		Turn     struct {
@@ -810,15 +864,15 @@ func digBenchTurnCompleted(params json.RawMessage, threadID, turnID string, fail
 		return false
 	}
 	if event.Turn.Status != "completed" {
-		*failure = "turn " + event.Turn.Status
+		*failure = "turn " + redactDigBenchText(event.Turn.Status, sensitiveValues...)
 		if event.Turn.Error != nil && event.Turn.Error.Message != "" {
-			*failure += ": " + event.Turn.Error.Message
+			*failure += ": " + redactDigBenchText(event.Turn.Error.Message, sensitiveValues...)
 		}
 	}
 	return true
 }
 
-func digBenchFinalResponse(params json.RawMessage, threadID, turnID, sessionID string) string {
+func digBenchFinalResponse(params json.RawMessage, threadID, turnID string, sensitiveValues ...string) string {
 	var event struct {
 		ThreadID string `json:"threadId"`
 		Turn     struct {
@@ -834,7 +888,7 @@ func digBenchFinalResponse(params json.RawMessage, threadID, turnID, sessionID s
 	}
 	for _, item := range event.Turn.Items {
 		if item.Type == "agentMessage" && strings.TrimSpace(item.Text) != "" {
-			return redactDigBenchText(item.Text, sessionID, threadID, turnID)
+			return redactDigBenchText(item.Text, sensitiveValues...)
 		}
 	}
 	return ""

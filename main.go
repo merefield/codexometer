@@ -240,6 +240,20 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintln(stdout, "codexometer "+version.Current())
 		return 0
 	}
+	// Capture credentials for the benchmark components, then remove them before
+	// any path that can launch Codex. This keeps auth checks and quota reads on
+	// the user's prevailing Codex login instead of leaking or implicitly using a
+	// benchmarking credential through the child environment.
+	benchmarkAPIKey, benchmarkAPIKeySource, err := takeBenchmarkAPIKey()
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer:", err)
+		return 1
+	}
+	digBenchToken, err := takeDigBenchToken()
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer:", err)
+		return 1
+	}
 	if *checkAuth {
 		snapshot, err := deps.checkAuth(context.Background(), *codexPath)
 		if err != nil {
@@ -254,18 +268,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			fmt.Fprintln(stderr, "codexometer: --digbench-game cannot be combined with --demo")
 			return 2
 		}
-		token, tokenErr := takeDigBenchToken()
-		if tokenErr != nil {
-			fmt.Fprintln(stderr, "codexometer:", tokenErr)
-			return 1
-		}
-		if token == "" {
+		if digBenchToken == "" {
 			fmt.Fprintln(stderr, "codexometer: DIGBENCH_API_TOKEN is required for --digbench-game")
-			return 1
-		}
-		benchmarkAPIKey, benchmarkAPIKeySource, err := takeBenchmarkAPIKey()
-		if err != nil {
-			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
 		}
 		if deps.runDigBench == nil {
@@ -278,7 +282,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		}
 		fmt.Fprintf(stderr, "Starting DigBench %s with %s/%s; this creates a persisted remote session and uses %s.\n",
 			strings.TrimSpace(*digBenchGame), strings.TrimSpace(*digBenchModel), strings.TrimSpace(*digBenchEffort), billing)
-		result, err := deps.runDigBench(context.Background(), *codexPath, token, benchmarkAPIKey, codex.DigBenchOptions{
+		result, err := deps.runDigBench(context.Background(), *codexPath, digBenchToken, benchmarkAPIKey, codex.DigBenchOptions{
 			Game: strings.TrimSpace(*digBenchGame), Model: strings.TrimSpace(*digBenchModel),
 			Effort: strings.TrimSpace(*digBenchEffort), Timeout: *digBenchTimeout, ClientVersion: version.Current(),
 			Progress: func(progress codex.DigBenchProgress) {
@@ -296,16 +300,6 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 0
 	}
 
-	benchmarkAPIKey, _, err := takeBenchmarkAPIKey()
-	if err != nil {
-		fmt.Fprintln(stderr, "codexometer:", err)
-		return 1
-	}
-	digBenchToken, err := takeDigBenchToken()
-	if err != nil {
-		fmt.Fprintln(stderr, "codexometer:", err)
-		return 1
-	}
 	var digBenchGames []string
 	if digBenchToken != "" && deps.listDigBenchGames != nil {
 		discoveryCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -384,12 +378,21 @@ func normalizeDigBenchGames(games []string) []string {
 	normalized := make([]string, 0, len(games))
 	for _, game := range games {
 		game = strings.TrimSpace(game)
-		if game != "" && !seen[game] {
+		if game != "" && !containsTerminalControl(game) && !seen[game] {
 			seen[game] = true
 			normalized = append(normalized, game)
 		}
 	}
 	return normalized
+}
+
+func containsTerminalControl(value string) bool {
+	for _, character := range value {
+		if character < 0x20 || (character >= 0x7f && character <= 0x9f) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatDigBenchResult(result codex.DigBenchResult) string {

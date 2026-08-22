@@ -56,6 +56,27 @@ func TestRunAuthCheckSuccessAndFailure(t *testing.T) {
 	}
 }
 
+func TestRunAuthCheckScrubsBenchmarkCredentialsBeforeLaunchingCodex(t *testing.T) {
+	t.Setenv("DIGBENCH_API_TOKEN", "digbench-secret")
+	t.Setenv("CODEXOMETER_BENCHMARK_API_KEY", "benchmark-secret")
+	t.Setenv("OPENAI_API_KEY", "fallback-secret")
+	var stdout, stderr bytes.Buffer
+	deps := dependencies{
+		checkAuth: func(context.Context, string) (codex.Snapshot, error) {
+			for _, name := range []string{"DIGBENCH_API_TOKEN", "CODEXOMETER_BENCHMARK_API_KEY", "OPENAI_API_KEY"} {
+				if value := os.Getenv(name); value != "" {
+					t.Fatalf("%s remained in the auth-check child environment", name)
+				}
+			}
+			return codex.DemoSnapshot(), nil
+		},
+	}
+
+	if code := run([]string{"--check-auth"}, &stdout, &stderr, deps); code != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
@@ -244,6 +265,16 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 	}
 	if code := run(nil, &stdout, &stderr, deps); code != 0 {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestNormalizeDigBenchGamesRejectsTerminalControls(t *testing.T) {
+	games := normalizeDigBenchGames([]string{
+		" P-1 ", "P-1", "P-2\nFORGED", "P-3\x1b]52;c;payload\a", "P-4\u0085FORGED", "P-5",
+	})
+	want := []string{"P-1", "P-5"}
+	if len(games) != len(want) || games[0] != want[0] || games[1] != want[1] {
+		t.Fatalf("normalized games = %#v, want %#v", games, want)
 	}
 }
 
