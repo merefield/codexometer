@@ -193,15 +193,20 @@ func main() {
 }
 
 type dependencies struct {
-	checkAuth   func(context.Context, string) (codex.Snapshot, error)
-	runDigBench func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI     func(ui.Fetcher, time.Duration, bool) error
+	checkAuth         func(context.Context, string) (codex.Snapshot, error)
+	listDigBenchGames func(context.Context, string) ([]string, error)
+	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
+	startUI           func(ui.Fetcher, time.Duration, bool) error
 }
 
 func defaultDependencies() dependencies {
 	return dependencies{
 		checkAuth: func(ctx context.Context, binary string) (codex.Snapshot, error) {
 			return (codex.Client{Binary: binary}).Fetch(ctx)
+		},
+		listDigBenchGames: func(ctx context.Context, token string) ([]string, error) {
+			response, err := (digbench.Client{Token: token}).ListGames(ctx)
+			return response.Games, err
 		},
 		runDigBench: func(ctx context.Context, binary, token, apiKey string, options codex.DigBenchOptions) (codex.DigBenchResult, error) {
 			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
@@ -301,7 +306,18 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}
-	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken}
+	var digBenchGames []string
+	if digBenchToken != "" && deps.listDigBenchGames != nil {
+		discoveryCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		digBenchGames, err = deps.listDigBenchGames(discoveryCtx, digBenchToken)
+		cancel()
+		if err != nil {
+			fmt.Fprintln(stderr, "codexometer: DigBench game discovery unavailable:", err)
+			digBenchGames = nil
+		}
+	}
+	digBenchGames = normalizeDigBenchGames(digBenchGames)
+	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
 	}
@@ -361,6 +377,19 @@ func takeDigBenchToken() (string, error) {
 		return "", fmt.Errorf("remove DIGBENCH_API_TOKEN from child environment: %w", err)
 	}
 	return token, nil
+}
+
+func normalizeDigBenchGames(games []string) []string {
+	seen := make(map[string]bool, len(games))
+	normalized := make([]string, 0, len(games))
+	for _, game := range games {
+		game = strings.TrimSpace(game)
+		if game != "" && !seen[game] {
+			seen[game] = true
+			normalized = append(normalized, game)
+		}
+	}
+	return normalized
 }
 
 func formatDigBenchResult(result codex.DigBenchResult) string {

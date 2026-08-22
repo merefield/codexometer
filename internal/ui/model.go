@@ -90,6 +90,7 @@ type Model struct {
 	benchmarkSelectedTask    int
 	benchmarkFilter          benchmarkResultFilter
 	benchmarkAllArmed        bool
+	benchmarkSelectedArmed   bool
 	benchmarkConfirmSequence uint64
 	benchmarkScroll          int
 	benchmarkSort            benchmarkSortColumn
@@ -804,6 +805,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case benchmarkConfirmExpiredMsg:
 		if message.sequence == m.benchmarkConfirmSequence {
 			m.benchmarkAllArmed = false
+			m.benchmarkSelectedArmed = false
 		}
 	}
 	return m, nil
@@ -918,9 +920,17 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		}
 	case footerButtonBenchmarkSelected:
 		if m.meterView == viewBenchmark && m.benchmarkCanRunSelected() {
-			m.benchmarkAllArmed = false
 			tasks := m.benchmarkTasks()
 			if len(tasks) > 0 {
+				selected := tasks[m.benchmarkSelectedTask%len(tasks)]
+				if selected.External && !m.benchmarkSelectedArmed {
+					m.benchmarkSelectedArmed = true
+					m.benchmarkConfirmSequence++
+					sequence := m.benchmarkConfirmSequence
+					return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
+				}
+				m.benchmarkSelectedArmed = false
+				m.benchmarkAllArmed = false
 				return m.startBenchmark([]codex.BenchmarkTaskID{tasks[m.benchmarkSelectedTask%len(tasks)].ID})
 			}
 		}
@@ -964,6 +974,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		if m.meterView == viewBenchmark && m.benchmarkState == benchmarkRunning {
 			m.benchmarkState = benchmarkStopping
 			m.benchmarkAllArmed = false
+			m.benchmarkSelectedArmed = false
 			m.cancelBenchmark()
 		}
 	}
@@ -1138,7 +1149,7 @@ func (m Model) benchmarkCanRunSelected() bool {
 		return false
 	}
 	selected := tasks[m.benchmarkSelectedTask%len(tasks)]
-	return !selected.External || m.benchmarkCombinations == 1
+	return !selected.External || (m.benchmarkCombinations == 1 && len(m.benchmarkScope.Games) > 0)
 }
 
 func (m Model) benchmarkPlanNeeded() bool {
@@ -1156,6 +1167,9 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	}
 	m.benchmarkResults = nil
 	m.benchmarkTotal = m.benchmarkCombinations * len(tasks)
+	if len(tasks) == 1 && tasks[0] == codex.BenchmarkDigBench {
+		m.benchmarkTotal = len(m.benchmarkScope.Games)
+	}
 	m.benchmarkCompleted = 0
 	m.benchmarkCurrentModel = ""
 	m.benchmarkCurrentEffort = ""
@@ -1173,6 +1187,8 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID) (Model, tea.Cmd) {
 	m.benchmarkScopeOpen = false
 	m.benchmarkScopeHover = -1
 	m.benchmarkState = benchmarkRunning
+	m.benchmarkAllArmed = false
+	m.benchmarkSelectedArmed = false
 	ctx, cancel := context.WithCancel(context.Background())
 	m.benchmarkCancel = cancel
 	events := make(chan codex.BenchmarkEvent, 2)
@@ -1187,6 +1203,7 @@ func (m *Model) selectBenchmarkTask(direction int) {
 	}
 	m.benchmarkSelectedTask = (m.benchmarkSelectedTask + direction + len(tasks)) % len(tasks)
 	m.benchmarkAllArmed = false
+	m.benchmarkSelectedArmed = false
 }
 
 func (m Model) benchmarkTasks() []codex.BenchmarkTask {

@@ -589,8 +589,12 @@ func TestBenchmarkScopeAreaHonorsAllocatedSize(t *testing.T) {
 }
 
 func TestDigBenchTaskRequiresOnePairAndIsExcludedFromRunAll(t *testing.T) {
-	client := codex.Client{DigBenchToken: "secret"}
-	model := Model{benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkCombinations: 2}
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1", "P-2"}}
+	model := Model{
+		benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkCombinations: 2,
+		benchmarkPlan:  codex.BenchmarkPlan{Games: []string{"P-1", "P-2"}},
+		benchmarkScope: codex.BenchmarkScope{Games: []string{"P-1", "P-2"}},
+	}
 	tasks := model.benchmarkTasks()
 	model.benchmarkSelectedTask = len(tasks) - 1
 	if !tasks[model.benchmarkSelectedTask].External || model.benchmarkCanRunSelected() {
@@ -607,9 +611,46 @@ func TestDigBenchTaskRequiresOnePairAndIsExcludedFromRunAll(t *testing.T) {
 	}
 }
 
+func TestDigBenchScopeFiltersDiscoveredGamesAndConfirmsRemoteSessions(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model", DisplayName: "Model", Efforts: []string{"high"}}},
+		Efforts: []string{"high"}, Games: []string{"P-1", "P-2", "P-3"},
+	}
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: plan.Games}
+	model := Model{
+		benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(),
+		benchmarkCombinations: 1, benchmarkSelectedTask: len(client.BenchmarkTasks()) - 1, meterView: viewBenchmark,
+	}
+	items := model.benchmarkScopeItems()
+	var p2 int
+	for index, item := range items {
+		if item.kind == benchmarkScopeGame && item.value == "P-2" {
+			p2 = index
+		}
+	}
+	if p2 == 0 {
+		t.Fatalf("discovered games missing from Scope: %#v", items)
+	}
+	model.benchmarkScopeCursor = p2
+	model.toggleBenchmarkScopeCursor()
+	if len(model.benchmarkScope.Games) != 2 || slices.Contains(model.benchmarkScope.Games, "P-2") {
+		t.Fatalf("game checkbox did not narrow scope: %#v", model.benchmarkScope.Games)
+	}
+	updated, command := model.Update(key('b'))
+	model = updated.(Model)
+	if !model.benchmarkSelectedArmed || model.benchmarkState == benchmarkRunning || command == nil {
+		t.Fatal("DigBench did not require confirmation before creating remote sessions")
+	}
+	updated, command = model.Update(key('b'))
+	model = updated.(Model)
+	if model.benchmarkSelectedArmed || model.benchmarkState != benchmarkRunning || model.benchmarkTotal != 2 || command == nil {
+		t.Fatalf("confirmed DigBench run did not start selected games: state=%d total=%d", model.benchmarkState, model.benchmarkTotal)
+	}
+}
+
 func TestDigBenchDetailShowsProgressAndTranscript(t *testing.T) {
 	result := codex.BenchmarkResult{
-		TaskID: codex.BenchmarkDigBenchP1, TaskName: "DIGBENCH P-1", Provider: "digbench",
+		TaskID: codex.BenchmarkDigBench, TaskName: "DIGBENCH P-1", Provider: "digbench",
 		Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "high", Correct: true,
 		CurrentLevel: 14, LevelsBeaten: 14, MaxLevel: 14, Steps: 553, GameStatus: "completed",
 		Interactions: []codex.BenchmarkInteraction{

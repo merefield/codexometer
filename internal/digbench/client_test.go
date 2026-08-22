@@ -44,6 +44,22 @@ func TestStartSessionUsesBearerAndDecodesState(t *testing.T) {
 	}
 }
 
+func TestListGamesUsesBearerAndReturnsCompleteCatalog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/games" || request.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("request = %s %s headers=%#v", request.Method, request.URL.Path, request.Header)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"games":["P-1","P-2","P-17"],"game_details":[{"name":"P-1","tier":1}]}`))
+	}))
+	defer server.Close()
+
+	response, err := (Client{BaseURL: server.URL, Token: "secret", HTTPClient: server.Client()}).ListGames(context.Background())
+	if err != nil || len(response.Games) != 3 || response.Games[2] != "P-17" {
+		t.Fatalf("response=%#v error=%v", response, err)
+	}
+}
+
 func TestStepUsesSessionScopeRetriesAndDetectsWin(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

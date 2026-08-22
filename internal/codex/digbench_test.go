@@ -125,9 +125,48 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 
 func TestClientBenchmarkTasksRequireDigBenchToken(t *testing.T) {
 	plain := (Client{}).BenchmarkTasks()
-	enabled := (Client{DigBenchToken: "secret"}).BenchmarkTasks()
+	enabled := (Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}).BenchmarkTasks()
 	if len(enabled) != len(plain)+1 || enabled[len(enabled)-1] != DigBenchTask() {
 		t.Fatalf("plain=%#v enabled=%#v", plain, enabled)
+	}
+}
+
+func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
+	server, _ := newFakeBenchmarkServer(benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{"data": []any{map[string]any{
+		"model": "model", "displayName": "Model",
+		"supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "high"}},
+	}}})})
+	originalOpen := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = originalOpen })
+
+	originalRun := runDigBenchTrial
+	var games []string
+	runDigBenchTrial = func(_ context.Context, _ Client, _ digBenchService, options DigBenchOptions) (DigBenchResult, error) {
+		games = append(games, options.Game)
+		result := DigBenchResult{Game: options.Game, Model: options.Model, DisplayName: "Model", ActualModel: options.Model, Effort: options.Effort, Won: true, Status: "completed"}
+		options.Snapshot(result)
+		return result, nil
+	}
+	t.Cleanup(func() { runDigBenchTrial = originalRun })
+
+	var events []BenchmarkEvent
+	client := Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1", "P-2", "P-3"}}
+	client.RunBenchmarkSuiteScoped(context.Background(), []BenchmarkTaskID{BenchmarkDigBench}, BenchmarkScope{
+		Models: []string{"model"}, Efforts: []string{"high"}, Games: []string{"P-2", "P-3"},
+	}, func(event BenchmarkEvent) { events = append(events, event) })
+	if len(games) != 2 || games[0] != "P-2" || games[1] != "P-3" {
+		t.Fatalf("selected games run = %#v", games)
+	}
+	results := 0
+	for _, event := range events {
+		if event.Result != nil {
+			results++
+		}
+	}
+	final := events[len(events)-1]
+	if results != 2 || !final.Done || final.Total != 2 || final.Completed != 2 || final.Err != nil {
+		t.Fatalf("events = %#v", events)
 	}
 }
 

@@ -90,17 +90,21 @@ var newDigBenchService = func(token string) digBenchService {
 	return digbench.Client{Token: token}
 }
 
+var runDigBenchTrial = func(ctx context.Context, client Client, service digBenchService, options DigBenchOptions) (DigBenchResult, error) {
+	return client.RunDigBench(ctx, service, options)
+}
+
 // BenchmarkTasks exposes the external proof-of-concept only when this process
 // received a DigBench token. Run All continues to use deterministic tasks only.
 func (c Client) BenchmarkTasks() []BenchmarkTask {
 	tasks := BenchmarkTasks()
-	if strings.TrimSpace(c.DigBenchToken) != "" {
+	if strings.TrimSpace(c.DigBenchToken) != "" && len(c.DigBenchGames) > 0 {
 		tasks = append(tasks, DigBenchTask())
 	}
 	return tasks
 }
 
-func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkTaskID, game string, emit func(BenchmarkEvent), scopes ...BenchmarkScope) {
+func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkTaskID, emit func(BenchmarkEvent), scopes ...BenchmarkScope) {
 	if strings.TrimSpace(c.DigBenchToken) == "" {
 		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("DIGBENCH_API_TOKEN is required for DigBench")))
 		return
@@ -130,40 +134,60 @@ func (c Client) runDigBenchBenchmarkSuite(ctx context.Context, taskID BenchmarkT
 		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, fmt.Errorf("DigBench requires exactly one selected model/effort pair; scope contains %d", len(selected))))
 		return
 	}
-	choice := selected[0]
-	event := BenchmarkEvent{Total: 1, Combinations: 1, CurrentTaskID: taskID, CurrentTask: "DIGBENCH " + game, CurrentModel: choice.name, CurrentEffort: choice.effort}
-	pending := BenchmarkResult{
-		TaskID: taskID, TaskName: "DIGBENCH " + game, Provider: "digbench",
-		Model: choice.model, DisplayName: choice.name, ActualModel: choice.model, Effort: choice.effort,
-		GameStatus: "connecting",
+	availableGames := stringSet(plan.Games)
+	games := make([]string, 0, len(scope.Games))
+	for _, game := range scope.Games {
+		if availableGames[game] {
+			games = append(games, game)
+		}
 	}
-	event.Active = &pending
-	emit(event)
-	result, runErr := c.RunDigBench(ctx, newDigBenchService(c.DigBenchToken), DigBenchOptions{
-		Game: game, Model: choice.model, Effort: choice.effort,
-		Snapshot: func(snapshot DigBenchResult) {
-			active := benchmarkResultFromDigBench(taskID, snapshot)
-			event.Active = &active
-			emit(event)
-		},
-	})
-	if result.Game == "" {
-		result.Game = game
-	}
-	if result.Model == "" {
-		result.Model, result.DisplayName, result.ActualModel, result.Effort = choice.model, choice.name, choice.model, choice.effort
-	}
-	converted := benchmarkResultFromDigBench(taskID, result)
-	if errors.Is(ctx.Err(), context.Canceled) {
-		markBenchmarkStopped(&converted)
-		event.Active, event.Result, event.Stopped = nil, &converted, true
-		emit(event)
-		emit(BenchmarkEvent{Total: 1, Combinations: 1, Stopped: true, Done: true})
+	if len(games) == 0 {
+		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("select at least one DigBench game")))
 		return
 	}
-	event.Completed, event.Active, event.Result = 1, nil, &converted
-	emit(event)
-	emit(BenchmarkEvent{Total: 1, Completed: 1, Combinations: 1, Done: true, Err: runErr})
+	choice := selected[0]
+	total, completed := len(games), 0
+	emit(BenchmarkEvent{Total: total, Combinations: 1})
+	for _, game := range games {
+		event := BenchmarkEvent{Total: total, Completed: completed, Combinations: 1, CurrentTaskID: taskID, CurrentTask: "DIGBENCH " + game, CurrentModel: choice.name, CurrentEffort: choice.effort}
+		pending := BenchmarkResult{
+			TaskID: taskID, TaskName: "DIGBENCH " + game, Provider: "digbench",
+			Model: choice.model, DisplayName: choice.name, ActualModel: choice.model, Effort: choice.effort,
+			GameStatus: "connecting",
+		}
+		event.Active = &pending
+		emit(event)
+		result, runErr := runDigBenchTrial(ctx, c, newDigBenchService(c.DigBenchToken), DigBenchOptions{
+			Game: game, Model: choice.model, Effort: choice.effort,
+			Snapshot: func(snapshot DigBenchResult) {
+				active := benchmarkResultFromDigBench(taskID, snapshot)
+				event.Active = &active
+				emit(event)
+			},
+		})
+		if result.Game == "" {
+			result.Game = game
+		}
+		if result.Model == "" {
+			result.Model, result.DisplayName, result.ActualModel, result.Effort = choice.model, choice.name, choice.model, choice.effort
+		}
+		converted := benchmarkResultFromDigBench(taskID, result)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			markBenchmarkStopped(&converted)
+			event.Active, event.Result, event.Stopped = nil, &converted, true
+			emit(event)
+			emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: 1, Stopped: true, Done: true})
+			return
+		}
+		completed++
+		event.Completed, event.Active, event.Result = completed, nil, &converted
+		emit(event)
+		if runErr != nil {
+			emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: 1, Done: true, Err: runErr})
+			return
+		}
+	}
+	emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: 1, Done: true})
 }
 
 func benchmarkResultFromDigBench(taskID BenchmarkTaskID, result DigBenchResult) BenchmarkResult {

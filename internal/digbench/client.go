@@ -98,7 +98,7 @@ func (e *APIError) Error() string {
 
 func (c Client) ListGames(ctx context.Context) (GamesResponse, error) {
 	var response GamesResponse
-	err := c.do(ctx, http.MethodGet, "/games", nil, true, false, &response)
+	err := c.do(ctx, http.MethodGet, "/games", nil, true, true, &response)
 	return response, err
 }
 

@@ -396,6 +396,8 @@ const (
 	benchmarkScopeModel
 	benchmarkScopeAllEfforts
 	benchmarkScopeEffort
+	benchmarkScopeAllGames
+	benchmarkScopeGame
 )
 
 type benchmarkScopeItem struct {
@@ -421,8 +423,12 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	for len(lines) < bodyHeight {
 		lines = append(lines, strings.Repeat(" ", innerWidth))
 	}
-	title := fmt.Sprintf("BENCHMARK SCOPE // %d MODELS // %d EFFORTS // %d PAIRS // SPACE TOGGLE // ESC DONE",
+	title := fmt.Sprintf("BENCHMARK SCOPE // %d MODELS // %d EFFORTS // %d PAIRS",
 		len(m.benchmarkScope.Models), len(m.benchmarkScope.Efforts), m.benchmarkCombinations)
+	if m.benchmarkSelectedTaskExternal() {
+		title += fmt.Sprintf(" // %d/%d GAMES", len(m.benchmarkScope.Games), len(m.benchmarkPlan.Games))
+	}
+	title += " // SPACE TOGGLE // ESC DONE"
 	return frameSized(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
@@ -459,7 +465,7 @@ func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width in
 	if item.selected {
 		style = lipgloss.NewStyle().Foreground(colors.primary)
 	}
-	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts {
+	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts || item.kind == benchmarkScopeAllGames {
 		style = style.Bold(true).Foreground(colors.accent)
 	}
 	return style.Render(fitTableCell(label, width))
@@ -494,6 +500,21 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 			kind: benchmarkScopeEffort, value: effort, selected: selected,
 			label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort),
 		})
+	}
+	if m.benchmarkSelectedTaskExternal() {
+		allGames := len(m.benchmarkPlan.Games) > 0 && len(m.benchmarkScope.Games) == len(m.benchmarkPlan.Games)
+		items = append(items, benchmarkScopeItem{
+			kind: benchmarkScopeAllGames, selected: allGames,
+			label: scopeCheckLabel(allGames) + " DIGBENCH GAMES // " + scopeAllAction(allGames),
+		})
+		selectedGames := stringSetUI(m.benchmarkScope.Games)
+		for _, game := range m.benchmarkPlan.Games {
+			selected := selectedGames[game]
+			items = append(items, benchmarkScopeItem{
+				kind: benchmarkScopeGame, value: game, selected: selected,
+				label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(game),
+			})
+		}
 	}
 	return items
 }
@@ -585,9 +606,18 @@ func (m *Model) toggleBenchmarkScopeCursor() {
 		}
 	case benchmarkScopeEffort:
 		m.benchmarkScope.Efforts = toggleScopeValue(m.benchmarkScope.Efforts, item.value)
+	case benchmarkScopeAllGames:
+		if item.selected {
+			m.benchmarkScope.Games = nil
+		} else {
+			m.benchmarkScope.Games = m.benchmarkPlan.AllScope().Games
+		}
+	case benchmarkScopeGame:
+		m.benchmarkScope.Games = toggleScopeValue(m.benchmarkScope.Games, item.value)
 	}
 	m.benchmarkCombinations = m.benchmarkPlan.CombinationCount(m.benchmarkScope)
 	m.benchmarkAllArmed = false
+	m.benchmarkSelectedArmed = false
 }
 
 func toggleScopeValue(values []string, value string) []string {
@@ -699,12 +729,27 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	if selected.External && m.benchmarkCombinations != 1 {
 		selectedLabel = "[ SELECT 1 PAIR IN SCOPE ]"
+	} else if selected.External && len(m.benchmarkScope.Games) == 0 {
+		selectedLabel = "[ SELECT DIGBENCH GAMES ]"
+	} else if selected.External {
+		selectedLabel = fmt.Sprintf("[ (B) RUN DIGBENCH // %d ]", len(m.benchmarkScope.Games))
+		if m.benchmarkSelectedArmed {
+			selectedLabel = fmt.Sprintf("[ CONFIRM // %d REMOTE SESSIONS ]", len(m.benchmarkScope.Games))
+		}
 	}
 	if m.benchmarkAllArmed {
 		allLabel = fmt.Sprintf("[ CONFIRM // %d TURNS ]", allTurns)
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
 		selectedLabel = "[B:RUN]"
+		if selected.External {
+			selectedLabel = fmt.Sprintf("[B:DIG %d]", len(m.benchmarkScope.Games))
+			if m.benchmarkCombinations != 1 || len(m.benchmarkScope.Games) == 0 {
+				selectedLabel = "[B:SCOPE]"
+			} else if m.benchmarkSelectedArmed {
+				selectedLabel = fmt.Sprintf("[B:CONFIRM %d]", len(m.benchmarkScope.Games))
+			}
+		}
 		allLabel = fmt.Sprintf("[A:SUITE %d]", allTurns)
 		if m.benchmarkPlanning {
 			allLabel = "[A:WAIT]"
@@ -715,6 +760,14 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
 		selectedLabel = "[RUN]"
+		if selected.External {
+			selectedLabel = fmt.Sprintf("[D:%d]", len(m.benchmarkScope.Games))
+			if m.benchmarkCombinations != 1 || len(m.benchmarkScope.Games) == 0 {
+				selectedLabel = "[SCOPE]"
+			} else if m.benchmarkSelectedArmed {
+				selectedLabel = fmt.Sprintf("[D:%d?]", len(m.benchmarkScope.Games))
+			}
+		}
 		allLabel = fmt.Sprintf("[ALL:%d]", allTurns)
 		if m.benchmarkPlanning {
 			allLabel = "[A:…]"

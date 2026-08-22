@@ -222,10 +222,19 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 	t.Setenv("DIGBENCH_API_TOKEN", "digbench-secret")
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
+		listDigBenchGames: func(_ context.Context, token string) ([]string, error) {
+			if token != "digbench-secret" {
+				t.Fatalf("game discovery token = %q", token)
+			}
+			return []string{"P-2", "P-1", "P-2"}, nil
+		},
 		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.DigBenchToken != "digbench-secret" {
 				t.Fatalf("DigBench token was not attached to Codex client")
+			}
+			if len(client.DigBenchGames) != 2 || client.DigBenchGames[0] != "P-2" || client.DigBenchGames[1] != "P-1" {
+				t.Fatalf("DigBench games were not normalized: %#v", client.DigBenchGames)
 			}
 			if os.Getenv("DIGBENCH_API_TOKEN") != "" {
 				t.Fatal("DIGBENCH_API_TOKEN remained in the inherited environment")
@@ -249,7 +258,7 @@ func TestRunDigBenchRequiresToken(t *testing.T) {
 
 func TestDefaultDependenciesAreConfigured(t *testing.T) {
 	deps := defaultDependencies()
-	if deps.checkAuth == nil || deps.runDigBench == nil || deps.startUI == nil {
+	if deps.checkAuth == nil || deps.listDigBenchGames == nil || deps.runDigBench == nil || deps.startUI == nil {
 		t.Fatal("default dependencies are incomplete")
 	}
 }

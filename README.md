@@ -807,15 +807,18 @@ Neither key is written to preferences or accepted as a command-line argument.
 Codexometer includes a deliberately narrow integration for
 [DigBench](https://digbench.ai/), an external benchmark of discovering unknown
 rules in interactive text games. Supplying `DIGBENCH_API_TOKEN` adds
-**DIGBENCH P-1** to the Benchmark tab's task selector. Select exactly one
-compatible model/reasoning-effort pair on the **Scope** screen, choose that
-task, and use **Run Selected**. DigBench is deliberately excluded from **Run
-All** because every invocation creates a persisted remote session with a random
-seed.
+**DIGBENCH** to the Benchmark tab's task selector. At launch, Codexometer calls
+authenticated `GET /games` and uses every game name returned by DigBench; no
+`P-x` catalog is compiled into Codexometer. Select DigBench, open **Scope**, and
+use its additional game-checkbox group to check all, clear all, or choose any
+subset. DigBench also requires exactly one compatible model/reasoning-effort
+pair. **Run Selected** displays the exact remote-session count and requires a
+second confirmation before running the selected games sequentially. DigBench is
+excluded from **Run All** because every game invocation creates a persisted
+remote session with a random seed.
 
 Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
-(sign-in is a passwordless email link) and place it in the environment. The TUI
-currently exposes the proof-of-concept game `P-1`:
+(sign-in is a passwordless email link) and place it in the environment:
 
 ```sh
 export DIGBENCH_API_TOKEN="<token>"
@@ -855,8 +858,8 @@ the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
 idempotent `step_index` protocol; session creation is never automatically
 retried because that endpoint does not document idempotency.
 
-In the TUI, the run appears immediately in the existing result table and can be
-opened while it is in progress. Its benchmark-only detail view reports
+In the TUI, each selected game run appears immediately in the existing result
+table and can be opened while it is in progress. Its benchmark-only detail view reports
 authoritative level, beaten-level, step, and status counters, followed by every
 captured move and the sanitized DigBench state returned for that move. The
 **Copy** control exports that complete captured view. DigBench session IDs,

@@ -169,6 +169,7 @@ type BenchmarkEvent struct {
 type BenchmarkPlan struct {
 	Models  []BenchmarkModelOption
 	Efforts []string
+	Games   []string
 }
 
 // BenchmarkModelOption is one selectable model and its supported efforts.
@@ -183,11 +184,12 @@ type BenchmarkModelOption struct {
 type BenchmarkScope struct {
 	Models  []string
 	Efforts []string
+	Games   []string
 }
 
 // AllScope selects every model and effort in the plan.
 func (p BenchmarkPlan) AllScope() BenchmarkScope {
-	scope := BenchmarkScope{Efforts: append([]string(nil), p.Efforts...)}
+	scope := BenchmarkScope{Efforts: append([]string(nil), p.Efforts...), Games: append([]string(nil), p.Games...)}
 	for _, model := range p.Models {
 		scope.Models = append(scope.Models, model.Model)
 	}
@@ -311,7 +313,9 @@ func (c Client) BenchmarkPlan(ctx context.Context) (BenchmarkPlan, error) {
 	if err != nil {
 		return BenchmarkPlan{}, err
 	}
-	return benchmarkPlan(models), nil
+	plan := benchmarkPlan(models)
+	plan.Games = append([]string(nil), c.DigBenchGames...)
+	return plan, nil
 }
 
 // RunBenchmarkSuite runs each selected deterministic task once for every
@@ -334,13 +338,13 @@ func (c Client) runBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 		emit = func(BenchmarkEvent) {}
 	}
 	if len(taskIDs) == 1 {
-		if game, ok := digBenchGame(taskIDs[0]); ok {
-			c.runDigBenchBenchmarkSuite(ctx, taskIDs[0], game, emit, scopes...)
+		if isDigBenchTask(taskIDs[0]) {
+			c.runDigBenchBenchmarkSuite(ctx, taskIDs[0], emit, scopes...)
 			return
 		}
 	}
 	for _, id := range taskIDs {
-		if _, external := digBenchGame(id); external {
+		if isDigBenchTask(id) {
 			emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("DigBench must be run separately from deterministic benchmarks")))
 			return
 		}

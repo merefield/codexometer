@@ -19,7 +19,7 @@ const (
 	BenchmarkDependencyScheduler BenchmarkTaskID = "dependency-scheduler"
 	BenchmarkVersionResolver     BenchmarkTaskID = "version-resolver"
 	BenchmarkEventProcessor      BenchmarkTaskID = "event-processor"
-	BenchmarkDigBenchP1          BenchmarkTaskID = "digbench-p-1"
+	BenchmarkDigBench            BenchmarkTaskID = "digbench"
 )
 
 // BenchmarkTask is the public description used by the terminal selector.
@@ -126,14 +126,11 @@ func BenchmarkTasks() []BenchmarkTask {
 // current integration. It is omitted from Run All because every invocation
 // creates a persisted remote session with a random seed.
 func DigBenchTask() BenchmarkTask {
-	return BenchmarkTask{ID: BenchmarkDigBenchP1, Name: "DIGBENCH P-1", External: true}
+	return BenchmarkTask{ID: BenchmarkDigBench, Name: "DIGBENCH", External: true}
 }
 
-func digBenchGame(id BenchmarkTaskID) (string, bool) {
-	if id == BenchmarkDigBenchP1 {
-		return "P-1", true
-	}
-	return "", false
+func isDigBenchTask(id BenchmarkTaskID) bool {
+	return id == BenchmarkDigBench
 }
 
 func resolveBenchmarkTasks(ids []BenchmarkTaskID) ([]benchmarkDefinition, error) {
