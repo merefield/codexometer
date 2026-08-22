@@ -807,8 +807,9 @@ Neither key is written to preferences or accepted as a command-line argument.
 Codexometer includes an experimental integration for
 [DigBench](https://digbench.ai/), an external benchmark of discovering unknown
 rules in interactive text games. Supplying `DIGBENCH_API_TOKEN` adds
-**DIGBENCH** to the Benchmark tab's **Suite** selector alongside
-**CODEXOMETER CORE**. At launch, Codexometer calls
+**DIGBENCH** to the Benchmark tab's **Suite** selector alongside the always
+available **CODEXOMETER CORE** and **CODEXOMETER EXTENDED** suites. At launch,
+Codexometer calls
 authenticated `GET /games` and uses every game name returned by DigBench; no
 `P-x` catalog is compiled into Codexometer. Select the DigBench suite, open
 **Scope**, and use its game, model, and reasoning-level checkboxes to check all,
@@ -884,19 +885,23 @@ fair deterministic cross-model ranking.
 
 ### Deterministic benchmark
 
-The Benchmark tab groups its built-in deterministic challenges under the
-**CODEXOMETER CORE** suite. Use the **Suite** arrows to switch to another
-available source such as **DIGBENCH**; external suites are hidden when their
-credentials or launch-time catalog are unavailable. The selector reserves a
-stable responsive track for the longest suite name, so its controls do not move
-as the selection changes.
+The Benchmark tab groups its built-in deterministic challenges into two
+always-available suites: **CODEXOMETER CORE** contains the original Easy and
+Moderate set, while **CODEXOMETER EXTENDED** contains the later Hard set. The
+**Suite** arrows therefore always switch between at least two choices. A third
+**DIGBENCH** choice appears when its credentials and launch-time catalog are
+available. The selector reserves a stable responsive track for the longest
+suite name, so its controls do not move as the selection changes.
 
 Codexometer discovers models visible to the active benchmark authentication and
-their supported reasoning efforts through `model/list`. Initially every Core
-benchmark and every compatible model/effort pair is selected. Press `s` or
-click **Scope** to open a separate selection screen: every Core benchmark,
-model, and reasoning level has its own checkbox, and each group has a **Check
-All** control that changes to **Clear All** when the whole group is selected.
+their supported reasoning efforts through `model/list`. Initially every
+benchmark in each built-in suite and every compatible model/effort pair is
+selected. Press `s` or click **Scope** to open a separate selection screen:
+every benchmark in the active suite, model, and reasoning level has its own
+checkbox, and each group has a **Check All** control that changes to **Clear
+All** when the whole group is selected. Core and Extended retain independent
+benchmark selections when you switch between them.
+
 The supported reasoning levels shown beside each model dim immediately when
 they fall outside the selected scope. Click a row, or use `Up`/`Down` and
 `Space`/`Enter`, then click **Done** or press `d`/`Esc` to return. Unsupported
@@ -909,8 +914,8 @@ label shows the resulting turn count. **Run All** deliberately ignores the
 scope and executes every benchmark in the active suite against every compatible
 model/effort pair. Codexometer displays that exact total and requires a second
 confirmation within five seconds. A fresh, ephemeral, read-only app-server
-thread is used for each Core trial, so benchmark history does not clutter normal
-Codex sessions. The turns still consume the same account quota shown by
+thread is used for each built-in trial, so benchmark history does not clutter
+normal Codex sessions. The turns still consume the same account quota shown by
 Codexometer unless a benchmark API key is supplied; with a key, they use
 standard usage-based API billing instead.
 
@@ -959,15 +964,15 @@ operating system and terminal's normal retention behavior.
 
 Every trial asks the model to return one named Starlark function:
 
-| Challenge | Difficulty | Required behavior | Verification set |
-| --- | --- | --- | --- |
-| **Merge Ranges** | Easy | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
-| **LRU Cache** | Moderate | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
-| **Expression** | Moderate | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
-| **Shortest Path** | Moderate | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
-| **Dependency Scheduler** | Hard | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
-| **Version Resolver** | Hard | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
-| **Event Processor** | Hard | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
+| Suite | Challenge | Difficulty | Required behavior | Verification set |
+| --- | --- | --- | --- | --- |
+| Core | **Merge Ranges** | Easy | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
+| Core | **LRU Cache** | Moderate | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
+| Core | **Expression** | Moderate | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
+| Core | **Shortest Path** | Moderate | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
+| Extended | **Dependency Scheduler** | Hard | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
+| Extended | **Version Resolver** | Hard | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
+| Extended | **Event Processor** | Hard | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
 
 The difficulty labels are documentation rather than part of the terminal names.
 Hard challenges deliberately combine more rules or require bounded search, which

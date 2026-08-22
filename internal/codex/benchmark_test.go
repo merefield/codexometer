@@ -166,6 +166,15 @@ func TestBenchmarkTaskCatalogAndSelection(t *testing.T) {
 	if len(tasks) != 7 || tasks[0].ID != BenchmarkMergeRanges || tasks[3].ID != BenchmarkShortestPath || tasks[6].ID != BenchmarkEventProcessor {
 		t.Fatalf("task catalog = %#v", tasks)
 	}
+	for index, task := range tasks {
+		wantSuite := BenchmarkSuiteCore
+		if index >= 4 {
+			wantSuite = BenchmarkSuiteExtended
+		}
+		if task.Suite != wantSuite {
+			t.Fatalf("task %s suite = %s, want %s", task.ID, task.Suite, wantSuite)
+		}
+	}
 	definitions, err := resolveBenchmarkTasks([]BenchmarkTaskID{BenchmarkShortestPath, BenchmarkLRUCache, BenchmarkLRUCache})
 	if err != nil || len(definitions) != 2 || definitions[0].task.ID != BenchmarkLRUCache || definitions[1].task.ID != BenchmarkShortestPath {
 		t.Fatalf("resolved tasks = %#v, %v", definitions, err)

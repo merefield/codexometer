@@ -488,15 +488,8 @@ const (
 	benchmarkScopeTask
 )
 
-type benchmarkSuiteID int
-
-const (
-	benchmarkSuiteCore benchmarkSuiteID = iota
-	benchmarkSuiteDigBench
-)
-
 type benchmarkSuite struct {
-	id       benchmarkSuiteID
+	id       codex.BenchmarkSuiteID
 	name     string
 	external bool
 }
@@ -529,7 +522,7 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	if m.benchmarkSelectedSuiteExternal() {
 		title += fmt.Sprintf(" // %d/%d GAMES", len(m.benchmarkScope.Games), len(m.benchmarkPlan.Games))
 	} else {
-		title += fmt.Sprintf(" // %d/%d BENCHMARKS", len(m.benchmarkSelectedCoreTaskIDs()), len(m.benchmarkCoreTasks()))
+		title += fmt.Sprintf(" // %d/%d BENCHMARKS", len(m.benchmarkSelectedTaskIDs()), len(m.benchmarkTasksForSuite(m.benchmarkSelectedSuiteOption().id)))
 	}
 	title += " // SPACE TOGGLE // ESC DONE"
 	return frameSizedWithTitleAction(
@@ -627,14 +620,15 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 			})
 		}
 	} else {
-		coreTasks := m.benchmarkCoreTasks()
-		selectedTaskIDs := benchmarkTaskIDSet(m.benchmarkSelectedCoreTaskIDs())
-		allTasks := len(coreTasks) > 0 && len(selectedTaskIDs) == len(coreTasks)
+		suite := m.benchmarkSelectedSuiteOption()
+		suiteTasks := m.benchmarkTasksForSuite(suite.id)
+		selectedTaskIDs := benchmarkTaskIDSet(m.benchmarkSelectedTaskIDs())
+		allTasks := len(suiteTasks) > 0 && len(selectedTaskIDs) == len(suiteTasks)
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeAllTasks, selected: allTasks,
-			label: scopeCheckLabel(allTasks) + " CORE BENCHMARKS // " + scopeAllAction(allTasks),
+			label: scopeCheckLabel(allTasks) + " " + strings.TrimPrefix(suite.name, "CODEXOMETER ") + " BENCHMARKS // " + scopeAllAction(allTasks),
 		})
-		for _, task := range coreTasks {
+		for _, task := range suiteTasks {
 			selected := selectedTaskIDs[task.ID]
 			items = append(items, benchmarkScopeItem{
 				kind: benchmarkScopeTask, value: string(task.ID), selected: selected,
@@ -670,9 +664,6 @@ func stringSetUI(values []string) map[string]bool {
 func (m *Model) openBenchmarkScope() {
 	if m.benchmarkRunActive() || len(m.benchmarkPlan.Models) == 0 {
 		return
-	}
-	if !m.benchmarkScopeTasksReady {
-		m.selectAllCoreBenchmarkTasks()
 	}
 	m.benchmarkScopeOpen = true
 	m.benchmarkScopeHover = -1
@@ -745,14 +736,12 @@ func (m *Model) toggleBenchmarkScopeCursor() {
 		m.benchmarkScope.Games = toggleScopeValue(m.benchmarkScope.Games, item.value)
 	case benchmarkScopeAllTasks:
 		if item.selected {
-			m.benchmarkScopeTasks = nil
+			m.setBenchmarkSelectedTaskIDs(nil)
 		} else {
-			m.selectAllCoreBenchmarkTasks()
+			m.selectAllBenchmarkTasks()
 		}
-		m.benchmarkScopeTasksReady = true
 	case benchmarkScopeTask:
-		m.benchmarkScopeTasks = toggleBenchmarkTaskID(m.benchmarkSelectedCoreTaskIDs(), codex.BenchmarkTaskID(item.value))
-		m.benchmarkScopeTasksReady = true
+		m.setBenchmarkSelectedTaskIDs(toggleBenchmarkTaskID(m.benchmarkSelectedTaskIDs(), codex.BenchmarkTaskID(item.value)))
 	}
 	m.benchmarkCombinations = m.benchmarkPlan.CombinationCount(m.benchmarkScope)
 	m.benchmarkAllArmed = false

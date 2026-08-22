@@ -88,8 +88,7 @@ type Model struct {
 	benchmarkScopeScroll     int
 	benchmarkScopeHover      int
 	benchmarkSelectedSuite   int
-	benchmarkScopeTasks      []codex.BenchmarkTaskID
-	benchmarkScopeTasksReady bool
+	benchmarkScopeTasks      map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID
 	benchmarkFilter          benchmarkResultFilter
 	benchmarkAllArmed        bool
 	benchmarkSelectedArmed   bool
@@ -823,7 +822,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if len(message.plan.Models) > 0 {
 				m.benchmarkPlan = message.plan
 				m.benchmarkScope = message.plan.AllScope()
-				m.selectAllCoreBenchmarkTasks()
 			}
 			m.benchmarkCombinations = message.combinations
 		}
@@ -1247,10 +1245,10 @@ func (m Model) benchmarkTasks() []codex.BenchmarkTask {
 	return codex.BenchmarkTasks()
 }
 
-func (m Model) benchmarkCoreTasks() []codex.BenchmarkTask {
+func (m Model) benchmarkTasksForSuite(suite codex.BenchmarkSuiteID) []codex.BenchmarkTask {
 	var tasks []codex.BenchmarkTask
 	for _, task := range m.benchmarkTasks() {
-		if !task.External {
+		if task.Suite == suite {
 			tasks = append(tasks, task)
 		}
 	}
@@ -1258,10 +1256,13 @@ func (m Model) benchmarkCoreTasks() []codex.BenchmarkTask {
 }
 
 func (m Model) benchmarkSuites() []benchmarkSuite {
-	suites := []benchmarkSuite{{id: benchmarkSuiteCore, name: "CODEXOMETER CORE"}}
+	suites := []benchmarkSuite{
+		{id: codex.BenchmarkSuiteCore, name: "CODEXOMETER CORE"},
+		{id: codex.BenchmarkSuiteExtended, name: "CODEXOMETER EXTENDED"},
+	}
 	for _, task := range m.benchmarkTasks() {
 		if task.ID == codex.BenchmarkDigBench && task.External {
-			return append(suites, benchmarkSuite{id: benchmarkSuiteDigBench, name: "DIGBENCH", external: true})
+			return append(suites, benchmarkSuite{id: codex.BenchmarkSuiteDigBench, name: "DIGBENCH", external: true})
 		}
 	}
 	return suites
@@ -1279,32 +1280,42 @@ func (m Model) benchmarkSelectedSuiteExternal() bool {
 	return m.benchmarkSelectedSuiteOption().external
 }
 
-func (m Model) benchmarkSelectedCoreTaskIDs() []codex.BenchmarkTaskID {
-	if m.benchmarkScopeTasksReady {
-		return append([]codex.BenchmarkTaskID(nil), m.benchmarkScopeTasks...)
+func (m Model) benchmarkSelectedTaskIDs() []codex.BenchmarkTaskID {
+	suite := m.benchmarkSelectedSuiteOption().id
+	if tasks, ok := m.benchmarkScopeTasks[suite]; ok {
+		return append([]codex.BenchmarkTaskID(nil), tasks...)
 	}
-	ids := make([]codex.BenchmarkTaskID, 0, len(m.benchmarkCoreTasks()))
-	for _, task := range m.benchmarkCoreTasks() {
+	ids := make([]codex.BenchmarkTaskID, 0, len(m.benchmarkTasksForSuite(suite)))
+	for _, task := range m.benchmarkTasksForSuite(suite) {
 		ids = append(ids, task.ID)
 	}
 	return ids
 }
 
-func (m *Model) selectAllCoreBenchmarkTasks() {
-	m.benchmarkScopeTasks = nil
-	for _, task := range m.benchmarkCoreTasks() {
-		m.benchmarkScopeTasks = append(m.benchmarkScopeTasks, task.ID)
+func (m *Model) setBenchmarkSelectedTaskIDs(tasks []codex.BenchmarkTaskID) {
+	selected := make(map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID, len(m.benchmarkScopeTasks)+1)
+	for suite, existing := range m.benchmarkScopeTasks {
+		selected[suite] = append([]codex.BenchmarkTaskID(nil), existing...)
 	}
-	m.benchmarkScopeTasksReady = true
+	selected[m.benchmarkSelectedSuiteOption().id] = append([]codex.BenchmarkTaskID(nil), tasks...)
+	m.benchmarkScopeTasks = selected
+}
+
+func (m *Model) selectAllBenchmarkTasks() {
+	var tasks []codex.BenchmarkTaskID
+	for _, task := range m.benchmarkTasksForSuite(m.benchmarkSelectedSuiteOption().id) {
+		tasks = append(tasks, task.ID)
+	}
+	m.setBenchmarkSelectedTaskIDs(tasks)
 }
 
 func (m Model) benchmarkScopedTasks() []codex.BenchmarkTaskID {
 	if m.benchmarkSelectedSuiteExternal() {
 		return []codex.BenchmarkTaskID{codex.BenchmarkDigBench}
 	}
-	selected := benchmarkTaskIDSet(m.benchmarkSelectedCoreTaskIDs())
+	selected := benchmarkTaskIDSet(m.benchmarkSelectedTaskIDs())
 	var tasks []codex.BenchmarkTaskID
-	for _, task := range m.benchmarkCoreTasks() {
+	for _, task := range m.benchmarkTasksForSuite(m.benchmarkSelectedSuiteOption().id) {
 		if selected[task.ID] {
 			tasks = append(tasks, task.ID)
 		}
@@ -1317,7 +1328,7 @@ func (m Model) benchmarkAllTasks() []codex.BenchmarkTaskID {
 		return []codex.BenchmarkTaskID{codex.BenchmarkDigBench}
 	}
 	var tasks []codex.BenchmarkTaskID
-	for _, task := range m.benchmarkCoreTasks() {
+	for _, task := range m.benchmarkTasksForSuite(m.benchmarkSelectedSuiteOption().id) {
 		tasks = append(tasks, task.ID)
 	}
 	return tasks
