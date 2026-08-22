@@ -76,9 +76,11 @@ It works particularly well in:
   For a root with linked agents, fresh activity from any member suppresses that
   uncertain fallback; definite input or approval signals still propagate from
   the member that raised them.
-- An opt-in deterministic coding benchmark comparing every visible Codex model
-  and supported reasoning effort by correctness, elapsed time, token use, and
-  estimated standard API-equivalent cost.
+- An opt-in deterministic coding benchmark comparing a selectable scope of
+  visible Codex models and supported reasoning efforts by correctness, elapsed
+  time, token use, and estimated standard API-equivalent cost. The current trial appears immediately
+  as an `IN PROGRESS` row; select or click any row to inspect its benchmark-only
+  prompt, structured response, verifier outcome, and telemetry.
 
 Codexometer does not assume that every account has the same windows. Some
 accounts expose a shorter rolling window and a weekly window; plans and backend
@@ -315,9 +317,13 @@ boundary. It also reads lifecycle event names and blocking flags to identify an
 explicit unresolved input or approval request. To distinguish an open CLI
 waiting at its prompt from a closed historical session, it inspects the lock
 state—not the contents—of Codex's per-thread writer lock. Message text—including
-the final response carried beside timing
-metadata—reasoning, commands, tool results, and credentials are ignored and
-never retained by Codexometer.
+the final response carried beside timing metadata—reasoning, commands, tool
+results, and credentials are ignored and never retained from ordinary Codex
+sessions. The sole content-reading exception is a benchmark turn explicitly
+started by Codexometer: its known prompt and visible structured response are
+kept in bounded process memory for the Benchmark run detail view. Reasoning
+events, credentials, request headers, and internal thread, turn, or response
+IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
@@ -341,16 +347,21 @@ codexometer --codex /path/to/codex
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh quota data immediately |
 | `v` | Cycle the active Quota view |
-| `s` | Start recording (Monitor only) |
+| `s` | Start recording (Monitor) or open Benchmark Scope |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
 | `b` | Run the selected challenge (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
+| `x` | Stop the active benchmark suite and retain its incomplete trial |
+| `d` | Close the Benchmark Scope screen |
 | `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
+| `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
+| `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
+| `c` | Copy the complete open Benchmark detail to the terminal clipboard |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
-| `Esc` | Quit |
+| `Esc` | Return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, or
@@ -854,24 +865,67 @@ fair deterministic cross-model ranking.
 
 The Benchmark tab discovers models visible to the active benchmark
 authentication and their supported reasoning efforts through `model/list`.
+Initially every compatible
+model/effort pair is selected. Press `s` or click **Scope** to open a separate
+selection screen: every model and reasoning level has its own checkbox, and
+each group has a **Check All** control that changes to **Clear All** when the
+whole group is selected. The supported reasoning levels shown beside each
+model dim immediately when they fall outside the selected scope. Click a row,
+or use `Up`/`Down` and `Space`/`Enter`, then click **Done** or press `d`/`Esc`
+to return. Unsupported model/effort intersections are never counted or run.
+
 Select any challenge with the arrow buttons; the selector reserves a stable
-responsive track for the longest
-name, so its controls do not move as the selection changes. Press `b` or click
-**Run Selected** to run that challenge against every model/effort combination.
-**Run All** runs the complete catalog against every combination. Because that
-means `challenge count × model/effort count` model turns, Codexometer displays
-the exact total and requires a second confirmation within five seconds. A fresh,
-ephemeral, read-only app-server thread is used for each trial, so benchmark
-history does not clutter normal Codex sessions. The turns still consume the
-same account quota shown by Codexometer unless a benchmark API key is supplied;
-with a key, they use standard usage-based API billing instead.
+responsive track for the longest name, so its controls do not move as the
+selection changes. Press `b` or click **Run Selected** to run that challenge
+against the selected scope. **Run All** runs the complete challenge catalog
+against that same scope. Because that means `challenge count × selected
+model/effort pair count` model turns, Codexometer displays the exact total and
+requires a second confirmation within five seconds. A fresh, ephemeral,
+read-only app-server thread is used for each trial, so benchmark history does
+not clutter normal Codex sessions. The turns still consume the same account
+quota shown by Codexometer unless a benchmark API key is supplied; with a key,
+they use standard usage-based API billing instead.
 
 Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
 that deadline, Codexometer requests `turn/interrupt`, waits for the matching
 `turn/completed` event, records that combination as `FAIL`, and continues with
-the remaining combinations. Explicit user cancellation, app-server transport
-failure, or failure to confirm interruption still stops the suite because the
-server's state is then unsafe or unknown.
+the remaining combinations. App-server transport failure or failure to confirm
+timeout interruption still stops the suite because the server's state is then
+unsafe or unknown.
+
+The **Stop** control remains visible but disabled until a suite starts. Press
+`x` or click **Stop** to request `turn/interrupt` for the current trial and wait
+for its matching completion before the temporary app-server is closed.
+Completed results are retained, the current row becomes `STOPPED`, remaining
+trials are not started, and the status reports how many planned trials were
+complete. A stopped row is incomplete rather than failed, so it appears under
+**All** but not the **Fail** filter or rankings. If remote interruption cannot
+be confirmed before cleanup, the stopped result reports that uncertainty as a
+**Stop Issue**.
+
+The current trial appears in the existing Result Matrix immediately as an
+`IN PROGRESS` row, before any result has completed. Click that or any completed
+row, or use `Up`/`Down` followed by `Enter`, to replace the matrix with the
+run's scrollable detail. An open live detail updates as safe benchmark events
+arrive, then changes in place to the final `PASS`, `FAIL`, or `STOPPED` result. It shows the
+requested and actual model, effort, task, outcome, live duration, token classes,
+API-equivalent cost, exact benchmark prompt, visible structured response
+(including the submitted Starlark), policy events, and deterministic-verifier
+result. `Esc` returns to the same selected matrix row. Page keys, arrow keys,
+and the mouse wheel scroll a long detail. Press `c` or click **Copy** in the
+detail title to copy the complete unstyled detail, including interactions below
+the visible scroll window. Copy uses the terminal's OSC 52 clipboard support,
+which is not available in every terminal.
+
+This transcript is deliberately benchmark-only. It is populated directly by
+the ephemeral thread that Codexometer created for that trial, bounded to 16
+entries of at most 64 KiB each and 128 KiB total, retained only in process
+memory, and discarded when a new suite starts or Codexometer exits. It does not
+subscribe to or read ordinary Codex conversations, and it excludes reasoning
+events, credentials, request headers, and internal app-server IDs.
+Codexometer sends that bounded transcript to the system clipboard only when you
+explicitly press `c` or click **Copy**; the clipboard then falls under your
+operating system and terminal's normal retention behavior.
 
 #### Challenges and difficulty
 
