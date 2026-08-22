@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -134,16 +135,19 @@ func TestClientBenchmarkTasksRequireDigBenchToken(t *testing.T) {
 func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	server, _ := newFakeBenchmarkServer(benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{"data": []any{map[string]any{
 		"model": "model", "displayName": "Model",
-		"supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "high"}},
+		"supportedReasoningEfforts": []any{
+			map[string]string{"reasoningEffort": "high"},
+			map[string]string{"reasoningEffort": "medium"},
+		},
 	}}})})
 	originalOpen := openBenchmarkAppServer
 	openBenchmarkAppServer = func(context.Context, string, string) (*appServerSession, error) { return server, nil }
 	t.Cleanup(func() { openBenchmarkAppServer = originalOpen })
 
 	originalRun := runDigBenchTrial
-	var games []string
+	var trials []string
 	runDigBenchTrial = func(_ context.Context, _ Client, _ digBenchService, options DigBenchOptions) (DigBenchResult, error) {
-		games = append(games, options.Game)
+		trials = append(trials, options.Game+"/"+options.Effort)
 		result := DigBenchResult{Game: options.Game, Model: options.Model, DisplayName: "Model", ActualModel: options.Model, Effort: options.Effort, Won: true, Status: "completed"}
 		options.Snapshot(result)
 		return result, nil
@@ -153,10 +157,11 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 	var events []BenchmarkEvent
 	client := Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1", "P-2", "P-3"}}
 	client.RunBenchmarkSuiteScoped(context.Background(), []BenchmarkTaskID{BenchmarkDigBench}, BenchmarkScope{
-		Models: []string{"model"}, Efforts: []string{"high"}, Games: []string{"P-2", "P-3"},
+		Models: []string{"model"}, Efforts: []string{"high", "medium"}, Games: []string{"P-2", "P-3"},
 	}, func(event BenchmarkEvent) { events = append(events, event) })
-	if len(games) != 2 || games[0] != "P-2" || games[1] != "P-3" {
-		t.Fatalf("selected games run = %#v", games)
+	wantTrials := []string{"P-2/high", "P-2/medium", "P-3/high", "P-3/medium"}
+	if !slices.Equal(trials, wantTrials) {
+		t.Fatalf("selected trials run = %#v, want %#v", trials, wantTrials)
 	}
 	results := 0
 	for _, event := range events {
@@ -165,7 +170,7 @@ func TestDigBenchBenchmarkSuiteRunsSelectedDiscoveredGames(t *testing.T) {
 		}
 	}
 	final := events[len(events)-1]
-	if results != 2 || !final.Done || final.Total != 2 || final.Completed != 2 || final.Err != nil {
+	if results != 4 || !final.Done || final.Total != 4 || final.Completed != 4 || final.Combinations != 2 || final.Err != nil {
 		t.Fatalf("events = %#v", events)
 	}
 }

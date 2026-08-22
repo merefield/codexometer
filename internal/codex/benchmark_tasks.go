@@ -122,9 +122,8 @@ func BenchmarkTasks() []BenchmarkTask {
 	return tasks
 }
 
-// DigBenchTask returns the deliberately narrow external game exposed by the
-// current integration. It is omitted from Run All because every invocation
-// creates a persisted remote session with a random seed.
+// DigBenchTask returns the external suite entry exposed when games are
+// available from the DigBench API.
 func DigBenchTask() BenchmarkTask {
 	return BenchmarkTask{ID: BenchmarkDigBench, Name: "DIGBENCH", External: true}
 }

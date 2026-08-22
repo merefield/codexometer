@@ -29,6 +29,15 @@ type benchmarkScopedCaptureFetcher struct {
 	stubFetcher
 	plan   codex.BenchmarkPlan
 	scopes chan codex.BenchmarkScope
+	tasks  chan []codex.BenchmarkTaskID
+}
+
+type benchmarkDigBenchCaptureFetcher struct {
+	benchmarkScopedCaptureFetcher
+}
+
+func (benchmarkDigBenchCaptureFetcher) BenchmarkTasks() []codex.BenchmarkTask {
+	return append(codex.BenchmarkTasks(), codex.DigBenchTask())
 }
 
 func (f benchmarkScopedCaptureFetcher) BenchmarkCombinationCount(context.Context) (int, error) {
@@ -43,7 +52,10 @@ func (f benchmarkScopedCaptureFetcher) RunBenchmarkSuite(ctx context.Context, ta
 	f.RunBenchmarkSuiteScoped(ctx, tasks, f.plan.AllScope(), emit)
 }
 
-func (f benchmarkScopedCaptureFetcher) RunBenchmarkSuiteScoped(_ context.Context, _ []codex.BenchmarkTaskID, scope codex.BenchmarkScope, emit func(codex.BenchmarkEvent)) {
+func (f benchmarkScopedCaptureFetcher) RunBenchmarkSuiteScoped(_ context.Context, tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope, emit func(codex.BenchmarkEvent)) {
+	if f.tasks != nil {
+		f.tasks <- append([]codex.BenchmarkTaskID(nil), tasks...)
+	}
 	f.scopes <- scope
 	emit(codex.BenchmarkEvent{Done: true, Combinations: f.plan.CombinationCount(scope)})
 }
@@ -91,7 +103,7 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 		},
 	}
 	output := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"(B) RUN SELECTED", "MERGE RANGES", "SHOW //", "HERMETIC STARLARK", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
+	for _, want := range []string{"(B) RUN SCOPE", "CODEXOMETER CORE", "MERGE RANGES", "SHOW //", "HERMETIC STARLARK", "1/2 PASS", "PASS", "FAIL", "4.3K", "~$0.0412", "N/A"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("benchmark view missing %q:\n%s", want, output)
 		}
@@ -106,10 +118,10 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	lines := strings.Split(controls, "\n")
 	selectorLine, runLine := -1, -1
 	for index, line := range lines {
-		if strings.Contains(line, "TASK //") {
+		if strings.Contains(line, "SUITE //") {
 			selectorLine = index
 		}
-		if strings.Contains(line, "(B) RUN SELECTED") {
+		if strings.Contains(line, "(B) RUN SCOPE") {
 			runLine = index
 		}
 	}
@@ -491,7 +503,7 @@ func TestBenchmarkAreaHonorsEveryAllocatedHeight(t *testing.T) {
 			if geometry.tableHeight < 3 && strings.Contains(output, "RESULT MATRIX") {
 				t.Fatalf("table rendered in an allocation too short for its frame:\n%s", output)
 			}
-			if height == 4 && !strings.Contains(output, "RUN SELECTED") && !strings.Contains(output, "B:RUN") {
+			if height == 4 && !strings.Contains(output, "RUN SCOPE") && !strings.Contains(output, "B:SCOPE") {
 				t.Fatalf("compact controls dropped an action before their spacer:\n%s", output)
 			}
 		})
@@ -554,6 +566,7 @@ func TestBenchmarkHotkeyRunsSuiteAndCollectsEvents(t *testing.T) {
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.meterView = viewBenchmark
+	model.benchmarkCombinations = 2
 
 	updated, command := model.Update(key('b'))
 	model = updated.(Model)
@@ -595,6 +608,7 @@ func TestBenchmarkButtonSupportsHoverAndClick(t *testing.T) {
 	model.loading = false
 	model.width, model.height = 100, 30
 	model.meterView = viewBenchmark
+	model.benchmarkCombinations = 2
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkSelected)
 	mouse := tea.MouseMotionMsg{X: x, Y: y}
 	updated, command := model.Update(mouse)
@@ -662,7 +676,8 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		Efforts: []string{"low", "high"},
 	}
 	scopes := make(chan codex.BenchmarkScope, 1)
-	fetcher := benchmarkScopedCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, plan: plan, scopes: scopes}
+	taskRuns := make(chan []codex.BenchmarkTaskID, 1)
+	fetcher := benchmarkScopedCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, plan: plan, scopes: scopes, tasks: taskRuns}
 	model := New(fetcher, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
@@ -677,7 +692,7 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		t.Fatal("Scope hotkey did not open the all-selected scope screen")
 	}
 	screen := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"BENCHMARK SCOPE", benchmarkDetailCloseLabel, "(D) DONE", "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH"} {
+	for _, want := range []string{"BENCHMARK SCOPE", benchmarkDetailCloseLabel, "(D) DONE", "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH", "[x] CORE BENCHMARKS // CLEAR ALL", "MERGE RANGES", "LRU CACHE"} {
 		if !strings.Contains(screen, want) {
 			t.Fatalf("scope screen missing %q:\n%s", want, screen)
 		}
@@ -711,6 +726,9 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	if model.benchmarkCombinations != 0 || len(model.benchmarkScope.Models) != 0 || model.benchmarkPlanNeeded() {
 		t.Fatalf("model Clear All did not clear scope: %#v", model.benchmarkScope)
 	}
+	if model.benchmarkCanRunSelected() {
+		t.Fatal("Run Scope remained enabled without a compatible model/effort pair")
+	}
 	clickScopeItem(1) // Check All models.
 	if model.benchmarkCombinations != 3 || len(model.benchmarkScope.Models) != 2 {
 		t.Fatalf("model Check All did not restore scope: %#v", model.benchmarkScope)
@@ -739,6 +757,25 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		t.Fatalf("reasoning Check All did not restore efforts: %#v", model.benchmarkScope)
 	}
 	clickScopeItem(6) // Keep the final launched scope to low only.
+	findScopeItem := func(kind benchmarkScopeItemKind, value string) int {
+		t.Helper()
+		for index, item := range model.benchmarkScopeItems() {
+			if item.kind == kind && item.value == value {
+				return index
+			}
+		}
+		t.Fatalf("scope item kind=%d value=%q not found", kind, value)
+		return -1
+	}
+	clickScopeItem(findScopeItem(benchmarkScopeAllTasks, "")) // Clear all core benchmarks.
+	if model.benchmarkCanRunSelected() {
+		t.Fatal("Run Scope remained enabled without a selected core benchmark")
+	}
+	clickScopeItem(findScopeItem(benchmarkScopeTask, string(codex.BenchmarkMergeRanges)))
+	clickScopeItem(findScopeItem(benchmarkScopeTask, string(codex.BenchmarkLRUCache)))
+	if got := model.benchmarkScopeTurnCount(); got != 2 {
+		t.Fatalf("selected core scope turns = %d, want 2", got)
+	}
 
 	clickScopeItem(0)
 	if model.benchmarkScopeOpen {
@@ -763,6 +800,9 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	if len(got.Models) != 1 || got.Models[0] != "model-a" || len(got.Efforts) != 1 || got.Efforts[0] != "low" {
 		t.Fatalf("runner received scope %#v", got)
 	}
+	if gotTasks := <-taskRuns; !slices.Equal(gotTasks, []codex.BenchmarkTaskID{codex.BenchmarkMergeRanges, codex.BenchmarkLRUCache}) {
+		t.Fatalf("runner received core tasks %#v", gotTasks)
+	}
 }
 
 func TestBenchmarkScopeAreaHonorsAllocatedSize(t *testing.T) {
@@ -782,26 +822,25 @@ func TestBenchmarkScopeAreaHonorsAllocatedSize(t *testing.T) {
 	}
 }
 
-func TestDigBenchTaskRequiresOnePairAndIsExcludedFromRunAll(t *testing.T) {
+func TestDigBenchSuiteSupportsScopedAndAllCombinations(t *testing.T) {
 	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1", "P-2"}}
 	model := Model{
 		benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkCombinations: 2,
-		benchmarkPlan:  codex.BenchmarkPlan{Games: []string{"P-1", "P-2"}},
-		benchmarkScope: codex.BenchmarkScope{Games: []string{"P-1", "P-2"}},
+		benchmarkPlan: codex.BenchmarkPlan{
+			Models:  []codex.BenchmarkModelOption{{Model: "model", Efforts: []string{"low", "high"}}},
+			Efforts: []string{"low", "high"}, Games: []string{"P-1", "P-2"},
+		},
+		benchmarkScope: codex.BenchmarkScope{Models: []string{"model"}, Efforts: []string{"low", "high"}, Games: []string{"P-1", "P-2"}},
 	}
-	tasks := model.benchmarkTasks()
-	model.benchmarkSelectedTask = len(tasks) - 1
-	if !tasks[model.benchmarkSelectedTask].External || model.benchmarkCanRunSelected() {
-		t.Fatalf("DigBench should be visible but disabled with two pairs: %#v", tasks)
+	model.benchmarkSelectedSuite = 1
+	if !model.benchmarkSelectedSuiteExternal() || !model.benchmarkCanRunSelected() {
+		t.Fatalf("DigBench suite should support two scoped pairs: %#v", model.benchmarkSuites())
 	}
-	model.benchmarkCombinations = 1
-	if !model.benchmarkCanRunSelected() {
-		t.Fatal("DigBench was not enabled with exactly one selected pair")
+	if model.benchmarkScopeTurnCount() != 4 || model.benchmarkAllTurnCount() != 4 {
+		t.Fatalf("DigBench turn counts scope/all = %d/%d", model.benchmarkScopeTurnCount(), model.benchmarkAllTurnCount())
 	}
-	for _, task := range model.benchmarkRunAllTasks() {
-		if task.External {
-			t.Fatalf("external task included in Run All: %#v", task)
-		}
+	if tasks := model.benchmarkAllTasks(); len(tasks) != 1 || tasks[0] != codex.BenchmarkDigBench {
+		t.Fatalf("DigBench Run All tasks = %#v", tasks)
 	}
 }
 
@@ -813,7 +852,7 @@ func TestDigBenchScopeFiltersDiscoveredGamesAndConfirmsRemoteSessions(t *testing
 	client := codex.Client{DigBenchToken: "secret", DigBenchGames: plan.Games}
 	model := Model{
 		benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(),
-		benchmarkCombinations: 1, benchmarkSelectedTask: len(client.BenchmarkTasks()) - 1, meterView: viewBenchmark,
+		benchmarkCombinations: 1, benchmarkSelectedSuite: 1, meterView: viewBenchmark,
 	}
 	items := model.benchmarkScopeItems()
 	var p2 int
@@ -1203,21 +1242,27 @@ func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) 
 	}
 }
 
-func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
-	model := New(benchmarkStubFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
+func TestBenchmarkSuiteSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1", "P-2"}}
+	model := New(client, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
 	model.meterView = viewBenchmark
-	model.benchmarkCombinations = 33
+	model.benchmarkPlan = codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model", Efforts: []string{"low", "high"}}},
+		Efforts: []string{"low", "high"}, Games: []string{"P-1", "P-2"},
+	}
+	model.benchmarkScope = model.benchmarkPlan.AllScope()
+	model.benchmarkCombinations = 2
 
 	updated, _ := model.Update(specialKey(tea.KeyRight))
 	model = updated.(Model)
-	if model.benchmarkSelectedTask != 1 {
-		t.Fatalf("right arrow selected task %d, want 1", model.benchmarkSelectedTask)
+	if model.benchmarkSelectedSuite != 1 {
+		t.Fatalf("right arrow selected suite %d, want 1", model.benchmarkSelectedSuite)
 	}
 	controls := ansi.Strip(model.renderBenchmarkControls(60, 8, paletteFor(themeHacker)))
-	if !strings.Contains(controls, "LRU CACHE") || !strings.Contains(controls, "231") {
+	if !strings.Contains(controls, "DIGBENCH") || !strings.Contains(controls, "4") {
 		t.Fatalf("selector or exact all-turn count missing:\n%s", controls)
 	}
 
@@ -1227,7 +1272,7 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 		t.Fatal("first Run All press did not arm confirmation without running")
 	}
 	controls = ansi.Strip(model.renderBenchmarkControls(60, 8, paletteFor(themeHacker)))
-	if !strings.Contains(controls, "CONFIRM") || !strings.Contains(controls, "231") {
+	if !strings.Contains(controls, "CONFIRM") || !strings.Contains(controls, "4") {
 		t.Fatalf("confirmation label missing exact turn count:\n%s", controls)
 	}
 	updated, command = model.Update(key('a'))
@@ -1237,8 +1282,9 @@ func TestBenchmarkTaskSelectorRunAllGuardAndExactTurnCount(t *testing.T) {
 	}
 }
 
-func TestBenchmarkSelectorAnchorsButtonsToLongestTaskName(t *testing.T) {
-	model := Model{}
+func TestBenchmarkSelectorAnchorsButtonsToLongestSuiteName(t *testing.T) {
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}
+	model := Model{benchmarkRunner: client}
 	buttonX := func(segments []benchmarkControlSegment, target footerButtonID) int {
 		x := 0
 		for _, segment := range segments {
@@ -1251,8 +1297,8 @@ func TestBenchmarkSelectorAnchorsButtonsToLongestTaskName(t *testing.T) {
 	}
 	first := model.benchmarkControlLines(60)[0]
 	previousX, nextX := buttonX(first, footerButtonBenchmarkPrevious), buttonX(first, footerButtonBenchmarkNext)
-	for range model.benchmarkTasks() {
-		model.selectBenchmarkTask(1)
+	for range model.benchmarkSuites() {
+		model.selectBenchmarkSuite(1)
 		selector := model.benchmarkControlLines(60)[0]
 		if got := buttonX(selector, footerButtonBenchmarkPrevious); got != previousX {
 			t.Fatalf("previous button moved from %d to %d", previousX, got)
@@ -1262,12 +1308,12 @@ func TestBenchmarkSelectorAnchorsButtonsToLongestTaskName(t *testing.T) {
 		}
 	}
 
-	clickable := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark}
+	clickable := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark, benchmarkRunner: client}
 	nextX, nextY := benchmarkControlCoordinates(t, clickable, footerButtonBenchmarkNext)
-	for range clickable.benchmarkTasks() {
-		clickable.selectBenchmarkTask(1)
+	for range clickable.benchmarkSuites() {
+		clickable.selectBenchmarkSuite(1)
 		if got := clickable.footerButtonAt(nextX, nextY); got != footerButtonBenchmarkNext {
-			t.Fatalf("anchored next-button coordinate hit %d after selecting task %d", got, clickable.benchmarkSelectedTask)
+			t.Fatalf("anchored next-button coordinate hit %d after selecting suite %d", got, clickable.benchmarkSelectedSuite)
 		}
 	}
 }
@@ -1300,6 +1346,84 @@ func TestBenchmarkRunAllLaunchesUnifiedCatalog(t *testing.T) {
 		if got[index] != want[index] {
 			t.Fatalf("launched tasks = %v, want %v", got, want)
 		}
+	}
+}
+
+func TestBenchmarkRunAllIgnoresCoreScope(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models: []codex.BenchmarkModelOption{
+			{Model: "model-a", Efforts: []string{"low", "high"}},
+			{Model: "model-b", Efforts: []string{"high"}},
+		},
+		Efforts: []string{"low", "high"},
+	}
+	scopes := make(chan codex.BenchmarkScope, 1)
+	tasks := make(chan []codex.BenchmarkTaskID, 1)
+	runner := benchmarkScopedCaptureFetcher{plan: plan, scopes: scopes, tasks: tasks}
+	model := Model{
+		benchmarkRunner: runner, benchmarkScopedRunner: runner, meterView: viewBenchmark,
+		benchmarkPlan: plan, benchmarkScope: codex.BenchmarkScope{
+			Models: []string{"model-a"}, Efforts: []string{"low"},
+		},
+		benchmarkCombinations: 1, benchmarkScopeTasks: []codex.BenchmarkTaskID{codex.BenchmarkLRUCache},
+		benchmarkScopeTasksReady: true,
+	}
+
+	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
+	model, command := model.activateFooterButton(footerButtonBenchmarkAll)
+	if command == nil || model.benchmarkTotal != plan.CombinationCount(plan.AllScope())*len(codex.BenchmarkTasks()) {
+		t.Fatalf("Run All total = %d", model.benchmarkTotal)
+	}
+	_ = command()
+	if got := <-scopes; !slices.Equal(got.Models, plan.AllScope().Models) || !slices.Equal(got.Efforts, plan.AllScope().Efforts) {
+		t.Fatalf("Run All scope = %#v, want %#v", got, plan.AllScope())
+	}
+	wantTasks := make([]codex.BenchmarkTaskID, 0, len(codex.BenchmarkTasks()))
+	for _, task := range codex.BenchmarkTasks() {
+		wantTasks = append(wantTasks, task.ID)
+	}
+	if got := <-tasks; !slices.Equal(got, wantTasks) {
+		t.Fatalf("Run All tasks = %#v, want %#v", got, wantTasks)
+	}
+}
+
+func TestDigBenchRunAllUsesEveryGameAndPair(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model", Efforts: []string{"low", "high"}}},
+		Efforts: []string{"low", "high"}, Games: []string{"P-1", "P-2", "P-3"},
+	}
+	scopes := make(chan codex.BenchmarkScope, 1)
+	tasks := make(chan []codex.BenchmarkTaskID, 1)
+	base := benchmarkScopedCaptureFetcher{plan: plan, scopes: scopes, tasks: tasks}
+	runner := benchmarkDigBenchCaptureFetcher{benchmarkScopedCaptureFetcher: base}
+	model := Model{
+		benchmarkRunner: runner, benchmarkScopedRunner: runner, meterView: viewBenchmark,
+		benchmarkPlan: plan, benchmarkScope: codex.BenchmarkScope{
+			Models: []string{"model"}, Efforts: []string{"low"}, Games: []string{"P-2"},
+		},
+		benchmarkCombinations: 1, benchmarkSelectedSuite: 1,
+	}
+
+	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
+	model, command := model.activateFooterButton(footerButtonBenchmarkAll)
+	if command == nil || model.benchmarkTotal != 6 {
+		t.Fatalf("DigBench Run All total = %d, want 6", model.benchmarkTotal)
+	}
+	_ = command()
+	if got := <-scopes; !slices.Equal(got.Models, plan.AllScope().Models) || !slices.Equal(got.Efforts, plan.AllScope().Efforts) || !slices.Equal(got.Games, plan.Games) {
+		t.Fatalf("DigBench Run All scope = %#v, want %#v", got, plan.AllScope())
+	}
+	if got := <-tasks; !slices.Equal(got, []codex.BenchmarkTaskID{codex.BenchmarkDigBench}) {
+		t.Fatalf("DigBench Run All tasks = %#v", got)
+	}
+}
+
+func TestBenchmarkRunKeySeparatesDigBenchGames(t *testing.T) {
+	base := codex.BenchmarkResult{TaskID: codex.BenchmarkDigBench, Model: "model", Effort: "high"}
+	p1, p2 := base, base
+	p1.TaskName, p2.TaskName = "DIGBENCH P-1", "DIGBENCH P-2"
+	if benchmarkRunKey(p1) == benchmarkRunKey(p2) {
+		t.Fatal("DigBench games share a result-table run key")
 	}
 }
 

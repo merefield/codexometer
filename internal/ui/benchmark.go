@@ -484,7 +484,22 @@ const (
 	benchmarkScopeEffort
 	benchmarkScopeAllGames
 	benchmarkScopeGame
+	benchmarkScopeAllTasks
+	benchmarkScopeTask
 )
+
+type benchmarkSuiteID int
+
+const (
+	benchmarkSuiteCore benchmarkSuiteID = iota
+	benchmarkSuiteDigBench
+)
+
+type benchmarkSuite struct {
+	id       benchmarkSuiteID
+	name     string
+	external bool
+}
 
 type benchmarkScopeItem struct {
 	kind     benchmarkScopeItemKind
@@ -511,8 +526,10 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	}
 	title := fmt.Sprintf("BENCHMARK SCOPE // %d MODELS // %d EFFORTS // %d PAIRS",
 		len(m.benchmarkScope.Models), len(m.benchmarkScope.Efforts), m.benchmarkCombinations)
-	if m.benchmarkSelectedTaskExternal() {
+	if m.benchmarkSelectedSuiteExternal() {
 		title += fmt.Sprintf(" // %d/%d GAMES", len(m.benchmarkScope.Games), len(m.benchmarkPlan.Games))
+	} else {
+		title += fmt.Sprintf(" // %d/%d BENCHMARKS", len(m.benchmarkSelectedCoreTaskIDs()), len(m.benchmarkCoreTasks()))
 	}
 	title += " // SPACE TOGGLE // ESC DONE"
 	return frameSizedWithTitleAction(
@@ -559,7 +576,7 @@ func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width in
 	if item.selected {
 		style = lipgloss.NewStyle().Foreground(colors.primary)
 	}
-	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts || item.kind == benchmarkScopeAllGames {
+	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts || item.kind == benchmarkScopeAllGames || item.kind == benchmarkScopeAllTasks {
 		style = style.Bold(true).Foreground(colors.accent)
 	}
 	return style.Render(fitTableCell(label, width))
@@ -595,7 +612,7 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 			label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort),
 		})
 	}
-	if m.benchmarkSelectedTaskExternal() {
+	if m.benchmarkSelectedSuiteExternal() {
 		allGames := len(m.benchmarkPlan.Games) > 0 && len(m.benchmarkScope.Games) == len(m.benchmarkPlan.Games)
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeAllGames, selected: allGames,
@@ -607,6 +624,21 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 			items = append(items, benchmarkScopeItem{
 				kind: benchmarkScopeGame, value: game, selected: selected,
 				label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(game),
+			})
+		}
+	} else {
+		coreTasks := m.benchmarkCoreTasks()
+		selectedTaskIDs := benchmarkTaskIDSet(m.benchmarkSelectedCoreTaskIDs())
+		allTasks := len(coreTasks) > 0 && len(selectedTaskIDs) == len(coreTasks)
+		items = append(items, benchmarkScopeItem{
+			kind: benchmarkScopeAllTasks, selected: allTasks,
+			label: scopeCheckLabel(allTasks) + " CORE BENCHMARKS // " + scopeAllAction(allTasks),
+		})
+		for _, task := range coreTasks {
+			selected := selectedTaskIDs[task.ID]
+			items = append(items, benchmarkScopeItem{
+				kind: benchmarkScopeTask, value: string(task.ID), selected: selected,
+				label: "  " + scopeCheckLabel(selected) + " " + task.Name,
 			})
 		}
 	}
@@ -638,6 +670,9 @@ func stringSetUI(values []string) map[string]bool {
 func (m *Model) openBenchmarkScope() {
 	if m.benchmarkRunActive() || len(m.benchmarkPlan.Models) == 0 {
 		return
+	}
+	if !m.benchmarkScopeTasksReady {
+		m.selectAllCoreBenchmarkTasks()
 	}
 	m.benchmarkScopeOpen = true
 	m.benchmarkScopeHover = -1
@@ -708,10 +743,37 @@ func (m *Model) toggleBenchmarkScopeCursor() {
 		}
 	case benchmarkScopeGame:
 		m.benchmarkScope.Games = toggleScopeValue(m.benchmarkScope.Games, item.value)
+	case benchmarkScopeAllTasks:
+		if item.selected {
+			m.benchmarkScopeTasks = nil
+		} else {
+			m.selectAllCoreBenchmarkTasks()
+		}
+		m.benchmarkScopeTasksReady = true
+	case benchmarkScopeTask:
+		m.benchmarkScopeTasks = toggleBenchmarkTaskID(m.benchmarkSelectedCoreTaskIDs(), codex.BenchmarkTaskID(item.value))
+		m.benchmarkScopeTasksReady = true
 	}
 	m.benchmarkCombinations = m.benchmarkPlan.CombinationCount(m.benchmarkScope)
 	m.benchmarkAllArmed = false
 	m.benchmarkSelectedArmed = false
+}
+
+func toggleBenchmarkTaskID(values []codex.BenchmarkTaskID, value codex.BenchmarkTaskID) []codex.BenchmarkTaskID {
+	for index, existing := range values {
+		if existing == value {
+			return append(append([]codex.BenchmarkTaskID(nil), values[:index]...), values[index+1:]...)
+		}
+	}
+	return append(append([]codex.BenchmarkTaskID(nil), values...), value)
+}
+
+func benchmarkTaskIDSet(values []codex.BenchmarkTaskID) map[codex.BenchmarkTaskID]bool {
+	set := make(map[codex.BenchmarkTaskID]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
 }
 
 func toggleScopeValue(values []string, value string) []string {
@@ -792,57 +854,49 @@ func (m Model) renderBenchmarkSegments(segments []benchmarkControlSegment, width
 }
 
 func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
-	tasks := m.benchmarkTasks()
-	allTasks := m.benchmarkRunAllTasks()
-	selected := codex.BenchmarkTask{Name: "NO TASKS"}
-	if len(tasks) > 0 {
-		selected = tasks[m.benchmarkSelectedTask%len(tasks)]
-	}
+	suites := m.benchmarkSuites()
+	selected := m.benchmarkSelectedSuiteOption()
 	running := m.benchmarkRunActive()
 	selectorMiddleWidth := 0
-	for _, task := range tasks {
-		selectorMiddleWidth = max(selectorMiddleWidth, lipgloss.Width("TASK // "+task.Name))
+	for _, suite := range suites {
+		selectorMiddleWidth = max(selectorMiddleWidth, lipgloss.Width("SUITE // "+suite.name))
 	}
 	selectorMiddleWidth = min(selectorMiddleWidth, max(width-8, 1))
-	selector := []benchmarkControlSegment{{text: ansi.Truncate(selected.Name, width, ""), enabled: true}}
+	selector := []benchmarkControlSegment{{text: ansi.Truncate(selected.name, width, ""), enabled: true}}
 	if width >= 9 {
 		selector = []benchmarkControlSegment{
-			{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running},
-			{text: fitTableCell("TASK // "+selected.Name, selectorMiddleWidth), enabled: true},
-			{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running},
+			{text: "[◀]", button: footerButtonBenchmarkPrevious, enabled: !running && len(suites) > 1},
+			{text: fitTableCell("SUITE // "+selected.name, selectorMiddleWidth), enabled: true},
+			{text: "[▶]", button: footerButtonBenchmarkNext, enabled: !running && len(suites) > 1},
 		}
 	}
 
-	selectedLabel := "[ (B) RUN SELECTED ]"
-	allTurns := m.benchmarkCombinations * len(allTasks)
+	scopeTurns := m.benchmarkScopeTurnCount()
+	allTurns := m.benchmarkAllTurnCount()
+	selectedLabel := fmt.Sprintf("[ (B) RUN SCOPE // %d ]", scopeTurns)
 	allLabel := fmt.Sprintf("[ (A) RUN ALL // %d ]", allTurns)
 	scopeLabel := fmt.Sprintf("[ (S) SCOPE // %d ]", m.benchmarkCombinations)
 	stopLabel := "[ (X) STOP ]"
 	if m.benchmarkPlanning {
 		allLabel = "[ DISCOVERING TURNS… ]"
 	}
-	if selected.External && m.benchmarkCombinations != 1 {
-		selectedLabel = "[ SELECT 1 PAIR IN SCOPE ]"
-	} else if selected.External && len(m.benchmarkScope.Games) == 0 {
-		selectedLabel = "[ SELECT DIGBENCH GAMES ]"
-	} else if selected.External {
-		selectedLabel = fmt.Sprintf("[ (B) RUN DIGBENCH // %d ]", len(m.benchmarkScope.Games))
+	if selected.external {
+		selectedLabel = fmt.Sprintf("[ (B) RUN SCOPE // %d REMOTE ]", scopeTurns)
 		if m.benchmarkSelectedArmed {
-			selectedLabel = fmt.Sprintf("[ CONFIRM // %d REMOTE SESSIONS ]", len(m.benchmarkScope.Games))
+			selectedLabel = fmt.Sprintf("[ CONFIRM // %d REMOTE SESSIONS ]", scopeTurns)
 		}
 	}
 	if m.benchmarkAllArmed {
-		allLabel = fmt.Sprintf("[ CONFIRM // %d TURNS ]", allTurns)
+		unit := "TURNS"
+		if selected.external {
+			unit = "REMOTE SESSIONS"
+		}
+		allLabel = fmt.Sprintf("[ CONFIRM // %d %s ]", allTurns, unit)
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
-		selectedLabel = "[B:RUN]"
-		if selected.External {
-			selectedLabel = fmt.Sprintf("[B:DIG %d]", len(m.benchmarkScope.Games))
-			if m.benchmarkCombinations != 1 || len(m.benchmarkScope.Games) == 0 {
-				selectedLabel = "[B:SCOPE]"
-			} else if m.benchmarkSelectedArmed {
-				selectedLabel = fmt.Sprintf("[B:CONFIRM %d]", len(m.benchmarkScope.Games))
-			}
+		selectedLabel = fmt.Sprintf("[B:SCOPE %d]", scopeTurns)
+		if selected.external && m.benchmarkSelectedArmed {
+			selectedLabel = fmt.Sprintf("[B:CONFIRM %d]", scopeTurns)
 		}
 		allLabel = fmt.Sprintf("[A:SUITE %d]", allTurns)
 		if m.benchmarkPlanning {
@@ -853,14 +907,9 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		}
 	}
 	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
-		selectedLabel = "[RUN]"
-		if selected.External {
-			selectedLabel = fmt.Sprintf("[D:%d]", len(m.benchmarkScope.Games))
-			if m.benchmarkCombinations != 1 || len(m.benchmarkScope.Games) == 0 {
-				selectedLabel = "[SCOPE]"
-			} else if m.benchmarkSelectedArmed {
-				selectedLabel = fmt.Sprintf("[D:%d?]", len(m.benchmarkScope.Games))
-			}
+		selectedLabel = fmt.Sprintf("[S:%d]", scopeTurns)
+		if selected.external && m.benchmarkSelectedArmed {
+			selectedLabel = fmt.Sprintf("[S:%d?]", scopeTurns)
 		}
 		allLabel = fmt.Sprintf("[ALL:%d]", allTurns)
 		if m.benchmarkPlanning {
@@ -879,8 +928,8 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		stopLabel = "[STOP]"
 	}
 	primary := []benchmarkControlSegment{
-		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(tasks) > 0},
-		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, m.benchmarkCombinations, len(allTasks))},
+		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(suites) > 0},
+		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, allTurns, len(m.benchmarkAllTasks()))},
 	}
 	secondary := []benchmarkControlSegment{
 		{text: scopeLabel, button: footerButtonBenchmarkScope, enabled: !running && len(m.benchmarkPlan.Models) > 0},
@@ -1004,18 +1053,13 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 	}
 	if height >= 5 {
 		boundary := "HERMETIC STARLARK // BOUNDED STEPS PER CASE"
-		if m.benchmarkSelectedTaskExternal() || strings.HasPrefix(m.benchmarkCurrentTask, "DIGBENCH") {
+		if m.benchmarkSelectedSuiteExternal() || strings.HasPrefix(m.benchmarkCurrentTask, "DIGBENCH") {
 			boundary = "EXTERNAL DIGBENCH // PERSISTED REMOTE SESSION // RANDOM SEED"
 		}
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(boundary, max(width-4, 1), "")))
 	}
 	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
-}
-
-func (m Model) benchmarkSelectedTaskExternal() bool {
-	tasks := m.benchmarkTasks()
-	return len(tasks) > 0 && tasks[m.benchmarkSelectedTask%len(tasks)].External
 }
 
 func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
@@ -1087,7 +1131,7 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		lines = append(lines, style.Render(row.text))
 	}
 	if len(visibleResults) == 0 && m.benchmarkActive == nil && len(lines) < bodyHeight {
-		message := "RUN SELECTED OR RUN ALL TO BEGIN // THIS CONSUMES CODEX QUOTA"
+		message := "RUN SCOPE OR RUN ALL TO BEGIN // THIS CONSUMES CODEX QUOTA"
 		if m.benchmarkRunActive() {
 			message = "WAITING FOR FIRST RESULT"
 		} else if len(m.benchmarkResults) > 0 {
@@ -1192,11 +1236,8 @@ func benchmarkRunKey(result codex.BenchmarkResult) string {
 	if model == "" {
 		model = result.DisplayName
 	}
-	task := string(result.TaskID)
-	if task == "" {
-		task = result.TaskName
-	}
-	return strings.ToLower(model) + "\x00" + strings.ToLower(result.Effort) + "\x00" + strings.ToLower(task)
+	return strings.ToLower(model) + "\x00" + strings.ToLower(result.Effort) + "\x00" +
+		strings.ToLower(string(result.TaskID)) + "\x00" + strings.ToLower(result.TaskName)
 }
 
 func benchmarkTableColumns(width int, results []codex.BenchmarkResult, activeKeys ...string) []benchmarkColumn {

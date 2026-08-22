@@ -349,7 +349,7 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Start recording (Monitor) or open Benchmark Scope |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
-| `b` | Run the selected challenge (Benchmark view only) |
+| `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Stop the active benchmark suite and retain its incomplete trial |
 | `d` | Close the Benchmark Scope screen |
@@ -804,17 +804,19 @@ Neither key is written to preferences or accepted as a command-line argument.
 
 ### Experimental DigBench agentic run
 
-Codexometer includes a deliberately narrow integration for
+Codexometer includes an experimental integration for
 [DigBench](https://digbench.ai/), an external benchmark of discovering unknown
 rules in interactive text games. Supplying `DIGBENCH_API_TOKEN` adds
-**DIGBENCH** to the Benchmark tab's task selector. At launch, Codexometer calls
+**DIGBENCH** to the Benchmark tab's **Suite** selector alongside
+**CODEXOMETER CORE**. At launch, Codexometer calls
 authenticated `GET /games` and uses every game name returned by DigBench; no
-`P-x` catalog is compiled into Codexometer. Select DigBench, open **Scope**, and
-use its additional game-checkbox group to check all, clear all, or choose any
-subset. DigBench also requires exactly one compatible model/reasoning-effort
-pair. **Run Selected** displays the exact remote-session count and requires a
-second confirmation before running the selected games sequentially. DigBench is
-excluded from **Run All** because every game invocation creates a persisted
+`P-x` catalog is compiled into Codexometer. Select the DigBench suite, open
+**Scope**, and use its game, model, and reasoning-level checkboxes to check all,
+clear all, or choose any subset. **Run Scope** executes every selected game
+against every selected compatible model/reasoning-effort pair. **Run All**
+executes every discovered game against every compatible pair. Both controls
+display the exact remote-session count and require a second confirmation before
+creating those sessions, because every game/pair invocation creates a persisted
 remote session with a random seed.
 
 Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
@@ -882,28 +884,35 @@ fair deterministic cross-model ranking.
 
 ### Deterministic benchmark
 
-The Benchmark tab discovers models visible to the active benchmark
-authentication and their supported reasoning efforts through `model/list`.
-Initially every compatible
-model/effort pair is selected. Press `s` or click **Scope** to open a separate
-selection screen: every model and reasoning level has its own checkbox, and
-each group has a **Check All** control that changes to **Clear All** when the
-whole group is selected. The supported reasoning levels shown beside each
-model dim immediately when they fall outside the selected scope. Click a row,
-or use `Up`/`Down` and `Space`/`Enter`, then click **Done** or press `d`/`Esc`
-to return. Unsupported model/effort intersections are never counted or run.
+The Benchmark tab groups its built-in deterministic challenges under the
+**CODEXOMETER CORE** suite. Use the **Suite** arrows to switch to another
+available source such as **DIGBENCH**; external suites are hidden when their
+credentials or launch-time catalog are unavailable. The selector reserves a
+stable responsive track for the longest suite name, so its controls do not move
+as the selection changes.
 
-Select any challenge with the arrow buttons; the selector reserves a stable
-responsive track for the longest name, so its controls do not move as the
-selection changes. Press `b` or click **Run Selected** to run that challenge
-against the selected scope. **Run All** runs the complete challenge catalog
-against that same scope. Because that means `challenge count × selected
-model/effort pair count` model turns, Codexometer displays the exact total and
-requires a second confirmation within five seconds. A fresh, ephemeral,
-read-only app-server thread is used for each trial, so benchmark history does
-not clutter normal Codex sessions. The turns still consume the same account
-quota shown by Codexometer unless a benchmark API key is supplied; with a key,
-they use standard usage-based API billing instead.
+Codexometer discovers models visible to the active benchmark authentication and
+their supported reasoning efforts through `model/list`. Initially every Core
+benchmark and every compatible model/effort pair is selected. Press `s` or
+click **Scope** to open a separate selection screen: every Core benchmark,
+model, and reasoning level has its own checkbox, and each group has a **Check
+All** control that changes to **Clear All** when the whole group is selected.
+The supported reasoning levels shown beside each model dim immediately when
+they fall outside the selected scope. Click a row, or use `Up`/`Down` and
+`Space`/`Enter`, then click **Done** or press `d`/`Esc` to return. Unsupported
+model/effort intersections are never counted or run.
+
+Press `b` or click **Run Scope** to execute each selected benchmark against
+every selected compatible model/effort pair. The button is enabled whenever
+that scope contains at least one benchmark and one compatible pair, and its
+label shows the resulting turn count. **Run All** deliberately ignores the
+scope and executes every benchmark in the active suite against every compatible
+model/effort pair. Codexometer displays that exact total and requires a second
+confirmation within five seconds. A fresh, ephemeral, read-only app-server
+thread is used for each Core trial, so benchmark history does not clutter normal
+Codex sessions. The turns still consume the same account quota shown by
+Codexometer unless a benchmark API key is supplied; with a key, they use
+standard usage-based API billing instead.
 
 Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
 that deadline, Codexometer requests `turn/interrupt`, waits for the matching
