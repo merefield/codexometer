@@ -522,6 +522,17 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollMonitorPage(1)
 				return m, nil
 			}
+		case "home":
+			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
+				m.benchmarkDetailScroll = 0
+				return m, nil
+			}
+		case "end":
+			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
+				m.prepareBenchmarkDetailTranscript()
+				m.benchmarkDetailScroll = m.benchmarkDetailMaximumScroll()
+				return m, nil
+			}
 		case "p":
 			if m.meterView == viewMonitor {
 				return m.pressFooterButton(footerButtonMonitorStop)

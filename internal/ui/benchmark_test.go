@@ -189,6 +189,21 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 	if model.benchmarkDetailScroll == 0 {
 		t.Fatal("Page Down did not scroll a long benchmark detail")
 	}
+	updated, _ = model.Update(specialKey(tea.KeyPgUp))
+	model = updated.(Model)
+	if model.benchmarkDetailScroll != 0 {
+		t.Fatalf("Page Up did not return to the first detail page: scroll=%d", model.benchmarkDetailScroll)
+	}
+	updated, _ = model.Update(specialKey(tea.KeyEnd))
+	model = updated.(Model)
+	if want := model.benchmarkDetailMaximumScroll(); want == 0 || model.benchmarkDetailScroll != want {
+		t.Fatalf("End detail scroll = %d, want %d", model.benchmarkDetailScroll, want)
+	}
+	updated, _ = model.Update(specialKey(tea.KeyHome))
+	model = updated.(Model)
+	if model.benchmarkDetailScroll != 0 {
+		t.Fatalf("Home did not return to the first detail line: scroll=%d", model.benchmarkDetailScroll)
+	}
 	updated, command = model.Update(tea.MouseClickMsg{X: closeX, Y: closeY, Button: tea.MouseLeft})
 	model = updated.(Model)
 	if command == nil || model.benchmarkDetail != nil || model.benchmarkSelectedRun != benchmarkRunKey(result) {
