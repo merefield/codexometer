@@ -146,7 +146,7 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 		t.Fatal("benchmark row click did not open its detail")
 	}
 	output := ansi.Strip(model.render())
-	for _, want := range []string{"RUN DETAIL", benchmarkDetailCopyLabel, "RESULT // PASS", "Detail Model", "TOTAL 4321", "PROMPT //", "Solve the benchmark-only prompt", "RESPONSE //", "safe benchmark response"} {
+	for _, want := range []string{"RUN DETAIL", benchmarkDetailCloseLabel, benchmarkDetailCopyLabel, "RESULT // PASS", "Detail Model", "TOTAL 4321", "PROMPT //", "Solve the benchmark-only prompt", "RESPONSE //", "safe benchmark response"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("benchmark detail missing %q:\n%s", want, output)
 		}
@@ -158,6 +158,13 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 		t.Fatalf("benchmark detail height = %d, want %d", got, model.height)
 	}
 	copyX, copyY := renderedTextStart(t, model, benchmarkDetailCopyLabel)
+	closeX, closeY := renderedTextStart(t, model, benchmarkDetailCloseLabel)
+	if closeY != model.dashboardLayout().meterY {
+		t.Fatalf("Close control y = %d, want top frame y = %d", closeY, model.dashboardLayout().meterY)
+	}
+	if copyY != model.dashboardLayout().meterY+model.dashboardLayout().meterHeight-1 {
+		t.Fatalf("Copy control y = %d, want bottom frame y = %d", copyY, model.dashboardLayout().meterY+model.dashboardLayout().meterHeight-1)
+	}
 	updated, command = model.Update(tea.MouseMotionMsg{X: copyX, Y: copyY})
 	model = updated.(Model)
 	if command != nil || model.hoveredButton != footerButtonBenchmarkCopy {
@@ -182,6 +189,18 @@ func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 	if model.benchmarkDetailScroll == 0 {
 		t.Fatal("Page Down did not scroll a long benchmark detail")
 	}
+	updated, command = model.Update(tea.MouseClickMsg{X: closeX, Y: closeY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.benchmarkDetail != nil || model.benchmarkSelectedRun != benchmarkRunKey(result) {
+		t.Fatal("Close control did not return to the selected matrix row")
+	}
+	model.openBenchmarkDetail(result)
+	updated, command = model.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	model = updated.(Model)
+	if command == nil || model.benchmarkDetail != nil {
+		t.Fatal("X did not close the benchmark detail")
+	}
+	model.openBenchmarkDetail(result)
 	updated, command = model.Update(specialKey(tea.KeyEscape))
 	model = updated.(Model)
 	if command != nil || model.benchmarkDetail != nil || model.benchmarkSelectedRun != benchmarkRunKey(result) {

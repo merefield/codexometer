@@ -54,7 +54,10 @@ type benchmarkControlSegment struct {
 	active  bool
 }
 
-const benchmarkDetailCopyLabel = "[ (C) COPY ]"
+const (
+	benchmarkDetailCopyLabel  = "[ (C) COPY ]"
+	benchmarkDetailCloseLabel = "[ (X) CLOSE ]"
+)
 
 func layoutBenchmarkArea(width, height int) benchmarkGeometry {
 	width = max(width, 1)
@@ -143,8 +146,17 @@ func (m Model) renderBenchmarkDetail(width, height int, colors palette) string {
 	if m.benchmarkDetailActive {
 		detailState = "LIVE RUN DETAIL // IN PROGRESS"
 	}
-	title := fmt.Sprintf("%s // BENCHMARK-ONLY // LINES %d-%d/%d // ESC BACK", detailState, min(scroll+1, len(lines)), end, len(lines))
-	return frameSizedWithTitleAction(width, bodyHeight, ansi.Truncate(title, max(innerWidth-4, 1), ""), m.renderBenchmarkDetailCopy(colors), strings.Join(visible, "\n"), colors.primary, colors)
+	title := fmt.Sprintf("%s // BENCHMARK-ONLY // LINES %d-%d/%d", detailState, min(scroll+1, len(lines)), end, len(lines))
+	return frameSizedWithActions(
+		width,
+		bodyHeight,
+		ansi.Truncate(title, max(innerWidth-4, 1), ""),
+		m.renderBenchmarkDetailControl(benchmarkDetailCloseLabel, footerButtonBenchmarkClose, colors),
+		m.renderBenchmarkDetailControl(benchmarkDetailCopyLabel, footerButtonBenchmarkCopy, colors),
+		strings.Join(visible, "\n"),
+		colors.primary,
+		colors,
+	)
 }
 
 func (m Model) benchmarkDetailLines(width int, colors palette) []string {
@@ -256,15 +268,15 @@ func (m Model) benchmarkDetailResult() (codex.BenchmarkResult, bool) {
 	return result, true
 }
 
-func (m Model) renderBenchmarkDetailCopy(colors palette) string {
+func (m Model) renderBenchmarkDetailControl(label string, button footerButtonID, colors palette) string {
 	style := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background)
-	if m.hoveredButton == footerButtonBenchmarkCopy {
+	if m.hoveredButton == button {
 		style = style.Bold(true).Foreground(colors.accent)
 	}
-	if m.flashedButton == footerButtonBenchmarkCopy {
+	if m.flashedButton == button {
 		style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
 	}
-	return style.Render(benchmarkDetailCopyLabel)
+	return style.Render(label)
 }
 
 func (m Model) benchmarkDetailClipboardText() string {
@@ -1596,7 +1608,7 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	if m.benchmarkDetail != nil {
-		return m.benchmarkDetailCopyAt(x, y)
+		return m.benchmarkDetailButtonAt(x, y)
 	}
 	dashboard := m.dashboardLayout()
 	layout := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
@@ -1617,18 +1629,20 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	return footerButtonNone
 }
 
-func (m Model) benchmarkDetailCopyAt(x, y int) footerButtonID {
+func (m Model) benchmarkDetailButtonAt(x, y int) footerButtonID {
 	if m.meterView != viewBenchmark || m.benchmarkDetail == nil || x < 0 || y < 0 {
 		return footerButtonNone
 	}
 	dashboard := m.dashboardLayout()
-	labelWidth := lipgloss.Width(benchmarkDetailCopyLabel)
-	if dashboard.contentWidth < labelWidth+8 || y != dashboard.meterY {
-		return footerButtonNone
-	}
 	localX := x - 2
-	start := dashboard.contentWidth - labelWidth - 2
-	if localX >= start && localX < start+labelWidth {
+	closeWidth := lipgloss.Width(benchmarkDetailCloseLabel)
+	closeStart := dashboard.contentWidth - closeWidth - 2
+	if dashboard.contentWidth >= closeWidth+8 && y == dashboard.meterY && localX >= closeStart && localX < closeStart+closeWidth {
+		return footerButtonBenchmarkClose
+	}
+	copyWidth := lipgloss.Width(benchmarkDetailCopyLabel)
+	copyStart := dashboard.contentWidth - copyWidth - 2
+	if dashboard.contentWidth >= copyWidth+4 && y == dashboard.meterY+dashboard.meterHeight-1 && localX >= copyStart && localX < copyStart+copyWidth {
 		return footerButtonBenchmarkCopy
 	}
 	return footerButtonNone

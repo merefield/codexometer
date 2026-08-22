@@ -231,6 +231,10 @@ func frameSized(width, height int, title, body string, color imagecolor.Color, c
 }
 
 func frameSizedWithTitleAction(width, height int, title, action, body string, color imagecolor.Color, colors palette) string {
+	return frameSizedWithActions(width, height, title, action, "", body, color, colors)
+}
+
+func frameSizedWithActions(width, height int, title, titleAction, footerAction, body string, color imagecolor.Color, colors palette) string {
 	width = max(width, 1)
 	style := lipgloss.NewStyle().
 		Width(width).
@@ -246,7 +250,13 @@ func frameSizedWithTitleAction(width, height int, title, action, body string, co
 		// reserving one extra row for that border.
 		style = style.Height(height + 1)
 	}
-	return renderFrameTitleWithAction(width, title, action, color, colors) + "\n" + style.Render(body)
+	renderedBody := style.Render(body)
+	if footerAction != "" {
+		lines := strings.Split(renderedBody, "\n")
+		lines[len(lines)-1] = renderFrameFooterWithAction(width, footerAction, color, colors)
+		renderedBody = strings.Join(lines, "\n")
+	}
+	return renderFrameTitleWithAction(width, title, titleAction, color, colors) + "\n" + renderedBody
 }
 
 func renderFrameTitle(width int, title string, color imagecolor.Color, colors palette) string {
@@ -289,6 +299,24 @@ func renderFrameTitleWithAction(width int, title, action string, color imagecolo
 	}
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(color).Background(colors.background)
 	return borderStyle.Render(prefix) + titleStyle.Render(title) + borderStyle.Render(middle) + suffix
+}
+
+func renderFrameFooterWithAction(width int, action string, color imagecolor.Color, colors palette) string {
+	width = max(width, 1)
+	border := lipgloss.RoundedBorder()
+	borderStyle := lipgloss.NewStyle().Foreground(color).Background(colors.background)
+	if width == 1 {
+		return borderStyle.Render(border.Bottom)
+	}
+	if width == 2 {
+		return borderStyle.Render(border.BottomLeft + border.BottomRight)
+	}
+	actionWidth := lipgloss.Width(action)
+	if actionWidth == 0 || width < actionWidth+4 {
+		return borderStyle.Render(border.BottomLeft + strings.Repeat(border.Bottom, width-2) + border.BottomRight)
+	}
+	middleWidth := width - actionWidth - 4
+	return borderStyle.Render(border.BottomLeft+strings.Repeat(border.Bottom, middleWidth)+" ") + action + borderStyle.Render(" "+border.BottomRight)
 }
 
 func countdown(at time.Time) string {
