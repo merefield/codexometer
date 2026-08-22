@@ -140,6 +140,94 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 	}
 }
 
+func TestBenchmarkResultsCopyControlExportsMarkdownTable(t *testing.T) {
+	results := []codex.BenchmarkResult{
+		{
+			TaskName: "PIPE | TASK", Model: "alpha", DisplayName: "Alpha", Effort: "high", Correct: true,
+			Duration: time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 1234}, UsageKnown: true, CostKnown: true, CostUSD: 0.0123,
+		},
+		{
+			TaskName: "FAILED TASK", Model: "zulu", DisplayName: "Zulu", Effort: "low",
+			Duration: 2 * time.Second, Usage: codex.BenchmarkUsage{TotalTokens: 99}, UsageKnown: true, Failure: "wrong result",
+		},
+	}
+	active := codex.BenchmarkResult{
+		Provider: "digbench", TaskName: "DIGBENCH P-1", Model: "live", DisplayName: "Live", Effort: "medium",
+		CurrentLevel: 4, Duration: 3 * time.Second,
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkRunning, benchmarkResults: results, benchmarkActive: &active,
+		benchmarkFilter: benchmarkFilterPass, benchmarkSort: benchmarkSortModel,
+	}
+
+	clipboard := model.benchmarkResultsClipboardText()
+	lines := strings.Split(strings.TrimSuffix(clipboard, "\n"), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("Markdown export lines = %d, want headings, separator, and 3 data rows:\n%s", len(lines), clipboard)
+	}
+	if lines[0] != "| RANK | MODEL | EFFORT | TASK | RESULT | TIME | TOKENS | API EQ |" {
+		t.Fatalf("Markdown headings = %q", lines[0])
+	}
+	if lines[1] != "| --- | --- | --- | --- | --- | --- | --- | --- |" {
+		t.Fatalf("Markdown separator = %q", lines[1])
+	}
+	for _, want := range []string{"PIPE \\| TASK", "FAILED TASK", "IN PROGRESS (P-1, 4)", "~$0.0123"} {
+		if !strings.Contains(clipboard, want) {
+			t.Fatalf("Markdown export missing %q:\n%s", want, clipboard)
+		}
+	}
+	for _, unwanted := range []string{"SHOW //", "[ COST ]", "[ BAL ]", "[ SPEED ]"} {
+		if strings.Contains(clipboard, unwanted) {
+			t.Fatalf("Markdown export contains control text %q:\n%s", unwanted, clipboard)
+		}
+	}
+	if strings.Index(clipboard, "Alpha") > strings.Index(clipboard, "Zulu") {
+		t.Fatalf("Markdown export did not retain the active model sort:\n%s", clipboard)
+	}
+	if !strings.Contains(clipboard, "Zulu") {
+		t.Fatalf("Markdown export obeyed the PASS display filter instead of including all data:\n%s", clipboard)
+	}
+	if got := markdownBenchmarkCell("first\nsecond"); got != "first<br>second" {
+		t.Fatalf("multiline Markdown cell = %q", got)
+	}
+
+	copyX, copyY := renderedTextStart(t, model, benchmarkDetailCopyLabel)
+	dashboard := model.dashboardLayout()
+	geometry := layoutBenchmarkArea(dashboard.contentWidth, dashboard.meterHeight)
+	if wantY := dashboard.meterY + geometry.topHeight + geometry.tableHeight - 1; copyY != wantY {
+		t.Fatalf("matrix Copy control y = %d, want bottom frame y = %d (meter y=%d height=%d, top=%d table=%d)", copyY, wantY, dashboard.meterY, dashboard.meterHeight, geometry.topHeight, geometry.tableHeight)
+	}
+	updated, command := model.Update(tea.MouseMotionMsg{X: copyX, Y: copyY})
+	model = updated.(Model)
+	if command != nil || model.hoveredButton != footerButtonBenchmarkCopy {
+		t.Fatal("result matrix Copy hover was not recorded")
+	}
+	updated, command = model.Update(tea.MouseClickMsg{X: copyX, Y: copyY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.flashedButton != footerButtonBenchmarkCopy {
+		t.Fatal("result matrix Copy click did not issue a clipboard command")
+	}
+	updated, command = model.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	model = updated.(Model)
+	if command == nil || model.flashedButton != footerButtonBenchmarkCopy {
+		t.Fatal("c did not activate result matrix Copy")
+	}
+}
+
+func TestBenchmarkResultsCopyControlIsDisabledWithoutRows(t *testing.T) {
+	model := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark}
+	copyX, copyY := renderedTextStart(t, model, benchmarkDetailCopyLabel)
+	if got := model.benchmarkButtonAt(copyX, copyY); got != footerButtonNone {
+		t.Fatalf("empty result matrix Copy hit target = %d, want none", got)
+	}
+	updated, command := model.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	model = updated.(Model)
+	if command != nil || model.flashedButton == footerButtonBenchmarkCopy {
+		t.Fatal("empty result matrix accepted the Copy shortcut")
+	}
+}
+
 func TestBenchmarkRowClickOpensScrollableBenchmarkOnlyDetail(t *testing.T) {
 	result := codex.BenchmarkResult{
 		TaskID: "merge-ranges", TaskName: "MERGE RANGES", Model: "detail-model", DisplayName: "Detail Model", Effort: "high",

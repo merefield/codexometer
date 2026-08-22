@@ -436,7 +436,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonBenchmarkSelected)
 			}
 		case "c":
-			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && (m.benchmarkDetail != nil || m.benchmarkResultsCopyAvailable()) {
 				return m.pressFooterButton(footerButtonBenchmarkCopy)
 			}
 		case "a":
@@ -985,8 +985,13 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonBenchmarkRankSpeed:
 		m.setBenchmarkRankMode(benchmarkRankSpeed)
 	case footerButtonBenchmarkCopy:
-		if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
-			return m, tea.SetClipboard(m.benchmarkDetailClipboardText())
+		if m.meterView == viewBenchmark {
+			if m.benchmarkDetail != nil {
+				return m, tea.SetClipboard(m.benchmarkDetailClipboardText())
+			}
+			if !m.benchmarkScopeOpen && m.benchmarkResultsCopyAvailable() {
+				return m, tea.SetClipboard(m.benchmarkResultsClipboardText())
+			}
 		}
 	case footerButtonBenchmarkClose:
 		if m.meterView == viewBenchmark {

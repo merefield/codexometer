@@ -1140,7 +1140,24 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		lines = lines[:bodyHeight]
 	}
 	title := "RESULT MATRIX // STANDARD API-EQUIVALENT USD"
-	return frameSized(width, max(height-2, 1), ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
+	copyControl := m.renderBenchmarkTableCopyControl(colors)
+	return frameSizedWithActions(
+		width,
+		max(height-2, 1),
+		ansi.Truncate(title, max(innerWidth-4, 1), ""),
+		"",
+		copyControl,
+		strings.Join(lines, "\n"),
+		colors.primary,
+		colors,
+	)
+}
+
+func (m Model) renderBenchmarkTableCopyControl(colors palette) string {
+	if !m.benchmarkResultsCopyAvailable() {
+		return lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background).Render(benchmarkDetailCopyLabel)
+	}
+	return m.renderBenchmarkDetailControl(benchmarkDetailCopyLabel, footerButtonBenchmarkCopy, colors)
 }
 
 type benchmarkTableRow struct {
@@ -1159,6 +1176,59 @@ func (m Model) orderedBenchmarkResults() []codex.BenchmarkResult {
 		ordered = append(ordered, *active)
 	}
 	return ordered
+}
+
+func (m Model) orderedBenchmarkClipboardResults() []codex.BenchmarkResult {
+	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
+	ordered := sortedBenchmarkResults(m.benchmarkResults, m.benchmarkSort, m.benchmarkSortDescending, rankings)
+	if active := m.currentBenchmarkActive(); active != nil {
+		ordered = append(ordered, *active)
+	}
+	return ordered
+}
+
+func (m Model) benchmarkResultsCopyAvailable() bool {
+	return len(m.benchmarkResults) > 0 || m.benchmarkActive != nil
+}
+
+func (m Model) benchmarkResultsClipboardText() string {
+	results := m.orderedBenchmarkClipboardResults()
+	if len(results) == 0 {
+		return ""
+	}
+
+	headings := []string{"RANK", "MODEL", "EFFORT", "TASK", "RESULT", "TIME", "TOKENS", "API EQ"}
+	var output strings.Builder
+	writeMarkdownBenchmarkRow(&output, headings)
+	writeMarkdownBenchmarkRow(&output, []string{"---", "---", "---", "---", "---", "---", "---", "---"})
+
+	rankings := benchmarkRankings(m.benchmarkResults, m.benchmarkRankMode)
+	activeKey := m.activeBenchmarkKey()
+	for _, result := range results {
+		active := activeKey != "" && benchmarkRunKey(result) == activeKey
+		writeMarkdownBenchmarkRow(&output, benchmarkResultValues(result, rankings, active))
+	}
+	return output.String()
+}
+
+func writeMarkdownBenchmarkRow(output *strings.Builder, values []string) {
+	output.WriteString("|")
+	for _, value := range values {
+		output.WriteString(" ")
+		output.WriteString(markdownBenchmarkCell(value))
+		output.WriteString(" |")
+	}
+	output.WriteString("\n")
+}
+
+func markdownBenchmarkCell(value string) string {
+	value = ansi.Strip(value)
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "|", "\\|")
+	value = strings.ReplaceAll(value, "\n", "<br>")
+	return strings.TrimSpace(value)
 }
 
 func (m Model) benchmarkTableResults() []codex.BenchmarkResult {
@@ -1802,6 +1872,13 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	}
 	if layout.tableHeight >= 3 && localX < layout.width && localY == layout.topHeight+1 {
 		return benchmarkSegmentButtonAt(localX, m.benchmarkFilterLine(max(layout.width-4, 1)))
+	}
+	if layout.tableHeight >= 3 && m.benchmarkResultsCopyAvailable() && localY == layout.topHeight+layout.tableHeight-1 {
+		copyWidth := lipgloss.Width(benchmarkDetailCopyLabel)
+		copyStart := layout.width - copyWidth - 2
+		if layout.width >= copyWidth+4 && localX >= copyStart && localX < copyStart+copyWidth {
+			return footerButtonBenchmarkCopy
+		}
 	}
 	return footerButtonNone
 }
