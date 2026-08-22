@@ -111,9 +111,34 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 func (d *demoFetcher) BenchmarkCombinationCount(context.Context) (int, error) { return 2, nil }
 
 func (d *demoFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.BenchmarkTaskID, emit func(codex.BenchmarkEvent)) {
+	d.RunBenchmarkSuiteScoped(ctx, tasks, d.demoBenchmarkPlan().AllScope(), emit)
+}
+
+func (d *demoFetcher) BenchmarkPlan(context.Context) (codex.BenchmarkPlan, error) {
+	return d.demoBenchmarkPlan(), nil
+}
+
+func (d *demoFetcher) demoBenchmarkPlan() codex.BenchmarkPlan {
+	return codex.BenchmarkPlan{
+		Models: []codex.BenchmarkModelOption{
+			{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Efforts: []string{"medium"}},
+			{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Efforts: []string{"low"}},
+		},
+		Efforts: []string{"low", "medium"},
+	}
+}
+
+func (d *demoFetcher) RunBenchmarkSuiteScoped(ctx context.Context, tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope, emit func(codex.BenchmarkEvent)) {
 	baseResults := []codex.BenchmarkResult{
-		{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "medium", ActualModel: "gpt-5.6-sol", Correct: true, Duration: 12_400 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4_820}, CostUSD: 0.0412, CostKnown: true},
-		{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Effort: "low", ActualModel: "gpt-5.6-terra", Correct: false, Duration: 7_900 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 2_210}, CostUSD: 0.0091, CostKnown: true, Failure: "case 17 returned the wrong answer"},
+		{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Effort: "medium", ActualModel: "gpt-5.6-sol", Correct: true, Duration: 12_400 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 4_820}, UsageKnown: true, CostUSD: 0.0412, CostKnown: true, Interactions: demoBenchmarkInteractions(true)},
+		{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Effort: "low", ActualModel: "gpt-5.6-terra", Correct: false, Duration: 7_900 * time.Millisecond, Usage: codex.BenchmarkUsage{TotalTokens: 2_210}, UsageKnown: true, CostUSD: 0.0091, CostKnown: true, Failure: "case 17 returned the wrong answer", Interactions: demoBenchmarkInteractions(false)},
+	}
+	models, efforts := make(map[string]bool), make(map[string]bool)
+	for _, model := range scope.Models {
+		models[model] = true
+	}
+	for _, effort := range scope.Efforts {
+		efforts[effort] = true
 	}
 	if len(tasks) == 0 {
 		tasks = []codex.BenchmarkTaskID{codex.BenchmarkMergeRanges}
@@ -125,6 +150,9 @@ func (d *demoFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.Bench
 				continue
 			}
 			for _, base := range baseResults {
+				if !models[base.Model] || !efforts[base.Effort] {
+					continue
+				}
 				result := base
 				result.TaskID, result.TaskName = task.ID, task.Name
 				results = append(results, result)
@@ -144,6 +172,18 @@ func (d *demoFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.Bench
 		emit(codex.BenchmarkEvent{Total: len(results), Completed: index + 1, Combinations: 2, CurrentTaskID: result.TaskID, CurrentTask: result.TaskName, CurrentModel: result.DisplayName, CurrentEffort: result.Effort, Result: &result})
 	}
 	emit(codex.BenchmarkEvent{Total: len(results), Completed: len(results), Done: true})
+}
+
+func demoBenchmarkInteractions(passed bool) []codex.BenchmarkInteraction {
+	verdict := "case 17 returned the wrong answer"
+	if passed {
+		verdict = "Submission passed the deterministic verifier."
+	}
+	return []codex.BenchmarkInteraction{
+		{Kind: codex.BenchmarkInteractionPrompt, Content: "Implement the selected deterministic benchmark as one Starlark function and return a JSON object containing its complete source."},
+		{Elapsed: 7 * time.Second, Kind: codex.BenchmarkInteractionResponse, Content: "{\"code\":\"def solve(items):\\n    return items\\n\"}"},
+		{Elapsed: 8 * time.Second, Kind: codex.BenchmarkInteractionVerifier, Content: verdict},
+	}
 }
 
 func main() {

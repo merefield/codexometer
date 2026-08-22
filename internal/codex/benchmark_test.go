@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const correctStarlarkSubmission = `
@@ -250,6 +251,43 @@ func TestRunBenchmarkConsumesStreamedResultAndUsage(t *testing.T) {
 	if !strings.Contains(requests.String(), `"sandbox":"read-only"`) {
 		t.Fatalf("thread request did not use the app-server sandbox spelling: %s", requests.String())
 	}
+	if len(result.Interactions) != 3 || result.Interactions[0].Kind != BenchmarkInteractionPrompt || result.Interactions[1].Kind != BenchmarkInteractionResponse || result.Interactions[2].Kind != BenchmarkInteractionVerifier {
+		t.Fatalf("benchmark interaction transcript = %#v", result.Interactions)
+	}
+	if !strings.Contains(result.Interactions[0].Content, "Starlark language contract") || result.Interactions[1].Content != message || !strings.Contains(result.Interactions[2].Content, "passed") {
+		t.Fatalf("benchmark interaction content = %#v", result.Interactions)
+	}
+	for _, interaction := range result.Interactions {
+		if strings.Contains(interaction.Content, "thread-1") || strings.Contains(interaction.Content, "turn-1") {
+			t.Fatalf("internal app-server ID leaked into benchmark transcript: %#v", result.Interactions)
+		}
+	}
+}
+
+func TestBenchmarkInteractionCaptureIsBoundedAndValidUTF8(t *testing.T) {
+	countBounded := BenchmarkResult{}
+	for index := 0; index < benchmarkInteractionCount+4; index++ {
+		appendBenchmarkInteraction(&countBounded, time.Time{}, BenchmarkInteractionPolicy, "event")
+	}
+	if len(countBounded.Interactions) != benchmarkInteractionCount {
+		t.Fatalf("captured %d interactions, want %d", len(countBounded.Interactions), benchmarkInteractionCount)
+	}
+
+	result := BenchmarkResult{}
+	content := strings.Repeat("x", benchmarkInteractionLimit-1) + "£" + strings.Repeat("y", 10)
+	for index := 0; index < benchmarkInteractionCount+4; index++ {
+		appendBenchmarkInteraction(&result, time.Time{}, BenchmarkInteractionResponse, content)
+	}
+	total := 0
+	for _, interaction := range result.Interactions {
+		total += len(interaction.Content)
+		if !strings.Contains(interaction.Content, "[truncated by Codexometer]") || !utf8.ValidString(interaction.Content) {
+			t.Fatalf("bounded interaction was not valid, visibly truncated UTF-8: %q", interaction.Content[len(interaction.Content)-64:])
+		}
+	}
+	if total > benchmarkTranscriptLimit {
+		t.Fatalf("transcript captured %d bytes, limit is %d", total, benchmarkTranscriptLimit)
+	}
 }
 
 func TestRunBenchmarkFailsClosedWhenUsageIsMissing(t *testing.T) {
@@ -348,6 +386,62 @@ func TestRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
 		!strings.Contains(requestLog, `"threadId":"thread-low"`) ||
 		!strings.Contains(requestLog, `"turnId":"turn-low"`) {
 		t.Fatalf("timed-out turn was not interrupted: %s", requestLog)
+	}
+}
+
+func TestRunBenchmarkSuiteMarksCancelledCurrentTrialStopped(t *testing.T) {
+	server, requests := newFakeBenchmarkServer(
+		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"data": []any{map[string]any{
+				"model": "gpt-5.6-luna", "displayName": "GPT-5.6 Luna",
+				"supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "low"}},
+			}},
+		})},
+		benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-low"}, "model": "gpt-5.6-luna",
+		})},
+		benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(map[string]any{"turn": map[string]string{"id": "turn-low"}})},
+		benchmarkEnvelope{Method: "thread/tokenUsage/updated", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turnId": "turn-low",
+			"tokenUsage": map[string]any{"total": BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5}},
+		})},
+		benchmarkEnvelope{ID: rawJSON(4), Result: rawJSON(map[string]any{})},
+		benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-low", "turn": map[string]any{"id": "turn-low", "status": "interrupted"},
+		})},
+	)
+	original := openBenchmarkAppServer
+	openBenchmarkAppServer = func(context.Context, string) (*appServerSession, error) { return server, nil }
+	t.Cleanup(func() { openBenchmarkAppServer = original })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var events []BenchmarkEvent
+	Client{}.RunBenchmarkSuite(ctx, []BenchmarkTaskID{BenchmarkMergeRanges}, func(event BenchmarkEvent) {
+		events = append(events, event)
+		if event.Active != nil && event.Active.UsageKnown {
+			cancel()
+		}
+	})
+
+	var stopped *BenchmarkResult
+	for _, event := range events {
+		if event.Result != nil && event.Result.Stopped {
+			result := *event.Result
+			stopped = &result
+		}
+	}
+	if stopped == nil || stopped.Correct || stopped.Failure != "" {
+		t.Fatalf("cancelled current trial was not retained as stopped: %#v", stopped)
+	}
+	if len(stopped.Interactions) < 2 || stopped.Interactions[len(stopped.Interactions)-1].Content != "Benchmark stopped before completion." {
+		t.Fatalf("stopped transcript is incomplete: %#v", stopped.Interactions)
+	}
+	final := events[len(events)-1]
+	if !final.Done || !final.Stopped || final.Err != nil || final.Completed != 0 || final.Total != 1 {
+		t.Fatalf("stopped suite final event = %#v", final)
+	}
+	if requestLog := requests.String(); !strings.Contains(requestLog, `"method":"turn/interrupt"`) || !strings.Contains(requestLog, `"turnId":"turn-low"`) {
+		t.Fatalf("Stop did not interrupt the remote turn: %s", requestLog)
 	}
 }
 
@@ -660,8 +754,22 @@ func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 		events = append(events, event)
 	})
 	var efforts []string
-	for _, event := range events {
+	activeEfforts := make(map[string]bool)
+	firstActive, firstResult := -1, -1
+	for index, event := range events {
+		if event.Active != nil {
+			activeEfforts[event.Active.Effort] = true
+			if firstActive < 0 {
+				firstActive = index
+			}
+			if len(event.Active.Interactions) == 0 || event.Active.Interactions[0].Kind != BenchmarkInteractionPrompt {
+				t.Fatalf("active event omitted the benchmark prompt: %#v", event.Active)
+			}
+		}
 		if event.Result != nil {
+			if firstResult < 0 {
+				firstResult = index
+			}
 			if !event.Result.Correct {
 				t.Fatalf("suite result failed: %#v", event.Result)
 			}
@@ -670,6 +778,9 @@ func TestRunBenchmarkSuiteDiscoversAndRunsEveryCombination(t *testing.T) {
 	}
 	if len(efforts) != 2 || efforts[0] != "low" || efforts[1] != "high" {
 		t.Fatalf("suite efforts = %v, want [low high]", efforts)
+	}
+	if !activeEfforts["low"] || !activeEfforts["high"] || firstActive < 0 || firstActive >= firstResult {
+		t.Fatalf("suite active events = %v, first active/result = %d/%d", activeEfforts, firstActive, firstResult)
 	}
 	last := events[len(events)-1]
 	if !last.Done || last.Err != nil || last.Total != 2 || last.Completed != 2 {
@@ -963,6 +1074,22 @@ func TestBenchmarkCombinationsPreserveCatalogOrder(t *testing.T) {
 	}
 	if got[2].model.DisplayName != "model-b" {
 		t.Fatalf("fallback display name = %q", got[2].model.DisplayName)
+	}
+}
+
+func TestBenchmarkPlanFiltersCompatibleModelEffortPairs(t *testing.T) {
+	models := []benchmarkModel{
+		{Model: "model-a", DisplayName: "Model A", SupportedReasoningEfforts: []benchmarkEffortOption{{ReasoningEffort: "low"}, {ReasoningEffort: "high"}}},
+		{Model: "model-b", DisplayName: "Model B", SupportedReasoningEfforts: []benchmarkEffortOption{{ReasoningEffort: "low"}}},
+	}
+	plan := benchmarkPlan(models)
+	if len(plan.Models) != 2 || len(plan.Efforts) != 2 || plan.CombinationCount(plan.AllScope()) != 3 {
+		t.Fatalf("benchmark plan = %#v", plan)
+	}
+	scope := BenchmarkScope{Models: []string{"model-a"}, Efforts: []string{"high"}}
+	combinations := benchmarkCombinations(models, scope)
+	if plan.CombinationCount(scope) != 1 || len(combinations) != 1 || combinations[0].model.Model != "model-a" || combinations[0].effort != "high" {
+		t.Fatalf("scoped combinations = %#v", combinations)
 	}
 }
 
