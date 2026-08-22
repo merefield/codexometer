@@ -1126,6 +1126,18 @@ func TestBenchmarkResultValuesDistinguishUnknownFromObservedZero(t *testing.T) {
 	}
 }
 
+func TestBenchmarkResultValuesShowLiveDigBenchGameAndLevel(t *testing.T) {
+	result := codex.BenchmarkResult{
+		Provider: "digbench", TaskName: "DIGBENCH P-1", CurrentLevel: 4,
+	}
+	if got := benchmarkResultValues(result, nil, true)[4]; got != "IN PROGRESS (P-1, 4)" {
+		t.Fatalf("live DigBench result = %q", got)
+	}
+	if got := benchmarkResultValues(result, nil)[4]; got != "LOSS" {
+		t.Fatalf("completed DigBench result changed to %q", got)
+	}
+}
+
 func TestBenchmarkColumnsRespondToHeadingsValuesAndAvailableWidth(t *testing.T) {
 	results := []codex.BenchmarkResult{{
 		Model: "gpt-5.6-luna", DisplayName: "GPT-5.6 Luna", Effort: "ultra", TaskName: "SHORTEST PATH",
