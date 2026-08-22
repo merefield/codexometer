@@ -21,6 +21,14 @@ const requestTimeout = 15 * time.Second
 type Client struct {
 	Binary    string
 	LiveUsage *LiveUsageReader
+	// BenchmarkAPIKey is used only by isolated benchmark app-server sessions.
+	// Fetch and local monitoring continue to use the prevailing Codex login.
+	BenchmarkAPIKey string
+	// DigBenchToken is retained in memory only and enables the external games
+	// returned by launch-time discovery in the Benchmark tab.
+	DigBenchToken string
+	// DigBenchGames is the launch-time GET /games result available to the TUI.
+	DigBenchGames []string
 }
 
 // FetchTokenUsage reads live telemetry from locally observed Codex sessions.

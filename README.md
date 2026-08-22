@@ -303,7 +303,7 @@ Codexometer deliberately does not:
 - read or copy Codex credential/token files;
 - implement a separate OAuth flow;
 - store access or refresh tokens;
-- send credentials to another service;
+- send Codex credentials to another service;
 - invoke a model merely to discover quota information.
 
 The Monitor and observed quota estimator additionally read locally persisted
@@ -320,10 +320,12 @@ state—not the contents—of Codex's per-thread writer lock. Message text—inc
 the final response carried beside timing metadata—reasoning, commands, tool
 results, and credentials are ignored and never retained from ordinary Codex
 sessions. The sole content-reading exception is a benchmark turn explicitly
-started by Codexometer: its known prompt and visible structured response are
-kept in bounded process memory for the Benchmark run detail view. Reasoning
-events, credentials, request headers, and internal thread, turn, or response
-IDs are not captured.
+started by Codexometer. Its Codexometer-authored policy and prompt, visible
+structured response, and—only for DigBench—sanitized game-tool requests and
+responses are kept in bounded process memory for the Benchmark run detail view.
+Reasoning events, platform instructions, credentials, request headers,
+temporary paths, local scratch-work commands, and internal thread, turn, call,
+or response IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
@@ -349,11 +351,11 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Start recording (Monitor) or open Benchmark Scope |
 | `p` | Stop and take a final up-to-date reading (Monitor view only) |
-| `b` | Run the selected challenge (Benchmark view only) |
+| `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Stop the active benchmark suite and retain its incomplete trial |
 | `d` | Close the Benchmark Scope screen |
-| `[` / `]`, `Left` / `Right` | Select the previous or next challenge |
+| `[` / `]`, `Left` / `Right` | Select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
@@ -613,10 +615,11 @@ The other top-level views are:
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows. Stop performs an immediate final local read
   instead of relying on the latest graph sample.
-- **Benchmark** — runs a selected hermetic coding challenge, or the complete
-  challenge catalog, against every visible model and each reasoning effort
-  that model advertises. Results arrive sequentially in a ranked table with
-  task, pass/fail, wall time, tokens, and estimated standard API-equivalent cost.
+- **Benchmark** — runs the selected scope from the active Core, Extended, or
+  conditional DigBench suite, or the active suite's complete catalog, against
+  the selected or complete set of compatible model/reasoning-effort pairs.
+  Results arrive sequentially in a ranked table with task, outcome, wall time,
+  tokens, and estimated standard API-equivalent cost.
   Filter the table to all, passed, or failed trials. Scroll a long result matrix
   with Page Up, Page Down, or the mouse wheel. Click any column-heading button
   to sort by that field; click it again to reverse the order.
@@ -745,28 +748,186 @@ platform-standard user configuration directory:
 Missing, unreadable, or malformed preferences never prevent startup;
 Codexometer falls back to its safe defaults.
 
+### Benchmark authentication and usage boundary
+
+> [!IMPORTANT]
+> Codexometer's benchmarks are intended for a person running the local client
+> with their own Codex authentication and quota. They are not a way to convert
+> a ChatGPT subscription into general API traffic, re-serve model access, or
+> share one person's included usage with other users. Do not deploy a shared
+> benchmark service backed by one person's subscription. You remain responsible
+> for complying with the terms and policies of OpenAI and each external
+> benchmark provider; this project cannot guarantee that guidance or enforcement
+> will remain unchanged. If you choose to run a benchmark with **Sign in with
+> ChatGPT** subscription authentication, you do so at your own risk.
+
+The justification for supporting the prevailing Codex login is that OpenAI's
+[authentication documentation](https://learn.chatgpt.com/docs/auth) expressly
+distinguishes **Sign in with ChatGPT** for subscription access from API-key
+authentication for usage-based access. OpenAI also documents
+[Codex app-server](https://learn.chatgpt.com/docs/app-server) as the interface
+for embedding Codex into another product, including its ChatGPT login flows. A
+[public clarification from OpenAI's Codex and ChatGPT lead](https://x.com/thsottiaux/status/2090675027670978569)
+further says that using included subscription usage through **Sign in with
+ChatGPT** is fine in official or OSS clients; it identifies converting a
+subscription into API traffic for re-serving or sharing across users as the
+unsupported pattern. That post is useful operational guidance, not a
+contractual guarantee.
+
+Codexometer stays on the client side of that boundary: it invokes the official
+local Codex app-server for the authenticated user, runs bounded user-triggered
+trials, and reports results locally. It does not expose an inference API,
+forward ChatGPT credentials, or offer another user access to the account. For
+unattended automation, CI, or a centrally hosted benchmark service, use an
+appropriately owned API-key-authenticated setup instead; OpenAI recommends API
+key authentication for programmatic Codex CLI workflows and the
+[Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) for automated jobs and CI.
+The separate DigBench token described below authorizes only DigBench and does
+not change how Codex itself is authenticated.
+
+For a clearer billing boundary, supply your own OpenAI API key. A dedicated key
+takes precedence over the prevailing ChatGPT login for **all** benchmark model
+discovery and runs, including DigBench:
+
+```sh
+export CODEXOMETER_BENCHMARK_API_KEY="<openai-api-key>"
+codexometer
+```
+
+`OPENAI_API_KEY` is accepted as a fallback when the dedicated variable is not
+set. Codexometer removes both variables from its normal child environment and
+passes the selected value only in the documented `account/login/start` request
+to a benchmark-only app-server. That server uses a temporary `CODEX_HOME` and
+ephemeral in-memory credential storage, so it neither replaces the normal Codex
+login nor persists the key. API-authenticated trials use standard usage-based
+API billing; quota monitoring continues to use the prevailing Codex login.
+Environment variables may still be visible to other processes running as the
+same operating-system user, so supply secrets only on a trusted local machine.
+Neither key is written to preferences or accepted as a command-line argument.
+
+### Experimental DigBench agentic run
+
+Codexometer includes an experimental integration for
+[DigBench](https://digbench.ai/), an external benchmark of discovering unknown
+rules in interactive text games. Supplying `DIGBENCH_API_TOKEN` adds
+**DIGBENCH** to the Benchmark tab's **Suite** selector alongside the always
+available **CODEXOMETER CORE** and **CODEXOMETER EXTENDED** suites. At launch,
+Codexometer calls
+authenticated `GET /games` and uses every game name returned by DigBench; no
+`P-x` catalog is compiled into Codexometer. Select the DigBench suite, open
+**Scope**, and use its game, model, and reasoning-level checkboxes to check all,
+clear all, or choose any subset. **Run Scope** executes every selected game
+against every selected compatible model/reasoning-effort pair. **Run All**
+executes every discovered game against every compatible pair. Both controls
+display the exact remote-session count and require a second confirmation before
+creating those sessions, because every game/pair invocation creates a persisted
+remote session with a random seed.
+
+Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
+(sign-in is a passwordless email link) and place it in the environment:
+
+```sh
+export DIGBENCH_API_TOKEN="<token>"
+codexometer
+```
+
+The existing headless form remains available for a named exploratory game:
+
+```sh
+codexometer --digbench-game P-1
+```
+
+The published Codex condition is the default: `gpt-5.6-sol` with `high`
+reasoning effort. Override it or the 30-minute hard limit explicitly:
+
+```sh
+codexometer --digbench-game P-3 \
+  --digbench-model gpt-5.6-terra \
+  --digbench-effort medium \
+  --digbench-timeout 20m
+```
+
+The command creates a fresh remote DigBench session, so invoking it is an
+external write as well as a model run that consumes either Codex subscription
+quota or usage-billed API tokens, according to the authentication choice above.
+DigBench persists sessions and currently exposes no deletion endpoint. The
+token is read only
+from `DIGBENCH_API_TOKEN`, is never written to Codexometer preferences, and is
+removed from the process environment before Codex is spawned. It is used only
+by Codexometer's native HTTPS client to start the session. Codex sees only
+session-scoped `get_session` and `step` tools, not the account token.
+
+The game runs in one ephemeral Codex app-server thread with a writable temporary
+workspace and no approval prompts. The model may use its normal local tools for
+notes, matching DigBench's agentic-harness design, but its only game access is
+the scoped dynamic-tool bridge. Step calls are safely retried using DigBench's
+idempotent `step_index` protocol; session creation is never automatically
+retried because that endpoint does not document idempotency.
+
+In the TUI, each selected game run appears immediately in the existing result
+table and can be opened while it is in progress. Its benchmark-only detail view
+shows every Codexometer-authored developer instruction, the complete game prompt
+with the session ID redacted, and the dynamic-tool definitions. It then presents
+each game exchange as a sanitized **Tool Request** and full **Tool Response**,
+followed by the concise **Move** and authoritative **State** representation, so
+the solving workflow remains readable without losing protocol detail. The final
+model response completes the visible
+`Policy → Prompt → Tools → Tool Request → Tool Response → Move → State → Final Response`
+workflow. The **Copy** control exports that complete captured view. DigBench
+session IDs, credentials, request headers,
+temporary paths, local scratch-work commands, internal app-server context, Codex
+platform instructions, and Codex reasoning are never included. **Stop** requests
+interruption of the active Codex turn, retains the captured transcript, and marks
+the row stopped.
+
+The headless command prints the selected game, model, effort, and billing source
+before connecting. It then reports remote-session creation, Codex-turn startup,
+authoritative level/step/status updates after successful game-tool calls, and a
+content-free elapsed-time heartbeat every 15 seconds while Codex is working.
+
+The final line reports `WIN`, `LOSS`, or `INCOMPLETE`, levels beaten, total game
+steps, duration, tokens, and estimated standard API-equivalent cost. A win
+requires the authoritative terminal combination `done: true` and
+`state.status: "completed"`; `game_over` is a loss. Contradictory terminal
+fields fail as a protocol error. DigBench assigns a random game seed and does
+not currently accept a requested seed, so one run is exploratory rather than a
+fair deterministic cross-model ranking.
+
 ### Deterministic benchmark
 
-The Benchmark tab discovers the current account's visible models and their
-supported reasoning efforts through `model/list`. Initially every compatible
-model/effort pair is selected. Press `s` or click **Scope** to open a separate
-selection screen: every model and reasoning level has its own checkbox, and
-each group has a **Check All** control that changes to **Clear All** when the
-whole group is selected. The supported reasoning levels shown beside each
-model dim immediately when they fall outside the selected scope. Click a row,
-or use `Up`/`Down` and `Space`/`Enter`, then click **Done** or press `d`/`Esc`
-to return. Unsupported model/effort intersections are never counted or run.
+The Benchmark tab groups its built-in deterministic challenges into two
+always-available suites: **CODEXOMETER CORE** contains the original Easy and
+Moderate set, while **CODEXOMETER EXTENDED** contains the later Hard set. The
+**Suite** arrows therefore always switch between at least two choices. A third
+**DIGBENCH** choice appears when its credentials and launch-time catalog are
+available. The selector reserves a stable responsive track for the longest
+suite name, so its controls do not move as the selection changes.
 
-Select any challenge with the arrow buttons; the selector reserves a stable
-responsive track for the longest name, so its controls do not move as the
-selection changes. Press `b` or click **Run Selected** to run that challenge
-against the selected scope. **Run All** runs the complete challenge catalog
-against that same scope. Because that means `challenge count × selected
-model/effort pair count` model turns, Codexometer displays the exact total and
-requires a second confirmation within five seconds. A fresh, ephemeral,
-read-only app-server thread is used for each trial, so benchmark history does
-not clutter normal Codex sessions. The turns still consume the same account
-quota shown by Codexometer.
+Codexometer discovers models visible to the active benchmark authentication and
+their supported reasoning efforts through `model/list`. Initially every
+benchmark in each built-in suite and every compatible model/effort pair is
+selected. Press `s` or click **Scope** to open a separate selection screen:
+every benchmark in the active suite, model, and reasoning level has its own
+checkbox, and each group has a **Check All** control that changes to **Clear
+All** when the whole group is selected. Core and Extended retain independent
+benchmark selections when you switch between them.
+
+The supported reasoning levels shown beside each model dim immediately when
+they fall outside the selected scope. Click a row, or use `Up`/`Down` and
+`Space`/`Enter`, then click **Done** or press `d`/`Esc` to return. Unsupported
+model/effort intersections are never counted or run.
+
+Press `b` or click **Run Scope** to execute each selected benchmark against
+every selected compatible model/effort pair. The button is enabled whenever
+that scope contains at least one benchmark and one compatible pair, and its
+label shows the resulting turn count. **Run All** deliberately ignores the
+scope and executes every benchmark in the active suite against every compatible
+model/effort pair. Codexometer displays that exact total and requires a second
+confirmation within five seconds. A fresh, ephemeral, read-only app-server
+thread is used for each built-in trial, so benchmark history does not clutter
+normal Codex sessions. The turns still consume the same account quota shown by
+Codexometer unless a benchmark API key is supplied; with a key, they use
+standard usage-based API billing instead.
 
 Each model/effort trial has a five-minute deadline. If an in-flight turn reaches
 that deadline, Codexometer requests `turn/interrupt`, waits for the matching
@@ -800,8 +961,8 @@ the visible scroll window. Copy uses the terminal's OSC 52 clipboard support,
 which is not available in every terminal.
 
 This transcript is deliberately benchmark-only. It is populated directly by
-the ephemeral thread that Codexometer created for that trial, bounded to 16
-entries of at most 64 KiB each and 128 KiB total, retained only in process
+the ephemeral thread that Codexometer created for that trial, bounded to 4,096
+entries of at most 64 KiB each and 1 MiB total, retained only in process
 memory, and discarded when a new suite starts or Codexometer exits. It does not
 subscribe to or read ordinary Codex conversations, and it excludes reasoning
 events, credentials, request headers, and internal app-server IDs.
@@ -813,15 +974,15 @@ operating system and terminal's normal retention behavior.
 
 Every trial asks the model to return one named Starlark function:
 
-| Challenge | Difficulty | Required behavior | Verification set |
-| --- | --- | --- | --- |
-| **Merge Ranges** | Easy | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
-| **LRU Cache** | Moderate | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
-| **Expression** | Moderate | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
-| **Shortest Path** | Moderate | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
-| **Dependency Scheduler** | Hard | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
-| **Version Resolver** | Hard | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
-| **Event Processor** | Hard | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
+| Suite | Challenge | Difficulty | Required behavior | Verification set |
+| --- | --- | --- | --- | --- |
+| Core | **Merge Ranges** | Easy | Sort inclusive integer ranges and merge every overlapping or adjacent pair into a canonical union. It must handle empty input, duplicates, nesting, negatives, and arbitrary order. | 8 hand-written edge cases + 48 reproducibly generated cases |
+| Core | **LRU Cache** | Moderate | Process integer `put` and `get` operations, update recency, evict the least-recently-used entry, and return both get results and final entries in most-recently-used order. Capacity zero is valid. | 5 hand-written edge cases + 40 reproducibly generated cases |
+| Core | **Expression** | Moderate | Evaluate tokenized non-negative integers with `+`, `-`, `*`, parentheses, normal precedence, and left associativity—without `eval`. | 8 hand-written edge cases + 40 reproducibly generated expressions |
+| Core | **Shortest Path** | Moderate | Return the minimum four-direction move count through a rectangular blocked/open grid, or `-1` when no route exists. | 5 hand-written edge cases + 40 reproducibly generated mazes |
+| Extended | **Dependency Scheduler** | Hard | Find the minimum makespan for a small dependency DAG with job durations and a limited number of identical workers. Correct solutions must reason about precedence, concurrency, and cases where immediately starting every available job is not optimal. | 6 hand-written edge cases + 8 reproducibly generated DAGs |
+| Extended | **Version Resolver** | Hard | Select one version per package while satisfying inclusive dependency ranges and exact conflicts, then return the lexicographically greatest valid solution. | 5 hand-written edge cases + 12 reproducibly generated catalogs |
+| Extended | **Event Processor** | Hard | Reorder ledger events by sequence and apply idempotency, transfers, freezes, reversals, failure precedence, and a canonical audit result. | 5 hand-written edge cases + 10 reproducibly generated event streams |
 
 The difficulty labels are documentation rather than part of the terminal names.
 Hard challenges deliberately combine more rules or require bounded search, which

@@ -24,8 +24,8 @@ const (
 	benchmarkInterruptTimeout = 15 * time.Second
 	benchmarkCodeLimit        = 64 * 1024
 	benchmarkInteractionLimit = 64 * 1024
-	benchmarkTranscriptLimit  = 128 * 1024
-	benchmarkInteractionCount = 16
+	benchmarkTranscriptLimit  = 1024 * 1024
+	benchmarkInteractionCount = 4096
 	benchmarkStepLimit        = 250_000
 	benchmarkHardStepLimit    = 2_000_000
 
@@ -99,10 +99,15 @@ type BenchmarkResponseUsage struct {
 type BenchmarkInteractionKind string
 
 const (
-	BenchmarkInteractionPrompt   BenchmarkInteractionKind = "prompt"
-	BenchmarkInteractionResponse BenchmarkInteractionKind = "response"
-	BenchmarkInteractionPolicy   BenchmarkInteractionKind = "policy"
-	BenchmarkInteractionVerifier BenchmarkInteractionKind = "verifier"
+	BenchmarkInteractionPrompt       BenchmarkInteractionKind = "prompt"
+	BenchmarkInteractionResponse     BenchmarkInteractionKind = "response"
+	BenchmarkInteractionPolicy       BenchmarkInteractionKind = "policy"
+	BenchmarkInteractionTools        BenchmarkInteractionKind = "tools"
+	BenchmarkInteractionTool         BenchmarkInteractionKind = "tool request"
+	BenchmarkInteractionToolResponse BenchmarkInteractionKind = "tool response"
+	BenchmarkInteractionVerifier     BenchmarkInteractionKind = "verifier"
+	BenchmarkInteractionMove         BenchmarkInteractionKind = "move"
+	BenchmarkInteractionState        BenchmarkInteractionKind = "state"
 )
 
 // BenchmarkInteraction is content emitted only by a benchmark turn that
@@ -138,6 +143,12 @@ type BenchmarkResult struct {
 	ToolType      string
 	Failure       string
 	Interactions  []BenchmarkInteraction
+	Provider      string
+	GameStatus    string
+	CurrentLevel  int
+	LevelsBeaten  int
+	MaxLevel      int
+	Steps         int
 }
 
 // BenchmarkEvent incrementally reports discovery, execution, and results.
@@ -161,6 +172,7 @@ type BenchmarkEvent struct {
 type BenchmarkPlan struct {
 	Models  []BenchmarkModelOption
 	Efforts []string
+	Games   []string
 }
 
 // BenchmarkModelOption is one selectable model and its supported efforts.
@@ -175,11 +187,12 @@ type BenchmarkModelOption struct {
 type BenchmarkScope struct {
 	Models  []string
 	Efforts []string
+	Games   []string
 }
 
 // AllScope selects every model and effort in the plan.
 func (p BenchmarkPlan) AllScope() BenchmarkScope {
-	scope := BenchmarkScope{Efforts: append([]string(nil), p.Efforts...)}
+	scope := BenchmarkScope{Efforts: append([]string(nil), p.Efforts...), Games: append([]string(nil), p.Games...)}
 	for _, model := range p.Models {
 		scope.Models = append(scope.Models, model.Model)
 	}
@@ -257,9 +270,11 @@ type appServerSession struct {
 	readErrors            chan error
 	done                  chan struct{}
 	stop                  sync.Once
+	experimentalAPI       bool
 	experimentalRawEvents bool
 	turnTimeout           time.Duration
 	interruptTimeout      time.Duration
+	temporaryCodexHome    string
 }
 
 type lockedBuffer struct {
@@ -292,7 +307,7 @@ func (c Client) BenchmarkCombinationCount(ctx context.Context) (int, error) {
 // BenchmarkPlan returns the visible model/effort catalog without starting a
 // model turn.
 func (c Client) BenchmarkPlan(ctx context.Context) (BenchmarkPlan, error) {
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
 		return BenchmarkPlan{}, err
 	}
@@ -301,7 +316,9 @@ func (c Client) BenchmarkPlan(ctx context.Context) (BenchmarkPlan, error) {
 	if err != nil {
 		return BenchmarkPlan{}, err
 	}
-	return benchmarkPlan(models), nil
+	plan := benchmarkPlan(models)
+	plan.Games = append([]string(nil), c.DigBenchGames...)
+	return plan, nil
 }
 
 // RunBenchmarkSuite runs each selected deterministic task once for every
@@ -323,12 +340,24 @@ func (c Client) runBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 	if emit == nil {
 		emit = func(BenchmarkEvent) {}
 	}
+	if len(taskIDs) == 1 {
+		if isDigBenchTask(taskIDs[0]) {
+			c.runDigBenchBenchmarkSuite(ctx, taskIDs[0], emit, scopes...)
+			return
+		}
+	}
+	for _, id := range taskIDs {
+		if isDigBenchTask(id) {
+			emit(benchmarkTerminalEvent(ctx, 0, 0, 0, errors.New("DigBench must be run separately from deterministic benchmarks")))
+			return
+		}
+	}
 	definitions, err := resolveBenchmarkTasks(taskIDs)
 	if err != nil {
 		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
 		return
 	}
-	server, err := openBenchmarkAppServer(ctx, c.Binary)
+	server, err := openBenchmarkAppServer(ctx, c.Binary, c.BenchmarkAPIKey)
 	if err != nil {
 		emit(benchmarkTerminalEvent(ctx, 0, 0, 0, err))
 		return
@@ -384,6 +413,10 @@ func (c Client) runBenchmarkSuite(ctx context.Context, taskIDs []BenchmarkTaskID
 	emit(BenchmarkEvent{Total: total, Completed: completed, Combinations: len(combinations), Done: true})
 }
 
+func startAppServer(ctx context.Context, binary, apiKey string) (*appServerSession, error) {
+	return startAppServerWithExperimentalUsage(ctx, binary, strings.TrimSpace(apiKey), true)
+}
+
 func benchmarkTerminalEvent(ctx context.Context, total, completed, combinations int, err error) BenchmarkEvent {
 	stopped := errors.Is(ctx.Err(), context.Canceled)
 	if stopped {
@@ -408,29 +441,47 @@ func markBenchmarkStopped(result *BenchmarkResult) {
 	appendBenchmarkInteraction(result, startedAt, BenchmarkInteractionVerifier, "Benchmark stopped before completion.")
 }
 
-func startAppServer(ctx context.Context, binary string) (*appServerSession, error) {
-	return startAppServerWithExperimentalUsage(ctx, binary, true)
-}
-
-func startAppServerWithExperimentalUsage(ctx context.Context, binary string, experimental bool) (*appServerSession, error) {
+func startAppServerWithExperimentalUsage(ctx context.Context, binary, apiKey string, experimental bool) (*appServerSession, error) {
 	if strings.TrimSpace(binary) == "" {
 		binary = "codex"
+	}
+	args := []string{"app-server", "--stdio"}
+	temporaryCodexHome := ""
+	if apiKey != "" {
+		var err error
+		temporaryCodexHome, err = os.MkdirTemp("", "codexometer-benchmark-auth-")
+		if err != nil {
+			return nil, fmt.Errorf("create isolated benchmark Codex home: %w", err)
+		}
+		args = append(args, "-c", `cli_auth_credentials_store="ephemeral"`)
+	}
+	removeTemporaryHome := func() {
+		if temporaryCodexHome != "" {
+			_ = os.RemoveAll(temporaryCodexHome)
+		}
 	}
 	// Calls remain context-bound, but the short-lived process is closed
 	// explicitly so a cancelled benchmark still has a chance to send and confirm
 	// turn/interrupt before teardown.
-	cmd := exec.Command(binary, "app-server", "--stdio")
+	cmd := exec.Command(binary, args...)
+	cmd.Env = environmentWithout(os.Environ(), "DIGBENCH_API_TOKEN", "CODEXOMETER_BENCHMARK_API_KEY", "OPENAI_API_KEY")
+	if temporaryCodexHome != "" {
+		cmd.Env = environmentWith(cmd.Env, "CODEX_HOME", temporaryCodexHome)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		removeTemporaryHome()
 		return nil, fmt.Errorf("open Codex input: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		removeTemporaryHome()
 		return nil, fmt.Errorf("open Codex output: %w", err)
 	}
 	stderr := &lockedBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		removeTemporaryHome()
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("Codex CLI not found; install it or pass --codex PATH")
 		}
@@ -439,7 +490,9 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	server := &appServerSession{
 		cmd: cmd, stdin: stdin, encoder: json.NewEncoder(stdin),
 		stderr: stderr, envelopes: make(chan benchmarkEnvelope, 64), readErrors: make(chan error, 1), done: make(chan struct{}),
+		experimentalAPI:       experimental,
 		experimentalRawEvents: experimental,
+		temporaryCodexHome:    temporaryCodexHome,
 	}
 	go server.readLoop(json.NewDecoder(bufio.NewReader(stdout)))
 	initialize := map[string]any{
@@ -451,7 +504,7 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 	if _, err := server.call(ctx, "initialize", initialize, nil); err != nil {
 		server.close()
 		if experimental && experimentalAPIUnsupported(err) {
-			return startAppServerWithExperimentalUsage(ctx, binary, false)
+			return startAppServerWithExperimentalUsage(ctx, binary, apiKey, false)
 		}
 		return nil, fmt.Errorf("initialize Codex app-server: %w", err)
 	}
@@ -459,7 +512,45 @@ func startAppServerWithExperimentalUsage(ctx context.Context, binary string, exp
 		server.close()
 		return nil, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
+	if apiKey != "" {
+		result, loginErr := server.call(ctx, "account/login/start", map[string]any{
+			"type": "apiKey", "apiKey": apiKey,
+		}, nil)
+		if loginErr != nil {
+			server.close()
+			return nil, fmt.Errorf("authenticate benchmark Codex app-server with API key: %w", loginErr)
+		}
+		var login struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(result, &login) != nil || login.Type != "apiKey" {
+			server.close()
+			return nil, errors.New("Codex returned an invalid API-key login response")
+		}
+	}
 	return server, nil
+}
+
+func environmentWithout(environment []string, names ...string) []string {
+	excluded := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		excluded[strings.ToUpper(name)] = struct{}{}
+	}
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		key, _, found := strings.Cut(entry, "=")
+		if found {
+			if _, remove := excluded[strings.ToUpper(key)]; remove {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+func environmentWith(environment []string, name, value string) []string {
+	return append(environmentWithout(environment, name), name+"="+value)
 }
 
 func experimentalAPIUnsupported(err error) bool {
@@ -491,31 +582,38 @@ func (s *appServerSession) readLoop(decoder *json.Decoder) {
 }
 
 func (s *appServerSession) nextEnvelope(ctx context.Context) (benchmarkEnvelope, error) {
+	envelope, _, err := s.nextEnvelopeOrHeartbeat(ctx, nil)
+	return envelope, err
+}
+
+func (s *appServerSession) nextEnvelopeOrHeartbeat(ctx context.Context, heartbeat <-chan time.Time) (benchmarkEnvelope, bool, error) {
 	// Drain decoded protocol messages before observing a terminal decoder error.
 	// A short-lived server may write its final response and close stdout so close
 	// together that both channels are ready at once.
 	select {
 	case envelope := <-s.envelopes:
-		return envelope, nil
+		return envelope, false, nil
 	default:
 	}
 	select {
 	case <-ctx.Done():
-		return benchmarkEnvelope{}, ctx.Err()
+		return benchmarkEnvelope{}, false, ctx.Err()
+	case <-heartbeat:
+		return benchmarkEnvelope{}, true, nil
 	case <-s.done:
-		return benchmarkEnvelope{}, errors.New("Codex app-server session closed")
+		return benchmarkEnvelope{}, false, errors.New("Codex app-server session closed")
 	case err := <-s.readErrors:
 		select {
 		case envelope := <-s.envelopes:
-			return envelope, nil
+			return envelope, false, nil
 		default:
 		}
 		if errors.Is(err, io.EOF) {
-			return benchmarkEnvelope{}, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
+			return benchmarkEnvelope{}, false, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
 		}
-		return benchmarkEnvelope{}, err
+		return benchmarkEnvelope{}, false, err
 	case envelope := <-s.envelopes:
-		return envelope, nil
+		return envelope, false, nil
 	}
 }
 
@@ -533,6 +631,10 @@ func (s *appServerSession) close() {
 			_ = s.cmd.Wait()
 		}
 	})
+	if s.temporaryCodexHome != "" {
+		_ = os.RemoveAll(s.temporaryCodexHome)
+		s.temporaryCodexHome = ""
+	}
 }
 
 func (s *appServerSession) call(
@@ -1249,21 +1351,35 @@ func (s *appServerSession) readUntilNotification(ctx context.Context, accept fun
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		var envelope benchmarkEnvelope
-		if len(s.pending) > 0 {
-			envelope = s.pending[0]
-			s.pending = s.pending[1:]
-		} else {
-			var err error
-			envelope, err = s.nextEnvelope(ctx)
-			if err != nil {
-				return nil, err
-			}
+		envelope, err := s.nextPendingEnvelope(ctx)
+		if err != nil {
+			return nil, err
 		}
 		if envelope.Method != "" && accept(envelope.Method, envelope.Params) {
 			return envelope.Params, nil
 		}
 	}
+}
+
+func (s *appServerSession) nextPendingEnvelope(ctx context.Context) (benchmarkEnvelope, error) {
+	envelope, _, err := s.nextPendingEnvelopeOrHeartbeat(ctx, nil)
+	return envelope, err
+}
+
+func (s *appServerSession) nextPendingEnvelopeOrHeartbeat(ctx context.Context, heartbeat <-chan time.Time) (benchmarkEnvelope, bool, error) {
+	if len(s.pending) > 0 {
+		envelope := s.pending[0]
+		s.pending = s.pending[1:]
+		return envelope, false, nil
+	}
+	return s.nextEnvelopeOrHeartbeat(ctx, heartbeat)
+}
+
+func (s *appServerSession) respond(id json.RawMessage, result any) error {
+	if len(id) == 0 {
+		return errors.New("app-server request omitted id")
+	}
+	return s.encoder.Encode(map[string]any{"id": id, "result": result})
 }
 
 var benchmarkOutputSchema = map[string]any{
