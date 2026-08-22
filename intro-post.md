@@ -48,7 +48,7 @@ Each trial appears in the result matrix as soon as it starts and remains clickab
 
 You can enter and leave a live detail view without interrupting the run, navigate long transcripts with the keyboard, and stop an active suite while retaining completed work and the captured incomplete result.
 
-Deterministic suites can be ranked with cost-, speed-, or balanced weighting. External randomized suites remain deliberately unranked.
+Deterministic suites can be ranked with cost-, speed-, or balanced weighting. DigBench uses the same controls for a separate observed-run ranking, with the clear caveat that its server-assigned random seeds make individual attempts exploratory rather than controlled model comparisons.
 
 ## Optional DigBench integration
 

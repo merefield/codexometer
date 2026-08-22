@@ -1214,29 +1214,39 @@ func TestBenchmarkRankingPrioritizesCorrectnessThenMeasuredEfficiency(t *testing
 	}
 }
 
-func TestBenchmarkRankIgnoresExternalSuiteResults(t *testing.T) {
+func TestBenchmarkRankRanksDigBenchObservedRunsSeparately(t *testing.T) {
 	external := []codex.BenchmarkResult{
 		{Provider: "digbench", Model: "slow", DisplayName: "Slow", Effort: "high", TaskName: "DIGBENCH P-1", Correct: true, Duration: time.Minute, CostKnown: true, CostUSD: 1},
-		{Provider: "digbench", Model: "fast", DisplayName: "Fast", Effort: "high", TaskName: "DIGBENCH P-2", Duration: time.Second, CostKnown: true, CostUSD: 0.01},
+		{Provider: "digbench", Model: "fast", DisplayName: "Fast", Effort: "high", TaskName: "DIGBENCH P-2", Correct: true, Duration: time.Second, CostKnown: true, CostUSD: 0.01},
 	}
 	rankings := benchmarkRankings(external)
-	if len(rankings) != 0 {
-		t.Fatalf("external results received hidden rankings: %v", rankings)
+	if rank, ranked := benchmarkResultRank(external[0], rankings); !ranked || rank != 2 {
+		t.Fatalf("slow DigBench rank = %d, %v; want #2", rank, ranked)
+	}
+	if rank, ranked := benchmarkResultRank(external[1], rankings); !ranked || rank != 1 {
+		t.Fatalf("fast DigBench rank = %d, %v; want #1", rank, ranked)
+	}
+	if got := benchmarkResultValues(external[1], rankings)[0]; got != "#1" {
+		t.Fatalf("DigBench rank column = %q, want #1", got)
 	}
 	ordered := sortedBenchmarkResults(external, benchmarkSortRank, false, rankings)
-	if ordered[0].DisplayName != "Slow" || ordered[1].DisplayName != "Fast" {
-		t.Fatalf("rank sort reordered unranked external trials: %#v", ordered)
+	if ordered[0].DisplayName != "Fast" || ordered[1].DisplayName != "Slow" {
+		t.Fatalf("DigBench rank sort order = %#v", ordered)
 	}
 
-	deterministic := codex.BenchmarkResult{Model: "fast", DisplayName: "Fast", Effort: "high", Correct: true, Duration: time.Second, CostKnown: true, CostUSD: 0.01}
-	mixed := append([]codex.BenchmarkResult{external[1]}, deterministic)
+	deterministic := codex.BenchmarkResult{Model: "slow", DisplayName: "Slow", Effort: "high", Correct: true, Duration: time.Hour, CostKnown: true, CostUSD: 10}
+	mixed := append(append([]codex.BenchmarkResult{}, external...), deterministic)
 	rankings = benchmarkRankings(mixed)
-	if _, ranked := benchmarkResultRank(external[1], rankings); ranked {
-		t.Fatalf("external result inherited deterministic combination rank: %v", rankings)
+	if rank, ranked := benchmarkResultRank(deterministic, rankings); !ranked || rank != 1 {
+		t.Fatalf("single deterministic combination rank = %d, %v; want independent #1", rank, ranked)
 	}
-	ordered = sortedBenchmarkResults(mixed, benchmarkSortRank, true, rankings)
-	if ordered[0].Provider != "" || ordered[1].Provider != "digbench" {
-		t.Fatalf("unranked external result was not kept after ranked results: %#v", ordered)
+	if rank, _ := benchmarkResultRank(external[0], rankings); rank != 2 {
+		t.Fatalf("DigBench rank changed after mixing providers: %v", rankings)
+	}
+
+	unsupported := codex.BenchmarkResult{Provider: "other", Model: "fast", Effort: "high", Correct: true}
+	if _, ranked := benchmarkResultRank(unsupported, benchmarkRankings(append(mixed, unsupported))); ranked {
+		t.Fatalf("unsupported external provider received a rank")
 	}
 }
 

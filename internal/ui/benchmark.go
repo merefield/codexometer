@@ -1428,9 +1428,8 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 			leftRank, leftRanked := benchmarkResultRank(ordered[left], rankings)
 			rightRank, rightRanked := benchmarkResultRank(ordered[right], rankings)
 			if leftRanked != rightRanked {
-				// Rank is not meaningful for external/randomized suites. Keep those
-				// rows unranked and after ranked deterministic results regardless of
-				// sort direction.
+				// Keep unsupported external providers after ranked results regardless
+				// of sort direction.
 				return leftRanked
 			}
 			if !leftRanked {
@@ -1458,10 +1457,10 @@ func sortedBenchmarkResults(results []codex.BenchmarkResult, column benchmarkSor
 }
 
 func benchmarkResultRank(result codex.BenchmarkResult, rankings map[string]int) (int, bool) {
-	if result.Provider != "" || result.Stopped {
+	if result.Stopped || !benchmarkRankEligible(result) {
 		return 0, false
 	}
-	value := rankings[benchmarkCombinationKey(result)]
+	value := rankings[benchmarkRankKey(result)]
 	return value, value > 0
 }
 
@@ -1485,20 +1484,53 @@ func benchmarkCombinationKey(result codex.BenchmarkResult) string {
 	return strings.ToLower(model) + "\x00" + strings.ToLower(result.Effort)
 }
 
+func benchmarkRankEligible(result codex.BenchmarkResult) bool {
+	return result.Provider == "" || strings.EqualFold(strings.TrimSpace(result.Provider), "digbench")
+}
+
+func benchmarkRankProvider(result codex.BenchmarkResult) string {
+	return strings.ToLower(strings.TrimSpace(result.Provider))
+}
+
+func benchmarkRankKey(result codex.BenchmarkResult) string {
+	provider := benchmarkRankProvider(result)
+	if provider == "" {
+		return benchmarkCombinationKey(result)
+	}
+	return provider + "\x00" + benchmarkCombinationKey(result)
+}
+
 // benchmarkRankings compares model/effort combinations across all completed
-// rows currently in the matrix. Correctness dominates a weighted blend of the
-// independent cost and elapsed-time ranks.
+// rows currently in each eligible provider's result set. Correctness dominates
+// a weighted blend of the independent cost and elapsed-time ranks. Provider
+// groups remain independent so observed DigBench ranks cannot mix with the
+// deterministic suites.
 func benchmarkRankings(results []codex.BenchmarkResult, modes ...benchmarkRankMode) map[string]int {
 	mode := benchmarkRankBalanced
 	if len(modes) > 0 {
 		mode = modes[0]
 	}
-	byKey := make(map[string]*benchmarkRankSummary)
+	byProvider := make(map[string][]codex.BenchmarkResult)
 	for _, result := range results {
-		if result.Stopped || result.Provider != "" {
+		if result.Stopped || !benchmarkRankEligible(result) {
 			continue
 		}
-		key := benchmarkCombinationKey(result)
+		provider := benchmarkRankProvider(result)
+		byProvider[provider] = append(byProvider[provider], result)
+	}
+	rankings := make(map[string]int)
+	for _, providerResults := range byProvider {
+		for key, rank := range benchmarkProviderRankings(providerResults, mode) {
+			rankings[key] = rank
+		}
+	}
+	return rankings
+}
+
+func benchmarkProviderRankings(results []codex.BenchmarkResult, mode benchmarkRankMode) map[string]int {
+	byKey := make(map[string]*benchmarkRankSummary)
+	for _, result := range results {
+		key := benchmarkRankKey(result)
 		summary := byKey[key]
 		if summary == nil {
 			summary = &benchmarkRankSummary{key: key, costComplete: true}

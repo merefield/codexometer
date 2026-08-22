@@ -890,8 +890,21 @@ steps, duration, tokens, and estimated standard API-equivalent cost. A win
 requires the authoritative terminal combination `done: true` and
 `state.status: "completed"`; `game_over` is a loss. Contradictory terminal
 fields fail as a protocol error. DigBench assigns a random game seed and does
-not currently accept a requested seed, so one run is exploratory rather than a
-fair deterministic cross-model ranking.
+not currently accept a requested seed. Codexometer still assigns an
+**observed-run rank** to completed DigBench rows, calculated independently from
+Core and Extended results with the same correctness-first cost/time formula
+described below. A win counts as a pass; a loss or incomplete attempt counts as
+a failure; stopped rows remain unranked. Levels beaten, steps, and token counts
+remain visible diagnostics but do not affect the rank.
+
+This rank compares the attempts Codexometer actually observed; it is not a
+controlled or definitive model ranking. Different model/effort combinations
+may receive game instances whose difficulty varies with their server-assigned
+seed, and the API cannot currently pair combinations on the same seed. Treat a
+single run as exploratory, and use repeated runs with aggregate outcomes when
+drawing broader conclusions. Rankings shown while a suite is running are also
+provisional because combinations may temporarily have different numbers of
+completed games.
 
 ### Deterministic benchmark
 
@@ -996,6 +1009,11 @@ combination across every completed row currently in the result matrix. It uses
 ordinal cost and time positions—not raw dollars and seconds—so the distance
 between first and second place on either axis is always one rank position,
 regardless of the difference in the underlying measurements.
+
+Rankings are isolated by benchmark provider: deterministic Core/Extended
+results and randomized DigBench results are never combined. For DigBench,
+`PASS` and `FAIL` in the algorithm below mean `WIN` and `LOSS`/`INCOMPLETE`, and
+the seed disclaimer in the DigBench section applies.
 
 The algorithm is:
 
