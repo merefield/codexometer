@@ -360,7 +360,7 @@ codexometer --codex /path/to/codex
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
 | `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
-| `c` | Copy the complete open Benchmark detail to the terminal clipboard |
+| `c` | Copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
 | `q` | Quit |
 | `Esc` | Return from Benchmark detail or Scope; otherwise quit |
@@ -967,11 +967,16 @@ arrive, then changes in place to the final `PASS`, `FAIL`, or `STOPPED` result. 
 requested and actual model, effort, task, outcome, live duration, token classes,
 API-equivalent cost, exact benchmark prompt, visible structured response
 (including the submitted Starlark), policy events, and deterministic-verifier
-result. `Esc` returns to the same selected matrix row. Page keys, arrow keys,
-and the mouse wheel scroll a long detail. Press `c` or click **Copy** in the
-detail title to copy the complete unstyled detail, including interactions below
-the visible scroll window. Copy uses the terminal's OSC 52 clipboard support,
-which is not available in every terminal.
+result. In the matrix, press `c` or click **Copy** at the lower right to export
+a clean Markdown table containing only the eight column headings and every data
+row. The export includes filtered and off-screen rows, retains the current sort
+and rank weighting, and excludes the Show and Rank controls.
+
+`Esc` returns to the same selected matrix row. Page keys, arrow keys, and the
+mouse wheel scroll a long detail. With a detail open, press `c` or click
+**Copy** at the lower right to copy the complete unstyled detail, including
+interactions below the visible scroll window. Both copy actions use the
+terminal's OSC 52 clipboard support, which is not available in every terminal.
 
 This transcript is deliberately benchmark-only. It is populated directly by
 the ephemeral thread that Codexometer created for that trial, bounded to 4,096
@@ -979,9 +984,9 @@ entries of at most 64 KiB each and 1 MiB total, retained only in process
 memory, and discarded when a new suite starts or Codexometer exits. It does not
 subscribe to or read ordinary Codex conversations, and it excludes reasoning
 events, credentials, request headers, and internal app-server IDs.
-Codexometer sends that bounded transcript to the system clipboard only when you
-explicitly press `c` or click **Copy**; the clipboard then falls under your
-operating system and terminal's normal retention behavior.
+Codexometer sends result data or that bounded transcript to the system clipboard
+only when you explicitly press `c` or click **Copy**; the clipboard then falls
+under your operating system and terminal's normal retention behavior.
 
 #### Challenges and difficulty
 

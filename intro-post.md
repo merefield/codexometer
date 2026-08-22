@@ -46,7 +46,7 @@ Each trial appears in the result matrix as soon as it starts and remains clickab
 - move and state transitions for interactive games; and
 - a complete copy-to-clipboard action for sharing or further analysis.
 
-You can enter and leave a live detail view without interrupting the run, navigate long transcripts with the keyboard, and stop an active suite while retaining completed work and the captured incomplete result.
+The result matrix itself can also be copied as a clean Markdown table containing its headings and every result row, without the interactive controls. You can enter and leave a live detail view without interrupting the run, navigate long transcripts with the keyboard, and stop an active suite while retaining completed work and the captured incomplete result.
 
 Deterministic suites can be ranked with cost-, speed-, or balanced weighting. DigBench uses the same controls for a separate observed-run ranking, with the clear caveat that its server-assigned random seeds make individual attempts exploratory rather than controlled model comparisons.
 
