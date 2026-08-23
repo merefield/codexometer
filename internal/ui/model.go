@@ -73,6 +73,9 @@ type Model struct {
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
+	benchmarkResultIndexes   map[string]int
+	benchmarkRunResults      []codex.BenchmarkResult
+	benchmarkRunIndexes      map[string]int
 	benchmarkTotal           int
 	benchmarkCompleted       int
 	benchmarkCurrentModel    string
@@ -83,12 +86,15 @@ type Model struct {
 	benchmarkCombinations    int
 	benchmarkPlan            codex.BenchmarkPlan
 	benchmarkScope           codex.BenchmarkScope
+	benchmarkScopeBeforeEdit codex.BenchmarkScope
 	benchmarkScopeOpen       bool
 	benchmarkScopeCursor     int
 	benchmarkScopeScroll     int
-	benchmarkScopeHover      int
+	benchmarkScopeKeyboard   bool
 	benchmarkSelectedSuite   int
 	benchmarkScopeTasks      map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID
+	benchmarkTasksBeforeEdit map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID
+	benchmarkPairsBeforeEdit int
 	benchmarkFilter          benchmarkResultFilter
 	benchmarkAllArmed        bool
 	benchmarkSelectedArmed   bool
@@ -316,7 +322,9 @@ const (
 	footerButtonBenchmarkRankBalanced
 	footerButtonBenchmarkRankSpeed
 	footerButtonBenchmarkCopy
+	footerButtonBenchmarkClearAll
 	footerButtonBenchmarkClose
+	footerButtonBenchmarkDone
 	footerButtonBenchmarkScope
 	footerButtonBenchmarkStop
 )
@@ -345,15 +353,14 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
-		fetcher:             fetcher,
-		refreshEvery:        refreshEvery,
-		loading:             true,
-		nextRefresh:         time.Now().Add(refreshEvery),
-		benchmarkRankMode:   benchmarkRankBalanced,
-		benchmarkScopeHover: -1,
-		quotaAPIAnchors:     make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:      make(map[string]string),
-		appVersion:          version.Current(),
+		fetcher:           fetcher,
+		refreshEvery:      refreshEvery,
+		loading:           true,
+		nextRefresh:       time.Now().Add(refreshEvery),
+		benchmarkRankMode: benchmarkRankBalanced,
+		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
+		quotaAPIIssues:    make(map[string]string),
+		appVersion:        version.Current(),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -380,13 +387,16 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyPressMsg:
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			m.benchmarkScopeKeyboard = true
+		}
 		switch strings.ToLower(message.String()) {
 		case "ctrl+c":
 			m.cancelBenchmark()
 			return m, tea.Quit
 		case "esc":
 			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
-				m.closeBenchmarkScope()
+				m.cancelBenchmarkScope()
 				return m, nil
 			}
 			if m.meterView == viewBenchmark && m.benchmarkDetail != nil {
@@ -402,7 +412,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonMonitorGo)
 			}
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && len(m.benchmarkPlan.Models) > 0 {
-				return m.pressFooterButton(footerButtonBenchmarkScope)
+				updated, command := m.pressFooterButton(footerButtonBenchmarkScope)
+				next := updated.(Model)
+				next.benchmarkScopeKeyboard = next.benchmarkScopeOpen
+				return next, command
 			}
 		case "x":
 			if m.meterView == viewBenchmark {
@@ -416,8 +429,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "d":
 			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
-				m.closeBenchmarkScope()
-				return m, nil
+				return m.pressFooterButton(footerButtonBenchmarkDone)
 			}
 		case "v":
 			if m.meterView.isQuota() {
@@ -545,6 +557,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			m.benchmarkScopeKeyboard = false
+		}
 		if tab, ok := m.mainTabAt(mouse.X, mouse.Y); ok {
 			m.mainTabHovered = true
 			m.hoveredMainTab = tab
@@ -568,15 +583,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewHovered = false
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			if item, ok := m.benchmarkScopeItemAt(mouse.X, mouse.Y); ok {
-				m.benchmarkScopeHover = item
 				m.hoveredButton = footerButtonNone
 				if mouse.Button == tea.MouseLeft && clicked {
-					m.benchmarkScopeCursor = item
-					m.toggleBenchmarkScopeCursor()
+					m.toggleBenchmarkScopeItem(item)
 				}
 				return m, nil
 			}
-			m.benchmarkScopeHover = -1
 			switch mouse.Button {
 			case tea.MouseWheelUp:
 				m.moveBenchmarkScopeCursor(-1)
@@ -788,7 +800,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.benchmarkScroll++
 			}
 			result := *event.Result
-			m.benchmarkResults = append(m.benchmarkResults, result)
+			m.benchmarkResults, m.benchmarkResultIndexes = upsertBenchmarkResult(m.benchmarkResults, m.benchmarkResultIndexes, result)
+			m.benchmarkRunResults, m.benchmarkRunIndexes = upsertBenchmarkResult(m.benchmarkRunResults, m.benchmarkRunIndexes, result)
 			if m.benchmarkDetailActive && m.benchmarkDetail != nil && benchmarkRunKey(*m.benchmarkDetail) == benchmarkRunKey(result) {
 				m.benchmarkDetail = &result
 				m.benchmarkDetailActive = false
@@ -953,7 +966,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			}
 			m.benchmarkSelectedArmed = false
 			m.benchmarkAllArmed = false
-			return m.startBenchmark(tasks, m.benchmarkScope)
+			return m.startBenchmark(tasks, m.benchmarkScope, false)
 		}
 	case footerButtonBenchmarkAll:
 		tasks := m.benchmarkAllTasks()
@@ -970,7 +983,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 				return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
 			}
 			m.benchmarkAllArmed = false
-			return m.startBenchmark(tasks, allScope)
+			return m.startBenchmark(tasks, allScope, true)
 		}
 	case footerButtonBenchmarkFilterAll:
 		m.setBenchmarkFilter(benchmarkFilterAll)
@@ -993,13 +1006,21 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 				return m, tea.SetClipboard(m.benchmarkResultsClipboardText())
 			}
 		}
+	case footerButtonBenchmarkClearAll:
+		if m.meterView == viewBenchmark && !m.benchmarkRunActive() && len(m.benchmarkResults) > 0 {
+			m.clearBenchmarkResults()
+		}
 	case footerButtonBenchmarkClose:
 		if m.meterView == viewBenchmark {
 			if m.benchmarkScopeOpen {
-				m.closeBenchmarkScope()
+				m.cancelBenchmarkScope()
 			} else if m.benchmarkDetail != nil {
 				m.closeBenchmarkDetail()
 			}
+		}
+	case footerButtonBenchmarkDone:
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			m.finishBenchmarkScope()
 		}
 	case footerButtonBenchmarkScope:
 		if m.meterView == viewBenchmark && !m.benchmarkRunActive() && len(m.benchmarkPlan.Models) > 0 {
@@ -1189,13 +1210,20 @@ func (m Model) benchmarkPlanNeeded() bool {
 	return m.benchmarkCombinations == 0
 }
 
-func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope) (Model, tea.Cmd) {
+func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope, clearAll bool) (Model, tea.Cmd) {
 	if m.benchmarkRunner == nil {
 		m.benchmarkState = benchmarkFinished
 		m.benchmarkError = "benchmark runner unavailable"
 		return m, nil
 	}
-	m.benchmarkResults = nil
+	if clearAll {
+		m.benchmarkResults = nil
+	} else {
+		m.benchmarkResults = benchmarkResultsOutsideScope(m.benchmarkResults, tasks, scope)
+	}
+	m.benchmarkResultIndexes = indexBenchmarkResults(m.benchmarkResults)
+	m.benchmarkRunResults = make([]codex.BenchmarkResult, 0)
+	m.benchmarkRunIndexes = make(map[string]int)
 	combinations := m.benchmarkPlan.CombinationCount(scope)
 	if m.benchmarkScopedRunner == nil {
 		combinations = m.benchmarkCombinations
@@ -1220,7 +1248,7 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	m.benchmarkDetailScroll = 0
 	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
 	m.benchmarkScopeOpen = false
-	m.benchmarkScopeHover = -1
+	m.benchmarkScopeKeyboard = false
 	m.benchmarkState = benchmarkRunning
 	m.benchmarkAllArmed = false
 	m.benchmarkSelectedArmed = false
@@ -1229,6 +1257,93 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	events := make(chan codex.BenchmarkEvent, 2)
 	m.benchmarkEvents = events
 	return m, launchBenchmark(ctx, m.benchmarkRunner, tasks, scope, events)
+}
+
+func (m *Model) clearBenchmarkResults() {
+	m.benchmarkState = benchmarkIdle
+	m.benchmarkResults = nil
+	m.benchmarkResultIndexes = nil
+	m.benchmarkRunResults = nil
+	m.benchmarkRunIndexes = nil
+	m.benchmarkTotal = 0
+	m.benchmarkCompleted = 0
+	m.benchmarkCurrentModel = ""
+	m.benchmarkCurrentEffort = ""
+	m.benchmarkCurrentTask = ""
+	m.benchmarkError = ""
+	m.benchmarkScroll = 0
+	m.benchmarkActive = nil
+	m.benchmarkActiveSince = time.Time{}
+	m.benchmarkSelectedRun = ""
+	m.benchmarkHoveredRun = ""
+	m.benchmarkRunHovered = false
+	m.benchmarkDetail = nil
+	m.benchmarkDetailActive = false
+	m.benchmarkDetailScroll = 0
+	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+	m.benchmarkAllArmed = false
+	m.benchmarkSelectedArmed = false
+}
+
+func upsertBenchmarkResult(results []codex.BenchmarkResult, indexes map[string]int, result codex.BenchmarkResult) ([]codex.BenchmarkResult, map[string]int) {
+	if indexes == nil {
+		indexes = indexBenchmarkResults(results)
+	}
+	key := benchmarkRunKey(result)
+	if index, ok := indexes[key]; ok {
+		results[index] = result
+		return results, indexes
+	}
+	indexes[key] = len(results)
+	return append(results, result), indexes
+}
+
+func indexBenchmarkResults(results []codex.BenchmarkResult) map[string]int {
+	indexes := make(map[string]int, len(results))
+	for index, result := range results {
+		indexes[benchmarkRunKey(result)] = index
+	}
+	return indexes
+}
+
+func benchmarkResultsOutsideScope(results []codex.BenchmarkResult, tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope) []codex.BenchmarkResult {
+	taskSet := make(map[codex.BenchmarkTaskID]bool, len(tasks))
+	for _, task := range tasks {
+		taskSet[task] = true
+	}
+	modelSet := lowerStringSet(scope.Models)
+	effortSet := lowerStringSet(scope.Efforts)
+	gameSet := lowerStringSet(scope.Games)
+	kept := make([]codex.BenchmarkResult, 0, len(results))
+	for _, result := range results {
+		model := result.Model
+		if model == "" {
+			model = result.DisplayName
+		}
+		matches := taskSet[result.TaskID]
+		if len(modelSet) > 0 {
+			matches = matches && modelSet[strings.ToLower(model)]
+		}
+		if len(effortSet) > 0 {
+			matches = matches && effortSet[strings.ToLower(result.Effort)]
+		}
+		if matches && result.TaskID == codex.BenchmarkDigBench {
+			game := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(result.TaskName), "digbench"))
+			matches = len(gameSet) == 0 || gameSet[game]
+		}
+		if !matches {
+			kept = append(kept, result)
+		}
+	}
+	return kept
+}
+
+func lowerStringSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[strings.ToLower(value)] = true
+	}
+	return set
 }
 
 func (m *Model) selectBenchmarkSuite(direction int) {

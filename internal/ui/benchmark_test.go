@@ -135,8 +135,11 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 			runLine = index
 		}
 	}
-	if selectorLine < 0 || runLine != selectorLine+1 || !strings.Contains(lines[selectorLine+2], "(S) SCOPE") || !strings.Contains(lines[selectorLine+2], "(X) STOP") {
-		t.Fatalf("controls do not contain stable Run, Scope, and Stop rows:\n%s", controls)
+	if selectorLine < 0 || !strings.Contains(lines[selectorLine+1], "(S) SCOPE") || strings.Contains(lines[selectorLine+1], "STOP") || runLine != selectorLine+2 {
+		t.Fatalf("controls do not contain stable Scope, Stop, and Run rows:\n%s", controls)
+	}
+	if runStart := strings.Index(lines[runLine], "["); runStart <= strings.Index(lines[selectorLine+1], "[") {
+		t.Fatalf("run controls are not right aligned beneath the scope row:\n%s", controls)
 	}
 }
 
@@ -225,6 +228,32 @@ func TestBenchmarkResultsCopyControlIsDisabledWithoutRows(t *testing.T) {
 	model = updated.(Model)
 	if command != nil || model.flashedButton == footerButtonBenchmarkCopy {
 		t.Fatal("empty result matrix accepted the Copy shortcut")
+	}
+}
+
+func TestBenchmarkClearAllControlClearsAccumulatedResultsOnlyWhileIdle(t *testing.T) {
+	result := codex.BenchmarkResult{
+		TaskID: codex.BenchmarkMergeRanges, TaskName: "MERGE RANGES", Model: "model", DisplayName: "Model", Effort: "high", Correct: true,
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkFinished, benchmarkResults: []codex.BenchmarkResult{result},
+	}
+	clearX, clearY := renderedTextStart(t, model, benchmarkClearAllLabel)
+	if got := model.benchmarkButtonAt(clearX, clearY); got != footerButtonBenchmarkClearAll {
+		t.Fatalf("Clear All hit target = %d, want %d", got, footerButtonBenchmarkClearAll)
+	}
+	updated, command := model.Update(tea.MouseClickMsg{X: clearX, Y: clearY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || len(model.benchmarkResults) != 0 || model.benchmarkState != benchmarkIdle {
+		t.Fatalf("Clear All did not reset idle results: command=%v state=%d results=%#v", command != nil, model.benchmarkState, model.benchmarkResults)
+	}
+
+	model.benchmarkState = benchmarkRunning
+	model.benchmarkResults = []codex.BenchmarkResult{result}
+	clearX, clearY = renderedTextStart(t, model, benchmarkClearAllLabel)
+	if got := model.benchmarkButtonAt(clearX, clearY); got != footerButtonNone {
+		t.Fatalf("running Clear All hit target = %d, want none", got)
 	}
 }
 
@@ -700,6 +729,104 @@ func TestBenchmarkHotkeyRunsSuiteAndCollectsEvents(t *testing.T) {
 	}
 }
 
+func TestBenchmarkResultEventsReplaceIdenticalMetadata(t *testing.T) {
+	old := codex.BenchmarkResult{
+		TaskID: codex.BenchmarkMergeRanges, TaskName: "MERGE RANGES", Model: "model", Effort: "high", Failure: "old failure",
+	}
+	replacement := old
+	replacement.Correct = true
+	replacement.Failure = ""
+	model := Model{
+		benchmarkState:      benchmarkRunning,
+		benchmarkResults:    []codex.BenchmarkResult{old},
+		benchmarkRunResults: make([]codex.BenchmarkResult, 0),
+	}
+	updated, _ := model.Update(benchmarkEventMsg{ok: true, event: codex.BenchmarkEvent{Total: 1, Completed: 1, Result: &replacement}})
+	model = updated.(Model)
+	if len(model.benchmarkResults) != 1 || !model.benchmarkResults[0].Correct {
+		t.Fatalf("identical result was appended instead of replaced: %#v", model.benchmarkResults)
+	}
+	if len(model.benchmarkRunResults) != 1 || !model.benchmarkRunResults[0].Correct {
+		t.Fatalf("current run result was not recorded: %#v", model.benchmarkRunResults)
+	}
+	key := benchmarkRunKey(replacement)
+	if model.benchmarkResultIndexes[key] != 0 || model.benchmarkRunIndexes[key] != 0 {
+		t.Fatalf("result indexes were not maintained: accumulated=%#v run=%#v", model.benchmarkResultIndexes, model.benchmarkRunIndexes)
+	}
+}
+
+func TestBenchmarkResultUpsertMaintainsConstantTimeIndex(t *testing.T) {
+	var results []codex.BenchmarkResult
+	var indexes map[string]int
+	for index := range 100 {
+		result := codex.BenchmarkResult{
+			TaskID: codex.BenchmarkMergeRanges, TaskName: fmt.Sprintf("TASK %d", index), Model: "model", Effort: "high",
+		}
+		results, indexes = upsertBenchmarkResult(results, indexes, result)
+	}
+	replacement := results[3]
+	replacement.Correct = true
+	results, indexes = upsertBenchmarkResult(results, indexes, replacement)
+	if len(results) != 100 || len(indexes) != 100 || !results[3].Correct || indexes[benchmarkRunKey(replacement)] != 3 {
+		t.Fatalf("indexed upsert = %d results, %d indexes, replacement=%#v", len(results), len(indexes), results[3])
+	}
+}
+
+func TestBenchmarkScopeRunRemovesOnlyMatchingResults(t *testing.T) {
+	runner := benchmarkCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, tasks: make(chan []codex.BenchmarkTaskID, 1)}
+	results := []codex.BenchmarkResult{
+		{TaskID: codex.BenchmarkMergeRanges, TaskName: "MERGE RANGES", Model: "model-a", Effort: "high"},
+		{TaskID: codex.BenchmarkMergeRanges, TaskName: "MERGE RANGES", Model: "model-b", Effort: "high"},
+		{TaskID: codex.BenchmarkMergeRanges, TaskName: "MERGE RANGES", Model: "model-a", Effort: "low"},
+		{TaskID: codex.BenchmarkLRUCache, TaskName: "LRU CACHE", Model: "model-a", Effort: "high"},
+	}
+	model := Model{benchmarkRunner: runner, benchmarkCombinations: 1, benchmarkResults: results}
+	model, _ = model.startBenchmark(
+		[]codex.BenchmarkTaskID{codex.BenchmarkMergeRanges},
+		codex.BenchmarkScope{Models: []string{"model-a"}, Efforts: []string{"high"}},
+		false,
+	)
+	if len(model.benchmarkResults) != 3 {
+		t.Fatalf("scope run retained %d results, want 3: %#v", len(model.benchmarkResults), model.benchmarkResults)
+	}
+	for _, result := range model.benchmarkResults {
+		if result.TaskID == codex.BenchmarkMergeRanges && result.Model == "model-a" && result.Effort == "high" {
+			t.Fatalf("scope run retained matching result: %#v", result)
+		}
+	}
+}
+
+func TestBenchmarkDigBenchScopeRunRemovesOnlySelectedGames(t *testing.T) {
+	runner := benchmarkCaptureFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}, tasks: make(chan []codex.BenchmarkTaskID, 1)}
+	base := codex.BenchmarkResult{TaskID: codex.BenchmarkDigBench, Model: "model", Effort: "high"}
+	p1, p2 := base, base
+	p1.TaskName, p2.TaskName = "DIGBENCH P-1", "DIGBENCH P-2"
+	model := Model{benchmarkRunner: runner, benchmarkCombinations: 1, benchmarkResults: []codex.BenchmarkResult{p1, p2}}
+	model, _ = model.startBenchmark(
+		[]codex.BenchmarkTaskID{codex.BenchmarkDigBench},
+		codex.BenchmarkScope{Models: []string{"model"}, Efforts: []string{"high"}, Games: []string{"P-2"}},
+		false,
+	)
+	if len(model.benchmarkResults) != 1 || model.benchmarkResults[0].TaskName != "DIGBENCH P-1" {
+		t.Fatalf("DigBench scope did not preserve the unselected game: %#v", model.benchmarkResults)
+	}
+}
+
+func TestBenchmarkFinishedStatusUsesCurrentRunResults(t *testing.T) {
+	model := Model{
+		benchmarkState: benchmarkFinished,
+		benchmarkResults: []codex.BenchmarkResult{
+			{TaskName: "HISTORICAL", Correct: false, Failure: "historical failure"},
+			{TaskName: "CURRENT", Correct: true},
+		},
+		benchmarkRunResults: []codex.BenchmarkResult{{TaskName: "CURRENT", Correct: true}},
+	}
+	output := ansi.Strip(model.renderBenchmarkStatus(60, 5, paletteFor(themeHacker)))
+	if !strings.Contains(output, "COMPLETE // 1/1 PASS") || strings.Contains(output, "historical failure") {
+		t.Fatalf("finished status included accumulated results:\n%s", output)
+	}
+}
+
 func TestBenchmarkButtonSupportsHoverAndClick(t *testing.T) {
 	model := New(benchmarkStubFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
@@ -736,6 +863,11 @@ func TestBenchmarkStopCancelsAndRetainsStoppedCurrentRow(t *testing.T) {
 	controls := ansi.Strip(model.renderBenchmarkControls(58, 5, paletteFor(themeHacker)))
 	if !strings.Contains(controls, "(X) STOP") {
 		t.Fatalf("running controls omitted Stop:\n%s", controls)
+	}
+	for _, line := range strings.Split(controls, "\n") {
+		if strings.Contains(line, "(X) STOP") && (!strings.Contains(line, "B:SCOPE") || strings.Index(line, "(X) STOP") > strings.Index(line, "B:SCOPE")) {
+			t.Fatalf("Stop is not the first action in the right-aligned run row:\n%s", controls)
+		}
 	}
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkStop)
 	updated, command := model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
@@ -789,27 +921,51 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	if command == nil || !model.benchmarkScopeOpen || model.benchmarkCombinations != 3 {
 		t.Fatal("Scope hotkey did not open the all-selected scope screen")
 	}
+	if !model.benchmarkScopeKeyboard {
+		t.Fatal("keyboard-opened Scope did not enable its cursor highlight")
+	}
 	screen := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
-	for _, want := range []string{"BENCHMARK SCOPE", benchmarkDetailCloseLabel, "(D) DONE", "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH", "[x] CORE BENCHMARKS // CLEAR ALL", "MERGE RANGES", "LRU CACHE"} {
+	for _, want := range []string{"BENCHMARK SCOPE", benchmarkScopeCancelLabel, benchmarkScopeDoneLabel, "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH", "[x] CORE BENCHMARKS // CLEAR ALL", "MERGE RANGES", "LRU CACHE"} {
 		if !strings.Contains(screen, want) {
 			t.Fatalf("scope screen missing %q:\n%s", want, screen)
 		}
 	}
-	closeX, closeY := renderedTextStart(t, model, benchmarkDetailCloseLabel)
-	if closeY != model.dashboardLayout().meterY {
-		t.Fatalf("Scope Close y = %d, want top frame y = %d", closeY, model.dashboardLayout().meterY)
+	if strings.Contains(screen, "RETURN TO BENCHMARK") {
+		t.Fatalf("scope screen retained the old return label:\n%s", screen)
 	}
-	updated, command = model.Update(tea.MouseClickMsg{X: closeX, Y: closeY, Button: tea.MouseLeft})
+	cancelX, cancelY := renderedTextStart(t, model, benchmarkScopeCancelLabel)
+	doneX, doneY := renderedTextStart(t, model, benchmarkScopeDoneLabel)
+	dashboard := model.dashboardLayout()
+	if cancelY != dashboard.meterY || doneY != dashboard.meterY+dashboard.meterHeight-1 {
+		t.Fatalf("Scope actions at cancel=%d done=%d, want top=%d bottom=%d", cancelY, doneY, dashboard.meterY, dashboard.meterY+dashboard.meterHeight-1)
+	}
+	modelBX, modelBY := benchmarkScopeCoordinates(t, model, 2)
+	cursorBeforeClick := model.benchmarkScopeCursor
+	updated, _ = model.Update(tea.MouseClickMsg{X: modelBX, Y: modelBY, Button: tea.MouseLeft})
 	model = updated.(Model)
-	if command == nil || model.benchmarkScopeOpen {
-		t.Fatal("Scope Close control did not return to Benchmark")
+	if model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != cursorBeforeClick {
+		t.Fatalf("mouse selection retained keyboard highlight or moved its cursor: keyboard=%v cursor=%d, want %d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor, cursorBeforeClick)
+	}
+	mergeX, mergeY := benchmarkScopeCoordinates(t, model, 7)
+	updated, _ = model.Update(tea.MouseClickMsg{X: mergeX, Y: mergeY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if len(model.benchmarkScope.Models) != 1 {
+		t.Fatalf("scope edit did not update draft: %#v", model.benchmarkScope)
+	}
+	updated, command = model.Update(tea.MouseClickMsg{X: cancelX, Y: cancelY, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if command == nil || model.benchmarkScopeOpen || len(model.benchmarkScope.Models) != 2 || model.benchmarkCombinations != 3 || model.benchmarkScopeTasks != nil {
+		t.Fatalf("Scope Cancel did not discard the draft: open=%v scope=%#v tasks=%#v pairs=%d", model.benchmarkScopeOpen, model.benchmarkScope, model.benchmarkScopeTasks, model.benchmarkCombinations)
 	}
 	updated, _ = model.Update(key('s'))
 	model = updated.(Model)
+	model.benchmarkScopeCursor = 5
+	updated, _ = model.Update(specialKey(tea.KeySpace))
+	model = updated.(Model)
 	updated, command = model.Update(key('x'))
 	model = updated.(Model)
-	if command == nil || model.benchmarkScopeOpen {
-		t.Fatal("X did not close Scope")
+	if command == nil || model.benchmarkScopeOpen || len(model.benchmarkScope.Efforts) != 2 {
+		t.Fatal("X did not cancel Scope changes")
 	}
 	updated, _ = model.Update(key('s'))
 	model = updated.(Model)
@@ -820,41 +976,44 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		updated, _ = model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		model = updated.(Model)
 	}
-	clickScopeItem(1) // Clear All models.
+	clickScopeItem(0) // Clear All models.
 	if model.benchmarkCombinations != 0 || len(model.benchmarkScope.Models) != 0 || model.benchmarkPlanNeeded() {
 		t.Fatalf("model Clear All did not clear scope: %#v", model.benchmarkScope)
 	}
 	if model.benchmarkCanRunSelected() {
 		t.Fatal("Run Scope remained enabled without a compatible model/effort pair")
 	}
-	clickScopeItem(1) // Check All models.
+	clickScopeItem(0) // Check All models.
 	if model.benchmarkCombinations != 3 || len(model.benchmarkScope.Models) != 2 {
 		t.Fatalf("model Check All did not restore scope: %#v", model.benchmarkScope)
 	}
-	clickScopeItem(3) // Model B off: Model A low/high remain.
+	clickScopeItem(2) // Model B off: Model A low/high remain.
 	if model.benchmarkCombinations != 2 || len(model.benchmarkScope.Models) != 1 || model.benchmarkScope.Models[0] != "model-a" {
 		t.Fatalf("model checkbox did not narrow scope: %#v", model.benchmarkScope)
 	}
 	colors := paletteFor(themeHacker)
-	modelARow := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[2], 2, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
+	modelARow := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
 	if !strings.Contains(modelARow, lipgloss.NewStyle().Foreground(colors.primary).Render("HIGH")) {
 		t.Fatalf("selected reasoning level was not active in model row: %q", modelARow)
 	}
-	clickScopeItem(6) // High off: Model A/low remains.
+	clickScopeItem(5) // High off: Model A/low remains.
 	if model.benchmarkCombinations != 1 || slices.Contains(model.benchmarkScope.Efforts, "high") {
 		t.Fatalf("effort checkbox did not narrow scope: %#v", model.benchmarkScope)
 	}
-	modelARow = model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[2], 2, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
+	modelARow = model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 90, colors, stringSetUI(model.benchmarkScope.Efforts))
 	if !strings.Contains(modelARow, colors.dimmed().Render("HIGH")) || strings.Contains(modelARow, lipgloss.NewStyle().Foreground(colors.primary).Render("HIGH")) {
 		t.Fatalf("out-of-scope reasoning level was not dimmed in model row: %q", modelARow)
 	}
-	model.benchmarkScopeCursor = 4
+	model.benchmarkScopeCursor = 3
 	updated, _ = model.Update(specialKey(tea.KeySpace)) // Check All reasoning levels.
 	model = updated.(Model)
+	if !model.benchmarkScopeKeyboard {
+		t.Fatal("keyboard toggle did not restore Scope cursor highlighting")
+	}
 	if model.benchmarkCombinations != 2 || len(model.benchmarkScope.Efforts) != 2 {
 		t.Fatalf("reasoning Check All did not restore efforts: %#v", model.benchmarkScope)
 	}
-	clickScopeItem(6) // Keep the final launched scope to low only.
+	clickScopeItem(5) // Keep the final launched scope to low only.
 	findScopeItem := func(kind benchmarkScopeItemKind, value string) int {
 		t.Helper()
 		for index, item := range model.benchmarkScopeItems() {
@@ -875,7 +1034,9 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		t.Fatalf("selected core scope turns = %d, want 2", got)
 	}
 
-	clickScopeItem(0)
+	doneX, doneY = renderedTextStart(t, model, benchmarkScopeDoneLabel)
+	updated, command = model.Update(tea.MouseClickMsg{X: doneX, Y: doneY, Button: tea.MouseLeft})
+	model = updated.(Model)
 	if model.benchmarkScopeOpen {
 		t.Fatal("Done did not close Scope")
 	}
@@ -900,6 +1061,63 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	}
 	if gotTasks := <-taskRuns; !slices.Equal(gotTasks, []codex.BenchmarkTaskID{codex.BenchmarkMergeRanges, codex.BenchmarkLRUCache}) {
 		t.Fatalf("runner received core tasks %#v", gotTasks)
+	}
+}
+
+func TestBenchmarkScopeMouseMotionSwitchesInputModality(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model-a", DisplayName: "Model A", Efforts: []string{"high"}}},
+		Efforts: []string{"high"},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkCombinations: 1,
+		benchmarkScopeOpen: true, benchmarkScopeKeyboard: true,
+	}
+	model.benchmarkScopeCursor = 0
+	x, y := benchmarkScopeCoordinates(t, model, 1)
+
+	updated, _ := model.Update(tea.MouseMotionMsg{X: x, Y: y})
+	model = updated.(Model)
+	if model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != 0 {
+		t.Fatalf("mouse motion did not hide the saved keyboard cursor: keyboard=%v cursor=%d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor)
+	}
+
+	colors := paletteFor(themeHacker)
+	mouseLine := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 60, colors, stringSetUI(model.benchmarkScope.Efforts))
+	updated, _ = model.Update(specialKey(tea.KeyDown))
+	model = updated.(Model)
+	if !model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != 1 {
+		t.Fatalf("keyboard navigation did not restore and move its cursor: keyboard=%v cursor=%d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor)
+	}
+	keyboardLine := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 60, colors, stringSetUI(model.benchmarkScope.Efforts))
+	if mouseLine == keyboardLine {
+		t.Fatal("Scope cursor rendering did not change with input modality")
+	}
+}
+
+func TestBenchmarkScopeKeyboardModeRequiresSuccessfulKeyboardOpen(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model-a", DisplayName: "Model A", Efforts: []string{"high"}}},
+		Efforts: []string{"high"},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkRunning, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkCombinations: 1,
+	}
+
+	updated, _ := model.Update(key('s'))
+	model = updated.(Model)
+	if model.benchmarkScopeOpen || model.benchmarkScopeKeyboard {
+		t.Fatalf("blocked keyboard open leaked Scope modality: open=%v keyboard=%v", model.benchmarkScopeOpen, model.benchmarkScopeKeyboard)
+	}
+
+	model.benchmarkState = benchmarkFinished
+	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkScope)
+	updated, _ = model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if !model.benchmarkScopeOpen || model.benchmarkScopeKeyboard {
+		t.Fatalf("mouse-opened Scope inherited keyboard modality: open=%v keyboard=%v", model.benchmarkScopeOpen, model.benchmarkScopeKeyboard)
 	}
 }
 
@@ -1573,11 +1791,15 @@ func TestBenchmarkRunAllLaunchesCoreCatalog(t *testing.T) {
 	model.loading = false
 	model.meterView = viewBenchmark
 	model.benchmarkCombinations = 1
+	model.benchmarkResults = []codex.BenchmarkResult{{TaskName: "OLD RESULT", Model: "old", Effort: "low"}}
 
 	model, _ = model.activateFooterButton(footerButtonBenchmarkAll)
 	model, command := model.activateFooterButton(footerButtonBenchmarkAll)
 	if command == nil || model.benchmarkState != benchmarkRunning {
 		t.Fatal("confirmed Run All did not launch")
+	}
+	if len(model.benchmarkResults) != 0 {
+		t.Fatalf("Run All retained old results: %#v", model.benchmarkResults)
 	}
 	_ = command()
 	got := <-captured

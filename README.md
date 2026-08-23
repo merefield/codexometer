@@ -473,7 +473,7 @@ rates where OpenAI publishes them. Unknown models or missing price classes fail
 closed as `UNPRICED MODEL MIX` rather than being guessed or treated as free.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were retrieved on **2026-08-13**.
+and were retrieved on **2026-08-23**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -1162,7 +1162,7 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The rates compiled into this version were retrieved from
-that page on **2026-08-13**; every pricing-bearing Quota or Benchmark footer
+that page on **2026-08-23**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
 

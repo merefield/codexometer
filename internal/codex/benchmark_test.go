@@ -1162,7 +1162,7 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 	if !ok {
 		t.Fatal("known model was not priced")
 	}
-	want := (1_400*5.00 + 500*0.50 + 100*6.25 + 300*30.00) / 1_000_000
+	want := (1_400*4.00 + 500*0.40 + 100*5.00 + 300*20.00) / 1_000_000
 	if cost != want {
 		t.Fatalf("cost = %.8f, want %.8f", cost, want)
 	}
