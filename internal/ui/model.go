@@ -412,8 +412,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonMonitorGo)
 			}
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && len(m.benchmarkPlan.Models) > 0 {
-				m.benchmarkScopeKeyboard = true
-				return m.pressFooterButton(footerButtonBenchmarkScope)
+				updated, command := m.pressFooterButton(footerButtonBenchmarkScope)
+				next := updated.(Model)
+				next.benchmarkScopeKeyboard = next.benchmarkScopeOpen
+				return next, command
 			}
 		case "x":
 			if m.meterView == viewBenchmark {

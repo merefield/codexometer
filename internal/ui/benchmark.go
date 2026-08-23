@@ -687,6 +687,7 @@ func (m *Model) openBenchmarkScope() {
 	m.benchmarkTasksBeforeEdit = cloneBenchmarkScopeTasks(m.benchmarkScopeTasks)
 	m.benchmarkPairsBeforeEdit = m.benchmarkCombinations
 	m.benchmarkScopeOpen = true
+	m.benchmarkScopeKeyboard = false
 	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor, 0), max(len(m.benchmarkScopeItems())-1, 0))
 	m.revealBenchmarkScopeCursor()
 }

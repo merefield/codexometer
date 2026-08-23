@@ -1096,6 +1096,31 @@ func TestBenchmarkScopeMouseMotionSwitchesInputModality(t *testing.T) {
 	}
 }
 
+func TestBenchmarkScopeKeyboardModeRequiresSuccessfulKeyboardOpen(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model-a", DisplayName: "Model A", Efforts: []string{"high"}}},
+		Efforts: []string{"high"},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkState: benchmarkRunning, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkCombinations: 1,
+	}
+
+	updated, _ := model.Update(key('s'))
+	model = updated.(Model)
+	if model.benchmarkScopeOpen || model.benchmarkScopeKeyboard {
+		t.Fatalf("blocked keyboard open leaked Scope modality: open=%v keyboard=%v", model.benchmarkScopeOpen, model.benchmarkScopeKeyboard)
+	}
+
+	model.benchmarkState = benchmarkFinished
+	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkScope)
+	updated, _ = model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	model = updated.(Model)
+	if !model.benchmarkScopeOpen || model.benchmarkScopeKeyboard {
+		t.Fatalf("mouse-opened Scope inherited keyboard modality: open=%v keyboard=%v", model.benchmarkScopeOpen, model.benchmarkScopeKeyboard)
+	}
+}
+
 func TestBenchmarkScopeAreaHonorsAllocatedSize(t *testing.T) {
 	plan := codex.BenchmarkPlan{
 		Models:  []codex.BenchmarkModelOption{{Model: "model", DisplayName: "Model", Efforts: []string{"low", "high"}}},
