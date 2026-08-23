@@ -37,6 +37,7 @@ $Version = Get-Setting $Version "CODEXOMETER_VERSION" "latest"
 $Repository = Get-Setting $Repository "CODEXOMETER_REPOSITORY" "merefield/codexometer"
 $GitHubUrl = (Get-Setting $GitHubUrl "CODEXOMETER_GITHUB_URL" "https://github.com").TrimEnd("/")
 $GitHubApiUrl = (Get-Setting $GitHubApiUrl "CODEXOMETER_GITHUB_API_URL" "https://api.github.com").TrimEnd("/")
+$semanticTagPattern = '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
 
 if ([string]::IsNullOrWhiteSpace($BinDir)) {
     $BinDir = [Environment]::GetEnvironmentVariable("CODEXOMETER_BIN_DIR")
@@ -58,8 +59,8 @@ if ([string]::IsNullOrWhiteSpace($BinDir)) {
 if ((Test-Path -LiteralPath $BinDir) -and -not (Test-Path -LiteralPath $BinDir -PathType Container)) {
     Fail "CODEXOMETER_BIN_DIR exists and is not a directory: $BinDir"
 }
-if ($Version -ne "latest" -and $Version -notmatch '^[A-Za-z0-9._-]+$') {
-    Fail "invalid release tag: $Version"
+if ($Version -ne "latest" -and $Version -cnotmatch $semanticTagPattern) {
+    Fail "invalid semantic release tag: $Version"
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
@@ -97,8 +98,8 @@ try {
         }
     }
 
-    if ($releaseTag -notmatch '^[A-Za-z0-9._-]+$') {
-        Fail "invalid release tag: $releaseTag"
+    if ($releaseTag -cnotmatch $semanticTagPattern) {
+        Fail "invalid semantic release tag: $releaseTag"
     }
     $releaseVersion = $releaseTag -replace '^v', ''
     if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
@@ -167,13 +168,25 @@ try {
         Fail "the downloaded binary reported an unexpected version: $versionOutput"
     }
 
+    New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+    $target = Join-Path $BinDir "codexometer.exe"
+    if (Test-Path -LiteralPath $target -PathType Container) {
+        Fail "installation target exists and is a directory: $target"
+    }
+
+    $stagedTarget = $null
     try {
-        New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-        $target = Join-Path $BinDir "codexometer.exe"
         $stagedTarget = Join-Path $BinDir (".codexometer-" + [Guid]::NewGuid().ToString("N") + ".exe")
         Copy-Item -LiteralPath $candidate -Destination $stagedTarget
+        if (Test-Path -LiteralPath $target -PathType Container) {
+            Remove-Item -LiteralPath $stagedTarget -Force
+            Fail "installation target exists and is a directory: $target"
+        }
         Move-Item -LiteralPath $stagedTarget -Destination $target -Force
     } catch {
+        if (-not [string]::IsNullOrWhiteSpace($stagedTarget) -and (Test-Path -LiteralPath $stagedTarget -PathType Leaf)) {
+            Remove-Item -LiteralPath $stagedTarget -Force
+        }
         Fail "could not install into ${BinDir}: $($_.Exception.Message); set CODEXOMETER_BIN_DIR to a writable directory"
     }
 

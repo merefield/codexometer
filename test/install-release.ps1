@@ -7,10 +7,12 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("codexometer-release-installer
 $serverRoot = Join-Path $testRoot "server"
 $packageDirectory = Join-Path $testRoot "package"
 $installDirectory = Join-Path $testRoot "installed"
+$explicitInstallDirectory = Join-Path $testRoot "explicit-installed"
 $badInstallDirectory = Join-Path $testRoot "bad-installed"
-$releaseTag = "v1.2.3"
-$releaseVersion = "1.2.3"
-$assetName = "codexometer_1.2.3_windows_amd64.zip"
+$directoryTargetInstallDirectory = Join-Path $testRoot "directory-target"
+$releaseTag = "v1.2.3+build.5"
+$releaseVersion = "1.2.3+build.5"
+$assetName = "codexometer_1.2.3+build.5_windows_amd64.zip"
 $releaseDirectory = Join-Path $serverRoot "merefield\codexometer\releases\download\$releaseTag"
 $latestDirectory = Join-Path $serverRoot "repos\merefield\codexometer\releases"
 $fixtureBinary = Join-Path $packageDirectory "codexometer.exe"
@@ -25,9 +27,16 @@ function Write-Utf8File {
 }
 
 function Invoke-Installer {
-    param([string]$Destination)
+    param(
+        [string]$Destination,
+        [string]$RequestedVersion
+    )
     $hostExecutable = (Get-Process -Id $PID).Path
-    $output = & $hostExecutable -NoProfile -ExecutionPolicy Bypass -File $installer -BinDir $Destination 2>&1
+    $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installer, "-BinDir", $Destination)
+    if (-not [string]::IsNullOrWhiteSpace($RequestedVersion)) {
+        $arguments += @("-Version", $RequestedVersion)
+    }
+    $output = & $hostExecutable @arguments 2>&1
     return @{
         Status = $LASTEXITCODE
         Output = ($output | Out-String).Trim()
@@ -35,7 +44,8 @@ function Invoke-Installer {
 }
 
 try {
-    New-Item -ItemType Directory -Path $packageDirectory, $releaseDirectory, $latestDirectory | Out-Null
+    New-Item -ItemType Directory -Path $testRoot | Out-Null
+    New-Item -ItemType Directory -Path $packageDirectory, $releaseDirectory, $latestDirectory -Force | Out-Null
 
     Push-Location $repositoryRoot
     try {
@@ -50,7 +60,7 @@ try {
     Compress-Archive -LiteralPath $fixtureBinary -DestinationPath $archivePath
     $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Utf8File $checksumsPath "$archiveHash  $assetName`n"
-    Write-Utf8File (Join-Path $latestDirectory "latest") '{"tag_name":"v1.2.3"}'
+    Write-Utf8File (Join-Path $latestDirectory "latest") '{"tag_name":"v1.2.3+build.5"}'
 
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start()
@@ -99,6 +109,23 @@ try {
     $versionOutput = (& $installedBinary --version 2>&1 | Out-String).Trim()
     if ($versionOutput -ne "codexometer $releaseVersion") {
         throw "installed binary reported an unexpected version: $versionOutput"
+    }
+
+    $explicitResult = Invoke-Installer $explicitInstallDirectory $releaseTag
+    if ($explicitResult.Status -ne 0) {
+        throw "release installer rejected explicit SemVer build metadata:`n$($explicitResult.Output)"
+    }
+
+    $invalidResult = Invoke-Installer $badInstallDirectory "v1.2.3-01"
+    if ($invalidResult.Status -eq 0 -or $invalidResult.Output -notmatch 'invalid semantic release tag') {
+        throw "release installer accepted an invalid semantic version: $($invalidResult.Output)"
+    }
+
+    New-Item -ItemType Directory -Path $directoryTargetInstallDirectory | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $directoryTargetInstallDirectory "codexometer.exe") | Out-Null
+    $directoryTargetResult = Invoke-Installer $directoryTargetInstallDirectory $releaseTag
+    if ($directoryTargetResult.Status -eq 0 -or $directoryTargetResult.Output -notmatch 'installation target exists and is a directory') {
+        throw "release installer accepted a directory at its final target: $($directoryTargetResult.Output)"
     }
 
     Write-Utf8File $checksumsPath "$('0' * 64)  $assetName`n"

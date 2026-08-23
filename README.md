@@ -125,9 +125,13 @@ On Windows, download and run the PowerShell installer:
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
 Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
+Set-ExecutionPolicy -Scope Process Bypass -Force
 & $installer
 Remove-Item $installer
 ```
+
+The execution-policy override applies only to that PowerShell process. Inspect
+the downloaded script before running it if required by your security policy.
 
 It installs into `%LOCALAPPDATA%\Programs\codexometer\bin` by default. Override
 that with `CODEXOMETER_BIN_DIR` or `-BinDir`; use `-Version v0.10.0` to select a

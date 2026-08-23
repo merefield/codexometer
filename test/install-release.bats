@@ -78,6 +78,12 @@ teardown() {
 }
 
 @test "release installer resolves, verifies, and installs the latest release" {
+  cat > "$TEST_ROOT/bin/codexometer" <<'EOF'
+#!/bin/sh
+echo "codexometer 0.0.0"
+EOF
+  chmod +x "$TEST_ROOT/bin/codexometer"
+
   run env \
     PATH="$TEST_ROOT/fakebin:$PATH" \
     CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
@@ -93,6 +99,42 @@ teardown() {
   run "$TEST_ROOT/bin/codexometer" --version
   [ "$status" -eq 0 ]
   [ "$output" = "codexometer 1.2.3" ]
+}
+
+@test "release installer accepts strict SemVer prerelease and build metadata" {
+  export FIXTURE_TAG=v1.2.3-rc.1+build.5
+  export FIXTURE_ASSET=codexometer_1.2.3-rc.1+build.5_linux_amd64.tar.gz
+  cat > "$FIXTURE_DIR/package/codexometer" <<'EOF'
+#!/bin/sh
+echo "codexometer 1.2.3-rc.1+build.5"
+EOF
+  chmod +x "$FIXTURE_DIR/package/codexometer"
+  tar -czf "$FIXTURE_DIR/archive.tar.gz" -C "$FIXTURE_DIR/package" codexometer
+  export FIXTURE_HASH
+  FIXTURE_HASH=$(sha256sum "$FIXTURE_DIR/archive.tar.gz" | awk '{ print $1 }')
+
+  run env \
+    PATH="$TEST_ROOT/fakebin:$PATH" \
+    CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
+    sh ./install-release.sh --version "$FIXTURE_TAG"
+
+  [ "$status" -eq 0 ]
+  run "$TEST_ROOT/bin/codexometer" --version
+  [ "$status" -eq 0 ]
+  [ "$output" = "codexometer 1.2.3-rc.1+build.5" ]
+}
+
+@test "release installer rejects invalid semantic versions before downloading" {
+  for invalid_tag in v1.2.3- v1.2.3+. v1.2.3-01; do
+    run env \
+      PATH="$TEST_ROOT/fakebin:$PATH" \
+      CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
+      sh ./install-release.sh --version "$invalid_tag"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"invalid semantic release tag: $invalid_tag"* ]]
+    [ ! -e "$CURL_LOG" ]
+  done
 }
 
 @test "release installer supports an explicit version and Darwin ARM64" {
@@ -161,6 +203,61 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"CODEXOMETER_BIN_DIR exists and is not a directory: $symlink_path"* ]]
   [ ! -e "$CURL_LOG" ]
+}
+
+@test "release installer creates a new nested user-local bin directory" {
+  nested_bin="$TEST_ROOT/new/nested/bin"
+
+  run env \
+    PATH="$TEST_ROOT/fakebin:$PATH" \
+    CODEXOMETER_BIN_DIR="$nested_bin" \
+    sh ./install-release.sh
+
+  [ "$status" -eq 0 ]
+  [ -x "$nested_bin/codexometer" ]
+}
+
+@test "release installer rejects a directory at the final target" {
+  mkdir "$TEST_ROOT/bin/codexometer"
+
+  run env \
+    PATH="$TEST_ROOT/fakebin:$PATH" \
+    CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
+    sh ./install-release.sh
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"installation target exists and is a directory: $TEST_ROOT/bin/codexometer"* ]]
+  [ -d "$TEST_ROOT/bin/codexometer" ]
+}
+
+@test "release installer rejects a repository without owner and name" {
+  run env \
+    PATH="$TEST_ROOT/fakebin:$PATH" \
+    CODEXOMETER_REPOSITORY=owner \
+    CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
+    sh ./install-release.sh
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CODEXOMETER_REPOSITORY must have the form owner/repository"* ]]
+  [ ! -e "$CURL_LOG" ]
+}
+
+@test "release installer preserves an existing executable when staging fails" {
+  printf 'working executable\n' > "$TEST_ROOT/bin/codexometer"
+  cat > "$TEST_ROOT/fakebin/install" <<'EOF'
+#!/bin/sh
+exit 9
+EOF
+  chmod +x "$TEST_ROOT/fakebin/install"
+
+  run env \
+    PATH="$TEST_ROOT/fakebin:$PATH" \
+    CODEXOMETER_BIN_DIR="$TEST_ROOT/bin" \
+    sh ./install-release.sh
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"could not stage the executable"* ]]
+  [ "$(cat "$TEST_ROOT/bin/codexometer")" = "working executable" ]
 }
 
 @test "release installer rejects a binary with the wrong version" {

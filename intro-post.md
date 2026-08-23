@@ -102,9 +102,12 @@ On Windows PowerShell:
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
 Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
+Set-ExecutionPolicy -Scope Process Bypass -Force
 & $installer
 Remove-Item $installer
 ```
+
+The execution-policy override applies only to that PowerShell process; inspect the downloaded script before running it if required by your security policy.
 
 Re-run the relevant installer to upgrade or reinstall Codexometer. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Developers who prefer to build from source can still use `go install github.com/merefield/codexometer@latest`.
 
