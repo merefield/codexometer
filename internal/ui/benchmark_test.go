@@ -172,7 +172,7 @@ func TestBenchmarkResultsCopyControlExportsMarkdownTable(t *testing.T) {
 	if lines[1] != "| --- | --- | --- | --- | --- | --- | --- | --- |" {
 		t.Fatalf("Markdown separator = %q", lines[1])
 	}
-	for _, want := range []string{"PIPE \\| TASK", "FAILED TASK", "IN PROGRESS (P-1, 4)", "~$0.0123"} {
+	for _, want := range []string{"PIPE \\| TASK", "FAILED TASK", "IN PROGRESS (LVL 4)", "~$0.0123"} {
 		if !strings.Contains(clipboard, want) {
 			t.Fatalf("Markdown export missing %q:\n%s", want, clipboard)
 		}
@@ -942,6 +942,40 @@ func TestDigBenchSuiteSupportsScopedAndAllCombinations(t *testing.T) {
 	}
 }
 
+func TestDigBenchScopeLabelsPublishedAndEnhancedEfforts(t *testing.T) {
+	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}
+	plan := codex.BenchmarkPlan{
+		Models: []codex.BenchmarkModelOption{
+			{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Efforts: []string{"high", "xhigh"}},
+			{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Efforts: []string{"high", "xhigh"}},
+		},
+		Efforts: []string{"high", "xhigh"}, Games: []string{"P-1"},
+	}
+	model := Model{benchmarkRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkSelectedSuite: 2}
+	modelLabels := map[string]string{}
+	labels := map[string]string{}
+	for _, item := range model.benchmarkScopeItems() {
+		switch item.kind {
+		case benchmarkScopeModel:
+			modelLabels[item.value] = item.label
+		case benchmarkScopeEffort:
+			labels[item.value] = item.label
+		}
+	}
+	if !strings.Contains(modelLabels["gpt-5.6-sol"], "PUBLISHED CONDITION WITH HIGH") {
+		t.Fatalf("Sol model label = %q", modelLabels["gpt-5.6-sol"])
+	}
+	if strings.Contains(modelLabels["gpt-5.6-terra"], "PUBLISHED") {
+		t.Fatalf("Terra model label = %q", modelLabels["gpt-5.6-terra"])
+	}
+	if !strings.Contains(labels["high"], "PUBLISHED CONDITION WITH GPT-5.6 SOL") {
+		t.Fatalf("high effort label = %q", labels["high"])
+	}
+	if !strings.Contains(labels["xhigh"], "ENHANCED") || !strings.Contains(labels["xhigh"], "NOT PAPER CONDITION") {
+		t.Fatalf("xhigh effort label = %q", labels["xhigh"])
+	}
+}
+
 func TestBenchmarkSuitesSplitBuiltInCatalogAndConditionallyAddDigBench(t *testing.T) {
 	plain := Model{benchmarkRunner: codex.Client{}}
 	suites := plain.benchmarkSuites()
@@ -1391,7 +1425,7 @@ func TestBenchmarkResultValuesShowLiveDigBenchGameAndLevel(t *testing.T) {
 	result := codex.BenchmarkResult{
 		Provider: "digbench", TaskName: "DIGBENCH P-1", CurrentLevel: 4,
 	}
-	if got := benchmarkResultValues(result, nil, true)[4]; got != "IN PROGRESS (P-1, 4)" {
+	if got := benchmarkResultValues(result, nil, true)[4]; got != "IN PROGRESS (LVL 4)" {
 		t.Fatalf("live DigBench result = %q", got)
 	}
 	if got := benchmarkResultValues(result, nil)[4]; got != "LOSS" {

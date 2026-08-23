@@ -227,7 +227,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		digBenchGame    = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
 		digBenchModel   = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
 		digBenchEffort  = flags.String("digbench-effort", "high", "reasoning effort for --digbench-game")
-		digBenchTimeout = flags.Duration("digbench-timeout", 30*time.Minute, "hard limit for --digbench-game")
+		digBenchTimeout = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
 		printVersion    bool
 	)
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")

@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	defaultDigBenchTimeout          = 30 * time.Minute
+	// DefaultDigBenchTimeout gives discovery-heavy games enough room to finish
+	// while retaining a finite safety boundary. Headless callers can override it.
+	DefaultDigBenchTimeout          = 2 * time.Hour
 	defaultDigBenchProgressInterval = 15 * time.Second
-	digBenchDeveloperInstructions   = "Play only the assigned DigBench session. Use its scoped tools for game access, keep useful notes in the isolated workspace if needed, and stop calling tools as soon as the game is done."
+	digBenchDeveloperInstructions   = "Play only the assigned DigBench session. Use its scoped tools for game access, keep useful notes and hypotheses in the isolated workspace if needed, inspect every returned state before choosing the next move, and stop calling tools as soon as the game is done."
 )
 
 var errDigBenchTimeout = errors.New("DigBench timeout reached")
@@ -239,7 +241,7 @@ func (c Client) RunDigBench(ctx context.Context, service digBenchService, option
 		return DigBenchResult{}, errors.New("DigBench game, model, and effort are required")
 	}
 	if options.Timeout <= 0 {
-		options.Timeout = defaultDigBenchTimeout
+		options.Timeout = DefaultDigBenchTimeout
 	}
 	runCtx, cancel := context.WithTimeoutCause(ctx, options.Timeout, errDigBenchTimeout)
 	defer cancel()
@@ -446,9 +448,9 @@ func (s *appServerSession) runDigBench(
 				assignedSessionID, envelope.Params, &session,
 			)
 			applyDigBenchSession(&result, session)
-			success := response["success"] == true
+			success := response.agent["success"] == true
 			appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionTool, formatDigBenchToolInteraction(tool, action, stepIndex, assignedSessionID, session.SessionID))
-			appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionToolResponse, formatDigBenchToolResponse(response, success, assignedSessionID, session.SessionID))
+			appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionToolResponse, formatDigBenchToolResponse(response.transcript, success, assignedSessionID, session.SessionID))
 			if success {
 				if tool == "step" {
 					appendDigBenchInteraction(&result, startedAt, BenchmarkInteractionMove, redactDigBenchText(action, assignedSessionID, session.SessionID))
@@ -457,7 +459,7 @@ func (s *appServerSession) runDigBench(
 				emitDigBenchProgress(options.Progress, DigBenchProgressUpdate, result, startedAt)
 				publishDigBenchSnapshot(options.Snapshot, result)
 			}
-			if err := s.respond(envelope.ID, response); err != nil {
+			if err := s.respond(envelope.ID, response.agent); err != nil {
 				return result, fmt.Errorf("respond to DigBench tool call: %w", err)
 			}
 			continue
@@ -700,7 +702,7 @@ func digBenchDynamicTools() []map[string]any {
 		},
 		{
 			"type": "function", "name": "step",
-			"description": "Apply exactly one legal action to the assigned DigBench game session.",
+			"description": "Apply exactly one legal action to the assigned DigBench game session. Inspect the returned authoritative state before choosing and submitting the next move; never queue moves against states you have not observed.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -731,25 +733,106 @@ func formatDigBenchTools() string {
 }
 
 func formatDigBenchPrompt(session digbench.Session, sessionID string, redactState bool) string {
-	stateValue := any(session.State)
+	description := session.Description
+	creativeToggle := session.State.CreativeToggle
+	stateValue := any(digBenchModelState(session.State))
 	if redactState {
+		description = redactDigBenchText(description, session.SessionID)
+		if creativeToggle != nil {
+			redacted := redactDigBenchText(*creativeToggle, session.SessionID)
+			creativeToggle = &redacted
+		}
 		stateValue = redactDigBenchJSONValue(stateValue, session.SessionID)
 	}
 	state, _ := json.Marshal(stateValue)
 	return fmt.Sprintf(`We are not going to tell you the rules of this game—you have to figure them out for yourself.
 
-The aim is to reach as high a level as possible. You advance by reaching unknown states. Each level has a limited number of steps; exhausting them or reaching certain states can cost a life. Losing all lives ends the game.
+Levels, lives and steps:
+- The aim is to reach as high a level as possible. For each level you reach you will be awarded a bonus.
+- You advance levels by reaching certain states within the game. You will have to figure out what these are.
+- Within each level, you have a limited number of steps. If you run out of steps, you lose a life. If you lose all your lives, the game is over.
+- It is also possible to lose a life by reaching certain states within the game.
 
-Creative mode is available when "/" appears in the state's actions list. Use the step tool with action "/" to enter or leave it. Creative mode permits experimentation without consuming ordinary steps or lives, but has its own finite budget.
+TASK DESCRIPTION (objective + any special actions, NOT the rules):
+%s%s
 
-Your game session is already started: session_id=%q, game=%q. Do not start or choose another game. Use only get_session and step for game access, and pass this session_id to every call.
-
-Starting step_index: %d. Your first move must use step_index %d.
-Initial state:
+How you play—use the scoped DigBench tools to drive the game:
+1. Your game session is ALREADY started for you:
+session_id=%q, game=%q. You do NOT start or choose a game—you only have the "get_session" and "step" game tools, scoped to this one session, and you must pass this session_id to every call. Your starting state (step_index=%d) is:
 %s
 
-Each move must use exactly one string from the latest state's actions list and the latest returned step_index plus one. Infer the rules from state changes, keep useful notes if helpful, and continue at a deliberate but efficient pace until state.done is true. Then stop making moves and give a concise debrief of the mechanics, objective, strategy, and uncertainties.`,
-		sessionID, session.Game, session.StepIndex, session.StepIndex+1, state)
+2. Each turn, read the current state and reason from these fields: observation (the rendered screen), level, max_level, lives_left, steps_remaining, status, done, the actions list (your legal moves), and mode/creative_toggle/transition when present.
+
+3. Make a move with the "step" tool: session_id=%q, step_index=<the server's last returned step_index + 1>, action=<EXACTLY ONE string from the current state's actions list>. Your first move uses step_index=%d. A step_index mismatch is a conflict—always step off the server's last returned step_index. Use the "get_session" tool if you ever need to re-read the current state.
+
+4. Infer what each action does from how the state changes, and build on what you learn across turns. Keep useful notes and hypotheses in the isolated workspace when helpful. After each successful "step" call, wait for and inspect its returned authoritative state before deciding the next action. Never queue or precompute multiple future step calls against an unobserved state. You may deliberately test a sequence, but submit it one observed move at a time.
+
+Keep playing at a deliberate but efficient pace until the state's done is true (status game_over or completed). When the game is done, STOP making moves and write a concise debrief: the mechanics you discovered, the objective, useful strategies, and remaining uncertainties.`,
+		digBenchTaskDescription(description), digBenchCreativeModeInstruction(creativeToggle),
+		sessionID, session.Game, session.StepIndex, state,
+		sessionID, session.StepIndex+1)
+}
+
+func digBenchTaskDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "(none provided)"
+	}
+	return description
+}
+
+func digBenchCreativeModeInstruction(toggle *string) string {
+	if toggle == nil || *toggle == "" {
+		return ""
+	}
+	action, _ := json.Marshal(*toggle)
+	return fmt.Sprintf(`
+
+Important: creative mode
+At nearly any time, you can use a button to switch into "creative mode", where you can experiment safely without losing ordinary steps or lives. It may be necessary to use creative mode in order to discover the rules without running out of steps. Creative mode has its own finite budget.
+
+Call the "step" tool with action %s to enter creative mode.
+Call the "step" tool with action %s again to return to survival mode.
+Only submit %s when it appears in the state's actions list.`, action, action, action)
+}
+
+// digBenchModelState keeps every game-relevant field while omitting repeated
+// protocol/session metadata. The complete API payload remains in the sanitized
+// benchmark transcript for auditability.
+func digBenchModelState(state digbench.State) map[string]any {
+	modelState := map[string]any{
+		"observation":     state.Observation,
+		"level":           state.Level,
+		"max_level":       state.MaxLevel,
+		"lives_left":      state.LivesLeft,
+		"steps_remaining": state.StepsRemaining,
+		"status":          state.Status,
+		"done":            state.Done,
+		"actions":         state.Actions,
+	}
+	// These static limits are useful when planning experiments and were already
+	// visible in Codexometer's original model-facing response.
+	if state.MaxSteps != nil {
+		modelState["max_steps"] = state.MaxSteps
+	}
+	if state.StartingLives != nil {
+		modelState["starting_lives"] = state.StartingLives
+	}
+	if state.Mode != nil {
+		modelState["mode"] = state.Mode
+	}
+	if state.CreativeToggle != nil {
+		modelState["creative_toggle"] = state.CreativeToggle
+	}
+	if state.Transition != nil {
+		modelState["transition"] = state.Transition
+	}
+	return modelState
+}
+
+type digBenchHandledToolCall struct {
+	agent      map[string]any
+	transcript map[string]any
 }
 
 func handleDigBenchToolCall(
@@ -760,7 +843,7 @@ func handleDigBenchToolCall(
 	sessionID string,
 	params json.RawMessage,
 	current *digbench.Session,
-) map[string]any {
+) digBenchHandledToolCall {
 	var call struct {
 		ThreadID  string          `json:"threadId"`
 		TurnID    string          `json:"turnId"`
@@ -768,19 +851,19 @@ func handleDigBenchToolCall(
 		Arguments json.RawMessage `json:"arguments"`
 	}
 	if err := json.Unmarshal(params, &call); err != nil {
-		return digBenchToolResponse(nil, fmt.Errorf("decode tool request: %w", err))
+		return digBenchErrorToolCall(fmt.Errorf("decode tool request: %w", err))
 	}
 	if call.ThreadID != threadID || call.TurnID != turnID {
-		return digBenchToolResponse(nil, errors.New("access denied: tool call belongs to another Codex turn"))
+		return digBenchErrorToolCall(errors.New("access denied: tool call belongs to another Codex turn"))
 	}
 	var common struct {
 		SessionID string `json:"session_id"`
 	}
 	if err := json.Unmarshal(call.Arguments, &common); err != nil {
-		return digBenchToolResponse(nil, fmt.Errorf("decode %s arguments: %w", call.Tool, err))
+		return digBenchErrorToolCall(fmt.Errorf("decode %s arguments: %w", call.Tool, err))
 	}
 	if common.SessionID != sessionID {
-		return digBenchToolResponse(nil, errors.New("access denied: tool is scoped to the assigned session"))
+		return digBenchErrorToolCall(errors.New("access denied: tool is scoped to the assigned session"))
 	}
 	switch call.Tool {
 	case "get_session":
@@ -788,7 +871,7 @@ func handleDigBenchToolCall(
 		if err == nil {
 			*current = session
 		}
-		return digBenchToolResponse(session, err)
+		return digBenchSuccessfulToolCall(session, digBenchCompactSession(session), err)
 	case "step":
 		var arguments struct {
 			SessionID string `json:"session_id"`
@@ -796,16 +879,46 @@ func handleDigBenchToolCall(
 			Action    string `json:"action"`
 		}
 		if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
-			return digBenchToolResponse(nil, fmt.Errorf("decode step arguments: %w", err))
+			return digBenchErrorToolCall(fmt.Errorf("decode step arguments: %w", err))
 		}
 		response, err := service.Step(ctx, sessionID, digbench.StepRequest{Action: arguments.Action, StepIndex: arguments.StepIndex})
 		if err == nil {
 			*current = response.Session
 		}
-		return digBenchToolResponse(response, err)
+		return digBenchSuccessfulToolCall(response, digBenchCompactStep(response), err)
 	default:
-		return digBenchToolResponse(nil, fmt.Errorf("unknown DigBench tool %q", call.Tool))
+		return digBenchErrorToolCall(fmt.Errorf("unknown DigBench tool %q", call.Tool))
 	}
+}
+
+func digBenchSuccessfulToolCall(full, compact any, err error) digBenchHandledToolCall {
+	if err != nil {
+		return digBenchErrorToolCall(err)
+	}
+	return digBenchHandledToolCall{
+		agent:      digBenchToolResponse(compact, nil),
+		transcript: digBenchToolResponse(full, nil),
+	}
+}
+
+func digBenchErrorToolCall(err error) digBenchHandledToolCall {
+	response := digBenchToolResponse(nil, err)
+	return digBenchHandledToolCall{agent: response, transcript: response}
+}
+
+func digBenchCompactSession(session digbench.Session) map[string]any {
+	return map[string]any{
+		"step_index": session.StepIndex,
+		"state":      digBenchModelState(session.State),
+	}
+}
+
+func digBenchCompactStep(response digbench.StepResponse) map[string]any {
+	compact := digBenchCompactSession(response.Session)
+	if response.InvalidAction != nil {
+		compact["invalid_action"] = *response.InvalidAction
+	}
+	return compact
 }
 
 func digBenchToolResponse(value any, err error) map[string]any {

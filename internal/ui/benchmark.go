@@ -593,6 +593,9 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	for _, model := range m.benchmarkPlan.Models {
 		selected := selectedModels[model.Model]
 		label := "  " + scopeCheckLabel(selected) + " " + model.DisplayName
+		if m.benchmarkSelectedSuiteExternal() && strings.EqualFold(model.Model, "gpt-5.6-sol") {
+			label += " // PUBLISHED CONDITION WITH HIGH"
+		}
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeModel, value: model.Model, label: label,
 			efforts: append([]string(nil), model.Efforts...), selected: selected,
@@ -605,9 +608,18 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	selectedEfforts := stringSetUI(m.benchmarkScope.Efforts)
 	for _, effort := range m.benchmarkPlan.Efforts {
 		selected := selectedEfforts[effort]
+		label := "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort)
+		if m.benchmarkSelectedSuiteExternal() {
+			switch strings.ToLower(effort) {
+			case "high":
+				label += " // PUBLISHED CONDITION WITH GPT-5.6 SOL"
+			case "xhigh":
+				label += " // ENHANCED // NOT PAPER CONDITION"
+			}
+		}
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeEffort, value: effort, selected: selected,
-			label: "  " + scopeCheckLabel(selected) + " " + strings.ToUpper(effort),
+			label: label,
 		})
 	}
 	if m.benchmarkSelectedSuiteExternal() {
@@ -1433,10 +1445,7 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 	if inProgress {
 		outcome = "IN PROGRESS"
 		if result.Provider == "digbench" {
-			game := strings.TrimSpace(strings.TrimPrefix(result.TaskName, "DIGBENCH"))
-			if game != "" {
-				outcome = fmt.Sprintf("IN PROGRESS (%s, %d)", game, result.CurrentLevel)
-			}
+			outcome = fmt.Sprintf("IN PROGRESS (LVL %d)", result.CurrentLevel)
 		}
 	} else if result.Stopped {
 		outcome = "STOPPED"

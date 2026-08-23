@@ -56,6 +56,8 @@ Codexometer also includes an experimental integration with [DigBench](https://di
 
 Supplying a `DIGBENCH_API_TOKEN` adds **DigBench** to the suite selector. Codexometer fetches the current game catalogue at launch rather than compiling a fixed list, so Scope can expose every game returned by DigBench alongside the model and reasoning controls.
 
+The exact published `gpt-5.6-sol`/`high` condition is identified on both Scope controls; `xhigh` is marked as an enhanced, non-paper experiment. Each game receives a two-hour default allowance, with a different finite timeout available to headless runs. The model gets DigBench's task description and creative-mode metadata, a compact state-focused response after every action, and explicit guidance to inspect that response before choosing its next single move. The derived level score remains operator-facing, and Codexometer keeps the richer sanitized API exchange in the benchmark detail transcript.
+
 Before a run, Codexometer shows the planned number of persisted remote sessions and asks for confirmation. During each game, the result table reports live game and level progress. Its detail view documents the solving workflow as safe prompts and tool definitions followed by each tool request, tool response, move, authoritative state, and final response. Win detection comes from the remote DigBench state rather than from interpreting the model’s prose.
 
 Without a DigBench token, the integration remains hidden and the normal Codexometer experience is unchanged. Tokens can be created from the [DigBench account page](https://digbench.ai/account/tokens).

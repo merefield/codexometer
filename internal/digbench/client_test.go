@@ -28,7 +28,7 @@ func TestStartSessionUsesBearerAndDecodesState(t *testing.T) {
 			"session_id":"session-1","game":"P-1","step_index":0,
 			"done":false,"levels_beaten":0,"seed":42,"framework_version":"abc",
 			"state":{"status":"in_progress","done":false,"level":1,"max_level":3,
-			"observation":"___","actions":["a","b"]}
+			"mode":"creative","creative_toggle":"/","observation":"___","actions":["a","b","/"]}
 		}`))
 	}))
 	defer server.Close()
@@ -41,6 +41,9 @@ func TestStartSessionUsesBearerAndDecodesState(t *testing.T) {
 	}
 	if session.SessionID != "session-1" || session.Seed == nil || *session.Seed != 42 || session.State.MaxLevel == nil || *session.State.MaxLevel != 3 {
 		t.Fatalf("session = %#v", session)
+	}
+	if session.State.CreativeToggle == nil || *session.State.CreativeToggle != "/" {
+		t.Fatalf("creative toggle was not decoded: %#v", session.State)
 	}
 }
 
