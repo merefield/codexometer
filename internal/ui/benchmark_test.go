@@ -135,7 +135,7 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 			runLine = index
 		}
 	}
-	if selectorLine < 0 || !strings.Contains(lines[selectorLine+1], "(S) SCOPE") || !strings.Contains(lines[selectorLine+1], "(X) STOP") || runLine != selectorLine+2 {
+	if selectorLine < 0 || !strings.Contains(lines[selectorLine+1], "(S) SCOPE") || strings.Contains(lines[selectorLine+1], "STOP") || runLine != selectorLine+2 {
 		t.Fatalf("controls do not contain stable Scope, Stop, and Run rows:\n%s", controls)
 	}
 	if runStart := strings.Index(lines[runLine], "["); runStart <= strings.Index(lines[selectorLine+1], "[") {
@@ -842,6 +842,11 @@ func TestBenchmarkStopCancelsAndRetainsStoppedCurrentRow(t *testing.T) {
 	controls := ansi.Strip(model.renderBenchmarkControls(58, 5, paletteFor(themeHacker)))
 	if !strings.Contains(controls, "(X) STOP") {
 		t.Fatalf("running controls omitted Stop:\n%s", controls)
+	}
+	for _, line := range strings.Split(controls, "\n") {
+		if strings.Contains(line, "(X) STOP") && (!strings.Contains(line, "B:SCOPE") || strings.Index(line, "(X) STOP") > strings.Index(line, "B:SCOPE")) {
+			t.Fatalf("Stop is not the first action in the right-aligned run row:\n%s", controls)
+		}
 	}
 	x, y := benchmarkControlCoordinates(t, model, footerButtonBenchmarkStop)
 	updated, command := model.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})

@@ -857,9 +857,6 @@ func (m Model) benchmarkVisibleControlLines(width, height int) [][]benchmarkCont
 		return lines
 	}
 	if capacity == 2 && len(lines) >= 3 {
-		if m.benchmarkRunActive() {
-			return lines[:2]
-		}
 		return [][]benchmarkControlSegment{lines[0], lines[2]}
 	}
 	return lines[:min(len(lines), capacity)]
@@ -933,7 +930,11 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 		}
 		allLabel = fmt.Sprintf("[ CONFIRM // %d %s ]", allTurns, unit)
 	}
-	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
+	primaryLabelsWidth := lipgloss.Width(selectedLabel) + lipgloss.Width(allLabel) + 1
+	if running {
+		primaryLabelsWidth += lipgloss.Width(stopLabel) + 1
+	}
+	if primaryLabelsWidth > width {
 		selectedLabel = fmt.Sprintf("[B:SCOPE %d]", scopeTurns)
 		if selected.external && m.benchmarkSelectedArmed {
 			selectedLabel = fmt.Sprintf("[B:CONFIRM %d]", scopeTurns)
@@ -946,7 +947,12 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 			allLabel = fmt.Sprintf("[A:CONFIRM %d]", allTurns)
 		}
 	}
-	if lipgloss.Width(selectedLabel)+lipgloss.Width(allLabel)+1 > width {
+	primaryLabelsWidth = lipgloss.Width(selectedLabel) + lipgloss.Width(allLabel) + 1
+	if running {
+		primaryLabelsWidth += lipgloss.Width(stopLabel) + 1
+	}
+	if primaryLabelsWidth > width {
+		stopLabel = "[STOP]"
 		selectedLabel = fmt.Sprintf("[S:%d]", scopeTurns)
 		if selected.external && m.benchmarkSelectedArmed {
 			selectedLabel = fmt.Sprintf("[S:%d?]", scopeTurns)
@@ -959,24 +965,22 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 			allLabel = fmt.Sprintf("[A:%d?]", allTurns)
 		}
 	}
-	if lipgloss.Width(scopeLabel)+lipgloss.Width(stopLabel)+1 > width {
+	if lipgloss.Width(scopeLabel) > width {
 		scopeLabel = fmt.Sprintf("[S:SCOPE %d]", m.benchmarkCombinations)
-		stopLabel = "[X:STOP]"
 	}
-	if lipgloss.Width(scopeLabel)+lipgloss.Width(stopLabel)+1 > width {
+	if lipgloss.Width(scopeLabel) > width {
 		scopeLabel = fmt.Sprintf("[SCOPE:%d]", m.benchmarkCombinations)
-		stopLabel = "[STOP]"
 	}
-	primary := []benchmarkControlSegment{
-		{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(suites) > 0},
-		{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, allTurns, len(m.benchmarkAllTasks()))},
+	primary := make([]benchmarkControlSegment, 0, 3)
+	if running {
+		primary = append(primary, benchmarkControlSegment{text: stopLabel, button: footerButtonBenchmarkStop, enabled: m.benchmarkState == benchmarkRunning})
 	}
+	primary = append(primary,
+		benchmarkControlSegment{text: selectedLabel, button: footerButtonBenchmarkSelected, enabled: m.benchmarkCanRunSelected() && len(suites) > 0},
+		benchmarkControlSegment{text: allLabel, button: footerButtonBenchmarkAll, enabled: benchmarkRunAllAvailable(running, allTurns, len(m.benchmarkAllTasks()))},
+	)
 	secondary := []benchmarkControlSegment{
 		{text: scopeLabel, button: footerButtonBenchmarkScope, enabled: !running && len(m.benchmarkPlan.Models) > 0},
-		{text: stopLabel, button: footerButtonBenchmarkStop, enabled: m.benchmarkState == benchmarkRunning},
-	}
-	if running {
-		secondary[0], secondary[1] = secondary[1], secondary[0]
 	}
 	for benchmarkSegmentsWidth(primary) > width && len(primary) > 1 {
 		primary = primary[:len(primary)-1]
