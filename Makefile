@@ -1,4 +1,4 @@
-.PHONY: build test fmt vet
+.PHONY: build test integration-test check fmt vet release-snapshot
 
 # A tagged checkout gets the nearest semantic Git description. Repositories
 # without a reachable tag leave this empty so Go's embedded VCS revision and
@@ -12,8 +12,16 @@ build:
 test:
 	go test ./...
 
+integration-test:
+	bats test/install-release.bats
+
+check: vet test integration-test
+
 fmt:
 	go fmt ./...
 
 vet:
 	go vet ./...
+
+release-snapshot:
+	goreleaser release --snapshot --clean --skip=publish
