@@ -136,7 +136,7 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 		snapshot:    codex.DemoSnapshot(),
 		nextRefresh: time.Now().Add(time.Minute),
 		meterView:   viewBars,
-		appVersion:  "0.10.0-dev+abc123.dirty",
+		appVersion:  "0.11.0-dev+abc123.dirty",
 	}
 	colors := paletteFor(themeHacker)
 	account := ansi.Strip(model.renderAccount(colors))
@@ -153,7 +153,7 @@ func TestStatusAndFooterKeepOnlyEssentialMetadata(t *testing.T) {
 	if !strings.HasSuffix(headerLines[len(headerLines)-1], "ACCOUNT // PLUS") {
 		t.Fatalf("account is not aligned with the subtitle: %q", headerLines[len(headerLines)-1])
 	}
-	if !strings.Contains(headerLines[len(headerLines)-1], "VERSION 0.10.0-DEV+ABC123.DIRTY") {
+	if !strings.Contains(headerLines[len(headerLines)-1], "VERSION 0.11.0-DEV+ABC123.DIRTY") {
 		t.Fatalf("resolved build version is absent from the masthead: %q", headerLines[len(headerLines)-1])
 	}
 	footer := ansi.Strip(model.renderFooter(100, colors))

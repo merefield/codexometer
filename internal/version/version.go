@@ -8,7 +8,7 @@ import (
 
 // Version is the source fallback. Tagged module installs and builds made with
 // an injected buildVersion use their embedded version instead.
-const Version = "0.10.0"
+const Version = "0.11.0"
 
 // buildVersion may be populated at link time from the nearest Git tag.
 var buildVersion string

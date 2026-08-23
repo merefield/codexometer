@@ -14,7 +14,7 @@ opening `/status` in your working Codex session.
 ```text
 █▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█
 █▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄
-◉ QUOTA TELEMETRY CONSOLE · VERSION 0.10.0
+◉ QUOTA TELEMETRY CONSOLE · VERSION 0.11.0
 ```
 
 ![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
@@ -117,8 +117,8 @@ curl -fsSL https://raw.githubusercontent.com/merefield/codexometer/main/install-
   CODEXOMETER_BIN_DIR="$HOME/.local/bin" sh
 ```
 
-To install a specific release, add `CODEXOMETER_VERSION=v0.10.0` beside the
-bin-directory setting or download the script and pass `--version v0.10.0`.
+To install a specific release, add `CODEXOMETER_VERSION=v0.11.0` beside the
+bin-directory setting or download the script and pass `--version v0.11.0`.
 
 On Windows, download and run the PowerShell installer:
 
@@ -134,7 +134,7 @@ The execution-policy override applies only to that PowerShell process. Inspect
 the downloaded script before running it if required by your security policy.
 
 It installs into `%LOCALAPPDATA%\Programs\codexometer\bin` by default. Override
-that with `CODEXOMETER_BIN_DIR` or `-BinDir`; use `-Version v0.10.0` to select a
+that with `CODEXOMETER_BIN_DIR` or `-BinDir`; use `-Version v0.11.0` to select a
 release. Both installers print a reminder if the destination is not already on
 `PATH`. Re-running the same command safely upgrades or reinstalls Codexometer.
 
@@ -1287,9 +1287,9 @@ remain unchanged between validation and publication.
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.10.0`. The Git tag is the release source of truth. Go automatically embeds
+`v0.11.0`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.10.0`.
+`go install github.com/merefield/codexometer@v0.11.0`.
 
 The resolver uses the first version available in this order:
 
@@ -1297,10 +1297,10 @@ The resolver uses the first version available in this order:
    `make build`;
 2. Go's embedded module version—an exact tag for a release build or, when Go
    supplies one, a pseudo-version such as
-   `0.10.1-0.<timestamp>-<commit>[+dirty]`;
+   `0.11.1-0.<timestamp>-<commit>[+dirty]`;
 3. for a local checkout whose module version is `(devel)`, a VCS fallback in
-   the explicit form `0.10.0-dev+<commit>[.dirty]`;
-4. the maintained source version, `0.10.0`, when no build or VCS identity is
+   the explicit form `0.11.0-dev+<commit>[.dirty]`;
+4. the maintained source version, `0.11.0`, when no build or VCS identity is
    available.
 
 The leading `v` used by Git tags and Go module versions is removed in every
@@ -1319,7 +1319,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.buildVersion=v0.10.0" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.buildVersion=v0.11.0" .
 ```
 
 ## How refresh works
