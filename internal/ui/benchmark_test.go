@@ -249,11 +249,24 @@ func TestBenchmarkClearAllControlClearsAccumulatedResultsOnlyWhileIdle(t *testin
 		t.Fatalf("Clear All did not reset idle results: command=%v state=%d results=%#v", command != nil, model.benchmarkState, model.benchmarkResults)
 	}
 
+	model.benchmarkState = benchmarkFinished
+	model.benchmarkResults = []codex.BenchmarkResult{result}
+	updated, command = model.Update(key('l'))
+	model = updated.(Model)
+	if command == nil || model.flashedButton != footerButtonBenchmarkClearAll || len(model.benchmarkResults) != 0 || model.benchmarkState != benchmarkIdle {
+		t.Fatalf("L did not clear idle results: command=%v button=%d state=%d results=%#v", command != nil, model.flashedButton, model.benchmarkState, model.benchmarkResults)
+	}
+
 	model.benchmarkState = benchmarkRunning
 	model.benchmarkResults = []codex.BenchmarkResult{result}
 	clearX, clearY = renderedTextStart(t, model, benchmarkClearAllLabel)
 	if got := model.benchmarkButtonAt(clearX, clearY); got != footerButtonNone {
 		t.Fatalf("running Clear All hit target = %d, want none", got)
+	}
+	updated, command = model.Update(key('l'))
+	model = updated.(Model)
+	if command != nil || len(model.benchmarkResults) != 1 {
+		t.Fatalf("running benchmark accepted L: command=%v results=%#v", command != nil, model.benchmarkResults)
 	}
 }
 

@@ -451,6 +451,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && (m.benchmarkDetail != nil || m.benchmarkResultsCopyAvailable()) {
 				return m.pressFooterButton(footerButtonBenchmarkCopy)
 			}
+		case "l":
+			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && !m.benchmarkRunActive() && len(m.benchmarkResults) > 0 {
+				return m.pressFooterButton(footerButtonBenchmarkClearAll)
+			}
 		case "a":
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil {
 				return m.pressFooterButton(footerButtonBenchmarkAll)
