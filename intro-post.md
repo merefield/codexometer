@@ -87,16 +87,26 @@ It is written in Go and builds as a standalone binary for macOS, Windows, and Li
 
 ## Install and upgrade
 
-The easiest installation is also the easiest way to upgrade an existing Go-installed copy:
+The release installer is also the easiest way to upgrade. It downloads the pre-built binary for your platform, verifies the published SHA-256 checksum, confirms the release version, and installs it without requiring Go.
+
+On macOS or Linux:
 
 ```sh
-go install github.com/merefield/codexometer@latest
-codexometer --version
+curl -fsSL https://raw.githubusercontent.com/merefield/codexometer/main/install-release.sh | sh
 ```
 
-Go installs the executable into `GOBIN`, or normally `$HOME/go/bin`. Ensure that directory is on `PATH`. If the version command still finds an older installation, `command -v codexometer` on macOS/Linux or `Get-Command codexometer` in PowerShell will show which executable is being run.
+The default destination is `/usr/local/bin`. For a user-local installation, set `CODEXOMETER_BIN_DIR="$HOME/.local/bin"` when running the installer.
 
-If you installed a manually built binary, pull the latest source and rebuild it, or replace the existing executable with a newly compiled copy.
+On Windows PowerShell:
+
+```powershell
+$installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
+& $installer
+Remove-Item $installer
+```
+
+Re-run the relevant installer to upgrade or reinstall Codexometer. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Developers who prefer to build from source can still use `go install github.com/merefield/codexometer@latest`.
 
 Full installation, authentication, privacy, monitoring, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
 
