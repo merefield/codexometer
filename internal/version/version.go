@@ -2,13 +2,17 @@
 package version
 
 import (
+	_ "embed"
 	"runtime/debug"
 	"strings"
 )
 
-// Version is the source fallback. Tagged module installs and builds made with
-// an injected buildVersion use their embedded version instead.
-const Version = "0.11.0"
+// sourceVersion is the single maintained release value for source builds.
+// Tagged module installs and builds made with an injected buildVersion use
+// their embedded version instead.
+//
+//go:embed VERSION
+var sourceVersion string
 
 // buildVersion may be populated at link time from the nearest Git tag.
 var buildVersion string
@@ -28,7 +32,7 @@ func Current() string {
 			return value
 		}
 	}
-	return Version
+	return maintainedVersion()
 }
 
 // vcsFallback identifies a local checkout when Go reports Main.Version as
@@ -51,11 +55,15 @@ func vcsFallback(settings []debug.BuildSetting) string {
 	if len(revision) > 12 {
 		revision = revision[:12]
 	}
-	value := Version + "-dev+" + revision
+	value := maintainedVersion() + "-dev+" + revision
 	if modified {
 		value += ".dirty"
 	}
 	return value
+}
+
+func maintainedVersion() string {
+	return normalize(sourceVersion)
 }
 
 func normalize(value string) string {

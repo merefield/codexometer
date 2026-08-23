@@ -7,11 +7,11 @@ import (
 
 func TestCurrentUsesBuildOverride(t *testing.T) {
 	previous := buildVersion
-	buildVersion = "v0.11.0"
+	buildVersion = "v1.2.3"
 	t.Cleanup(func() { buildVersion = previous })
 
-	if got := Current(); got != "0.11.0" {
-		t.Fatalf("Current() = %q, want 0.11.0", got)
+	if got := Current(); got != "1.2.3" {
+		t.Fatalf("Current() = %q, want 1.2.3", got)
 	}
 }
 
@@ -32,8 +32,9 @@ func TestVCSFallbackIncludesRevisionAndDirtyState(t *testing.T) {
 		{Key: "vcs.revision", Value: "0123456789abcdef"},
 		{Key: "vcs.modified", Value: "true"},
 	})
-	if got != "0.11.0-dev+0123456789ab.dirty" {
-		t.Fatalf("vcsFallback() = %q", got)
+	want := maintainedVersion() + "-dev+0123456789ab.dirty"
+	if got != want {
+		t.Fatalf("vcsFallback() = %q, want %q", got, want)
 	}
 }
 
