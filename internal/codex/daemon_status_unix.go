@@ -16,7 +16,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const daemonStatusTimeout = 2 * time.Second
+const (
+	daemonStatusTimeout      = 2 * time.Second
+	daemonStatusRefreshEvery = 5 * time.Second
+)
 
 type daemonStatusProvider struct {
 	socketPath string
@@ -29,6 +32,9 @@ type daemonStatusProvider struct {
 	reroutedTurns map[daemonTurnKey]string
 	observations  []resolvedModelObservation
 	nextSequence  uint64
+	lastStatusAt  time.Time
+	statusThreads map[string]struct{}
+	statuses      map[string]sessionRuntimeStatus
 	writeMu       sync.Mutex
 }
 
@@ -52,6 +58,9 @@ func newSessionStatusProvider(codexHome string) sessionStatusProvider {
 func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (sessionDaemonSnapshot, bool) {
 	if err := p.ensureConnected(ctx); err != nil {
 		return sessionDaemonSnapshot{}, false
+	}
+	if snapshot, ok := p.cachedStatusSnapshot(threadIDs, time.Now()); ok {
+		return snapshot, true
 	}
 
 	loaded, err := p.loadedThreads(ctx)
@@ -96,15 +105,67 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	}
 
 	p.mu.Lock()
-	observations := append([]resolvedModelObservation(nil), p.observations...)
+	p.lastStatusAt = time.Now()
+	p.statusThreads = stringStructSet(threadIDs)
+	p.statuses = cloneRuntimeStatuses(statuses)
+	snapshot := p.statusSnapshotLocked(threadIDs)
+	p.mu.Unlock()
+	return snapshot, true
+}
+
+func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time.Time) (sessionDaemonSnapshot, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lastStatusAt.IsZero() || now.Sub(p.lastStatusAt) >= daemonStatusRefreshEvery || !sameStringSet(p.statusThreads, threadIDs) {
+		return sessionDaemonSnapshot{}, false
+	}
+	return p.statusSnapshotLocked(threadIDs), true
+}
+
+func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
+	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
+	for _, threadID := range threadIDs {
+		if status, ok := p.statuses[threadID]; ok {
+			statuses[threadID] = status
+		}
+	}
 	subscribed := make(map[string]struct{}, len(p.subscribed))
 	for threadID := range p.subscribed {
 		subscribed[threadID] = struct{}{}
 	}
-	p.mu.Unlock()
 	return sessionDaemonSnapshot{
-		Statuses: statuses, ModelObservations: observations, SubscribedThreads: subscribed,
-	}, true
+		Statuses:          statuses,
+		ModelObservations: append([]resolvedModelObservation(nil), p.observations...),
+		SubscribedThreads: subscribed,
+	}
+}
+
+func stringStructSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+func sameStringSet(set map[string]struct{}, values []string) bool {
+	if len(set) != len(values) {
+		return false
+	}
+	for _, value := range values {
+		if _, ok := set[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneRuntimeStatuses(statuses map[string]sessionRuntimeStatus) map[string]sessionRuntimeStatus {
+	cloned := make(map[string]sessionRuntimeStatus, len(statuses))
+	for threadID, status := range statuses {
+		cloned[threadID] = status
+	}
+	return cloned
 }
 
 func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs []string) {
@@ -379,6 +440,9 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	}
 	p.subscribed = nil
 	p.reroutedTurns = nil
+	p.lastStatusAt = time.Time{}
+	p.statusThreads = nil
+	p.statuses = nil
 	p.mu.Unlock()
 	if current != nil {
 		_ = current.Close()

@@ -82,16 +82,19 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := layoutMonitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	goLabel, stopLabel := "(S)TART", "STO(P)"
-	if layout.buttonWidths[0] < lipgloss.Width(goLabel)+2 {
-		goLabel = "(S)"
+	toggleLabel, resetLabel := "(P)AUSE", "RE(S)ET"
+	if m.monitorState == monitorPaused || m.monitorState == monitorResuming {
+		toggleLabel = "RESUME (P)"
 	}
-	if layout.buttonWidths[1] < lipgloss.Width(stopLabel)+2 {
-		stopLabel = "(P)"
+	if layout.buttonWidths[0] < lipgloss.Width(toggleLabel)+2 {
+		toggleLabel = "(P)"
 	}
-	goButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, goLabel, footerButtonMonitorGo, m.monitorGoEnabled(), colors)
-	stopButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, stopLabel, footerButtonMonitorStop, m.monitorStopEnabled(), colors)
-	controls := lipgloss.JoinHorizontal(lipgloss.Top, goButton, strings.Repeat(" ", layout.gap), stopButton)
+	if layout.buttonWidths[1] < lipgloss.Width(resetLabel)+2 {
+		resetLabel = "(S)"
+	}
+	toggleButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, toggleLabel, footerButtonMonitorPause, m.monitorPauseEnabled(), colors)
+	resetButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
+	controls := lipgloss.JoinHorizontal(lipgloss.Top, toggleButton, strings.Repeat(" ", layout.gap), resetButton)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
 	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
@@ -105,26 +108,27 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 }
 
 func (m Model) renderMonitorReadout(width, height int, colors palette) string {
-	state := "READY"
-	hint := "PRESS S OR CLICK START // LOCAL SESSIONS"
+	state := "STARTING"
+	hint := "INITIALIZING LOCAL SESSION MONITOR"
 	switch m.monitorState {
 	case monitorStarting:
-		state, hint = "ZEROING COUNTER", "SCANNING LOCAL CODEX TELEMETRY"
+		state, hint = "STARTING", "SCANNING LOCAL CODEX TELEMETRY"
 	case monitorRunning:
-		state, hint = "RECORDING ●", fmt.Sprintf("LIVE LOCAL SESSIONS %d // P OR CLICK STOP", m.monitorSessions)
-	case monitorStopping:
-		state, hint = "FINAL SYNC", "READING APPENDED TOKEN TELEMETRY"
-	case monitorStopped:
-		state, hint = "STOPPED", fmt.Sprintf("FINAL CONSUMPTION // LOCAL SESSIONS %d", m.monitorSessions)
+		state, hint = "MONITORING ●", fmt.Sprintf("LIVE LOCAL SESSIONS %d // P TO PAUSE", m.monitorSessions)
+	case monitorPausing:
+		state, hint = "PAUSING", "READING FINAL APPENDED TOKEN TELEMETRY"
+	case monitorPaused:
+		state, hint = "PAUSED", fmt.Sprintf("LOCAL SESSIONS %d // P TO RESUME", m.monitorSessions)
+	case monitorResuming:
+		state, hint = "RESUMING", "REBASING AFTER PAUSED ACTIVITY"
+	case monitorResetting:
+		state, hint = "RESETTING", "ESTABLISHING A FRESH BASELINE"
 	}
 	if m.monitorError != "" {
 		state, hint = "NO TOKEN SIGNAL", m.monitorError
 	}
 
-	total := int64(0)
-	if !m.monitorStartedAt.IsZero() && m.monitorLatest >= m.monitorBaseline {
-		total = m.monitorLatest - m.monitorBaseline
-	}
+	total := m.monitorRecordedTokens()
 	elapsed := m.monitorElapsed(time.Now())
 	rate := int64(0)
 	if elapsed > 0 {
@@ -242,13 +246,17 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 }
 
 func (m Model) renderMonitorSessionRow(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	rowColors := colors
+	if session.id == m.monitorSelectedID {
+		rowColors.primary = colors.accent
+	}
 	metricsWidth, graphWidth, ok := monitorSessionColumnWidths(width)
 	if !ok {
-		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", colors)
+		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", rowColors)
 	}
-	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, colors)
+	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
 	title := "TOKEN BARS"
-	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, colors)
+	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, rowColors)
 	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
 }
 
@@ -328,7 +336,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	borderColor := colors.primary
-	if session.attention != codex.SessionAttentionNone {
+	if session.attention != codex.SessionAttentionNone && session.id != m.monitorSelectedID {
 		borderColor = colors.warning
 	}
 	action := ""
@@ -339,14 +347,21 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 }
 
 func (m Model) renderMonitorSessionDismiss(id string, colors palette) string {
+	label := monitorDismissLabel
+	if m.monitorSelectedID == id {
+		label = "[X]"
+	}
 	style := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background)
+	if m.monitorSelectedID == id {
+		style = style.Bold(true).Foreground(colors.accent)
+	}
 	if m.monitorDismissHover == id {
 		style = style.Bold(true).Foreground(colors.accent)
 	}
 	if m.monitorDismissFlash == id {
 		style = style.Bold(true).Foreground(colors.background).Background(colors.primary)
 	}
-	return style.Render(monitorDismissLabel)
+	return style.Render(label)
 }
 
 func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
@@ -569,9 +584,9 @@ func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSam
 	}
 	if len(samples) == 0 {
 		message := "WAITING FOR FIRST SAMPLE"
-		if m.monitorState == monitorIdle {
-			message = "PRESS START TO ARM RECORDER"
-		} else if m.monitorState == monitorStopped {
+		if m.monitorState == monitorIdle || m.monitorState == monitorStarting {
+			message = "STARTING MONITOR"
+		} else if m.monitorState == monitorPaused {
 			message = "NO COMPLETE 30 SEC SAMPLE"
 		}
 		message = ansi.Truncate(message, innerWidth, "")
@@ -636,11 +651,11 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	dashboard := m.dashboardLayout()
 	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
-	if m.monitorGoEnabled() && area.goRect.contains(localX, localY) {
-		return footerButtonMonitorGo
+	if m.monitorPauseEnabled() && area.goRect.contains(localX, localY) {
+		return footerButtonMonitorPause
 	}
-	if m.monitorStopEnabled() && area.stopRect.contains(localX, localY) {
-		return footerButtonMonitorStop
+	if m.monitorResetEnabled() && area.stopRect.contains(localX, localY) {
+		return footerButtonMonitorReset
 	}
 	return footerButtonNone
 }
@@ -672,12 +687,12 @@ func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
 	return "", false
 }
 
-func (m Model) monitorGoEnabled() bool {
-	return m.monitorState == monitorIdle || m.monitorState == monitorStopped
+func (m Model) monitorPauseEnabled() bool {
+	return m.monitorState == monitorRunning || m.monitorState == monitorPaused
 }
 
-func (m Model) monitorStopEnabled() bool {
-	return m.monitorState == monitorRunning
+func (m Model) monitorResetEnabled() bool {
+	return m.monitorState == monitorRunning || m.monitorState == monitorPaused
 }
 
 func (m Model) monitorElapsed(now time.Time) time.Duration {
@@ -685,7 +700,7 @@ func (m Model) monitorElapsed(now time.Time) time.Duration {
 		return 0
 	}
 	end := now
-	if m.monitorState == monitorStopped && !m.monitorStoppedAt.IsZero() {
+	if m.monitorState == monitorPaused && !m.monitorStoppedAt.IsZero() {
 		end = m.monitorStoppedAt
 	}
 	if end.Before(m.monitorStartedAt) {
@@ -700,7 +715,7 @@ func (m Model) monitorSessionElapsed(session monitorSession, now time.Time) time
 		start = m.monitorStartedAt
 	}
 	end := now
-	if m.monitorState == monitorStopped && !m.monitorStoppedAt.IsZero() {
+	if m.monitorState == monitorPaused && !m.monitorStoppedAt.IsZero() {
 		end = m.monitorStoppedAt
 	}
 	if start.IsZero() || end.Before(start) {

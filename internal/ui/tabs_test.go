@@ -175,7 +175,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 	}
 }
 
-func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
+func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model := Model{meterView: viewBars}
 	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewBars} {
 		updated, command := model.Update(key('v'))
@@ -191,11 +191,18 @@ func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
 		t.Fatal("S changed the Quota view")
 	}
 
-	model = Model{meterView: viewMonitor, monitorState: monitorIdle}
+	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
 	updated, command = model.Update(key('s'))
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorStarting || model.flashedButton != footerButtonMonitorGo {
-		t.Fatalf("Monitor S did not start: state=%d flash=%d", model.monitorState, model.flashedButton)
+	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
+		t.Fatalf("Monitor S did not reset: state=%d flash=%d", model.monitorState, model.flashedButton)
+	}
+
+	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
+	updated, command = model.Update(key('p'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorPausing || model.flashedButton != footerButtonMonitorPause {
+		t.Fatalf("Monitor P did not pause: state=%d flash=%d", model.monitorState, model.flashedButton)
 	}
 
 	model = Model{meterView: viewBenchmark}
