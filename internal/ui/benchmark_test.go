@@ -172,7 +172,7 @@ func TestBenchmarkResultsCopyControlExportsMarkdownTable(t *testing.T) {
 	if lines[1] != "| --- | --- | --- | --- | --- | --- | --- | --- |" {
 		t.Fatalf("Markdown separator = %q", lines[1])
 	}
-	for _, want := range []string{"PIPE \\| TASK", "FAILED TASK", "IN PROGRESS (P-1, 4)", "~$0.0123"} {
+	for _, want := range []string{"PIPE \\| TASK", "FAILED TASK", "IN PROGRESS (LVL 4)", "~$0.0123"} {
 		if !strings.Contains(clipboard, want) {
 			t.Fatalf("Markdown export missing %q:\n%s", want, clipboard)
 		}
@@ -1412,7 +1412,7 @@ func TestBenchmarkResultValuesShowLiveDigBenchGameAndLevel(t *testing.T) {
 	result := codex.BenchmarkResult{
 		Provider: "digbench", TaskName: "DIGBENCH P-1", CurrentLevel: 4,
 	}
-	if got := benchmarkResultValues(result, nil, true)[4]; got != "IN PROGRESS (P-1, 4)" {
+	if got := benchmarkResultValues(result, nil, true)[4]; got != "IN PROGRESS (LVL 4)" {
 		t.Fatalf("live DigBench result = %q", got)
 	}
 	if got := benchmarkResultValues(result, nil)[4]; got != "LOSS" {

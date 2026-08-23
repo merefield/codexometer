@@ -1442,10 +1442,7 @@ func benchmarkResultValues(result codex.BenchmarkResult, rankings map[string]int
 	if inProgress {
 		outcome = "IN PROGRESS"
 		if result.Provider == "digbench" {
-			game := strings.TrimSpace(strings.TrimPrefix(result.TaskName, "DIGBENCH"))
-			if game != "" {
-				outcome = fmt.Sprintf("IN PROGRESS (%s, %d)", game, result.CurrentLevel)
-			}
+			outcome = fmt.Sprintf("IN PROGRESS (LVL %d)", result.CurrentLevel)
 		}
 	} else if result.Stopped {
 		outcome = "STOPPED"
