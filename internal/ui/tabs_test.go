@@ -241,10 +241,10 @@ func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 	}
 }
 
-func TestMonitorIndicatorUsesActivityAndAppServerHealth(t *testing.T) {
+func TestMonitorIndicatorUsesCodexActivityAndHealth(t *testing.T) {
 	model := Model{
 		meterView: viewBars, monitorState: monitorRunning,
-		monitorAppServerKnown: true, monitorAppServerUp: true, monitorAppServerWorking: true,
+		monitorCodexStatusKnown: true, monitorCodexUp: true, monitorCodexWorking: true,
 	}
 	colors := paletteFor(themeHacker)
 	model.phase = 0
@@ -261,24 +261,24 @@ func TestMonitorIndicatorUsesActivityAndAppServerHealth(t *testing.T) {
 	if model.monitorIndicatorColor(colors) != colors.success {
 		t.Fatal("working indicator did not alternate to bright green")
 	}
-	model.monitorAppServerWorking = false
+	model.monitorCodexWorking = false
 	if model.monitorIndicatorColor(colors) != colors.success {
-		t.Fatal("idle app server indicator was not steady green")
+		t.Fatal("idle Codex indicator was not steady green")
 	}
-	model.monitorAppServerUp = false
+	model.monitorCodexUp = false
 	if model.monitorIndicatorColor(colors) != colors.danger {
-		t.Fatal("unreachable app server indicator was not steady red")
+		t.Fatal("stopped Codex indicator was not steady red")
 	}
-	model.monitorAppServerKnown = false
+	model.monitorCodexStatusKnown = false
 	if model.monitorIndicatorColor(colors) != colors.dim {
-		t.Fatal("unknown app server status was not shown as dim")
+		t.Fatal("unknown Codex status was not shown as dim")
 	}
 	model.monitorState = monitorPaused
-	model.monitorAppServerKnown = true
-	model.monitorAppServerUp = true
-	model.monitorAppServerWorking = true
+	model.monitorCodexStatusKnown = true
+	model.monitorCodexUp = true
+	model.monitorCodexWorking = true
 	if model.monitorIndicatorColor(colors) != colors.dim {
-		t.Fatal("paused Monitor presented stale app-server health as current")
+		t.Fatal("paused Monitor presented stale Codex health as current")
 	}
 	if lipgloss.Width(bright) != 100 || lipgloss.Width(dark) != 100 {
 		t.Fatalf("tab rail did not fill its responsive width: bright=%d dark=%d", lipgloss.Width(bright), lipgloss.Width(dark))

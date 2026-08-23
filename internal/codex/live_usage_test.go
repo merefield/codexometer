@@ -453,6 +453,9 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
 		t.Fatalf("open completed CLI = %#v, %v; want input needed", usage, err)
 	}
+	if !usage.CodexStatusKnown || !usage.CodexUp || !usage.CodexWorking {
+		t.Fatalf("held writer lock did not report live Codex activity: %#v", usage)
+	}
 
 	appendRollout(t, path, attentionEventLine(now.Add(time.Second), "task_started", nil)+"\n")
 	usage, err = reader.FetchTokenUsage(context.Background())
@@ -469,6 +472,9 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
 		t.Fatalf("closed CLI = %#v, %v; want no attention", usage, err)
+	}
+	if !usage.CodexStatusKnown || usage.CodexUp || usage.CodexWorking {
+		t.Fatalf("released final writer lock did not report an observable stopped runtime: %#v", usage)
 	}
 }
 
@@ -707,7 +713,7 @@ func (s stubSessionStatusProvider) Fetch(context.Context, []string) (sessionDaem
 	}, true
 }
 
-func TestLiveUsageReaderReportsAppServerHealthAndWork(t *testing.T) {
+func TestLiveUsageReaderReportsCodexHealthAndWork(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()
 	path := testRolloutPath(t, home, now, "health-thread")
@@ -720,14 +726,36 @@ func TestLiveUsageReaderReportsAppServerHealthAndWork(t *testing.T) {
 		statuses: map[string]sessionRuntimeStatus{"health-thread": sessionRuntimeWorking},
 	}
 	working, err := reader.FetchTokenUsage(context.Background())
-	if err != nil || !working.AppServerStatusKnown || !working.AppServerUp || !working.AppServerWorking {
-		t.Fatalf("working app-server health = %#v, %v", working, err)
+	if err != nil || !working.CodexStatusKnown || !working.CodexUp || !working.CodexWorking {
+		t.Fatalf("working Codex health = %#v, %v", working, err)
 	}
 
 	reader.statusProvider = stubSessionStatusProvider{unavailable: true}
-	down, err := reader.FetchTokenUsage(context.Background())
-	if err != nil || !down.AppServerStatusKnown || down.AppServerUp || down.AppServerWorking {
-		t.Fatalf("unreachable app-server health = %#v, %v", down, err)
+	unknown, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || unknown.CodexStatusKnown || unknown.CodexUp || unknown.CodexWorking {
+		t.Fatalf("unobservable Codex health = %#v, %v", unknown, err)
+	}
+}
+
+func TestCodexRuntimeHealthCombinesAppServerAndWriterLocks(t *testing.T) {
+	tests := []struct {
+		name                                          string
+		appUp, appWorking, liveWriter, locksSupported bool
+		wantKnown, wantUp, wantWorking                bool
+	}{
+		{"working app server", true, true, false, false, true, true, true},
+		{"idle app server", true, false, false, false, true, true, false},
+		{"live writer without app server", false, false, true, true, true, true, true},
+		{"observable without live runtime", false, false, false, true, true, false, false},
+		{"unobservable", false, false, false, false, false, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			known, up, working := codexRuntimeHealth(tt.appUp, tt.appWorking, tt.liveWriter, tt.locksSupported)
+			if known != tt.wantKnown || up != tt.wantUp || working != tt.wantWorking {
+				t.Fatalf("health = (%t, %t, %t), want (%t, %t, %t)", known, up, working, tt.wantKnown, tt.wantUp, tt.wantWorking)
+			}
+		})
 	}
 }
 

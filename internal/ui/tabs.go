@@ -228,16 +228,16 @@ func (m Model) monitorIndicatorColor(colors palette) imagecolor.Color {
 	if m.monitorState != monitorRunning {
 		return colors.dim
 	}
-	if m.monitorAppServerWorking {
+	if m.monitorCodexWorking {
 		if m.phase%2 == 0 {
 			return colors.success
 		}
 		return colors.successDim
 	}
-	if !m.monitorAppServerKnown {
+	if !m.monitorCodexStatusKnown {
 		return colors.dim
 	}
-	if m.monitorAppServerUp {
+	if m.monitorCodexUp {
 		return colors.success
 	}
 	return colors.danger

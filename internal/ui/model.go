@@ -134,9 +134,9 @@ type Model struct {
 	monitorLastActivity     time.Time
 	monitorSessions         int
 	monitorSessionData      []monitorSession
-	monitorAppServerKnown   bool
-	monitorAppServerUp      bool
-	monitorAppServerWorking bool
+	monitorCodexStatusKnown bool
+	monitorCodexUp          bool
+	monitorCodexWorking     bool
 	monitorSelectedID       string
 	monitorDismissed        map[string]monitorSessionDismissal
 	monitorDismissHover     string
@@ -1892,7 +1892,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 		}
 		return m, nil, false
 	}
-	m.syncMonitorAppServerStatus(message.usage)
+	m.syncMonitorCodexStatus(message.usage)
 	accepted := true
 	switch message.kind {
 	case monitorFetchStart:
@@ -1937,10 +1937,10 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	return m, nil, accepted
 }
 
-func (m *Model) syncMonitorAppServerStatus(usage codex.LiveUsageSnapshot) {
-	m.monitorAppServerKnown = usage.AppServerStatusKnown
-	m.monitorAppServerUp = usage.AppServerUp
-	m.monitorAppServerWorking = usage.AppServerWorking
+func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
+	m.monitorCodexStatusKnown = usage.CodexStatusKnown
+	m.monitorCodexUp = usage.CodexUp
+	m.monitorCodexWorking = usage.CodexWorking
 }
 
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {

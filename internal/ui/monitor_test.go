@@ -915,7 +915,7 @@ func TestMonitorLabelUsesTheSharedActivityIndicatorColor(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	model := Model{
 		monitorState: monitorRunning, monitorStartedAt: time.Now(),
-		monitorAppServerKnown: true, monitorAppServerUp: true, monitorAppServerWorking: true,
+		monitorCodexStatusKnown: true, monitorCodexUp: true, monitorCodexWorking: true,
 	}
 	model.phase = 0
 	bright := model.renderMonitorReadout(60, 8, colors)

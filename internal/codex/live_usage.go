@@ -29,17 +29,17 @@ const (
 // totals increase monotonically; APIEqPendingCalls is an instantaneous count
 // kept separate until daemon model resolution or requested-model fallback.
 type LiveUsageSnapshot struct {
-	TotalTokens          int64
-	LastActivity         time.Time
-	SessionCount         int
-	Sessions             []LiveUsageSession
-	AppServerStatusKnown bool
-	AppServerUp          bool
-	AppServerWorking     bool
-	APIEqUSD             float64
-	APIEqPricedCalls     int64
-	APIEqUnpricedCalls   int64
-	APIEqPendingCalls    int64
+	TotalTokens        int64
+	LastActivity       time.Time
+	SessionCount       int
+	Sessions           []LiveUsageSession
+	CodexStatusKnown   bool
+	CodexUp            bool
+	CodexWorking       bool
+	APIEqUSD           float64
+	APIEqPricedCalls   int64
+	APIEqUnpricedCalls int64
+	APIEqPendingCalls  int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -315,7 +315,6 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
-	appServerStatusKnown := r.statusProvider != nil
 	appServerUp := false
 	appServerWorking := false
 	r.daemonSubscribedThreads = nil
@@ -362,16 +361,30 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
 	sessions, activeSessions := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
+	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
+		appServerUp, appServerWorking, len(liveWriters) > 0, writerLocksSupported,
+	)
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
 		SessionCount: activeSessions, Sessions: sessions,
-		AppServerStatusKnown: appServerStatusKnown,
-		AppServerUp:          appServerUp,
-		AppServerWorking:     appServerWorking,
-		APIEqUSD:             r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
+		CodexStatusKnown: codexStatusKnown,
+		CodexUp:          codexUp,
+		CodexWorking:     codexWorking,
+		APIEqUSD:         r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
 		APIEqUnpricedCalls: r.apiEqUnknownCalls,
 		APIEqPendingCalls:  int64(len(r.pendingModelResolutions)),
 	}, nil
+}
+
+// codexRuntimeHealth combines the optional shared app-server heartbeat with
+// locally held writer locks. A held lock represents a live Codex session, so it
+// is both a health and activity signal. An unavailable optional socket alone is
+// not evidence that Codex is down.
+func codexRuntimeHealth(appServerUp, appServerWorking, liveWriter, writerLocksSupported bool) (known, up, working bool) {
+	working = appServerWorking || liveWriter
+	up = appServerUp || working
+	known = up || writerLocksSupported
+	return known, up, working
 }
 
 func (r *LiveUsageReader) observedThreadIDs(now time.Time) []string {
