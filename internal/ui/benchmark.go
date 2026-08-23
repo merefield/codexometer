@@ -68,6 +68,9 @@ type benchmarkDetailTranscriptCache struct {
 const (
 	benchmarkDetailCopyLabel  = "[ (C) COPY ]"
 	benchmarkDetailCloseLabel = "[ (X) CLOSE ]"
+	benchmarkClearAllLabel    = "[ CLEAR ALL ]"
+	benchmarkScopeCancelLabel = "[ (X) CANCEL ]"
+	benchmarkScopeDoneLabel   = "[ (D) DONE ]"
 )
 
 func layoutBenchmarkArea(width, height int) benchmarkGeometry {
@@ -482,8 +485,7 @@ func (m Model) benchmarkDetailMaximumScroll() int {
 type benchmarkScopeItemKind int
 
 const (
-	benchmarkScopeDone benchmarkScopeItemKind = iota
-	benchmarkScopeAllModels
+	benchmarkScopeAllModels benchmarkScopeItemKind = iota
 	benchmarkScopeModel
 	benchmarkScopeAllEfforts
 	benchmarkScopeEffort
@@ -529,12 +531,13 @@ func (m Model) renderBenchmarkScope(width, height int, colors palette) string {
 	} else {
 		title += fmt.Sprintf(" // %d/%d BENCHMARKS", len(m.benchmarkSelectedTaskIDs()), len(m.benchmarkTasksForSuite(m.benchmarkSelectedSuiteOption().id)))
 	}
-	title += " // SPACE TOGGLE // ESC DONE"
-	return frameSizedWithTitleAction(
+	title += " // SPACE TOGGLE // ESC CANCEL"
+	return frameSizedWithActions(
 		width,
 		bodyHeight,
 		ansi.Truncate(title, max(innerWidth-4, 1), ""),
-		m.renderBenchmarkDetailControl(benchmarkDetailCloseLabel, footerButtonBenchmarkClose, colors),
+		m.renderBenchmarkDetailControl(benchmarkScopeCancelLabel, footerButtonBenchmarkClose, colors),
+		m.renderBenchmarkDetailControl(benchmarkScopeDoneLabel, footerButtonBenchmarkDone, colors),
 		strings.Join(lines, "\n"),
 		colors.primary,
 		colors,
@@ -574,7 +577,7 @@ func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width in
 	if item.selected {
 		style = lipgloss.NewStyle().Foreground(colors.primary)
 	}
-	if item.kind == benchmarkScopeDone || item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts || item.kind == benchmarkScopeAllGames || item.kind == benchmarkScopeAllTasks {
+	if item.kind == benchmarkScopeAllModels || item.kind == benchmarkScopeAllEfforts || item.kind == benchmarkScopeAllGames || item.kind == benchmarkScopeAllTasks {
 		style = style.Bold(true).Foreground(colors.accent)
 	}
 	return style.Render(fitTableCell(label, width))
@@ -584,8 +587,6 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	allModels := len(m.benchmarkPlan.Models) > 0 && len(m.benchmarkScope.Models) == len(m.benchmarkPlan.Models)
 	allEfforts := len(m.benchmarkPlan.Efforts) > 0 && len(m.benchmarkScope.Efforts) == len(m.benchmarkPlan.Efforts)
 	items := []benchmarkScopeItem{{
-		kind: benchmarkScopeDone, label: "[ (D) DONE ] // RETURN TO BENCHMARK", selected: true,
-	}, {
 		kind: benchmarkScopeAllModels, selected: allModels,
 		label: scopeCheckLabel(allModels) + " MODELS // " + scopeAllAction(allModels),
 	}}
@@ -682,15 +683,51 @@ func (m *Model) openBenchmarkScope() {
 	if m.benchmarkRunActive() || len(m.benchmarkPlan.Models) == 0 {
 		return
 	}
+	m.benchmarkScopeBeforeEdit = cloneBenchmarkScope(m.benchmarkScope)
+	m.benchmarkTasksBeforeEdit = cloneBenchmarkScopeTasks(m.benchmarkScopeTasks)
+	m.benchmarkPairsBeforeEdit = m.benchmarkCombinations
 	m.benchmarkScopeOpen = true
 	m.benchmarkScopeHover = -1
 	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor, 0), max(len(m.benchmarkScopeItems())-1, 0))
 	m.revealBenchmarkScopeCursor()
 }
 
-func (m *Model) closeBenchmarkScope() {
+func (m *Model) cancelBenchmarkScope() {
+	m.benchmarkScope = cloneBenchmarkScope(m.benchmarkScopeBeforeEdit)
+	m.benchmarkScopeTasks = cloneBenchmarkScopeTasks(m.benchmarkTasksBeforeEdit)
+	m.benchmarkCombinations = m.benchmarkPairsBeforeEdit
+	m.closeBenchmarkScopeEditor()
+}
+
+func (m *Model) finishBenchmarkScope() {
+	m.closeBenchmarkScopeEditor()
+}
+
+func (m *Model) closeBenchmarkScopeEditor() {
 	m.benchmarkScopeOpen = false
 	m.benchmarkScopeHover = -1
+	m.benchmarkScopeBeforeEdit = codex.BenchmarkScope{}
+	m.benchmarkTasksBeforeEdit = nil
+	m.benchmarkPairsBeforeEdit = 0
+}
+
+func cloneBenchmarkScope(scope codex.BenchmarkScope) codex.BenchmarkScope {
+	return codex.BenchmarkScope{
+		Models:  slices.Clone(scope.Models),
+		Efforts: slices.Clone(scope.Efforts),
+		Games:   slices.Clone(scope.Games),
+	}
+}
+
+func cloneBenchmarkScopeTasks(tasks map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID) map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID {
+	if tasks == nil {
+		return nil
+	}
+	cloned := make(map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID, len(tasks))
+	for suite, selected := range tasks {
+		cloned[suite] = slices.Clone(selected)
+	}
+	return cloned
 }
 
 func (m *Model) moveBenchmarkScopeCursor(direction int) {
@@ -724,9 +761,6 @@ func (m *Model) toggleBenchmarkScopeCursor() {
 	}
 	item := items[m.benchmarkScopeCursor]
 	switch item.kind {
-	case benchmarkScopeDone:
-		m.closeBenchmarkScope()
-		return
 	case benchmarkScopeAllModels:
 		if item.selected {
 			m.benchmarkScope.Models = nil
@@ -1029,17 +1063,18 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 	case benchmarkStopped:
 		state = fmt.Sprintf("STOPPED // %d/%d COMPLETE", m.benchmarkCompleted, m.benchmarkTotal)
 		detail = "COMPLETED RESULTS RETAINED // PRESS B TO RUN AGAIN"
-		if issue := latestBenchmarkStopIssue(m.benchmarkResults); issue != "" {
+		if issue := latestBenchmarkStopIssue(m.currentBenchmarkRunResults()); issue != "" {
 			detail = "STOP ISSUE // " + issue
 		}
 		color = colors.warning
 	case benchmarkFinished:
-		passed := benchmarkPassCount(m.benchmarkResults)
-		state = fmt.Sprintf("COMPLETE // %d/%d PASS", passed, len(m.benchmarkResults))
+		runResults := m.currentBenchmarkRunResults()
+		passed := benchmarkPassCount(runResults)
+		state = fmt.Sprintf("COMPLETE // %d/%d PASS", passed, len(runResults))
 		detail = "PRESS B OR CLICK TO RUN AGAIN"
-		if failure := latestBenchmarkFailure(m.benchmarkResults); failure != "" {
+		if failure := latestBenchmarkFailure(runResults); failure != "" {
 			detail = "LAST FAIL // " + failure
-		} else if issue := latestBenchmarkMeasurementIssue(m.benchmarkResults); issue != "" {
+		} else if issue := latestBenchmarkMeasurementIssue(runResults); issue != "" {
 			detail = "LAST N/A // " + issue
 		}
 		if m.benchmarkError != "" {
@@ -1066,6 +1101,13 @@ func (m Model) renderBenchmarkStatus(width, height int, colors palette) string {
 	}
 	lines = lines[:min(len(lines), max(height-2, 0))]
 	return frameSized(width, max(height-2, 1), "ALGORITHM TRIAL", strings.Join(lines, "\n"), color, colors)
+}
+
+func (m Model) currentBenchmarkRunResults() []codex.BenchmarkResult {
+	if m.benchmarkRunResults != nil {
+		return m.benchmarkRunResults
+	}
+	return m.benchmarkResults
 }
 
 func latestBenchmarkFailure(results []codex.BenchmarkResult) string {
@@ -1152,17 +1194,25 @@ func (m Model) renderBenchmarkTable(width, height int, colors palette) string {
 		lines = lines[:bodyHeight]
 	}
 	title := "RESULT MATRIX // STANDARD API-EQUIVALENT USD"
+	clearControl := m.renderBenchmarkTableClearControl(colors)
 	copyControl := m.renderBenchmarkTableCopyControl(colors)
 	return frameSizedWithActions(
 		width,
 		max(height-2, 1),
 		ansi.Truncate(title, max(innerWidth-4, 1), ""),
-		"",
+		clearControl,
 		copyControl,
 		strings.Join(lines, "\n"),
 		colors.primary,
 		colors,
 	)
+}
+
+func (m Model) renderBenchmarkTableClearControl(colors palette) string {
+	if m.benchmarkRunActive() || len(m.benchmarkResults) == 0 {
+		return lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background).Render(benchmarkClearAllLabel)
+	}
+	return m.renderBenchmarkDetailControl(benchmarkClearAllLabel, footerButtonBenchmarkClearAll, colors)
 }
 
 func (m Model) renderBenchmarkTableCopyControl(colors palette) string {
@@ -1861,6 +1911,9 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 		if m.benchmarkCloseButtonAt(x, y) {
 			return footerButtonBenchmarkClose
 		}
+		if m.benchmarkScopeDoneButtonAt(x, y) {
+			return footerButtonBenchmarkDone
+		}
 		return footerButtonNone
 	}
 	if m.benchmarkDetail != nil {
@@ -1881,6 +1934,13 @@ func (m Model) benchmarkButtonAt(x, y int) footerButtonID {
 	}
 	if layout.tableHeight >= 3 && localX < layout.width && localY == layout.topHeight+1 {
 		return benchmarkSegmentButtonAt(localX, m.benchmarkFilterLine(max(layout.width-4, 1)))
+	}
+	if layout.tableHeight >= 3 && !m.benchmarkRunActive() && len(m.benchmarkResults) > 0 && localY == layout.topHeight {
+		clearWidth := lipgloss.Width(benchmarkClearAllLabel)
+		clearStart := layout.width - clearWidth - 2
+		if layout.width >= clearWidth+8 && localX >= clearStart && localX < clearStart+clearWidth {
+			return footerButtonBenchmarkClearAll
+		}
 	}
 	if layout.tableHeight >= 3 && m.benchmarkResultsCopyAvailable() && localY == layout.topHeight+layout.tableHeight-1 {
 		copyWidth := lipgloss.Width(benchmarkDetailCopyLabel)
@@ -1914,10 +1974,25 @@ func (m Model) benchmarkCloseButtonAt(x, y int) bool {
 		return false
 	}
 	dashboard := m.dashboardLayout()
-	labelWidth := lipgloss.Width(benchmarkDetailCloseLabel)
+	label := benchmarkDetailCloseLabel
+	if m.benchmarkScopeOpen {
+		label = benchmarkScopeCancelLabel
+	}
+	labelWidth := lipgloss.Width(label)
 	localX := x - 2
 	start := dashboard.contentWidth - labelWidth - 2
 	return dashboard.contentWidth >= labelWidth+8 && y == dashboard.meterY && localX >= start && localX < start+labelWidth
+}
+
+func (m Model) benchmarkScopeDoneButtonAt(x, y int) bool {
+	if m.meterView != viewBenchmark || !m.benchmarkScopeOpen || x < 0 || y < 0 {
+		return false
+	}
+	dashboard := m.dashboardLayout()
+	labelWidth := lipgloss.Width(benchmarkScopeDoneLabel)
+	localX := x - 2
+	start := dashboard.contentWidth - labelWidth - 2
+	return dashboard.contentWidth >= labelWidth+4 && y == dashboard.meterY+dashboard.meterHeight-1 && localX >= start && localX < start+labelWidth
 }
 
 func benchmarkSegmentButtonAt(localX int, segments []benchmarkControlSegment) footerButtonID {
