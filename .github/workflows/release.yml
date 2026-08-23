@@ -46,6 +46,11 @@ jobs:
             echo "Release tag must be semantic and start with v: $RELEASE_TAG" >&2
             exit 1
           fi
+          source_version=$(tr -d '\r\n' < internal/version/VERSION)
+          if [[ "$RELEASE_TAG" != "v$source_version" ]]; then
+            echo "Release tag $RELEASE_TAG does not match source version v$source_version" >&2
+            exit 1
+          fi
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
           git fetch --no-tags origin main
           if ! git merge-base --is-ancestor "$RELEASE_TAG^{commit}" FETCH_HEAD; then
