@@ -1906,6 +1906,10 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			accepted = false
 			break
 		}
+		if m.monitorStartedAt.IsZero() {
+			m.resetMonitorFromSnapshot(message, false)
+			break
+		}
 		if message.quotaErr == nil {
 			m.resumeMonitorQuotaSnapshot(message.quota)
 		}

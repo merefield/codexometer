@@ -170,6 +170,37 @@ func TestMonitorRejectedResumeDoesNotRebaseQuota(t *testing.T) {
 	}
 }
 
+func TestMonitorResumeAfterFailedStartEstablishesFreshBaseline(t *testing.T) {
+	failedAt := time.Unix(900, 0)
+	model := Model{meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, err: errors.New("telemetry offline"), at: failedAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorPaused || !model.monitorStartedAt.IsZero() {
+		t.Fatalf("failed Start state = %#v", model)
+	}
+
+	updated, command := model.Update(key('p'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorResuming {
+		t.Fatalf("Resume was not started after failed Start: %#v", model)
+	}
+	resumedAt := failedAt.Add(time.Minute)
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchResume, sequence: model.monitorRequest,
+		usage: usageWithTokens(500), quota: codex.DemoSnapshot(), at: resumedAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorRunning || !model.monitorStartedAt.Equal(resumedAt) ||
+		model.monitorBaseline != 500 || model.monitorRecordedTokens() != 0 {
+		t.Fatalf("Resume did not establish a fresh baseline: %#v", model)
+	}
+	if elapsed := model.monitorElapsed(resumedAt.Add(time.Second)); elapsed != time.Second {
+		t.Fatalf("elapsed after recovered Resume = %s, want 1s", elapsed)
+	}
+}
+
 func TestMonitorTickSamplesOnlyWhileRunningAndIgnoresStaleResults(t *testing.T) {
 	model := New(stubLiveFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
 	model.meterView = viewMonitor
