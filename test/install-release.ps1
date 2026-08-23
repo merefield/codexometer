@@ -125,3 +125,7 @@ try {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }
 }
+
+# The expected checksum-failure child leaves LASTEXITCODE set to 1. Reaching
+# this point means every assertion passed, so report success explicitly.
+exit 0
