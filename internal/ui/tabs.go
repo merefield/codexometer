@@ -228,6 +228,12 @@ func (m Model) monitorIndicatorColor(colors palette) imagecolor.Color {
 	if m.monitorState != monitorRunning {
 		return colors.dim
 	}
+	if m.monitorHasVisibleWaitingSession() {
+		if m.phase%2 == 0 {
+			return colors.warning
+		}
+		return colors.warningDim
+	}
 	if m.monitorCodexWorking {
 		if m.phase%2 == 0 {
 			return colors.success

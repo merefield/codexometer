@@ -261,6 +261,23 @@ func TestMonitorIndicatorUsesCodexActivityAndHealth(t *testing.T) {
 	if model.monitorIndicatorColor(colors) != colors.success {
 		t.Fatal("working indicator did not alternate to bright green")
 	}
+	model.monitorSessionData = []monitorSession{{
+		id: "waiting", displayed: true, active: true, attention: codex.SessionAttentionInput,
+	}}
+	if model.monitorIndicatorColor(colors) != colors.warning {
+		t.Fatal("visible waiting session did not take precedence with bright amber")
+	}
+	model.phase = 1
+	if model.monitorIndicatorColor(colors) != colors.warningDim {
+		t.Fatal("waiting indicator did not alternate to dim amber")
+	}
+	model.monitorDismissed = map[string]monitorSessionDismissal{"waiting": {}}
+	model.phase = 0
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("dismissed waiting session continued to override working green")
+	}
+	model.monitorSessionData = nil
+	model.monitorDismissed = nil
 	model.monitorCodexWorking = false
 	if model.monitorIndicatorColor(colors) != colors.success {
 		t.Fatal("idle Codex indicator was not steady green")

@@ -579,12 +579,12 @@ The other top-level views are:
   token telemetry and shows total observed tokens, elapsed time, and average
   rate; clickable Pause/Resume and Reset controls sit beside it. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
-  The Monitor tab light and status label pulse between bright and dim green
-  while any local Codex session holds its writer lock or the shared app server
-  reports work, remain steady green while the server is reachable but idle,
-  and turn red only when local runtime health is observable and no Codex
-  runtime is alive. They remain dim while paused or when runtime health cannot
-  be established. Below,
+  The Monitor tab light and status label pulse between bright and dim amber
+  whenever any session needs input, approval, or a check. With nothing waiting,
+  they pulse green while at least one session is working and remain steady green
+  while the Codex runtime is healthy but idle. They turn red only when local
+  runtime health is observable and Codex is down, and remain dim while paused
+  or when runtime health cannot be established. Below,
   every independent root session has a metrics box and its own graph.
   Spawned-agent descendants with an explicit Codex parent link are recursively
   aggregated into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows

@@ -1943,6 +1943,15 @@ func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
 	m.monitorCodexWorking = usage.CodexWorking
 }
 
+func (m Model) monitorHasVisibleWaitingSession() bool {
+	for _, session := range m.monitorSessionData {
+		if m.monitorSessionVisible(session) && session.attention != codex.SessionAttentionNone {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {
 	m.monitorStartedAt = message.at
 	m.monitorStoppedAt = time.Time{}
