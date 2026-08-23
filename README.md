@@ -14,7 +14,7 @@ opening `/status` in your working Codex session.
 ```text
 █▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█
 █▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄
-◉ QUOTA TELEMETRY CONSOLE · VERSION 0.7.8
+◉ QUOTA TELEMETRY CONSOLE · VERSION 0.10.0
 ```
 
 ![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
@@ -99,84 +99,70 @@ does not require a Go runtime.
 
 ## Install
 
-Once a release has been published, Go users can install directly:
+The release installer downloads the pre-built binary for the current operating
+system and architecture, verifies its published SHA-256 checksum, confirms the
+binary reports the requested version, and then installs it. Go is not required.
+
+On macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/merefield/codexometer/main/install-release.sh | sh
+```
+
+The default destination is `/usr/local/bin`; the installer uses `sudo` only
+when that directory is not writable. To install without elevation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/merefield/codexometer/main/install-release.sh | \
+  CODEXOMETER_BIN_DIR="$HOME/.local/bin" sh
+```
+
+To install a specific release, add `CODEXOMETER_VERSION=v0.10.0` beside the
+bin-directory setting or download the script and pass `--version v0.10.0`.
+
+On Windows, download and run the PowerShell installer:
+
+```powershell
+$installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
+& $installer
+Remove-Item $installer
+```
+
+It installs into `%LOCALAPPDATA%\Programs\codexometer\bin` by default. Override
+that with `CODEXOMETER_BIN_DIR` or `-BinDir`; use `-Version v0.10.0` to select a
+release. Both installers print a reminder if the destination is not already on
+`PATH`. Re-running the same command safely upgrades or reinstalls Codexometer.
+
+The installer scripts are ordinary text files in this repository and can be
+downloaded and inspected before execution.
+
+### Install from source
+
+Developers with a current Go toolchain can build and install from source:
 
 ```sh
 go install github.com/merefield/codexometer@latest
 ```
 
-`go install` places the executable in `GOBIN` when that setting is non-empty;
-otherwise it uses the `bin` directory under `GOPATH` (normally
-`$HOME/go/bin`). That directory must be on `PATH` to run `codexometer` from any
-working directory.
-
-On macOS or Linux, find the directory Go used:
-
-```sh
-go_bin="$(go env GOBIN)"
-if [ -z "$go_bin" ]; then go_bin="$(go env GOPATH)/bin"; fi
-printf '%s\n' "$go_bin"
-```
-
-Add the printed directory to your shell configuration. For a default Go setup,
-add this line to `~/.zshrc` on macOS with Zsh, or `~/.bashrc` on Linux with
-Bash:
-
-```sh
-export PATH="$PATH:$HOME/go/bin"
-```
-
-Restart the terminal, or reload the relevant file with `source ~/.zshrc` or
-`source ~/.bashrc`.
-
-On Windows, PowerShell can discover Go's install directory and add it to the
-current user's persistent `Path` without requiring administrator access:
-
-```powershell
-$goBin = go env GOBIN
-if (-not $goBin) { $goBin = Join-Path (go env GOPATH) "bin" }
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($userPath -split ";") -notcontains $goBin) {
-    $newUserPath = if ($userPath) { "$userPath;$goBin" } else { $goBin }
-    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
-}
-```
-
-Open a new terminal after changing the Windows `Path`. Confirm the command is
-available everywhere:
-
-```sh
-codexometer --version
-```
-
-On macOS/Linux, `command -v codexometer` shows the resolved executable. In
-PowerShell, use `Get-Command codexometer`.
+`go install` builds locally and places the executable in `GOBIN`, or in the
+`bin` directory under `GOPATH` when `GOBIN` is empty. That directory must be on
+`PATH`.
 
 To build the current checkout:
 
 ```sh
 git clone https://github.com/merefield/codexometer.git
 cd codexometer
-go build -trimpath -o codexometer .
+make build
 ```
 
-On systems with Make, `make build` is an equivalent convenience target that
-also injects the nearest reachable Git tag when one exists.
-
-On Windows, use `-o codexometer.exe` instead. The compiled executable is
-standalone and does not require Go at runtime. Run it from the project directory
-as `./codexometer` (or `.\codexometer.exe` in PowerShell), or copy it into any
-directory already on `PATH`. A common per-user option on macOS/Linux is:
+Use `go build -trimpath -o codexometer .` directly if Make is unavailable; on
+Windows, use `-o codexometer.exe`. Confirm any installation with:
 
 ```sh
-mkdir -p "$HOME/.local/bin"
-install -m 0755 codexometer "$HOME/.local/bin/codexometer"
+codexometer --version
 ```
-
-If you use that location, ensure `$HOME/.local/bin` is also included in `PATH`
-using the same shell-configuration steps above. On Windows, a directory such as
-`$HOME\bin` can be created, added to the user `Path`, and used for
-`codexometer.exe`.
 
 ## Quick start
 
@@ -1279,31 +1265,27 @@ codexometer --inline
 codexometer --codex ~/bin/codex
 ```
 
-## Platform builds
+## Release builds
 
-Codexometer uses pure Go and cross-compiles without CGo. Each operating system
-and CPU architecture needs its own executable.
+GoReleaser builds Linux, macOS, and Windows archives for AMD64 and ARM64 with
+CGo disabled. Unix releases are `.tar.gz`; Windows releases are `.zip`; every
+release also includes `checksums.txt`.
 
 ```sh
-mkdir -p dist
-
-GOOS=darwin  GOARCH=arm64 go build -trimpath -o dist/codexometer-darwin-arm64 .
-GOOS=darwin  GOARCH=amd64 go build -trimpath -o dist/codexometer-darwin-amd64 .
-GOOS=linux   GOARCH=arm64 go build -trimpath -o dist/codexometer-linux-arm64 .
-GOOS=linux   GOARCH=amd64 go build -trimpath -o dist/codexometer-linux-amd64 .
-GOOS=windows GOARCH=arm64 go build -trimpath -o dist/codexometer-windows-arm64.exe .
-GOOS=windows GOARCH=amd64 go build -trimpath -o dist/codexometer-windows-amd64.exe .
+make release-snapshot
 ```
 
-The destination machine needs Codex installed and logged in, but it does not
-need Go or Codexometer's source dependencies.
+That local snapshot requires GoReleaser. Publishing is deliberately confined to
+the `Release` GitHub Actions workflow: a semantic `v*` tag must resolve to a
+commit reachable from `main`, pass the full Linux/macOS/Windows test matrix, and
+remain unchanged between validation and publication.
 
 ## Versioning
 
 Codexometer follows semantic versioning; the current source version is
-`v0.7.8`. The Git tag is the release source of truth. Go automatically embeds
+`v0.10.0`. The Git tag is the release source of truth. Go automatically embeds
 that tag in binaries built with
-`go install github.com/merefield/codexometer@v0.7.8`.
+`go install github.com/merefield/codexometer@v0.10.0`.
 
 The resolver uses the first version available in this order:
 
@@ -1311,10 +1293,10 @@ The resolver uses the first version available in this order:
    `make build`;
 2. Go's embedded module version—an exact tag for a release build or, when Go
    supplies one, a pseudo-version such as
-   `0.7.9-0.<timestamp>-<commit>[+dirty]`;
+   `0.10.1-0.<timestamp>-<commit>[+dirty]`;
 3. for a local checkout whose module version is `(devel)`, a VCS fallback in
-   the explicit form `0.7.8-dev+<commit>[.dirty]`;
-4. the maintained source version, `0.7.8`, when no build or VCS identity is
+   the explicit form `0.10.0-dev+<commit>[.dirty]`;
+4. the maintained source version, `0.10.0`, when no build or VCS identity is
    available.
 
 The leading `v` used by Git tags and Go module versions is removed in every
@@ -1333,7 +1315,7 @@ codexometer --version
 Release automation can override the source-build fallback without editing code:
 
 ```sh
-go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.buildVersion=v0.7.8" .
+go build -ldflags="-s -w -X github.com/merefield/codexometer/internal/version.buildVersion=v0.10.0" .
 ```
 
 ## How refresh works
