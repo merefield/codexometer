@@ -579,9 +579,13 @@ The other top-level views are:
   token telemetry and shows total observed tokens, elapsed time, and average
   rate; clickable Pause/Resume and Reset controls sit beside it. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
-  Below, every independent root session has a metrics box and its own graph. Spawned-agent
-  descendants with an explicit Codex parent link are recursively aggregated
-  into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
+  The Monitor tab light and status label pulse between the current theme's
+  highlight and dim colors while the shared app server is working, remain green
+  while it is reachable but idle, and turn red when it is unreachable. They
+  remain dim while paused or when app-server health is unavailable. Below,
+  every independent root session has a metrics box and its own graph.
+  Spawned-agent descendants with an explicit Codex parent link are recursively
+  aggregated into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
   model calls and latest activity, latest/peak time to first token, and
   latest/peak output size. All graphs add one thin vertical block bar on the
   same 30-second tick, after a fresh boundary read. The companion readout

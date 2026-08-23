@@ -117,32 +117,35 @@ type Model struct {
 	benchmarkDetailScroll    int
 	benchmarkDetailCache     benchmarkDetailTranscriptCache
 
-	monitorState        monitorState
-	monitorAutoStart    bool
-	monitorStartedAt    time.Time
-	monitorStoppedAt    time.Time
-	monitorBaseline     int64
-	monitorLatest       int64
-	monitorSamples      []monitorSample
-	monitorRequest      uint64
-	monitorFetchActive  bool
-	monitorNextFetch    time.Time
-	monitorResetPaused  bool
-	monitorNextSample   time.Time
-	monitorBoundaryDue  bool
-	monitorGraphStart   int64
-	monitorLastActivity time.Time
-	monitorSessions     int
-	monitorSessionData  []monitorSession
-	monitorSelectedID   string
-	monitorDismissed    map[string]monitorSessionDismissal
-	monitorDismissHover string
-	monitorDismissFlash string
-	monitorDismissSeq   uint64
-	monitorScroll       int
-	monitorError        string
-	monitorQuotaWindows []monitorQuotaWindow
-	monitorQuotaError   string
+	monitorState            monitorState
+	monitorAutoStart        bool
+	monitorStartedAt        time.Time
+	monitorStoppedAt        time.Time
+	monitorBaseline         int64
+	monitorLatest           int64
+	monitorSamples          []monitorSample
+	monitorRequest          uint64
+	monitorFetchActive      bool
+	monitorNextFetch        time.Time
+	monitorResetPaused      bool
+	monitorNextSample       time.Time
+	monitorBoundaryDue      bool
+	monitorGraphStart       int64
+	monitorLastActivity     time.Time
+	monitorSessions         int
+	monitorSessionData      []monitorSession
+	monitorAppServerKnown   bool
+	monitorAppServerUp      bool
+	monitorAppServerWorking bool
+	monitorSelectedID       string
+	monitorDismissed        map[string]monitorSessionDismissal
+	monitorDismissHover     string
+	monitorDismissFlash     string
+	monitorDismissSeq       uint64
+	monitorScroll           int
+	monitorError            string
+	monitorQuotaWindows     []monitorQuotaWindow
+	monitorQuotaError       string
 
 	quotaAPIAnchors        map[string]quotaAPIAnchor
 	quotaAPIEvidence       []quotaAPISample
@@ -1889,6 +1892,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 		}
 		return m, nil, false
 	}
+	m.syncMonitorAppServerStatus(message.usage)
 	accepted := true
 	switch message.kind {
 	case monitorFetchStart:
@@ -1927,6 +1931,12 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 		}
 	}
 	return m, nil, accepted
+}
+
+func (m *Model) syncMonitorAppServerStatus(usage codex.LiveUsageSnapshot) {
+	m.monitorAppServerKnown = usage.AppServerStatusKnown
+	m.monitorAppServerUp = usage.AppServerUp
+	m.monitorAppServerWorking = usage.AppServerWorking
 }
 
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {

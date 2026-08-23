@@ -136,11 +136,11 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	}
 
 	stateColor := colors.primary
-	if m.monitorState == monitorRunning && m.monitorError == "" {
-		stateColor = lipgloss.Color("#7A2633")
-		if m.phase%2 == 0 {
-			stateColor = colors.danger
-		}
+	if m.monitorState == monitorRunning {
+		stateColor = m.monitorIndicatorColor(colors)
+	}
+	if m.monitorError != "" {
+		stateColor = colors.danger
 	}
 	innerWidth := max(width-4, 1)
 	lines := []string{

@@ -19,11 +19,11 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	}{
 		{width: 100, want: "BENCHMARK"},
 		{width: 22, want: "QTA"},
-		{width: 9, want: "[M]"},
-		{width: 3, want: "M"},
+		{width: 9, want: "●"},
+		{width: 3, want: "●"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
-			tabs, _ := mainTabLayout(test.width, false)
+			tabs, _ := mainTabLayout(test.width, true)
 			if len(tabs) != int(mainTabCount) {
 				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount)
 			}
@@ -78,7 +78,7 @@ func TestMainTabsSupportHoverClickAndPulse(t *testing.T) {
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
-	tabs, _ := mainTabLayout(model.contentWidth(), false)
+	tabs, _ := mainTabLayout(model.contentWidth(), true)
 	target := tabs[mainTabMonitor]
 	mouse := tea.MouseMotionMsg{
 		X:      2 + target.x + target.width/2,
@@ -132,7 +132,7 @@ func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
 	for _, width := range []int{8, 12, 20, 40, 45, 60, 80, 100, 160} {
 		model := Model{snapshot: codex.DemoSnapshot(), width: width, height: 24}
 		layout := model.dashboardLayout()
-		mainTabs, _ := mainTabLayout(layout.contentWidth, false)
+		mainTabs, _ := mainTabLayout(layout.contentWidth, true)
 		for _, tab := range mainTabs {
 			for offset := 0; offset < tab.width; offset++ {
 				if got, ok := model.mainTabAt(2+tab.x+offset, layout.tabsY); !ok || got != tab.tab {
@@ -241,18 +241,44 @@ func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 	}
 }
 
-func TestMonitorMainTabShowsPulsingRecordingDotWhileQuotaIsActive(t *testing.T) {
-	model := Model{meterView: viewBars, monitorState: monitorRunning}
+func TestMonitorIndicatorUsesActivityAndAppServerHealth(t *testing.T) {
+	model := Model{
+		meterView: viewBars, monitorState: monitorRunning,
+		monitorAppServerKnown: true, monitorAppServerUp: true, monitorAppServerWorking: true,
+	}
 	colors := paletteFor(themeHacker)
 	model.phase = 0
 	bright := model.renderMainTabs(100, colors)
 	model.phase = 1
 	dark := model.renderMainTabs(100, colors)
 	if !strings.Contains(ansi.Strip(bright), "●") {
-		t.Fatal("recording tab did not retain a pulsing dot away from the Monitor view")
+		t.Fatal("Monitor tab did not retain its status light away from the Monitor view")
 	}
-	if recordingDotColor(0, colors) == recordingDotColor(1, colors) {
-		t.Fatal("recording tab dot does not alternate between bright and dark red")
+	if model.monitorIndicatorColor(colors) != colors.dim {
+		t.Fatal("working indicator did not alternate to the theme's dim color")
+	}
+	model.phase = 0
+	if model.monitorIndicatorColor(colors) != colors.accent {
+		t.Fatal("working indicator did not alternate to the theme's highlight color")
+	}
+	model.monitorAppServerWorking = false
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("idle app server indicator was not steady green")
+	}
+	model.monitorAppServerUp = false
+	if model.monitorIndicatorColor(colors) != colors.danger {
+		t.Fatal("unreachable app server indicator was not steady red")
+	}
+	model.monitorAppServerKnown = false
+	if model.monitorIndicatorColor(colors) != colors.dim {
+		t.Fatal("unknown app server status was not shown as dim")
+	}
+	model.monitorState = monitorPaused
+	model.monitorAppServerKnown = true
+	model.monitorAppServerUp = true
+	model.monitorAppServerWorking = true
+	if model.monitorIndicatorColor(colors) != colors.dim {
+		t.Fatal("paused Monitor presented stale app-server health as current")
 	}
 	if lipgloss.Width(bright) != 100 || lipgloss.Width(dark) != 100 {
 		t.Fatalf("tab rail did not fill its responsive width: bright=%d dark=%d", lipgloss.Width(bright), lipgloss.Width(dark))

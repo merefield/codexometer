@@ -880,17 +880,20 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 	}
 }
 
-func TestMonitorRecordingLampPulsesBetweenDarkAndBrightRed(t *testing.T) {
+func TestMonitorLabelUsesTheSharedActivityIndicatorColor(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	model := Model{monitorState: monitorRunning, monitorStartedAt: time.Now()}
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: time.Now(),
+		monitorAppServerKnown: true, monitorAppServerUp: true, monitorAppServerWorking: true,
+	}
 	model.phase = 0
 	bright := model.renderMonitorReadout(60, 8, colors)
 	model.phase = 1
 	dark := model.renderMonitorReadout(60, 8, colors)
-	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.danger).Render("MONITORING ●")
-	wantDark := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7A2633")).Render("MONITORING ●")
+	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Render("MONITORING ●")
+	wantDark := lipgloss.NewStyle().Bold(true).Foreground(colors.dim).Render("MONITORING ●")
 	if !strings.Contains(bright, wantBright) || !strings.Contains(dark, wantDark) || ansi.Strip(bright) != ansi.Strip(dark) {
-		t.Fatal("recording lamp did not pulse red intensity while keeping a stable label")
+		t.Fatal("Monitor label did not share the theme activity pulse while keeping stable text")
 	}
 }
 

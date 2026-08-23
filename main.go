@@ -101,6 +101,7 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	return codex.LiveUsageSnapshot{
 		TotalTokens: d.lifetimeTokens, APIEqUSD: d.apiEqUSD, APIEqPricedCalls: d.apiEqCalls,
 		LastActivity: time.Now(), SessionCount: 2,
+		AppServerStatusKnown: true, AppServerUp: true, AppServerWorking: true,
 		Sessions: []codex.LiveUsageSession{
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
 				Attention: codex.SessionAttentionApproval, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},

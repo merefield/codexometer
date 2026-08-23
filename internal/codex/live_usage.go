@@ -29,14 +29,17 @@ const (
 // totals increase monotonically; APIEqPendingCalls is an instantaneous count
 // kept separate until daemon model resolution or requested-model fallback.
 type LiveUsageSnapshot struct {
-	TotalTokens        int64
-	LastActivity       time.Time
-	SessionCount       int
-	Sessions           []LiveUsageSession
-	APIEqUSD           float64
-	APIEqPricedCalls   int64
-	APIEqUnpricedCalls int64
-	APIEqPendingCalls  int64
+	TotalTokens          int64
+	LastActivity         time.Time
+	SessionCount         int
+	Sessions             []LiveUsageSession
+	AppServerStatusKnown bool
+	AppServerUp          bool
+	AppServerWorking     bool
+	APIEqUSD             float64
+	APIEqPricedCalls     int64
+	APIEqUnpricedCalls   int64
+	APIEqPendingCalls    int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -286,7 +289,7 @@ func (r *LiveUsageReader) FetchTokenUsage(ctx context.Context) (LiveUsageSnapsho
 }
 
 // FetchTokenUsageFresh forces a complete session discovery before consuming
-// telemetry. The Monitor uses this for its final Stop reading so a recently
+// telemetry. The Monitor uses this for its final Pause reading so a recently
 // resumed rollout in an older date directory cannot be missed.
 func (r *LiveUsageReader) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, error) {
 	return r.fetchTokenUsage(ctx, true)
@@ -312,10 +315,20 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	appServerStatusKnown := r.statusProvider != nil
+	appServerUp := false
+	appServerWorking := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
 		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
+			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
+			for _, status := range exactStatuses {
+				if status == sessionRuntimeWorking {
+					appServerWorking = true
+					break
+				}
+			}
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -352,7 +365,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
 		SessionCount: activeSessions, Sessions: sessions,
-		APIEqUSD: r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
+		AppServerStatusKnown: appServerStatusKnown,
+		AppServerUp:          appServerUp,
+		AppServerWorking:     appServerWorking,
+		APIEqUSD:             r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
 		APIEqUnpricedCalls: r.apiEqUnknownCalls,
 		APIEqPendingCalls:  int64(len(r.pendingModelResolutions)),
 	}, nil

@@ -695,12 +695,40 @@ type stubSessionStatusProvider struct {
 	statuses     map[string]sessionRuntimeStatus
 	observations []resolvedModelObservation
 	subscribed   map[string]struct{}
+	unavailable  bool
 }
 
 func (s stubSessionStatusProvider) Fetch(context.Context, []string) (sessionDaemonSnapshot, bool) {
+	if s.unavailable {
+		return sessionDaemonSnapshot{}, false
+	}
 	return sessionDaemonSnapshot{
 		Statuses: s.statuses, ModelObservations: s.observations, SubscribedThreads: s.subscribed,
 	}, true
+}
+
+func TestLiveUsageReaderReportsAppServerHealthAndWork(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now, "health-thread")
+	writeRollout(t, path, sessionMetaLine("health-thread", `"cli"`, "/work/health", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{
+		statuses: map[string]sessionRuntimeStatus{"health-thread": sessionRuntimeWorking},
+	}
+	working, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || !working.AppServerStatusKnown || !working.AppServerUp || !working.AppServerWorking {
+		t.Fatalf("working app-server health = %#v, %v", working, err)
+	}
+
+	reader.statusProvider = stubSessionStatusProvider{unavailable: true}
+	down, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || !down.AppServerStatusKnown || down.AppServerUp || down.AppServerWorking {
+		t.Fatalf("unreachable app-server health = %#v, %v", down, err)
+	}
 }
 
 func TestLiveUsageReaderPropagatesWaitingAgentToRoot(t *testing.T) {

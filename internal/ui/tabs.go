@@ -61,12 +61,12 @@ func responsiveTabLabels(width int, tiers [][]string) ([]string, string) {
 	return labels, separator
 }
 
-func mainTabLayout(width int, recording bool) ([]mainTab, string) {
+func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 	monitorFull := "╭ MONITOR ╮"
 	monitorCompact := "╭MON╮"
 	monitorMinimal := "[M]"
 	microMonitor := "M"
-	if recording {
+	if showMonitorLight {
 		monitorFull = "╭ MONITOR ●╮"
 		monitorCompact = "╭MON●╮"
 		monitorMinimal = "[M●]"
@@ -162,8 +162,7 @@ func mainTabForView(view meterViewID) mainTabID {
 }
 
 func (m Model) renderMainTabs(width int, colors palette) string {
-	recording := m.monitorState == monitorRunning
-	tabs, separator := mainTabLayout(width, recording)
+	tabs, separator := mainTabLayout(width, true)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -171,7 +170,7 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 		hovered := m.mainTabHovered && tab.tab == m.hoveredMainTab
 		flashed := m.viewFlashing && tab.tab == mainTabForView(m.flashedView)
 		base, background := tabAppearance(active, hovered, flashed, colors)
-		parts = append(parts, renderViewTabLabel(tab.label, base, background, recording && tab.tab == mainTabMonitor, m.phase, colors))
+		parts = append(parts, renderViewTabLabel(tab.label, base, background, tab.tab == mainTabMonitor, m.monitorIndicatorColor(colors)))
 		used += tab.width
 	}
 	if len(parts) > 1 {
@@ -216,21 +215,32 @@ func tabAppearance(active, hovered, flashed bool, colors palette) (lipgloss.Styl
 	return lipgloss.NewStyle().Foreground(foreground).Background(background).Bold(bold), background
 }
 
-func renderViewTabLabel(label string, base lipgloss.Style, background imagecolor.Color, recording bool, phase int, colors palette) string {
-	if !recording || !strings.Contains(label, "●") {
+func renderViewTabLabel(label string, base lipgloss.Style, background imagecolor.Color, monitorLight bool, lightColor imagecolor.Color) string {
+	if !monitorLight || !strings.Contains(label, "●") {
 		return base.Render(label)
 	}
 	pieces := strings.SplitN(label, "●", 2)
-	dotColor := recordingDotColor(phase, colors)
-	dot := lipgloss.NewStyle().Bold(true).Foreground(dotColor).Background(background).Render("●")
+	dot := lipgloss.NewStyle().Bold(true).Foreground(lightColor).Background(background).Render("●")
 	return base.Render(pieces[0]) + dot + base.Render(pieces[1])
 }
 
-func recordingDotColor(phase int, colors palette) imagecolor.Color {
-	if phase%2 == 0 {
-		return colors.danger
+func (m Model) monitorIndicatorColor(colors palette) imagecolor.Color {
+	if m.monitorState != monitorRunning {
+		return colors.dim
 	}
-	return lipgloss.Color("#7A2633")
+	if m.monitorAppServerWorking {
+		if m.phase%2 == 0 {
+			return colors.accent
+		}
+		return colors.dim
+	}
+	if !m.monitorAppServerKnown {
+		return colors.dim
+	}
+	if m.monitorAppServerUp {
+		return colors.success
+	}
+	return colors.danger
 }
 
 func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
@@ -242,7 +252,7 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 		return mainTabQuota, false
 	}
 	localX := x - 2
-	tabs, _ := mainTabLayout(layout.contentWidth, m.monitorState == monitorRunning)
+	tabs, _ := mainTabLayout(layout.contentWidth, true)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.tab, true
