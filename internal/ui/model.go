@@ -73,7 +73,9 @@ type Model struct {
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
+	benchmarkResultIndexes   map[string]int
 	benchmarkRunResults      []codex.BenchmarkResult
+	benchmarkRunIndexes      map[string]int
 	benchmarkTotal           int
 	benchmarkCompleted       int
 	benchmarkCurrentModel    string
@@ -796,8 +798,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.benchmarkScroll++
 			}
 			result := *event.Result
-			m.benchmarkResults = upsertBenchmarkResult(m.benchmarkResults, result)
-			m.benchmarkRunResults = upsertBenchmarkResult(m.benchmarkRunResults, result)
+			m.benchmarkResults, m.benchmarkResultIndexes = upsertBenchmarkResult(m.benchmarkResults, m.benchmarkResultIndexes, result)
+			m.benchmarkRunResults, m.benchmarkRunIndexes = upsertBenchmarkResult(m.benchmarkRunResults, m.benchmarkRunIndexes, result)
 			if m.benchmarkDetailActive && m.benchmarkDetail != nil && benchmarkRunKey(*m.benchmarkDetail) == benchmarkRunKey(result) {
 				m.benchmarkDetail = &result
 				m.benchmarkDetailActive = false
@@ -1217,7 +1219,9 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	} else {
 		m.benchmarkResults = benchmarkResultsOutsideScope(m.benchmarkResults, tasks, scope)
 	}
+	m.benchmarkResultIndexes = indexBenchmarkResults(m.benchmarkResults)
 	m.benchmarkRunResults = make([]codex.BenchmarkResult, 0)
+	m.benchmarkRunIndexes = make(map[string]int)
 	combinations := m.benchmarkPlan.CombinationCount(scope)
 	if m.benchmarkScopedRunner == nil {
 		combinations = m.benchmarkCombinations
@@ -1256,7 +1260,9 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 func (m *Model) clearBenchmarkResults() {
 	m.benchmarkState = benchmarkIdle
 	m.benchmarkResults = nil
+	m.benchmarkResultIndexes = nil
 	m.benchmarkRunResults = nil
+	m.benchmarkRunIndexes = nil
 	m.benchmarkTotal = 0
 	m.benchmarkCompleted = 0
 	m.benchmarkCurrentModel = ""
@@ -1277,15 +1283,25 @@ func (m *Model) clearBenchmarkResults() {
 	m.benchmarkSelectedArmed = false
 }
 
-func upsertBenchmarkResult(results []codex.BenchmarkResult, result codex.BenchmarkResult) []codex.BenchmarkResult {
-	key := benchmarkRunKey(result)
-	for index := range results {
-		if benchmarkRunKey(results[index]) == key {
-			results[index] = result
-			return results
-		}
+func upsertBenchmarkResult(results []codex.BenchmarkResult, indexes map[string]int, result codex.BenchmarkResult) ([]codex.BenchmarkResult, map[string]int) {
+	if indexes == nil {
+		indexes = indexBenchmarkResults(results)
 	}
-	return append(results, result)
+	key := benchmarkRunKey(result)
+	if index, ok := indexes[key]; ok {
+		results[index] = result
+		return results, indexes
+	}
+	indexes[key] = len(results)
+	return append(results, result), indexes
+}
+
+func indexBenchmarkResults(results []codex.BenchmarkResult) map[string]int {
+	indexes := make(map[string]int, len(results))
+	for index, result := range results {
+		indexes[benchmarkRunKey(result)] = index
+	}
+	return indexes
 }
 
 func benchmarkResultsOutsideScope(results []codex.BenchmarkResult, tasks []codex.BenchmarkTaskID, scope codex.BenchmarkScope) []codex.BenchmarkResult {

@@ -749,6 +749,27 @@ func TestBenchmarkResultEventsReplaceIdenticalMetadata(t *testing.T) {
 	if len(model.benchmarkRunResults) != 1 || !model.benchmarkRunResults[0].Correct {
 		t.Fatalf("current run result was not recorded: %#v", model.benchmarkRunResults)
 	}
+	key := benchmarkRunKey(replacement)
+	if model.benchmarkResultIndexes[key] != 0 || model.benchmarkRunIndexes[key] != 0 {
+		t.Fatalf("result indexes were not maintained: accumulated=%#v run=%#v", model.benchmarkResultIndexes, model.benchmarkRunIndexes)
+	}
+}
+
+func TestBenchmarkResultUpsertMaintainsConstantTimeIndex(t *testing.T) {
+	var results []codex.BenchmarkResult
+	var indexes map[string]int
+	for index := range 100 {
+		result := codex.BenchmarkResult{
+			TaskID: codex.BenchmarkMergeRanges, TaskName: fmt.Sprintf("TASK %d", index), Model: "model", Effort: "high",
+		}
+		results, indexes = upsertBenchmarkResult(results, indexes, result)
+	}
+	replacement := results[3]
+	replacement.Correct = true
+	results, indexes = upsertBenchmarkResult(results, indexes, replacement)
+	if len(results) != 100 || len(indexes) != 100 || !results[3].Correct || indexes[benchmarkRunKey(replacement)] != 3 {
+		t.Fatalf("indexed upsert = %d results, %d indexes, replacement=%#v", len(results), len(indexes), results[3])
+	}
 }
 
 func TestBenchmarkScopeRunRemovesOnlyMatchingResults(t *testing.T) {
