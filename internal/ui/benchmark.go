@@ -858,9 +858,9 @@ func (m Model) benchmarkVisibleControlLines(width, height int) [][]benchmarkCont
 	}
 	if capacity == 2 && len(lines) >= 3 {
 		if m.benchmarkRunActive() {
-			return [][]benchmarkControlSegment{lines[0], lines[2]}
+			return lines[:2]
 		}
-		return lines[:2]
+		return [][]benchmarkControlSegment{lines[0], lines[2]}
 	}
 	return lines[:min(len(lines), capacity)]
 }
@@ -984,7 +984,18 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	for benchmarkSegmentsWidth(secondary) > width && len(secondary) > 1 {
 		secondary = secondary[:len(secondary)-1]
 	}
-	return [][]benchmarkControlSegment{selector, primary, secondary}
+	primary = benchmarkRightAlignSegments(primary, width)
+	return [][]benchmarkControlSegment{selector, secondary, primary}
+}
+
+func benchmarkRightAlignSegments(segments []benchmarkControlSegment, width int) []benchmarkControlSegment {
+	padding := width - benchmarkSegmentsWidth(segments)
+	if len(segments) == 0 || padding <= 0 {
+		return segments
+	}
+	aligned := make([]benchmarkControlSegment, 0, len(segments)+1)
+	aligned = append(aligned, benchmarkControlSegment{text: strings.Repeat(" ", padding-1)})
+	return append(aligned, segments...)
 }
 
 func benchmarkSegmentsWidth(segments []benchmarkControlSegment) int {

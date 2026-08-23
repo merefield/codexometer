@@ -135,8 +135,11 @@ func TestBenchmarkViewRendersResponsiveResultsTable(t *testing.T) {
 			runLine = index
 		}
 	}
-	if selectorLine < 0 || runLine != selectorLine+1 || !strings.Contains(lines[selectorLine+2], "(S) SCOPE") || !strings.Contains(lines[selectorLine+2], "(X) STOP") {
-		t.Fatalf("controls do not contain stable Run, Scope, and Stop rows:\n%s", controls)
+	if selectorLine < 0 || !strings.Contains(lines[selectorLine+1], "(S) SCOPE") || !strings.Contains(lines[selectorLine+1], "(X) STOP") || runLine != selectorLine+2 {
+		t.Fatalf("controls do not contain stable Scope, Stop, and Run rows:\n%s", controls)
+	}
+	if runStart := strings.Index(lines[runLine], "["); runStart <= strings.Index(lines[selectorLine+1], "[") {
+		t.Fatalf("run controls are not right aligned beneath the scope row:\n%s", controls)
 	}
 }
 
