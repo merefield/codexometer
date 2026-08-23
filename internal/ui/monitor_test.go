@@ -890,10 +890,10 @@ func TestMonitorLabelUsesTheSharedActivityIndicatorColor(t *testing.T) {
 	bright := model.renderMonitorReadout(60, 8, colors)
 	model.phase = 1
 	dark := model.renderMonitorReadout(60, 8, colors)
-	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Render("MONITORING ●")
-	wantDark := lipgloss.NewStyle().Bold(true).Foreground(colors.dim).Render("MONITORING ●")
+	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.success).Render("MONITORING ●")
+	wantDark := lipgloss.NewStyle().Bold(true).Foreground(colors.successDim).Render("MONITORING ●")
 	if !strings.Contains(bright, wantBright) || !strings.Contains(dark, wantDark) || ansi.Strip(bright) != ansi.Strip(dark) {
-		t.Fatal("Monitor label did not share the theme activity pulse while keeping stable text")
+		t.Fatal("Monitor label did not share the green activity pulse while keeping stable text")
 	}
 }
 

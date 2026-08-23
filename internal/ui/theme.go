@@ -75,6 +75,7 @@ type palette struct {
 	dim        imagecolor.Color
 	accent     imagecolor.Color
 	success    imagecolor.Color
+	successDim imagecolor.Color
 	warning    imagecolor.Color
 	danger     imagecolor.Color
 	background imagecolor.Color
@@ -89,6 +90,7 @@ func paletteFor(theme themeID) palette {
 			dim:        lipgloss.Color("#8A5428"),
 			accent:     lipgloss.Color("#FFD38A"),
 			success:    lipgloss.Color("#67D391"),
+			successDim: lipgloss.Color("#285B3B"),
 			warning:    lipgloss.Color("#FF8A3D"),
 			danger:     lipgloss.Color("#FF5F56"),
 			background: lipgloss.Color("#1A0E05"),
@@ -100,6 +102,7 @@ func paletteFor(theme themeID) palette {
 			dim:        lipgloss.Color("#425B76"),
 			accent:     lipgloss.Color("#B7E3FF"),
 			success:    lipgloss.Color("#57D68D"),
+			successDim: lipgloss.Color("#25583D"),
 			warning:    lipgloss.Color("#E8C46A"),
 			danger:     lipgloss.Color("#FF6B83"),
 			background: lipgloss.Color("#08111B"),
@@ -111,6 +114,7 @@ func paletteFor(theme themeID) palette {
 			dim:        lipgloss.Color("#68428F"),
 			accent:     lipgloss.Color("#F0ABFC"),
 			success:    lipgloss.Color("#65D98B"),
+			successDim: lipgloss.Color("#28583A"),
 			warning:    lipgloss.Color("#F9A8D4"),
 			danger:     lipgloss.Color("#FF668F"),
 			background: lipgloss.Color("#12081C"),
@@ -122,6 +126,7 @@ func paletteFor(theme themeID) palette {
 			dim:        lipgloss.Color("#6840A6"),
 			accent:     lipgloss.Color("#D0A7FF"),
 			success:    lipgloss.Color("#62D990"),
+			successDim: lipgloss.Color("#28583C"),
 			warning:    lipgloss.Color("#8F7CFF"),
 			danger:     lipgloss.Color("#FF668F"),
 			background: lipgloss.Color("#180D29"),
@@ -133,6 +138,7 @@ func paletteFor(theme themeID) palette {
 			dim:        lipgloss.Color("#238F4A"),
 			accent:     lipgloss.Color("#67E8F9"),
 			success:    lipgloss.Color("#00C853"),
+			successDim: lipgloss.Color("#006B2D"),
 			warning:    lipgloss.Color("#FFCA58"),
 			danger:     lipgloss.Color("#FF5F6D"),
 			background: lipgloss.Color("#07130B"),

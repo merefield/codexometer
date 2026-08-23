@@ -579,9 +579,9 @@ The other top-level views are:
   token telemetry and shows total observed tokens, elapsed time, and average
   rate; clickable Pause/Resume and Reset controls sit beside it. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
-  The Monitor tab light and status label pulse between the current theme's
-  highlight and dim colors while the shared app server is working, remain green
-  while it is reachable but idle, and turn red when it is unreachable. They
+  The Monitor tab light and status label pulse between bright and dim green
+  while the shared app server is working, remain steady green while it is
+  reachable but idle, and turn red when it is unreachable. They
   remain dim while paused or when app-server health is unavailable. Below,
   every independent root session has a metrics box and its own graph.
   Spawned-agent descendants with an explicit Codex parent link are recursively

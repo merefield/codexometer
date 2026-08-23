@@ -230,9 +230,9 @@ func (m Model) monitorIndicatorColor(colors palette) imagecolor.Color {
 	}
 	if m.monitorAppServerWorking {
 		if m.phase%2 == 0 {
-			return colors.accent
+			return colors.success
 		}
-		return colors.dim
+		return colors.successDim
 	}
 	if !m.monitorAppServerKnown {
 		return colors.dim

@@ -254,12 +254,12 @@ func TestMonitorIndicatorUsesActivityAndAppServerHealth(t *testing.T) {
 	if !strings.Contains(ansi.Strip(bright), "●") {
 		t.Fatal("Monitor tab did not retain its status light away from the Monitor view")
 	}
-	if model.monitorIndicatorColor(colors) != colors.dim {
-		t.Fatal("working indicator did not alternate to the theme's dim color")
+	if model.monitorIndicatorColor(colors) != colors.successDim {
+		t.Fatal("working indicator did not alternate to dim green")
 	}
 	model.phase = 0
-	if model.monitorIndicatorColor(colors) != colors.accent {
-		t.Fatal("working indicator did not alternate to the theme's highlight color")
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("working indicator did not alternate to bright green")
 	}
 	model.monitorAppServerWorking = false
 	if model.monitorIndicatorColor(colors) != colors.success {
