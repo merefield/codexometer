@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -43,6 +44,8 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 	}
 	upgrader := websocket.Upgrader{}
 	var resumedHistorical atomic.Bool
+	var loadedCalls atomic.Int64
+	var readCalls atomic.Int64
 	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, upgradeErr := upgrader.Upgrade(writer, request, nil)
 		if upgradeErr != nil {
@@ -65,6 +68,7 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 			case "initialize":
 				_ = connection.WriteJSON(map[string]any{"id": *message.ID, "result": map[string]any{"userAgent": "codex/1.0"}})
 			case "thread/loaded/list":
+				loadedCalls.Add(1)
 				_ = connection.WriteJSON(map[string]any{"id": *message.ID, "result": map[string]any{
 					"data": []string{"working", "approval"}, "nextCursor": nil,
 				}})
@@ -91,6 +95,7 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 					}})
 				}
 			case "thread/read":
+				readCalls.Add(1)
 				threadID, _ := message.Params["threadId"].(string)
 				status := map[string]any{"type": "active", "activeFlags": []string{}}
 				if threadID == "approval" {
@@ -131,6 +136,32 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 	}
 	if resumedHistorical.Load() {
 		t.Fatal("provider subscribed to a thread that was not already loaded")
+	}
+	loadedBefore, readsBefore := loadedCalls.Load(), readCalls.Load()
+	cached, exact := provider.Fetch(context.Background(), []string{"working", "approval", "historical"})
+	if !exact || cached.Statuses["working"] != sessionRuntimeWorking {
+		t.Fatalf("cached daemon statuses = %#v, exact=%v", cached.Statuses, exact)
+	}
+	if loadedCalls.Load() != loadedBefore || readCalls.Load() != readsBefore {
+		t.Fatalf("unchanged thread set repeated daemon RPCs: loaded %d->%d reads %d->%d", loadedBefore, loadedCalls.Load(), readsBefore, readCalls.Load())
+	}
+}
+
+func TestDaemonStatusCacheExpiresAndRejectsChangedThreadSets(t *testing.T) {
+	now := time.Now()
+	provider := &daemonStatusProvider{
+		lastStatusAt: now, statusThreads: stringStructSet([]string{"alpha"}),
+		statuses:   map[string]sessionRuntimeStatus{"alpha": sessionRuntimeWorking},
+		subscribed: map[string]struct{}{"alpha": {}},
+	}
+	if snapshot, ok := provider.cachedStatusSnapshot([]string{"alpha"}, now.Add(time.Second)); !ok || snapshot.Statuses["alpha"] != sessionRuntimeWorking {
+		t.Fatalf("fresh matching cache = %#v, ok=%v", snapshot, ok)
+	}
+	if _, ok := provider.cachedStatusSnapshot([]string{"bravo"}, now.Add(time.Second)); ok {
+		t.Fatal("cache accepted a changed thread set")
+	}
+	if _, ok := provider.cachedStatusSnapshot([]string{"alpha"}, now.Add(daemonStatusRefreshEvery)); ok {
+		t.Fatal("cache remained valid at its refresh boundary")
 	}
 }
 

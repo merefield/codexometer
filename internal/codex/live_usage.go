@@ -33,6 +33,9 @@ type LiveUsageSnapshot struct {
 	LastActivity       time.Time
 	SessionCount       int
 	Sessions           []LiveUsageSession
+	CodexStatusKnown   bool
+	CodexUp            bool
+	CodexWorking       bool
 	APIEqUSD           float64
 	APIEqPricedCalls   int64
 	APIEqUnpricedCalls int64
@@ -286,7 +289,7 @@ func (r *LiveUsageReader) FetchTokenUsage(ctx context.Context) (LiveUsageSnapsho
 }
 
 // FetchTokenUsageFresh forces a complete session discovery before consuming
-// telemetry. The Monitor uses this for its final Stop reading so a recently
+// telemetry. The Monitor uses this for its final Pause reading so a recently
 // resumed rollout in an older date directory cannot be missed.
 func (r *LiveUsageReader) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, error) {
 	return r.fetchTokenUsage(ctx, true)
@@ -312,9 +315,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
 		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
+			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
@@ -348,14 +353,32 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
-	sessions, activeSessions := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
+	sessions, activeSessions, sessionWorking := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
+	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
+		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
+	)
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
 		SessionCount: activeSessions, Sessions: sessions,
-		APIEqUSD: r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
+		CodexStatusKnown: codexStatusKnown,
+		CodexUp:          codexUp,
+		CodexWorking:     codexWorking,
+		APIEqUSD:         r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
 		APIEqUnpricedCalls: r.apiEqUnknownCalls,
 		APIEqPendingCalls:  int64(len(r.pendingModelResolutions)),
 	}, nil
+}
+
+// codexRuntimeHealth combines the optional shared app-server heartbeat with
+// locally held writer locks and reconciled session state. A held lock
+// establishes that Codex is healthy without implying that its session is
+// working. An unavailable optional socket alone is not evidence that Codex is
+// down.
+func codexRuntimeHealth(appServerUp, liveWriter, sessionWorking, writerLocksSupported bool) (known, up, working bool) {
+	working = sessionWorking
+	up = appServerUp || liveWriter || working
+	known = up || writerLocksSupported
+	return known, up, working
 }
 
 func (r *LiveUsageReader) observedThreadIDs(now time.Time) []string {
@@ -1078,7 +1101,7 @@ func (r *LiveUsageReader) liveWriterThreads() (map[string]struct{}, bool) {
 	return live, true
 }
 
-func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string]struct{}, writerLocksSupported bool, exactStatuses map[string]sessionRuntimeStatus) ([]LiveUsageSession, int) {
+func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string]struct{}, writerLocksSupported bool, exactStatuses map[string]sessionRuntimeStatus) ([]LiveUsageSession, int, bool) {
 	byID := make(map[string]*rolloutCursor, len(r.files))
 	for _, cursor := range r.files {
 		if cursor.threadID != "" {
@@ -1088,12 +1111,14 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 
 	groups := make(map[string]*LiveUsageSession)
 	groupHasFreshActivity := make(map[string]bool)
+	groupWorking := make(map[string]bool)
 	for _, cursor := range r.files {
 		quietFor := now.Sub(cursor.lastModified)
 		active := quietFor <= 5*time.Minute
 		_, writerActive := liveWriters[cursor.threadID]
 		exactStatus, exact := exactStatuses[cursor.threadID]
 		exactWorking := exact && exactStatus == sessionRuntimeWorking
+		localWorking := !exact && writerActive && cursor.attention == sessionAttentionWorking
 		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, quietFor, exactStatus, exact)
 		if !active && !exactWorking && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
@@ -1109,6 +1134,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
 		group.Active = group.Active || active || exactWorking || attention != SessionAttentionNone
 		group.Attention = mergeSessionAttention(group.Attention, attention)
+		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing
 		// member—or an authoritatively working daemon thread—means the grouped
 		// root is demonstrably active, even if a linked child was left quiet
@@ -1133,6 +1159,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 
 	sessions := make([]LiveUsageSession, 0, len(groups))
 	activeCount := 0
+	anyWorking := false
 	for _, session := range groups {
 		if session.Attention == SessionAttentionCheck && groupHasFreshActivity[session.ID] {
 			session.Attention = SessionAttentionNone
@@ -1142,6 +1169,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		if session.Active {
 			activeCount++
 		}
+		anyWorking = anyWorking || groupWorking[session.ID]
 		sessions = append(sessions, *session)
 	}
 	sort.Slice(sessions, func(i, j int) bool {
@@ -1153,7 +1181,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		}
 		return sessions[i].ID < sessions[j].ID
 	})
-	return sessions, activeCount
+	return sessions, activeCount, anyWorking
 }
 
 func sessionAttention(state sessionAttentionState, writerActive, writerLocksSupported bool, quietFor time.Duration, exactStatus sessionRuntimeStatus, exact bool) SessionAttention {

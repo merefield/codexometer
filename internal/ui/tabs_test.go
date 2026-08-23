@@ -19,11 +19,11 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	}{
 		{width: 100, want: "BENCHMARK"},
 		{width: 22, want: "QTA"},
-		{width: 9, want: "[M]"},
-		{width: 3, want: "M"},
+		{width: 9, want: "●"},
+		{width: 3, want: "●"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
-			tabs, _ := mainTabLayout(test.width, false)
+			tabs, _ := mainTabLayout(test.width, true)
 			if len(tabs) != int(mainTabCount) {
 				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount)
 			}
@@ -78,7 +78,7 @@ func TestMainTabsSupportHoverClickAndPulse(t *testing.T) {
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.width, model.height = 100, 30
-	tabs, _ := mainTabLayout(model.contentWidth(), false)
+	tabs, _ := mainTabLayout(model.contentWidth(), true)
 	target := tabs[mainTabMonitor]
 	mouse := tea.MouseMotionMsg{
 		X:      2 + target.x + target.width/2,
@@ -132,7 +132,7 @@ func TestEveryRenderedTabCellIsClickableAcrossWidths(t *testing.T) {
 	for _, width := range []int{8, 12, 20, 40, 45, 60, 80, 100, 160} {
 		model := Model{snapshot: codex.DemoSnapshot(), width: width, height: 24}
 		layout := model.dashboardLayout()
-		mainTabs, _ := mainTabLayout(layout.contentWidth, false)
+		mainTabs, _ := mainTabLayout(layout.contentWidth, true)
 		for _, tab := range mainTabs {
 			for offset := 0; offset < tab.width; offset++ {
 				if got, ok := model.mainTabAt(2+tab.x+offset, layout.tabsY); !ok || got != tab.tab {
@@ -175,7 +175,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 	}
 }
 
-func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
+func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model := Model{meterView: viewBars}
 	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewBars} {
 		updated, command := model.Update(key('v'))
@@ -191,11 +191,18 @@ func TestVSelectsQuotaViewAndSOnlyStartsMonitor(t *testing.T) {
 		t.Fatal("S changed the Quota view")
 	}
 
-	model = Model{meterView: viewMonitor, monitorState: monitorIdle}
+	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
 	updated, command = model.Update(key('s'))
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorStarting || model.flashedButton != footerButtonMonitorGo {
-		t.Fatalf("Monitor S did not start: state=%d flash=%d", model.monitorState, model.flashedButton)
+	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
+		t.Fatalf("Monitor S did not reset: state=%d flash=%d", model.monitorState, model.flashedButton)
+	}
+
+	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
+	updated, command = model.Update(key('p'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorPausing || model.flashedButton != footerButtonMonitorPause {
+		t.Fatalf("Monitor P did not pause: state=%d flash=%d", model.monitorState, model.flashedButton)
 	}
 
 	model = Model{meterView: viewBenchmark}
@@ -234,18 +241,61 @@ func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 	}
 }
 
-func TestMonitorMainTabShowsPulsingRecordingDotWhileQuotaIsActive(t *testing.T) {
-	model := Model{meterView: viewBars, monitorState: monitorRunning}
+func TestMonitorIndicatorUsesCodexActivityAndHealth(t *testing.T) {
+	model := Model{
+		meterView: viewBars, monitorState: monitorRunning,
+		monitorCodexStatusKnown: true, monitorCodexUp: true, monitorCodexWorking: true,
+	}
 	colors := paletteFor(themeHacker)
 	model.phase = 0
 	bright := model.renderMainTabs(100, colors)
 	model.phase = 1
 	dark := model.renderMainTabs(100, colors)
 	if !strings.Contains(ansi.Strip(bright), "●") {
-		t.Fatal("recording tab did not retain a pulsing dot away from the Monitor view")
+		t.Fatal("Monitor tab did not retain its status light away from the Monitor view")
 	}
-	if recordingDotColor(0, colors) == recordingDotColor(1, colors) {
-		t.Fatal("recording tab dot does not alternate between bright and dark red")
+	if model.monitorIndicatorColor(colors) != colors.successDim {
+		t.Fatal("working indicator did not alternate to dim green")
+	}
+	model.phase = 0
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("working indicator did not alternate to bright green")
+	}
+	model.monitorSessionData = []monitorSession{{
+		id: "waiting", displayed: true, active: true, attention: codex.SessionAttentionInput,
+	}}
+	if model.monitorIndicatorColor(colors) != colors.warning {
+		t.Fatal("visible waiting session did not take precedence with bright amber")
+	}
+	model.phase = 1
+	if model.monitorIndicatorColor(colors) != colors.warningDim {
+		t.Fatal("waiting indicator did not alternate to dim amber")
+	}
+	model.monitorDismissed = map[string]monitorSessionDismissal{"waiting": {}}
+	model.phase = 0
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("dismissed waiting session continued to override working green")
+	}
+	model.monitorSessionData = nil
+	model.monitorDismissed = nil
+	model.monitorCodexWorking = false
+	if model.monitorIndicatorColor(colors) != colors.success {
+		t.Fatal("idle Codex indicator was not steady green")
+	}
+	model.monitorCodexUp = false
+	if model.monitorIndicatorColor(colors) != colors.danger {
+		t.Fatal("stopped Codex indicator was not steady red")
+	}
+	model.monitorCodexStatusKnown = false
+	if model.monitorIndicatorColor(colors) != colors.dim {
+		t.Fatal("unknown Codex status was not shown as dim")
+	}
+	model.monitorState = monitorPaused
+	model.monitorCodexStatusKnown = true
+	model.monitorCodexUp = true
+	model.monitorCodexWorking = true
+	if model.monitorIndicatorColor(colors) != colors.dim {
+		t.Fatal("paused Monitor presented stale Codex health as current")
 	}
 	if lipgloss.Width(bright) != 100 || lipgloss.Width(dark) != 100 {
 		t.Fatalf("tab rail did not fill its responsive width: bright=%d dark=%d", lipgloss.Width(bright), lipgloss.Width(dark))

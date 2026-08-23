@@ -16,33 +16,20 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-func TestMonitorGoSampleAndStopLifecycle(t *testing.T) {
+func TestMonitorAutoStartPauseResumeAndResetLifecycle(t *testing.T) {
 	baseline := int64(1_000)
 	model := New(stubLiveFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
 	model.loading = false
 	model.meterView = viewMonitor
-
-	updated, command := model.Update(key('s'))
-	model = updated.(Model)
-	if command == nil || model.monitorState != monitorStarting || model.flashedButton != footerButtonMonitorGo {
-		t.Fatalf("Go did not arm monitor: state=%d flash=%d command=%v", model.monitorState, model.flashedButton, command)
-	}
-	flashed := model.renderMonitorButton(14, 6, "(S)TART", footerButtonMonitorGo, model.monitorGoEnabled(), paletteFor(themeHacker))
-	wantFlash := lipgloss.NewStyle().Bold(true).Foreground(paletteFor(themeHacker).background).Background(paletteFor(themeHacker).primary).Render("(S)TART")
-	if !strings.Contains(flashed, wantFlash) {
-		t.Fatal("Start hotkey did not visibly pulse after entering the starting state")
-	}
-	sequence := model.monitorRequest
 	startedAt := time.Unix(100, 0)
-	updated, command = model.Update(monitorFetchedMsg{
-		kind: monitorFetchStart, sequence: sequence, usage: usageWithTokens(baseline), at: startedAt,
+	updated, command := model.Update(fetchedMsg{
+		snapshot: codex.DemoSnapshot(), usage: usageWithTokens(baseline), at: startedAt,
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorRunning || model.monitorBaseline != baseline || command != nil {
-		t.Fatalf("baseline was not established: %#v", model)
+	if command != nil || model.monitorState != monitorRunning || model.monitorBaseline != baseline {
+		t.Fatalf("Monitor did not auto-start from the initial refresh: %#v", model)
 	}
-
 	model.monitorRequest++
 	updated, _ = model.Update(monitorFetchedMsg{
 		kind: monitorFetchSample, sequence: model.monitorRequest,
@@ -68,20 +55,149 @@ func TestMonitorGoSampleAndStopLifecycle(t *testing.T) {
 
 	updated, command = model.Update(key('p'))
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorStopping || model.flashedButton != footerButtonMonitorStop {
-		t.Fatalf("Stop did not request final sync: state=%d flash=%d command=%v", model.monitorState, model.flashedButton, command)
+	if command == nil || model.monitorState != monitorPausing || model.flashedButton != footerButtonMonitorPause {
+		t.Fatalf("Pause did not request final sync: state=%d flash=%d command=%v", model.monitorState, model.flashedButton, command)
 	}
-	stopSequence := model.monitorRequest
+	pauseSequence := model.monitorRequest
 	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchStop, sequence: stopSequence,
+		kind: monitorFetchPause, sequence: pauseSequence,
 		usage: usageWithTokens(1_400), at: startedAt.Add(45 * time.Second),
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorStopped || model.monitorLatest-model.monitorBaseline != 400 {
+	if model.monitorState != monitorPaused || model.monitorRecordedTokens() != 400 {
 		t.Fatalf("final usage was not recorded: state=%d total=%d", model.monitorState, model.monitorLatest-model.monitorBaseline)
 	}
 	if len(model.monitorSamples) != 1 {
 		t.Fatalf("partial final interval was incorrectly plotted as a 30-second bucket: %#v", model.monitorSamples)
+	}
+
+	updated, command = model.Update(key('p'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorResuming {
+		t.Fatalf("Resume did not request a fresh baseline: state=%d command=%v", model.monitorState, command)
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchResume, sequence: model.monitorRequest,
+		usage: usageWithTokens(1_600), at: startedAt.Add(75 * time.Second),
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorRunning || model.monitorRecordedTokens() != 400 {
+		t.Fatalf("Resume counted paused activity: state=%d total=%d", model.monitorState, model.monitorRecordedTokens())
+	}
+
+	updated, command = model.Update(key('s'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
+		t.Fatalf("Reset did not request a fresh baseline: state=%d flash=%d", model.monitorState, model.flashedButton)
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchReset, sequence: model.monitorRequest,
+		usage: usageWithTokens(1_700), quota: codex.DemoSnapshot(), at: startedAt.Add(80 * time.Second),
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorRunning || model.monitorRecordedTokens() != 0 || len(model.monitorSamples) != 0 {
+		t.Fatalf("Reset did not clear the running measurement: %#v", model)
+	}
+}
+
+func TestMonitorResetPreservesPausedState(t *testing.T) {
+	startedAt := time.Unix(500, 0)
+	model := Model{
+		meterView: viewMonitor, monitorState: monitorPaused,
+		monitorStartedAt: startedAt, monitorStoppedAt: startedAt.Add(time.Minute),
+		monitorBaseline: 100, monitorLatest: 250,
+		monitorSamples: []monitorSample{{intervalTokens: 150}},
+	}
+	updated, command := model.Update(key('s'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorResetting || !model.monitorResetPaused {
+		t.Fatalf("paused Reset was not armed correctly: %#v", model)
+	}
+	resetAt := startedAt.Add(2 * time.Minute)
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchReset, sequence: model.monitorRequest,
+		usage: usageWithTokens(500), at: resetAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorPaused || model.monitorRecordedTokens() != 0 ||
+		!model.monitorStoppedAt.Equal(resetAt) || !model.monitorNextFetch.IsZero() || len(model.monitorSamples) != 0 {
+		t.Fatalf("paused Reset changed run state or retained history: %#v", model)
+	}
+}
+
+func TestMonitorFailedResetRestoresPreviousRunState(t *testing.T) {
+	now := time.Unix(700, 0)
+	for _, test := range []struct {
+		name   string
+		paused bool
+		want   monitorState
+	}{
+		{name: "running", want: monitorRunning},
+		{name: "paused", paused: true, want: monitorPaused},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := Model{
+				monitorState: monitorResetting, monitorRequest: 1,
+				monitorResetPaused: test.paused, monitorFetchActive: true,
+			}
+			updated, _ := model.Update(monitorFetchedMsg{
+				kind: monitorFetchReset, sequence: 1, err: errors.New("telemetry offline"), at: now,
+			})
+			model = updated.(Model)
+			if model.monitorState != test.want || model.monitorResetPaused {
+				t.Fatalf("failed Reset state = %d, reset-paused=%t; want %d, false", model.monitorState, model.monitorResetPaused, test.want)
+			}
+		})
+	}
+}
+
+func TestMonitorRejectedResumeDoesNotRebaseQuota(t *testing.T) {
+	now := time.Unix(800, 0)
+	model := Model{
+		monitorState: monitorResuming, monitorRequest: 1,
+		monitorLatest: 200,
+		monitorQuotaWindows: []monitorQuotaWindow{{
+			key: "primary", baselineUsed: 10, latestUsed: 12,
+		}},
+	}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchResume, sequence: 1, usage: usageWithTokens(100),
+		quota: monitorQuotaSnapshot(30, now.Add(time.Hour).Unix()), at: now,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorPaused || model.monitorQuotaWindows[0].baselineUsed != 10 || model.monitorQuotaWindows[0].latestUsed != 12 {
+		t.Fatalf("rejected Resume changed quota state: %#v", model.monitorQuotaWindows)
+	}
+}
+
+func TestMonitorResumeAfterFailedStartEstablishesFreshBaseline(t *testing.T) {
+	failedAt := time.Unix(900, 0)
+	model := Model{meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, err: errors.New("telemetry offline"), at: failedAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorPaused || !model.monitorStartedAt.IsZero() {
+		t.Fatalf("failed Start state = %#v", model)
+	}
+
+	updated, command := model.Update(key('p'))
+	model = updated.(Model)
+	if command == nil || model.monitorState != monitorResuming {
+		t.Fatalf("Resume was not started after failed Start: %#v", model)
+	}
+	resumedAt := failedAt.Add(time.Minute)
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchResume, sequence: model.monitorRequest,
+		usage: usageWithTokens(500), quota: codex.DemoSnapshot(), at: resumedAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorRunning || !model.monitorStartedAt.Equal(resumedAt) ||
+		model.monitorBaseline != 500 || model.monitorRecordedTokens() != 0 {
+		t.Fatalf("Resume did not establish a fresh baseline: %#v", model)
+	}
+	if elapsed := model.monitorElapsed(resumedAt.Add(time.Second)); elapsed != time.Second {
+		t.Fatalf("elapsed after recovered Resume = %s, want 1s", elapsed)
 	}
 }
 
@@ -172,7 +288,7 @@ func TestMonitorTracksCompactModelCallOutputAndTTFTStatsSinceStart(t *testing.T)
 	model = updated.(Model)
 	session := model.monitorSessionData[0]
 	if session.modelCalls != 0 || session.latestTTFTOK {
-		t.Fatalf("pre-Start response telemetry was not baselined: %#v", session)
+		t.Fatalf("pre-baseline response telemetry was not excluded: %#v", session)
 	}
 
 	model.monitorRequest++
@@ -361,10 +477,10 @@ func TestMonitorSuppressesStaleAndMissingQuotaEstimates(t *testing.T) {
 	}
 
 	model.monitorQuotaWindows[0].stale = false
-	model.monitorState = monitorStopping
+	model.monitorState = monitorPausing
 	model.monitorRequest = 4
 	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchStop, sequence: 4, usage: codex.LiveUsageSnapshot{TotalTokens: 200},
+		kind: monitorFetchPause, sequence: 4, usage: codex.LiveUsageSnapshot{TotalTokens: 200},
 		quotaErr: errors.New("final quota offline"), at: startedAt.Add(time.Minute),
 	})
 	model = updated.(Model)
@@ -383,15 +499,15 @@ func TestMonitorQuotaReadsBracketTheLocalTokenInterval(t *testing.T) {
 		t.Fatal(message.err)
 	}
 	if want := []string{"quota", "usage"}; !reflect.DeepEqual(fetcher.calls, want) {
-		t.Fatalf("Start reads = %v; want %v", fetcher.calls, want)
+		t.Fatalf("initial baseline reads = %v; want %v", fetcher.calls, want)
 	}
 
 	fetcher.calls = nil
-	if message := model.monitorFetch(monitorFetchStop, 2)().(monitorFetchedMsg); message.err != nil {
+	if message := model.monitorFetch(monitorFetchPause, 2)().(monitorFetchedMsg); message.err != nil {
 		t.Fatal(message.err)
 	}
 	if want := []string{"usage-fresh", "quota"}; !reflect.DeepEqual(fetcher.calls, want) {
-		t.Fatalf("Stop reads = %v; want %v", fetcher.calls, want)
+		t.Fatalf("Pause reads = %v; want %v", fetcher.calls, want)
 	}
 }
 
@@ -727,17 +843,17 @@ func TestMonitorSurfacesUnavailableAndFailedFinalUsage(t *testing.T) {
 		kind: monitorFetchStart, sequence: 1, err: errors.New("local telemetry unavailable"), at: time.Now(),
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorStopped || !strings.Contains(model.monitorError, "local telemetry unavailable") {
+	if model.monitorState != monitorPaused || !strings.Contains(model.monitorError, "local telemetry unavailable") {
 		t.Fatalf("missing usage was not surfaced: %#v", model)
 	}
 
-	model.monitorState = monitorStopping
+	model.monitorState = monitorPausing
 	model.monitorRequest = 2
 	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchStop, sequence: 2, err: errors.New("offline"), at: time.Now(),
+		kind: monitorFetchPause, sequence: 2, err: errors.New("offline"), at: time.Now(),
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorStopped || model.monitorError != "offline" {
+	if model.monitorState != monitorPaused || model.monitorError != "offline" {
 		t.Fatalf("failed final sync was not surfaced: %#v", model)
 	}
 }
@@ -757,14 +873,14 @@ func TestMonitorFetchUsesConfiguredLocalSource(t *testing.T) {
 	}
 }
 
-func TestMonitorStopUsesFreshLocalSourceWhenAvailable(t *testing.T) {
+func TestMonitorPauseUsesFreshLocalSourceWhenAvailable(t *testing.T) {
 	fetcher := &stubFreshLiveFetcher{
 		stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()},
 		ordinary:    codex.LiveUsageSnapshot{TotalTokens: 100},
 		fresh:       codex.LiveUsageSnapshot{TotalTokens: 175},
 	}
 	model := New(fetcher, time.Minute)
-	message := model.monitorFetch(monitorFetchStop, 9)().(monitorFetchedMsg)
+	message := model.monitorFetch(monitorFetchPause, 9)().(monitorFetchedMsg)
 	if message.err != nil || message.usage.TotalTokens != 175 || fetcher.freshCalls != 1 || fetcher.ordinaryCalls != 0 {
 		t.Fatalf("final read did not use fresh discovery: message=%#v fetcher=%#v", message, fetcher)
 	}
@@ -781,7 +897,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(S)TART", "STO(P)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(P)AUSE", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -795,17 +911,20 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 	}
 }
 
-func TestMonitorRecordingLampPulsesBetweenDarkAndBrightRed(t *testing.T) {
+func TestMonitorLabelUsesTheSharedActivityIndicatorColor(t *testing.T) {
 	colors := paletteFor(themeHacker)
-	model := Model{monitorState: monitorRunning, monitorStartedAt: time.Now()}
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: time.Now(),
+		monitorCodexStatusKnown: true, monitorCodexUp: true, monitorCodexWorking: true,
+	}
 	model.phase = 0
 	bright := model.renderMonitorReadout(60, 8, colors)
 	model.phase = 1
 	dark := model.renderMonitorReadout(60, 8, colors)
-	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.danger).Render("RECORDING ●")
-	wantDark := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7A2633")).Render("RECORDING ●")
+	wantBright := lipgloss.NewStyle().Bold(true).Foreground(colors.success).Render("MONITORING ●")
+	wantDark := lipgloss.NewStyle().Bold(true).Foreground(colors.successDim).Render("MONITORING ●")
 	if !strings.Contains(bright, wantBright) || !strings.Contains(dark, wantDark) || ansi.Strip(bright) != ansi.Strip(dark) {
-		t.Fatal("recording lamp did not pulse red intensity while keeping a stable label")
+		t.Fatal("Monitor label did not share the green activity pulse while keeping stable text")
 	}
 }
 
@@ -842,7 +961,7 @@ func TestMonitorSessionProminentlyDistinguishesAttentionReason(t *testing.T) {
 func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	model := Model{
 		snapshot: codex.DemoSnapshot(), width: 100, height: 36,
-		meterView: viewMonitor, monitorState: monitorIdle,
+		meterView: viewMonitor, monitorState: monitorRunning,
 	}
 	colors := paletteFor(model.theme)
 	dashboard := model.dashboardLayout()
@@ -857,7 +976,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	for _, test := range []struct {
 		rect monitorRect
 		want footerButtonID
-	}{{geometry.goRect, footerButtonMonitorGo}, {geometry.stopRect, footerButtonNone}} {
+	}{{geometry.goRect, footerButtonMonitorPause}, {geometry.stopRect, footerButtonMonitorReset}} {
 		// Hit an otherwise blank spot inside the large box, not merely its label.
 		x := originX + test.rect.x + 1
 		y := originY + test.rect.y + 1
@@ -865,27 +984,17 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 			t.Errorf("button hit = %d, want %d at %d,%d", got, test.want, x, y)
 		}
 	}
-	model.monitorState = monitorRunning
-	stopX := originX + geometry.stopRect.x + 1
-	stopY := originY + geometry.stopRect.y + 1
 	hoverX := originX + geometry.goRect.x + 1
 	hoverY := originY + geometry.goRect.y + 1
-	if got := model.monitorButtonAt(stopX, stopY); got != footerButtonMonitorStop {
-		t.Errorf("enabled Stop button hit = %d, want %d", got, footerButtonMonitorStop)
-	}
-	if got := model.monitorButtonAt(hoverX, hoverY); got != footerButtonNone {
-		t.Errorf("disabled Start button hit = %d, want none", got)
-	}
-	model.monitorState = monitorIdle
 	updated, command := model.Update(tea.MouseMotionMsg{X: hoverX, Y: hoverY})
 	model = updated.(Model)
-	if command != nil || model.hoveredButton != footerButtonMonitorGo {
-		t.Fatal("hovering the Go box did not select it")
+	if command != nil || model.hoveredButton != footerButtonMonitorPause {
+		t.Fatal("hovering the Pause box did not select it")
 	}
-	hovered := model.renderMonitorButton(14, 6, "(S)TART", footerButtonMonitorGo, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(S)TART")
+	hovered := model.renderMonitorButton(14, 6, "(P)AUSE", footerButtonMonitorPause, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(P)AUSE")
 	if !strings.Contains(hovered, wantHover) {
-		t.Fatal("hovering the Go box did not highlight its label")
+		t.Fatal("hovering the Pause box did not highlight its label")
 	}
 
 	updated, command = model.Update(tea.MouseClickMsg{
@@ -893,8 +1002,8 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 		Button: tea.MouseLeft,
 	})
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorStarting {
-		t.Fatal("clicking the Go box did not start the monitor")
+	if command == nil || model.monitorState != monitorPausing {
+		t.Fatal("clicking the Pause box did not pause the monitor")
 	}
 }
 
@@ -909,7 +1018,7 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 		}
 
 		for index, width := range geometry.buttonWidths {
-			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorGo, true, colors)
+			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorPause, true, colors)
 			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
 				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
 			}
@@ -919,7 +1028,10 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 
 func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{40, 16}, {40, 24}, {60, 24}, {100, 36}, {160, 45}} {
-		for _, state := range []monitorState{monitorIdle, monitorRunning} {
+		for _, state := range []monitorState{
+			monitorIdle, monitorStarting, monitorRunning, monitorPausing,
+			monitorPaused, monitorResuming, monitorResetting,
+		} {
 			model := Model{
 				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
 				meterView: viewMonitor, monitorState: state,
@@ -931,8 +1043,8 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 				id      footerButtonID
 				enabled bool
 			}{
-				{geometry.goRect, footerButtonMonitorGo, model.monitorGoEnabled()},
-				{geometry.stopRect, footerButtonMonitorStop, model.monitorStopEnabled()},
+				{geometry.goRect, footerButtonMonitorPause, model.monitorPauseEnabled()},
+				{geometry.stopRect, footerButtonMonitorReset, model.monitorResetEnabled()},
 			} {
 				want := footerButtonNone
 				if button.enabled {
@@ -978,6 +1090,110 @@ func TestMonitorGraphUsesVerticalGranularBars(t *testing.T) {
 	}
 	if !strings.Contains(graph, "░") {
 		t.Fatalf("bars did not use dim granular cells above their values:\n%s", graph)
+	}
+}
+
+func TestMonitorPollingAdaptsToSessionActivity(t *testing.T) {
+	startedAt := time.Unix(3_000, 0)
+	model := Model{
+		monitorState: monitorRunning, monitorStartedAt: startedAt,
+		monitorNextFetch: startedAt.Add(time.Second), monitorNextSample: startedAt.Add(time.Minute),
+		monitorSessionData: []monitorSession{{id: "active", active: true, displayed: true}},
+	}
+	updated, _ := model.Update(secondMsg(startedAt.Add(500 * time.Millisecond)))
+	model = updated.(Model)
+	if model.monitorFetchActive {
+		t.Fatal("active Monitor polled before its one-second deadline")
+	}
+	updated, _ = model.Update(secondMsg(startedAt.Add(time.Second)))
+	model = updated.(Model)
+	if !model.monitorFetchActive {
+		t.Fatal("active Monitor did not poll at its one-second deadline")
+	}
+	updated, _ = model.Update(monitorFetchedMsg{
+		kind: monitorFetchSample, sequence: model.monitorRequest,
+		usage: codex.LiveUsageSnapshot{}, at: startedAt.Add(time.Second),
+	})
+	model = updated.(Model)
+	if want := startedAt.Add(6 * time.Second); !model.monitorNextFetch.Equal(want) {
+		t.Fatalf("inactive Monitor next poll = %s, want %s", model.monitorNextFetch, want)
+	}
+	updated, _ = model.Update(secondMsg(startedAt.Add(2 * time.Second)))
+	model = updated.(Model)
+	if model.monitorFetchActive {
+		t.Fatal("inactive Monitor retained the one-second polling cadence")
+	}
+	updated, _ = model.Update(secondMsg(startedAt.Add(6 * time.Second)))
+	model = updated.(Model)
+	if !model.monitorFetchActive {
+		t.Fatal("inactive Monitor did not poll at its five-second deadline")
+	}
+}
+
+func TestMonitorSampleHistoryIsBounded(t *testing.T) {
+	samples := make([]monitorSample, monitorSampleHistoryMax)
+	for index := range samples {
+		samples[index].intervalTokens = int64(index)
+	}
+	samples = appendMonitorSample(samples, monitorSample{intervalTokens: 9_999})
+	if len(samples) != monitorSampleHistoryMax {
+		t.Fatalf("bounded history length = %d, want %d", len(samples), monitorSampleHistoryMax)
+	}
+	if samples[0].intervalTokens != 1 || samples[len(samples)-1].intervalTokens != 9_999 {
+		t.Fatalf("bounded history retained wrong range: first=%d last=%d", samples[0].intervalTokens, samples[len(samples)-1].intervalTokens)
+	}
+}
+
+func TestMonitorKeyboardSelectsHighlightsAndClosesSessions(t *testing.T) {
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 36,
+		meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: time.Now(),
+		monitorSessionData: []monitorSession{
+			{id: "alpha", active: true, displayed: true},
+			{id: "bravo", active: true, displayed: true},
+			{id: "charlie", active: true, displayed: true},
+		},
+	}
+	updated, _ := model.Update(specialKey(tea.KeyDown))
+	model = updated.(Model)
+	if model.monitorSelectedID != "alpha" {
+		t.Fatalf("first Down selected %q, want alpha", model.monitorSelectedID)
+	}
+	updated, _ = model.Update(specialKey(tea.KeyDown))
+	model = updated.(Model)
+	if model.monitorSelectedID != "bravo" {
+		t.Fatalf("second Down selected %q, want bravo", model.monitorSelectedID)
+	}
+	updated, _ = model.Update(specialKey(tea.KeyUp))
+	model = updated.(Model)
+	if model.monitorSelectedID != "alpha" {
+		t.Fatalf("Up selected %q, want alpha", model.monitorSelectedID)
+	}
+
+	colors := paletteFor(themeHacker)
+	selected := model.renderMonitorSessionRow(80, 8, model.monitorSessionData[0], "", colors)
+	if !strings.Contains(ansi.Strip(selected), "[X]") {
+		t.Fatal("keyboard-selected Monitor row did not expose its X close shortcut")
+	}
+	model.monitorSelectedID = ""
+	unselected := model.renderMonitorSessionRow(80, 8, model.monitorSessionData[0], "", colors)
+	if selected == unselected {
+		t.Fatal("keyboard-selected Monitor row did not receive a distinct highlight")
+	}
+
+	model.monitorSelectedID = "alpha"
+	updated, _ = model.Update(key('x'))
+	model = updated.(Model)
+	if model.monitorSelectedID != "bravo" || model.visibleMonitorSessionCount() != 2 {
+		t.Fatalf("X did not close alpha and advance selection: selected=%q visible=%d", model.monitorSelectedID, model.visibleMonitorSessionCount())
+	}
+
+	model.monitorDismissed = nil
+	model.monitorSelectedID = ""
+	updated, _ = model.Update(specialKey(tea.KeyUp))
+	model = updated.(Model)
+	if model.monitorSelectedID != "charlie" {
+		t.Fatalf("first Up selected %q, want bottom row charlie", model.monitorSelectedID)
 	}
 }
 

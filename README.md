@@ -66,7 +66,8 @@ It works particularly well in:
 - Online, refreshing, stale-data, and error states, with the limiting window
   named in warning states and a celebratory fresh-reset signal at 0% usage.
 - A countdown to the next automatic refresh.
-- An optional Monitor view that measures token activity between Go and Stop.
+- An always-on Monitor view that measures local token activity while Codexometer
+  is running, with Pause/Resume and Reset controls.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
@@ -259,9 +260,9 @@ Set up the recommended arrangement as follows.
    reconstructed after the fact. No additional Codexometer option is required;
    it automatically probes the same default socket under `CODEX_HOME`.
 
-5. Leave Codexometer running while you work. Use Monitor Start when you want a
-   measured interval, and keep unrelated Codex activity quiet while running
-   Benchmarks if you want the cleanest comparisons.
+5. Leave Codexometer running while you work. The Monitor starts automatically;
+   use Reset when you want a fresh measured interval, and keep unrelated Codex
+   activity quiet while running Benchmarks if you want the cleanest comparisons.
 
 Codexometer subscribes only to thread IDs that are already loaded by the
 daemon; it does not load unrelated historical sessions.
@@ -349,16 +350,16 @@ codexometer --codex /path/to/codex
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh quota data immediately |
 | `v` | Cycle the active Quota view |
-| `s` | Start recording (Monitor) or open Benchmark Scope |
-| `p` | Stop and take a final up-to-date reading (Monitor view only) |
+| `s` | Reset the Monitor baseline, or open Benchmark Scope |
+| `p` | Pause or resume live monitoring (Monitor view only) |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
-| `x` | Stop the active benchmark suite and retain its incomplete trial |
+| `x` | Close the selected Monitor session row, or stop the active benchmark suite and retain its incomplete trial |
 | `d` | Close the Benchmark Scope screen |
 | `[` / `]`, `Left` / `Right` | Select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a Benchmark row, or scroll its open detail |
+| `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
 | `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
 | `c` | Copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
@@ -573,19 +574,26 @@ choose one of these four views with its sub-tab or `v`:
 
 The other top-level views are:
 
-- **Monitor** — establishes a zero baseline across locally active Codex
-  sessions when you press Start. A large readout follows newly appended token
-  telemetry once per second and shows total observed tokens, elapsed time, and
-  average rate; clickable Start and Stop controls sit beside it. Below, every
-  independent root session has a metrics box and its own graph. Spawned-agent
-  descendants with an explicit Codex parent link are recursively aggregated
-  into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
+- **Monitor** — automatically establishes a zero baseline across locally active
+  Codex sessions when Codexometer starts. A large readout follows newly appended
+  token telemetry and shows total observed tokens, elapsed time, and average
+  rate; clickable Pause/Resume and Reset controls sit beside it. Active sessions
+  are checked once per second and the idle cadence relaxes to five seconds.
+  The Monitor tab light and status label pulse between bright and dim amber
+  whenever any session needs input, approval, or a check. With nothing waiting,
+  they pulse green while at least one session is working and remain steady green
+  while the Codex runtime is healthy but idle. They turn red only when local
+  runtime health is observable and Codex is down, and remain dim while paused
+  or when runtime health cannot be established. Below,
+  every independent root session has a metrics box and its own graph.
+  Spawned-agent descendants with an explicit Codex parent link are recursively
+  aggregated into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
   model calls and latest activity, latest/peak time to first token, and
   latest/peak output size. All graphs add one thin vertical block bar on the
   same 30-second tick, after a fresh boundary read. The companion readout
-  records each account quota window at Start and tracks its observed change
-  while recording. Every session row shows its exact share of locally observed
-  tokens and an explicitly labelled, local-only estimate of the first quota
+  records each account quota window at the current baseline and tracks its
+  observed change while monitoring. Every session row shows its exact share of
+  locally observed tokens and an explicitly labelled, local-only estimate of the first quota
   window's movement, apportioned by that share. A root discovered part-way
   through an interval gets an honestly labelled partial first bar and its rate
   uses that root's own observed lifetime. New bars enter on the right, older
@@ -610,11 +618,14 @@ The other top-level views are:
   when tokens, model calls, turn timing, durable activity, or attention moves
   forward, or when an inactive session becomes active again. An alert already
   visible when `[×]` is clicked is dismissed with its row; a later new or
-  changed alert restores it. Starting a new Monitor recording also restores
-  every dismissed row.
+  changed alert restores it. Resetting the Monitor also restores every dismissed
+  row. With the keyboard, `Down` initially selects the top row, `Up` initially
+  selects the bottom row, subsequent arrow presses move the highlight, and `x`
+  closes the selected row.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
-  wheel to page through the rows. Stop performs an immediate final local read
-  instead of relying on the latest graph sample.
+  wheel to page through the rows. Pause performs an immediate final local read
+  instead of relying on the latest graph sample. Resume preserves the recorded
+  totals while excluding tokens and elapsed time from the paused interval.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or
   conditional DigBench suite, or the active suite's complete catalog, against
   the selected or complete set of compatible model/reasoning-effort pairs.
@@ -701,8 +712,8 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
-`CALLS` counts upstream model-response cycles observed after Monitor Start, not
-complete user turns. A single Codex turn can make several calls while using
+`CALLS` counts upstream model-response cycles observed after the current Monitor
+baseline, not complete user turns. A single Codex turn can make several calls while using
 tools or progressing through an agent loop. `LAST OUT` is the provider-reported
 output-token count for the latest such call. `TTFT` comes from the completed
 turn's persisted time-to-first-token measurement; older Codex rollouts that do
@@ -726,11 +737,11 @@ Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessari
 zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
 missing, late-baseline, and reset-crossing windows do not produce a per-session
 number.
-Start reads quota before establishing the local token baseline, while Stop reads
-local tokens before the final quota snapshot, so the account observation
-brackets the local interval. These operations are not atomic, so unrelated
-account activity during either short boundary read remains another source of
-uncertainty.
+Starting, resuming, or resetting reads quota before establishing the local token
+baseline, while Pause reads local tokens before the final quota snapshot, so the
+account observation brackets each monitored segment. These operations are not
+atomic, so unrelated account activity during either short boundary read remains
+another source of uncertainty.
 
 ### Saved presentation preferences
 
@@ -1340,21 +1351,26 @@ interval. Pressing `r` refreshes immediately. If a refresh fails after valid
 data has already been displayed, Codexometer retains the last snapshot and
 marks it as stale instead of blanking the dashboard.
 
-While the Monitor is recording it checks appended local token telemetry once per
-second, groups explicit agent descendants under their root, and rolls each
-root's observed deltas into synchronized graph buckets. It also updates the
+The Monitor starts with Codexometer and checks appended local token telemetry
+once per second while sessions are active, relaxing to once every five seconds
+when none are active. It groups explicit agent descendants under their root and
+rolls each root's observed deltas into synchronized graph buckets. It also updates the
 three compact response-cycle statistics without retaining response content. A
 bucket closes only after the boundary telemetry read completes; its heading
 reports the actual observed duration when scheduling or first-session detection
 makes it shorter or longer than 30 seconds. These reads do not contact OpenAI or
 invoke a model.
-On Unix systems, each read also probes the default shared app-server control
-socket. When present, its loaded-thread runtime statuses make attention badges
-exact; when absent or unreachable, Codexometer silently uses the local rollout
-and writer-lock fallback described above.
-Pressing Stop performs one immediate final local read and forces complete
+On Unix systems, these reads also probe the default shared app-server control
+socket. Exact thread-status results are cached for five seconds to avoid
+repeating the same per-thread requests on every active poll. When present, its
+loaded-thread runtime statuses make attention badges exact; when absent or
+unreachable, Codexometer silently uses the local rollout and writer-lock
+fallback described above. Graph history is bounded to the latest 4,096 samples.
+Pressing Pause performs one immediate final local read and forces complete
 session discovery, including Codex sessions resumed from older rollout
-directories.
+directories. Resume rebases counters so activity during the pause is excluded;
+Reset clears the measurement and graphs without changing the paused/running
+state.
 
 ## Troubleshooting
 

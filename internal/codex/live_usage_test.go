@@ -453,11 +453,17 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
 		t.Fatalf("open completed CLI = %#v, %v; want input needed", usage, err)
 	}
+	if !usage.CodexStatusKnown || !usage.CodexUp || usage.CodexWorking {
+		t.Fatalf("waiting writer lock did not report healthy idle Codex: %#v", usage)
+	}
 
 	appendRollout(t, path, attentionEventLine(now.Add(time.Second), "task_started", nil)+"\n")
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
 		t.Fatalf("open active CLI = %#v, %v; want no attention", usage, err)
+	}
+	if !usage.CodexWorking {
+		t.Fatalf("working writer lifecycle did not report Codex activity: %#v", usage)
 	}
 
 	appendRollout(t, path, attentionEventLine(now.Add(2*time.Second), "task_complete", nil)+"\n")
@@ -465,10 +471,16 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 	if err != nil || usage.Sessions[0].Attention != SessionAttentionInput {
 		t.Fatalf("second completed turn = %#v, %v; want input needed", usage, err)
 	}
+	if usage.CodexWorking {
+		t.Fatalf("waiting writer lifecycle continued to report Codex activity: %#v", usage)
+	}
 	release()
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.Sessions[0].Attention != SessionAttentionNone {
 		t.Fatalf("closed CLI = %#v, %v; want no attention", usage, err)
+	}
+	if !usage.CodexStatusKnown || usage.CodexUp || usage.CodexWorking {
+		t.Fatalf("released final writer lock did not report an observable stopped runtime: %#v", usage)
 	}
 }
 
@@ -533,9 +545,12 @@ func TestSessionSnapshotsSuppressesQuietChildCheckWhileGroupIsActive(t *testing.
 	}}
 	writers := map[string]struct{}{"root": {}, "child": {}}
 
-	sessions, active := reader.sessionSnapshots(now, writers, true, nil)
+	sessions, active, working := reader.sessionSnapshots(now, writers, true, nil)
 	if len(sessions) != 1 || active != 1 {
 		t.Fatalf("grouped sessions = %#v, active %d; want one active root", sessions, active)
+	}
+	if !working {
+		t.Fatal("fresh working root did not mark the group as working")
 	}
 	if got := sessions[0].Attention; got != SessionAttentionNone {
 		t.Fatalf("fresh root inherited quiet child's uncertain attention = %v", got)
@@ -557,9 +572,12 @@ func TestSessionSnapshotsExactWorkingStatusSuppressesGroupedFallback(t *testing.
 	writers := map[string]struct{}{"root": {}, "child": {}}
 	statuses := map[string]sessionRuntimeStatus{"root": sessionRuntimeWorking}
 
-	sessions, active := reader.sessionSnapshots(now, writers, true, statuses)
+	sessions, active, working := reader.sessionSnapshots(now, writers, true, statuses)
 	if len(sessions) != 1 || active != 1 {
 		t.Fatalf("daemon-working group = %#v, active %d; want one active root", sessions, active)
+	}
+	if !working {
+		t.Fatal("exact daemon status did not mark the group as working")
 	}
 	if got := sessions[0].Attention; got != SessionAttentionNone {
 		t.Fatalf("daemon-working root inherited quiet child's fallback = %v", got)
@@ -695,12 +713,72 @@ type stubSessionStatusProvider struct {
 	statuses     map[string]sessionRuntimeStatus
 	observations []resolvedModelObservation
 	subscribed   map[string]struct{}
+	unavailable  bool
 }
 
 func (s stubSessionStatusProvider) Fetch(context.Context, []string) (sessionDaemonSnapshot, bool) {
+	if s.unavailable {
+		return sessionDaemonSnapshot{}, false
+	}
 	return sessionDaemonSnapshot{
 		Statuses: s.statuses, ModelObservations: s.observations, SubscribedThreads: s.subscribed,
 	}, true
+}
+
+func TestLiveUsageReaderReportsCodexHealthAndWork(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now, "health-thread")
+	writeRollout(t, path, sessionMetaLine("health-thread", `"cli"`, "/work/health", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{
+		statuses: map[string]sessionRuntimeStatus{"health-thread": sessionRuntimeWorking},
+	}
+	working, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || !working.CodexStatusKnown || !working.CodexUp || !working.CodexWorking {
+		t.Fatalf("working Codex health = %#v, %v", working, err)
+	}
+
+	reader.statusProvider = stubSessionStatusProvider{
+		statuses: map[string]sessionRuntimeStatus{"health-thread": sessionRuntimeInput},
+	}
+	waiting, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || !waiting.CodexStatusKnown || !waiting.CodexUp || waiting.CodexWorking ||
+		len(waiting.Sessions) != 1 || waiting.Sessions[0].Attention != SessionAttentionInput {
+		t.Fatalf("waiting Codex health = %#v, %v", waiting, err)
+	}
+
+	reader.statusProvider = stubSessionStatusProvider{unavailable: true}
+	unknown, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || unknown.CodexStatusKnown || unknown.CodexUp || unknown.CodexWorking {
+		t.Fatalf("unobservable Codex health = %#v, %v", unknown, err)
+	}
+}
+
+func TestCodexRuntimeHealthCombinesAppServerAndWriterLocks(t *testing.T) {
+	tests := []struct {
+		name                                              string
+		appUp, liveWriter, sessionWorking, locksSupported bool
+		wantKnown, wantUp, wantWorking                    bool
+	}{
+		{"working app server session", true, false, true, false, true, true, true},
+		{"idle app server", true, false, false, false, true, true, false},
+		{"waiting writer without app server", false, true, false, true, true, true, false},
+		{"working writer without app server", false, true, true, true, true, true, true},
+		{"observable without live runtime", false, false, false, true, true, false, false},
+		{"unobservable", false, false, false, false, false, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			known, up, working := codexRuntimeHealth(tt.appUp, tt.liveWriter, tt.sessionWorking, tt.locksSupported)
+			if known != tt.wantKnown || up != tt.wantUp || working != tt.wantWorking {
+				t.Fatalf("health = (%t, %t, %t), want (%t, %t, %t)", known, up, working, tt.wantKnown, tt.wantUp, tt.wantWorking)
+			}
+		})
+	}
 }
 
 func TestLiveUsageReaderPropagatesWaitingAgentToRoot(t *testing.T) {
