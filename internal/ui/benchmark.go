@@ -68,7 +68,7 @@ type benchmarkDetailTranscriptCache struct {
 const (
 	benchmarkDetailCopyLabel  = "[ (C) COPY ]"
 	benchmarkDetailCloseLabel = "[ (X) CLOSE ]"
-	benchmarkClearAllLabel    = "[ CLEAR ALL ]"
+	benchmarkClearAllLabel    = "[ (L) CLEAR ALL ]"
 	benchmarkScopeCancelLabel = "[ (X) CANCEL ]"
 	benchmarkScopeDoneLabel   = "[ (D) DONE ]"
 )
