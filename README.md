@@ -838,9 +838,9 @@ codexometer --digbench-game P-1
 ```
 
 The published Codex condition is the default: `gpt-5.6-sol` with `high`
-reasoning effort. In DigBench Scope, `high` is labelled as that published Sol
-setting, while `xhigh` is identified as an enhanced Codexometer experiment and
-not a paper condition. Codexometer allows two hours per game by default because
+reasoning effort. DigBench Scope labels both sides of that exact pairing, while
+`xhigh` is identified as an enhanced Codexometer experiment and not a paper
+condition. Codexometer allows two hours per game by default because
 discovery runs can be substantially longer than ordinary coding benchmarks.
 The headless form can set another finite boundary explicitly; for example:
 
@@ -878,7 +878,9 @@ and inspect the authoritative result before choosing another move, including
 when deliberately testing a sequence. Tool results sent back into the model are
 compact game-state slices so repeated session metadata and schemas do not crowd
 out useful history. This compaction does not discard game observations, legal
-actions, limits, transitions, progress, or creative-mode state.
+actions, limits, transitions, progress, or creative-mode state. The derived
+`levels_beaten` score stays in the operator-facing transcript and UI rather than
+being supplied to the model.
 
 In the TUI, each selected game run appears immediately in the existing result
 table and can be opened while it is in progress. Its benchmark-only detail view

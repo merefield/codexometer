@@ -42,9 +42,13 @@ func TestRunDigBenchBridgesScopedStepAndDetectsWin(t *testing.T) {
 	seed := int64(42)
 	framework := "engine-1"
 	maxLevel := 3
+	creativeToggle := "/"
 	service := &fakeDigBenchService{session: digbench.Session{
 		Game: "P-1", SessionID: "session-1", Seed: &seed, FrameworkVersion: &framework,
-		State: digbench.State{Status: "in_progress", Level: 1, MaxLevel: &maxLevel, Observation: "___", Actions: []string{"b"}},
+		State: digbench.State{
+			Status: "in_progress", Level: 1, MaxLevel: &maxLevel, CreativeToggle: &creativeToggle,
+			Observation: "___", Actions: []string{"b"},
+		},
 	}}
 	usage := BenchmarkUsage{TotalTokens: 120, InputTokens: 100, OutputTokens: 20}
 	server, requests := newFakeBenchmarkServer(
@@ -218,6 +222,29 @@ func TestDigBenchPromptMarksMissingTaskDescription(t *testing.T) {
 	if !strings.Contains(prompt, "TASK DESCRIPTION") || !strings.Contains(prompt, "(none provided)") {
 		t.Fatalf("missing description was not represented explicitly: %q", prompt)
 	}
+	if strings.Contains(prompt, "Important: creative mode") {
+		t.Fatalf("creative-mode guidance was shown without a toggle: %q", prompt)
+	}
+}
+
+func TestDigBenchPromptUsesProvidedCreativeToggle(t *testing.T) {
+	toggle := "creative-mode"
+	prompt := digBenchPrompt(digbench.Session{
+		Game: "P-1", SessionID: "session-1",
+		State: digbench.State{CreativeToggle: &toggle},
+	})
+	for _, expected := range []string{
+		"Important: creative mode",
+		`Call the "step" tool with action "creative-mode" to enter creative mode.`,
+		`Only submit "creative-mode" when it appears in the state's actions list.`,
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("creative-mode guidance missing %q: %q", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, `action "/"`) {
+		t.Fatalf("creative-mode guidance used a hard-coded toggle: %q", prompt)
+	}
 }
 
 func TestDigBenchAgentResponseIsCompactWhileTranscriptRetainsFullPayload(t *testing.T) {
@@ -237,17 +264,17 @@ func TestDigBenchAgentResponseIsCompactWhileTranscriptRetainsFullPayload(t *test
 	handled := digBenchSuccessfulToolCall(response, digBenchCompactStep(response), nil)
 	agent := handled.agent["contentItems"].([]map[string]string)[0]["text"]
 	transcript := handled.transcript["contentItems"].([]map[string]string)[0]["text"]
-	for _, expected := range []string{`"step_index":7`, `"levels_beaten":1`, `"observation":"abc"`, `"actions":["x"]`, `"invalid_action":false`} {
+	for _, expected := range []string{`"step_index":7`, `"observation":"abc"`, `"actions":["x"]`, `"invalid_action":false`} {
 		if !strings.Contains(agent, expected) {
 			t.Fatalf("compact agent response missing %q: %s", expected, agent)
 		}
 	}
-	for _, excluded := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`} {
+	for _, excluded := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`, `"levels_beaten"`} {
 		if strings.Contains(agent, excluded) {
 			t.Fatalf("compact agent response retained %q: %s", excluded, agent)
 		}
 	}
-	for _, retained := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`} {
+	for _, retained := range []string{"session-secret", "framework_version", "move_schema", "objective", `"seed"`, `"levels_beaten":1`} {
 		if !strings.Contains(transcript, retained) {
 			t.Fatalf("full transcript response lost %q: %s", retained, transcript)
 		}

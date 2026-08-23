@@ -945,17 +945,30 @@ func TestDigBenchSuiteSupportsScopedAndAllCombinations(t *testing.T) {
 func TestDigBenchScopeLabelsPublishedAndEnhancedEfforts(t *testing.T) {
 	client := codex.Client{DigBenchToken: "secret", DigBenchGames: []string{"P-1"}}
 	plan := codex.BenchmarkPlan{
-		Models:  []codex.BenchmarkModelOption{{Model: "gpt-5.6-sol", Efforts: []string{"high", "xhigh"}}},
+		Models: []codex.BenchmarkModelOption{
+			{Model: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Efforts: []string{"high", "xhigh"}},
+			{Model: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Efforts: []string{"high", "xhigh"}},
+		},
 		Efforts: []string{"high", "xhigh"}, Games: []string{"P-1"},
 	}
 	model := Model{benchmarkRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkSelectedSuite: 2}
+	modelLabels := map[string]string{}
 	labels := map[string]string{}
 	for _, item := range model.benchmarkScopeItems() {
-		if item.kind == benchmarkScopeEffort {
+		switch item.kind {
+		case benchmarkScopeModel:
+			modelLabels[item.value] = item.label
+		case benchmarkScopeEffort:
 			labels[item.value] = item.label
 		}
 	}
-	if !strings.Contains(labels["high"], "PUBLISHED GPT-5.6-SOL SETTING") {
+	if !strings.Contains(modelLabels["gpt-5.6-sol"], "PUBLISHED CONDITION WITH HIGH") {
+		t.Fatalf("Sol model label = %q", modelLabels["gpt-5.6-sol"])
+	}
+	if strings.Contains(modelLabels["gpt-5.6-terra"], "PUBLISHED") {
+		t.Fatalf("Terra model label = %q", modelLabels["gpt-5.6-terra"])
+	}
+	if !strings.Contains(labels["high"], "PUBLISHED CONDITION WITH GPT-5.6 SOL") {
 		t.Fatalf("high effort label = %q", labels["high"])
 	}
 	if !strings.Contains(labels["xhigh"], "ENHANCED") || !strings.Contains(labels["xhigh"], "NOT PAPER CONDITION") {

@@ -593,6 +593,9 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 	for _, model := range m.benchmarkPlan.Models {
 		selected := selectedModels[model.Model]
 		label := "  " + scopeCheckLabel(selected) + " " + model.DisplayName
+		if m.benchmarkSelectedSuiteExternal() && strings.EqualFold(model.Model, "gpt-5.6-sol") {
+			label += " // PUBLISHED CONDITION WITH HIGH"
+		}
 		items = append(items, benchmarkScopeItem{
 			kind: benchmarkScopeModel, value: model.Model, label: label,
 			efforts: append([]string(nil), model.Efforts...), selected: selected,
@@ -609,7 +612,7 @@ func (m Model) benchmarkScopeItems() []benchmarkScopeItem {
 		if m.benchmarkSelectedSuiteExternal() {
 			switch strings.ToLower(effort) {
 			case "high":
-				label += " // PUBLISHED GPT-5.6-SOL SETTING"
+				label += " // PUBLISHED CONDITION WITH GPT-5.6 SOL"
 			case "xhigh":
 				label += " // ENHANCED // NOT PAPER CONDITION"
 			}

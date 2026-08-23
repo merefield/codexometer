@@ -734,9 +734,14 @@ func formatDigBenchTools() string {
 
 func formatDigBenchPrompt(session digbench.Session, sessionID string, redactState bool) string {
 	description := session.Description
+	creativeToggle := session.State.CreativeToggle
 	stateValue := any(digBenchModelState(session.State))
 	if redactState {
 		description = redactDigBenchText(description, session.SessionID)
+		if creativeToggle != nil {
+			redacted := redactDigBenchText(*creativeToggle, session.SessionID)
+			creativeToggle = &redacted
+		}
 		stateValue = redactDigBenchJSONValue(stateValue, session.SessionID)
 	}
 	state, _ := json.Marshal(stateValue)
@@ -749,14 +754,7 @@ Levels, lives and steps:
 - It is also possible to lose a life by reaching certain states within the game.
 
 TASK DESCRIPTION (objective + any special actions, NOT the rules):
-%s
-
-Important: creative mode
-At nearly any time, you can use a button to switch into "creative mode", where you can experiment safely without losing ordinary steps or lives. It may be necessary to use creative mode in order to discover the rules without running out of steps. Creative mode has its own finite budget.
-
-Call the "step" tool with action "/" to enter creative mode.
-Call the "step" tool with action "/" again to return to survival mode.
-Only submit "/" when it appears in the state's actions list.
+%s%s
 
 How you play—use the scoped DigBench tools to drive the game:
 1. Your game session is ALREADY started for you:
@@ -770,7 +768,8 @@ session_id=%q, game=%q. You do NOT start or choose a game—you only have the "g
 4. Infer what each action does from how the state changes, and build on what you learn across turns. Keep useful notes and hypotheses in the isolated workspace when helpful. After each successful "step" call, wait for and inspect its returned authoritative state before deciding the next action. Never queue or precompute multiple future step calls against an unobserved state. You may deliberately test a sequence, but submit it one observed move at a time.
 
 Keep playing at a deliberate but efficient pace until the state's done is true (status game_over or completed). When the game is done, STOP making moves and write a concise debrief: the mechanics you discovered, the objective, useful strategies, and remaining uncertainties.`,
-		digBenchTaskDescription(description), sessionID, session.Game, session.StepIndex, state,
+		digBenchTaskDescription(description), digBenchCreativeModeInstruction(creativeToggle),
+		sessionID, session.Game, session.StepIndex, state,
 		sessionID, session.StepIndex+1)
 }
 
@@ -780,6 +779,21 @@ func digBenchTaskDescription(description string) string {
 		return "(none provided)"
 	}
 	return description
+}
+
+func digBenchCreativeModeInstruction(toggle *string) string {
+	if toggle == nil || *toggle == "" {
+		return ""
+	}
+	action, _ := json.Marshal(*toggle)
+	return fmt.Sprintf(`
+
+Important: creative mode
+At nearly any time, you can use a button to switch into "creative mode", where you can experiment safely without losing ordinary steps or lives. It may be necessary to use creative mode in order to discover the rules without running out of steps. Creative mode has its own finite budget.
+
+Call the "step" tool with action %s to enter creative mode.
+Call the "step" tool with action %s again to return to survival mode.
+Only submit %s when it appears in the state's actions list.`, action, action, action)
 }
 
 // digBenchModelState keeps every game-relevant field while omitting repeated
@@ -894,9 +908,8 @@ func digBenchErrorToolCall(err error) digBenchHandledToolCall {
 
 func digBenchCompactSession(session digbench.Session) map[string]any {
 	return map[string]any{
-		"step_index":    session.StepIndex,
-		"levels_beaten": session.LevelsBeaten,
-		"state":         digBenchModelState(session.State),
+		"step_index": session.StepIndex,
+		"state":      digBenchModelState(session.State),
 	}
 }
 
