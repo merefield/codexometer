@@ -549,7 +549,7 @@ func (m Model) renderBenchmarkScopeItem(item benchmarkScopeItem, index, width in
 	if len(item.efforts) > 0 {
 		label += " // " + strings.ToUpper(strings.Join(item.efforts, ", "))
 	}
-	if index == m.benchmarkScopeCursor || index == m.benchmarkScopeHover {
+	if m.benchmarkScopeKeyboard && index == m.benchmarkScopeCursor {
 		style := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.accent)
 		return style.Render(fitTableCell(label, width))
 	}
@@ -687,7 +687,6 @@ func (m *Model) openBenchmarkScope() {
 	m.benchmarkTasksBeforeEdit = cloneBenchmarkScopeTasks(m.benchmarkScopeTasks)
 	m.benchmarkPairsBeforeEdit = m.benchmarkCombinations
 	m.benchmarkScopeOpen = true
-	m.benchmarkScopeHover = -1
 	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor, 0), max(len(m.benchmarkScopeItems())-1, 0))
 	m.revealBenchmarkScopeCursor()
 }
@@ -705,7 +704,7 @@ func (m *Model) finishBenchmarkScope() {
 
 func (m *Model) closeBenchmarkScopeEditor() {
 	m.benchmarkScopeOpen = false
-	m.benchmarkScopeHover = -1
+	m.benchmarkScopeKeyboard = false
 	m.benchmarkScopeBeforeEdit = codex.BenchmarkScope{}
 	m.benchmarkTasksBeforeEdit = nil
 	m.benchmarkPairsBeforeEdit = 0
@@ -736,7 +735,6 @@ func (m *Model) moveBenchmarkScopeCursor(direction int) {
 		return
 	}
 	m.benchmarkScopeCursor = min(max(m.benchmarkScopeCursor+direction, 0), len(items)-1)
-	m.benchmarkScopeHover = -1
 	m.revealBenchmarkScopeCursor()
 }
 
@@ -755,11 +753,15 @@ func (m Model) benchmarkScopePageSize() int {
 }
 
 func (m *Model) toggleBenchmarkScopeCursor() {
+	m.toggleBenchmarkScopeItem(m.benchmarkScopeCursor)
+}
+
+func (m *Model) toggleBenchmarkScopeItem(index int) {
 	items := m.benchmarkScopeItems()
-	if m.benchmarkScopeCursor < 0 || m.benchmarkScopeCursor >= len(items) {
+	if index < 0 || index >= len(items) {
 		return
 	}
-	item := items[m.benchmarkScopeCursor]
+	item := items[index]
 	switch item.kind {
 	case benchmarkScopeAllModels:
 		if item.selected {

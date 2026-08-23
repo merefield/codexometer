@@ -88,7 +88,7 @@ type Model struct {
 	benchmarkScopeOpen       bool
 	benchmarkScopeCursor     int
 	benchmarkScopeScroll     int
-	benchmarkScopeHover      int
+	benchmarkScopeKeyboard   bool
 	benchmarkSelectedSuite   int
 	benchmarkScopeTasks      map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID
 	benchmarkTasksBeforeEdit map[codex.BenchmarkSuiteID][]codex.BenchmarkTaskID
@@ -351,15 +351,14 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
-		fetcher:             fetcher,
-		refreshEvery:        refreshEvery,
-		loading:             true,
-		nextRefresh:         time.Now().Add(refreshEvery),
-		benchmarkRankMode:   benchmarkRankBalanced,
-		benchmarkScopeHover: -1,
-		quotaAPIAnchors:     make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:      make(map[string]string),
-		appVersion:          version.Current(),
+		fetcher:           fetcher,
+		refreshEvery:      refreshEvery,
+		loading:           true,
+		nextRefresh:       time.Now().Add(refreshEvery),
+		benchmarkRankMode: benchmarkRankBalanced,
+		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
+		quotaAPIIssues:    make(map[string]string),
+		appVersion:        version.Current(),
 	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
@@ -386,6 +385,9 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyPressMsg:
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			m.benchmarkScopeKeyboard = true
+		}
 		switch strings.ToLower(message.String()) {
 		case "ctrl+c":
 			m.cancelBenchmark()
@@ -408,6 +410,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonMonitorGo)
 			}
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && len(m.benchmarkPlan.Models) > 0 {
+				m.benchmarkScopeKeyboard = true
 				return m.pressFooterButton(footerButtonBenchmarkScope)
 			}
 		case "x":
@@ -550,6 +553,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
+		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
+			m.benchmarkScopeKeyboard = false
+		}
 		if tab, ok := m.mainTabAt(mouse.X, mouse.Y); ok {
 			m.mainTabHovered = true
 			m.hoveredMainTab = tab
@@ -573,15 +579,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewHovered = false
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			if item, ok := m.benchmarkScopeItemAt(mouse.X, mouse.Y); ok {
-				m.benchmarkScopeHover = item
 				m.hoveredButton = footerButtonNone
 				if mouse.Button == tea.MouseLeft && clicked {
-					m.benchmarkScopeCursor = item
-					m.toggleBenchmarkScopeCursor()
+					m.toggleBenchmarkScopeItem(item)
 				}
 				return m, nil
 			}
-			m.benchmarkScopeHover = -1
 			switch mouse.Button {
 			case tea.MouseWheelUp:
 				m.moveBenchmarkScopeCursor(-1)
@@ -1239,7 +1242,7 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	m.benchmarkDetailScroll = 0
 	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
 	m.benchmarkScopeOpen = false
-	m.benchmarkScopeHover = -1
+	m.benchmarkScopeKeyboard = false
 	m.benchmarkState = benchmarkRunning
 	m.benchmarkAllArmed = false
 	m.benchmarkSelectedArmed = false

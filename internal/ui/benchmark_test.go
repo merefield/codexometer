@@ -900,6 +900,9 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	if command == nil || !model.benchmarkScopeOpen || model.benchmarkCombinations != 3 {
 		t.Fatal("Scope hotkey did not open the all-selected scope screen")
 	}
+	if !model.benchmarkScopeKeyboard {
+		t.Fatal("keyboard-opened Scope did not enable its cursor highlight")
+	}
 	screen := ansi.Strip(model.renderBenchmarkArea(96, 19, paletteFor(themeHacker)))
 	for _, want := range []string{"BENCHMARK SCOPE", benchmarkScopeCancelLabel, benchmarkScopeDoneLabel, "[x] MODELS // CLEAR ALL", "Model A", "Model B", "[x] REASONING LEVELS // CLEAR ALL", "LOW", "HIGH", "[x] CORE BENCHMARKS // CLEAR ALL", "MERGE RANGES", "LRU CACHE"} {
 		if !strings.Contains(screen, want) {
@@ -916,8 +919,12 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 		t.Fatalf("Scope actions at cancel=%d done=%d, want top=%d bottom=%d", cancelY, doneY, dashboard.meterY, dashboard.meterY+dashboard.meterHeight-1)
 	}
 	modelBX, modelBY := benchmarkScopeCoordinates(t, model, 2)
+	cursorBeforeClick := model.benchmarkScopeCursor
 	updated, _ = model.Update(tea.MouseClickMsg{X: modelBX, Y: modelBY, Button: tea.MouseLeft})
 	model = updated.(Model)
+	if model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != cursorBeforeClick {
+		t.Fatalf("mouse selection retained keyboard highlight or moved its cursor: keyboard=%v cursor=%d, want %d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor, cursorBeforeClick)
+	}
 	mergeX, mergeY := benchmarkScopeCoordinates(t, model, 7)
 	updated, _ = model.Update(tea.MouseClickMsg{X: mergeX, Y: mergeY, Button: tea.MouseLeft})
 	model = updated.(Model)
@@ -979,6 +986,9 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	model.benchmarkScopeCursor = 3
 	updated, _ = model.Update(specialKey(tea.KeySpace)) // Check All reasoning levels.
 	model = updated.(Model)
+	if !model.benchmarkScopeKeyboard {
+		t.Fatal("keyboard toggle did not restore Scope cursor highlighting")
+	}
 	if model.benchmarkCombinations != 2 || len(model.benchmarkScope.Efforts) != 2 {
 		t.Fatalf("reasoning Check All did not restore efforts: %#v", model.benchmarkScope)
 	}
@@ -1030,6 +1040,38 @@ func TestBenchmarkScopeScreenSelectsModelsAndEffortsForRun(t *testing.T) {
 	}
 	if gotTasks := <-taskRuns; !slices.Equal(gotTasks, []codex.BenchmarkTaskID{codex.BenchmarkMergeRanges, codex.BenchmarkLRUCache}) {
 		t.Fatalf("runner received core tasks %#v", gotTasks)
+	}
+}
+
+func TestBenchmarkScopeMouseMotionSwitchesInputModality(t *testing.T) {
+	plan := codex.BenchmarkPlan{
+		Models:  []codex.BenchmarkModelOption{{Model: "model-a", DisplayName: "Model A", Efforts: []string{"high"}}},
+		Efforts: []string{"high"},
+	}
+	model := Model{
+		snapshot: codex.DemoSnapshot(), width: 100, height: 30, meterView: viewBenchmark,
+		benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkCombinations: 1,
+		benchmarkScopeOpen: true, benchmarkScopeKeyboard: true,
+	}
+	model.benchmarkScopeCursor = 0
+	x, y := benchmarkScopeCoordinates(t, model, 1)
+
+	updated, _ := model.Update(tea.MouseMotionMsg{X: x, Y: y})
+	model = updated.(Model)
+	if model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != 0 {
+		t.Fatalf("mouse motion did not hide the saved keyboard cursor: keyboard=%v cursor=%d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor)
+	}
+
+	colors := paletteFor(themeHacker)
+	mouseLine := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 60, colors, stringSetUI(model.benchmarkScope.Efforts))
+	updated, _ = model.Update(specialKey(tea.KeyDown))
+	model = updated.(Model)
+	if !model.benchmarkScopeKeyboard || model.benchmarkScopeCursor != 1 {
+		t.Fatalf("keyboard navigation did not restore and move its cursor: keyboard=%v cursor=%d", model.benchmarkScopeKeyboard, model.benchmarkScopeCursor)
+	}
+	keyboardLine := model.renderBenchmarkScopeItem(model.benchmarkScopeItems()[1], 1, 60, colors, stringSetUI(model.benchmarkScope.Efforts))
+	if mouseLine == keyboardLine {
+		t.Fatal("Scope cursor rendering did not change with input modality")
 	}
 }
 
