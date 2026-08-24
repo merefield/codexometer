@@ -89,6 +89,26 @@ const (
 	BenchmarkUsageRawResponses BenchmarkUsageSource = "raw-responses"
 )
 
+// BenchmarkBillingSource identifies whether benchmark model calls consume the
+// Codex subscription quota displayed by Codexometer or a separately billed API
+// key. Quota accounting must not infer this from identical token telemetry.
+type BenchmarkBillingSource string
+
+const (
+	BenchmarkBillingUnknown      BenchmarkBillingSource = "unknown"
+	BenchmarkBillingSubscription BenchmarkBillingSource = "subscription"
+	BenchmarkBillingAPIKey       BenchmarkBillingSource = "api-key"
+)
+
+// BenchmarkBillingSource reports the billing path selected for benchmark
+// app-server sessions created by this client.
+func (c Client) BenchmarkBillingSource() BenchmarkBillingSource {
+	if strings.TrimSpace(c.BenchmarkAPIKey) != "" {
+		return BenchmarkBillingAPIKey
+	}
+	return BenchmarkBillingSubscription
+}
+
 // BenchmarkResponseUsage is the exact upstream usage for one Responses API
 // completion when the current Codex app-server exposes experimental raw events.
 type BenchmarkResponseUsage struct {
@@ -1641,6 +1661,13 @@ func estimateSingleResponseAPICostWithIssue(model string, usage BenchmarkUsage) 
 // understate an aggregate.
 func EstimateStandardAPIEqCost(model string, usage BenchmarkUsage) (float64, bool, string) {
 	return estimateSingleResponseAPICostWithIssue(model, usage)
+}
+
+// EstimateStandardAPIEqAggregateCost prices aggregate usage only when its
+// standard API cost can be reconstructed without response boundaries. Long
+// context usage therefore fails closed because its surcharge is per response.
+func EstimateStandardAPIEqAggregateCost(model string, usage BenchmarkUsage) (float64, bool, string) {
+	return estimateAPICostWithIssue(model, usage)
 }
 
 func priceForModel(model string) (apiPrice, bool) {

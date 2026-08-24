@@ -463,6 +463,17 @@ cache-write input, and output are priced separately; requests above the
 published 272,000-input-token threshold use the corresponding long-context
 rates where OpenAI publishes them. Unknown models or missing price classes fail
 closed as `UNPRICED MODEL MIX` rather than being guessed or treated as free.
+Core, Extended, and DigBench trials use ephemeral threads that intentionally do
+not appear in normal persisted session telemetry. While a subscription-funded
+benchmark suite is active, Quota views replace the numeric API-equivalent
+estimate with `SUBSCRIPTION BENCHMARK ACTIVE` instead of presenting partial
+accounting. When each trial finishes, its authoritative benchmark usage is
+folded into the same process-local accounting used for quota learning; missing
+or unpriceable benchmark usage fails closed and restarts the learning anchor.
+Benchmarks funded by `CODEXOMETER_BENCHMARK_API_KEY` are excluded because they
+do not consume the displayed subscription quota. Benchmark threads remain
+hidden from Monitor; hiding presentation does not exclude their aggregate
+subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 and were retrieved on **2026-08-23**.

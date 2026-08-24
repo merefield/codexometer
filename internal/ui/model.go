@@ -116,6 +116,7 @@ type Model struct {
 	benchmarkDetailActive    bool
 	benchmarkDetailScroll    int
 	benchmarkDetailCache     benchmarkDetailTranscriptCache
+	benchmarkQuotaAccounting benchmarkQuotaAccounting
 
 	monitorState            monitorState
 	monitorAutoStart        bool
@@ -155,11 +156,12 @@ type Model struct {
 }
 
 type fetchedMsg struct {
-	snapshot codex.Snapshot
-	err      error
-	usage    codex.LiveUsageSnapshot
-	usageErr error
-	at       time.Time
+	snapshot               codex.Snapshot
+	err                    error
+	usage                  codex.LiveUsageSnapshot
+	usageErr               error
+	at                     time.Time
+	benchmarkQuotaRevision uint64
 }
 
 type secondMsg time.Time
@@ -379,6 +381,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 	}
 	if runner, ok := fetcher.(BenchmarkRunner); ok {
 		model.benchmarkRunner = runner
+		model.benchmarkQuotaAccounting = benchmarkQuotaAccountingFor(runner)
 	}
 	if runner, ok := fetcher.(ScopedBenchmarkRunner); ok {
 		model.benchmarkScopedRunner = runner
@@ -703,9 +706,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
-			if message.usageErr == nil && m.usageFetcher != nil {
+			if message.benchmarkQuotaRevision != m.benchmarkQuotaAccounting.revision || m.benchmarkQuotaAccounting.active {
+				m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
+			} else if message.usageErr == nil && m.usageFetcher != nil {
 				m.quotaAPITelemetryIssue = ""
 				m.observeQuotaAPIEq(message.snapshot, message.usage, message.at)
+				m.benchmarkQuotaAccounting.settle()
 			} else if message.usageErr != nil {
 				if errors.Is(message.usageErr, errQuotaObservationChanged) {
 					m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
@@ -799,6 +805,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case benchmarkEventMsg:
 		if !message.ok {
+			if m.benchmarkActive != nil {
+				m.benchmarkQuotaAccounting.abandonActiveResult()
+			}
 			if m.benchmarkState == benchmarkStopping {
 				m.benchmarkState = benchmarkStopped
 			} else {
@@ -808,6 +817,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.benchmarkActiveSince = time.Time{}
 			m.benchmarkEvents = nil
 			m.benchmarkCancel = nil
+			if m.benchmarkQuotaAccounting.finish() {
+				return m, m.fetch()
+			}
 			return m, nil
 		}
 		event := message.event
@@ -842,6 +854,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.benchmarkScroll++
 			}
 			result := *event.Result
+			m.benchmarkQuotaAccounting.observe(result)
 			m.benchmarkResults, m.benchmarkResultIndexes = upsertBenchmarkResult(m.benchmarkResults, m.benchmarkResultIndexes, result)
 			m.benchmarkRunResults, m.benchmarkRunIndexes = upsertBenchmarkResult(m.benchmarkRunResults, m.benchmarkRunIndexes, result)
 			if m.benchmarkDetailActive && m.benchmarkDetail != nil && benchmarkRunKey(*m.benchmarkDetail) == benchmarkRunKey(result) {
@@ -856,6 +869,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.benchmarkError = event.Err.Error()
 		}
 		if event.Done {
+			if m.benchmarkActive != nil && event.Result == nil {
+				m.benchmarkQuotaAccounting.abandonActiveResult()
+			}
 			if event.Stopped {
 				m.benchmarkState = benchmarkStopped
 			} else {
@@ -865,6 +881,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.benchmarkActiveSince = time.Time{}
 			m.benchmarkEvents = nil
 			m.benchmarkCancel = nil
+			if m.benchmarkQuotaAccounting.finish() {
+				return m, m.fetch()
+			}
 			return m, nil
 		}
 		return m, waitBenchmarkEvent(message.events)
@@ -1281,6 +1300,7 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	m.benchmarkScopeOpen = false
 	m.benchmarkScopeKeyboard = false
 	m.benchmarkState = benchmarkRunning
+	m.benchmarkQuotaAccounting.start()
 	m.benchmarkAllArmed = false
 	m.benchmarkSelectedArmed = false
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1763,11 +1783,16 @@ func (m Model) fetch() tea.Cmd {
 		var beforeErr error
 		if m.usageFetcher != nil {
 			before, beforeErr = m.usageFetcher.FetchTokenUsage(context.Background())
+			before = m.benchmarkQuotaAccounting.combine(before)
 		}
 		snapshot, err := m.fetcher.Fetch(context.Background())
-		message := fetchedMsg{snapshot: snapshot, err: err, at: time.Now()}
+		message := fetchedMsg{
+			snapshot: snapshot, err: err, at: time.Now(),
+			benchmarkQuotaRevision: m.benchmarkQuotaAccounting.revision,
+		}
 		if err == nil && m.usageFetcher != nil {
 			after, afterErr := m.usageFetcher.FetchTokenUsage(context.Background())
+			after = m.benchmarkQuotaAccounting.combine(after)
 			switch {
 			case beforeErr != nil:
 				message.usageErr = beforeErr
