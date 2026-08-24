@@ -273,6 +273,35 @@ func TestRunBenchmarkConsumesStreamedResultAndUsage(t *testing.T) {
 	}
 }
 
+func TestRunBenchmarkRenewsTimeoutAfterThreadSetup(t *testing.T) {
+	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
+	server, _ := newFakeBenchmarkServer()
+	server.turnTimeout = 200 * time.Millisecond
+	go func() {
+		time.Sleep(120 * time.Millisecond)
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
+			"thread": map[string]string{"id": "thread-1"}, "model": "gpt-5.3-codex",
+		})}
+		time.Sleep(120 * time.Millisecond)
+		server.envelopes <- benchmarkEnvelope{ID: rawJSON(2), Result: rawJSON(map[string]any{
+			"turn": map[string]string{"id": "turn-1"},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "item/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"type": "agentMessage", "text": message},
+		})}
+		server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+			"threadId": "thread-1", "turn": map[string]any{"id": "turn-1", "status": "completed"},
+		})}
+	}()
+
+	result, fatalErr := server.runBenchmark(context.Background(), benchmarkCombination{
+		model: benchmarkModel{Model: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"}, effort: "high",
+	}, benchmarkTaskDefinitions[0])
+	if fatalErr != nil || !result.Correct {
+		t.Fatalf("separate setup and turn deadlines failed: result=%#v fatal=%v", result, fatalErr)
+	}
+}
+
 func TestBenchmarkInteractionCaptureIsBoundedAndValidUTF8(t *testing.T) {
 	countBounded := BenchmarkResult{}
 	for index := 0; index < benchmarkInteractionCount+4; index++ {

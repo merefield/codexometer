@@ -817,8 +817,6 @@ func (s *appServerSession) runBenchmark(
 	}
 	publish()
 	turnTimeout := s.benchmarkTurnTimeout()
-	turnCtx, cancel := context.WithTimeout(ctx, turnTimeout)
-	defer cancel()
 
 	temporary, err := os.MkdirTemp("", "codexometer-benchmark-")
 	if err != nil {
@@ -839,18 +837,21 @@ func (s *appServerSession) runBenchmark(
 	if s.experimentalRawEvents {
 		threadParams["experimentalRawEvents"] = true
 	}
-	threadResult, err := s.call(turnCtx, "thread/start", threadParams, nil)
+	setupCtx, cancelSetup := context.WithTimeout(ctx, turnTimeout)
+	threadResult, err := s.call(setupCtx, "thread/start", threadParams, nil)
 	if err != nil && s.experimentalRawEvents && experimentalAPIUnsupported(err) {
 		// Older Codex versions may support the stable benchmark API but not raw
 		// response telemetry. Retry this thread without the experimental field and
 		// keep cumulative usage as the compatibility path for the rest of the suite.
 		s.experimentalRawEvents = false
 		delete(threadParams, "experimentalRawEvents")
-		threadResult, err = s.call(turnCtx, "thread/start", threadParams, nil)
+		threadResult, err = s.call(setupCtx, "thread/start", threadParams, nil)
 	}
+	setupErr := fatalBenchmarkError(setupCtx, err)
+	cancelSetup()
 	if err != nil {
 		result.Failure = fmt.Sprintf("start thread: %v", err)
-		return result, fatalBenchmarkError(turnCtx, err)
+		return result, setupErr
 	}
 	var startedThread struct {
 		Thread struct {
@@ -876,6 +877,8 @@ func (s *appServerSession) runBenchmark(
 	if combination.effort != "default" && combination.effort != "" {
 		turnParams["effort"] = combination.effort
 	}
+	turnCtx, cancelTurn := context.WithTimeout(ctx, turnTimeout)
+	defer cancelTurn()
 	turnResponse, err := s.call(turnCtx, "turn/start", turnParams, nil)
 	if err != nil {
 		result.Duration = time.Since(startedAt)
