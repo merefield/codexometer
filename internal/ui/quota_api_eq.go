@@ -345,6 +345,9 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 }
 
 func (m Model) quotaAPILine(meter codex.Meter, width int) string {
+	if m.benchmarkQuotaAccounting.deferred() {
+		return m.benchmarkQuotaAccounting.deferredLabel(width)
+	}
 	if m.quotaAPITelemetryIssue != "" {
 		if width < 44 {
 			return "API-EQ // " + m.quotaAPITelemetryIssue
