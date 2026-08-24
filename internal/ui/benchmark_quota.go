@@ -100,7 +100,10 @@ func benchmarkQuotaCost(result codex.BenchmarkResult) (float64, bool) {
 	if model == "" {
 		model = result.Model
 	}
-	if len(result.ResponseUsage) > 0 {
+	if !result.UsageKnown {
+		return 0, false
+	}
+	if result.UsageSource == codex.BenchmarkUsageRawResponses && len(result.ResponseUsage) > 0 {
 		var total float64
 		for _, response := range result.ResponseUsage {
 			cost, known, _ := codex.EstimateStandardAPIEqCost(model, response.Usage)
@@ -111,10 +114,7 @@ func benchmarkQuotaCost(result codex.BenchmarkResult) (float64, bool) {
 		}
 		return total, validBenchmarkQuotaCost(total)
 	}
-	if !result.UsageKnown {
-		return 0, false
-	}
-	cost, known, _ := codex.EstimateStandardAPIEqCost(model, result.Usage)
+	cost, known, _ := codex.EstimateStandardAPIEqAggregateCost(model, result.Usage)
 	return cost, known && validBenchmarkQuotaCost(cost)
 }
 

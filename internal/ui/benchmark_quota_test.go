@@ -77,6 +77,38 @@ func TestSubscriptionBenchmarkAccountingRejectsInvalidKnownCost(t *testing.T) {
 	}
 }
 
+func TestSubscriptionBenchmarkAccountingRejectsUnvalidatedResponseUsage(t *testing.T) {
+	accounting := benchmarkQuotaAccounting{billingSource: codex.BenchmarkBillingSubscription}
+	accounting.start()
+	accounting.observe(codex.BenchmarkResult{
+		TaskID: codex.BenchmarkDigBench, TaskName: "DIGBENCH P-6", Model: "gpt-5.6-sol", Effort: "high",
+		ResponseUsage: []codex.BenchmarkResponseUsage{{
+			ResponseID: "partial-response",
+			Usage:      codex.BenchmarkUsage{TotalTokens: 1200, InputTokens: 1000, CachedInputTokens: 800, OutputTokens: 200},
+		}},
+	})
+	accounting.finish()
+	combined := accounting.combine(codex.LiveUsageSnapshot{})
+	if combined.APIEqUSD != 0 || combined.APIEqPricedCalls != 0 || combined.APIEqUnpricedCalls != 1 {
+		t.Fatalf("unvalidated response usage was accepted: %#v", combined)
+	}
+}
+
+func TestSubscriptionBenchmarkAccountingRejectsAggregateLongContextUsage(t *testing.T) {
+	accounting := benchmarkQuotaAccounting{billingSource: codex.BenchmarkBillingSubscription}
+	accounting.start()
+	accounting.observe(codex.BenchmarkResult{
+		TaskID: codex.BenchmarkDigBench, TaskName: "DIGBENCH P-6", Model: "gpt-5.6-sol", Effort: "high",
+		UsageKnown: true, UsageSource: codex.BenchmarkUsageCumulative,
+		Usage: codex.BenchmarkUsage{TotalTokens: 300_100, InputTokens: 300_000, OutputTokens: 100},
+	})
+	accounting.finish()
+	combined := accounting.combine(codex.LiveUsageSnapshot{})
+	if combined.APIEqUSD != 0 || combined.APIEqPricedCalls != 0 || combined.APIEqUnpricedCalls != 1 {
+		t.Fatalf("aggregate long-context usage was accepted: %#v", combined)
+	}
+}
+
 func TestSubscriptionBenchmarkAccountingFailsClosedForAbandonedActiveResult(t *testing.T) {
 	accounting := benchmarkQuotaAccounting{billingSource: codex.BenchmarkBillingSubscription}
 	accounting.start()

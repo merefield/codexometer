@@ -1663,6 +1663,13 @@ func EstimateStandardAPIEqCost(model string, usage BenchmarkUsage) (float64, boo
 	return estimateSingleResponseAPICostWithIssue(model, usage)
 }
 
+// EstimateStandardAPIEqAggregateCost prices aggregate usage only when its
+// standard API cost can be reconstructed without response boundaries. Long
+// context usage therefore fails closed because its surcharge is per response.
+func EstimateStandardAPIEqAggregateCost(model string, usage BenchmarkUsage) (float64, bool, string) {
+	return estimateAPICostWithIssue(model, usage)
+}
+
 func priceForModel(model string) (apiPrice, bool) {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if price, ok := standardAPIPrices[model]; ok {
