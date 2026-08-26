@@ -243,6 +243,46 @@ func TestFuelTankIsReverseGaugeWithCorrectEndpoints(t *testing.T) {
 	}
 }
 
+func TestFuelTankPrioritizesFuelAtShortHeights(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	for _, height := range []int{1, 2, 3} {
+		output := ansi.Strip(renderFuelTankSized(30, height, 40, colors.primary, colors))
+		if got := lipgloss.Height(output); got != height {
+			t.Errorf("height %d rendered %d rows: %q", height, got, output)
+		}
+		if !strings.Contains(output, "▰") || !strings.Contains(output, "▱") {
+			t.Errorf("height %d omitted the fuel tank row: %q", height, output)
+		}
+	}
+
+	minimum := ansi.Strip(renderFuelTankSized(30, 1, 40, colors.primary, colors))
+	for _, secondary := range []string{"RANGE", "E", "F"} {
+		if strings.Contains(minimum, secondary) {
+			t.Errorf("one-row tank retained secondary label %q: %q", secondary, minimum)
+		}
+	}
+}
+
+func TestShortFuelMeterDropsTelemetryBeforeTank(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	duration := int64(60)
+	reset := time.Now().Add(30 * time.Minute).Unix()
+	meter := codex.Meter{
+		Bucket: "codex",
+		Name:   "1 HOUR",
+		Window: codex.Window{UsedPercent: 40, WindowDurationMins: &duration, ResetsAt: &reset},
+	}
+	output := ansi.Strip(renderMeterArea(60, 3, meter, viewFuel, colors))
+	if !strings.Contains(output, "▰") || !strings.Contains(output, "▱") {
+		t.Fatalf("minimum-height fuel meter omitted its tank:\n%s", output)
+	}
+	for _, secondary := range []string{"FREE", "USED", "RANGE", "RESET CYCLE", "RESET T-"} {
+		if strings.Contains(output, secondary) {
+			t.Errorf("minimum-height fuel meter retained secondary telemetry %q:\n%s", secondary, output)
+		}
+	}
+}
+
 func TestFuelTankStatsFollowReverseGaugeDirection(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	meter := codex.Meter{
