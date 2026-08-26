@@ -677,28 +677,31 @@ func renderFuelTank(width, used int, color imagecolor.Color, colors palette) str
 }
 
 func renderFuelTankSized(width, height, used int, color imagecolor.Color, colors palette) string {
-	height = max(height, 1)
+	if height <= 0 {
+		height = 6
+	}
 	remaining := 100 - used
 	tankWidth := max(width-6, 1)
 	available := int(math.Round(float64(tankWidth) * float64(remaining) / 100))
 	tank := lipgloss.NewStyle().Foreground(colors.primary).Render(strings.Repeat("▰", available)) +
 		lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("▱", tankWidth-available))
 	label := lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("RANGE %3d%%", remaining))
-	top := "╭" + strings.Repeat("─", tankWidth+2) + "╮"
 	middle := "│ " + tank + " │"
-	bottom := "╰" + strings.Repeat("─", tankWidth+2) + "╯"
+	// The fuel itself is the primary signal. At constrained heights retain the
+	// tank row first, then restore the range readout, and only then the dim
+	// endpoint context. The enclosing meter layout independently drops the reset
+	// timeline and other telemetry before it reaches this one-row form.
 	if height == 1 {
-		return lipgloss.PlaceHorizontal(width, lipgloss.Center, label)
+		return lipgloss.PlaceHorizontal(width, lipgloss.Center, middle)
+	}
+	if height == 2 {
+		return lipgloss.PlaceHorizontal(width, lipgloss.Center, middle+"\n"+label)
 	}
 	rows := make([]string, height)
-	rows[0] = colors.dimmed().Render(top)
-	rows[height-1] = colors.dimmed().Render(bottom)
+	rows[0] = colors.dimmed().Render("E" + strings.Repeat(" ", max(tankWidth, 1)) + "F")
+	rows[height-1] = label
 	for row := 1; row < height-1; row++ {
 		rows[row] = middle
-	}
-	if height >= 4 {
-		rows[0] = colors.dimmed().Render("E" + strings.Repeat(" ", max(tankWidth, 1)) + "F")
-		rows[height-1] = label
 	}
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, strings.Join(rows, "\n"))
 }
