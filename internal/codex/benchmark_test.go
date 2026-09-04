@@ -1203,6 +1203,55 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 	}
 }
 
+func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
+	want := map[string]apiPrice{
+		"gpt-6-astra":   {input: 10.00, cached: 1.00, cacheWrite: 12.50, cacheWriteKnown: true, output: 50.00, longInput: 20.00, longCached: 2.00, longCacheWrite: 25.00, longOutput: 75.00, longKnown: true},
+		"gpt-5.6-sol":   {input: 4.00, cached: 0.40, cacheWrite: 5.00, cacheWriteKnown: true, output: 20.00, longInput: 8.00, longCached: 0.80, longCacheWrite: 10.00, longOutput: 30.00, longKnown: true},
+		"gpt-5.6-terra": {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 12.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 18.00, longKnown: true},
+		"gpt-5.6-luna":  {input: 0.20, cached: 0.02, cacheWrite: 0.25, cacheWriteKnown: true, output: 1.20, longInput: 0.40, longCached: 0.04, longCacheWrite: 0.50, longOutput: 1.80, longKnown: true},
+		"gpt-5.5":       {input: 5.00, cached: 0.50, output: 30.00, longInput: 10.00, longCached: 1.00, longOutput: 45.00, longKnown: true},
+		"gpt-5.4":       {input: 2.50, cached: 0.25, output: 15.00, longInput: 5.00, longCached: 0.50, longOutput: 22.50, longKnown: true},
+		"gpt-5.4-mini":  {input: 0.75, cached: 0.075, output: 4.50},
+		"gpt-5.3-codex": {input: 1.75, cached: 0.175, output: 14.00},
+	}
+
+	if len(standardAPIPrices) != len(want) {
+		t.Fatalf("maintained price count = %d, want %d", len(standardAPIPrices), len(want))
+	}
+	for model, wantPrice := range want {
+		got, ok := standardAPIPrices[model]
+		if !ok {
+			t.Errorf("maintained prices are missing %s", model)
+			continue
+		}
+		if got != wantPrice {
+			t.Errorf("%s price = %#v, want %#v", model, got, wantPrice)
+		}
+	}
+}
+
+func TestEstimateAPICostUsesGPT6AstraShortAndLongContextRates(t *testing.T) {
+	shortUsage := BenchmarkUsage{
+		InputTokens: 2_000, CachedInputTokens: 500, CacheWriteInputTokens: 100,
+		OutputTokens: 300, TotalTokens: 2_300,
+	}
+	shortCost, known, issue := EstimateStandardAPIEqCost("gpt-6-astra", shortUsage)
+	wantShort := (1_400*10.00 + 500*1.00 + 100*12.50 + 300*50.00) / 1_000_000.0
+	if !known || issue != "" || math.Abs(shortCost-wantShort) > 1e-12 {
+		t.Fatalf("Astra short-context cost = %f, %v, %q; want %f", shortCost, known, issue, wantShort)
+	}
+
+	longUsage := BenchmarkUsage{
+		InputTokens: 300_000, CachedInputTokens: 100_000, CacheWriteInputTokens: 20_000,
+		OutputTokens: 10_000, TotalTokens: 310_000,
+	}
+	longCost, known, issue := EstimateStandardAPIEqCost("gpt-6-astra", longUsage)
+	wantLong := (180_000*20.00 + 100_000*2.00 + 20_000*25.00 + 10_000*75.00) / 1_000_000.0
+	if !known || issue != "" || math.Abs(longCost-wantLong) > 1e-12 {
+		t.Fatalf("Astra long-context cost = %f, %v, %q; want %f", longCost, known, issue, wantLong)
+	}
+}
+
 func TestEstimateAPICostUsesPublishedLongContextRates(t *testing.T) {
 	usage := BenchmarkUsage{
 		InputTokens: 300_000, CachedInputTokens: 100_000, CacheWriteInputTokens: 20_000,
