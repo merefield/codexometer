@@ -476,7 +476,7 @@ hidden from Monitor; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were retrieved on **2026-08-23**.
+and were retrieved on **2026-09-04**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -1175,9 +1175,11 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The rates compiled into this version were retrieved from
-that page on **2026-08-23**; every pricing-bearing Quota or Benchmark footer
+that page on **2026-09-04**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
+The maintained price table covers GPT-6 Astra, GPT-5.6 Sol, GPT-5.6 Terra,
+GPT-5.6 Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
