@@ -106,6 +106,12 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 	if m.resetBusy || m.resetLabel() == "" {
 		return m, nil
 	}
+	consumer, supported := m.fetcher.(resetConsumer)
+	if !supported {
+		m.resetConfirmUntil = time.Time{}
+		m.resetNotice = "Reset unavailable: this quota source does not support redemption. No reset submitted."
+		return m, nil
+	}
 	if m.resetConfirmUntil.IsZero() || time.Now().After(m.resetConfirmUntil) {
 		if m.resetKey == "" {
 			m.resetAccount = m.snapshot.AccountFingerprint
@@ -122,7 +128,7 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 	if m.resetKey == "" {
 		var id [16]byte
 		if _, err := rand.Read(id[:]); err != nil {
-			m.resetNotice = err.Error()
+			m.resetNotice = "Could not generate a reset request ID; no reset submitted: " + err.Error()
 			return m, nil
 		}
 		id[6] = (id[6] & 15) | 64
@@ -132,7 +138,6 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 	m.resetBusy = true
 	m.resetRevision++
 	m.resetNotice = "Resetting quota…"
-	consumer := m.fetcher.(resetConsumer)
 	key, account := m.resetKey, m.resetAccount
 	return m, func() tea.Msg {
 		outcome, err := consumer.ConsumeReset(context.Background(), key, account)

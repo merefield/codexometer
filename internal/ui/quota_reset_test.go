@@ -63,6 +63,26 @@ func TestQuotaResetConfirmationAndRetry(t *testing.T) {
 	}
 }
 
+func TestQuotaResetUnsupportedFetcherDuringConfirmationOrRetry(t *testing.T) {
+	for _, retry := range []bool{false, true} {
+		m, _ := resetModel()
+		m.fetcher = stubFetcher{}
+		m.resetConfirmUntil = time.Now().Add(time.Second)
+		m.resetAccount = m.snapshot.AccountFingerprint
+		if retry {
+			m.resetKey = "previous-attempt"
+		}
+		u, cmd := m.pressQuotaReset()
+		got := u.(Model)
+		if cmd != nil || got.resetBusy || !got.resetConfirmUntil.IsZero() || !strings.Contains(got.resetNotice, "does not support redemption") {
+			t.Fatal("unsupported fetcher did not cancel safely")
+		}
+		if got.resetKey != m.resetKey {
+			t.Fatal("lost uncertain attempt ID")
+		}
+	}
+}
+
 func TestQuotaResetConsumptionThresholdAndOverride(t *testing.T) {
 	for _, threshold := range []int{1, 35, 60, 100} {
 		m, _ := resetModel()

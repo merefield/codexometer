@@ -100,7 +100,7 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt) (Snapshot, error
 		return Snapshot{}, fmt.Errorf("open Codex output: %w", err)
 	}
 
-	var stderr strings.Builder
+	var stderr lockedBuffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
@@ -155,17 +155,17 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt) (Snapshot, error
 			"method": "account/rateLimitResetCredit/consume", "id": 4,
 			"params": map[string]any{"idempotencyKey": reset.key},
 		}); err != nil {
-			return Snapshot{}, err
+			return Snapshot{}, fmt.Errorf("send Codex quota reset request: %w", err)
 		}
 		result, err := responseFor(decoder, 4)
 		if err != nil {
-			return Snapshot{}, err
+			return Snapshot{}, withServerError("read Codex quota reset response", err, stderr.String())
 		}
 		var response struct {
 			Outcome string `json:"outcome"`
 		}
 		if err := json.Unmarshal(result, &response); err != nil {
-			return Snapshot{}, err
+			return Snapshot{}, fmt.Errorf("decode Codex quota reset response: %w", err)
 		}
 		switch response.Outcome {
 		case "reset", "alreadyRedeemed", "nothingToReset", "noCredit":

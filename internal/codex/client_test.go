@@ -134,6 +134,15 @@ func runFakeAppServer() {
 		}
 		switch request.Method {
 		case "account/rateLimitResetCredit/consume":
+			switch os.Getenv("CODEXOMETER_FAKE_RESET_ERROR") {
+			case "rpc":
+				fmt.Fprintln(os.Stderr, "reset service unavailable")
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32000, "message": "reset rejected"}})
+				continue
+			case "decode":
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{"outcome": 123}})
+				continue
+			}
 			var params struct {
 				Key string `json:"idempotencyKey"`
 			}
@@ -229,5 +238,30 @@ func TestConsumeResetAccountBindingAndOutcomes(t *testing.T) {
 	t.Setenv("CODEXOMETER_FAKE_ACCOUNT_ERROR", "1")
 	if _, err := c.ConsumeReset(context.Background(), "test-attempt", snapshot.AccountFingerprint); err == nil {
 		t.Fatal("unverified account accepted")
+	}
+}
+
+func TestConsumeResetErrorsHaveContext(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Client{Binary: executable}
+	snapshot, err := c.Fetch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ mode, want string }{
+		{"rpc", "read Codex quota reset response"}, {"decode", "decode Codex quota reset response"},
+	} {
+		t.Setenv("CODEXOMETER_FAKE_RESET_ERROR", test.mode)
+		_, err := c.ConsumeReset(context.Background(), "test-attempt", snapshot.AccountFingerprint)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s: %v", test.mode, err)
+		}
+		if test.mode == "rpc" && !strings.Contains(err.Error(), "reset rejected") {
+			t.Fatalf("RPC cause lost: %v", err)
+		}
 	}
 }
