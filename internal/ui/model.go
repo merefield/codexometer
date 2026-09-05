@@ -41,6 +41,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	alwaysShowReset                     bool
 	resetHovered                        bool
 	resetBusy                           bool
 	resetKey, resetAccount, resetNotice string

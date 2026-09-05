@@ -81,9 +81,9 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
+		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline, alwaysShowReset bool) error {
 			called = true
-			if refresh != 30*time.Second || !inline {
+			if refresh != 30*time.Second || !inline || !alwaysShowReset {
 				t.Fatalf("refresh=%s inline=%v", refresh, inline)
 			}
 			usageFetcher, ok := fetcher.(ui.TokenUsageFetcher)
@@ -117,7 +117,7 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			return nil
 		},
 	}
-	code := run([]string{"--demo", "--inline", "--refresh", "30s"}, &stdout, &stderr, deps)
+	code := run([]string{"--demo", "--inline", "--refresh", "30s", "--always-show-reset"}, &stdout, &stderr, deps)
 	if code != 0 || !called {
 		t.Fatalf("code=%d called=%v stderr=%q", code, called, stderr.String())
 	}
@@ -132,7 +132,7 @@ func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 func TestRunReportsUIError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(ui.Fetcher, time.Duration, bool) error { return errors.New("terminal unavailable") },
+		startUI: func(ui.Fetcher, time.Duration, bool, bool) error { return errors.New("terminal unavailable") },
 	}
 	code := run(nil, &stdout, &stderr, deps)
 	if code != 1 || !strings.Contains(stderr.String(), "terminal unavailable") {
@@ -223,7 +223,7 @@ func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ bool) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.BenchmarkAPIKey != "openai-secret" {
 				t.Fatalf("benchmark API key was not attached to Codex client")
@@ -249,7 +249,7 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 			}
 			return []string{"P-2", "P-1", "P-2"}, nil
 		},
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ bool) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.DigBenchToken != "digbench-secret" {
 				t.Fatalf("DigBench token was not attached to Codex client")

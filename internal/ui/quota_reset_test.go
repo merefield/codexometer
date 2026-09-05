@@ -27,7 +27,7 @@ func resetModel() (Model, *resetFake) {
 	f := &resetFake{}
 	m := New(f, time.Minute)
 	m.width, m.height, m.loading = 100, 40, false
-	m.snapshot = codex.Snapshot{AccountFingerprint: "account", FetchedAt: time.Now(), RateLimitResetCredits: &codex.ResetCredits{AvailableCount: 2}, RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 70}}}
+	m.snapshot = codex.Snapshot{AccountFingerprint: "account", FetchedAt: time.Now(), RateLimitResetCredits: &codex.ResetCredits{AvailableCount: 2}, RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 80}}}
 	f.snapshot = m.snapshot
 	return m, f
 }
@@ -60,6 +60,37 @@ func TestQuotaResetConfirmationAndRetry(t *testing.T) {
 	m = u.(Model)
 	if len(f.keys) != 2 || f.keys[1] != first || m.resetKey != "" || refresh == nil {
 		t.Fatal("retry lost idempotency or refresh")
+	}
+}
+
+func TestQuotaResetConsumptionThresholdAndOverride(t *testing.T) {
+	for _, used := range []int{0, 79, 80, 100} {
+		m, _ := resetModel()
+		m.snapshot.RateLimits.Primary.UsedPercent = used
+		if visible := m.resetLabel() != ""; visible != (used >= 80) {
+			t.Fatalf("used %d visibility %v", used, visible)
+		}
+		m.SetAlwaysShowReset(true)
+		if m.resetLabel() == "" {
+			t.Fatalf("override hidden at %d", used)
+		}
+		m.snapshot.RateLimitResetCredits.AvailableCount = 0
+		if m.resetLabel() != "" {
+			t.Fatal("override invented available credit")
+		}
+	}
+	m, _ := resetModel()
+	m.snapshot.RateLimits.Primary.UsedPercent = 10
+	m.snapshot.RateLimits.Secondary = &codex.Window{UsedPercent: 80}
+	if m.resetLabel() == "" {
+		t.Fatal("secondary window threshold ignored")
+	}
+	m.snapshot.RateLimitsByLimitID = map[string]codex.RateLimitSnapshot{
+		"one": {Primary: &codex.Window{UsedPercent: 20}},
+		"two": {Primary: &codex.Window{UsedPercent: 80}},
+	}
+	if m.resetLabel() == "" {
+		t.Fatal("additional quota bucket threshold ignored")
 	}
 }
 

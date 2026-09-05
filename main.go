@@ -197,7 +197,7 @@ type dependencies struct {
 	checkAuth         func(context.Context, string) (codex.Snapshot, error)
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI           func(ui.Fetcher, time.Duration, bool) error
+	startUI           func(ui.Fetcher, time.Duration, bool, bool) error
 }
 
 func defaultDependencies() dependencies {
@@ -224,6 +224,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		refresh         = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo            = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline          = flags.Bool("inline", false, "render inline instead of using the alternate screen")
+		alwaysShowReset = flags.Bool("always-show-reset", false, "show available quota reset credits below 80% consumption")
 		checkAuth       = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
 		digBenchGame    = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
 		digBenchModel   = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
@@ -321,7 +322,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fetcher = &demoFetcher{}
 	}
 
-	if err := deps.startUI(fetcher, *refresh, *inline); err != nil {
+	if err := deps.startUI(fetcher, *refresh, *inline, *alwaysShowReset); err != nil {
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}
@@ -437,12 +438,13 @@ func formatDigBenchResult(result codex.DigBenchResult) string {
 	return line
 }
 
-func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
+func startUI(fetcher ui.Fetcher, refresh time.Duration, inline, alwaysShowReset bool) error {
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
 	}
 	model.SetInline(inline)
+	model.SetAlwaysShowReset(alwaysShowReset)
 	_, err := tea.NewProgram(model).Run()
 	return err
 }
