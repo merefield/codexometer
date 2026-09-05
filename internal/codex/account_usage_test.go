@@ -52,7 +52,16 @@ func TestAccountUsageRequiresVerifiedAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Client{Binary: exe}).FetchAccountUsage(context.Background()); err == nil {
+	data, err := (Client{Binary: exe}).FetchAccountUsage(context.Background())
+	if err == nil {
 		t.Fatal("unverified account accepted")
+	}
+	for _, detail := range []string{"read Codex account identity for usage", "unknown method", "RPC -32601"} {
+		if !strings.Contains(err.Error(), detail) {
+			t.Errorf("account error %q lost detail %q", err, detail)
+		}
+	}
+	if data.DailyUsageBuckets != nil || !data.FetchedAt.IsZero() {
+		t.Fatal("usage fetched despite failed account verification")
 	}
 }

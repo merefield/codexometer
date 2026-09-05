@@ -146,6 +146,8 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 	}
 	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
 		accountFingerprint = fingerprintAccount(accountResult)
+	} else if history != nil {
+		return Snapshot{}, withServerError("read Codex account identity for usage", accountErr, stderr.String())
 	}
 	if history != nil {
 		if accountFingerprint == "" {
