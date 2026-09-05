@@ -1267,7 +1267,7 @@ deterministic PASS/FAIL verifier.
 --demo             use simulated quota data
 --inline           render inline instead of using the alternate screen
 --refresh DURATION refresh interval (default: 1m)
---always-show-reset show available resets even below 80% consumption
+--reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
 -v, --version      print the version and exit
 ```
 
@@ -1289,8 +1289,10 @@ codexometer --codex ~/bin/codex
 On the Quota tab, `[ RESET // N ]` appears at the top right when a recent
 quota reading reports available banked resets, the account is verified, and
 at least one displayed quota window is **80% consumed or higher**.
-For testing, `./codexometer --always-show-reset` bypasses the consumption
-threshold; an available credit and verified, fresh account data are still required.
+Set another threshold with `./codexometer --reset-threshold 60` (whole percentages
+from 0 to 100). For testing, `./codexometer --reset-threshold 0` bypasses the
+consumption threshold; an available credit and verified, fresh account data
+are still required. The default is 80 when the flag is omitted.
 It moves below the main tabs on narrow terminals. Click once to reveal
 `[ CONFIRM RESET ]`, then click again within ten seconds to redeem one reset.
 `Esc` or changing tabs cancels confirmation. Redemption refreshes eligible

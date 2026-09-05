@@ -41,7 +41,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
-	alwaysShowReset                     bool
+	resetThreshold                      int
 	resetHovered                        bool
 	resetBusy                           bool
 	resetKey, resetAccount, resetNotice string
@@ -373,6 +373,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
+		resetThreshold:    80,
 		fetcher:           fetcher,
 		refreshEvery:      refreshEvery,
 		monitorAutoStart:  true,

@@ -64,13 +64,25 @@ func TestQuotaResetConfirmationAndRetry(t *testing.T) {
 }
 
 func TestQuotaResetConsumptionThresholdAndOverride(t *testing.T) {
+	for _, threshold := range []int{1, 35, 60, 100} {
+		m, _ := resetModel()
+		m.SetResetThreshold(threshold)
+		m.snapshot.RateLimits.Primary.UsedPercent = threshold - 1
+		if m.resetLabel() != "" {
+			t.Fatalf("visible below %d", threshold)
+		}
+		m.snapshot.RateLimits.Primary.UsedPercent = threshold
+		if m.resetLabel() == "" {
+			t.Fatalf("hidden at %d", threshold)
+		}
+	}
 	for _, used := range []int{0, 79, 80, 100} {
 		m, _ := resetModel()
 		m.snapshot.RateLimits.Primary.UsedPercent = used
 		if visible := m.resetLabel() != ""; visible != (used >= 80) {
 			t.Fatalf("used %d visibility %v", used, visible)
 		}
-		m.SetAlwaysShowReset(true)
+		m.SetResetThreshold(0)
 		if m.resetLabel() == "" {
 			t.Fatalf("override hidden at %d", used)
 		}

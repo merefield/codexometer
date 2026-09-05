@@ -77,13 +77,45 @@ func TestRunAuthCheckScrubsBenchmarkCredentialsBeforeLaunchingCodex(t *testing.T
 	}
 }
 
+func TestResetThresholdOption(t *testing.T) {
+	for _, test := range []struct {
+		value      string
+		want, code int
+	}{
+		{"", 80, 0}, {"0", 0, 0}, {"100", 100, 0},
+		{"-1", 0, 2}, {"101", 0, 2}, {"abc", 0, 2}, {"80.5", 0, 2},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			called := false
+			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, threshold int) error {
+				called = true
+				if threshold != test.want {
+					t.Fatalf("threshold %d, want %d", threshold, test.want)
+				}
+				return nil
+			}}
+			args := []string{"--demo"}
+			if test.value != "" {
+				args = append(args, "--reset-threshold", test.value)
+			}
+			if code := run(args, &stdout, &stderr, deps); code != test.code {
+				t.Fatalf("code %d: %s", code, stderr.String())
+			}
+			if called != (test.code == 0) {
+				t.Fatal("invalid threshold launched UI")
+			}
+		})
+	}
+}
+
 func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline, alwaysShowReset bool) error {
+		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold int) error {
 			called = true
-			if refresh != 30*time.Second || !inline || !alwaysShowReset {
+			if refresh != 30*time.Second || !inline || resetThreshold != 35 {
 				t.Fatalf("refresh=%s inline=%v", refresh, inline)
 			}
 			usageFetcher, ok := fetcher.(ui.TokenUsageFetcher)
@@ -117,7 +149,7 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 			return nil
 		},
 	}
-	code := run([]string{"--demo", "--inline", "--refresh", "30s", "--always-show-reset"}, &stdout, &stderr, deps)
+	code := run([]string{"--demo", "--inline", "--refresh", "30s", "--reset-threshold", "35"}, &stdout, &stderr, deps)
 	if code != 0 || !called {
 		t.Fatalf("code=%d called=%v stderr=%q", code, called, stderr.String())
 	}
@@ -132,7 +164,7 @@ func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 func TestRunReportsUIError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(ui.Fetcher, time.Duration, bool, bool) error { return errors.New("terminal unavailable") },
+		startUI: func(ui.Fetcher, time.Duration, bool, int) error { return errors.New("terminal unavailable") },
 	}
 	code := run(nil, &stdout, &stderr, deps)
 	if code != 1 || !strings.Contains(stderr.String(), "terminal unavailable") {
@@ -223,7 +255,7 @@ func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ int) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.BenchmarkAPIKey != "openai-secret" {
 				t.Fatalf("benchmark API key was not attached to Codex client")
@@ -249,7 +281,7 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 			}
 			return []string{"P-2", "P-1", "P-2"}, nil
 		},
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ int) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.DigBenchToken != "digbench-secret" {
 				t.Fatalf("DigBench token was not attached to Codex client")

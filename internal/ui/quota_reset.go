@@ -15,8 +15,9 @@ type resetConsumer interface {
 	ConsumeReset(context.Context, string, string) (string, error)
 }
 
-// SetAlwaysShowReset bypasses the consumption threshold, not credit availability.
-func (m *Model) SetAlwaysShowReset(always bool) { m.alwaysShowReset = always }
+// SetResetThreshold sets the consumed percentage required to offer a reset.
+// Zero bypasses consumption checks, but still requires an available credit.
+func (m *Model) SetResetThreshold(percent int) { m.resetThreshold = min(max(percent, 0), 100) }
 
 func (m Model) renderResetButton(label string, colors palette) string {
 	style := colors.label()
@@ -62,10 +63,10 @@ func (m Model) resetLabel() string {
 		m.snapshot.FetchedAt.IsZero() || time.Since(m.snapshot.FetchedAt) > 2*m.refreshEvery {
 		return ""
 	}
-	if !m.alwaysShowReset {
+	if m.resetThreshold > 0 {
 		eligible := false
 		for _, meter := range m.snapshot.Meters() {
-			if meter.Window.UsedPercent >= 80 {
+			if meter.Window.UsedPercent >= m.resetThreshold {
 				eligible = true
 				break
 			}
