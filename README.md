@@ -584,14 +584,21 @@ It does not require the shared-daemon configuration used for live Monitor events
 - **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.
 - **Weekly** (`w`): tokens summed into Sunday–Saturday weeks; the current week is partial.
-- **Cumulative** (`c`): a running total of those weeks within the 52-week window,
+- **Cumulative** (`c`): a running total of those weeks within the selected window,
   not the account's lifetime total.
 
+Choose **6 months** (`6`) or **12 months** (`1`) with the range buttons. These
+represent 26 or 52 Sunday-based weeks including the current partial week,
+not exact calendar-month boundaries. The default is 12 months. Selection applies
+instantly to all three views without refetching, resets paging, and is remembered
+while switching tabs for the current run. Cumulative restarts from the beginning
+of the selected range; the separately labelled lifetime summary does not change.
+
 Daily uses five intensity levels (zero and four positive levels), scaled to
-the highest daily token count across the 52-week history, so colours remain
+the highest daily token count across the selected range, so colours remain
 comparable when paging. Future days stay blank. A Less/More legend and the peak
 daily count explain the scale. All Usage views prioritise showing the full
-52 weeks: compact cells/bars and reduced gaps on narrower terminals, expanding
+26 or 52 weeks: compact cells/bars and reduced gaps on narrower terminals, expanding
 when space allows. Daily fits a year at 60 terminal columns; Weekly/Cumulative
 need 64 columns, including their vertical axis. Daily cells grow to approximately
 square blocks when both width and height allow; very short terminals request
@@ -599,7 +606,7 @@ more height rather than dropping weekday rows.
 
 Weekly and Cumulative use theme-coloured fractional block bars, automatically
 scale their vertical axes to the visible values, and fit as many periods as the
-terminal allows. Only terminals too narrow for 52 columns need paging; these
+terminal allows. Only terminals too narrow for the selected number of weeks need paging; these
 open on the newest periods. Click **Older/Newer** or use
 `←`/`→` or `Page Up`/`Page Down` to browse the rest. Daily pages by whole weeks.
 Dates beneath the graph

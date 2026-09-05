@@ -26,18 +26,18 @@ func TestHistoryPeriods(t *testing.T) {
 		{StartDate: "2020-01-01", Tokens: 999},
 		{StartDate: "invalid", Tokens: 999},
 	}}
-	daily := historyPoints(data, now, 0)
-	weekly := historyPoints(data, now, 1)
-	cumulative := historyPoints(data, now, 2)
+	daily := historyPoints(data, now, 0, 52)
+	weekly := historyPoints(data, now, 1, 52)
+	cumulative := historyPoints(data, now, 2, 52)
 	if len(daily) != 364 || len(weekly) != 52 || daily[357].tokens != 25 || daily[363].tokens != 30 || weekly[50].tokens != 10 || weekly[51].tokens != 55 || cumulative[51].tokens != 65 {
 		t.Fatalf("incorrect grouping: daily tail=%v weekly tail=%v cumulative=%v", daily[356:], weekly[50:], cumulative[51])
 	}
 	data.DailyUsageBuckets = []codex.AccountUsageDay{{StartDate: "2026-09-05", Tokens: math.MaxInt64}, {StartDate: "2026-09-05", Tokens: 1}}
-	if got := historyPoints(data, now, 2)[51].tokens; got != math.MaxInt64 {
+	if got := historyPoints(data, now, 2, 52)[51].tokens; got != math.MaxInt64 {
 		t.Fatalf("overflow: %d", got)
 	}
 	// The same instant in a different timezone must preserve UTC bucketing.
-	if got := historyPoints(data, now.In(time.FixedZone("west", -18*3600)), 0); len(got) != 364 {
+	if got := historyPoints(data, now.In(time.FixedZone("west", -18*3600)), 0, 52); len(got) != 364 {
 		t.Fatal("dates depend on local timezone")
 	}
 }
@@ -196,7 +196,7 @@ func TestDailyActivityCalendar(t *testing.T) {
 func TestHistoryViewsPrioritiseFullYear(t *testing.T) {
 	for _, height := range []int{11, 20, 40, 80} {
 		for width := 56; width <= 300; width++ {
-			calendar := historyCalendarGeometry(width, height)
+			calendar := historyCalendarGeometry(width, height, 52)
 			if calendar.columns != 52 {
 				t.Fatalf("calendar at %dx%d shows %d weeks", width, height, calendar.columns)
 			}
@@ -209,13 +209,13 @@ func TestHistoryViewsPrioritiseFullYear(t *testing.T) {
 		}
 	}
 	for width := 60; width <= 300; width++ {
-		bars := historyBarGeometry(width)
+		bars := historyBarGeometry(width, 52)
 		if bars.columns != 52 || 8+52*bars.cellWidth+51*bars.gap > width {
 			t.Fatalf("bars do not fit full year at %d: %+v", width, bars)
 		}
 	}
 	m := Model{width: 80, height: 24, meterView: viewUsage, history: accountHistoryState{data: codex.AccountUsage{DailyUsageBuckets: []codex.AccountUsageDay{}}}}
-	points := historyPoints(m.history.data, time.Now(), 0)
+	points := historyPoints(m.history.data, time.Now(), 0, 52)
 	first := points[0].date.Format("02 Jan 2006")
 	for mode := 0; mode < 3; mode++ {
 		m.history.mode = mode
@@ -228,6 +228,51 @@ func TestHistoryViewsPrioritiseFullYear(t *testing.T) {
 		m.activateHistory(3)
 		if m.history.offset != 0 {
 			t.Fatalf("mode %d pages although full year fits", mode)
+		}
+	}
+}
+
+func TestHistoryRangeSelection(t *testing.T) {
+	m := Model{meterView: viewUsage, width: 100, height: 24}
+	if m.history.weeks() != 52 {
+		t.Fatal("default should be 12 months")
+	}
+	for _, mode := range []int{0, 1, 2} {
+		m.history.mode = mode
+		m.history.offset = 10
+		updated, command := m.Update(key('6'))
+		m = updated.(Model)
+		if command != nil || m.history.weeks() != 26 || m.history.offset != 0 || m.history.mode != mode {
+			t.Fatal("6-month selection did not update locally")
+		}
+		for _, button := range historyButtons(m.dashboardLayout().contentWidth) {
+			if button.action != 6 {
+				continue
+			}
+			updated, _ = m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: m.dashboardLayout().meterY, Button: tea.MouseLeft})
+			m = updated.(Model)
+		}
+		if m.history.weeks() != 52 {
+			t.Fatal("12-month button failed")
+		}
+	}
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	data := codex.AccountUsage{DailyUsageBuckets: []codex.AccountUsageDay{{StartDate: "2026-01-01", Tokens: 1000}, {StartDate: "2026-09-05", Tokens: 10}}}
+	full := historyPoints(data, now, 2, 52)
+	half := historyPoints(data, now, 2, 26)
+	if len(half) != 26 || half[25].tokens != 10 || full[51].tokens != 1010 {
+		t.Fatal("cumulative range did not rebase")
+	}
+	for _, width := range []int{30, 40, 76, 120, 200} {
+		calendar := historyCalendarGeometry(width, 20, 26)
+		if calendar.columns != 26 || 4+26*calendar.cellWidth+25*calendar.gap > width {
+			t.Fatalf("half-year calendar does not fit at %d", width)
+		}
+		if width >= 34 {
+			bars := historyBarGeometry(width, 26)
+			if bars.columns != 26 || 8+26*bars.cellWidth+25*bars.gap > width {
+				t.Fatalf("half-year bars do not fit at %d", width)
+			}
 		}
 	}
 }

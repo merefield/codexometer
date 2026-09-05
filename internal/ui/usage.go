@@ -19,19 +19,27 @@ type accountUsageFetcher interface {
 }
 
 type accountHistoryState struct {
-	data     codex.AccountUsage
-	err      error
-	loading  bool
-	sequence uint64
-	mode     int
-	offset   int // periods back from the newest page
-	hovered  int // action + 1; zero means none
+	data      codex.AccountUsage
+	err       error
+	loading   bool
+	sequence  uint64
+	mode      int
+	sixMonths bool
+	offset    int // periods back from the newest page
+	hovered   int // action + 1; zero means none
 }
 
 type accountHistoryMsg struct {
 	data     codex.AccountUsage
 	err      error
 	sequence uint64
+}
+
+func (h accountHistoryState) weeks() int {
+	if h.sixMonths {
+		return 26
+	}
+	return 52
 }
 
 func (m *Model) requestHistory() tea.Cmd {
@@ -66,12 +74,12 @@ func addTokens(a, b int64) int64 {
 	return a + b
 }
 
-// Like Codex /usage, use 52 Sunday-based weeks ending in the current UTC
+// Like Codex /usage, use Sunday-based weeks ending in the current UTC
 // week. Missing days within a supplied history are zero; future days are not
 // plotted. Cumulative totals cover this window, not the lifetime summary.
-func historyPoints(data codex.AccountUsage, now time.Time, mode int) []historyPoint {
+func historyPoints(data codex.AccountUsage, now time.Time, mode, weekCount int) []historyPoint {
 	today := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
-	start := today.AddDate(0, 0, -int(today.Weekday())-51*7)
+	start := today.AddDate(0, 0, -int(today.Weekday())-(weekCount-1)*7)
 	days := int(today.Sub(start)/(24*time.Hour)) + 1
 	points := make([]historyPoint, days)
 	for i := range points {
@@ -88,7 +96,7 @@ func historyPoints(data codex.AccountUsage, now time.Time, mode int) []historyPo
 	if mode == 0 {
 		return points
 	}
-	weeks := make([]historyPoint, 52)
+	weeks := make([]historyPoint, weekCount)
 	for i := range weeks {
 		weeks[i].date = start.AddDate(0, 0, i*7)
 	}
@@ -110,17 +118,19 @@ type historyButton struct {
 
 func historyButtons(width int) []historyButton {
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"[ (D)AILY ]", "[ (W)EEKLY ]", "[ (C)UMULATIVE ]", "[ ← OLDER ]", "[ NEWER → ]"},
-		{"[D]", "[W]", "[C]", "[←]", "[→]"},
-		{"D", "W", "C", "←", "→"},
+		{"[ (D)AILY ]", "[ (W)EEKLY ]", "[ (C)UMULATIVE ]", "[ (6) MONTHS ]", "[ (1)2 MONTHS ]", "[ ← OLDER ]", "[ NEWER → ]"},
+		{"[ (D)AILY ]", "[ (W)EEKLY ]", "[ (C)UMULATIVE ]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"[D]", "[W]", "[C]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"D", "W", "C", "6", "12", "←", "→"},
 	})
+	actions := []int{0, 1, 2, 5, 6, 3, 4}
 	buttons := []historyButton{}
 	x := 0
 	for i, label := range labels {
 		if x+lipgloss.Width(label) > width {
 			break
 		}
-		buttons = append(buttons, historyButton{i, x, label})
+		buttons = append(buttons, historyButton{actions[i], x, label})
 		x += lipgloss.Width(label) + len(separator)
 	}
 	return buttons
@@ -138,36 +148,42 @@ func historyKey(key string) (int, bool) {
 		return 3, true
 	case "right", "pgdown":
 		return 4, true
+	case "6":
+		return 5, true
+	case "1":
+		return 6, true
 	}
 	return 0, false
 }
 
-func historyCapacity(width int) int { return historyBarGeometry(width).columns }
-
-func historyBarGeometry(width int) historyCalendarLayout {
+func historyBarGeometry(width, weeks int) historyCalendarLayout {
 	available := max(width-8, 1)
-	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, 52)}
-	if available >= 52+51 {
+	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, weeks)}
+	if available >= weeks*2-1 {
 		layout.gap = 1
 	}
-	if available >= 52*2+51 {
-		layout.cellWidth = (available - 51) / 52
+	if available >= weeks*3-1 {
+		layout.cellWidth = (available - (weeks - 1)) / weeks
 	}
 	return layout
 }
 
 func (m *Model) activateHistory(action int) {
+	if action == 5 || action == 6 {
+		m.history.sixMonths = action == 5
+		m.history.offset = 0
+		return
+	}
 	if action < 3 {
 		m.history.mode = action
 		m.history.offset = 0
 		return
 	}
 	layout := m.dashboardLayout()
-	count := len(historyPoints(m.history.data, time.Now(), m.history.mode))
-	step := historyCapacity(layout.contentWidth)
+	count := m.history.weeks()
+	step := historyBarGeometry(layout.contentWidth, count).columns
 	if m.history.mode == 0 {
-		count = 52
-		step = historyCalendarGeometry(layout.contentWidth, layout.meterHeight-3).columns
+		step = historyCalendarGeometry(layout.contentWidth, layout.meterHeight-3, count).columns
 	}
 	m.history.offset = min(m.history.offset, max(count-step, 0))
 	if action == 3 {
@@ -217,7 +233,7 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	for _, button := range historyButtons(width) {
 		buttons += strings.Repeat(" ", max(button.x-lipgloss.Width(buttons), 0))
 		label := colors.dimmed().Render(button.label)
-		if button.action == m.history.mode {
+		if button.action == m.history.mode || (button.action == 5 && m.history.sixMonths) || (button.action == 6 && !m.history.sixMonths) {
 			label = colors.label().Bold(true).Render(button.label)
 		}
 		if m.history.hovered == button.action+1 {
@@ -228,7 +244,7 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	lines = append(lines, buttons)
 	data := m.history.data
 	lines = append(lines, colors.label().Render(fmt.Sprintf("LIFETIME // %s TOKENS   PEAK DAY // %s   STREAK // %s DAYS", optionalUsage(data.Summary.LifetimeTokens), optionalUsage(data.Summary.PeakDailyTokens), optionalUsage(data.Summary.CurrentStreakDays))))
-	status := "ACCOUNT HISTORY // UTC // 52 WEEKS // R REFRESH"
+	status := fmt.Sprintf("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
 	if !data.FetchedAt.IsZero() {
 		status = "ACCOUNT HISTORY // UTC // UPDATED " + data.FetchedAt.Local().Format("15:04:05") + " // R REFRESH"
 	}
@@ -247,8 +263,8 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	} else if m.history.mode == 0 {
 		lines = append(lines, m.renderHistoryCalendar(width, height-len(lines), colors)...)
 	} else {
-		points := historyPoints(data, time.Now(), m.history.mode)
-		barLayout := historyBarGeometry(width)
+		points := historyPoints(data, time.Now(), m.history.mode, m.history.weeks())
+		barLayout := historyBarGeometry(width, m.history.weeks())
 		capacity := barLayout.columns
 		offset := min(m.history.offset, max(len(points)-capacity, 0))
 		end := len(points) - offset
@@ -258,7 +274,7 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		for _, p := range visible {
 			peak = max(peak, p.tokens)
 		}
-		caption := []string{"DAILY TOKENS", "WEEKLY TOKENS (SUN–SAT)", "CUMULATIVE TOKENS (52-WEEK WINDOW)"}[m.history.mode]
+		caption := fmt.Sprintf("%s // %d WEEKS", []string{"DAILY TOKENS", "WEEKLY TOKENS", "CUMULATIVE TOKENS"}[m.history.mode], m.history.weeks())
 		lines = append(lines, colors.dimmed().Render(caption+" // SCALE "+usageNumber(peak)))
 		chartHeight := max(height-len(lines)-2, 0)
 		for row := chartHeight - 1; row >= 0; row-- {
@@ -303,16 +319,16 @@ type historyCalendarLayout struct {
 	cellWidth, cellHeight, gap, columns int
 }
 
-// Prioritise all 52 weeks over cell size. Below 56 content columns, even
-// single-column cells cannot show a year beside weekday labels; page then.
-func historyCalendarGeometry(width, height int) historyCalendarLayout {
+// Prioritise the full selected range over cell size; page only when even
+// single-column cells cannot fit beside weekday labels.
+func historyCalendarGeometry(width, height, weeks int) historyCalendarLayout {
 	available := max(width-4, 1)
-	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, 52)}
-	if available >= 52+51 {
+	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, weeks)}
+	if available >= weeks*2-1 {
 		layout.gap = 1
 	}
-	if available >= 52*2+51 {
-		layout.cellHeight = max(min((height-4)/7, (available-51)/(52*2)), 1)
+	if available >= weeks*3-1 {
+		layout.cellHeight = max(min((height-4)/7, (available-(weeks-1))/(weeks*2)), 1)
 		layout.cellWidth = layout.cellHeight * 2
 	}
 	return layout
@@ -338,18 +354,19 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 	if height < 11 || width < 12 {
 		return []string{colors.dimmed().Render("Enlarge terminal for daily activity grid (7 weekday rows).")}
 	}
-	points := historyPoints(m.history.data, time.Now(), 0)
-	layout := historyCalendarGeometry(width, height)
+	weeks := m.history.weeks()
+	points := historyPoints(m.history.data, time.Now(), 0, weeks)
+	layout := historyCalendarGeometry(width, height, weeks)
 	cellHeight, columns := layout.cellHeight, layout.columns
-	offset := min(m.history.offset, 52-columns)
-	end := 52 - offset
+	offset := min(m.history.offset, weeks-columns)
+	end := weeks - offset
 	start := max(end-columns, 0)
 	var peak int64
 	for _, p := range points {
 		peak = max(peak, p.tokens)
 	}
 	heatColors := historyHeatColors(colors)
-	lines := []string{colors.dimmed().Render("DAILY ACTIVITY // 52 WEEKS // UTC")}
+	lines := []string{colors.dimmed().Render(fmt.Sprintf("DAILY ACTIVITY // %d WEEKS // UTC", weeks))}
 	stride := layout.cellWidth + layout.gap
 	monthLabels := []rune(strings.Repeat(" ", columns*stride-layout.gap))
 	labelEnd := 0
