@@ -63,6 +63,25 @@ type rpcResponse struct {
 // Fetch starts a short-lived app-server, performs the initialization handshake,
 // reads the authenticated account limits, and shuts the server down again.
 func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
+	return c.fetch(ctx, nil)
+}
+
+type resetAttempt struct {
+	key, account, outcome string
+}
+
+// ConsumeReset uses the prevailing account, checking that it is the account
+// whose quota the user confirmed. Callers must reuse key after uncertain errors.
+func (c Client) ConsumeReset(ctx context.Context, key, account string) (string, error) {
+	if strings.TrimSpace(key) == "" || account == "" {
+		return "", errors.New("reset requires an attempt key and verified account")
+	}
+	attempt := &resetAttempt{key: key, account: account}
+	_, err := c.fetch(ctx, attempt)
+	return attempt.outcome, err
+}
+
+func (c Client) fetch(ctx context.Context, reset *resetAttempt) (Snapshot, error) {
 	binary := c.Binary
 	if binary == "" {
 		binary = "codex"
@@ -127,6 +146,34 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 	}
 	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
 		accountFingerprint = fingerprintAccount(accountResult)
+	}
+	if reset != nil {
+		if accountFingerprint == "" || accountFingerprint != reset.account {
+			return Snapshot{}, errors.New("Codex account changed or could not be verified; reset not submitted")
+		}
+		if err := encoder.Encode(map[string]any{
+			"method": "account/rateLimitResetCredit/consume", "id": 4,
+			"params": map[string]any{"idempotencyKey": reset.key},
+		}); err != nil {
+			return Snapshot{}, err
+		}
+		result, err := responseFor(decoder, 4)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		var response struct {
+			Outcome string `json:"outcome"`
+		}
+		if err := json.Unmarshal(result, &response); err != nil {
+			return Snapshot{}, err
+		}
+		switch response.Outcome {
+		case "reset", "alreadyRedeemed", "nothingToReset", "noCredit":
+			reset.outcome = response.Outcome
+			return Snapshot{}, nil
+		default:
+			return Snapshot{}, fmt.Errorf("unrecognized reset outcome %q", response.Outcome)
+		}
 	}
 	if err := encoder.Encode(map[string]any{
 		"method": "account/rateLimits/read",

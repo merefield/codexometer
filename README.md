@@ -1283,6 +1283,26 @@ codexometer --inline
 codexometer --codex ~/bin/codex
 ```
 
+## Redeeming a banked quota reset
+
+On the Quota tab, `[ RESET // N ]` appears at the top right when a recent
+quota reading reports available banked resets and the account is verified.
+It moves below the main tabs on narrow terminals. Click once to reveal
+`[ CONFIRM RESET ]`, then click again within ten seconds to redeem one reset.
+`Esc` or changing tabs cancels confirmation. Redemption refreshes eligible
+quota windows and changes the weekly reset schedule; it does not add quota
+on top of the existing allowance.
+
+Codexometer uses the prevailing Codex login and the
+[official app-server](https://learn.chatgpt.com/docs/app-server#8-earned-rate-limit-resets-chatgpt)
+`account/rateLimitResetCredit/consume` method. A shared daemon is not required.
+Older servers that do not report reset availability leave the button hidden.
+The button is disabled during submission, and quota/count data is fetched
+again afterward. If the result is uncertain, `[ RETRY RESET ]` repeats the
+same attempt identifier, with another confirmation, to avoid consuming a second
+reset. Keep Codexometer open to retain that retry identifier. Check Codex's
+Usage page before attempting another reset after restarting the application.
+
 ## Release builds
 
 GoReleaser builds Linux, macOS, and Windows archives for AMD64 and ARM64 with

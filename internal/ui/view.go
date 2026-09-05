@@ -46,6 +46,9 @@ func (m Model) render() string {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
 		}
+		if m.meterView.isQuota() && m.resetNotice != "" {
+			parts = append(parts, m.renderResetNotice(contentWidth))
+		}
 		meters := m.snapshot.Meters()
 		if m.meterView.isQuota() {
 			meters = m.quotaMetersWithInsights(contentWidth)

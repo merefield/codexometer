@@ -162,7 +162,8 @@ func mainTabForView(view meterViewID) mainTabID {
 }
 
 func (m Model) renderMainTabs(width int, colors palette) string {
-	tabs, separator := mainTabLayout(width, true)
+	tabWidth, resetLabel := m.resetLayout(width)
+	tabs, separator := mainTabLayout(tabWidth, true)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -175,6 +176,12 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 	}
 	if len(parts) > 1 {
 		used += (len(parts) - 1) * len(separator)
+	}
+	if resetLabel != "" {
+		return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(tabWidth-used+1, 0)) + m.renderResetButton(resetLabel, colors)
+	}
+	if m.resetOwnRow(width) {
+		return strings.Join(parts, colors.dimmed().Render(separator)) + "\n" + joinRight("", m.renderResetButton(m.resetLabel(), colors), width)
 	}
 	return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(width-used, 0))
 }
@@ -258,7 +265,8 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 		return mainTabQuota, false
 	}
 	localX := x - 2
-	tabs, _ := mainTabLayout(layout.contentWidth, true)
+	tabWidth, _ := m.resetLayout(layout.contentWidth)
+	tabs, _ := mainTabLayout(tabWidth, true)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.tab, true

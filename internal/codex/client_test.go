@@ -133,6 +133,16 @@ func runFakeAppServer() {
 			continue
 		}
 		switch request.Method {
+		case "account/rateLimitResetCredit/consume":
+			var params struct {
+				Key string `json:"idempotencyKey"`
+			}
+			if json.Unmarshal(request.Params, &params) != nil || params.Key != "test-attempt" {
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32602, "message": "invalid attempt"}})
+				continue
+			}
+			outcome := os.Getenv("CODEXOMETER_FAKE_RESET_OUTCOME")
+			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{"outcome": outcome}})
 		case "initialize":
 			if os.Getenv("CODEXOMETER_FAKE_EXPECT_BENCHMARK_LOGIN") == "1" {
 				args := strings.Join(os.Args, " ")
@@ -185,5 +195,39 @@ func runFakeAppServer() {
 				},
 			})
 		}
+	}
+}
+
+func TestConsumeResetAccountBindingAndOutcomes(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Client{Binary: executable}
+	snapshot, err := c.Fetch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, outcome := range []string{"reset", "alreadyRedeemed", "nothingToReset", "noCredit"} {
+		t.Setenv("CODEXOMETER_FAKE_RESET_OUTCOME", outcome)
+		got, err := c.ConsumeReset(context.Background(), "test-attempt", snapshot.AccountFingerprint)
+		if err != nil || got != outcome {
+			t.Fatalf("%s: %q %v", outcome, got, err)
+		}
+	}
+	if _, err := c.ConsumeReset(context.Background(), "test-attempt", "different-account"); err == nil {
+		t.Fatal("account mismatch accepted")
+	}
+	if _, err := c.ConsumeReset(context.Background(), "", snapshot.AccountFingerprint); err == nil {
+		t.Fatal("empty key accepted")
+	}
+	t.Setenv("CODEXOMETER_FAKE_RESET_OUTCOME", "future-outcome")
+	if _, err := c.ConsumeReset(context.Background(), "test-attempt", snapshot.AccountFingerprint); err == nil {
+		t.Fatal("unknown outcome accepted")
+	}
+	t.Setenv("CODEXOMETER_FAKE_ACCOUNT_ERROR", "1")
+	if _, err := c.ConsumeReset(context.Background(), "test-attempt", snapshot.AccountFingerprint); err == nil {
+		t.Fatal("unverified account accepted")
 	}
 }

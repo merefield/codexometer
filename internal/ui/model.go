@@ -41,35 +41,40 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
-	fetcher               Fetcher
-	usageFetcher          TokenUsageFetcher
-	refreshEvery          time.Duration
-	snapshot              codex.Snapshot
-	err                   error
-	width                 int
-	height                int
-	inline                bool
-	loading               bool
-	lastRefresh           time.Time
-	nextRefresh           time.Time
-	phase                 int
-	theme                 themeID
-	meterView             meterViewID
-	quotaMeterView        meterViewID
-	hoveredMainTab        mainTabID
-	mainTabHovered        bool
-	hoveredView           meterViewID
-	viewHovered           bool
-	flashedView           meterViewID
-	viewFlashing          bool
-	viewSequence          uint64
-	hoveredButton         footerButtonID
-	flashedButton         footerButtonID
-	flashSequence         uint64
-	benchmarkRunner       BenchmarkRunner
-	benchmarkScopedRunner ScopedBenchmarkRunner
-	preferenceStore       PreferenceStore
-	appVersion            string
+	resetHovered                        bool
+	resetBusy                           bool
+	resetKey, resetAccount, resetNotice string
+	resetConfirmUntil                   time.Time
+	resetRevision                       uint64
+	fetcher                             Fetcher
+	usageFetcher                        TokenUsageFetcher
+	refreshEvery                        time.Duration
+	snapshot                            codex.Snapshot
+	err                                 error
+	width                               int
+	height                              int
+	inline                              bool
+	loading                             bool
+	lastRefresh                         time.Time
+	nextRefresh                         time.Time
+	phase                               int
+	theme                               themeID
+	meterView                           meterViewID
+	quotaMeterView                      meterViewID
+	hoveredMainTab                      mainTabID
+	mainTabHovered                      bool
+	hoveredView                         meterViewID
+	viewHovered                         bool
+	flashedView                         meterViewID
+	viewFlashing                        bool
+	viewSequence                        uint64
+	hoveredButton                       footerButtonID
+	flashedButton                       footerButtonID
+	flashSequence                       uint64
+	benchmarkRunner                     BenchmarkRunner
+	benchmarkScopedRunner               ScopedBenchmarkRunner
+	preferenceStore                     PreferenceStore
+	appVersion                          string
 
 	benchmarkState           benchmarkState
 	benchmarkResults         []codex.BenchmarkResult
@@ -156,6 +161,7 @@ type Model struct {
 }
 
 type fetchedMsg struct {
+	resetRevision          uint64
 	snapshot               codex.Snapshot
 	err                    error
 	usage                  codex.LiveUsageSnapshot
@@ -401,6 +407,23 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case quotaResetResult:
+		m.resetBusy = false
+		if message.err != nil {
+			m.resetNotice = "Reset unconfirmed: " + message.err.Error() + ". Retry uses the same attempt."
+		} else {
+			m.resetKey, m.resetAccount = "", ""
+			switch message.outcome {
+			case "reset", "alreadyRedeemed":
+				m.resetNotice = "Quota reset. Refreshing limits…"
+			case "nothingToReset":
+				m.resetNotice = "Nothing eligible to reset; credit was not consumed."
+			case "noCredit":
+				m.resetNotice = "No reset credits available."
+			}
+		}
+		m.loading = true
+		return m, m.fetch()
 	case tea.KeyPressMsg:
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			m.benchmarkScopeKeyboard = true
@@ -410,6 +433,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelBenchmark()
 			return m, tea.Quit
 		case "esc":
+			if !m.resetConfirmUntil.IsZero() || (m.meterView.isQuota() && m.resetNotice != "" && !m.resetBusy) {
+				m.resetConfirmUntil = time.Time{}
+				m.resetNotice = ""
+				return m, nil
+			}
 			if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 				m.cancelBenchmarkScope()
 				return m, nil
@@ -588,6 +616,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
+		m.resetHovered = m.resetAt(mouse.X, mouse.Y)
+		if m.resetAt(mouse.X, mouse.Y) && clicked && mouse.Button == tea.MouseLeft {
+			return m.pressQuotaReset()
+		}
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			m.benchmarkScopeKeyboard = false
 		}
@@ -701,6 +733,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = message.Height
 		m.prepareBenchmarkDetailTranscript()
 	case fetchedMsg:
+		if m.resetBusy || message.resetRevision != m.resetRevision {
+			return m, nil
+		}
+		if message.err == nil && m.resetNotice == "Quota reset. Refreshing limits…" {
+			m.resetNotice = "Quota reset. Limits refreshed."
+		}
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
@@ -738,6 +776,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m.beginMonitorFetch(monitorFetchStart)
 		}
 	case secondMsg:
+		if !m.resetConfirmUntil.IsZero() && time.Now().After(m.resetConfirmUntil) {
+			m.resetConfirmUntil = time.Time{}
+			m.resetNotice = ""
+		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
 		if m.monitorState == monitorRunning {
@@ -909,6 +951,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	m.resetConfirmUntil = time.Time{}
+	if !m.resetBusy {
+		m.resetNotice = ""
+	}
 	if view < viewBars || view >= viewCount {
 		return m, nil
 	}
@@ -1150,9 +1196,13 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if m.meterView.isQuota() {
 		tabsHeight++
 	}
+	if m.resetOwnRow(contentWidth) {
+		tabsHeight++
+	}
 	const framedErrorHeight = 3
 	const footerHeight = 2
 	extraHeight := 0
+	extraHeight += m.resetNoticeHeight(contentWidth)
 	if m.err != nil {
 		extraHeight += framedErrorHeight
 	}
@@ -1172,6 +1222,9 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	quotaTabsY := -1
 	if m.meterView.isQuota() {
 		quotaTabsY = tabsY + 1
+		if m.resetOwnRow(contentWidth) {
+			quotaTabsY++
+		}
 	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
@@ -1787,7 +1840,8 @@ func (m Model) fetch() tea.Cmd {
 		}
 		snapshot, err := m.fetcher.Fetch(context.Background())
 		message := fetchedMsg{
-			snapshot: snapshot, err: err, at: time.Now(),
+			resetRevision: m.resetRevision,
+			snapshot:      snapshot, err: err, at: time.Now(),
 			benchmarkQuotaRevision: m.benchmarkQuotaAccounting.revision,
 		}
 		if err == nil && m.usageFetcher != nil {
