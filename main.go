@@ -197,7 +197,7 @@ type dependencies struct {
 	checkAuth         func(context.Context, string) (codex.Snapshot, error)
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI           func(ui.Fetcher, time.Duration, bool) error
+	startUI           func(ui.Fetcher, time.Duration, bool, int) error
 }
 
 func defaultDependencies() dependencies {
@@ -224,6 +224,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		refresh         = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo            = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline          = flags.Bool("inline", false, "render inline instead of using the alternate screen")
+		resetThreshold  = flags.Int("reset-threshold", 80, "quota consumption percentage required to show reset (0-100; 0 always shows available resets)")
 		checkAuth       = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
 		digBenchGame    = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
 		digBenchModel   = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
@@ -240,6 +241,10 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if printVersion {
 		fmt.Fprintln(stdout, "codexometer "+version.Current())
 		return 0
+	}
+	if *resetThreshold < 0 || *resetThreshold > 100 {
+		fmt.Fprintln(stderr, "codexometer: --reset-threshold must be between 0 and 100")
+		return 2
 	}
 	// Capture credentials for the benchmark components, then remove them before
 	// any path that can launch Codex. This keeps auth checks and quota reads on
@@ -321,7 +326,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fetcher = &demoFetcher{}
 	}
 
-	if err := deps.startUI(fetcher, *refresh, *inline); err != nil {
+	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold); err != nil {
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}
@@ -437,12 +442,13 @@ func formatDigBenchResult(result codex.DigBenchResult) string {
 	return line
 }
 
-func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool) error {
+func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold int) error {
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
 	}
 	model.SetInline(inline)
+	model.SetResetThreshold(resetThreshold)
 	_, err := tea.NewProgram(model).Run()
 	return err
 }
