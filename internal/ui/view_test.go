@@ -39,6 +39,10 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 				if !strings.Contains(output, "ALGORITHM TRIAL") || !strings.Contains(output, "RESULT MATRIX") {
 					t.Errorf("benchmark components missing for theme %d", theme)
 				}
+			} else if view == viewUsage {
+				if !strings.Contains(output, "LIFETIME") {
+					t.Error("usage summary missing")
+				}
 			} else if !strings.Contains(output, "5 HOURS LOOP") || !strings.Contains(output, "1 WEEK LOOP") {
 				t.Errorf("quota windows missing for theme %d view %d", theme, view)
 			}

@@ -74,7 +74,7 @@ func TestThemeHotkeyCyclesAndWraps(t *testing.T) {
 
 func TestTabCyclesMainTabsAndShiftTabMovesBack(t *testing.T) {
 	model := New(nil, time.Minute)
-	for _, want := range []meterViewID{viewMonitor, viewBenchmark, viewBars} {
+	for _, want := range []meterViewID{viewMonitor, viewUsage, viewBenchmark, viewBars} {
 		updated, _ := model.Update(specialKey(tea.KeyTab))
 		model = updated.(Model)
 		if model.meterView != want {

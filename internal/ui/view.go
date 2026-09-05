@@ -32,7 +32,7 @@ func (m Model) render() string {
 	}
 	header := renderHeader(contentWidth, m.phase, m.renderSignalStatus(contentWidth, colors), account, m.appVersion, colors)
 	parts := []string{header}
-	if m.loading && len(m.snapshot.Meters()) == 0 {
+	if m.meterView != viewUsage && m.loading && len(m.snapshot.Meters()) == 0 {
 		parts = append(parts, renderBoot(contentWidth, m.phase, colors))
 	} else {
 		if layout.headerSpacer {
@@ -42,7 +42,7 @@ func (m Model) render() string {
 		if m.meterView.isQuota() {
 			parts = append(parts, m.renderQuotaViewTabs(contentWidth, colors))
 		}
-		if m.err != nil {
+		if m.err != nil && m.meterView != viewUsage {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
 		}
@@ -53,12 +53,14 @@ func (m Model) render() string {
 		if m.meterView.isQuota() {
 			meters = m.quotaMetersWithInsights(contentWidth)
 		}
-		if len(meters) == 0 {
+		if len(meters) == 0 && m.meterView != viewUsage {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		if m.meterView == viewMonitor {
+		if m.meterView == viewUsage {
+			parts = append(parts, m.renderHistory(contentWidth, layout.meterHeight, colors))
+		} else if m.meterView == viewMonitor {
 			parts = append(parts, m.renderMonitorArea(contentWidth, layout.meterHeight, colors).view)
 		} else if m.meterView == viewBenchmark {
 			parts = append(parts, m.renderBenchmarkArea(contentWidth, layout.meterHeight, colors))

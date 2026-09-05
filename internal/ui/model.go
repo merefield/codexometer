@@ -41,6 +41,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	history                             accountHistoryState
 	resetThreshold                      int
 	resetHovered                        bool
 	resetBusy                           bool
@@ -427,6 +428,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, m.fetch()
 	case tea.KeyPressMsg:
+		if m.meterView == viewUsage {
+			if action, ok := historyKey(strings.ToLower(message.String())); ok {
+				m.activateHistory(action)
+				return m, nil
+			}
+		}
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			m.benchmarkScopeKeyboard = true
 		}
@@ -618,6 +625,18 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
+		m.history.hovered = 0
+		if m.meterView == viewUsage {
+			if action, ok := m.historyButtonAt(mouse.X, mouse.Y); ok {
+				m.history.hovered = action + 1
+			}
+		}
+		if m.meterView == viewUsage && clicked && mouse.Button == tea.MouseLeft {
+			if action, ok := m.historyButtonAt(mouse.X, mouse.Y); ok {
+				m.activateHistory(action)
+				return m, nil
+			}
+		}
 		m.resetHovered = m.resetAt(mouse.X, mouse.Y)
 		if m.resetAt(mouse.X, mouse.Y) && clicked && mouse.Button == tea.MouseLeft {
 			return m.pressQuotaReset()
@@ -734,6 +753,21 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = message.Width
 		m.height = message.Height
 		m.prepareBenchmarkDetailTranscript()
+	case accountHistoryMsg:
+		if message.sequence != m.history.sequence {
+			return m, nil
+		}
+		m.history.loading = false
+		m.history.err = message.err
+		if message.err == nil {
+			if m.snapshot.AccountFingerprint != "" && message.data.AccountFingerprint != m.snapshot.AccountFingerprint {
+				m.history.data = codex.AccountUsage{}
+				m.history.err = fmt.Errorf("Account changed; refresh usage")
+			} else {
+				m.history.data = message.data
+			}
+		}
+		return m, nil
 	case fetchedMsg:
 		if m.resetBusy || message.resetRevision != m.resetRevision {
 			return m, nil
@@ -744,6 +778,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
+			if m.snapshot.AccountFingerprint != message.snapshot.AccountFingerprint {
+				m.history.data = codex.AccountUsage{}
+				m.history.sequence++
+				m.history.loading = false
+				m.history.err = nil
+			}
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
 			if message.benchmarkQuotaRevision != m.benchmarkQuotaAccounting.revision || m.benchmarkQuotaAccounting.active {
@@ -777,6 +817,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.beginMonitorFetch(monitorFetchStart)
 		}
+		if m.meterView == viewUsage && m.history.data.FetchedAt.IsZero() && m.history.err == nil {
+			command := m.requestHistory()
+			return m, command
+		}
 	case secondMsg:
 		if !m.resetConfirmUntil.IsZero() && time.Now().After(m.resetConfirmUntil) {
 			m.resetConfirmUntil = time.Time{}
@@ -808,7 +852,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMsg:
 		m.loading = true
 		m.nextRefresh = time.Now().Add(m.refreshEvery)
-		return m, tea.Batch(m.fetch(), refreshTick(m.refreshEvery))
+		historyCommand := m.requestHistory()
+		return m, tea.Batch(m.fetch(), refreshTick(m.refreshEvery), historyCommand)
 	case monitorFetchedMsg:
 		if message.sequence != m.monitorRequest {
 			return m, nil
@@ -972,6 +1017,9 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	commands := []tea.Cmd{tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
 		return viewTabFlashExpiredMsg{view: view, sequence: sequence}
 	})}
+	if view == viewUsage {
+		commands = append(commands, m.requestHistory())
+	}
 	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
 		m.benchmarkPlanning = true
 		commands = append(commands, planBenchmark(m.benchmarkRunner))
@@ -1023,6 +1071,10 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.persistPreferences()
 		}
 	case footerButtonRefresh:
+		if m.meterView == viewUsage {
+			command := m.requestHistory()
+			return m, command
+		}
 		if !m.loading {
 			m.loading = true
 			return m, m.fetch()
@@ -1139,7 +1191,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 	if x < 0 || y < 0 {
 		return footerButtonNone
 	}
-	if m.loading && len(m.snapshot.Meters()) == 0 {
+	if m.meterView != viewUsage && m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
 	if m.meterView == viewMonitor {
@@ -1205,11 +1257,11 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	const footerHeight = 2
 	extraHeight := 0
 	extraHeight += m.resetNoticeHeight(contentWidth)
-	if m.err != nil {
+	if m.err != nil && m.meterView != viewUsage {
 		extraHeight += framedErrorHeight
 	}
 	meters := m.snapshot.Meters()
-	if len(meters) == 0 {
+	if len(meters) == 0 && m.meterView != viewUsage {
 		extraHeight += framedErrorHeight
 	}
 	if (m.meterView == viewBars || m.meterView == viewConsumptionPace || m.meterView == viewFuel) && len(meters) > 0 {
@@ -1231,7 +1283,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
-	if m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
+	if m.meterView == viewUsage || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
 		footerY += meterHeight
 	}
 	return dashboardGeometry{
