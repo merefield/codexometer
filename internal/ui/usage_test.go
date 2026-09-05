@@ -101,6 +101,7 @@ func TestHistoryRefreshAndControls(t *testing.T) {
 			t.Fatal("period key failed")
 		}
 	}
+	m.width = 40 // Only narrow terminals now require history paging.
 	m.activateHistory(3)
 	if m.history.offset == 0 {
 		t.Fatal("older history not selected")
@@ -189,5 +190,44 @@ func TestDailyActivityCalendar(t *testing.T) {
 	}
 	if got := m.renderHistoryCalendar(80, 10, paletteFor(themeHacker)); len(got) != 1 || !strings.Contains(got[0], "Enlarge") {
 		t.Fatal("short calendar silently lost weekdays")
+	}
+}
+
+func TestHistoryViewsPrioritiseFullYear(t *testing.T) {
+	for _, height := range []int{11, 20, 40, 80} {
+		for width := 56; width <= 300; width++ {
+			calendar := historyCalendarGeometry(width, height)
+			if calendar.columns != 52 {
+				t.Fatalf("calendar at %dx%d shows %d weeks", width, height, calendar.columns)
+			}
+			if got := 4 + 52*calendar.cellWidth + 51*calendar.gap; got > width {
+				t.Fatalf("calendar width %d exceeds %d", got, width)
+			}
+			if got := 7*calendar.cellHeight + 4; got > height {
+				t.Fatalf("calendar height %d exceeds %d", got, height)
+			}
+		}
+	}
+	for width := 60; width <= 300; width++ {
+		bars := historyBarGeometry(width)
+		if bars.columns != 52 || 8+52*bars.cellWidth+51*bars.gap > width {
+			t.Fatalf("bars do not fit full year at %d: %+v", width, bars)
+		}
+	}
+	m := Model{width: 80, height: 24, meterView: viewUsage, history: accountHistoryState{data: codex.AccountUsage{DailyUsageBuckets: []codex.AccountUsageDay{}}}}
+	points := historyPoints(m.history.data, time.Now(), 0)
+	first := points[0].date.Format("02 Jan 2006")
+	for mode := 0; mode < 3; mode++ {
+		m.history.mode = mode
+		m.history.offset = 25 // A previous narrow viewport must not hide older weeks.
+		layout := m.dashboardLayout()
+		output := ansi.Strip(m.renderHistory(layout.contentWidth, layout.meterHeight, paletteFor(themeHacker)))
+		if !strings.Contains(output, first) {
+			t.Fatalf("mode %d omits oldest week:\n%s", mode, output)
+		}
+		m.activateHistory(3)
+		if m.history.offset != 0 {
+			t.Fatalf("mode %d pages although full year fits", mode)
+		}
 	}
 }

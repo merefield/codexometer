@@ -142,7 +142,19 @@ func historyKey(key string) (int, bool) {
 	return 0, false
 }
 
-func historyCapacity(width int) int { return max((width-10)/3, 1) }
+func historyCapacity(width int) int { return historyBarGeometry(width).columns }
+
+func historyBarGeometry(width int) historyCalendarLayout {
+	available := max(width-8, 1)
+	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, 52)}
+	if available >= 52+51 {
+		layout.gap = 1
+	}
+	if available >= 52*2+51 {
+		layout.cellWidth = (available - 51) / 52
+	}
+	return layout
+}
 
 func (m *Model) activateHistory(action int) {
 	if action < 3 {
@@ -155,7 +167,7 @@ func (m *Model) activateHistory(action int) {
 	step := historyCapacity(layout.contentWidth)
 	if m.history.mode == 0 {
 		count = 52
-		_, step = historyCalendarGeometry(layout.contentWidth, layout.meterHeight-3)
+		step = historyCalendarGeometry(layout.contentWidth, layout.meterHeight-3).columns
 	}
 	m.history.offset = min(m.history.offset, max(count-step, 0))
 	if action == 3 {
@@ -236,7 +248,8 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		lines = append(lines, m.renderHistoryCalendar(width, height-len(lines), colors)...)
 	} else {
 		points := historyPoints(data, time.Now(), m.history.mode)
-		capacity := historyCapacity(width)
+		barLayout := historyBarGeometry(width)
+		capacity := barLayout.columns
 		offset := min(m.history.offset, max(len(points)-capacity, 0))
 		end := len(points) - offset
 		start := max(end-capacity, 0)
@@ -257,18 +270,22 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 				axis = "0"
 			}
 			line := colors.dimmed().Render(fmt.Sprintf("%7s│", axis))
-			for _, p := range visible {
+			for i, p := range visible {
 				fraction := 0.0
 				if peak > 0 {
 					fraction = float64(p.tokens)/float64(peak)*float64(chartHeight) - float64(row)
 				}
 				level := min(max(int(math.Ceil(fraction*8)), 0), 8)
 				cell := string([]rune(" ▁▂▃▄▅▆▇█")[level])
-				line += colors.label().Render(cell+cell) + " "
+				line += colors.label().Render(strings.Repeat(cell, barLayout.cellWidth))
+				if i+1 < len(visible) {
+					line += strings.Repeat(" ", barLayout.gap)
+				}
 			}
 			lines = append(lines, line)
 		}
-		lines = append(lines, colors.dimmed().Render("        "+strings.Repeat("─", min(len(visible)*3, max(width-8, 0)))))
+		plotWidth := len(visible)*(barLayout.cellWidth+barLayout.gap) - barLayout.gap
+		lines = append(lines, colors.dimmed().Render("        "+strings.Repeat("─", min(plotWidth, max(width-8, 0)))))
 		first, last := visible[0].date.Format("02 Jan 2006"), visible[len(visible)-1].date.Format("02 Jan 2006")
 		lines = append(lines, colors.dimmed().Render(first+" → "+last+" // ←/→ OR PGUP/PGDN"))
 	}
@@ -282,12 +299,23 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	return strings.Join(lines, "\n")
 }
 
-// Cells have two terminal columns per row of height, approximating squares.
-// Seven weekday rows stay intact; pagination always moves by whole weeks.
-func historyCalendarGeometry(width, height int) (cellHeight, columns int) {
-	cellHeight = max(min((height-4)/7, (width-4)/36), 1)
-	columns = min(max((width-4)/(cellHeight*2+1), 1), 52)
-	return
+type historyCalendarLayout struct {
+	cellWidth, cellHeight, gap, columns int
+}
+
+// Prioritise all 52 weeks over cell size. Below 56 content columns, even
+// single-column cells cannot show a year beside weekday labels; page then.
+func historyCalendarGeometry(width, height int) historyCalendarLayout {
+	available := max(width-4, 1)
+	layout := historyCalendarLayout{cellWidth: 1, cellHeight: 1, columns: min(available, 52)}
+	if available >= 52+51 {
+		layout.gap = 1
+	}
+	if available >= 52*2+51 {
+		layout.cellHeight = max(min((height-4)/7, (available-51)/(52*2)), 1)
+		layout.cellWidth = layout.cellHeight * 2
+	}
+	return layout
 }
 
 func historyHeatLevel(tokens, peak int64) int {
@@ -311,7 +339,8 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 		return []string{colors.dimmed().Render("Enlarge terminal for daily activity grid (7 weekday rows).")}
 	}
 	points := historyPoints(m.history.data, time.Now(), 0)
-	cellHeight, columns := historyCalendarGeometry(width, height)
+	layout := historyCalendarGeometry(width, height)
+	cellHeight, columns := layout.cellHeight, layout.columns
 	offset := min(m.history.offset, 52-columns)
 	end := 52 - offset
 	start := max(end-columns, 0)
@@ -321,18 +350,20 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 	}
 	heatColors := historyHeatColors(colors)
 	lines := []string{colors.dimmed().Render("DAILY ACTIVITY // 52 WEEKS // UTC")}
-	monthLine := "    "
+	stride := layout.cellWidth + layout.gap
+	monthLabels := []rune(strings.Repeat(" ", columns*stride-layout.gap))
+	labelEnd := 0
 	lastMonth := ""
 	for week := start; week < end; week++ {
 		month := points[week*7].date.Format("Jan")
-		label := ""
-		if month != lastMonth {
-			label = month
+		x := (week - start) * stride
+		if month != lastMonth && x >= labelEnd && x+3 <= len(monthLabels) {
+			copy(monthLabels[x:x+3], []rune(month))
+			labelEnd = x + 4
 		}
 		lastMonth = month
-		monthLine += fmt.Sprintf("%-*s", cellHeight*2+1, label)
 	}
-	lines = append(lines, colors.dimmed().Render(monthLine))
+	lines = append(lines, colors.dimmed().Render("    "+string(monthLabels)))
 	for day, label := range []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"} {
 		for row := 0; row < cellHeight; row++ {
 			prefix := "    "
@@ -342,12 +373,19 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 			line := colors.dimmed().Render(prefix)
 			for week := start; week < end; week++ {
 				i := week*7 + day
-				cell := strings.Repeat(" ", cellHeight*2)
+				cell := strings.Repeat(" ", layout.cellWidth)
 				if i < len(points) {
 					level := historyHeatLevel(points[i].tokens, peak)
-					cell = lipgloss.NewStyle().Foreground(heatColors[level]).Render(strings.Repeat("█", cellHeight*2))
+					glyph := "█"
+					if layout.cellWidth == 1 {
+						glyph = "■"
+					}
+					cell = lipgloss.NewStyle().Foreground(heatColors[level]).Render(strings.Repeat(glyph, layout.cellWidth))
 				}
-				line += cell + " "
+				line += cell
+				if week+1 < end {
+					line += strings.Repeat(" ", layout.gap)
+				}
 			}
 			lines = append(lines, line)
 		}

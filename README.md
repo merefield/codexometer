@@ -590,13 +590,17 @@ It does not require the shared-daemon configuration used for live Monitor events
 Daily uses five intensity levels (zero and four positive levels), scaled to
 the highest daily token count across the 52-week history, so colours remain
 comparable when paging. Future days stay blank. A Less/More legend and the peak
-daily count explain the scale. Cells grow to approximately square blocks on
-taller terminals; very short terminals request more height rather than dropping
-weekday rows.
+daily count explain the scale. All Usage views prioritise showing the full
+52 weeks: compact cells/bars and reduced gaps on narrower terminals, expanding
+when space allows. Daily fits a year at 60 terminal columns; Weekly/Cumulative
+need 64 columns, including their vertical axis. Daily cells grow to approximately
+square blocks when both width and height allow; very short terminals request
+more height rather than dropping weekday rows.
 
 Weekly and Cumulative use theme-coloured fractional block bars, automatically
 scale their vertical axes to the visible values, and fit as many periods as the
-terminal allows. Each view opens on the newest periods. Click **Older/Newer** or use
+terminal allows. Only terminals too narrow for 52 columns need paging; these
+open on the newest periods. Click **Older/Newer** or use
 `←`/`→` or `Page Up`/`Page Down` to browse the rest. Daily pages by whole weeks.
 Dates beneath the graph
 identify daily dates or weekly start dates. Widening the terminal reveals more
