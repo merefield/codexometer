@@ -63,7 +63,7 @@ type rpcResponse struct {
 // Fetch starts a short-lived app-server, performs the initialization handshake,
 // reads the authenticated account limits, and shuts the server down again.
 func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
-	return c.fetch(ctx, nil)
+	return c.fetch(ctx, nil, nil)
 }
 
 type resetAttempt struct {
@@ -77,11 +77,11 @@ func (c Client) ConsumeReset(ctx context.Context, key, account string) (string, 
 		return "", errors.New("reset requires an attempt key and verified account")
 	}
 	attempt := &resetAttempt{key: key, account: account}
-	_, err := c.fetch(ctx, attempt)
+	_, err := c.fetch(ctx, attempt, nil)
 	return attempt.outcome, err
 }
 
-func (c Client) fetch(ctx context.Context, reset *resetAttempt) (Snapshot, error) {
+func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *AccountUsage) (Snapshot, error) {
 	binary := c.Binary
 	if binary == "" {
 		binary = "codex"
@@ -146,6 +146,26 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt) (Snapshot, error
 	}
 	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
 		accountFingerprint = fingerprintAccount(accountResult)
+	} else if history != nil {
+		return Snapshot{}, withServerError("read Codex account identity for usage", accountErr, stderr.String())
+	}
+	if history != nil {
+		if accountFingerprint == "" {
+			return Snapshot{}, errors.New("Codex account could not be verified; usage unavailable")
+		}
+		if err := encoder.Encode(map[string]any{"method": "account/usage/read", "id": 5}); err != nil {
+			return Snapshot{}, fmt.Errorf("request Codex usage: %w", err)
+		}
+		result, err := responseFor(decoder, 5)
+		if err != nil {
+			return Snapshot{}, withServerError("read Codex usage", err, stderr.String())
+		}
+		if err := json.Unmarshal(result, history); err != nil {
+			return Snapshot{}, fmt.Errorf("decode Codex usage: %w", err)
+		}
+		history.AccountFingerprint = accountFingerprint
+		history.FetchedAt = time.Now()
+		return Snapshot{}, nil
 	}
 	if reset != nil {
 		if accountFingerprint == "" || accountFingerprint != reset.account {

@@ -14,6 +14,18 @@ import (
 	"github.com/merefield/codexometer/internal/version"
 )
 
+func TestDemoAccountHistoryMatchesQuotaAccount(t *testing.T) {
+	demo := &demoFetcher{}
+	quota, err := demo.Fetch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := demo.FetchAccountUsage(context.Background())
+	if err != nil || history.AccountFingerprint != quota.AccountFingerprint || len(history.DailyUsageBuckets) != 364 {
+		t.Fatalf("demo history inconsistent with quota: account=%q, days=%d, error=%v", history.AccountFingerprint, len(history.DailyUsageBuckets), err)
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer

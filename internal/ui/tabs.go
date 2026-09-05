@@ -13,6 +13,7 @@ type mainTabID int
 const (
 	mainTabQuota mainTabID = iota
 	mainTabMonitor
+	mainTabUsage
 	mainTabBenchmark
 	mainTabCount
 )
@@ -73,10 +74,10 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 		microMonitor = "●"
 	}
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"╭ QUOTA ╮", monitorFull, "╭ BENCHMARK ╮"},
-		{"╭QTA╮", monitorCompact, "╭TEST╮"},
-		{"[Q]", monitorMinimal, "[B]"},
-		{"Q", microMonitor, "B"},
+		{"╭ QUOTA ╮", monitorFull, "╭ USAGE ╮", "╭ BENCHMARK ╮"},
+		{"╭QTA╮", monitorCompact, "╭USE╮", "╭TEST╮"},
+		{"[Q]", monitorMinimal, "[U]", "[B]"},
+		{"Q", microMonitor, "U", "B"},
 	})
 
 	tabs := make([]mainTab, 0, mainTabCount)
@@ -115,6 +116,8 @@ func quotaViewTabLayout(width int) ([]viewTab, string) {
 
 func (m Model) currentMainTab() mainTabID {
 	switch m.meterView {
+	case viewUsage:
+		return mainTabUsage
 	case viewMonitor:
 		return mainTabMonitor
 	case viewBenchmark:
@@ -143,6 +146,8 @@ func (m Model) pressMainTab(tab mainTabID) (tea.Model, tea.Cmd) {
 		return m.pressViewTab(m.selectedQuotaView())
 	case mainTabMonitor:
 		return m.pressViewTab(viewMonitor)
+	case mainTabUsage:
+		return m.pressViewTab(viewUsage)
 	case mainTabBenchmark:
 		return m.pressViewTab(viewBenchmark)
 	default:
@@ -152,6 +157,8 @@ func (m Model) pressMainTab(tab mainTabID) (tea.Model, tea.Cmd) {
 
 func mainTabForView(view meterViewID) mainTabID {
 	switch view {
+	case viewUsage:
+		return mainTabUsage
 	case viewMonitor:
 		return mainTabMonitor
 	case viewBenchmark:
@@ -257,7 +264,7 @@ func (m Model) monitorIndicatorColor(colors palette) imagecolor.Color {
 }
 
 func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
-	if x < 0 || y < 0 || (m.loading && len(m.snapshot.Meters()) == 0) {
+	if x < 0 || y < 0 || (m.meterView != viewUsage && m.loading && len(m.snapshot.Meters()) == 0) {
 		return mainTabQuota, false
 	}
 	layout := m.dashboardLayout()

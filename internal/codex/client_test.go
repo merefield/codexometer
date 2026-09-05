@@ -133,6 +133,16 @@ func runFakeAppServer() {
 			continue
 		}
 		switch request.Method {
+		case "account/usage/read":
+			if os.Getenv("CODEXOMETER_FAKE_USAGE_ERROR") == "1" {
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32601, "message": "Method not found"}})
+			} else {
+				result := os.Getenv("CODEXOMETER_FAKE_USAGE_RESULT")
+				if result == "" {
+					result = `{"summary":{"lifetimeTokens":123456,"peakDailyTokens":3000,"currentStreakDays":2},"dailyUsageBuckets":[{"startDate":"2026-09-01","tokens":3000}]}`
+				}
+				_ = encoder.Encode(map[string]any{"id": *request.ID, "result": json.RawMessage(result)})
+			}
 		case "account/rateLimitResetCredit/consume":
 			switch os.Getenv("CODEXOMETER_FAKE_RESET_ERROR") {
 			case "rpc":

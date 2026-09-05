@@ -30,6 +30,7 @@ const (
 	viewConsumptionPace
 	viewFuel
 	viewBenchmark
+	viewUsage
 	viewCount
 )
 
@@ -66,6 +67,7 @@ func (s meterViewID) name() string {
 		"CONSUMPTION PACE",
 		"FUEL TANK",
 		"BENCHMARK",
+		"USAGE",
 	}[s]
 }
 

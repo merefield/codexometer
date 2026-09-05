@@ -337,7 +337,7 @@ codexometer --codex /path/to/codex
 | Key | Action |
 | --- | --- |
 | `t` | Cycle color themes |
-| `Tab` | Select the next top-level tab: Quota, Monitor, or Benchmark |
+| `Tab` | Select the next top-level tab: Quota, Monitor, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh quota data immediately |
 | `v` | Cycle the active Quota view |
@@ -358,7 +358,7 @@ codexometer --codex /path/to/codex
 | `Esc` | Return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
-The responsive top rail below the account status selects Quota, Monitor, or
+The responsive top rail below the account status selects Quota, Monitor, Usage, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
 Consumption Pace, Pie, and Fuel Tank; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
@@ -558,7 +558,7 @@ The default remains the original green hacker-terminal presentation.
 
 ## Views and quota presentations
 
-The top-level tabs are **Quota**, **Monitor**, and **Benchmark**. Within Quota,
+The top-level tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**. Within Quota,
 choose one of these four views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
@@ -573,6 +573,69 @@ choose one of these four views with its sub-tab or `v`:
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
+
+### Usage: account token history
+
+**Usage** is a read-only companion to Codex CLI's `/usage` command. It fetches
+`account/usage/read` through a short-lived local Codex app-server using your
+prevailing ChatGPT login. No model turn is started and no reset credit is used.
+It does not require the shared-daemon configuration used for live Monitor events.
+
+- **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
+  one column per week. More tokens mean brighter theme-coloured blocks.
+- **Weekly** (`w`): tokens summed into Sunday–Saturday weeks; the current week is partial.
+- **Cumulative** (`c`): a running total of those weeks within the selected window,
+  not the account's lifetime total.
+
+Choose **6 months** (`6`) or **12 months** (`1`) with the range buttons. These
+represent 26 or 52 Sunday-based weeks including the current partial week,
+not exact calendar-month boundaries. The default is 12 months. Selection applies
+instantly to all three views without refetching, resets paging, and is remembered
+while switching tabs for the current run. Cumulative restarts from the beginning
+of the selected range; the separately labelled lifetime summary does not change.
+
+Daily uses five intensity levels (zero and four positive levels), scaled to
+the highest daily token count across the selected range, so colours remain
+comparable when paging. Future days stay blank. A Less/More legend and the peak
+daily count explain the scale. All Usage views prioritise showing the full
+26 or 52 weeks: compact cells/bars and reduced gaps on narrower terminals, expanding
+when space allows. Daily fits a year at 60 terminal columns; Weekly/Cumulative
+need 64 columns, including their vertical axis. Daily cells grow to approximately
+square blocks when both width and height allow; very short terminals request
+more height rather than dropping weekday rows.
+
+Weekly and Cumulative use theme-coloured fractional block bars, automatically
+scale their vertical axes to the visible values, and fit as many periods as the
+terminal allows. Only terminals too narrow for the selected number of weeks need paging; these
+open on the newest periods. Click **Older/Newer** or use
+`←`/`→` or `Page Up`/`Page Down` to browse the rest. Daily pages by whole weeks.
+Dates beneath the graph
+identify daily dates or weekly start dates. Widening the terminal reveals more
+periods; resizing does not change the underlying data. Period buttons support
+mouse clicks and hover highlighting, and the period remains selected when
+switching tabs. `Tab` and `Shift+Tab` still navigate the main tabs.
+
+As in Codex's chart, the available display range is 52 Sunday-based weeks ending
+in the current UTC week. Missing dates in a supplied history count as zero;
+invalid dates, negative values, future dates, and dates outside that range are
+ignored. Duplicate dates are summed. The compact summary shows the server's
+separately reported lifetime tokens, peak daily tokens, and current streak when
+available (`—` otherwise).
+
+History refreshes when you enter Usage, on the normal refresh interval while
+Usage is selected, or with `r` / the Refresh button. These are server-side account
+statistics, **not live Monitor telemetry**: updates may lag ongoing work.
+Older CLI versions or unsupported accounts can return an unavailable/error state;
+missing history is never silently presented as zero. A failed refresh labels
+previously fetched data **STALE**, and a detected account change discards it.
+
+The endpoint currently exposes daily **total tokens**, not historical per-model,
+input/output/cache splits, quota percentages, or dollar spend. Consequently this
+tab does not infer historical API-equivalent cost or combine these totals with
+Monitor's local counters. History is held in memory only; restarting fetches it
+again from Codex. `--demo` includes sample history for previewing the charts.
+
+### Other top-level views
 
 The other top-level views are:
 

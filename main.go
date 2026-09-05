@@ -33,6 +33,24 @@ type demoFetcher struct {
 	bravoTurns     []codex.LiveTurnTiming
 }
 
+func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, error) {
+	now := time.Now()
+	history := codex.AccountUsage{AccountFingerprint: "demo-account", FetchedAt: now, DailyUsageBuckets: []codex.AccountUsageDay{}}
+	var total, peak int64
+	for i := 363; i >= 0; i-- {
+		tokens := int64((i * 7919) % 80000)
+		if i%7 == 0 {
+			tokens = 0
+		}
+		total += tokens
+		peak = max(peak, tokens)
+		history.DailyUsageBuckets = append(history.DailyUsageBuckets, codex.AccountUsageDay{StartDate: now.UTC().AddDate(0, 0, -i).Format("2006-01-02"), Tokens: tokens})
+	}
+	history.Summary.LifetimeTokens = &total
+	history.Summary.PeakDailyTokens = &peak
+	return history, nil
+}
+
 func (d *demoFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

@@ -20,7 +20,7 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 		{width: 100, want: "BENCHMARK"},
 		{width: 22, want: "QTA"},
 		{width: 9, want: "●"},
-		{width: 3, want: "●"},
+		{width: 4, want: "●"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := mainTabLayout(test.width, true)
@@ -160,8 +160,13 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 	}
 	updated, _ = model.Update(specialKey(tea.KeyTab))
 	model = updated.(Model)
+	if model.meterView != viewUsage {
+		t.Fatalf("second Tab selected %s, want Usage", model.meterView.name())
+	}
+	updated, _ = model.Update(specialKey(tea.KeyTab))
+	model = updated.(Model)
 	if model.meterView != viewBenchmark {
-		t.Fatalf("second Tab selected %s, want Benchmark", model.meterView.name())
+		t.Fatalf("third Tab selected %s, want Benchmark", model.meterView.name())
 	}
 	updated, _ = model.Update(specialKey(tea.KeyTab))
 	model = updated.(Model)
