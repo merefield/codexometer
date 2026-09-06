@@ -125,6 +125,9 @@ messages. Product/model/theme names, protocol IDs, CLI flag names and technical
 units are not renamed. Benchmark challenges, verifier rules and model transcripts
 are not translated: changing prompts could bias benchmark comparisons. Raw
 backend/diagnostic messages and messages without a translation remain in English.
+Compact API-EQ restart-reason codes (such as `ACCOUNT`, `RESET` and `REBASED`)
+also remain consistently English; estimate labels and full confidence labels are
+translated, while compact confidence codes remain `L`/`M`.
 API-equivalent amounts remain USD, regardless of language. These are initial
 translations; native-language corrections are welcome.
 Non-English history views use unambiguous ISO dates; the established English

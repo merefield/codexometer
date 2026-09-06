@@ -395,10 +395,12 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 	return i18n.Format("API-EQ LEARNING // %d/%dPP CLEAN MOVEMENT", progress, quotaAPIMinimumDelta)
 }
 
+// Restart reasons are compact diagnostic codes, not translated labels. Keep
+// every code canonical so changing language does not partly translate them.
 func shortQuotaAPIRestartReason(reason string) string {
 	switch reason {
 	case quotaAPIRestartAccountChanged:
-		return i18n.Text("ACCOUNT")
+		return "ACCOUNT"
 	case quotaAPIRestartAccountingRebased:
 		return "REBASED"
 	case quotaAPIRestartCoverageGap:
@@ -408,7 +410,7 @@ func shortQuotaAPIRestartReason(reason string) string {
 	case quotaAPIRestartWindowChanged:
 		return "WINDOW CHANGED"
 	case quotaAPIRestartWindowReset:
-		return i18n.Text("RESET")
+		return "RESET"
 	default:
 		return reason
 	}

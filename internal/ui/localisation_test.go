@@ -49,6 +49,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("tab_click_surfaces", TestEveryRenderedTabCellIsClickableAcrossWidths)
 	t.Run("reset_click_surfaces", TestQuotaResetRenderedHitSurfaces)
 	t.Run("quota_estimator", TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend)
+	t.Run("canonical_restart_reasons", TestShortQuotaAPIRestartReasonsStayCanonical)
 	t.Run("quota_estimate_text", func(t *testing.T) {
 		now := time.Now().Truncate(time.Second)
 		reset := now.Add(4 * time.Hour).Unix()

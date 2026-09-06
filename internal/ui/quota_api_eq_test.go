@@ -12,6 +12,23 @@ import (
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
+func TestShortQuotaAPIRestartReasonsStayCanonical(t *testing.T) {
+	for reason, want := range map[string]string{
+		quotaAPIRestartAccountChanged:    "ACCOUNT",
+		quotaAPIRestartAccountingRebased: "REBASED",
+		quotaAPIRestartCoverageGap:       "COVERAGE GAP",
+		quotaAPIRestartUnpricedModel:     "UNPRICED",
+		quotaAPIRestartWindowChanged:     "WINDOW CHANGED",
+		quotaAPIRestartWindowReset:       "RESET",
+		"FUTURE REASON":                  "FUTURE REASON",
+		"":                               "",
+	} {
+		if got := shortQuotaAPIRestartReason(reason); got != want {
+			t.Errorf("reason %q: got %q, want canonical %q", reason, got, want)
+		}
+	}
+}
+
 func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	snapshot := apiEqSnapshot(10, now.Add(4*time.Hour).Unix())
