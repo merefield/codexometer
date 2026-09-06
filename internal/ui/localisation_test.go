@@ -63,6 +63,25 @@ func TestLocalisedScreensHelper(t *testing.T) {
 				t.Errorf("invalid estimate at width %d: %q", width, line)
 			}
 		}
+		if i18n.Code() == "fr" {
+			line := m.quotaAPILine(m.snapshot.Meters()[0], 80)
+			if !strings.HasPrefix(line, "API-EQ OBSERVÉ // DÉPENSE ") || !strings.Contains(line, "FAIBLE") || strings.Contains(line, "SPEND") {
+				t.Errorf("partially translated French estimate: %q", line)
+			}
+		}
+		// A second and third clean observation exercise medium confidence too.
+		for step := 2; step <= 3; step++ {
+			m.snapshot = apiEqSnapshot(10+5*step, reset)
+			m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: float64(step), APIEqPricedCalls: int64(step)}, now.Add(time.Duration(step)*time.Minute))
+		}
+		estimate, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0])
+		if !ok || estimate.confidence != "MED" {
+			t.Fatalf("expected canonical medium confidence, got %+v", estimate)
+		}
+		line := m.quotaAPILine(m.snapshot.Meters()[0], 80)
+		if !strings.Contains(line, i18n.Text("MED")) || (i18n.Code() != "en-GB" && strings.Contains(line, "// SPEND ")) {
+			t.Errorf("partially translated medium-confidence estimate: %q", line)
+		}
 	})
 	for _, state := range []monitorState{monitorIdle, monitorRunning, monitorPaused} {
 		for _, width := range []int{12, 24, 40, 80} {

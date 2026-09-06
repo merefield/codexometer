@@ -361,7 +361,7 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 		full := formatAPIRange(estimate.fullLow, estimate.fullHigh)
 		switch {
 		case width >= 72:
-			return fmt.Sprintf("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d", current, full, i18n.Text(estimate.confidence), estimate.samples)
+			return i18n.Format("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d", current, full, i18n.Text(estimate.confidence), estimate.samples)
 		case width >= 52:
 			return i18n.Format("API-EQ NOW ~%s // 100%% ~%s · %s%d", current, full, estimate.confidence[:1], estimate.samples)
 		default:

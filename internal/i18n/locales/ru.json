@@ -1,4 +1,6 @@
 {
+  "OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d": "НАБЛЮДАЕМЫЙ API-EQ // РАСХОД ~%s // 100%% ~%s // %s · N=%d",
+  "MED": "СРЕДНЯЯ",
   "RESULT MATRIX": "ТАБЛИЦА РЕЗУЛЬТАТОВ",
   "\nBENCHMARK TRANSCRIPT: UNAVAILABLE\n": "\nТЕСТ ПРОТОКОЛ: НЕДОСТУПНО\n",
   "  //  CREDITS ": "  //  КРЕДИТЫ ",

@@ -1,4 +1,6 @@
 {
+  "OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d": "観測 API-EQ // 支出 ~%s // 100%% ~%s // %s · N=%d",
+  "MED": "中",
   "RESULT MATRIX": "結果一覧",
   "\nBENCHMARK TRANSCRIPT: UNAVAILABLE\n": "\nベンチマーク 実行記録: 取得不可\n",
   "  //  CREDITS ": "  //  クレジット ",
