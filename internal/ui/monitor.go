@@ -174,7 +174,7 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	}
 	action := ""
 	if len(m.monitorSessionData) > 0 && width >= 16 {
-		action = m.renderContextAction("privacy", m.monitorPrivacyLabel(), colors)
+		action = m.renderContextAction("privacy", m.monitorPrivacyLabel(width), colors)
 	}
 	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), action, strings.Join(lines, "\n"), colors.primary, colors)
 }

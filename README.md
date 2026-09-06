@@ -1143,7 +1143,8 @@ truncated or sanitised text, local-only observation, or a resolved/disconnected
 request. Eligible requests on small terminals instead explain that the terminal
 must be enlarged. These diagnostics do not relax any approval safeguards.
 
-The readout's `[H:HIDE]`/`[H:SHOW]` button or `h` toggles all previews; the choice
+The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
+previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
 survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
 context can be unavailable. Terminal escapes and control/bidirectional-formatting

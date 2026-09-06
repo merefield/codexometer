@@ -30,7 +30,19 @@ func contextTitle(c codex.SessionContext) string {
 	}
 }
 
-func (m Model) monitorPrivacyLabel() string {
+func (m Model) monitorPrivacyLabel(widths ...int) string {
+	g := m.dashboardLayout()
+	width := layoutMonitorArea(g.contentWidth, g.meterHeight).readoutWidth
+	if len(widths) > 0 {
+		width = widths[0]
+	}
+	hide, show := i18n.Text("[ H: HIDE DETAIL ]"), i18n.Text("[ H: SHOW DETAIL ]")
+	if width >= max(lipgloss.Width(hide), lipgloss.Width(show))+8 {
+		if m.monitorContextHidden {
+			return show
+		}
+		return hide
+	}
 	if m.monitorContextHidden {
 		return i18n.Text("[H:SHOW]")
 	}
@@ -308,7 +320,7 @@ func (m Model) monitorContextAt(x, y int) string {
 	}
 	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
 	if len(m.monitorSessionData) > 0 && a.readoutWidth >= 16 {
-		if r, ok := contextActionRect(a.readoutWidth, 0, m.monitorPrivacyLabel()); ok && r.contains(x, y) {
+		if r, ok := contextActionRect(a.readoutWidth, 0, m.monitorPrivacyLabel(a.readoutWidth)); ok && r.contains(x, y) {
 			return "privacy"
 		}
 	}

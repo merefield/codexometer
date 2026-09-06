@@ -280,3 +280,17 @@ func TestMonitorContextPrivacyAndDismissRenderedTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitorDetailToggleLabelsAdaptToWidth(t *testing.T) {
+	m := contextTestModel()
+	for _, hidden := range []bool{false, true} {
+		m.monitorContextHidden = hidden
+		full, compact := i18n.Text("[ H: HIDE DETAIL ]"), i18n.Text("[H:HIDE]")
+		if hidden {
+			full, compact = i18n.Text("[ H: SHOW DETAIL ]"), i18n.Text("[H:SHOW]")
+		}
+		if m.monitorPrivacyLabel(100) != full || m.monitorPrivacyLabel(16) != compact {
+			t.Fatal("unexpected detail toggle label")
+		}
+	}
+}
