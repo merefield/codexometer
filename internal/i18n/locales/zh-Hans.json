@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "此审批操作必须在 Codex 中处理。",
   "JUSTIFICATION": "理由",
   "COMMAND": "命令",
   "WORKING DIRECTORY": "工作目录",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ 点击此处或按 Enter 输入 ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter：发送／下一题 • Esc：退出编辑 • ↑/↓：选项",
   "Sending…": "正在发送…",
-  "Text sent…": "文本已发送…",
+  "Text sent ...": "文本已发送 ...",
   "Send unconfirmed; check Codex before retrying.": "发送未确认；重试前请检查 Codex。",
   "Prompt changed; review the session before replying.": "提示已更改；回复前请检查会话。",
   "Choose an offered answer with ↑/↓.": "使用 ↑/↓ 选择提供的答案。",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ 确认批准 ]",
   "[ DECLINE ]": "[ 拒绝 ]",
   "Sending decision…": "正在发送决定…",
-  "Decision sent…": "决定已发送…",
+  "Decision sent ...": "决定已发送 ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "决定未确认；请检查 Codex。不要在此重试。",
   "LAST REPLY": "最近回复",
   "QUESTION": "问题",

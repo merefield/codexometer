@@ -14,7 +14,13 @@ import (
 
 type monitorApprovalResult struct {
 	sessionID string
+	token     string
 	err       error
+}
+
+func (m Model) monitorApprovalHasOutcome() bool {
+	s, ok := m.contextDetailSession()
+	return ok && s.preview.Kind == codex.SessionContextApproval && s.preview.ApprovalToken != "" && s.preview.ApprovalToken == m.monitorApprovalNoticeToken && (m.monitorApprovalBusy || m.monitorApprovalNotice != "")
 }
 
 func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
@@ -28,6 +34,8 @@ func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
 		return i18n.Text("Local observation cannot answer live approvals.")
 	}
 	switch c.ApprovalBlocked {
+	case "approval-kind":
+		return i18n.Text("This approval action must be handled in Codex.")
 	case "network":
 		return i18n.Text("Network approval is not supported here.")
 	case "permissions":
@@ -243,11 +251,12 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalBusy = true
 	m.monitorApprovalNotice = i18n.Text("Sending decision…")
+	m.monitorApprovalNoticeToken = token
 	p := m.fetcher.(codex.SessionApprovalClient)
 	id := m.monitorContextTarget()
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		return monitorApprovalResult{id, p.RespondSessionApproval(ctx, token, decision)}
+		return monitorApprovalResult{id, token, p.RespondSessionApproval(ctx, token, decision)}
 	}, true
 }

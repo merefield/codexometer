@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "This approval action must be handled in Codex.",
   "JUSTIFICATION": "JUSTIFICATION",
   "COMMAND": "COMMAND",
   "WORKING DIRECTORY": "WORKING DIRECTORY",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ Click here or press Enter to write ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: send / next answer • Esc: leave editor • ↑/↓: choices",
   "Sending…": "Sending…",
-  "Text sent…": "Text sent…",
+  "Text sent ...": "Text sent ...",
   "Send unconfirmed; check Codex before retrying.": "Send unconfirmed; check Codex before retrying.",
   "Prompt changed; review the session before replying.": "Prompt changed; review the session before replying.",
   "Choose an offered answer with ↑/↓.": "Choose an offered answer with ↑/↓.",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ CONFIRM APPROVAL ]",
   "[ DECLINE ]": "[ DECLINE ]",
   "Sending decision…": "Sending decision…",
-  "Decision sent…": "Decision sent…",
+  "Decision sent ...": "Decision sent ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "Decision unconfirmed; check Codex. Do not retry here.",
   "LAST REPLY": "LAST REPLY",
   "QUESTION": "QUESTION",

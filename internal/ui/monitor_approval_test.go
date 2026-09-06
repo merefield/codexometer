@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +13,41 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
 )
+
+func TestMonitorDecisionOutcomeDoesNotAskForAnotherReply(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		m := approvalTestModel()
+		m, _, _ = m.monitorApprovalAction("decision:0")
+		m, cmd, _ := m.monitorApprovalAction("decision:0")
+		if strings.Contains(strings.Join(m.contextDetailLines(120), "\n"), i18n.Text("REPLY IN CODEX")) {
+			t.Fatal("sending decision asks for another reply")
+		}
+		result := cmd().(monitorApprovalResult)
+		if failed {
+			result.err = errors.New("ambiguous write")
+		}
+		n, _ := m.Update(result)
+		m = n.(Model)
+		if strings.Contains(strings.Join(m.contextDetailLines(120), "\n"), i18n.Text("REPLY IN CODEX")) {
+			t.Fatal("outcome asks for another reply")
+		}
+		if !m.monitorApprovalHasOutcome() {
+			t.Fatal("outcome was not retained")
+		}
+		m.monitorSessionData[0].preview.ApprovalToken = "replacement"
+		if m.monitorApprovalHasOutcome() {
+			t.Fatal("old result hides new request")
+		}
+		if !strings.Contains(strings.Join(m.contextDetailLines(120), "\n"), i18n.Text("REPLY IN CODEX")) {
+			t.Fatal("unavailable replacement diagnostic hidden")
+		}
+		n, _ = m.Update(result)
+		m = n.(Model)
+		if m.monitorApprovalNotice != "" {
+			t.Fatal("late old outcome applied to replacement")
+		}
+	}
+}
 
 type approvalTestClient struct{ token, decision string }
 

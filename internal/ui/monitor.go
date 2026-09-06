@@ -288,6 +288,10 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
 }
 
+func monitorNeedsAttention(attention codex.SessionAttention) bool {
+	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck
+}
+
 func monitorSessionColumnWidths(width int) (int, int, bool) {
 	const gap = 1
 	if width <= gap+1 {
@@ -335,7 +339,11 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
 	if session.attention != codex.SessionAttentionNone {
-		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning)
+		badgeColor := colors.primary
+		if monitorNeedsAttention(session.attention) {
+			badgeColor = colors.warning
+		}
+		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
 		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorSessionAttentionLabel(session)+" ", innerWidth, "")))
 	}
 	if len(lines) < bodyRows {
@@ -364,7 +372,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	borderColor := colors.primary
-	if session.attention != codex.SessionAttentionNone && session.id != m.monitorSelectedID {
+	if monitorNeedsAttention(session.attention) && session.id != m.monitorSelectedID {
 		borderColor = colors.warning
 	}
 	action := ""

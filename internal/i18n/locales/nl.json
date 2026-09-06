@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "Deze goedkeuringsactie moet in Codex worden afgehandeld.",
   "JUSTIFICATION": "TOELICHTING",
   "COMMAND": "OPDRACHT",
   "WORKING DIRECTORY": "WERKMAP",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ Klik hier of druk op Enter om te typen ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: verzenden / volgende • Esc: editor verlaten • ↑/↓: keuzes",
   "Sending…": "Verzenden…",
-  "Text sent…": "Tekst verzonden…",
+  "Text sent ...": "Tekst verzonden ...",
   "Send unconfirmed; check Codex before retrying.": "Verzending onbevestigd; controleer Codex vóór opnieuw proberen.",
   "Prompt changed; review the session before replying.": "Prompt gewijzigd; controleer de sessie vóór antwoorden.",
   "Choose an offered answer with ↑/↓.": "Kies een aangeboden antwoord met ↑/↓.",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ GOEDKEURING BEVESTIGEN ]",
   "[ DECLINE ]": "[ WEIGEREN ]",
   "Sending decision…": "Beslissing verzenden…",
-  "Decision sent…": "Beslissing verzonden…",
+  "Decision sent ...": "Beslissing verzonden ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "Beslissing niet bevestigd; controleer Codex. Probeer hier niet opnieuw.",
   "LAST REPLY": "LAATSTE ANTWOORD",
   "QUESTION": "VRAAG",

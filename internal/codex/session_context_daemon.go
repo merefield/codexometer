@@ -37,6 +37,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		RequestID            json.RawMessage   `json:"requestId"`
 		Reason               string            `json:"reason"`
 		Command              json.RawMessage   `json:"command"`
+		Kind                 json.RawMessage   `json:"kind"`
 		Questions            []contextQuestion `json:"questions"`
 		IsBlocking           *bool             `json:"isBlocking"`
 		Item                 struct {
@@ -74,6 +75,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		delete(state.requests, string(p.RequestID))
 		return
 	case "item/commandExecution/requestApproval":
+		kind := "command" // legacy servers omit the discriminator
+		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && kind == "command" && string(p.Kind) != "null"
 		var command string
 		commandValid := len(p.Command) == 0 || string(p.Command) == "null" || json.Unmarshal(p.Command, &command) == nil
 		previous := state.commands[p.TurnID+"/"+p.ItemID]
@@ -102,6 +105,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		// Fail closed if the display loses ANY command/request content, or if
 		// this is a broader grant rather than an ordinary command decision.
 		switch {
+		case !kindValid:
+			c.ApprovalBlocked = "approval-kind"
 		case special(p.Network):
 			c.ApprovalBlocked = "network"
 		case special(p.Permissions):

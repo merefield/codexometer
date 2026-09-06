@@ -132,7 +132,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		controls = m.renderMonitorApprovalControls(width, height, colors)
 	} else if m.monitorPromptRows(width, height) > 0 {
 		controls = m.renderMonitorPrompt(width, height, colors)
-	} else if m.monitorApprovalNotice != "" {
+	} else if m.monitorApprovalHasOutcome() {
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
 	controlRows := 0
@@ -205,7 +205,7 @@ func (m *Model) scrollMonitorContext(delta int) {
 	if n == 0 {
 		n = m.monitorPromptRows(g.contentWidth, g.meterHeight)
 	}
-	if n == 0 && m.monitorApprovalNotice != "" {
+	if n == 0 && m.monitorApprovalHasOutcome() {
 		n = 1
 	}
 	rows, _, _ := monitorContextBodyLayout(g.meterHeight, n)

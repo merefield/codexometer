@@ -106,6 +106,38 @@ func TestMonitorCompletionIsIndependentOfPreview(t *testing.T) {
 	}
 }
 
+func TestMonitorCompletionDoesNotRequestAttention(t *testing.T) {
+	m := contextTestModel()
+	m.monitorSessionData[0].attention = codex.SessionAttentionComplete
+	if m.monitorHasVisibleWaitingSession() {
+		t.Fatal("completion pulses waiting indicator")
+	}
+	colors := paletteFor(themeHacker)
+	s := m.monitorSessionData[0]
+	label := " ● " + monitorSessionAttentionLabel(s) + " "
+	out := m.renderMonitorSessionMetrics(70, 12, s, "", colors)
+	want := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.primary).Render(label)
+	if !strings.Contains(out, want) {
+		t.Fatal("completion does not use informational theme badge")
+	}
+	for _, a := range []codex.SessionAttention{codex.SessionAttentionInput, codex.SessionAttentionApproval, codex.SessionAttentionCheck} {
+		m.monitorSessionData[1].attention = a
+		if !m.monitorHasVisibleWaitingSession() {
+			t.Fatal("real attention signal lost", a)
+		}
+	}
+}
+
+func TestMonitorResumeNewSessionRetainsContext(t *testing.T) {
+	m := contextTestModel()
+	preview := codex.SessionContext{Kind: codex.SessionContextQuestion, Text: "Please choose", ThreadID: "new", Source: "LIVE", InputToken: "question"}
+	m.resumeMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "new", Active: true, Context: preview, Attention: codex.SessionAttentionInput}}}, time.Now(), time.Minute)
+	i := m.monitorSessionIndex("new")
+	if i < 0 || m.monitorSessionData[i].preview != preview {
+		t.Fatal("new resume branch lost context")
+	}
+}
+
 func TestMonitorContextResponsiveHitTargets(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{40, 16}, {60, 24}, {80, 24}, {100, 30}, {120, 40}, {180, 50}} {
 		m := contextTestModel()

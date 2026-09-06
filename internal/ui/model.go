@@ -52,6 +52,7 @@ type Model struct {
 	monitorApprovalConfirm              string
 	monitorApprovalBusy                 bool
 	monitorApprovalNotice               string
+	monitorApprovalNoticeToken          string
 	history                             accountHistoryState
 	resetThreshold                      int
 	resetHovered                        bool
@@ -431,11 +432,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
-		if m.monitorContextTarget() != message.sessionID {
+		session, exists := m.contextDetailSession()
+		if m.monitorContextTarget() != message.sessionID || !exists || session.preview.ApprovalToken != message.token {
 			m.monitorApprovalNotice = ""
 			return m, nil
 		}
-		m.monitorApprovalNotice = i18n.Text("Decision sent…")
+		m.monitorApprovalNotice = i18n.Text("Decision sent ...")
 		if message.err != nil {
 			m.monitorApprovalNotice = i18n.Text("Decision unconfirmed; check Codex. Do not retry here.")
 		}
@@ -2127,7 +2129,7 @@ func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
 
 func (m Model) monitorHasVisibleWaitingSession() bool {
 	for _, session := range m.monitorSessionData {
-		if m.monitorSessionVisible(session) && session.attention != codex.SessionAttentionNone {
+		if m.monitorSessionVisible(session) && monitorNeedsAttention(session.attention) {
 			return true
 		}
 	}
@@ -2250,7 +2252,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 			id: update.ID, workingDirectory: update.WorkingDirectory,
 			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
-			active: update.Active, attention: update.Attention, displayed: update.Active,
+			active: update.Active, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
 			turnSequence: latestTurnTimingSequence(update.TurnTimings),
 		})

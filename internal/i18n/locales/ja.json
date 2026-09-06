@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "この承認操作は Codex で行ってください。",
   "JUSTIFICATION": "理由",
   "COMMAND": "コマンド",
   "WORKING DIRECTORY": "作業ディレクトリ",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ クリックまたは Enter で入力 ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: 送信／次の回答 • Esc: 入力終了 • ↑/↓: 選択",
   "Sending…": "送信中…",
-  "Text sent…": "テキストを送信しました…",
+  "Text sent ...": "テキストを送信しました ...",
   "Send unconfirmed; check Codex before retrying.": "送信未確認。再試行前に Codex を確認してください。",
   "Prompt changed; review the session before replying.": "プロンプトが変わりました。回答前にセッションを確認してください。",
   "Choose an offered answer with ↑/↓.": "↑/↓ で提示された回答を選んでください。",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ 許可を確定 ]",
   "[ DECLINE ]": "[ 拒否 ]",
   "Sending decision…": "決定を送信中…",
-  "Decision sent…": "決定を送信しました…",
+  "Decision sent ...": "決定を送信しました ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "決定を確認できません。Codex を確認し、ここでは再試行しないでください。",
   "LAST REPLY": "直近の返信",
   "QUESTION": "質問",

@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "Это разрешение нужно обработать в Codex.",
   "JUSTIFICATION": "ОБОСНОВАНИЕ",
   "COMMAND": "КОМАНДА",
   "WORKING DIRECTORY": "РАБОЧИЙ КАТАЛОГ",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ Нажмите здесь или Enter для ввода ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: отправить / далее • Esc: выйти • ↑/↓: варианты",
   "Sending…": "Отправка…",
-  "Text sent…": "Текст отправлен…",
+  "Text sent ...": "Текст отправлен ...",
   "Send unconfirmed; check Codex before retrying.": "Отправка не подтверждена; проверьте Codex перед повтором.",
   "Prompt changed; review the session before replying.": "Запрос изменился; проверьте сессию перед ответом.",
   "Choose an offered answer with ↑/↓.": "Выберите предложенный ответ с помощью ↑/↓.",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ ПОДТВЕРДИТЬ РАЗРЕШЕНИЕ ]",
   "[ DECLINE ]": "[ ОТКЛОНИТЬ ]",
   "Sending decision…": "Отправка решения…",
-  "Decision sent…": "Решение отправлено…",
+  "Decision sent ...": "Решение отправлено ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "Решение не подтверждено; проверьте Codex. Не повторяйте здесь.",
   "LAST REPLY": "ПОСЛЕДНИЙ ОТВЕТ",
   "QUESTION": "ВОПРОС",

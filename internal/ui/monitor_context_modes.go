@@ -143,7 +143,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	if len(buttons) > 0 {
 		n = buttons[len(buttons)-1].y + 1
 		controls = m.renderMonitorApprovalControls(width, height, colors)
-	} else if m.monitorApprovalNotice != "" {
+	} else if m.monitorApprovalHasOutcome() {
 		n = 1
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}

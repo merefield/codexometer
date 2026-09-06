@@ -32,6 +32,10 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 		t.Fatal("structured fields did not preserve source values", c.CommandDetails)
 	}
 	for name, fields := range map[string]map[string]any{
+		"stdin action":            {"kind": "writeStdin"},
+		"future action":           {"kind": "unknownAction"},
+		"null action":             {"kind": nil},
+		"malformed action":        {"kind": 42},
 		"wrong turn":              {"turnId": "other"},
 		"wrong item":              {"itemId": "other"},
 		"truncated":               {"command": strings.Repeat("x", 5000)},
@@ -52,6 +56,19 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 				t.Fatal("unvalidated request exposed structured command")
 			}
 		})
+	}
+}
+
+func TestApprovalKindExplicitAndLegacyCommand(t *testing.T) {
+	for _, fields := range []map[string]any{nil, {"kind": "command"}} {
+		_, c := approvalFixture(t, fields)
+		if c.ApprovalToken == "" || c.CommandDetails.Command != "git push" {
+			t.Fatal("valid command blocked", c)
+		}
+	}
+	_, c := approvalFixture(t, map[string]any{"kind": "writeStdin", "command": "git push", "cwd": "/work"})
+	if c.ApprovalToken != "" || c.ApprovalBlocked != "approval-kind" {
+		t.Fatal("stdin treated as command", c)
 	}
 }
 

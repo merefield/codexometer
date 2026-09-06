@@ -1,4 +1,5 @@
 {
+  "This approval action must be handled in Codex.": "Cette autorisation doit être traitée dans Codex.",
   "JUSTIFICATION": "JUSTIFICATION",
   "COMMAND": "COMMANDE",
   "WORKING DIRECTORY": "RÉPERTOIRE DE TRAVAIL",
@@ -8,7 +9,7 @@
   "[ Click here or press Enter to write ]": "[ Cliquez ici ou Entrée pour écrire ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Entrée : envoyer / suivant • Échap : quitter • ↑/↓ : choix",
   "Sending…": "Envoi…",
-  "Text sent…": "Texte envoyé…",
+  "Text sent ...": "Texte envoyé ...",
   "Send unconfirmed; check Codex before retrying.": "Envoi non confirmé ; vérifiez Codex avant de réessayer.",
   "Prompt changed; review the session before replying.": "Invite modifiée ; vérifiez la session avant de répondre.",
   "Choose an offered answer with ↑/↓.": "Choisissez une réponse proposée avec ↑/↓.",
@@ -39,7 +40,7 @@
   "[ CONFIRM APPROVAL ]": "[ CONFIRMER L’AUTORISATION ]",
   "[ DECLINE ]": "[ REFUSER ]",
   "Sending decision…": "Envoi de la décision…",
-  "Decision sent…": "Décision envoyée…",
+  "Decision sent ...": "Décision envoyée ...",
   "Decision unconfirmed; check Codex. Do not retry here.": "Décision non confirmée ; vérifiez Codex. Ne réessayez pas ici.",
   "LAST REPLY": "DERNIÈRE RÉPONSE",
   "QUESTION": "QUESTION",
