@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	go.starlark.net v0.0.0-20260708150628-5395d018f003
 	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.41.0
 )
 
 require (

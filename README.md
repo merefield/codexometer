@@ -48,6 +48,97 @@ It works particularly well in:
 - a tmux, Zellij, or terminal-multiplexer pane;
 - an Ubuntu terminal beside the Codex CLI.
 
+## Language
+
+UK English (`en-GB`) is the default. Its existing labels, numbers, spacing,
+hotkeys and layouts are preserved; this feature does not redesign the English UI.
+To select another interface language, set `CODEXOMETER_LANG` before starting:
+
+| Language | Code |
+| --- | --- |
+| English (UK) | `en-GB` |
+| Dutch | `nl` |
+| German | `de` |
+| French | `fr` |
+| Italian | `it` |
+| Spanish | `es` |
+| Russian | `ru` |
+| Japanese | `ja` |
+| Chinese (Simplified) | `zh-Hans` |
+
+Codes use BCP 47 language tags. Regional variants such as `de-DE`, `fr-CA`,
+`ja-JP` and `zh-CN` match the corresponding supported language. Other English
+variants use the existing UK English presentation. An unset, invalid or
+unsupported code falls back to UK English. `LANG` and `LC_ALL` are deliberately
+not used to choose the UI language: the default stays English unless you opt in.
+
+Try a language for one launch:
+
+```sh
+CODEXOMETER_LANG=fr codexometer
+CODEXOMETER_LANG=ja codexometer --demo
+```
+
+### Retain the language setting
+
+The recommended persistent configuration is a user environment variable. No
+extra Codexometer config file or language pack is needed, and upgrades retain
+your choice. Codexometer does not edit your shell profile or persist an override
+from a one-off launch.
+
+**Bash / Zsh (Linux and macOS):** add the following line to `~/.bashrc` or
+`~/.zshrc`, then open a new terminal:
+
+```sh
+export CODEXOMETER_LANG=de
+```
+
+**Fish:** `set -Ux CODEXOMETER_LANG de`
+
+**Windows PowerShell:** set a user environment variable for future terminals,
+and optionally set it in the current session too:
+
+```powershell
+[Environment]::SetEnvironmentVariable('CODEXOMETER_LANG', 'de', 'User')
+$env:CODEXOMETER_LANG = 'de'
+```
+
+**Windows cmd:** use `setx CODEXOMETER_LANG de` for future terminals and
+`set CODEXOMETER_LANG=de` for the current terminal. Restart Windows Terminal
+if an existing terminal process still supplies the old environment. WSL has
+its own shell environment: configure it using the Linux instructions.
+
+Set `en-GB` explicitly (or remove the variable) to restore English. Language is
+selected at startup, so restart Codexometer after changing it.
+
+### Translation boundaries and maintenance
+
+The interface uses Go's `golang.org/x/text/language`, `message`, `catalog` and
+CLDR plural rules, with JSON catalogues embedded using `go:embed`. The compiled
+binary remains standalone and does not download translations. Text is translated
+before measuring terminal-cell widths, so translated buttons share their layout
+with mouse hit targets. Existing keyboard shortcuts remain unchanged; compact
+tab/button abbreviations may retain Latin letters to keep those keys recognisable.
+
+Localisation covers the dashboard's navigation, controls, labels and status
+messages. Product/model/theme names, protocol IDs, CLI flag names and technical
+units are not renamed. Benchmark challenges, verifier rules and model transcripts
+are not translated: changing prompts could bias benchmark comparisons. Raw
+backend/diagnostic messages and messages without a translation remain in English.
+API-equivalent amounts remain USD, regardless of language. These are initial
+translations; native-language corrections are welcome.
+Non-English history views use unambiguous ISO dates; the established English
+date formatting, wording, colours and spacing are unchanged. CLI help and
+diagnostic output retain English in this initial localisation pass.
+
+To maintain translations, edit `internal/i18n/locales/<code>.json`. Keys are the
+original English messages; preserve formatting placeholders and parenthesised
+hotkeys. New presentation strings should use `i18n.Text` (literal text) or
+`i18n.Format` (formatted messages) before layout. Quota-window plural forms live
+in `units.json`. The tests check catalogue parity, placeholder/hotkey integrity,
+language matching, cross-language layouts and click targets, and a byte-for-byte
+English rendering baseline captured from v0.12.0.
+
 ## What it shows
 
 - Every rate-limit bucket and window returned by the current Codex account,

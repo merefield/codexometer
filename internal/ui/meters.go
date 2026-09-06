@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func usesMeterGrid(view meterViewID) bool {
@@ -128,11 +129,11 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	color := meterColor(used, colors)
 	innerWidth := max(width-4, 1)
 
-	usedText := lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("USED %3d%%", used))
-	freeText := colors.dimmed().Render(fmt.Sprintf("FREE %3d%%", free))
+	usedText := lipgloss.NewStyle().Bold(true).Foreground(color).Render(i18n.Format("USED %3d%%", used))
+	freeText := colors.dimmed().Render(i18n.Format("FREE %3d%%", free))
 	if view == viewFuel {
-		usedText = colors.dimmed().Render(fmt.Sprintf("USED %3d%%", used))
-		freeText = lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render(fmt.Sprintf("FREE %3d%%", free))
+		usedText = colors.dimmed().Render(i18n.Format("USED %3d%%", used))
+		freeText = lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render(i18n.Format("FREE %3d%%", free))
 	}
 	gap := max(innerWidth-lipgloss.Width(usedText)-lipgloss.Width(freeText), 1)
 	stats := usedText + strings.Repeat(" ", gap) + freeText
@@ -148,12 +149,12 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	}
 	stats = ansi.Truncate(stats, innerWidth, "")
 
-	reset := "RESET DATA UNAVAILABLE"
+	reset := i18n.Text("RESET DATA UNAVAILABLE")
 	if meter.Window.ResetsAt != nil {
 		at := time.Unix(*meter.Window.ResetsAt, 0)
-		reset = fmt.Sprintf("RESET T-%s  //  %s", countdown(at), formatResetDeadline(at))
+		reset = i18n.Format("RESET T-%s  //  %s", countdown(at), formatResetDeadline(at))
 		if lipgloss.Width(reset) > innerWidth {
-			reset = fmt.Sprintf("RESET T-%s", countdown(at))
+			reset = i18n.Format("RESET T-%s", countdown(at))
 		}
 	}
 	reset = ansi.Truncate(reset, innerWidth, "")
@@ -197,12 +198,12 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 		bodyParts = []string{stats, colors.dimmed().Render(ansi.Truncate(detailLines[0], innerWidth, "")), visual, resetLine}
 	}
 	body := strings.Join(bodyParts, "\n")
-	title := meter.Name
+	title := i18n.WindowName(meter.Name)
 	if meter.Bucket != "codex" {
 		title = codex.DisplayName(meter.Bucket) + " // " + title
 	}
 	if meter.Kind == codex.MeterQuotaWindow {
-		title += " LOOP"
+		title += i18n.Text(" LOOP")
 	}
 	title = ansi.Truncate(title, max(innerWidth-4, 1), "")
 	frameHeight := 0
@@ -213,7 +214,7 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 }
 
 func formatResetDeadline(at time.Time) string {
-	return strings.ToUpper(at.Local().Format("Mon 15:04:05"))
+	return strings.ToUpper(i18n.Text(at.Local().Format("Mon")) + " " + at.Local().Format("15:04:05"))
 }
 
 func meterDetailLines(details string) []string {
@@ -242,9 +243,9 @@ func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now
 	gaugeWidth = min(max(gaugeWidth, 1), max(width, 1))
 	progress, ok := resetProgress(window, now)
 	if !ok {
-		message := "RESET CYCLE // RESET DATA UNAVAILABLE"
+		message := i18n.Text("RESET CYCLE // RESET DATA UNAVAILABLE")
 		if window.ResetsAt != nil {
-			message = "CYCLE START UNAVAILABLE // " + resetLabel
+			message = i18n.Text("CYCLE START UNAVAILABLE // ") + resetLabel
 		}
 		label := colors.dimmed().Render(ansi.Truncate(message, width, ""))
 		bar := lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", gaugeWidth))
@@ -255,7 +256,7 @@ func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now
 		progress = 100 - progress
 		qualifier = " LEFT"
 	}
-	label := ansi.Truncate(fmt.Sprintf("RESET CYCLE %3d%%%s // %s", progress, qualifier, resetLabel), width, "")
+	label := ansi.Truncate(i18n.Format("RESET CYCLE %3d%%%s // %s", progress, qualifier, resetLabel), width, "")
 	filled := int(math.Round(float64(gaugeWidth) * float64(progress) / 100))
 	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) +
 		lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", gaugeWidth-filled))
@@ -342,7 +343,7 @@ func renderPie(width, used int, color imagecolor.Color, colors palette) string {
 }
 
 func renderPieSized(width, height, used int, color imagecolor.Color, colors palette) string {
-	const legendWidth = 11
+	legendWidth := max(11, lipgloss.Width(i18n.Text("BRAILLE PIE")))
 	showLegend := width >= legendWidth+8
 	reservedLegendWidth := 0
 	if showLegend {
@@ -397,7 +398,7 @@ func renderPieSized(width, height, used int, color imagecolor.Color, colors pale
 	visual := pie
 	if showLegend {
 		label := []string{
-			colors.dimmed().Render("BRAILLE PIE"),
+			colors.dimmed().Render(i18n.Text("BRAILLE PIE")),
 			lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("  %3d%%", used)),
 			colors.dimmed().Render("CLOCKWISE"),
 		}
@@ -459,19 +460,19 @@ func renderConsumptionPaceWithProjectionSized(width, height, pace int, available
 	}
 	axis := paceAxis(width, center, marker, pace, available, markerColor, colors)
 
-	status := "PACE DATA UNAVAILABLE"
+	status := i18n.Text("PACE DATA UNAVAILABLE")
 	if available {
 		switch {
 		case pace > 0:
-			status = fmt.Sprintf("HEADROOM %+d POINTS // UNDER PACE", pace)
+			status = i18n.Format("HEADROOM %+d POINTS // UNDER PACE", pace)
 		case pace < 0:
-			status = fmt.Sprintf("DEFICIT %+d POINTS // OVER PACE", pace)
+			status = i18n.Format("DEFICIT %+d POINTS // OVER PACE", pace)
 		default:
-			status = "BALANCED +0 POINTS // ON PACE"
+			status = i18n.Text("BALANCED +0 POINTS // ON PACE")
 		}
 	}
 	status = lipgloss.NewStyle().Bold(true).Foreground(markerColor).Render(ansi.Truncate(status, width, ""))
-	caption := colors.dimmed().Render(ansi.Truncate("CONSUMPTION PACE // TIME - USAGE", width, ""))
+	caption := colors.dimmed().Render(ansi.Truncate(i18n.Text("CONSUMPTION PACE // TIME - USAGE"), width, ""))
 	labels := colors.dimmed().Render(paceScaleLabels(width))
 
 	lines := []string{caption, labels, axis, status}
@@ -557,9 +558,9 @@ func formatConsumptionProjection(projection consumptionProjection) string {
 	case consumptionProjectionNoBurn:
 		return "LINEAR PROJECTION // NO BURN YET"
 	case consumptionProjectionSafe:
-		return fmt.Sprintf("LINEAR PROJECTION // SAFE THROUGH RESET // ~%d%% LEFT", projection.projectedRemaining)
+		return i18n.Format("LINEAR PROJECTION // SAFE THROUGH RESET // ~%d%% LEFT", projection.projectedRemaining)
 	case consumptionProjectionEarly:
-		return fmt.Sprintf("LINEAR PROJECTION // LIMIT IN ~%s // %s EARLY",
+		return i18n.Format("LINEAR PROJECTION // LIMIT IN ~%s // %s EARLY",
 			projectionDuration(projection.timeToExhaustion), projectionDuration(projection.earlyBy))
 	case consumptionProjectionExhausted:
 		return "LINEAR PROJECTION // LIMIT REACHED"

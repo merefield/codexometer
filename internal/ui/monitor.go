@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type monitorRect struct {
@@ -82,9 +83,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := layoutMonitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	toggleLabel, resetLabel := "(P)AUSE", "RE(S)ET"
+	toggleLabel, resetLabel := i18n.Text("(P)AUSE"), i18n.Text("RE(S)ET")
 	if m.monitorState == monitorPaused || m.monitorState == monitorResuming {
-		toggleLabel = "RESUME (P)"
+		toggleLabel = i18n.Text("RESUME (P)")
 	}
 	if layout.buttonWidths[0] < lipgloss.Width(toggleLabel)+2 {
 		toggleLabel = "(P)"
@@ -108,24 +109,24 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 }
 
 func (m Model) renderMonitorReadout(width, height int, colors palette) string {
-	state := "STARTING"
-	hint := "INITIALIZING LOCAL SESSION MONITOR"
+	state := i18n.Text("STARTING")
+	hint := i18n.Text("INITIALIZING LOCAL SESSION MONITOR")
 	switch m.monitorState {
 	case monitorStarting:
-		state, hint = "STARTING", "SCANNING LOCAL CODEX TELEMETRY"
+		state, hint = i18n.Text("STARTING"), i18n.Text("SCANNING LOCAL CODEX TELEMETRY")
 	case monitorRunning:
-		state, hint = "MONITORING ●", fmt.Sprintf("LIVE LOCAL SESSIONS %d // P TO PAUSE", m.monitorSessions)
+		state, hint = i18n.Text("MONITORING ●"), i18n.Format("LIVE LOCAL SESSIONS %d // P TO PAUSE", m.monitorSessions)
 	case monitorPausing:
-		state, hint = "PAUSING", "READING FINAL APPENDED TOKEN TELEMETRY"
+		state, hint = i18n.Text("PAUSING"), i18n.Text("READING FINAL APPENDED TOKEN TELEMETRY")
 	case monitorPaused:
-		state, hint = "PAUSED", fmt.Sprintf("LOCAL SESSIONS %d // P TO RESUME", m.monitorSessions)
+		state, hint = i18n.Text("PAUSED"), i18n.Format("LOCAL SESSIONS %d // P TO RESUME", m.monitorSessions)
 	case monitorResuming:
-		state, hint = "RESUMING", "REBASING AFTER PAUSED ACTIVITY"
+		state, hint = i18n.Text("RESUMING"), i18n.Text("REBASING AFTER PAUSED ACTIVITY")
 	case monitorResetting:
-		state, hint = "RESETTING", "ESTABLISHING A FRESH BASELINE"
+		state, hint = i18n.Text("RESETTING"), i18n.Text("ESTABLISHING A FRESH BASELINE")
 	}
 	if m.monitorError != "" {
-		state, hint = "NO TOKEN SIGNAL", m.monitorError
+		state, hint = i18n.Text("NO TOKEN SIGNAL"), m.monitorError
 	}
 
 	total := m.monitorRecordedTokens()
@@ -145,11 +146,11 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 	innerWidth := max(width-4, 1)
 	lines := []string{
 		ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+
-			lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("  //  "+formatTokens(total)+" TOKENS"), innerWidth, ""),
+			lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("  //  "+formatTokens(total)+i18n.Text(" TOKENS")), innerWidth, ""),
 		colors.dimmed().Render(ansi.Truncate(hint, innerWidth, "")),
 	}
 	if height >= 6 {
-		lines = append(lines, colors.label().Render(ansi.Truncate(fmt.Sprintf("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
+		lines = append(lines, colors.label().Render(ansi.Truncate(i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
 	}
 	if height >= 5 {
 		if quota := m.monitorQuotaReadout(); quota != "" {
@@ -157,18 +158,18 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		}
 	}
 	if height >= 8 && !m.monitorStartedAt.IsZero() {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(i18n.Format("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
 	}
 	if height >= 10 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(fmt.Sprintf("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel()), innerWidth, "")))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(i18n.Format("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel()), innerWidth, "")))
 		last := "--:--"
 		if !m.monitorLastActivity.IsZero() {
 			last = compactDuration(time.Since(m.monitorLastActivity))
 		}
-		telemetry := fmt.Sprintf("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
+		telemetry := i18n.Format("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
-	return frameSized(width, max(height-2, 1), "MONITOR READOUT", strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSized(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
@@ -197,7 +198,7 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 }
 
 func (m Model) renderMonitorGraph(width, height int, colors palette) string {
-	return m.renderMonitorGraphSamples(width, height, m.monitorSamples, "LOCAL TOKEN BARS", colors)
+	return m.renderMonitorGraphSamples(width, height, m.monitorSamples, i18n.Text("LOCAL TOKEN BARS"), colors)
 }
 
 func (m Model) renderMonitorSessions(width, height int, colors palette) string {
@@ -239,7 +240,7 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 	visible = visible[start : start+rowCount]
 	pageLabel := ""
 	if rowCount < visibleCount {
-		pageLabel = fmt.Sprintf("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
+		pageLabel = i18n.Format("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
 	}
 	rowHeights := distributeSpace(max(height-(rowCount-1), rowCount), rowCount)
 	return visible, rowHeights, pageLabel
@@ -252,10 +253,10 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 	}
 	metricsWidth, graphWidth, ok := monitorSessionColumnWidths(width)
 	if !ok {
-		return m.renderMonitorGraphSamples(width, height, session.samples, "TOKENS", rowColors)
+		return m.renderMonitorGraphSamples(width, height, session.samples, i18n.Text("TOKENS"), rowColors)
 	}
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
-	title := "TOKEN BARS"
+	title := i18n.Text("TOKEN BARS")
 	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, rowColors)
 	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
 }
@@ -271,7 +272,7 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 }
 
 func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
-	title := "SESSION // " + shortSessionID(session.id)
+	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
 		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(session.workingDirectory))
 	}
@@ -284,9 +285,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if elapsed > 0 {
 		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
 	}
-	status := "IDLE"
+	status := i18n.Text("IDLE")
 	if session.active {
-		status = "ACTIVE"
+		status = i18n.Text("ACTIVE")
 	}
 	if session.attention != codex.SessionAttentionNone {
 		status = monitorAttentionStatus(session.attention)
@@ -304,7 +305,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	}
 	bodyRows := max(height-2, 1)
 	share := m.monitorSessionShare(total)
-	usageLine := fmt.Sprintf("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
+	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
 	if session.attention != codex.SessionAttentionNone {
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning)
@@ -325,12 +326,12 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	appendLine(formatMonitorCallActivity(session, time.Now()))
 	appendLine(formatMonitorTTFT(session))
 	appendLine(formatMonitorOutput(session))
-	appendLine("RATE " + formatTokens(rate) + "/MIN")
+	appendLine(i18n.Text("RATE ") + formatTokens(rate) + "/MIN")
 	if session.workingDirectory != "" {
 		appendLine("DIR // " + filepath.Base(session.workingDirectory))
 	}
 	if !session.lastActivity.IsZero() {
-		appendLine("LAST // " + compactDuration(time.Since(session.lastActivity)) + " AGO")
+		appendLine(i18n.Text("LAST // ") + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
 	if pageLabel != "" && (session.attention == codex.SessionAttentionNone || len(lines) > 1) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
@@ -376,22 +377,22 @@ func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
 func monitorAttentionLabel(attention codex.SessionAttention) string {
 	switch attention {
 	case codex.SessionAttentionApproval:
-		return "APPROVAL NEEDED"
+		return i18n.Text("APPROVAL NEEDED")
 	case codex.SessionAttentionCheck:
-		return "CHECK SESSION"
+		return i18n.Text("CHECK SESSION")
 	default:
-		return "INPUT NEEDED"
+		return i18n.Text("INPUT NEEDED")
 	}
 }
 
 func monitorAttentionStatus(attention codex.SessionAttention) string {
 	switch attention {
 	case codex.SessionAttentionApproval:
-		return "APPROVAL"
+		return i18n.Text("APPROVAL")
 	case codex.SessionAttentionCheck:
-		return "CHECK"
+		return i18n.Text("CHECK")
 	default:
-		return "INPUT"
+		return i18n.Text("INPUT")
 	}
 }
 
@@ -400,7 +401,7 @@ func formatMonitorCallActivity(session monitorSession, now time.Time) string {
 	if !session.lastCallAt.IsZero() {
 		last = formatMonitorAge(now.Sub(session.lastCallAt)) + " AGO"
 	}
-	return fmt.Sprintf("CALLS %d // LAST %s", session.modelCalls, last)
+	return i18n.Format("CALLS %d // LAST %s", session.modelCalls, last)
 }
 
 func formatMonitorTTFT(session monitorSession) string {
@@ -412,7 +413,7 @@ func formatMonitorTTFT(session monitorSession) string {
 	if session.peakTTFTOK {
 		peak = formatMonitorLatency(session.peakTTFT)
 	}
-	return "TTFT " + latest + " // PEAK " + peak
+	return "TTFT " + latest + i18n.Text(" // PEAK ") + peak
 }
 
 func formatMonitorOutput(session monitorSession) string {
@@ -424,7 +425,7 @@ func formatMonitorOutput(session monitorSession) string {
 	if session.peakOutputOK {
 		peak = formatTokens(session.peakOutput)
 	}
-	return "LAST OUT " + latest + " // PEAK " + peak
+	return i18n.Text("LAST OUT ") + latest + i18n.Text(" // PEAK ") + peak
 }
 
 func formatMonitorAge(duration time.Duration) string {
@@ -476,15 +477,15 @@ func (m Model) monitorQuotaReadout() string {
 	}
 	if len(m.monitorQuotaWindows) == 0 {
 		if m.monitorQuotaError != "" {
-			return "ACCOUNT QUOTA Δ // UNAVAILABLE"
+			return i18n.Text("ACCOUNT QUOTA Δ // UNAVAILABLE")
 		}
-		return "ACCOUNT QUOTA Δ // NO WINDOWS"
+		return i18n.Text("ACCOUNT QUOTA Δ // NO WINDOWS")
 	}
-	parts := []string{"ACCOUNT QUOTA Δ"}
+	parts := []string{i18n.Text("ACCOUNT QUOTA Δ")}
 	for _, window := range m.monitorQuotaWindows {
-		value := "RESET"
+		value := i18n.Text("RESET")
 		if m.monitorQuotaError != "" || window.stale {
-			value = "STALE"
+			value = i18n.Text("STALE")
 		} else if !window.resetDetected {
 			value = fmt.Sprintf("%+dPP", window.latestUsed-window.baselineUsed)
 			if window.partial {
@@ -501,22 +502,22 @@ func (m Model) monitorSessionQuotaEstimate(share float64) string {
 		return ""
 	}
 	window := m.monitorQuotaWindows[0]
-	prefix := "EST LOCAL-ONLY " + compactMonitorQuotaLabel(window.label)
+	prefix := i18n.Text("EST LOCAL-ONLY ") + compactMonitorQuotaLabel(window.label)
 	if m.monitorError != "" {
-		return prefix + " // LOCAL STALE"
+		return prefix + i18n.Text(" // LOCAL STALE")
 	}
 	if m.monitorQuotaError != "" || window.stale {
-		return prefix + " // STALE"
+		return prefix + i18n.Text(" // STALE")
 	}
 	if window.resetDetected {
-		return prefix + " // RESET"
+		return prefix + i18n.Text(" // RESET")
 	}
 	if window.partial {
 		return prefix + " // PARTIAL"
 	}
 	delta := window.latestUsed - window.baselineUsed
 	if delta == 0 {
-		return prefix + " // NO INTEGER Δ"
+		return prefix + i18n.Text(" // NO INTEGER Δ")
 	}
 	estimate := float64(delta) * share
 	switch {
@@ -543,7 +544,7 @@ func compactMonitorQuotaLabel(label string) string {
 
 func shortSessionID(id string) string {
 	if id == "" {
-		return "UNKNOWN"
+		return i18n.Text("UNKNOWN")
 	}
 	if len(id) <= 5 {
 		return strings.ToUpper(id)
@@ -583,16 +584,17 @@ func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSam
 		canvas[row] = []rune(strings.Repeat(" ", innerWidth))
 	}
 	if len(samples) == 0 {
-		message := "WAITING FOR FIRST SAMPLE"
+		message := i18n.Text("WAITING FOR FIRST SAMPLE")
 		if m.monitorState == monitorIdle || m.monitorState == monitorStarting {
-			message = "STARTING MONITOR"
+			message = i18n.Text("STARTING MONITOR")
 		} else if m.monitorState == monitorPaused {
-			message = "NO COMPLETE 30 SEC SAMPLE"
+			message = i18n.Text("NO COMPLETE 30 SEC SAMPLE")
 		}
 		message = ansi.Truncate(message, innerWidth, "")
 		row := plotHeight / 2
-		column := max((innerWidth-len([]rune(message)))/2, 0)
-		copy(canvas[row][column:], []rune(message))
+		messageWidth := lipgloss.Width(message)
+		column := max((innerWidth-messageWidth)/2, 0)
+		canvas[row] = []rune(strings.Repeat(" ", column) + message + strings.Repeat(" ", innerWidth-column-messageWidth))
 	} else {
 		chartWidth := len(samples)*sampleWidth - 1
 		startX := innerWidth - chartWidth

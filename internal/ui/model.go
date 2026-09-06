@@ -8,8 +8,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/version"
 )
 
@@ -357,16 +359,16 @@ type footerButton struct {
 }
 
 var footerButtonDefinitions = []footerButton{
-	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
-	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
-	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
+	{id: footerButtonTheme, label: i18n.Text("[ (T)HEME ]"), compact: "[T]"},
+	{id: footerButtonRefresh, label: i18n.Text("[ (R)EFRESH ]"), compact: "[R]"},
+	{id: footerButtonQuit, label: i18n.Text("[ (Q)UIT ]"), compact: "[Q]"},
 }
 
 var quotaFooterButtonDefinitions = []footerButton{
-	{id: footerButtonTheme, label: "[ (T)HEME ]", compact: "[T]"},
-	{id: footerButtonView, label: "[ (V)IEW ]", compact: "[V]"},
-	{id: footerButtonRefresh, label: "[ (R)EFRESH ]", compact: "[R]"},
-	{id: footerButtonQuit, label: "[ (Q)UIT ]", compact: "[Q]"},
+	{id: footerButtonTheme, label: i18n.Text("[ (T)HEME ]"), compact: "[T]"},
+	{id: footerButtonView, label: i18n.Text("[ (V)IEW ]"), compact: "[V]"},
+	{id: footerButtonRefresh, label: i18n.Text("[ (R)EFRESH ]"), compact: "[R]"},
+	{id: footerButtonQuit, label: i18n.Text("[ (Q)UIT ]"), compact: "[Q]"},
 }
 
 func New(fetcher Fetcher, refreshEvery time.Duration) Model {
@@ -787,16 +789,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
 			if message.benchmarkQuotaRevision != m.benchmarkQuotaAccounting.revision || m.benchmarkQuotaAccounting.active {
-				m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
+				m.quotaAPITelemetryIssue = i18n.Text("OBSERVATION DEFERRED")
 			} else if message.usageErr == nil && m.usageFetcher != nil {
 				m.quotaAPITelemetryIssue = ""
 				m.observeQuotaAPIEq(message.snapshot, message.usage, message.at)
 				m.benchmarkQuotaAccounting.settle()
 			} else if message.usageErr != nil {
 				if errors.Is(message.usageErr, errQuotaObservationChanged) {
-					m.quotaAPITelemetryIssue = "OBSERVATION DEFERRED"
+					m.quotaAPITelemetryIssue = i18n.Text("OBSERVATION DEFERRED")
 				} else {
-					m.quotaAPITelemetryIssue = "LOCAL TELEMETRY UNAVAILABLE"
+					m.quotaAPITelemetryIssue = i18n.Text("LOCAL TELEMETRY UNAVAILABLE")
 				}
 			}
 			if m.monitorState == monitorRunning || m.monitorState == monitorPausing {
@@ -1212,10 +1214,10 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota())
 	buttonX := 0
 	for _, button := range buttons {
-		if localX >= buttonX && localX < buttonX+len(button.label) {
+		if localX >= buttonX && localX < buttonX+lipgloss.Width(button.label) {
 			return button.id
 		}
-		buttonX += len(button.label) + len(separator)
+		buttonX += lipgloss.Width(button.label) + len(separator)
 	}
 	return footerButtonNone
 }
@@ -1849,7 +1851,7 @@ func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
 	separator := "  "
 	total := len(separator) * (len(buttons) - 1)
 	for _, button := range buttons {
-		total += len(button.label)
+		total += lipgloss.Width(button.label)
 	}
 	if total <= width {
 		return buttons, separator
@@ -1862,7 +1864,7 @@ func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
 }
 
 func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]footerButton, string) {
-	themeWidth := len("THEME // ") + len(themeName)
+	themeWidth := lipgloss.Width(i18n.Text("THEME // ")) + lipgloss.Width(themeName)
 	available := width - themeWidth - 1
 	if available <= 0 {
 		return nil, " "
@@ -1871,7 +1873,7 @@ func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]foo
 	visible := buttons[:0]
 	used := 0
 	for _, button := range buttons {
-		required := len(button.label)
+		required := lipgloss.Width(button.label)
 		if len(visible) > 0 {
 			required += len(separator)
 		}

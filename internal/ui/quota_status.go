@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type quotaHealth int
@@ -25,23 +26,23 @@ const (
 
 func (h quotaHealth) label() string {
 	return [...]string{
-		"QUOTA UNKNOWN",
-		"RESET FRESH // GO!",
-		"QUOTA CLEAR",
-		"QUOTA WATCH",
-		"LIMIT NEAR",
-		"QUOTA EXHAUSTED",
+		i18n.Text("QUOTA UNKNOWN"),
+		i18n.Text("RESET FRESH // GO!"),
+		i18n.Text("QUOTA CLEAR"),
+		i18n.Text("QUOTA WATCH"),
+		i18n.Text("LIMIT NEAR"),
+		i18n.Text("QUOTA EXHAUSTED"),
 	}[h]
 }
 
 func (h quotaHealth) compactLabel() string {
 	return [...]string{
-		"UNKNOWN",
-		"FRESH // GO!",
-		"CLEAR",
-		"WATCH",
-		"NEAR",
-		"EXHAUSTED",
+		i18n.Text("UNKNOWN"),
+		i18n.Text("FRESH // GO!"),
+		i18n.Text("CLEAR"),
+		i18n.Text("WATCH"),
+		i18n.Text("NEAR"),
+		i18n.Text("EXHAUSTED"),
 	}[h]
 }
 
@@ -69,7 +70,7 @@ func (s quotaSignal) label() string {
 	if s.health == quotaHealthFresh || s.health == quotaHealthUnknown || s.cause == "" {
 		return s.health.label()
 	}
-	return s.cause + " // " + s.health.compactLabel()
+	return i18n.WindowName(s.cause) + " // " + s.health.compactLabel()
 }
 
 func (s quotaSignal) compactLabel() string {

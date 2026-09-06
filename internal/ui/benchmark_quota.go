@@ -5,7 +5,10 @@ import (
 	"math"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type benchmarkBillingProvider interface {
@@ -141,20 +144,20 @@ func (a benchmarkQuotaAccounting) deferred() bool {
 
 func (a benchmarkQuotaAccounting) deferredLabel(width int) string {
 	if a.active {
-		full, compact := "API-EQ DEFERRED // SUBSCRIPTION BENCHMARK ACTIVE", "API-EQ // BENCHMARK ACTIVE"
-		if width >= len(full) {
+		full, compact := i18n.Text("API-EQ DEFERRED // SUBSCRIPTION BENCHMARK ACTIVE"), i18n.Text("API-EQ // BENCHMARK ACTIVE")
+		if width >= lipgloss.Width(full) {
 			return full
 		}
-		if width >= len(compact) {
+		if width >= lipgloss.Width(compact) {
 			return compact
 		}
-		return "EQ // BENCH ACTIVE"
+		return i18n.Text("EQ // BENCH ACTIVE")
 	}
-	full, compact := "API-EQ DEFERRED // BENCHMARK ACCOUNTING SETTLING", "API-EQ // BENCHMARK SETTLING"
-	if width >= len(full) {
+	full, compact := i18n.Text("API-EQ DEFERRED // BENCHMARK ACCOUNTING SETTLING"), i18n.Text("API-EQ // BENCHMARK SETTLING")
+	if width >= lipgloss.Width(full) {
 		return full
 	}
-	if width >= len(compact) {
+	if width >= lipgloss.Width(compact) {
 		return compact
 	}
 	return "EQ // BENCH SETTLE"

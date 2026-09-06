@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type accountUsageFetcher interface {
@@ -118,8 +119,8 @@ type historyButton struct {
 
 func historyButtons(width int) []historyButton {
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"[ (D)AILY ]", "[ (W)EEKLY ]", "[ (C)UMULATIVE ]", "[ (6) MONTHS ]", "[ (1)2 MONTHS ]", "[ ← OLDER ]", "[ NEWER → ]"},
-		{"[ (D)AILY ]", "[ (W)EEKLY ]", "[ (C)UMULATIVE ]", "[6M]", "[12M]", "[←]", "[→]"},
+		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), i18n.Text("[ (6) MONTHS ]"), i18n.Text("[ (1)2 MONTHS ]"), i18n.Text("[ ← OLDER ]"), i18n.Text("[ NEWER → ]")},
+		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), "[6M]", "[12M]", "[←]", "[→]"},
 		{"[D]", "[W]", "[C]", "[6M]", "[12M]", "[←]", "[→]"},
 		{"D", "W", "C", "6", "12", "←", "→"},
 	})
@@ -243,23 +244,23 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	}
 	lines = append(lines, buttons)
 	data := m.history.data
-	lines = append(lines, colors.label().Render(fmt.Sprintf("LIFETIME // %s TOKENS   PEAK DAY // %s   STREAK // %s DAYS", optionalUsage(data.Summary.LifetimeTokens), optionalUsage(data.Summary.PeakDailyTokens), optionalUsage(data.Summary.CurrentStreakDays))))
-	status := fmt.Sprintf("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
+	lines = append(lines, colors.label().Render(i18n.Format("LIFETIME // %s TOKENS   PEAK DAY // %s   STREAK // %s DAYS", optionalUsage(data.Summary.LifetimeTokens), optionalUsage(data.Summary.PeakDailyTokens), optionalUsage(data.Summary.CurrentStreakDays))))
+	status := i18n.Format("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
 	if !data.FetchedAt.IsZero() {
-		status = "ACCOUNT HISTORY // UTC // UPDATED " + data.FetchedAt.Local().Format("15:04:05") + " // R REFRESH"
+		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05") + i18n.Text(" // R REFRESH")
 	}
 	if m.history.loading {
-		status = "FETCHING ACCOUNT HISTORY…"
+		status = i18n.Text("FETCHING ACCOUNT HISTORY…")
 	}
 	if m.history.err != nil {
-		status = "UNAVAILABLE // " + m.history.err.Error() + " // R RETRY"
+		status = i18n.Text("UNAVAILABLE // ") + m.history.err.Error() + i18n.Text(" // R RETRY")
 	}
 	if m.history.err != nil && !data.FetchedAt.IsZero() {
-		status = "STALE // " + m.history.err.Error() + " // R RETRY"
+		status = i18n.Text("STALE // ") + m.history.err.Error() + i18n.Text(" // R RETRY")
 	}
 	lines = append(lines, colors.dimmed().Render(status))
 	if data.DailyUsageBuckets == nil {
-		lines = append(lines, colors.dimmed().Render("Token activity history unavailable. Requires a supported Codex CLI and ChatGPT login."))
+		lines = append(lines, colors.dimmed().Render(i18n.Text("Token activity history unavailable. Requires a supported Codex CLI and ChatGPT login.")))
 	} else if m.history.mode == 0 {
 		lines = append(lines, m.renderHistoryCalendar(width, height-len(lines), colors)...)
 	} else {
@@ -274,8 +275,8 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		for _, p := range visible {
 			peak = max(peak, p.tokens)
 		}
-		caption := fmt.Sprintf("%s // %d WEEKS", []string{"DAILY TOKENS", "WEEKLY TOKENS", "CUMULATIVE TOKENS"}[m.history.mode], m.history.weeks())
-		lines = append(lines, colors.dimmed().Render(caption+" // SCALE "+usageNumber(peak)))
+		caption := i18n.Format("%s // %d WEEKS", []string{i18n.Text("DAILY TOKENS"), i18n.Text("WEEKLY TOKENS"), i18n.Text("CUMULATIVE TOKENS")}[m.history.mode], m.history.weeks())
+		lines = append(lines, colors.dimmed().Render(caption+i18n.Text(" // SCALE ")+usageNumber(peak)))
 		chartHeight := max(height-len(lines)-2, 0)
 		for row := chartHeight - 1; row >= 0; row-- {
 			axis := ""
@@ -302,7 +303,7 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		}
 		plotWidth := len(visible)*(barLayout.cellWidth+barLayout.gap) - barLayout.gap
 		lines = append(lines, colors.dimmed().Render("        "+strings.Repeat("─", min(plotWidth, max(width-8, 0)))))
-		first, last := visible[0].date.Format("02 Jan 2006"), visible[len(visible)-1].date.Format("02 Jan 2006")
+		first, last := historyDate(visible[0].date), historyDate(visible[len(visible)-1].date)
 		lines = append(lines, colors.dimmed().Render(first+" → "+last+" // ←/→ OR PGUP/PGDN"))
 	}
 	for len(lines) < height {
@@ -352,7 +353,7 @@ func historyHeatColors(colors palette) []color.Color {
 
 func (m Model) renderHistoryCalendar(width, height int, colors palette) []string {
 	if height < 11 || width < 12 {
-		return []string{colors.dimmed().Render("Enlarge terminal for daily activity grid (7 weekday rows).")}
+		return []string{colors.dimmed().Render(i18n.Text("Enlarge terminal for daily activity grid (7 weekday rows)."))}
 	}
 	weeks := m.history.weeks()
 	points := historyPoints(m.history.data, time.Now(), 0, weeks)
@@ -366,26 +367,28 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 		peak = max(peak, p.tokens)
 	}
 	heatColors := historyHeatColors(colors)
-	lines := []string{colors.dimmed().Render(fmt.Sprintf("DAILY ACTIVITY // %d WEEKS // UTC", weeks))}
+	lines := []string{colors.dimmed().Render(i18n.Format("DAILY ACTIVITY // %d WEEKS // UTC", weeks))}
 	stride := layout.cellWidth + layout.gap
-	monthLabels := []rune(strings.Repeat(" ", columns*stride-layout.gap))
+	monthLabels := ""
+	monthWidth := columns*stride - layout.gap
 	labelEnd := 0
 	lastMonth := ""
 	for week := start; week < end; week++ {
-		month := points[week*7].date.Format("Jan")
+		month := i18n.Text(points[week*7].date.Format("Jan"))
 		x := (week - start) * stride
-		if month != lastMonth && x >= labelEnd && x+3 <= len(monthLabels) {
-			copy(monthLabels[x:x+3], []rune(month))
-			labelEnd = x + 4
+		if month != lastMonth && x >= labelEnd && x+lipgloss.Width(month) <= monthWidth {
+			monthLabels += strings.Repeat(" ", max(x-lipgloss.Width(monthLabels), 0)) + month
+			labelEnd = x + lipgloss.Width(month) + 1
 		}
 		lastMonth = month
 	}
-	lines = append(lines, colors.dimmed().Render("    "+string(monthLabels)))
+	monthLabels += strings.Repeat(" ", max(monthWidth-lipgloss.Width(monthLabels), 0))
+	lines = append(lines, colors.dimmed().Render("    "+monthLabels))
 	for day, label := range []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"} {
 		for row := 0; row < cellHeight; row++ {
 			prefix := "    "
 			if row == 0 {
-				prefix = label + " "
+				prefix = i18n.Text(label) + strings.Repeat(" ", max(4-lipgloss.Width(i18n.Text(label)), 0))
 			}
 			line := colors.dimmed().Render(prefix)
 			for week := start; week < end; week++ {
@@ -407,13 +410,20 @@ func (m Model) renderHistoryCalendar(width, height int, colors palette) []string
 			lines = append(lines, line)
 		}
 	}
-	legend := "LESS "
+	legend := i18n.Text("LESS ")
 	for _, c := range heatColors {
 		legend += lipgloss.NewStyle().Foreground(c).Render("██") + " "
 	}
-	legend += fmt.Sprintf("MORE // PEAK DAY %s", usageNumber(peak))
+	legend += i18n.Format("MORE // PEAK DAY %s", usageNumber(peak))
 	lines = append(lines, legend)
 	first, last := points[start*7].date, points[min(end*7, len(points))-1].date
-	lines = append(lines, colors.dimmed().Render(first.Format("02 Jan 2006")+" → "+last.Format("02 Jan 2006")))
+	lines = append(lines, colors.dimmed().Render(historyDate(first)+" → "+historyDate(last)))
 	return lines
+}
+
+func historyDate(at time.Time) string {
+	if i18n.Code() == "en-GB" {
+		return at.Format("02 Jan 2006")
+	}
+	return at.Format("2006-01-02")
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 const (
@@ -286,6 +287,7 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 	fullLow, fullHigh := medianFloat(lows), medianFloat(highs)
 	center := medianFloat(centers)
 	minCenter, maxCenter := slicesMinMax(centers)
+	// Keep this identifier canonical: compact presentations use L/M codes.
 	confidence := "LOW"
 	if len(matching) >= 3 && totalDelta >= 15 && center > 0 &&
 		(fullHigh-fullLow)/center <= 0.45 && (maxCenter-minCenter)/center <= 0.50 {
@@ -329,9 +331,9 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 		if meters[index].Kind != codex.MeterQuotaWindow {
 			continue
 		}
-		line := "API-EQ N/A // LIMIT ATTRIBUTION UNKNOWN"
+		line := i18n.Text("API-EQ N/A // LIMIT ATTRIBUTION UNKNOWN")
 		if m.snapshot.AccountFingerprint == "" {
-			line = "API-EQ N/A // ACCOUNT ATTRIBUTION UNKNOWN"
+			line = i18n.Text("API-EQ N/A // ACCOUNT ATTRIBUTION UNKNOWN")
 		} else if quotaAPIMeterEligible(m.snapshot, meters[index]) {
 			line = m.quotaAPILine(meters[index], lineWidth)
 		}
@@ -352,25 +354,25 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 		if width < 44 {
 			return "API-EQ // " + m.quotaAPITelemetryIssue
 		}
-		return "API-EQ LEARNING // " + m.quotaAPITelemetryIssue
+		return i18n.Text("API-EQ LEARNING // ") + m.quotaAPITelemetryIssue
 	}
 	if estimate, ok := m.quotaAPIEstimate(m.snapshot, meter); ok {
 		current := formatAPIRange(estimate.currentLow, estimate.currentHigh)
 		full := formatAPIRange(estimate.fullLow, estimate.fullHigh)
 		switch {
 		case width >= 72:
-			return fmt.Sprintf("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d", current, full, estimate.confidence, estimate.samples)
+			return fmt.Sprintf("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d", current, full, i18n.Text(estimate.confidence), estimate.samples)
 		case width >= 52:
-			return fmt.Sprintf("API-EQ NOW ~%s // 100%% ~%s · %s%d", current, full, estimate.confidence[:1], estimate.samples)
+			return i18n.Format("API-EQ NOW ~%s // 100%% ~%s · %s%d", current, full, estimate.confidence[:1], estimate.samples)
 		default:
 			currentMid := formatUSD((estimate.currentLow + estimate.currentHigh) / 2)
 			fullMid := formatUSD((estimate.fullLow + estimate.fullHigh) / 2)
-			return fmt.Sprintf("EQ NOW ~%s // FULL ~%s %s%d", currentMid, fullMid, estimate.confidence[:1], estimate.samples)
+			return i18n.Format("EQ NOW ~%s // FULL ~%s %s%d", currentMid, fullMid, estimate.confidence[:1], estimate.samples)
 		}
 	}
 	key := quotaAPIKey(m.snapshot, meter)
 	if issue := m.quotaAPIIssues[key]; issue != "" {
-		return "API-EQ LEARNING // " + issue
+		return i18n.Text("API-EQ LEARNING // ") + issue
 	}
 	progress := 0
 	if anchor, ok := m.quotaAPIAnchors[key]; ok {
@@ -379,7 +381,7 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 			shortReason := shortQuotaAPIRestartReason(anchor.restartReason)
 			switch {
 			case width >= 72:
-				return fmt.Sprintf("API-EQ LEARNING // %d/%dPP CLEAN MOVEMENT // RESTARTED: %s", progress, quotaAPIMinimumDelta, anchor.restartReason)
+				return i18n.Format("API-EQ LEARNING // %d/%dPP CLEAN MOVEMENT // RESTARTED: %s", progress, quotaAPIMinimumDelta, anchor.restartReason)
 			case width >= 44:
 				return fmt.Sprintf("API-EQ %d/%dPP // RESTARTED: %s", progress, quotaAPIMinimumDelta, shortReason)
 			default:
@@ -388,15 +390,15 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 		}
 	}
 	if width < 44 {
-		return fmt.Sprintf("API-EQ LEARNING %d/%dPP", progress, quotaAPIMinimumDelta)
+		return i18n.Format("API-EQ LEARNING %d/%dPP", progress, quotaAPIMinimumDelta)
 	}
-	return fmt.Sprintf("API-EQ LEARNING // %d/%dPP CLEAN MOVEMENT", progress, quotaAPIMinimumDelta)
+	return i18n.Format("API-EQ LEARNING // %d/%dPP CLEAN MOVEMENT", progress, quotaAPIMinimumDelta)
 }
 
 func shortQuotaAPIRestartReason(reason string) string {
 	switch reason {
 	case quotaAPIRestartAccountChanged:
-		return "ACCOUNT"
+		return i18n.Text("ACCOUNT")
 	case quotaAPIRestartAccountingRebased:
 		return "REBASED"
 	case quotaAPIRestartCoverageGap:
@@ -406,7 +408,7 @@ func shortQuotaAPIRestartReason(reason string) string {
 	case quotaAPIRestartWindowChanged:
 		return "WINDOW CHANGED"
 	case quotaAPIRestartWindowReset:
-		return "RESET"
+		return i18n.Text("RESET")
 	default:
 		return reason
 	}

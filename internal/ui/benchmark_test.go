@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type benchmarkStubFetcher struct {
@@ -1463,7 +1464,9 @@ func TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes(t *testing.T) 
 				}
 				return
 			}
-			tableTitleX, tableTitleY := renderedTextStart(t, model, "RESULT MATRIX")
+			// The title yields space to the clear action on narrow terminals.
+			titleWidth := max(dashboard.contentWidth-lipgloss.Width(benchmarkClearAllLabel)-6, 0)
+			tableTitleX, tableTitleY := renderedTextStart(t, model, strings.TrimSpace(ansi.Truncate(i18n.Text("RESULT MATRIX"), titleWidth, "")))
 			_ = tableTitleX
 			headerY := tableTitleY + 2
 			if geometry.tableHeight == 3 {

@@ -9,6 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type resetConsumer interface {
@@ -34,7 +36,7 @@ type quotaResetResult struct {
 
 func (m Model) renderResetNotice(width int) string {
 	c := paletteFor(m.theme)
-	return frame(width, "QUOTA RESET", c.label().Render(ansi.Hardwrap(m.resetNotice, max(width-4, 1), true)), c.primary, c)
+	return frame(width, i18n.Text("QUOTA RESET"), c.label().Render(ansi.Hardwrap(m.resetNotice, max(width-4, 1), true)), c.primary, c)
 }
 
 func (m Model) resetNoticeHeight(width int) int {
@@ -49,13 +51,13 @@ func (m Model) resetLabel() string {
 		return ""
 	}
 	if m.resetBusy {
-		return "[ RESETTING… ]"
+		return i18n.Text("[ RESETTING… ]")
 	}
 	if !m.resetConfirmUntil.IsZero() {
-		return "[ CONFIRM RESET ]"
+		return i18n.Text("[ CONFIRM RESET ]")
 	}
 	if m.resetKey != "" {
-		return "[ RETRY RESET ]"
+		return i18n.Text("[ RETRY RESET ]")
 	}
 	_, supported := m.fetcher.(resetConsumer)
 	if !supported || m.loading || m.err != nil || m.snapshot.AccountFingerprint == "" ||
@@ -75,7 +77,7 @@ func (m Model) resetLabel() string {
 			return ""
 		}
 	}
-	return fmt.Sprintf("[ RESET // %d ]", m.snapshot.RateLimitResetCredits.AvailableCount)
+	return i18n.Format("[ RESET // %d ]", m.snapshot.RateLimitResetCredits.AvailableCount)
 }
 
 // Reserve the same horizontal span for rendering and hit testing.
@@ -117,7 +119,7 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 			m.resetAccount = m.snapshot.AccountFingerprint
 		}
 		m.resetConfirmUntil = time.Now().Add(10 * time.Second)
-		m.resetNotice = "Use one reset? Refreshes eligible quota and changes the weekly reset schedule. Click CONFIRM; Esc cancels."
+		m.resetNotice = i18n.Text("Use one reset? Refreshes eligible quota and changes the weekly reset schedule. Click CONFIRM; Esc cancels.")
 		return m, nil
 	}
 	m.resetConfirmUntil = time.Time{}
