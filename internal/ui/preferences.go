@@ -12,10 +12,11 @@ import (
 // Operational, account, quota-estimation, session, and token-event data are
 // never stored.
 type Preferences struct {
-	Theme           string `json:"theme,omitempty"`
-	QuotaView       string `json:"quotaView,omitempty"`
-	BenchmarkFilter string `json:"benchmarkFilter,omitempty"`
-	BenchmarkRank   string `json:"benchmarkRank,omitempty"`
+	HideSessionContext bool   `json:"hideSessionContext,omitempty"`
+	Theme              string `json:"theme,omitempty"`
+	QuotaView          string `json:"quotaView,omitempty"`
+	BenchmarkFilter    string `json:"benchmarkFilter,omitempty"`
+	BenchmarkRank      string `json:"benchmarkRank,omitempty"`
 }
 
 type PreferenceStore interface {
@@ -75,6 +76,7 @@ func NewWithPreferences(fetcher Fetcher, refreshEvery time.Duration, store Prefe
 }
 
 func (m *Model) applyPreferences(preferences Preferences) {
+	m.monitorContextHidden = preferences.HideSessionContext
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
 	}
@@ -95,10 +97,11 @@ func (m Model) persistPreferences() {
 		return
 	}
 	_ = m.preferenceStore.Save(Preferences{
-		Theme:           themePreferenceNames[m.theme],
-		QuotaView:       quotaViewPreferenceNames[m.selectedQuotaView()],
-		BenchmarkFilter: benchmarkFilterPreferenceNames[m.benchmarkFilter],
-		BenchmarkRank:   benchmarkRankPreferenceNames[m.benchmarkRankMode],
+		HideSessionContext: m.monitorContextHidden,
+		Theme:              themePreferenceNames[m.theme],
+		QuotaView:          quotaViewPreferenceNames[m.selectedQuotaView()],
+		BenchmarkFilter:    benchmarkFilterPreferenceNames[m.benchmarkFilter],
+		BenchmarkRank:      benchmarkRankPreferenceNames[m.benchmarkRankMode],
 	})
 }
 

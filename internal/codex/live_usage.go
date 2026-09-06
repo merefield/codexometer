@@ -53,6 +53,7 @@ type LiveUsageSession struct {
 	AgentCount       int
 	Active           bool
 	Attention        SessionAttention
+	Context          SessionContext
 	Unattributed     bool
 	ModelCalls       []LiveModelCall
 	TurnTimings      []LiveTurnTiming
@@ -61,6 +62,7 @@ type LiveUsageSession struct {
 // SessionAttention describes why a local Codex session may need the user.
 // Input and approval are definite signals; Check is deliberately cautious and
 // means only that an open fallback-observed session has remained quiet.
+// Complete is informational: an observed completed turn, not an input request.
 type SessionAttention int
 
 const (
@@ -68,6 +70,7 @@ const (
 	SessionAttentionInput
 	SessionAttentionApproval
 	SessionAttentionCheck
+	SessionAttentionComplete
 )
 
 // LiveModelCall is the small, content-free usage pulse persisted after one
@@ -93,8 +96,10 @@ type LiveTurnTiming struct {
 }
 
 // LiveUsageReader incrementally observes token telemetry written by local Codex
-// sessions. It never interprets message, reasoning, command, or tool contents.
+// sessions. It also extracts bounded display-only replies and request context;
+// reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
+	daemonContexts  map[string]SessionContext
 	SessionsRoot    string
 	WriterLocksRoot string
 	statusProvider  sessionStatusProvider
@@ -118,6 +123,7 @@ type LiveUsageReader struct {
 }
 
 type rolloutCursor struct {
+	preview                     SessionContext
 	offset                      int64
 	totalTokens                 int64
 	observedTokens              int64
@@ -315,12 +321,14 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	r.daemonContexts = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
 		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
+			r.daemonContexts = daemonSnapshot.Contexts
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -489,6 +497,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return err
 		}
 		cursor.attention = attention
+		cursor.preview = latestSessionContext(path, cursor)
 	}
 	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
 		model, modelErr := latestRolloutModel(path, cursor)
@@ -540,6 +549,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return attentionErr
 		}
 		cursor.attention = attention
+		cursor.preview = latestSessionContext(path, cursor)
 		return nil
 	}
 	if info.Size() == cursor.offset {
@@ -553,6 +563,9 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if preview, ok := rolloutContextRecord(line, cursor); ok {
+				cursor.preview = preview
+			}
 			if turnID, ordinal, at, ok := rolloutTurnIDRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.currentTurnID = turnID
@@ -1120,10 +1133,17 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		exactWorking := exact && exactStatus == sessionRuntimeWorking
 		localWorking := !exact && writerActive && cursor.attention == sessionAttentionWorking
 		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, quietFor, exactStatus, exact)
+		if !exact && attention == SessionAttentionInput && cursor.attention == sessionAttentionIdle && cursor.preview.Kind == SessionContextReply {
+			attention = SessionAttentionComplete
+		}
 		if !active && !exactWorking && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
 		rootID, unattributed := rolloutRoot(cursor, byID)
+		// A child finishing is not proof that its root conversation finished.
+		if attention == SessionAttentionComplete && cursor.threadID != rootID {
+			attention = SessionAttentionNone
+		}
 		group := groups[rootID]
 		if group == nil {
 			group = &LiveUsageSession{ID: rootID, Unattributed: unattributed}
@@ -1134,6 +1154,22 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
 		group.Active = group.Active || active || exactWorking || attention != SessionAttentionNone
 		group.Attention = mergeSessionAttention(group.Attention, attention)
+		preview := cursor.preview
+		if exact && preview.pending() {
+			preview = SessionContext{}
+		}
+		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending()) {
+			preview = live
+		}
+		// A persisted request is not proof that it is still outstanding. Match
+		// it to current attention before displaying it as actionable context.
+		if preview.Kind == SessionContextApproval && attention != SessionAttentionApproval ||
+			preview.Kind == SessionContextQuestion && attention != SessionAttentionInput {
+			preview = SessionContext{}
+		}
+		if !unattributed {
+			group.Context = preferSessionContext(group.Context, preview)
+		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing
 		// member—or an authoritatively working daemon thread—means the grouped
@@ -1161,6 +1197,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	activeCount := 0
 	anyWorking := false
 	for _, session := range groups {
+		if session.Attention == SessionAttentionComplete && groupWorking[session.ID] {
+			session.Attention = SessionAttentionNone
+		}
 		if session.Attention == SessionAttentionCheck && groupHasFreshActivity[session.ID] {
 			session.Attention = SessionAttentionNone
 		}
@@ -1187,6 +1226,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 func sessionAttention(state sessionAttentionState, writerActive, writerLocksSupported bool, quietFor time.Duration, exactStatus sessionRuntimeStatus, exact bool) SessionAttention {
 	if exact {
 		switch exactStatus {
+		case sessionRuntimeComplete:
+			return SessionAttentionComplete
 		case sessionRuntimeApproval:
 			return SessionAttentionApproval
 		case sessionRuntimeInput:
@@ -1226,10 +1267,12 @@ func mergeSessionAttention(current, next SessionAttention) SessionAttention {
 func sessionAttentionPriority(attention SessionAttention) int {
 	switch attention {
 	case SessionAttentionApproval:
-		return 3
+		return 4
 	case SessionAttentionInput:
-		return 2
+		return 3
 	case SessionAttentionCheck:
+		return 2
+	case SessionAttentionComplete:
 		return 1
 	default:
 		return 0

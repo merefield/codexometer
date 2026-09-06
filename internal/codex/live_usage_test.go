@@ -431,7 +431,7 @@ func TestLiveUsageReaderTracksDefiniteAwaitingUserLifecycle(t *testing.T) {
 	}
 }
 
-func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T) {
+func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForCompletion(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now()
 	threadID := "open-idle"
@@ -450,8 +450,8 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 		t.Fatal(err)
 	}
 	usage, err := reader.FetchTokenUsage(context.Background())
-	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionInput {
-		t.Fatalf("open completed CLI = %#v, %v; want input needed", usage, err)
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].Attention != SessionAttentionComplete {
+		t.Fatalf("open completed CLI = %#v, %v; want turn complete", usage, err)
 	}
 	if !usage.CodexStatusKnown || !usage.CodexUp || usage.CodexWorking {
 		t.Fatalf("waiting writer lock did not report healthy idle Codex: %#v", usage)
@@ -468,8 +468,8 @@ func TestLiveUsageReaderUsesOpenWriterAndCompletedTurnForInputWait(t *testing.T)
 
 	appendRollout(t, path, attentionEventLine(now.Add(2*time.Second), "task_complete", nil)+"\n")
 	usage, err = reader.FetchTokenUsage(context.Background())
-	if err != nil || usage.Sessions[0].Attention != SessionAttentionInput {
-		t.Fatalf("second completed turn = %#v, %v; want input needed", usage, err)
+	if err != nil || usage.Sessions[0].Attention != SessionAttentionComplete {
+		t.Fatalf("second completed turn = %#v, %v; want turn complete", usage, err)
 	}
 	if usage.CodexWorking {
 		t.Fatalf("waiting writer lifecycle continued to report Codex activity: %#v", usage)

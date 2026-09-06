@@ -21,7 +21,7 @@ func TestLocalisedScreens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, code := range []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans"} {
+	for _, code := range []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans", "sv", "nb", "tr", "et", "fi"} {
 		t.Run(code, func(t *testing.T) {
 			cmd := exec.Command(exe, "-test.run=^TestLocalisedScreensHelper$")
 			for _, env := range os.Environ() {
@@ -46,6 +46,13 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	}
 	t.Run("benchmark_click_surfaces", TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes)
 	t.Run("monitor_click_surfaces", TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes)
+	t.Run("monitor_context_surfaces", TestMonitorContextResponsiveHitTargets)
+	t.Run("monitor_privacy_surfaces", TestMonitorContextPrivacyAndDismissRenderedTargets)
+	t.Run("monitor_approval_surfaces", TestMonitorApprovalRenderedTargets)
+	t.Run("monitor_expanded_surfaces", TestExpandedContextResponsiveHitTargets)
+	t.Run("monitor_prompt_surfaces", TestMonitorPromptResponsiveClickTargets)
+	t.Run("monitor_prompt_wrapping", TestMonitorPromptWrapsAndGrowsUpward)
+	t.Run("monitor_detail_sections", TestMonitorDetailStructuredSections)
 	t.Run("tab_click_surfaces", TestEveryRenderedTabCellIsClickableAcrossWidths)
 	t.Run("reset_click_surfaces", TestQuotaResetRenderedHitSurfaces)
 	t.Run("quota_estimator", TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend)

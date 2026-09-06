@@ -82,7 +82,7 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 				}})
 				if threadID == "working" {
 					_ = connection.WriteJSON(map[string]any{
-						"id": "approval-1", "method": "item/commandExecution/requestApproval", "params": map[string]any{},
+						"id": "approval-1", "method": "item/commandExecution/requestApproval", "params": map[string]any{"threadId": "approval", "reason": "Allow push?", "command": "git push"},
 					})
 					_ = connection.WriteJSON(map[string]any{"method": "model/rerouted", "params": map[string]any{
 						"threadId": threadID, "turnId": "turn-1", "fromModel": "gpt-5.6-sol", "toModel": "gpt-5.6-terra",
@@ -128,6 +128,9 @@ func TestDaemonStatusProviderReadsExactThreadStates(t *testing.T) {
 	}
 	if len(snapshot.ModelObservations) != 1 {
 		t.Fatalf("reroute observations = %#v", snapshot.ModelObservations)
+	}
+	if c := snapshot.Contexts["approval"]; c.Kind != SessionContextApproval || c.Text != "Allow push?\nCommand: git push\nDirectory:" || c.ApprovalToken != "" {
+		t.Fatalf("live request context = %+v", c)
 	}
 	observation := snapshot.ModelObservations[0]
 	if observation.ThreadID != "working" || observation.TurnID != "turn-1" ||

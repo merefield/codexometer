@@ -22,6 +22,7 @@ const (
 )
 
 type daemonStatusProvider struct {
+	contexts   map[string]*daemonContextState
 	socketPath string
 
 	mu            sync.Mutex
@@ -126,6 +127,9 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		if status, ok := p.statuses[threadID]; ok {
+			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
+				status = sessionRuntimeComplete
+			}
 			statuses[threadID] = status
 		}
 	}
@@ -134,6 +138,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		subscribed[threadID] = struct{}{}
 	}
 	return sessionDaemonSnapshot{
+		Contexts:          daemonContextSnapshot(p.contexts, threadIDs, statuses),
 		Statuses:          statuses,
 		ModelObservations: append([]resolvedModelObservation(nil), p.observations...),
 		SubscribedThreads: subscribed,
@@ -188,6 +193,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 		}
 		p.mu.Lock()
 		delete(p.subscribed, threadID)
+		delete(p.contexts, threadID)
 		for key := range p.reroutedTurns {
 			if key.threadID == threadID {
 				delete(p.reroutedTurns, key)
@@ -284,7 +290,16 @@ func (p *daemonStatusProvider) isSubscribed(threadID string) bool {
 func (p *daemonStatusProvider) request(ctx context.Context, method string, params any, target any) error {
 	p.mu.Lock()
 	connection := p.connection
-	if connection == nil {
+	p.mu.Unlock()
+	return p.requestOn(ctx, connection, method, params, target)
+}
+
+func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if connection == nil || p.connection != connection {
 		p.mu.Unlock()
 		return errors.New("daemon connection is closed")
 	}
@@ -365,6 +380,13 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 			}
 			continue
 		}
+		p.mu.Lock()
+		if p.contexts == nil {
+			p.contexts = map[string]*daemonContextState{}
+		}
+		daemonContextEvent(p.contexts, envelope.Method, envelope.ID, envelope.Params, time.Now())
+		p.promptLifecycleLocked(envelope.Method, envelope.Params)
+		p.mu.Unlock()
 		p.handleNotification(envelope.Method, envelope.Params)
 	}
 }
@@ -439,6 +461,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 		}
 	}
 	p.subscribed = nil
+	p.contexts = nil
 	p.reroutedTurns = nil
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil

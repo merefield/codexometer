@@ -30,7 +30,7 @@ depending on the selected authentication.
 
 The four primary tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**.
 The interface supports mouse controls, keyboard navigation, five colour themes,
-and [nine languages](#language), with the original UK English presentation
+and [fourteen languages](#language), with the original UK English presentation
 unchanged by default.
 
 ## Why use it?
@@ -73,10 +73,16 @@ To select another interface language, set `CODEXOMETER_LANG` before starting:
 | Russian | `ru` |
 | Japanese | `ja` |
 | Chinese (Simplified) | `zh-Hans` |
+| Swedish | `sv` |
+| Norwegian (Bokmål) | `nb` |
+| Turkish | `tr` |
+| Estonian | `et` |
+| Finnish | `fi` |
 
 Codes use BCP 47 language tags. Regional variants such as `de-DE`, `fr-CA`,
-`ja-JP` and `zh-CN` match the corresponding supported language. Other English
-variants use the existing UK English presentation. An unset, invalid or
+`ja-JP`, `zh-CN`, `sv-SE`, `nb-NO`, `tr-TR`, `et-EE` and `fi-FI` match the
+corresponding supported language. `no` and `no-NO` also select Norwegian Bokmål.
+Other English variants use the existing UK English presentation. An unset, invalid or
 unsupported code falls back to UK English. `LANG` and `LC_ALL` are deliberately
 not used to choose the UI language: the default stays English unless you opt in.
 
@@ -85,6 +91,8 @@ Try a language for one launch:
 ```sh
 CODEXOMETER_LANG=fr codexometer
 CODEXOMETER_LANG=ja codexometer --demo
+CODEXOMETER_LANG=sv codexometer
+CODEXOMETER_LANG=nb codexometer --demo
 ```
 
 ### Retain the language setting
@@ -302,12 +310,16 @@ codexometer --demo
 ## Recommended Codex CLI setup
 
 Codexometer works with an ordinary Codex CLI process, but connecting your CLI
-sessions through one shared app-server daemon unlocks its most accurate live
+sessions through one shared app-server unlocks its most accurate live
 telemetry on macOS, Linux, and WSL:
 
 - **Definite attention states** — Monitor can distinguish `INPUT NEEDED` from
   `APPROVAL NEEDED` using live per-thread status instead of eventually showing
   the cautious `CHECK SESSION` inactivity fallback.
+- **Command approval details and controls** — supported live requests show the
+  command, directory and reason in Monitor's `[i]` detail page, with
+  buttons matching Codex's offered decisions, with confirmation for grants. Incomplete or
+  unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
   events let Codexometer price a positively matched call using the model that
   actually served it, rather than relying only on the requested model saved in
@@ -315,16 +327,16 @@ telemetry on macOS, Linux, and WSL:
 - **Better multi-session visibility** — every connected CLI tab or pane remains
   a separate Monitor session while sharing the same accurate status source;
   explicitly linked subagents are still folded into their root session.
-- **No extra Codexometer authentication** — the daemon, CLI clients, and
+- **No extra Codexometer authentication** — the server, CLI clients, and
   Codexometer continue to use the prevailing Codex login under the same
   `CODEX_HOME`.
-- **Safe degradation** — sessions not connected to the daemon continue to use
+- **Safe degradation** — sessions not connected to the server continue to use
   all core quota features with requested-model pricing, rollout lifecycle
   signals, and writer-lock attention detection.
 
 Set up the recommended arrangement as follows.
 
-1. Confirm that the current standalone Codex CLI and Codexometer see the same
+1. Confirm that the current Codex CLI and Codexometer see the same
    login and `CODEX_HOME`:
 
    ```sh
@@ -332,14 +344,40 @@ Set up the recommended arrangement as follows.
    codexometer --check-auth
    ```
 
-2. Start the managed daemon and confirm that it is ready:
+2. Choose **one** way to start the shared server. Both use the default Unix
+   socket that Codexometer detects; do not run both against that socket.
+
+   **Option A: use your existing installation (no reinstall).** In a dedicated
+   terminal, run:
+
+   ```sh
+   codex app-server --listen unix://
+   ```
+
+   Leave that terminal and server running while using connected sessions.
+   This runs in the foreground; it does not need the managed standalone install.
+
+   **Option B: managed background daemon.** This requires the installer-managed
+   standalone binary at `$CODEX_HOME/packages/standalone/current/codex`
+   (normally `~/.codex/packages/standalone/current/codex`). An npm, Homebrew or
+   manually built executable alone does not satisfy that requirement. If you
+   want this option, install the managed binary first:
+
+   ```sh
+   curl -fsSL https://chatgpt.com/codex/install.sh | sh
+   ```
+
+   Then start the daemon and confirm that it is ready:
 
    ```sh
    codex app-server daemon start
    codex app-server daemon version
    ```
 
-3. Launch each working Codex CLI terminal against the daemon's default Unix
+   If you see **managed standalone Codex install not found**, either complete
+   that installation or use Option A instead.
+
+3. Launch each working Codex CLI terminal against the server's default Unix
    control socket:
 
    ```sh
@@ -347,7 +385,14 @@ Set up the recommended arrangement as follows.
    ```
 
    Run this client command separately in every terminal tab or pane that
-   Codexometer should monitor through the shared daemon.
+   Codexometer should monitor through the shared server. Use `/resume` inside
+   each connected CLI to reopen an existing conversation.
+
+   Starting the server does not interrupt or migrate existing ordinary CLI
+   sessions. To move a conversation, let its current task finish, exit that
+   ordinary CLI, then resume it through the connected client. Avoid opening
+   the same conversation in both modes at once. Unmigrated sessions remain
+   available to Codexometer through local observation, without live approvals.
 
 4. Start Codexometer in an adjacent window or split pane before beginning work
    that you want attributed:
@@ -360,19 +405,31 @@ Set up the recommended arrangement as follows.
    reconstructed after the fact. No additional Codexometer option is required;
    it automatically probes the same default socket under `CODEX_HOME`.
 
+   If the latest Codexometer build is already running, leave it open: it retries
+   the connection and discovers newly connected sessions automatically. Allow
+   a refresh cycle. Restart it if you have replaced its binary or changed its
+   `CODEX_HOME`. A context detail marked **LIVE** came from the shared server;
+   **LOCAL** means that excerpt came from rollout logs, which do not persist
+   the live approval-request events. An older local excerpt can remain until
+   new live context arrives.
+
 5. Leave Codexometer running while you work. The Monitor starts automatically;
    use Reset when you want a fresh measured interval, and keep unrelated Codex
    activity quiet while running Benchmarks if you want the cleanest comparisons.
 
 Codexometer subscribes only to thread IDs that are already loaded by the
-daemon; it does not load unrelated historical sessions.
+shared server; it does not load unrelated historical sessions.
 
-Manage or stop the daemon with:
+For Option B, manage or stop the daemon with:
 
 ```sh
 codex app-server daemon restart
 codex app-server daemon stop
 ```
+
+For Option A, stop the foreground server with `Ctrl+C` in its dedicated
+terminal. Stopping or restarting either server disconnects its clients and
+can interrupt their work; finish active tasks first.
 
 The managed daemon lifecycle is currently experimental, Unix-only, and expects
 the standalone Codex installation. Native Windows and other ordinary CLI
@@ -385,7 +442,7 @@ codex --remote ws://127.0.0.1:4500
 ```
 
 Plain WebSockets should be used only on localhost or through an SSH tunnel.
-Codexometer currently auto-detects only the default Unix daemon socket, so
+Codexometer currently auto-detects only the default Unix control socket, so
 WebSocket-connected sessions use its fallback attention detection for now. See
 the official [Codex app-server documentation](https://developers.openai.com/codex/app-server)
 for custom socket paths, secure remote connections, and authentication.
@@ -417,11 +474,17 @@ ID, source classification, working directory, and the inherited-history
 boundary. It also reads lifecycle event names and blocking flags to identify an
 explicit unresolved input or approval request. To distinguish an open CLI
 waiting at its prompt from a closed historical session, it inspects the lock
-state—not the contents—of Codex's per-thread writer lock. Message text—including
-the final response carried beside timing metadata—reasoning, commands, tool
-results, and credentials are ignored and never retained from ordinary Codex
-sessions. The sole content-reading exception is a benchmark turn explicitly
-started by Codexometer. Its Codexometer-authored policy and prompt, visible
+state—not the contents—of Codex's per-thread writer lock. Monitor also extracts
+bounded assistant replies/commentary, input questions and choices, approval
+reasons, and command descriptions for its session-context previews. Excerpts
+stay in process memory, never in preferences or a summarisation service. User
+prompts, reasoning and arbitrary tool results are not retained by that reader.
+Text may contain sensitive material the assistant already displayed: terminal
+sanitisation is not secret redaction. Press `h` in Monitor to hide previews and
+close the detail view; this saved preference controls display, not collection.
+
+Benchmark turns explicitly started by Codexometer have separate content capture.
+Their Codexometer-authored policy and prompt, visible
 structured response, and—only for DigBench—sanitized game-tool requests and
 responses are kept in bounded process memory for the Benchmark run detail view.
 Reasoning events, platform instructions, credentials, request headers,
@@ -430,10 +493,17 @@ or response IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
-retains only runtime status flags and content-free model-reroute/token-usage
-correlations needed for the features above. It ignores prompts, responses,
-reasoning, tool payloads, and server requests, and never sends a turn or an
-approval response through this connection.
+retains runtime flags, model-reroute/token-usage correlations, and bounded
+context from assistant messages and input/approval requests. Resolved requests
+and new turns clear stale pending context. Observation alone never starts a turn
+or answers a question. Explicit actions in Monitor can submit follow-up turns
+to idle sessions, answer supported blocking questions, and send selected command
+decisions (with confirmation for permission grants). Drafts stay in memory;
+submitted text enters Codex's normal session history and follow-ups consume
+model usage. Nothing is sent automatically; see the Monitor controls below.
+Without a shared daemon, previews use
+available local rollout text rather than fetching full thread histories.
+Missing request details are left unavailable; there is no extra model call.
 
 If you use a nonstandard Codex executable, pass it explicitly:
 
@@ -452,6 +522,8 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
+| `h` | Hide/show Monitor context previews and close any open context detail |
+| `i` | Cycle Monitor context: compact → expanded row → full detail → compact; use the selected session, otherwise the latest approval-gated session |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -462,12 +534,12 @@ codexometer --codex /path/to/codex
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
-| `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; `Enter` cycles Monitor context like `i` |
 | `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
 | `q` | Quit |
-| `Esc` | Cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
+| `Esc` | Step back one Monitor context level, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, Usage, or
@@ -880,8 +952,8 @@ status. A held writer lock plus a completed turn reliably identifies an open
 CLI waiting at its prompt. Without a shared server, three minutes without any
 new rollout-file activity produces only `CHECK SESSION`, because persisted data
 cannot distinguish an approval wait from every long-running local tool. The
-Monitor does not retain the input question, approval text, response, or
-conversation content. A linked child's attention state is folded into its root
+context preview does not infer attention from prose. A linked child's attention
+state is folded into its root
 so one remote Monitor row identifies the CLI session that needs intervention.
 A definite approval signal takes precedence, then definite input, then the
 inferred check state when linked members have mixed states. Because `CHECK
@@ -920,10 +992,180 @@ account observation brackets each monitored segment. These operations are not
 atomic, so unrelated account activity during either short boundary read remains
 another source of uncertainty.
 
+#### Session context previews
+
+Previews are visible by default. Wide terminals (at least 100 columns of usable
+Monitor space) show a third box between session metrics and the graph. It holds
+at most two text rows plus the source session and age when height permits.
+On narrower terminals, a last reply or pending question/request takes the graph
+column temporarily. Ordinary busy-session commentary stays collapsed to an
+`[i]` action on the graph; `CHECK SESSION` can expose its last known activity.
+With no context available, the original metrics/graph layout remains.
+
+- **LAST REPLY** is the last completed assistant reply, not a new question. An
+  observed local completed-turn prompt is labelled **TURN COMPLETE**.
+  For shared-server sessions, **TURN COMPLETE** comes from an observed successful
+  `turn/completed` event followed by idle status, independently of whether reply
+  text is available or previews are hidden. Failed/interrupted turns and idle
+  threads without an observed completion do not receive this label. Starting
+  the next turn clears it; a working linked agent suppresses root completion,
+  and actual input/approval requests take priority. Attaching after a turn
+  finished may miss its live completion event; the next completed turn qualifies.
+- **QUESTION** contains an observed blocking input request and any choices.
+- **REQUEST** contains an observed approval reason/command when available.
+- **LAST ACTIVITY** is observed commentary or a command, not proof that input
+  is required. Ages describe the last observed event; paused readings can be stale.
+
+Click a row's `[i]`, or press `i`/`Enter`, to cycle through three presentations:
+
+1. **Compact:** the normal short preview beside the token graph; no approval buttons.
+2. **Expanded:** that session's context occupies the full space previously shared
+   by its preview and token graph, while telemetry and the other sessions stay
+   visible. Eligible approval buttons sit below the complete command/request
+   and source session. If the complete request plus controls cannot fit, an
+   **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
+3. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+   Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
+   `i` or `[i]` click returns directly to compact. When a reply editor is available,
+   `Enter` focuses it instead of changing presentation.
+
+`Esc` steps back one level; `[×]` or `x` in full detail returns to expanded.
+The initial keyboard target is the explicitly selected session, otherwise the
+most recent approval-gated session with context, otherwise the first session
+with context. Once expanded, the target is pinned and kept on screen: newer
+approvals cannot silently switch the session behind the buttons. Clicking
+another row's `[i]` explicitly changes the target. Switching context levels
+clears unsubmitted approval confirmations. Hiding previews or dismissing the
+target clears its expansion.
+When a row is explicitly selected, only that row shows `[i]`, even if it has no
+context yet; `Enter`/`i` opens that session rather than falling back to another.
+Moving the selection collapses any other expanded row and clears its pending
+confirmation. With no selected row, the default targeting described above applies.
+Outstanding requests take priority over ordinary activity when linked agents
+share a root row, and the source ID identifies the actual member.
+
+**Replies and follow-ups (shared app-server only):** full detail reserves a
+compact prompt at the bottom when a loaded session is idle (including **TURN
+COMPLETE**), or has a supported blocking question. Click the input line or press
+`Enter` to focus it; type your text, then press `Enter` to submit. Dashboard
+hotkeys become ordinary letters while typing. `Esc` leaves the editor without
+sending; press it again to return to the expanded row. Cursor editing, Unicode
+and bracketed paste are supported; pasted newlines are preserved and never
+submit. Text wraps automatically and the editor grows upward, reducing the
+scrollable context area above it. Once it reaches the available height, the
+editor scrolls internally without truncating the draft; deleting text shrinks
+it again. Enter still submits rather than inserting a newline. This is a text
+editor, not the Codex slash-command UI. Secret answers retain a single-line
+masked password field.
+
+For a question with multiple parts, `Enter` records each answer locally; only
+after the last answer is the complete response sent. Use `↑`/`↓` to select offered
+choices. Custom text is accepted only if the question permits it, and secret
+answers are masked. Unsupported or ambiguous simultaneous requests remain
+**REPLY IN CODEX**. Approval requests retain their explicit decision buttons;
+typing is not a substitute for approval.
+
+An idle follow-up starts a new turn in the displayed root CLI session using its
+existing configuration, without changing its model, working directory or
+permission policy. A pending question is answered on its exact source thread,
+which can be a linked agent. The editor shows the target thread or question.
+Drafts are memory-only, bounded to 4,096 characters per answer, and discarded
+when leaving detail, hiding context, or when the request/connection changes.
+Submitted text is sent to Codex and can become part of its normal session history.
+No text is sent automatically; pressing Enter while focused is the send action.
+
+Capabilities are one-use and connection-bound. Follow-ups recheck the live idle
+state immediately before `turn/start`, and pending answers use their original
+JSON-RPC request and question IDs. The protocol has no atomic “start only if this
+completed turn is still current” condition, so avoid submitting in Codex and
+Codexometer simultaneously. Failed or ambiguous sends are never automatically
+retried: check Codex first. Local-only, disconnected, busy and very small views
+do not offer an editor; use Codex itself in those cases. Codexometer does not
+detect the CLI's visual keyboard-focus state or type into its terminal.
+
+**Command approvals (shared app-server only):** the detail page shows the reason,
+command and working directory. The full detail view presents distinct justification, command,
+working-directory and persistent-rule sections, with themed headings, muted
+metadata and blank separators. Commands retain their line breaks and are
+visually marked with a vertical rail. Formatting uses validated structured
+fields rather than guessing command boundaries from the justification. Legacy
+or incomplete requests retain their original bounded text.
+
+When the approval event omits the command or
+directory, Codexometer associates it with the preceding command item from the
+same thread, turn and item. A complete ordinary command request offers clickable
+buttons matching the supported decisions Codex actually offers, in its order:
+
+- **APPROVE ONCE** grants this command after **CONFIRM APPROVAL**.
+- **ALLOW FOR SESSION** grants session-scoped approval after **CONFIRM SESSION
+  GRANT**; future prompts covered by Codex's session approval cache may run
+  without asking again.
+- **ALWAYS ALLOW PREFIX** applies the exact displayed persistent command-prefix
+  rule after **CONFIRM PERSISTENT RULE**. Future matching commands may run
+  without asking again; review the displayed prefix carefully.
+- **DECLINE** rejects the command but lets the agent continue the turn.
+- **REJECT & STOP TURN** sends Codex's `cancel` decision: reject the command and
+  interrupt the turn. This is distinct from declining or closing the detail page.
+
+Each button appears independently; a normal Accept/Cancel prompt no longer
+requires a Decline option to enable approval. Unknown decision types are not
+actionable. The **OFFERED DECISIONS** line shows bounded, canonical decision
+names/types for troubleshooting, not conversation content. Structured
+command-prefix grants are validated and their exact payload is returned; no
+decision absent from the request can be submitted. For older servers omitting
+the decision list, only the legacy Accept/Cancel pair is offered.
+
+Closing the detail page cancels an unsubmitted confirmation. Each visible
+approval button has a numbered shortcut (`1`–`8`, following the offered order).
+A grant shortcut selects the choice; `C` confirms that specific choice, whether
+selected by keyboard or mouse. Repeating the number does not confirm. Decline
+and reject/stop shortcuts act immediately, just like their buttons. Only one
+session—the expanded row or full-detail target—can display approval controls
+at a time. Hidden, clipped and compact controls have no active shortcuts, and
+typing in the reply editor never triggers approval shortcuts.
+Buttons wrap into rows when needed, reserve their
+confirmation widths so other targets do not move, and sit in a pinned footer
+below the scrolling request text, separated by one blank line when space allows.
+Very short terminals omit that spacer first. Controls are hidden if the terminal
+cannot fit them with room to read the request. All permission grants require
+their own explicit second click; confirming one choice cannot confirm another.
+
+Actions are bound to a single pending request on the current connection. They
+become unavailable when resolved elsewhere, the turn ends, or the connection
+closes. The server arbitrates simultaneous responses from multiple clients.
+Sending a decision is not proof that the command ran: check Codex for the outcome.
+Failed or ambiguous sends are not automatically retried.
+
+Local rollout logs do **not** persist Codex's approval-request events, so a local
+preview can show only the message preceding an approval. `INPUT NEEDED` or
+`CHECK SESSION` alone never enables these controls. Requests with missing,
+truncated or sanitised-away details, network approvals, file changes, permission
+grants and other unsupported requests remain **REPLY IN CODEX**. The complete
+eligible request is available in the scrollable detail, not just the compact
+two-line preview. Unsupported requests may have only a bounded excerpt.
+
+When controls are unavailable, the detail page explains why beside
+**REPLY IN CODEX**: for example, missing command/directory or request identity,
+additional permissions, network/file-change approval, no supported decisions,
+truncated or sanitised text, local-only observation, or a resolved/disconnected
+request. Eligible requests on small terminals instead explain that the terminal
+must be enlarged. These diagnostics do not relax any approval safeguards.
+
+The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
+previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
+survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
+Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
+context can be unavailable. Terminal escapes and control/bidirectional-formatting
+characters are stripped. Previews remain in their original language and are not
+LLM-generated summaries. `--demo` includes example context and a simulated
+command approval choices without accessing a real conversation or executing
+any command; restart the demo to reset its approval.
+
 ### Saved presentation preferences
 
-Codexometer stores only the selected theme, Quota view, benchmark filter, and
-benchmark ranking weight. No quota estimate or snapshot, raw session telemetry,
+Codexometer stores only the selected theme, Quota view, benchmark filter,
+benchmark ranking weight, and the Monitor context hide/show preference.
+No quota estimate or snapshot, raw session telemetry,
 benchmark result, message content, credential, session ID, email, account
 fingerprint, or account ID is written. The small JSON file uses the
 platform-standard user configuration directory:

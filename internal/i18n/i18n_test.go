@@ -69,6 +69,15 @@ func TestPresentationKeysHaveCatalogueEntries(t *testing.T) {
 }
 
 func TestLanguageSelection(t *testing.T) {
+	for input, want := range map[string]string{
+		"sv": "sv", "sv-SE": "sv", "sv-FI": "sv",
+		"nb": "nb", "nb-NO": "nb", "no": "nb", "no-NO": "nb",
+		"tr": "tr", "tr-TR": "tr", "et": "et", "et-EE": "et", "fi": "fi", "fi-FI": "fi",
+	} {
+		if got := New(input).Code(); got != want {
+			t.Errorf("%q: %q, want %q", input, got, want)
+		}
+	}
 	for input, want := range map[string]string{"": "en-GB", "en": "en-GB", "en-US": "en-GB", "en-GB": "en-GB", "nl-NL": "nl", "de-AT": "de", "fr-CA": "fr", "it": "it", "es-MX": "es", "ru-RU": "ru", "ja-JP": "ja", "zh-CN": "zh-Hans", "zh-Hans": "zh-Hans", "zz": "en-GB", "not a language": "en-GB", "  de  ": "de"} {
 		if got := New(input).Code(); got != want {
 			t.Errorf("%q: %q, want %q", input, got, want)
@@ -129,6 +138,11 @@ func TestCataloguesAndEnglishCompatibility(t *testing.T) {
 }
 
 func TestLiteralFallbackAndTranslations(t *testing.T) {
+	for code, want := range map[string]string{"sv": "ANVÄNDNING", "nb": "BRUK", "tr": "KULLANIM", "et": "KASUTUS", "fi": "KÄYTTÖ"} {
+		if got := New(code).Text("USAGE"); got != want {
+			t.Errorf("%s translation: %q, want %q", code, got, want)
+		}
+	}
 	for _, code := range codes {
 		tr := New(code)
 		if got := tr.Text("untranslated 50% complete"); got != "untranslated 50% complete" {
@@ -152,6 +166,11 @@ func TestWindowNameUsesLocalePluralRules(t *testing.T) {
 		{"de", "1 WEEK", "1 WOCHE"}, {"de", "2 WEEKS", "2 WOCHEN"},
 		{"ru", "1 HOUR", "1 ЧАС"}, {"ru", "2 HOURS", "2 ЧАСА"}, {"ru", "5 HOURS", "5 ЧАСОВ"}, {"ru", "21 HOURS", "21 ЧАС"},
 		{"ja", "5 HOURS", "5 時間"}, {"zh-Hans", "1 DAY", "1 天"},
+		{"sv", "1 HOUR", "1 TIMME"}, {"sv", "2 HOURS", "2 TIMMAR"},
+		{"nb", "1 WEEK", "1 UKE"}, {"nb", "2 WEEKS", "2 UKER"},
+		{"tr", "1 DAY", "1 GÜN"}, {"tr", "2 DAYS", "2 GÜN"},
+		{"et", "1 MINUTE", "1 MINUT"}, {"et", "2 MINUTES", "2 MINUTIT"},
+		{"fi", "1 WEEK", "1 VIIKKO"}, {"fi", "2 WEEKS", "2 VIIKKOA"}, {"fi", "0 HOURS", "0 TUNTIA"},
 		{"fr", "custom-model-id", "custom-model-id"},
 	} {
 		if got := New(test.code).WindowName(test.name); got != test.want {

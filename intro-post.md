@@ -17,7 +17,7 @@ It is useful when you want to:
 - compare available models and reasoning levels on the same checked tasks; or
 - inspect how a benchmark was solved rather than seeing only a final score.
 
-The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and nine interface languages. Extra rate-limit windows are accommodated as Codex returns them. Theme, Quota view, benchmark filter, and ranking preferences survive restarts.
+The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and fourteen interface languages. Extra rate-limit windows are accommodated as Codex returns them. Theme, Quota view, benchmark filter, and ranking preferences survive restarts.
 
 ## What does it show?
 
@@ -36,15 +36,16 @@ API-equivalent figures are workload-dependent estimates, not your subscription�
 
 The reset button normally appears only when Codex reports an available reset and a quota window is at least **80% consumed**. Change that threshold with `--reset-threshold 60`. Click once to reveal confirmation, then again within ten seconds to redeem; `Esc` cancels. A reset refreshes eligible quota and changes the weekly reset schedule—it does not stack additional allowance.
 
-Ordinary Codex CLI sessions work out of the box. For the best Monitor feedback, connect your CLI sessions through a shared local Codex app-server: Codexometer can distinguish **INPUT NEEDED** from **APPROVAL NEEDED** and use positively matched resolved-model events for more accurate pricing. Without that setup, it falls back to local session signals and a cautious **CHECK SESSION** inactivity prompt, not a guessed approval alert. See the [recommended setup](https://github.com/merefield/codexometer#recommended-codex-cli-setup).
+Ordinary Codex CLI sessions work out of the box. For the best Monitor feedback, connect your CLI sessions through a shared local Codex app-server: Codexometer can distinguish **INPUT NEEDED** from **APPROVAL NEEDED**, show command-approval details with controls matching Codex's supported offered choices, and use positively matched resolved-model events for more accurate pricing. Permission grants require confirmation; session-wide and persistent-prefix choices are clearly labelled. Without that setup, it falls back to local session signals and a cautious **CHECK SESSION** inactivity prompt, not a guessed approval alert. See the [recommended setup](https://github.com/merefield/codexometer#recommended-codex-cli-setup).
 
 ## Make it yours
 
-Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), or Simplified Chinese (`zh-Hans`):
+Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Swedish (`sv`), Norwegian Bokmål (`nb`, also `no`), Turkish (`tr`), Estonian (`et`), or Finnish (`fi`):
 
 ```sh
 CODEXOMETER_LANG=fr codexometer
 CODEXOMETER_LANG=ja codexometer --demo
+CODEXOMETER_LANG=fi codexometer
 ```
 
 On PowerShell, use `$env:CODEXOMETER_LANG = 'fr'` before launching. Retain the setting in your shell profile or Windows user environment; restart Codexometer after changing it. Set `en-GB` or remove the variable to restore English. Translations are embedded in the binary; existing hotkeys, model names, and benchmark prompts stay unchanged. These are initial UI translations, and native-language corrections are welcome.
@@ -91,7 +92,7 @@ Prefer a non-interactive run? `codexometer --digbench-game P-1` runs a named gam
 
 ## Privacy, authentication, and cost
 
-Quota monitoring uses the prevailing Codex login and does not inspect ordinary conversation content. Detailed interaction capture is restricted to isolated benchmark turns created by Codexometer; ordinary Codex session messages remain excluded.
+Quota monitoring uses the prevailing Codex login. Monitor can show a bounded last-reply, activity, question, or approval preview beside each session, with an `[i]` detail view. Excerpts remain in memory and do not trigger another model call; `h` hides them, and that display preference is remembered. With a shared app-server, full detail lets you answer supported blocking questions or explicitly send a follow-up to an idle session. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (`C` or a second click), and persistent-prefix rules are shown for review. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Monitor does not harvest user prompts, reasoning, or arbitrary tool output.
 
 Benchmark transcripts are bounded and sanitized. Credentials, request headers, known runtime identifiers, temporary paths, terminal controls, Codex reasoning, and unrelated local session content are not retained in the detail view.
 

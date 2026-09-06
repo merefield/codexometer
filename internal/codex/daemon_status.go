@@ -10,6 +10,7 @@ const (
 	sessionRuntimeIdle
 	sessionRuntimeInput
 	sessionRuntimeApproval
+	sessionRuntimeComplete
 )
 
 type sessionStatusProvider interface {
@@ -17,6 +18,7 @@ type sessionStatusProvider interface {
 }
 
 type sessionDaemonSnapshot struct {
+	Contexts          map[string]SessionContext
 	Statuses          map[string]sessionRuntimeStatus
 	ModelObservations []resolvedModelObservation
 	SubscribedThreads map[string]struct{}

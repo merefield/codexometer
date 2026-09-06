@@ -22,8 +22,8 @@ const EnvironmentVariable = "CODEXOMETER_LANG"
 //go:embed locales/*.json
 var files embed.FS
 
-var codes = []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans"}
-var tags = []language.Tag{language.BritishEnglish, language.Dutch, language.German, language.French, language.Italian, language.Spanish, language.Russian, language.Japanese, language.SimplifiedChinese}
+var codes = []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans", "sv", "nb", "tr", "et", "fi"}
+var tags = []language.Tag{language.BritishEnglish, language.Dutch, language.German, language.French, language.Italian, language.Spanish, language.Russian, language.Japanese, language.SimplifiedChinese, language.Swedish, language.MustParse("nb"), language.Turkish, language.Estonian, language.Finnish}
 var matcher = language.NewMatcher(tags)
 var textCatalog, formatCatalog = loadCatalogues()
 var current = New(os.Getenv(EnvironmentVariable))
