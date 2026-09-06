@@ -26,6 +26,31 @@ func TestDemoAccountHistoryMatchesQuotaAccount(t *testing.T) {
 	}
 }
 
+func TestDemoCommandApprovalIsOneUseSimulation(t *testing.T) {
+	d := &demoFetcher{}
+	snapshot, err := d.FetchTokenUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := snapshot.Sessions[0].Context.ApprovalToken
+	if !d.SessionApprovalPending(token) {
+		t.Fatal("demo approval missing")
+	}
+	if err := d.RespondSessionApproval(context.Background(), token, "acceptForSession"); err == nil {
+		t.Fatal("demo accepted persistent grant")
+	}
+	if err := d.RespondSessionApproval(context.Background(), token, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if d.SessionApprovalPending(token) {
+		t.Fatal("demo approval reused")
+	}
+	snapshot, _ = d.FetchTokenUsage(context.Background())
+	if snapshot.Sessions[0].Attention != codex.SessionAttentionNone || !strings.Contains(snapshot.Sessions[0].Context.Text, "No command was executed") {
+		t.Fatal("demo outcome missing")
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	for _, flag := range []string{"-v", "--version"} {
 		var stdout, stderr bytes.Buffer

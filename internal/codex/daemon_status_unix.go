@@ -22,6 +22,7 @@ const (
 )
 
 type daemonStatusProvider struct {
+	contexts   map[string]*daemonContextState
 	socketPath string
 
 	mu            sync.Mutex
@@ -134,6 +135,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		subscribed[threadID] = struct{}{}
 	}
 	return sessionDaemonSnapshot{
+		Contexts:          daemonContextSnapshot(p.contexts, threadIDs, statuses),
 		Statuses:          statuses,
 		ModelObservations: append([]resolvedModelObservation(nil), p.observations...),
 		SubscribedThreads: subscribed,
@@ -188,6 +190,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 		}
 		p.mu.Lock()
 		delete(p.subscribed, threadID)
+		delete(p.contexts, threadID)
 		for key := range p.reroutedTurns {
 			if key.threadID == threadID {
 				delete(p.reroutedTurns, key)
@@ -365,6 +368,12 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 			}
 			continue
 		}
+		p.mu.Lock()
+		if p.contexts == nil {
+			p.contexts = map[string]*daemonContextState{}
+		}
+		daemonContextEvent(p.contexts, envelope.Method, envelope.ID, envelope.Params, time.Now())
+		p.mu.Unlock()
 		p.handleNotification(envelope.Method, envelope.Params)
 	}
 }
@@ -439,6 +448,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 		}
 	}
 	p.subscribed = nil
+	p.contexts = nil
 	p.reroutedTurns = nil
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil

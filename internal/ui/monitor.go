@@ -80,6 +80,9 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
+	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+		return monitorView{view: m.renderMonitorContextDetail(width, height, colors)}
+	}
 	layout := layoutMonitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
@@ -169,7 +172,11 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		telemetry := i18n.Format("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
-	return frameSized(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), strings.Join(lines, "\n"), colors.primary, colors)
+	action := ""
+	if len(m.monitorSessionData) > 0 && width >= 16 {
+		action = m.renderContextAction("privacy", m.monitorPrivacyLabel(), colors)
+	}
+	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), action, strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {
@@ -242,7 +249,9 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 	if rowCount < visibleCount {
 		pageLabel = i18n.Format("ROWS %d-%d/%d", start+1, start+rowCount, visibleCount)
 	}
-	rowHeights := distributeSpace(max(height-(rowCount-1), rowCount), rowCount)
+	// Joining framed rows with a newline adds no blank row. Allocate the full
+	// height so no row falls below the three lines its frame actually renders.
+	rowHeights := distributeSpace(max(height, rowCount), rowCount)
 	return visible, rowHeights, pageLabel
 }
 
@@ -256,6 +265,9 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 		return m.renderMonitorGraphSamples(width, height, session.samples, i18n.Text("TOKENS"), rowColors)
 	}
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
+	if !m.monitorContextHidden && session.preview.Text != "" {
+		return m.renderMonitorContextRow(width, height, metrics, session, rowColors)
+	}
 	title := i18n.Text("TOKEN BARS")
 	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, rowColors)
 	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
@@ -291,6 +303,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	}
 	if session.attention != codex.SessionAttentionNone {
 		status = monitorAttentionStatus(session.attention)
+		if session.preview.Kind == codex.SessionContextReply && session.attention == codex.SessionAttentionInput {
+			status = i18n.Text("TURN COMPLETE")
+		}
 	}
 	innerWidth := max(width-4, 1)
 	memberLabel := "ROOT"
@@ -309,7 +324,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	lines := make([]string, 0, bodyRows)
 	if session.attention != codex.SessionAttentionNone {
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning)
-		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorAttentionLabel(session.attention)+" ", innerWidth, "")))
+		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorSessionAttentionLabel(session)+" ", innerWidth, "")))
 	}
 	if len(lines) < bodyRows {
 		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
@@ -560,6 +575,10 @@ func plural(count int, singular, plural string) string {
 }
 
 func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSample, heading string, colors palette) string {
+	return m.renderMonitorGraphWithAction(width, height, samples, heading, "", colors)
+}
+
+func (m Model) renderMonitorGraphWithAction(width, height int, samples []monitorSample, heading, action string, colors palette) string {
 	innerWidth := max(width-4, 1)
 	plotHeight := max(height-2, 1)
 	const sampleWidth = 2 // one block-wide bar plus one cell of breathing room
@@ -626,7 +645,7 @@ func (m Model) renderMonitorGraphSamples(width, height int, samples []monitorSam
 		}
 		lines[row] = renderMonitorBarRow(runes, colors)
 	}
-	return frameSized(width, max(height-2, 1), ansi.Truncate(title, max(innerWidth-4, 1), ""), strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithTitleAction(width, max(height-2, 1), ansi.Truncate(title, max(innerWidth-4, 1), ""), action, strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func renderMonitorBarRow(cells []rune, colors palette) string {
@@ -647,6 +666,9 @@ func renderMonitorBarRow(cells []rune, colors palette) string {
 }
 
 func (m Model) monitorButtonAt(x, y int) footerButtonID {
+	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+		return footerButtonNone
+	}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
@@ -663,6 +685,9 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 }
 
 func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
+	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+		return "", false
+	}
 	if m.meterView != viewMonitor || (m.loading && len(m.snapshot.Meters()) == 0) {
 		return "", false
 	}

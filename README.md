@@ -302,12 +302,16 @@ codexometer --demo
 ## Recommended Codex CLI setup
 
 Codexometer works with an ordinary Codex CLI process, but connecting your CLI
-sessions through one shared app-server daemon unlocks its most accurate live
+sessions through one shared app-server unlocks its most accurate live
 telemetry on macOS, Linux, and WSL:
 
 - **Definite attention states** — Monitor can distinguish `INPUT NEEDED` from
   `APPROVAL NEEDED` using live per-thread status instead of eventually showing
   the cautious `CHECK SESSION` inactivity fallback.
+- **Command approval details and controls** — supported live requests show the
+  command, directory and reason in Monitor's `[i]` detail page, with
+  **Approve once → Confirm approval** and **Decline** buttons. Incomplete or
+  unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
   events let Codexometer price a positively matched call using the model that
   actually served it, rather than relying only on the requested model saved in
@@ -315,16 +319,16 @@ telemetry on macOS, Linux, and WSL:
 - **Better multi-session visibility** — every connected CLI tab or pane remains
   a separate Monitor session while sharing the same accurate status source;
   explicitly linked subagents are still folded into their root session.
-- **No extra Codexometer authentication** — the daemon, CLI clients, and
+- **No extra Codexometer authentication** — the server, CLI clients, and
   Codexometer continue to use the prevailing Codex login under the same
   `CODEX_HOME`.
-- **Safe degradation** — sessions not connected to the daemon continue to use
+- **Safe degradation** — sessions not connected to the server continue to use
   all core quota features with requested-model pricing, rollout lifecycle
   signals, and writer-lock attention detection.
 
 Set up the recommended arrangement as follows.
 
-1. Confirm that the current standalone Codex CLI and Codexometer see the same
+1. Confirm that the current Codex CLI and Codexometer see the same
    login and `CODEX_HOME`:
 
    ```sh
@@ -332,14 +336,40 @@ Set up the recommended arrangement as follows.
    codexometer --check-auth
    ```
 
-2. Start the managed daemon and confirm that it is ready:
+2. Choose **one** way to start the shared server. Both use the default Unix
+   socket that Codexometer detects; do not run both against that socket.
+
+   **Option A: use your existing installation (no reinstall).** In a dedicated
+   terminal, run:
+
+   ```sh
+   codex app-server --listen unix://
+   ```
+
+   Leave that terminal and server running while using connected sessions.
+   This runs in the foreground; it does not need the managed standalone install.
+
+   **Option B: managed background daemon.** This requires the installer-managed
+   standalone binary at `$CODEX_HOME/packages/standalone/current/codex`
+   (normally `~/.codex/packages/standalone/current/codex`). An npm, Homebrew or
+   manually built executable alone does not satisfy that requirement. If you
+   want this option, install the managed binary first:
+
+   ```sh
+   curl -fsSL https://chatgpt.com/codex/install.sh | sh
+   ```
+
+   Then start the daemon and confirm that it is ready:
 
    ```sh
    codex app-server daemon start
    codex app-server daemon version
    ```
 
-3. Launch each working Codex CLI terminal against the daemon's default Unix
+   If you see **managed standalone Codex install not found**, either complete
+   that installation or use Option A instead.
+
+3. Launch each working Codex CLI terminal against the server's default Unix
    control socket:
 
    ```sh
@@ -347,7 +377,14 @@ Set up the recommended arrangement as follows.
    ```
 
    Run this client command separately in every terminal tab or pane that
-   Codexometer should monitor through the shared daemon.
+   Codexometer should monitor through the shared server. Use `/resume` inside
+   each connected CLI to reopen an existing conversation.
+
+   Starting the server does not interrupt or migrate existing ordinary CLI
+   sessions. To move a conversation, let its current task finish, exit that
+   ordinary CLI, then resume it through the connected client. Avoid opening
+   the same conversation in both modes at once. Unmigrated sessions remain
+   available to Codexometer through local observation, without live approvals.
 
 4. Start Codexometer in an adjacent window or split pane before beginning work
    that you want attributed:
@@ -360,19 +397,31 @@ Set up the recommended arrangement as follows.
    reconstructed after the fact. No additional Codexometer option is required;
    it automatically probes the same default socket under `CODEX_HOME`.
 
+   If the latest Codexometer build is already running, leave it open: it retries
+   the connection and discovers newly connected sessions automatically. Allow
+   a refresh cycle. Restart it if you have replaced its binary or changed its
+   `CODEX_HOME`. A context detail marked **LIVE** came from the shared server;
+   **LOCAL** means that excerpt came from rollout logs, which do not persist
+   the live approval-request events. An older local excerpt can remain until
+   new live context arrives.
+
 5. Leave Codexometer running while you work. The Monitor starts automatically;
    use Reset when you want a fresh measured interval, and keep unrelated Codex
    activity quiet while running Benchmarks if you want the cleanest comparisons.
 
 Codexometer subscribes only to thread IDs that are already loaded by the
-daemon; it does not load unrelated historical sessions.
+shared server; it does not load unrelated historical sessions.
 
-Manage or stop the daemon with:
+For Option B, manage or stop the daemon with:
 
 ```sh
 codex app-server daemon restart
 codex app-server daemon stop
 ```
+
+For Option A, stop the foreground server with `Ctrl+C` in its dedicated
+terminal. Stopping or restarting either server disconnects its clients and
+can interrupt their work; finish active tasks first.
 
 The managed daemon lifecycle is currently experimental, Unix-only, and expects
 the standalone Codex installation. Native Windows and other ordinary CLI
@@ -385,7 +434,7 @@ codex --remote ws://127.0.0.1:4500
 ```
 
 Plain WebSockets should be used only on localhost or through an SSH tunnel.
-Codexometer currently auto-detects only the default Unix daemon socket, so
+Codexometer currently auto-detects only the default Unix control socket, so
 WebSocket-connected sessions use its fallback attention detection for now. See
 the official [Codex app-server documentation](https://developers.openai.com/codex/app-server)
 for custom socket paths, secure remote connections, and authentication.
@@ -417,11 +466,17 @@ ID, source classification, working directory, and the inherited-history
 boundary. It also reads lifecycle event names and blocking flags to identify an
 explicit unresolved input or approval request. To distinguish an open CLI
 waiting at its prompt from a closed historical session, it inspects the lock
-state—not the contents—of Codex's per-thread writer lock. Message text—including
-the final response carried beside timing metadata—reasoning, commands, tool
-results, and credentials are ignored and never retained from ordinary Codex
-sessions. The sole content-reading exception is a benchmark turn explicitly
-started by Codexometer. Its Codexometer-authored policy and prompt, visible
+state—not the contents—of Codex's per-thread writer lock. Monitor also extracts
+bounded assistant replies/commentary, input questions and choices, approval
+reasons, and command descriptions for its session-context previews. Excerpts
+stay in process memory, never in preferences or a summarisation service. User
+prompts, reasoning and arbitrary tool results are not retained by that reader.
+Text may contain sensitive material the assistant already displayed: terminal
+sanitisation is not secret redaction. Press `h` in Monitor to hide previews and
+close the detail view; this saved preference controls display, not collection.
+
+Benchmark turns explicitly started by Codexometer have separate content capture.
+Their Codexometer-authored policy and prompt, visible
 structured response, and—only for DigBench—sanitized game-tool requests and
 responses are kept in bounded process memory for the Benchmark run detail view.
 Reasoning events, platform instructions, credentials, request headers,
@@ -430,10 +485,13 @@ or response IDs are not captured.
 
 When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
-retains only runtime status flags and content-free model-reroute/token-usage
-correlations needed for the features above. It ignores prompts, responses,
-reasoning, tool payloads, and server requests, and never sends a turn or an
-approval response through this connection.
+retains runtime flags, model-reroute/token-usage correlations, and bounded
+context from assistant messages and input/approval requests. Resolved requests
+and new turns clear stale pending context. This connection never starts a turn
+or answers a question. It can send an explicit, user-confirmed one-time command
+approval or decline from the Monitor detail page (see below). Without a shared daemon, previews use
+available local rollout text rather than fetching full thread histories.
+Missing request details are left unavailable; there is no extra model call.
 
 If you use a nonstandard Codex executable, pass it explicitly:
 
@@ -452,6 +510,8 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
+| `h` | Hide/show Monitor context previews and close any open context detail |
+| `i` | Open context for the selected Monitor row (or first visible row), or close context detail |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -462,12 +522,12 @@ codexometer --codex /path/to/codex
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
-| `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; `Enter` opens/closes Monitor context |
 | `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
 | `q` | Quit |
-| `Esc` | Cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
+| `Esc` | Close Monitor context, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, Usage, or
@@ -880,8 +940,8 @@ status. A held writer lock plus a completed turn reliably identifies an open
 CLI waiting at its prompt. Without a shared server, three minutes without any
 new rollout-file activity produces only `CHECK SESSION`, because persisted data
 cannot distinguish an approval wait from every long-running local tool. The
-Monitor does not retain the input question, approval text, response, or
-conversation content. A linked child's attention state is folded into its root
+context preview does not infer attention from prose. A linked child's attention
+state is folded into its root
 so one remote Monitor row identifies the CLI session that needs intervention.
 A definite approval signal takes precedence, then definite input, then the
 inferred check state when linked members have mixed states. Because `CHECK
@@ -920,10 +980,66 @@ account observation brackets each monitored segment. These operations are not
 atomic, so unrelated account activity during either short boundary read remains
 another source of uncertainty.
 
+#### Session context previews
+
+Previews are visible by default. Wide terminals (at least 100 columns of usable
+Monitor space) show a third box between session metrics and the graph. It holds
+at most two text rows plus the source session and age when height permits.
+On narrower terminals, a last reply or pending question/request takes the graph
+column temporarily. Ordinary busy-session commentary stays collapsed to an
+`[i]` action on the graph; `CHECK SESSION` can expose its last known activity.
+With no context available, the original metrics/graph layout remains.
+
+- **LAST REPLY** is the last completed assistant reply, not a new question. A
+  local completed-turn prompt with a final reply is labelled **TURN COMPLETE**.
+- **QUESTION** contains an observed blocking input request and any choices.
+- **REQUEST** contains an observed approval reason/command when available.
+- **LAST ACTIVITY** is observed commentary or a command, not proof that input
+  is required. Ages describe the last observed event; paused readings can be stale.
+
+Click `[i]`, or select a row with arrows and press `i`/`Enter`, for a scrollable
+detail view. Use arrows, Page Up/Down, or the mouse wheel; close with `[×]`,
+`Esc`, `i`, `Enter`, or `x`. Answer questions in Codex itself.
+Outstanding requests take priority over ordinary activity when linked agents
+share a root row, and the source ID identifies the actual member.
+
+**Command approvals (shared app-server only):** the detail page shows the reason,
+command and working directory. When the approval event omits the command or
+directory, Codexometer associates it with the preceding command item from the
+same thread, turn and item. A complete ordinary command request offers clickable
+**APPROVE ONCE** and **DECLINE** buttons. Approval requires a second click on
+**CONFIRM APPROVAL**; closing the detail page cancels that confirmation. There is
+no approval keyboard shortcut and no persistent/session-wide permission grant.
+Controls are hidden on terminals too small to fit the confirmation labels.
+
+Actions are bound to a single pending request on the current connection. They
+become unavailable when resolved elsewhere, the turn ends, or the connection
+closes. The server arbitrates simultaneous responses from multiple clients.
+Sending a decision is not proof that the command ran: check Codex for the outcome.
+Failed or ambiguous sends are not automatically retried.
+
+Local rollout logs do **not** persist Codex's approval-request events, so a local
+preview can show only the message preceding an approval. `INPUT NEEDED` or
+`CHECK SESSION` alone never enables these controls. Requests with missing,
+truncated or sanitised-away details, network approvals, file changes, permission
+grants and other unsupported requests remain **REPLY IN CODEX**. The complete
+eligible request is available in the scrollable detail, not just the compact
+two-line preview. Unsupported requests may have only a bounded excerpt.
+
+The readout's `[H:HIDE]`/`[H:SHOW]` button or `h` toggles all previews; the choice
+survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
+Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
+context can be unavailable. Terminal escapes and control/bidirectional-formatting
+characters are stripped. Previews remain in their original language and are not
+LLM-generated summaries. `--demo` includes example context and a simulated
+one-time command approval without accessing a real conversation or executing
+any command; restart the demo to reset its approval.
+
 ### Saved presentation preferences
 
-Codexometer stores only the selected theme, Quota view, benchmark filter, and
-benchmark ranking weight. No quota estimate or snapshot, raw session telemetry,
+Codexometer stores only the selected theme, Quota view, benchmark filter,
+benchmark ranking weight, and the Monitor context hide/show preference.
+No quota estimate or snapshot, raw session telemetry,
 benchmark result, message content, credential, session ID, email, account
 fingerprint, or account ID is written. The small JSON file uses the
 platform-standard user configuration directory:

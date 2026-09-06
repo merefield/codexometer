@@ -53,6 +53,7 @@ type LiveUsageSession struct {
 	AgentCount       int
 	Active           bool
 	Attention        SessionAttention
+	Context          SessionContext
 	Unattributed     bool
 	ModelCalls       []LiveModelCall
 	TurnTimings      []LiveTurnTiming
@@ -93,8 +94,10 @@ type LiveTurnTiming struct {
 }
 
 // LiveUsageReader incrementally observes token telemetry written by local Codex
-// sessions. It never interprets message, reasoning, command, or tool contents.
+// sessions. It also extracts bounded display-only replies and request context;
+// reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
+	daemonContexts  map[string]SessionContext
 	SessionsRoot    string
 	WriterLocksRoot string
 	statusProvider  sessionStatusProvider
@@ -118,6 +121,7 @@ type LiveUsageReader struct {
 }
 
 type rolloutCursor struct {
+	preview                     SessionContext
 	offset                      int64
 	totalTokens                 int64
 	observedTokens              int64
@@ -315,12 +319,14 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	r.daemonContexts = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
 		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
+			r.daemonContexts = daemonSnapshot.Contexts
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -489,6 +495,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return err
 		}
 		cursor.attention = attention
+		cursor.preview = latestSessionContext(path, cursor)
 	}
 	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
 		model, modelErr := latestRolloutModel(path, cursor)
@@ -540,6 +547,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 			return attentionErr
 		}
 		cursor.attention = attention
+		cursor.preview = latestSessionContext(path, cursor)
 		return nil
 	}
 	if info.Size() == cursor.offset {
@@ -553,6 +561,9 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if preview, ok := rolloutContextRecord(line, cursor); ok {
+				cursor.preview = preview
+			}
 			if turnID, ordinal, at, ok := rolloutTurnIDRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.currentTurnID = turnID
@@ -1134,6 +1145,22 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		group.TurnTimings = append(group.TurnTimings, cursor.turnTimings...)
 		group.Active = group.Active || active || exactWorking || attention != SessionAttentionNone
 		group.Attention = mergeSessionAttention(group.Attention, attention)
+		preview := cursor.preview
+		if exact && preview.pending() {
+			preview = SessionContext{}
+		}
+		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending()) {
+			preview = live
+		}
+		// A persisted request is not proof that it is still outstanding. Match
+		// it to current attention before displaying it as actionable context.
+		if preview.Kind == SessionContextApproval && attention != SessionAttentionApproval ||
+			preview.Kind == SessionContextQuestion && attention != SessionAttentionInput {
+			preview = SessionContext{}
+		}
+		if !unattributed {
+			group.Context = preferSessionContext(group.Context, preview)
+		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing
 		// member—or an authoritatively working daemon thread—means the grouped

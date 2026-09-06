@@ -19,18 +19,19 @@ import (
 )
 
 type demoFetcher struct {
-	mu             sync.Mutex
-	snapshot       codex.Snapshot
-	pendingQuota   int
-	suppressUsage  bool
-	lifetimeTokens int64
-	apiEqUSD       float64
-	apiEqCalls     int64
-	eventSequence  uint64
-	alphaCalls     []codex.LiveModelCall
-	alphaTurns     []codex.LiveTurnTiming
-	bravoCalls     []codex.LiveModelCall
-	bravoTurns     []codex.LiveTurnTiming
+	approvalDecision string
+	mu               sync.Mutex
+	snapshot         codex.Snapshot
+	pendingQuota     int
+	suppressUsage    bool
+	lifetimeTokens   int64
+	apiEqUSD         float64
+	apiEqCalls       int64
+	eventSequence    uint64
+	alphaCalls       []codex.LiveModelCall
+	alphaTurns       []codex.LiveTurnTiming
+	bravoCalls       []codex.LiveModelCall
+	bravoTurns       []codex.LiveTurnTiming
 }
 
 func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, error) {
@@ -116,20 +117,47 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 		}
 	}
 	alphaTokens := d.lifetimeTokens * 3 / 5
+	attention := codex.SessionAttentionApproval
+	preview := codex.SessionContext{Kind: codex.SessionContextApproval, Text: "DEMO ONLY — no command will run.\nAllow pushing the documentation update?\nCommand: git push origin main\nDirectory: /projects/alpha", ThreadID: "019d-demo-a1b2c", Source: "DEMO", At: time.Now().Add(-time.Minute), ApprovalToken: "demo-command"}
+	if d.approvalDecision != "" {
+		attention = codex.SessionAttentionNone
+		preview.Kind = codex.SessionContextReply
+		preview.ApprovalToken = ""
+		preview.Text = "Simulated decision: " + d.approvalDecision + ". No command was executed."
+	}
 	return codex.LiveUsageSnapshot{
 		TotalTokens: d.lifetimeTokens, APIEqUSD: d.apiEqUSD, APIEqPricedCalls: d.apiEqCalls,
 		LastActivity: time.Now(), SessionCount: 2,
 		CodexStatusKnown: true, CodexUp: true, CodexWorking: true,
 		Sessions: []codex.LiveUsageSession{
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
-				Attention: codex.SessionAttentionApproval, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
+				Attention: attention, Context: preview, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
 			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true,
-				Attention: codex.SessionAttentionInput, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
+				Attention: codex.SessionAttentionInput, Context: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Pushed directly to main.\nIncludes both README and intro-post updates.", ThreadID: "019d-demo-d4e5f", Source: "DEMO", At: time.Now().Add(-2 * time.Minute)}, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
 		},
 	}, nil
 }
 
 func (d *demoFetcher) BenchmarkCombinationCount(context.Context) (int, error) { return 2, nil }
+
+func (d *demoFetcher) SessionApprovalPending(token string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return token == "demo-command" && d.approvalDecision == ""
+}
+
+func (d *demoFetcher) RespondSessionApproval(ctx context.Context, token, decision string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if token != "demo-command" || d.approvalDecision != "" || (decision != "accept" && decision != "decline") {
+		return fmt.Errorf("invalid or resolved demo approval")
+	}
+	d.approvalDecision = decision
+	return nil
+}
 
 func (d *demoFetcher) RunBenchmarkSuite(ctx context.Context, tasks []codex.BenchmarkTaskID, emit func(codex.BenchmarkEvent)) {
 	d.RunBenchmarkSuiteScoped(ctx, tasks, d.demoBenchmarkPlan().AllScope(), emit)
