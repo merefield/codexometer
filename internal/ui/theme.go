@@ -4,6 +4,8 @@ import (
 	imagecolor "image/color"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type themeID int
@@ -61,13 +63,13 @@ func (s meterViewID) nextQuota() meterViewID {
 
 func (s meterViewID) name() string {
 	return [...]string{
-		"BARS",
-		"MONITOR",
-		"PIE",
-		"CONSUMPTION PACE",
-		"FUEL TANK",
-		"BENCHMARK",
-		"USAGE",
+		i18n.Text("BARS"),
+		i18n.Text("MONITOR"),
+		i18n.Text("PIE"),
+		i18n.Text("CONSUMPTION PACE"),
+		i18n.Text("FUEL TANK"),
+		i18n.Text("BENCHMARK"),
+		i18n.Text("USAGE"),
 	}[s]
 }
 

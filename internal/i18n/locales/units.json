@@ -1,0 +1,164 @@
+{
+  "en-GB": {
+    "MINUTE": {
+      "one": "%d MINUTE",
+      "other": "%d MINUTES"
+    },
+    "HOUR": {
+      "one": "%d HOUR",
+      "other": "%d HOURS"
+    },
+    "DAY": {
+      "one": "%d DAY",
+      "other": "%d DAYS"
+    },
+    "WEEK": {
+      "one": "%d WEEK",
+      "other": "%d WEEKS"
+    }
+  },
+  "nl": {
+    "MINUTE": {
+      "one": "%d MINUUT",
+      "other": "%d MINUTEN"
+    },
+    "HOUR": {
+      "one": "%d UUR",
+      "other": "%d UREN"
+    },
+    "DAY": {
+      "one": "%d DAG",
+      "other": "%d DAGEN"
+    },
+    "WEEK": {
+      "one": "%d WEEK",
+      "other": "%d WEKEN"
+    }
+  },
+  "de": {
+    "MINUTE": {
+      "one": "%d MINUTE",
+      "other": "%d MINUTEN"
+    },
+    "HOUR": {
+      "one": "%d STUNDE",
+      "other": "%d STUNDEN"
+    },
+    "DAY": {
+      "one": "%d TAG",
+      "other": "%d TAGE"
+    },
+    "WEEK": {
+      "one": "%d WOCHE",
+      "other": "%d WOCHEN"
+    }
+  },
+  "fr": {
+    "MINUTE": {
+      "one": "%d MINUTE",
+      "other": "%d MINUTES"
+    },
+    "HOUR": {
+      "one": "%d HEURE",
+      "other": "%d HEURES"
+    },
+    "DAY": {
+      "one": "%d JOUR",
+      "other": "%d JOURS"
+    },
+    "WEEK": {
+      "one": "%d SEMAINE",
+      "other": "%d SEMAINES"
+    }
+  },
+  "it": {
+    "MINUTE": {
+      "one": "%d MINUTO",
+      "other": "%d MINUTI"
+    },
+    "HOUR": {
+      "one": "%d ORA",
+      "other": "%d ORE"
+    },
+    "DAY": {
+      "one": "%d GIORNO",
+      "other": "%d GIORNI"
+    },
+    "WEEK": {
+      "one": "%d SETTIMANA",
+      "other": "%d SETTIMANE"
+    }
+  },
+  "es": {
+    "MINUTE": {
+      "one": "%d MINUTO",
+      "other": "%d MINUTOS"
+    },
+    "HOUR": {
+      "one": "%d HORA",
+      "other": "%d HORAS"
+    },
+    "DAY": {
+      "one": "%d DÍA",
+      "other": "%d DÍAS"
+    },
+    "WEEK": {
+      "one": "%d SEMANA",
+      "other": "%d SEMANAS"
+    }
+  },
+  "ru": {
+    "MINUTE": {
+      "one": "%d МИНУТА",
+      "other": "%d МИНУТ",
+      "few": "%d МИНУТЫ",
+      "many": "%d МИНУТ"
+    },
+    "HOUR": {
+      "one": "%d ЧАС",
+      "other": "%d ЧАСОВ",
+      "few": "%d ЧАСА",
+      "many": "%d ЧАСОВ"
+    },
+    "DAY": {
+      "one": "%d ДЕНЬ",
+      "other": "%d ДНЕЙ",
+      "few": "%d ДНЯ",
+      "many": "%d ДНЕЙ"
+    },
+    "WEEK": {
+      "one": "%d НЕДЕЛЯ",
+      "other": "%d НЕДЕЛЬ",
+      "few": "%d НЕДЕЛИ",
+      "many": "%d НЕДЕЛЬ"
+    }
+  },
+  "ja": {
+    "MINUTE": {
+      "other": "%d 分"
+    },
+    "HOUR": {
+      "other": "%d 時間"
+    },
+    "DAY": {
+      "other": "%d 日"
+    },
+    "WEEK": {
+      "other": "%d 週間"
+    }
+  },
+  "zh-Hans": {
+    "MINUTE": {
+      "other": "%d 分钟"
+    },
+    "HOUR": {
+      "other": "%d 小时"
+    },
+    "DAY": {
+      "other": "%d 天"
+    },
+    "WEEK": {
+      "other": "%d 周"
+    }
+  }
+}

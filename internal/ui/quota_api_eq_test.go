@@ -9,7 +9,25 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
+
+func TestShortQuotaAPIRestartReasonsStayCanonical(t *testing.T) {
+	for reason, want := range map[string]string{
+		quotaAPIRestartAccountChanged:    "ACCOUNT",
+		quotaAPIRestartAccountingRebased: "REBASED",
+		quotaAPIRestartCoverageGap:       "COVERAGE GAP",
+		quotaAPIRestartUnpricedModel:     "UNPRICED",
+		quotaAPIRestartWindowChanged:     "WINDOW CHANGED",
+		quotaAPIRestartWindowReset:       "RESET",
+		"FUTURE REASON":                  "FUTURE REASON",
+		"":                               "",
+	} {
+		if got := shortQuotaAPIRestartReason(reason); got != want {
+			t.Errorf("reason %q: got %q, want canonical %q", reason, got, want)
+		}
+	}
+}
 
 func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
@@ -31,7 +49,11 @@ func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 		t.Fatalf("estimate range = %#v", estimate)
 	}
 	line := model.quotaAPILine(meter, 100)
-	if !strings.Contains(line, "SPEND") || !strings.Contains(line, "100%") || !strings.Contains(line, "N=1") {
+	want := i18n.Format("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d",
+		formatAPIRange(estimate.currentLow, estimate.currentHigh),
+		formatAPIRange(estimate.fullLow, estimate.fullHigh),
+		i18n.Text("LOW"), 1)
+	if line != want {
 		t.Fatalf("estimate line = %q", line)
 	}
 }

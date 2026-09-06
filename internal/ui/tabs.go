@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type mainTabID int
@@ -63,18 +65,18 @@ func responsiveTabLabels(width int, tiers [][]string) ([]string, string) {
 }
 
 func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
-	monitorFull := "╭ MONITOR ╮"
+	monitorFull := i18n.Text("╭ MONITOR ╮")
 	monitorCompact := "╭MON╮"
 	monitorMinimal := "[M]"
 	microMonitor := "M"
 	if showMonitorLight {
-		monitorFull = "╭ MONITOR ●╮"
+		monitorFull = i18n.Text("╭ MONITOR ●╮")
 		monitorCompact = "╭MON●╮"
 		monitorMinimal = "[M●]"
 		microMonitor = "●"
 	}
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"╭ QUOTA ╮", monitorFull, "╭ USAGE ╮", "╭ BENCHMARK ╮"},
+		{i18n.Text("╭ QUOTA ╮"), monitorFull, i18n.Text("╭ USAGE ╮"), i18n.Text("╭ BENCHMARK ╮")},
 		{"╭QTA╮", monitorCompact, "╭USE╮", "╭TEST╮"},
 		{"[Q]", monitorMinimal, "[U]", "[B]"},
 		{"Q", microMonitor, "U", "B"},
@@ -95,7 +97,7 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 
 func quotaViewTabLayout(width int) ([]viewTab, string) {
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{"╭ BARS ╮", "╭ CONSUMPTION PACE ╮", "╭ PIE ╮", "╭ FUEL TANK ╮"},
+		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮")},
 		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮"},
 		{"[B]", "[C]", "[P]", "[F]"},
 		{"B", "C", "P", "F"},

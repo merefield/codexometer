@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func (m Model) View() tea.View {
@@ -83,7 +84,7 @@ func renderHeader(width, phase int, signal, account, appVersion string, colors p
 	}
 	if width < 64 {
 		title := colors.header().Render("▰ CODEXOMETER ▰")
-		subtitle := colors.dimmed().Render(ansi.Truncate("QUOTA TELEMETRY // VERSION "+displayedVersion, width, ""))
+		subtitle := colors.dimmed().Render(ansi.Truncate(i18n.Text("QUOTA TELEMETRY // VERSION ")+displayedVersion, width, ""))
 		return joinRight(title, signal, width) + "\n" + joinRight(subtitle, account, width)
 	}
 	logo := []string{
@@ -91,7 +92,7 @@ func renderHeader(width, phase int, signal, account, appVersion string, colors p
 		"█▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄",
 	}
 	beacon := []string{"◉", "◎", "◌", "◎"}[phase%4]
-	subtitle := colors.dimmed().Render(fmt.Sprintf("%s QUOTA TELEMETRY CONSOLE · VERSION %s", beacon, displayedVersion))
+	subtitle := colors.dimmed().Render(i18n.Format("%s QUOTA TELEMETRY CONSOLE · VERSION %s", beacon, displayedVersion))
 	return joinRight(colors.header().Render(logo[0]), signal, width) + "\n" +
 		colors.header().Render(logo[1]) + "\n" +
 		joinRight(subtitle, account, width)
@@ -101,23 +102,23 @@ func renderBoot(width, phase int, colors palette) string {
 	trackWidth := max(width-18, 8)
 	position := phase % trackWidth
 	track := strings.Repeat("·", position) + "◆" + strings.Repeat("·", trackWidth-position-1)
-	return frame(width, "ACQUIRING SIGNAL", colors.label().Render(track)+"\n"+colors.dimmed().Render("HANDSHAKE WITH CODEX APP-SERVER IN PROGRESS"), colors.primary, colors)
+	return frame(width, i18n.Text("ACQUIRING SIGNAL"), colors.label().Render(track)+"\n"+colors.dimmed().Render(i18n.Text("HANDSHAKE WITH CODEX APP-SERVER IN PROGRESS")), colors.primary, colors)
 }
 
 func (m Model) renderAccount(colors palette) string {
-	plan := "UNKNOWN PLAN"
+	plan := i18n.Text("UNKNOWN PLAN")
 	if m.snapshot.RateLimits.PlanType != nil {
 		plan = codex.DisplayName(*m.snapshot.RateLimits.PlanType)
 	}
-	return colors.dimmed().Render("ACCOUNT // " + plan)
+	return colors.dimmed().Render(i18n.Text("ACCOUNT // ") + plan)
 }
 
 func (m Model) renderSignalStatus(width int, colors palette) string {
 	if m.loading {
-		return renderColoredSignal("SCANNING", colors.accent)
+		return renderColoredSignal(i18n.Text("SCANNING"), colors.accent)
 	}
 	if m.err != nil {
-		return renderColoredSignal("STALE SIGNAL", colors.warning)
+		return renderColoredSignal(i18n.Text("STALE SIGNAL"), colors.warning)
 	}
 	signal := snapshotQuotaSignal(m.snapshot, time.Now())
 	semantic := lipgloss.NewStyle().Bold(true).Foreground(signal.health.color(colors))
@@ -130,7 +131,7 @@ func (m Model) renderSignalStatus(width int, colors palette) string {
 		return semantic.Render("●") + online.Render(" ON // ") + semantic.Render(label)
 	}
 	label := ansi.Truncate(signal.label(), max(width-12, 1), "")
-	return semantic.Render("●") + online.Render(" ONLINE // ") + semantic.Render(label)
+	return semantic.Render("●") + online.Render(i18n.Text(" ONLINE // ")) + semantic.Render(label)
 }
 
 func renderColoredSignal(label string, color imagecolor.Color) string {
@@ -157,18 +158,18 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if remaining < 0 {
 		remaining = 0
 	}
-	left := fmt.Sprintf("AUTO-SCAN %s", compactDuration(remaining))
+	left := i18n.Format("AUTO-SCAN %s", compactDuration(remaining))
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
-		left += fmt.Sprintf("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
+		left += i18n.Format("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
 	if credits, ok := m.snapshot.CreditStatus(); ok {
 		switch {
 		case credits.Unlimited:
-			left += "  //  CREDITS UNLIMITED"
+			left += i18n.Text("  //  CREDITS UNLIMITED")
 		case credits.Balance != nil && strings.TrimSpace(*credits.Balance) != "":
-			left += "  //  CREDITS " + strings.TrimSpace(*credits.Balance)
+			left += i18n.Text("  //  CREDITS ") + strings.TrimSpace(*credits.Balance)
 		case credits.HasCredits:
-			left += "  //  CREDITS AVAILABLE"
+			left += i18n.Text("  //  CREDITS AVAILABLE")
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
@@ -184,7 +185,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 			button.id == m.flashedButton,
 		).Render(button.label))
 	}
-	theme := colors.dimmed().Render(fmt.Sprintf("THEME // %s", colors.name))
+	theme := colors.dimmed().Render(i18n.Format("THEME // %s", colors.name))
 	controlRow := joinRight(strings.Join(controls, separator), theme, width)
 	return status + "\n" + controlRow
 }
@@ -194,7 +195,7 @@ func renderPricingFooter(left string, width int, colors palette) string {
 	if width < minimumWidth {
 		return left
 	}
-	label := "PRICES RETRIEVED " + codex.StandardAPIPricingRetrievedOn + " // OPENAI.COM"
+	label := i18n.Text("PRICES RETRIEVED ") + codex.StandardAPIPricingRetrievedOn + " // OPENAI.COM"
 	center := pricingHyperlink(label, colors)
 	start := (width - lipgloss.Width(center)) / 2
 	if lipgloss.Width(left)+2 > start {
@@ -221,10 +222,12 @@ func footerButtonAppearance(colors palette, hovered, flashed bool) lipgloss.Styl
 
 func renderError(width int, err error, colors palette) string {
 	message := err.Error()
-	if len(message) > width-4 {
+	if i18n.Code() != "en-GB" {
+		message = ansi.Truncate(message, max(width-4, 0), "...")
+	} else if len(message) > width-4 {
 		message = message[:max(width-7, 0)] + "..."
 	}
-	return frame(width, "SIGNAL FAULT", lipgloss.NewStyle().Foreground(colors.danger).Render(message), colors.danger, colors)
+	return frame(width, i18n.Text("SIGNAL FAULT"), lipgloss.NewStyle().Foreground(colors.danger).Render(message), colors.danger, colors)
 }
 
 func frame(width int, title, body string, color imagecolor.Color, colors palette) string {
