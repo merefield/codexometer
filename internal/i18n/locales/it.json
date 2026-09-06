@@ -1,4 +1,8 @@
 {
+  "JUSTIFICATION": "MOTIVAZIONE",
+  "COMMAND": "COMANDO",
+  "WORKING DIRECTORY": "CARTELLA DI LAVORO",
+  "PERSISTENT PERMISSION RULE": "REGOLA DI AUTORIZZAZIONE PERMANENTE",
   "FOLLOW-UP": "SEGUITO",
   "REPLY": "RISPOSTA",
   "[ Click here or press Enter to write ]": "[ Clicca qui o premi Invio per scrivere ]",

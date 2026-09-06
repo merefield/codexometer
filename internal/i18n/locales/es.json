@@ -1,4 +1,8 @@
 {
+  "JUSTIFICATION": "JUSTIFICACIÓN",
+  "COMMAND": "COMANDO",
+  "WORKING DIRECTORY": "DIRECTORIO DE TRABAJO",
+  "PERSISTENT PERMISSION RULE": "REGLA DE PERMISO PERSISTENTE",
   "FOLLOW-UP": "SEGUIMIENTO",
   "REPLY": "RESPUESTA",
   "[ Click here or press Enter to write ]": "[ Haz clic aquí o pulsa Intro para escribir ]",

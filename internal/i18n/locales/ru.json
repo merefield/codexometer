@@ -1,4 +1,8 @@
 {
+  "JUSTIFICATION": "ОБОСНОВАНИЕ",
+  "COMMAND": "КОМАНДА",
+  "WORKING DIRECTORY": "РАБОЧИЙ КАТАЛОГ",
+  "PERSISTENT PERMISSION RULE": "ПОСТОЯННОЕ ПРАВИЛО РАЗРЕШЕНИЙ",
   "FOLLOW-UP": "ПРОДОЛЖЕНИЕ",
   "REPLY": "ОТВЕТ",
   "[ Click here or press Enter to write ]": "[ Нажмите здесь или Enter для ввода ]",

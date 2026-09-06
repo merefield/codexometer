@@ -1039,8 +1039,13 @@ COMPLETE**), or has a supported blocking question. Click the input line or press
 `Enter` to focus it; type your text, then press `Enter` to submit. Dashboard
 hotkeys become ordinary letters while typing. `Esc` leaves the editor without
 sending; press it again to return to the expanded row. Cursor editing, Unicode
-and bracketed paste are supported; pasted newlines become spaces and never
-submit. This is a single-line text editor, not the Codex slash-command UI.
+and bracketed paste are supported; pasted newlines are preserved and never
+submit. Text wraps automatically and the editor grows upward, reducing the
+scrollable context area above it. Once it reaches the available height, the
+editor scrolls internally without truncating the draft; deleting text shrinks
+it again. Enter still submits rather than inserting a newline. This is a text
+editor, not the Codex slash-command UI. Secret answers retain a single-line
+masked password field.
 
 For a question with multiple parts, `Enter` records each answer locally; only
 after the last answer is the complete response sent. Use `↑`/`↓` to select offered
@@ -1068,7 +1073,14 @@ do not offer an editor; use Codex itself in those cases. Codexometer does not
 detect the CLI's visual keyboard-focus state or type into its terminal.
 
 **Command approvals (shared app-server only):** the detail page shows the reason,
-command and working directory. When the approval event omits the command or
+command and working directory. The full detail view presents distinct justification, command,
+working-directory and persistent-rule sections, with themed headings, muted
+metadata and blank separators. Commands retain their line breaks and are
+visually marked with a vertical rail. Formatting uses validated structured
+fields rather than guessing command boundaries from the justification. Legacy
+or incomplete requests retain their original bounded text.
+
+When the approval event omits the command or
 directory, Codexometer associates it with the preceding command item from the
 same thread, turn and item. A complete ordinary command request offers clickable
 buttons matching the supported decisions Codex actually offers, in its order:
@@ -1092,8 +1104,15 @@ command-prefix grants are validated and their exact payload is returned; no
 decision absent from the request can be submitted. For older servers omitting
 the decision list, only the legacy Accept/Cancel pair is offered.
 
-Closing the detail page cancels an unsubmitted confirmation. There are no
-approval keyboard shortcuts. Buttons wrap into rows when needed, reserve their
+Closing the detail page cancels an unsubmitted confirmation. Each visible
+approval button has a numbered shortcut (`1`–`8`, following the offered order).
+A grant shortcut selects the choice; `C` confirms that specific choice, whether
+selected by keyboard or mouse. Repeating the number does not confirm. Decline
+and reject/stop shortcuts act immediately, just like their buttons. Only one
+session—the expanded row or full-detail target—can display approval controls
+at a time. Hidden, clipped and compact controls have no active shortcuts, and
+typing in the reply editor never triggers approval shortcuts.
+Buttons wrap into rows when needed, reserve their
 confirmation widths so other targets do not move, and sit in a pinned footer
 below the scrolling request text, separated by one blank line when space allows.
 Very short terminals omit that spacer first. Controls are hidden if the terminal

@@ -103,7 +103,7 @@ func TestExpandedContextResponsiveHitTargets(t *testing.T) {
 			m.monitorSessionData = append(m.monitorSessionData, s)
 		}
 		m.monitorSessionData = m.monitorSessionData[:size.n]
-		if strings.Contains(ansi.Strip(m.render()), approvalOptionLabel("accept", false)) {
+		if strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel("accept", false, 0)) {
 			t.Fatal("compact exposed approval")
 		}
 		m.cycleMonitorContext(m.monitorSessionData[0].id)

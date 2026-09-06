@@ -100,6 +100,18 @@ type monitorApprovalButton struct {
 	x, y, slot    int
 }
 
+func approvalShortcutLabel(kind string, confirm bool, index int) string {
+	label := approvalOptionLabel(kind, confirm)
+	if label == "" {
+		return ""
+	}
+	shortcut := strconv.Itoa(index + 1)
+	if confirm {
+		shortcut = "C"
+	}
+	return "[ (" + shortcut + ") " + strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(label, "["), "]")) + " ]"
+}
+
 // Rendering and hit testing share this layout. Slots reserve confirmation
 // widths so neighbouring decisions never move underneath a user's pointer.
 func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton {
@@ -117,8 +129,8 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 		if option.Kind == "" {
 			continue
 		}
-		label := approvalOptionLabel(option.Kind, false)
-		slot := max(lipgloss.Width(label), lipgloss.Width(approvalOptionLabel(option.Kind, true)))
+		label := approvalShortcutLabel(option.Kind, false, i)
+		slot := max(lipgloss.Width(label), lipgloss.Width(approvalShortcutLabel(option.Kind, true, i)))
 		if slot > width-4 || label == "" {
 			return nil
 		}
@@ -131,12 +143,57 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 		}
 		action := "decision:" + strconv.Itoa(i)
 		if m.monitorApprovalConfirm == token+"/"+action {
-			label = approvalOptionLabel(option.Kind, true)
+			label = approvalShortcutLabel(option.Kind, true, i)
 		}
 		buttons = append(buttons, monitorApprovalButton{action, label, x, y, slot})
 		x += slot + 2
 	}
 	return buttons
+}
+
+// Shortcuts are enabled only for the buttons actually visible on the sole
+// expanded/detail target, never for compact rows or clipped inline controls.
+func (m Model) visibleMonitorApprovalButtons() []monitorApprovalButton {
+	if m.meterView != viewMonitor || m.monitorContextHidden || m.monitorPrompt.input.Focused() {
+		return nil
+	}
+	g := m.dashboardLayout()
+	if m.monitorContextDetail != "" {
+		return m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
+	}
+	if m.monitorContextExpanded == "" || m.monitorSelectedID != "" && m.monitorSelectedID != m.monitorContextExpanded {
+		return nil
+	}
+	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
+	for i, s := range sessions {
+		if s.id == m.monitorContextExpanded {
+			_, cw, _ := monitorSessionColumnWidths(a.width)
+			return m.expandedApprovalButtons(cw, heights[i], s)
+		}
+	}
+	return nil
+}
+
+func (m Model) updateMonitorApprovalKey(key string) (Model, tea.Cmd, bool) {
+	if key != "c" && (len(key) != 1 || key[0] < '1' || key[0] > '8') {
+		return m, nil, false
+	}
+	buttons := m.visibleMonitorApprovalButtons()
+	token := m.monitorApprovalToken()
+	for _, b := range buttons {
+		if key == "c" {
+			if m.monitorApprovalConfirm == token+"/"+b.action {
+				return m.monitorApprovalAction(b.action)
+			}
+		} else if b.action == "decision:"+strconv.Itoa(int(key[0]-'1')) {
+			// Repeating a number must never turn selection into a grant. Only C
+			// or the explicitly relabelled confirmation button can confirm it.
+			m.monitorApprovalConfirm = ""
+			return m.monitorApprovalAction(b.action)
+		}
+	}
+	return m, nil, true
 }
 
 func (m Model) monitorApprovalControls(width, height int) bool {

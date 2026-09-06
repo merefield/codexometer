@@ -54,13 +54,13 @@ func TestMonitorPromptEnterAndHotkeyIsolation(t *testing.T) {
 	if !m.monitorPrompt.input.Focused() {
 		t.Fatal("Enter did not focus")
 	}
-	for _, text := range []string{"Q", "s", "t", "h", "i", "X", "Hello 世界"} {
+	for _, text := range []string{"Q", "s", "t", "h", "i", "X", "1", "C", "Hello 世界"} {
 		m, _ = promptKey(m, []rune(text)[0], text)
 	}
 	if m.monitorContextHidden || m.monitorContextDetail != "root-one" {
 		t.Fatal("typing triggered dashboard action")
 	}
-	want := "QsthiXHello 世界"
+	want := "QsthiX1CHello 世界"
 	if m.monitorPrompt.input.Value() != want {
 		t.Fatalf("case/input lost: %q", m.monitorPrompt.input.Value())
 	}
@@ -187,5 +187,75 @@ func TestMonitorPromptSourceAndChangedRequest(t *testing.T) {
 	g := m.dashboardLayout()
 	if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 0 {
 		t.Fatal("prompt notice overlaps approval footer")
+	}
+}
+
+func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
+	for _, size := range [][2]int{{40, 16}, {80, 24}, {120, 40}, {180, 50}} {
+		m, _ := promptTestModel()
+		m.width, m.height = size[0], size[1]
+		m.focusMonitorPrompt()
+		g := m.dashboardLayout()
+		_, _, initialY := monitorContextBodyLayout(g.meterHeight, m.monitorPromptRows(g.contentWidth, g.meterHeight))
+		value := strings.Repeat("Hello 世界 ", 60)
+		m.monitorPrompt.input.SetValue(value)
+		rows := m.monitorPromptRows(g.contentWidth, g.meterHeight)
+		_, _, y := monitorContextBodyLayout(g.meterHeight, rows)
+		if g.meterHeight > 9 && (rows <= 3 || y >= initialY) {
+			t.Fatalf("editor did not grow upward %v: rows=%d y=%d initial=%d", size, rows, y, initialY)
+		}
+		if rows > max(g.meterHeight-8, 1)+2 {
+			t.Fatal("editor exceeded available space")
+		}
+		out := m.render()
+		if lipgloss.Width(out) > m.width || lipgloss.Height(out) > m.height {
+			t.Fatalf("overflow %v\n%s", size, ansi.Strip(out))
+		}
+		for row := y + 1; row < y+rows-1; row++ {
+			for x := 4; x < g.contentWidth; x++ {
+				if got := m.monitorContextAt(x, g.meterY+row); got != "prompt" {
+					t.Fatalf("wrapped input miss %v %d,%d: %s", size, x, row, got)
+				}
+			}
+		}
+		if m.monitorContextAt(4, g.meterY+y+rows-1) == "prompt" {
+			t.Fatal("hint line became editable hit target")
+		}
+		if m.monitorPrompt.input.Value() != value {
+			t.Fatal("wrapping altered the submitted text")
+		}
+		m.monitorPrompt.input.SetValue("short")
+		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 3 {
+			t.Fatal("editor failed to shrink")
+		}
+	}
+}
+
+func TestMonitorPromptResizeAndWrappedSubmission(t *testing.T) {
+	m, c := promptTestModel()
+	m.focusMonitorPrompt()
+	text := strings.Repeat("words ", 70) + "\nlast line"
+	n, _ := m.Update(tea.PasteMsg{Content: text})
+	m = n.(Model)
+	if m.monitorPrompt.input.Value() != text || c.answers != nil {
+		t.Fatal("multiline paste altered or submitted")
+	}
+	for _, width := range []int{40, 180, 60, 120} {
+		n, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+		m = n.(Model)
+		if m.monitorPrompt.input.Value() != text {
+			t.Fatal("resize lost input")
+		}
+		if out := m.render(); lipgloss.Width(out) > width || lipgloss.Height(out) > 30 {
+			t.Fatal("resized editor overflow")
+		}
+	}
+	m, cmd := promptKey(m, tea.KeyEnter, "")
+	if cmd == nil {
+		t.Fatal("Enter did not submit wrapped draft")
+	}
+	cmd()
+	if len(c.answers) != 1 || c.answers[0] != text {
+		t.Fatal("submitted visual wraps instead of original text")
 	}
 }

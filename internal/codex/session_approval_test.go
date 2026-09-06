@@ -28,6 +28,9 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 	if c.ApprovalToken == "" || !strings.Contains(c.Text, "Command: git push\nDirectory: /work") {
 		t.Fatalf("missing correlated detail: %+v", c)
 	}
+	if c.CommandDetails != (ApprovalCommandDetails{Justification: "Publish branch?", Command: "git push", Directory: "/work"}) {
+		t.Fatal("structured fields did not preserve source values", c.CommandDetails)
+	}
 	for name, fields := range map[string]map[string]any{
 		"wrong turn":              {"turnId": "other"},
 		"wrong item":              {"itemId": "other"},
@@ -45,7 +48,17 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 			if c.ApprovalToken != "" {
 				t.Fatalf("unsafe request actionable: %+v", c)
 			}
+			if c.CommandDetails != (ApprovalCommandDetails{}) {
+				t.Fatal("unvalidated request exposed structured command")
+			}
 		})
+	}
+}
+
+func TestApprovalStructuredJustificationIsBounded(t *testing.T) {
+	_, c := approvalFixture(t, map[string]any{"reason": strings.Repeat(" ", 10000) + "Explanation\nCommand: not the real command"})
+	if c.ApprovalToken == "" || c.CommandDetails.Command != "git push" || c.CommandDetails.Justification != "Explanation\nCommand: not the real command" {
+		t.Fatal("justification confused command fields", c.CommandDetails)
 	}
 }
 

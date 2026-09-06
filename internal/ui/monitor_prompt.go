@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -16,7 +15,7 @@ import (
 type monitorPromptState struct {
 	session  string
 	offer    codex.SessionPromptOffer
-	input    textinput.Model
+	input    monitorEditor
 	answers  [3]string
 	question int
 	choice   int
@@ -68,6 +67,11 @@ func (m Model) monitorPromptRows(width, height int) int {
 		return 0
 	}
 	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextDetail && (m.monitorPrompt.busy || m.monitorPrompt.notice != "") {
+		p := m.monitorPrompt
+		if p.input.Focused() && !p.busy {
+			p.input.configure(width, height)
+			return p.input.Height() + 2
+		}
 		return 3
 	}
 	return 0
@@ -79,14 +83,16 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 		return nil
 	}
 	if m.monitorPrompt.offer.Token != o.Token {
-		m.monitorPrompt = monitorPromptState{session: m.monitorContextDetail, offer: o, input: textinput.New(), choice: -1}
-		m.monitorPrompt.input.CharLimit = 4096
+		m.monitorPrompt = monitorPromptState{session: m.monitorContextDetail, offer: o, input: newMonitorEditor(), choice: -1}
 	}
+	m.monitorPrompt.input.setSecret(len(o.Questions) > 0 && o.Questions[m.monitorPrompt.question].Secret)
+	g := m.dashboardLayout()
+	m.monitorPrompt.input.configure(g.contentWidth, g.meterHeight)
 	m.monitorPrompt.notice = ""
 	return m.monitorPrompt.input.Focus()
 }
 
-func (m Model) renderMonitorPrompt(width int, colors palette) string {
+func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	p := m.monitorPrompt
 	o := m.monitorPromptOffer()
 	header := i18n.Text("FOLLOW-UP") + " // " + o.ThreadID
@@ -102,18 +108,8 @@ func (m Model) renderMonitorPrompt(width int, colors palette) string {
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	if p.offer.Token == o.Token && p.input.Focused() && !p.busy {
 		input := p.input
-		input.SetWidth(max(width-6, 1))
-		input.EchoMode = textinput.EchoNormal
-		if len(o.Questions) > 0 && o.Questions[p.question].Secret {
-			input.EchoMode = textinput.EchoPassword
-		}
-		styles := input.Styles()
-		styles.Focused.Text = colors.label()
-		styles.Focused.Prompt = colors.label().Foreground(colors.primary)
-		styles.Focused.Placeholder = colors.label()
-		styles.Cursor.Color = colors.primary
-		input.SetStyles(styles)
-		line = input.View()
+		input.configure(width, height)
+		line = input.View(colors)
 	}
 	if p.busy {
 		line = i18n.Text("Sending…")
@@ -121,7 +117,11 @@ func (m Model) renderMonitorPrompt(width int, colors palette) string {
 	if p.notice != "" {
 		hint = p.notice
 	}
-	return colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…")) + "\n" + ansi.Truncate(line, max(width-4, 1), "") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	inputLines := strings.Split(line, "\n")
+	for i := range inputLines {
+		inputLines[i] = ansi.Truncate(inputLines[i], max(width-4, 1), "")
+	}
+	return colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…")) + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
 }
 
 func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
@@ -142,6 +142,12 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	wasFocused := p.input.Focused()
 	g := m.dashboardLayout()
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		resized := m
+		resized.width, resized.height = size.Width, size.Height
+		g = resized.dashboardLayout()
+	}
+	p.input.configure(g.contentWidth, g.meterHeight)
 	if wasFocused && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		p.input.Blur()
 	}
@@ -177,9 +183,9 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 					}
 					p.input.SetValue(options[p.choice])
 					p.input.CursorEnd()
+					return m, nil, true
 				}
 			}
-			return m, nil, true
 		}
 	}
 	// Only editor messages are consumed. Telemetry and mouse updates must still
@@ -228,6 +234,7 @@ func (m Model) submitMonitorPrompt() (Model, tea.Cmd, bool) {
 		p.question++
 		p.choice = -1
 		p.input.Reset()
+		p.input.setSecret(p.offer.Questions[p.question].Secret)
 		p.notice = ""
 		return m, nil, true
 	}

@@ -120,45 +120,18 @@ func (m Model) contextDetailSession() (monitorSession, bool) {
 	return monitorSession{}, false
 }
 
-func (m Model) contextDetailLines(width int) []string {
-	s, ok := m.contextDetailSession()
-	if !ok || s.preview.Text == "" {
-		return []string{i18n.Text("NO CONTEXT")}
-	}
-	header := contextTitle(s.preview) + " // " + shortSessionID(s.preview.ThreadID) + " // " + s.preview.Source + " // " + contextAge(s.preview)
-	lines := []string{ansi.Truncate(header, max(width, 1), "")}
-	g := m.dashboardLayout()
-	if (s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion) && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
-		message := i18n.Text("REPLY IN CODEX") + " // " + m.monitorApprovalBlockReason(s.preview)
-		lines = append(lines, strings.Split(ansi.Hardwrap(message, max(width, 1), true), "\n")...)
-	}
-	if s.preview.ApprovalDecisions != "" {
-		lines = append(lines, strings.Split(ansi.Hardwrap(i18n.Text("OFFERED DECISIONS")+" // "+s.preview.ApprovalDecisions, max(width, 1), true), "\n")...)
-	}
-	text := codex.SanitizeSessionContext(s.preview.Text)
-	if s.preview.Kind == codex.SessionContextApproval {
-		// Presentation-only spacing: preserve the exact request/capability and
-		// command text, including multiline commands, for approval validation.
-		parts := strings.Split(text, "\n")
-		for i, line := range parts {
-			if i > 0 && strings.HasPrefix(line, "Command: ") && strings.TrimSpace(parts[i-1]) != "" {
-				parts[i] = "\n" + line
-				break
-			}
-		}
-		text = strings.Join(parts, "\n")
-	}
-	return append(lines, strings.Split(ansi.Hardwrap(text, max(width, 1), true), "\n")...)
-}
-
 func (m Model) renderMonitorContextDetail(width, height int, colors palette) string {
-	lines := m.contextDetailLines(max(width-4, 1))
+	document := m.contextDetailDocument(max(width-4, 1))
+	lines := make([]string, len(document))
+	for i, line := range document {
+		lines[i] = line.render(colors)
+	}
 	rows := max(height-2, 1)
 	controls := ""
 	if m.monitorApprovalControls(width, height) {
 		controls = m.renderMonitorApprovalControls(width, height, colors)
 	} else if m.monitorPromptRows(width, height) > 0 {
-		controls = m.renderMonitorPrompt(width, colors)
+		controls = m.renderMonitorPrompt(width, height, colors)
 	} else if m.monitorApprovalNotice != "" {
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
@@ -169,9 +142,6 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	textRows, gap, _ := monitorContextBodyLayout(height, controlRows)
 	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
 	end := min(start+textRows, len(lines))
-	for i := start; i < end; i++ {
-		lines[i] = colors.label().Render(lines[i])
-	}
 	bodyLines := append([]string(nil), lines[start:end]...)
 	if controls != "" {
 		for len(bodyLines) < textRows+gap {
@@ -244,6 +214,9 @@ func (m *Model) scrollMonitorContext(delta int) {
 }
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
+	if next, cmd, handled := m.updateMonitorApprovalKey(key); handled {
+		return next, cmd, true
+	}
 	if key == "h" {
 		m.toggleMonitorContext()
 		return m, nil, true
@@ -302,7 +275,7 @@ func (m Model) monitorContextAt(x, y int) string {
 	if m.monitorContextDetail != "" && !m.monitorContextHidden {
 		if rows := m.monitorPromptRows(g.contentWidth, g.meterHeight); rows > 0 && m.monitorPromptOffer().Token != "" {
 			_, _, controlY := monitorContextBodyLayout(g.meterHeight, rows)
-			if y == controlY+1 && x >= 2 && x < g.contentWidth-2 {
+			if y >= controlY+1 && y < controlY+rows-1 && x >= 2 && x < g.contentWidth-2 {
 				return "prompt"
 			}
 		}

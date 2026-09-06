@@ -1,4 +1,8 @@
 {
+  "JUSTIFICATION": "理由",
+  "COMMAND": "命令",
+  "WORKING DIRECTORY": "工作目录",
+  "PERSISTENT PERMISSION RULE": "持久权限规则",
   "FOLLOW-UP": "继续提问",
   "REPLY": "回复",
   "[ Click here or press Enter to write ]": "[ 点击此处或按 Enter 输入 ]",

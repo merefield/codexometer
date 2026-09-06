@@ -122,6 +122,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "sanitised"
 		default:
 			c.ApprovalToken = rand.Text()
+			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeSessionContext(p.Reason), Command: command, Directory: p.CWD}
 		}
 	case "item/fileChange/requestApproval":
 		c.ApprovalBlocked = "file-change"

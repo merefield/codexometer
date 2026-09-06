@@ -1,4 +1,8 @@
 {
+  "JUSTIFICATION": "BEGRÜNDUNG",
+  "COMMAND": "BEFEHL",
+  "WORKING DIRECTORY": "ARBEITSVERZEICHNIS",
+  "PERSISTENT PERMISSION RULE": "DAUERHAFTE BERECHTIGUNGSREGEL",
   "FOLLOW-UP": "NACHFRAGE",
   "REPLY": "ANTWORT",
   "[ Click here or press Enter to write ]": "[ Hier klicken oder Enter zum Schreiben ]",

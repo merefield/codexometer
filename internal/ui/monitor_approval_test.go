@@ -59,7 +59,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 						continue
 					}
 					action := "decision:" + strconv.Itoa(i)
-					label := approvalOptionLabel(option.Kind, confirmed && i == 0)
+					label := approvalShortcutLabel(option.Kind, confirmed && i == 0, i)
 					found := false
 					for y, line := range strings.Split(ansi.Strip(out), "\n") {
 						pos := strings.Index(line, label)
@@ -120,6 +120,86 @@ func TestMonitorApprovalStaleAndKeyboardSafety(t *testing.T) {
 	m.monitorSessionData[0].preview.ApprovalToken = ""
 	if m.monitorApprovalToken() != "" {
 		t.Fatal("local request actionable")
+	}
+}
+
+func TestMonitorApprovalNumberSelectsCConfirms(t *testing.T) {
+	for _, index := range []int{0, 3, 4} {
+		m := approvalTestModel()
+		m, cmd, _ := m.updateMonitorContextKey("c")
+		if cmd != nil || m.monitorApprovalBusy {
+			t.Fatal("C granted without a selection")
+		}
+		for range 2 {
+			m, cmd, _ = m.updateMonitorContextKey(strconv.Itoa(index + 1))
+			if cmd != nil || m.monitorApprovalBusy || m.monitorApprovalConfirm != "live/decision:"+strconv.Itoa(index) {
+				t.Fatal("number did not exclusively arm requested choice")
+			}
+		}
+		if !strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel(m.monitorSessionData[0].preview.ApprovalOptions[index].Kind, true, index)) {
+			t.Fatal("C confirmation shortcut missing")
+		}
+		m, cmd, _ = m.updateMonitorContextKey("c")
+		if cmd == nil || !m.monitorApprovalBusy {
+			t.Fatal("C did not submit armed grant")
+		}
+		cmd()
+		if got := m.fetcher.(*approvalTestClient).decision; got != m.monitorSessionData[0].preview.ApprovalOptions[index].Value {
+			t.Fatal("wrong grant", got)
+		}
+	}
+	for _, index := range []int{1, 2} {
+		m := approvalTestModel()
+		m, cmd, _ := m.updateMonitorContextKey(strconv.Itoa(index + 1))
+		if cmd == nil || !m.monitorApprovalBusy {
+			t.Fatal("negative decision shortcut did not match its button")
+		}
+	}
+}
+
+func TestMonitorApprovalShortcutsHaveOneVisibleSession(t *testing.T) {
+	m := approvalTestModel()
+	m.width, m.height = 180, 60
+	for i := range m.monitorSessionData {
+		m.monitorSessionData[i].preview = m.monitorSessionData[0].preview
+	}
+	for _, detail := range []bool{false, true} {
+		m.monitorContextDetail, m.monitorContextExpanded = "", "root-one"
+		if detail {
+			m.monitorContextDetail, m.monitorContextExpanded = "root-one", ""
+		}
+		buttons := m.visibleMonitorApprovalButtons()
+		if len(buttons) == 0 {
+			t.Fatal("fixture has no visible buttons")
+		}
+		out := ansi.Strip(m.render())
+		for _, b := range buttons {
+			if strings.Count(out, b.label) != 1 {
+				t.Fatal("approval choice shown for multiple sessions", b.label)
+			}
+		}
+		m, _, _ = m.updateMonitorContextKey("1")
+		if m.monitorApprovalConfirm != "live/decision:0" {
+			t.Fatal("visible keyboard choice failed")
+		}
+	}
+	m.monitorContextDetail = ""
+	m.monitorContextExpanded = "root-one"
+	m.monitorSessionData[0].preview.Text = strings.Repeat("too long\n", 200)
+	for _, k := range []string{"1", "c", "2"} {
+		_, cmd, _ := m.updateMonitorContextKey(k)
+		if cmd != nil {
+			t.Fatal("invisible inline button actionable")
+		}
+	}
+	m.monitorSelectedID = "root-one"
+	m.selectMonitorSession(1)
+	if m.monitorApprovalConfirm != "" {
+		t.Fatal("selection retained old confirmation")
+	}
+	_, cmd, _ := m.updateMonitorContextKey("c")
+	if cmd != nil {
+		t.Fatal("C acted on previous session")
 	}
 }
 

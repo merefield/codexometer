@@ -25,6 +25,7 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
+	CommandDetails ApprovalCommandDetails
 	InputToken     string
 	InputQuestions string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.
@@ -40,6 +41,14 @@ type SessionContext struct {
 	At                time.Time
 	ThreadID          string
 	Source            string
+}
+
+// Structured display fields are populated only alongside a complete validated
+// command request. Never infer command boundaries from justification prose.
+type ApprovalCommandDetails struct {
+	Justification string
+	Command       string
+	Directory     string
 }
 
 const sessionContextLimit = 4096

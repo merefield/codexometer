@@ -119,6 +119,7 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	alphaTokens := d.lifetimeTokens * 3 / 5
 	attention := codex.SessionAttentionApproval
 	preview := codex.SessionContext{Kind: codex.SessionContextApproval, Text: "DEMO ONLY — no command will run.\nAllow pushing the documentation update?\nCommand: git push origin main\nDirectory: /projects/alpha", ThreadID: "019d-demo-a1b2c", Source: "DEMO", At: time.Now().Add(-time.Minute), ApprovalToken: "demo-command"}
+	preview.CommandDetails = codex.ApprovalCommandDetails{Justification: "DEMO ONLY — no command will run.\nAllow pushing the documentation update?", Command: "git push origin main", Directory: "/projects/alpha"}
 	preview.ApprovalOptions = [8]codex.ApprovalOption{{Kind: "accept", Value: "accept", Wire: `"accept"`}, {Kind: "acceptForSession", Value: "acceptForSession", Wire: `"acceptForSession"`}, {Kind: "cancel", Value: "cancel", Wire: `"cancel"`}}
 	preview.ApprovalDecisions = "accept, acceptForSession, cancel"
 	if d.approvalDecision != "" {
