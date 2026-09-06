@@ -21,6 +21,44 @@ func contextTestModel() Model {
 	return m
 }
 
+func TestMonitorDetailKeepsVisibleGlobalShortcuts(t *testing.T) {
+	for _, tc := range []struct {
+		key    rune
+		button footerButtonID
+	}{{'t', footerButtonTheme}, {'r', footerButtonRefresh}, {'q', footerButtonQuit}} {
+		m := approvalTestModel()
+		updated, cmd := m.Update(key(tc.key))
+		next := updated.(Model)
+		if cmd == nil || next.flashedButton != tc.button {
+			t.Fatalf("footer shortcut %c swallowed", tc.key)
+		}
+		if tc.key != 'q' && next.monitorContextDetail != m.monitorContextDetail {
+			t.Fatal("global action closed detail")
+		}
+		if tc.key == 't' && next.theme != m.theme.next() {
+			t.Fatal("theme did not change")
+		}
+		if tc.key == 'r' && !next.loading {
+			t.Fatal("refresh not requested")
+		}
+	}
+	for _, code := range []rune{tea.KeyTab} {
+		m := approvalTestModel()
+		updated, _ := m.Update(tea.KeyPressMsg{Code: code})
+		if next := updated.(Model); next.meterView == viewMonitor || next.monitorContextDetail != "" {
+			t.Fatal("Tab failed to leave detail")
+		}
+	}
+	for _, k := range []rune{'s', 'p'} {
+		m := approvalTestModel()
+		updated, cmd := m.Update(key(k))
+		next := updated.(Model)
+		if cmd != nil || next.monitorState != m.monitorState {
+			t.Fatal("hidden Monitor controls activated from detail")
+		}
+	}
+}
+
 func TestApprovalDetailSeparatesJustificationFromCommand(t *testing.T) {
 	m := approvalTestModel()
 	for _, text := range []string{

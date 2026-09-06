@@ -8,7 +8,7 @@
   "[ Click here or press Enter to write ]": "[ Нажмите здесь или Enter для ввода ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: отправить / далее • Esc: выйти • ↑/↓: варианты",
   "Sending…": "Отправка…",
-  "Text sent; check Codex for the outcome.": "Текст отправлен; проверьте результат в Codex.",
+  "Text sent…": "Текст отправлен…",
   "Send unconfirmed; check Codex before retrying.": "Отправка не подтверждена; проверьте Codex перед повтором.",
   "Prompt changed; review the session before replying.": "Запрос изменился; проверьте сессию перед ответом.",
   "Choose an offered answer with ↑/↓.": "Выберите предложенный ответ с помощью ↑/↓.",

@@ -8,7 +8,7 @@
   "[ Click here or press Enter to write ]": "[ Hier klicken oder Enter zum Schreiben ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: senden / weiter • Esc: Editor verlassen • ↑/↓: Auswahl",
   "Sending…": "Wird gesendet…",
-  "Text sent; check Codex for the outcome.": "Text gesendet; Ergebnis in Codex prüfen.",
+  "Text sent…": "Text gesendet…",
   "Send unconfirmed; check Codex before retrying.": "Senden unbestätigt; vor erneutem Versuch Codex prüfen.",
   "Prompt changed; review the session before replying.": "Eingabe geändert; Sitzung vor dem Antworten prüfen.",
   "Choose an offered answer with ↑/↓.": "Mit ↑/↓ eine angebotene Antwort wählen.",

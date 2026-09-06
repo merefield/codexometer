@@ -223,6 +223,10 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 	}
 	if m.monitorContextDetail != "" && !m.monitorContextHidden {
 		switch key {
+		case "t", "r":
+			// These controls remain visible in the global footer. Keep detail
+			// open and let the standard handler apply the action and flash.
+			return m, nil, false
 		case "enter":
 			g := m.dashboardLayout()
 			if m.monitorPromptRows(g.contentWidth, g.meterHeight) > 0 && m.monitorPromptOffer().Token != "" {

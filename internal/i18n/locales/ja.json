@@ -8,7 +8,7 @@
   "[ Click here or press Enter to write ]": "[ クリックまたは Enter で入力 ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: 送信／次の回答 • Esc: 入力終了 • ↑/↓: 選択",
   "Sending…": "送信中…",
-  "Text sent; check Codex for the outcome.": "テキストを送信しました。Codex で結果を確認してください。",
+  "Text sent…": "テキストを送信しました…",
   "Send unconfirmed; check Codex before retrying.": "送信未確認。再試行前に Codex を確認してください。",
   "Prompt changed; review the session before replying.": "プロンプトが変わりました。回答前にセッションを確認してください。",
   "Choose an offered answer with ↑/↓.": "↑/↓ で提示された回答を選んでください。",

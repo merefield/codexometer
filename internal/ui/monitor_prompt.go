@@ -132,7 +132,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.input.Reset()
 			p.input.Blur()
 			p.answers = [3]string{}
-			p.notice = i18n.Text("Text sent; check Codex for the outcome.")
+			p.notice = i18n.Text("Text sent…")
 			if result.err != nil {
 				p.notice = i18n.Text("Send unconfirmed; check Codex before retrying.")
 			}

@@ -54,13 +54,13 @@ func TestMonitorPromptEnterAndHotkeyIsolation(t *testing.T) {
 	if !m.monitorPrompt.input.Focused() {
 		t.Fatal("Enter did not focus")
 	}
-	for _, text := range []string{"Q", "s", "t", "h", "i", "X", "1", "C", "Hello 世界"} {
+	for _, text := range []string{"Q", "s", "t", "r", "h", "i", "X", "1", "C", "Hello 世界"} {
 		m, _ = promptKey(m, []rune(text)[0], text)
 	}
 	if m.monitorContextHidden || m.monitorContextDetail != "root-one" {
 		t.Fatal("typing triggered dashboard action")
 	}
-	want := "QsthiX1CHello 世界"
+	want := "QstrhiX1CHello 世界"
 	if m.monitorPrompt.input.Value() != want {
 		t.Fatalf("case/input lost: %q", m.monitorPrompt.input.Value())
 	}

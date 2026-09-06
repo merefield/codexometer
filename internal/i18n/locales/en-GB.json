@@ -8,7 +8,7 @@
   "[ Click here or press Enter to write ]": "[ Click here or press Enter to write ]",
   "Enter: send / next answer • Esc: leave editor • ↑/↓: choices": "Enter: send / next answer • Esc: leave editor • ↑/↓: choices",
   "Sending…": "Sending…",
-  "Text sent; check Codex for the outcome.": "Text sent; check Codex for the outcome.",
+  "Text sent…": "Text sent…",
   "Send unconfirmed; check Codex before retrying.": "Send unconfirmed; check Codex before retrying.",
   "Prompt changed; review the session before replying.": "Prompt changed; review the session before replying.",
   "Choose an offered answer with ↑/↓.": "Choose an offered answer with ↑/↓.",
