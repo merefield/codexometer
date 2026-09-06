@@ -135,7 +135,20 @@ func (m Model) contextDetailLines(width int) []string {
 	if s.preview.ApprovalDecisions != "" {
 		lines = append(lines, strings.Split(ansi.Hardwrap(i18n.Text("OFFERED DECISIONS")+" // "+s.preview.ApprovalDecisions, max(width, 1), true), "\n")...)
 	}
-	return append(lines, strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width, 1), true), "\n")...)
+	text := codex.SanitizeSessionContext(s.preview.Text)
+	if s.preview.Kind == codex.SessionContextApproval {
+		// Presentation-only spacing: preserve the exact request/capability and
+		// command text, including multiline commands, for approval validation.
+		parts := strings.Split(text, "\n")
+		for i, line := range parts {
+			if i > 0 && strings.HasPrefix(line, "Command: ") && strings.TrimSpace(parts[i-1]) != "" {
+				parts[i] = "\n" + line
+				break
+			}
+		}
+		text = strings.Join(parts, "\n")
+	}
+	return append(lines, strings.Split(ansi.Hardwrap(text, max(width, 1), true), "\n")...)
 }
 
 func (m Model) renderMonitorContextDetail(width, height int, colors palette) string {

@@ -21,6 +21,37 @@ func contextTestModel() Model {
 	return m
 }
 
+func TestApprovalDetailSeparatesJustificationFromCommand(t *testing.T) {
+	m := approvalTestModel()
+	for _, text := range []string{
+		"Please check the repository.\nCommand: git status\nDirectory: /work",
+		"Please check the repository.\n\nCommand: git status\nDirectory: /work",
+	} {
+		m.monitorSessionData[0].preview.Text = text
+		before := m.monitorSessionData[0].preview
+		for _, width := range []int{20, 100} {
+			lines := m.contextDetailLines(width)
+			found := false
+			for i, line := range lines {
+				if strings.HasPrefix(line, "Command:") {
+					found = true
+					if i < 2 || lines[i-1] != "" || lines[i-2] == "" {
+						t.Fatalf("expected one spacer at width %d: %q", width, lines)
+					}
+				}
+			}
+			if !found || m.monitorSessionData[0].preview != before {
+				t.Fatal("command missing or request mutated")
+			}
+		}
+	}
+	m.monitorSessionData[0].preview.Kind = codex.SessionContextReply
+	m.monitorSessionData[0].preview.Text = "Example\nCommand: untouched"
+	if got := strings.Join(m.contextDetailLines(100), "\n"); !strings.Contains(got, "Example\nCommand: untouched") {
+		t.Fatal("ordinary reply reformatted", got)
+	}
+}
+
 func TestMonitorCompletionIsIndependentOfPreview(t *testing.T) {
 	m := contextTestModel()
 	m.monitorSessionData[0].attention = codex.SessionAttentionComplete
