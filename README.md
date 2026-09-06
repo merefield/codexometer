@@ -6,7 +6,8 @@
 [![License](https://img.shields.io/github/license/merefield/codexometer)](LICENSE)
 
 Codexometer is a small, retro terminal dashboard for your current
-[Codex](https://github.com/openai/codex) quota.
+[Codex](https://github.com/openai/codex) quota, live sessions, token-usage history,
+and model benchmarks.
 Keep it open in a second terminal window or pane and you can see every active
 usage window, its remaining capacity, and its reset time without repeatedly
 opening `/status` in your working Codex session.
@@ -21,9 +22,16 @@ opening `/status` in your working Codex session.
 
 _Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
 
-Codexometer refreshes once a minute by default. Its quota dashboard is
-read-only. The optional Benchmark tab starts model turns only when you
-explicitly click its run button; those trials consume Codex quota.
+Codexometer refreshes quota once a minute by default. Passive quota monitoring
+and the Usage history tab are read-only and do not start model turns. Redeeming
+a banked quota reset is an explicit, separately confirmed action. Benchmark
+runs also require an explicit action and consume Codex quota or API-billed tokens,
+depending on the selected authentication.
+
+The four primary tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**.
+The interface supports mouse controls, keyboard navigation, five colour themes,
+and [nine languages](#language), with the original UK English presentation
+unchanged by default.
 
 ## Why use it?
 
@@ -160,10 +168,17 @@ English rendering baseline captured from v0.12.0.
 - Online, refreshing, stale-data, and error states, with the limiting window
   named in warning states and a celebratory fresh-reset signal at 0% usage.
 - A countdown to the next automatic refresh.
+- Confirmed redemption of available banked quota resets, normally offered only
+  when a displayed window is at least 80% consumed (configurable).
+- Account token history in a daily activity grid, weekly bars, or a cumulative
+  graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
+  when supplied. This server-side history can lag live local telemetry.
 - An always-on Monitor view that measures local token activity while Codexometer
   is running, with Pause/Resume and Reset controls.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
+- Dismissible Monitor session rows that automatically return on fresh activity,
+  without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
   exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
   open turn is definite `INPUT NEEDED`; an otherwise active session with no
@@ -433,23 +448,26 @@ codexometer --codex /path/to/codex
 | `t` | Cycle color themes |
 | `Tab` | Select the next top-level tab: Quota, Monitor, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
-| `r` | Refresh quota data immediately |
+| `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle the active Quota view |
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
-| `x` | Close the selected Monitor session row, or stop the active benchmark suite and retain its incomplete trial |
-| `d` | Close the Benchmark Scope screen |
-| `[` / `]`, `Left` / `Right` | Select the previous or next benchmark suite |
+| `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
+| `d` | Select Daily in Usage, or close the Benchmark Scope screen |
+| `6` / `1` | Select 6/12 months of Usage history |
+| `[` / `]` | Select the previous or next benchmark suite |
+| `Left` / `Right` | Page Usage history, or select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
-| `w` | Cycle Cost, Balanced, and Speed benchmark ranking weights |
+| `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
 | `Enter` / `Space` | Open a selected result, or toggle a Benchmark Scope checkbox |
-| `c` | Copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
-| `Page Up` / `Page Down` | Scroll Monitor session rows or Benchmark result pages |
+| `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
+| `l` | Clear accumulated Benchmark results while no suite is running |
+| `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
 | `q` | Quit |
-| `Esc` | Return from Benchmark detail or Scope; otherwise quit |
+| `Esc` | Cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, Usage, or
@@ -656,13 +674,13 @@ The top-level tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**. Wit
 choose one of these four views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
-   for clean curves at any size.
-3. **Consumption Pace** — a signed horizontal scale comparing elapsed window
+2. **Consumption Pace** — a signed horizontal scale comparing elapsed window
    time with quota consumed. Positive headroom means consumption is behind
    elapsed time; a negative deficit means quota is being used too quickly. A
    clearly labelled linear projection reports `SAFE THROUGH RESET` or estimates
    how long remains until exhaustion and how early that is relative to reset.
+3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+   for clean curves at any size.
 4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
@@ -1421,7 +1439,7 @@ deterministic PASS/FAIL verifier.
 ```text
 --codex PATH       path to the Codex CLI (default: codex)
 --check-auth       verify the current Codex login and exit
---demo             use simulated quota data
+--demo             preview simulated quota, Monitor, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --refresh DURATION refresh interval (default: 1m)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
