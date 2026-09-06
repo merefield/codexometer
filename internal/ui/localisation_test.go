@@ -21,7 +21,7 @@ func TestLocalisedScreens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, code := range []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans"} {
+	for _, code := range []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans", "sv", "nb", "tr", "et", "fi"} {
 		t.Run(code, func(t *testing.T) {
 			cmd := exec.Command(exe, "-test.run=^TestLocalisedScreensHelper$")
 			for _, env := range os.Environ() {

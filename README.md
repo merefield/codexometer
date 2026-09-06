@@ -30,7 +30,7 @@ depending on the selected authentication.
 
 The four primary tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**.
 The interface supports mouse controls, keyboard navigation, five colour themes,
-and [nine languages](#language), with the original UK English presentation
+and [fourteen languages](#language), with the original UK English presentation
 unchanged by default.
 
 ## Why use it?
@@ -73,10 +73,16 @@ To select another interface language, set `CODEXOMETER_LANG` before starting:
 | Russian | `ru` |
 | Japanese | `ja` |
 | Chinese (Simplified) | `zh-Hans` |
+| Swedish | `sv` |
+| Norwegian (Bokmål) | `nb` |
+| Turkish | `tr` |
+| Estonian | `et` |
+| Finnish | `fi` |
 
 Codes use BCP 47 language tags. Regional variants such as `de-DE`, `fr-CA`,
-`ja-JP` and `zh-CN` match the corresponding supported language. Other English
-variants use the existing UK English presentation. An unset, invalid or
+`ja-JP`, `zh-CN`, `sv-SE`, `nb-NO`, `tr-TR`, `et-EE` and `fi-FI` match the
+corresponding supported language. `no` and `no-NO` also select Norwegian Bokmål.
+Other English variants use the existing UK English presentation. An unset, invalid or
 unsupported code falls back to UK English. `LANG` and `LC_ALL` are deliberately
 not used to choose the UI language: the default stays English unless you opt in.
 
@@ -85,6 +91,8 @@ Try a language for one launch:
 ```sh
 CODEXOMETER_LANG=fr codexometer
 CODEXOMETER_LANG=ja codexometer --demo
+CODEXOMETER_LANG=sv codexometer
+CODEXOMETER_LANG=nb codexometer --demo
 ```
 
 ### Retain the language setting

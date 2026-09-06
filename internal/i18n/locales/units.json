@@ -1,4 +1,94 @@
 {
+  "sv": {
+    "MINUTE": {
+      "one": "%d MINUT",
+      "other": "%d MINUTER"
+    },
+    "HOUR": {
+      "one": "%d TIMME",
+      "other": "%d TIMMAR"
+    },
+    "DAY": {
+      "one": "%d DAG",
+      "other": "%d DAGAR"
+    },
+    "WEEK": {
+      "one": "%d VECKA",
+      "other": "%d VECKOR"
+    }
+  },
+  "nb": {
+    "MINUTE": {
+      "one": "%d MINUTT",
+      "other": "%d MINUTTER"
+    },
+    "HOUR": {
+      "one": "%d TIME",
+      "other": "%d TIMER"
+    },
+    "DAY": {
+      "one": "%d DAG",
+      "other": "%d DAGER"
+    },
+    "WEEK": {
+      "one": "%d UKE",
+      "other": "%d UKER"
+    }
+  },
+  "tr": {
+    "MINUTE": {
+      "one": "%d DAKİKA",
+      "other": "%d DAKİKA"
+    },
+    "HOUR": {
+      "one": "%d SAAT",
+      "other": "%d SAAT"
+    },
+    "DAY": {
+      "one": "%d GÜN",
+      "other": "%d GÜN"
+    },
+    "WEEK": {
+      "one": "%d HAFTA",
+      "other": "%d HAFTA"
+    }
+  },
+  "et": {
+    "MINUTE": {
+      "one": "%d MINUT",
+      "other": "%d MINUTIT"
+    },
+    "HOUR": {
+      "one": "%d TUND",
+      "other": "%d TUNDI"
+    },
+    "DAY": {
+      "one": "%d PÄEV",
+      "other": "%d PÄEVA"
+    },
+    "WEEK": {
+      "one": "%d NÄDAL",
+      "other": "%d NÄDALAT"
+    }
+  },
+  "fi": {
+    "MINUTE": {
+      "one": "%d MINUUTTI",
+      "other": "%d MINUUTTIA"
+    },
+    "HOUR": {
+      "one": "%d TUNTI",
+      "other": "%d TUNTIA"
+    },
+    "DAY": {
+      "one": "%d PÄIVÄ",
+      "other": "%d PÄIVÄÄ"
+    },
+    "WEEK": {
+      "one": "%d VIIKKO",
+      "other": "%d VIIKKOA"
+    }
+  },
   "en-GB": {
     "MINUTE": {
       "one": "%d MINUTE",
