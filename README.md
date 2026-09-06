@@ -487,9 +487,12 @@ When the managed shared daemon is available, Codexometer also keeps a local
 app-server subscription for already-loaded thread IDs. From that stream it
 retains runtime flags, model-reroute/token-usage correlations, and bounded
 context from assistant messages and input/approval requests. Resolved requests
-and new turns clear stale pending context. This connection never starts a turn
-or answers a question. It can send an explicitly selected command decision,
-with confirmation for permission grants, from the Monitor detail page (see below).
+and new turns clear stale pending context. Observation alone never starts a turn
+or answers a question. Explicit actions in Monitor can submit follow-up turns
+to idle sessions, answer supported blocking questions, and send selected command
+decisions (with confirmation for permission grants). Drafts stay in memory;
+submitted text enters Codex's normal session history and follow-ups consume
+model usage. Nothing is sent automatically; see the Monitor controls below.
 Without a shared daemon, previews use
 available local rollout text rather than fetching full thread histories.
 Missing request details are left unavailable; there is no extra model call.
