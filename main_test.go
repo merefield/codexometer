@@ -36,8 +36,8 @@ func TestDemoCommandApprovalIsOneUseSimulation(t *testing.T) {
 	if !d.SessionApprovalPending(token) {
 		t.Fatal("demo approval missing")
 	}
-	if err := d.RespondSessionApproval(context.Background(), token, "acceptForSession"); err == nil {
-		t.Fatal("demo accepted persistent grant")
+	if err := d.RespondSessionApproval(context.Background(), token, "unknown"); err == nil {
+		t.Fatal("demo accepted unknown decision")
 	}
 	if err := d.RespondSessionApproval(context.Background(), token, "accept"); err != nil {
 		t.Fatal(err)

@@ -49,6 +49,8 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_context_surfaces", TestMonitorContextResponsiveHitTargets)
 	t.Run("monitor_privacy_surfaces", TestMonitorContextPrivacyAndDismissRenderedTargets)
 	t.Run("monitor_approval_surfaces", TestMonitorApprovalRenderedTargets)
+	t.Run("monitor_expanded_surfaces", TestExpandedContextResponsiveHitTargets)
+	t.Run("monitor_prompt_surfaces", TestMonitorPromptResponsiveClickTargets)
 	t.Run("tab_click_surfaces", TestEveryRenderedTabCellIsClickableAcrossWidths)
 	t.Run("reset_click_surfaces", TestQuotaResetRenderedHitSurfaces)
 	t.Run("quota_estimator", TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend)

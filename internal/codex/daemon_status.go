@@ -10,6 +10,7 @@ const (
 	sessionRuntimeIdle
 	sessionRuntimeInput
 	sessionRuntimeApproval
+	sessionRuntimeComplete
 )
 
 type sessionStatusProvider interface {

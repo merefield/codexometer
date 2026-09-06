@@ -14,9 +14,6 @@ import (
 const monitorContextInfo = "[i]"
 
 func monitorSessionAttentionLabel(s monitorSession) string {
-	if s.attention == codex.SessionAttentionInput && s.preview.Kind == codex.SessionContextReply {
-		return i18n.Text("TURN COMPLETE")
-	}
 	return monitorAttentionLabel(s.attention)
 }
 
@@ -57,7 +54,7 @@ func contextActionRect(width, y int, label string) (monitorRect, bool) {
 // space previously owned by the graph; narrow terminals prioritise the text.
 func contextColumns(width int, s monitorSession) (metrics, context, graph int) {
 	metrics, graph, _ = monitorSessionColumnWidths(width)
-	if s.preview.Kind == codex.SessionContextActivity && s.attention == codex.SessionAttentionNone {
+	if s.preview.Text == "" || s.preview.Kind == codex.SessionContextActivity && s.attention == codex.SessionAttentionNone {
 		return
 	}
 	if width >= 100 {
@@ -77,8 +74,15 @@ func contextAge(c codex.SessionContext) string {
 }
 
 func (m Model) renderMonitorContextRow(width, height int, metrics string, s monitorSession, colors palette) string {
+	if m.monitorContextExpanded == s.id {
+		_, cw, _ := monitorSessionColumnWidths(width)
+		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", m.renderExpandedContext(cw, height, s, colors))
+	}
 	_, cw, gw := contextColumns(width, s)
-	info := m.renderContextAction(s.id, monitorContextInfo, colors)
+	info := ""
+	if m.monitorContextActionVisible(s) {
+		info = m.renderContextAction(s.id, monitorContextInfo, colors)
+	}
 	if cw == 0 {
 		graph := m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), info, colors)
 		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
@@ -109,7 +113,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 
 func (m Model) contextDetailSession() (monitorSession, bool) {
 	for _, s := range m.monitorSessionData {
-		if s.id == m.monitorContextDetail && m.monitorSessionVisible(s) {
+		if s.id == m.monitorContextTarget() && m.monitorSessionVisible(s) {
 			return s, true
 		}
 	}
@@ -123,8 +127,13 @@ func (m Model) contextDetailLines(width int) []string {
 	}
 	header := contextTitle(s.preview) + " // " + shortSessionID(s.preview.ThreadID) + " // " + s.preview.Source + " // " + contextAge(s.preview)
 	lines := []string{ansi.Truncate(header, max(width, 1), "")}
-	if (s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion) && m.monitorApprovalToken() == "" {
-		lines = append(lines, ansi.Truncate(i18n.Text("REPLY IN CODEX"), max(width, 1), ""))
+	g := m.dashboardLayout()
+	if (s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion) && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
+		message := i18n.Text("REPLY IN CODEX") + " // " + m.monitorApprovalBlockReason(s.preview)
+		lines = append(lines, strings.Split(ansi.Hardwrap(message, max(width, 1), true), "\n")...)
+	}
+	if s.preview.ApprovalDecisions != "" {
+		lines = append(lines, strings.Split(ansi.Hardwrap(i18n.Text("OFFERED DECISIONS")+" // "+s.preview.ApprovalDecisions, max(width, 1), true), "\n")...)
 	}
 	return append(lines, strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width, 1), true), "\n")...)
 }
@@ -134,32 +143,57 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	rows := max(height-2, 1)
 	controls := ""
 	if m.monitorApprovalControls(width, height) {
-		a, b := m.monitorApprovalLabels()
-		controls = m.renderContextAction("approve", a, colors) + strings.Repeat(" ", monitorApprovalSlotWidth()-lipgloss.Width(a)+2) + m.renderContextAction("decline", b, colors)
+		controls = m.renderMonitorApprovalControls(width, height, colors)
+	} else if m.monitorPromptRows(width, height) > 0 {
+		controls = m.renderMonitorPrompt(width, colors)
 	} else if m.monitorApprovalNotice != "" {
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
-	textRows := rows
+	controlRows := 0
 	if controls != "" {
-		textRows--
+		controlRows = strings.Count(controls, "\n") + 1
 	}
+	textRows, gap, _ := monitorContextBodyLayout(height, controlRows)
 	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
 	end := min(start+textRows, len(lines))
 	for i := start; i < end; i++ {
 		lines[i] = colors.label().Render(lines[i])
 	}
-	body := strings.Join(lines[start:end], "\n")
+	bodyLines := append([]string(nil), lines[start:end]...)
 	if controls != "" {
-		body = controls + "\n" + body
+		for len(bodyLines) < textRows+gap {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, controls)
 	}
-	return frameSizedWithTitleAction(width, rows, i18n.Text("SESSION CONTEXT"), m.renderContextAction("close", monitorDismissLabel, colors), body, colors.primary, colors)
+	body := strings.Join(bodyLines, "\n")
+	action := m.renderContextAction("close", monitorDismissLabel, colors)
+	if width >= lipgloss.Width(monitorContextInfo+" "+monitorDismissLabel)+8 {
+		action = m.renderContextAction("cycle", monitorContextInfo, colors) + " " + action
+	}
+	return frameSizedWithTitleAction(width, rows, i18n.Text("SESSION CONTEXT"), action, body, colors.primary, colors)
+}
+
+// Reserve the footer before allocating the scroll viewport. Short terminals
+// drop the spacer first, preserving at least three text rows for buttons.
+func monitorContextBodyLayout(height, controls int) (textRows, gap, controlY int) {
+	bodyRows := max(height-2, 1)
+	textRows = max(bodyRows-controls, 0)
+	if controls > 0 && textRows >= 4 {
+		gap = 1
+		textRows--
+	}
+	controlY = 1 + textRows + gap // one title row, relative to the detail frame
+	return
 }
 
 func (m *Model) toggleMonitorContext() {
+	m.monitorPrompt = monitorPromptState{}
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalNotice = ""
 	m.monitorContextHidden = !m.monitorContextHidden
 	m.monitorContextDetail = ""
+	m.monitorContextExpanded = ""
 	m.monitorContextHover = ""
 	m.monitorContextScroll = 0
 	m.persistPreferences()
@@ -170,10 +204,12 @@ func (m *Model) openMonitorContext(id string) {
 		return
 	}
 	for _, s := range m.monitorSessionData {
-		if s.id == id && s.preview.Text != "" && m.monitorSessionVisible(s) {
+		if s.id == id && (s.preview.Text != "" || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
+			m.monitorPrompt = monitorPromptState{}
 			m.monitorApprovalConfirm = ""
 			m.monitorApprovalNotice = ""
 			m.monitorContextDetail = id
+			m.monitorContextExpanded = ""
 			m.monitorContextScroll = 0
 			return
 		}
@@ -182,10 +218,14 @@ func (m *Model) openMonitorContext(id string) {
 
 func (m *Model) scrollMonitorContext(delta int) {
 	g := m.dashboardLayout()
-	rows := max(g.meterHeight-2, 1)
-	if m.monitorApprovalControls(g.contentWidth, g.meterHeight) || m.monitorApprovalNotice != "" {
-		rows--
+	n := m.monitorApprovalControlRows(g.contentWidth, g.meterHeight)
+	if n == 0 {
+		n = m.monitorPromptRows(g.contentWidth, g.meterHeight)
 	}
+	if n == 0 && m.monitorApprovalNotice != "" {
+		n = 1
+	}
+	rows, _, _ := monitorContextBodyLayout(g.meterHeight, n)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
 	m.monitorContextScroll = min(max(m.monitorContextScroll+delta, 0), limit)
 }
@@ -197,8 +237,19 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 	}
 	if m.monitorContextDetail != "" && !m.monitorContextHidden {
 		switch key {
-		case "esc", "x", "enter", "i":
-			m.monitorContextDetail = ""
+		case "enter":
+			g := m.dashboardLayout()
+			if m.monitorPromptRows(g.contentWidth, g.meterHeight) > 0 && m.monitorPromptOffer().Token != "" {
+				cmd := m.focusMonitorPrompt()
+				return m, cmd, true
+			}
+			m.cycleMonitorContext("")
+			return m, nil, true
+		case "esc", "x":
+			m.stepBackMonitorContext()
+			return m, nil, true
+		case "i":
+			m.cycleMonitorContext("")
 			return m, nil, true
 		case "up":
 			m.scrollMonitorContext(-1)
@@ -210,23 +261,19 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 			m.scrollMonitorContext(max(m.dashboardLayout().meterHeight-4, 1))
 		case "q", "ctrl+c", "tab", "shift+tab":
 			m.monitorContextDetail = ""
+			m.monitorContextExpanded = ""
 			return m, nil, false
 		default:
 			return m, nil, true
 		}
 		return m, nil, true
 	}
+	if key == "esc" && m.monitorContextExpanded != "" {
+		m.stepBackMonitorContext()
+		return m, nil, true
+	}
 	if key == "i" || key == "enter" {
-		id := m.monitorSelectedID
-		if id == "" {
-			for _, s := range m.monitorSessionData {
-				if m.monitorSessionVisible(s) {
-					id = s.id
-					break
-				}
-			}
-		}
-		m.openMonitorContext(id)
+		m.cycleMonitorContext("")
 		return m, nil, true
 	}
 	return m, nil, false
@@ -240,13 +287,28 @@ func (m Model) monitorContextAt(x, y int) string {
 	x -= 2
 	y -= g.meterY
 	if m.monitorContextDetail != "" && !m.monitorContextHidden {
-		if y == 1 && m.monitorApprovalControls(g.contentWidth, g.meterHeight) {
-			a, b := m.monitorApprovalLabels()
-			if x >= 2 && x < 2+lipgloss.Width(a) {
-				return "approve"
+		if rows := m.monitorPromptRows(g.contentWidth, g.meterHeight); rows > 0 && m.monitorPromptOffer().Token != "" {
+			_, _, controlY := monitorContextBodyLayout(g.meterHeight, rows)
+			if y == controlY+1 && x >= 2 && x < g.contentWidth-2 {
+				return "prompt"
 			}
-			if x >= 4+monitorApprovalSlotWidth() && x < 4+monitorApprovalSlotWidth()+lipgloss.Width(b) {
-				return "decline"
+		}
+		label := monitorContextInfo + " " + monitorDismissLabel
+		if r, ok := contextActionRect(g.contentWidth, 0, label); ok {
+			r.width = lipgloss.Width(monitorContextInfo)
+			if r.contains(x, y) {
+				return "cycle"
+			}
+		}
+		buttons := m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
+		controlRows := 0
+		if len(buttons) > 0 {
+			controlRows = buttons[len(buttons)-1].y + 1
+		}
+		_, _, controlY := monitorContextBodyLayout(g.meterHeight, controlRows)
+		for _, b := range buttons {
+			if y == controlY+b.y && x >= b.x+2 && x < b.x+2+lipgloss.Width(b.label) {
+				return b.action
 			}
 		}
 		if r, ok := contextActionRect(g.contentWidth, 0, monitorDismissLabel); ok && r.contains(x, y) {
@@ -263,14 +325,21 @@ func (m Model) monitorContextAt(x, y int) string {
 	if m.monitorContextHidden {
 		return ""
 	}
+	if hit := m.expandedContextAt(x, y); hit != "" {
+		return hit
+	}
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	rowY := a.topHeight + a.gap - 1
 	for i, s := range sessions {
+		if s.id == m.monitorContextExpanded {
+			rowY += heights[i]
+			continue
+		}
 		mw, cw, gw := contextColumns(a.width, s)
 		if cw == 0 {
 			cw = gw
 		}
-		if s.preview.Text != "" {
+		if m.monitorContextActionVisible(s) {
 			if r, ok := contextActionRect(cw, rowY, monitorContextInfo); ok {
 				r.x += mw + 1
 				if r.contains(x, y) {
@@ -288,15 +357,21 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 	_, click := msg.(tea.MouseClickMsg)
 	m.monitorContextHover = m.monitorContextAt(mouse.X, mouse.Y)
 	if click && mouse.Button == tea.MouseLeft && m.monitorContextHover != "" {
-		switch m.monitorContextHover {
-		case "approve", "decline":
+		if strings.HasPrefix(m.monitorContextHover, "decision:") {
 			return m.monitorApprovalAction(m.monitorContextHover)
+		}
+		switch m.monitorContextHover {
+		case "prompt":
+			cmd := m.focusMonitorPrompt()
+			return m, cmd, true
+		case "cycle":
+			m.cycleMonitorContext("")
 		case "privacy":
 			m.toggleMonitorContext()
 		case "close":
-			m.monitorContextDetail = ""
+			m.stepBackMonitorContext()
 		default:
-			m.openMonitorContext(m.monitorContextHover)
+			m.cycleMonitorContext(m.monitorContextHover)
 		}
 		return m, nil, true
 	}

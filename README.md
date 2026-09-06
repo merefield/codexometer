@@ -310,7 +310,7 @@ telemetry on macOS, Linux, and WSL:
   the cautious `CHECK SESSION` inactivity fallback.
 - **Command approval details and controls** — supported live requests show the
   command, directory and reason in Monitor's `[i]` detail page, with
-  **Approve once → Confirm approval** and **Decline** buttons. Incomplete or
+  buttons matching Codex's offered decisions, with confirmation for grants. Incomplete or
   unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
   events let Codexometer price a positively matched call using the model that
@@ -488,8 +488,9 @@ app-server subscription for already-loaded thread IDs. From that stream it
 retains runtime flags, model-reroute/token-usage correlations, and bounded
 context from assistant messages and input/approval requests. Resolved requests
 and new turns clear stale pending context. This connection never starts a turn
-or answers a question. It can send an explicit, user-confirmed one-time command
-approval or decline from the Monitor detail page (see below). Without a shared daemon, previews use
+or answers a question. It can send an explicitly selected command decision,
+with confirmation for permission grants, from the Monitor detail page (see below).
+Without a shared daemon, previews use
 available local rollout text rather than fetching full thread histories.
 Missing request details are left unavailable; there is no extra model call.
 
@@ -511,7 +512,7 @@ codexometer --codex /path/to/codex
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
 | `h` | Hide/show Monitor context previews and close any open context detail |
-| `i` | Open context for the selected Monitor row (or first visible row), or close context detail |
+| `i` | Cycle Monitor context: compact → expanded row → full detail → compact; use the selected session, otherwise the latest approval-gated session |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -522,12 +523,12 @@ codexometer --codex /path/to/codex
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
-| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; `Enter` opens/closes Monitor context |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; `Enter` cycles Monitor context like `i` |
 | `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
 | `q` | Quit |
-| `Esc` | Close Monitor context, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
+| `Esc` | Step back one Monitor context level, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
 The responsive top rail below the account status selects Quota, Monitor, Usage, or
@@ -990,27 +991,114 @@ column temporarily. Ordinary busy-session commentary stays collapsed to an
 `[i]` action on the graph; `CHECK SESSION` can expose its last known activity.
 With no context available, the original metrics/graph layout remains.
 
-- **LAST REPLY** is the last completed assistant reply, not a new question. A
-  local completed-turn prompt with a final reply is labelled **TURN COMPLETE**.
+- **LAST REPLY** is the last completed assistant reply, not a new question. An
+  observed local completed-turn prompt is labelled **TURN COMPLETE**.
+  For shared-server sessions, **TURN COMPLETE** comes from an observed successful
+  `turn/completed` event followed by idle status, independently of whether reply
+  text is available or previews are hidden. Failed/interrupted turns and idle
+  threads without an observed completion do not receive this label. Starting
+  the next turn clears it; a working linked agent suppresses root completion,
+  and actual input/approval requests take priority. Attaching after a turn
+  finished may miss its live completion event; the next completed turn qualifies.
 - **QUESTION** contains an observed blocking input request and any choices.
 - **REQUEST** contains an observed approval reason/command when available.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
 
-Click `[i]`, or select a row with arrows and press `i`/`Enter`, for a scrollable
-detail view. Use arrows, Page Up/Down, or the mouse wheel; close with `[×]`,
-`Esc`, `i`, `Enter`, or `x`. Answer questions in Codex itself.
+Click a row's `[i]`, or press `i`/`Enter`, to cycle through three presentations:
+
+1. **Compact:** the normal short preview beside the token graph; no approval buttons.
+2. **Expanded:** that session's context occupies the full space previously shared
+   by its preview and token graph, while telemetry and the other sessions stay
+   visible. Eligible approval buttons sit below the complete command/request
+   and source session. If the complete request plus controls cannot fit, an
+   **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
+3. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+   Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
+   `i` or `[i]` click returns directly to compact. When a reply editor is available,
+   `Enter` focuses it instead of changing presentation.
+
+`Esc` steps back one level; `[×]` or `x` in full detail returns to expanded.
+The initial keyboard target is the explicitly selected session, otherwise the
+most recent approval-gated session with context, otherwise the first session
+with context. Once expanded, the target is pinned and kept on screen: newer
+approvals cannot silently switch the session behind the buttons. Clicking
+another row's `[i]` explicitly changes the target. Switching context levels
+clears unsubmitted approval confirmations. Hiding previews or dismissing the
+target clears its expansion.
+When a row is explicitly selected, only that row shows `[i]`, even if it has no
+context yet; `Enter`/`i` opens that session rather than falling back to another.
+Moving the selection collapses any other expanded row and clears its pending
+confirmation. With no selected row, the default targeting described above applies.
 Outstanding requests take priority over ordinary activity when linked agents
 share a root row, and the source ID identifies the actual member.
+
+**Replies and follow-ups (shared app-server only):** full detail reserves a
+compact prompt at the bottom when a loaded session is idle (including **TURN
+COMPLETE**), or has a supported blocking question. Click the input line or press
+`Enter` to focus it; type your text, then press `Enter` to submit. Dashboard
+hotkeys become ordinary letters while typing. `Esc` leaves the editor without
+sending; press it again to return to the expanded row. Cursor editing, Unicode
+and bracketed paste are supported; pasted newlines become spaces and never
+submit. This is a single-line text editor, not the Codex slash-command UI.
+
+For a question with multiple parts, `Enter` records each answer locally; only
+after the last answer is the complete response sent. Use `↑`/`↓` to select offered
+choices. Custom text is accepted only if the question permits it, and secret
+answers are masked. Unsupported or ambiguous simultaneous requests remain
+**REPLY IN CODEX**. Approval requests retain their explicit decision buttons;
+typing is not a substitute for approval.
+
+An idle follow-up starts a new turn in the displayed root CLI session using its
+existing configuration, without changing its model, working directory or
+permission policy. A pending question is answered on its exact source thread,
+which can be a linked agent. The editor shows the target thread or question.
+Drafts are memory-only, bounded to 4,096 characters per answer, and discarded
+when leaving detail, hiding context, or when the request/connection changes.
+Submitted text is sent to Codex and can become part of its normal session history.
+No text is sent automatically; pressing Enter while focused is the send action.
+
+Capabilities are one-use and connection-bound. Follow-ups recheck the live idle
+state immediately before `turn/start`, and pending answers use their original
+JSON-RPC request and question IDs. The protocol has no atomic “start only if this
+completed turn is still current” condition, so avoid submitting in Codex and
+Codexometer simultaneously. Failed or ambiguous sends are never automatically
+retried: check Codex first. Local-only, disconnected, busy and very small views
+do not offer an editor; use Codex itself in those cases. Codexometer does not
+detect the CLI's visual keyboard-focus state or type into its terminal.
 
 **Command approvals (shared app-server only):** the detail page shows the reason,
 command and working directory. When the approval event omits the command or
 directory, Codexometer associates it with the preceding command item from the
 same thread, turn and item. A complete ordinary command request offers clickable
-**APPROVE ONCE** and **DECLINE** buttons. Approval requires a second click on
-**CONFIRM APPROVAL**; closing the detail page cancels that confirmation. There is
-no approval keyboard shortcut and no persistent/session-wide permission grant.
-Controls are hidden on terminals too small to fit the confirmation labels.
+buttons matching the supported decisions Codex actually offers, in its order:
+
+- **APPROVE ONCE** grants this command after **CONFIRM APPROVAL**.
+- **ALLOW FOR SESSION** grants session-scoped approval after **CONFIRM SESSION
+  GRANT**; future prompts covered by Codex's session approval cache may run
+  without asking again.
+- **ALWAYS ALLOW PREFIX** applies the exact displayed persistent command-prefix
+  rule after **CONFIRM PERSISTENT RULE**. Future matching commands may run
+  without asking again; review the displayed prefix carefully.
+- **DECLINE** rejects the command but lets the agent continue the turn.
+- **REJECT & STOP TURN** sends Codex's `cancel` decision: reject the command and
+  interrupt the turn. This is distinct from declining or closing the detail page.
+
+Each button appears independently; a normal Accept/Cancel prompt no longer
+requires a Decline option to enable approval. Unknown decision types are not
+actionable. The **OFFERED DECISIONS** line shows bounded, canonical decision
+names/types for troubleshooting, not conversation content. Structured
+command-prefix grants are validated and their exact payload is returned; no
+decision absent from the request can be submitted. For older servers omitting
+the decision list, only the legacy Accept/Cancel pair is offered.
+
+Closing the detail page cancels an unsubmitted confirmation. There are no
+approval keyboard shortcuts. Buttons wrap into rows when needed, reserve their
+confirmation widths so other targets do not move, and sit in a pinned footer
+below the scrolling request text, separated by one blank line when space allows.
+Very short terminals omit that spacer first. Controls are hidden if the terminal
+cannot fit them with room to read the request. All permission grants require
+their own explicit second click; confirming one choice cannot confirm another.
 
 Actions are bound to a single pending request on the current connection. They
 become unavailable when resolved elsewhere, the turn ends, or the connection
@@ -1026,13 +1114,20 @@ grants and other unsupported requests remain **REPLY IN CODEX**. The complete
 eligible request is available in the scrollable detail, not just the compact
 two-line preview. Unsupported requests may have only a bounded excerpt.
 
+When controls are unavailable, the detail page explains why beside
+**REPLY IN CODEX**: for example, missing command/directory or request identity,
+additional permissions, network/file-change approval, no supported decisions,
+truncated or sanitised text, local-only observation, or a resolved/disconnected
+request. Eligible requests on small terminals instead explain that the terminal
+must be enlarged. These diagnostics do not relax any approval safeguards.
+
 The readout's `[H:HIDE]`/`[H:SHOW]` button or `h` toggles all previews; the choice
 survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
 context can be unavailable. Terminal escapes and control/bidirectional-formatting
 characters are stripped. Previews remain in their original language and are not
 LLM-generated summaries. `--demo` includes example context and a simulated
-one-time command approval without accessing a real conversation or executing
+command approval choices without accessing a real conversation or executing
 any command; restart the demo to reset its approval.
 
 ### Saved presentation preferences

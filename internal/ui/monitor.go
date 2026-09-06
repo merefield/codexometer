@@ -244,6 +244,21 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 	visibleCount := len(visible)
 	rowCount := min(visibleCount, max(height/3, 1))
 	start := min(max(m.monitorScroll, 0), max(visibleCount-rowCount, 0))
+	// Keep the expanded target on screen as new sessions arrive. It never
+	// follows a newer approval to a different row implicitly.
+	if m.monitorContextExpanded != "" && !m.monitorContextHidden {
+		for i, s := range visible {
+			if s.id == m.monitorContextExpanded {
+				if i < start {
+					start = i
+				}
+				if i >= start+rowCount {
+					start = i - rowCount + 1
+				}
+				break
+			}
+		}
+	}
 	visible = visible[start : start+rowCount]
 	pageLabel := ""
 	if rowCount < visibleCount {
@@ -257,7 +272,7 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 
 func (m Model) renderMonitorSessionRow(width, height int, session monitorSession, pageLabel string, colors palette) string {
 	rowColors := colors
-	if session.id == m.monitorSelectedID {
+	if session.id == m.monitorSelectedID || session.id == m.monitorContextExpanded {
 		rowColors.primary = colors.accent
 	}
 	metricsWidth, graphWidth, ok := monitorSessionColumnWidths(width)
@@ -265,7 +280,7 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 		return m.renderMonitorGraphSamples(width, height, session.samples, i18n.Text("TOKENS"), rowColors)
 	}
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
-	if !m.monitorContextHidden && session.preview.Text != "" {
+	if !m.monitorContextHidden && (session.preview.Text != "" || m.monitorContextExpanded == session.id || m.monitorContextActionVisible(session)) {
 		return m.renderMonitorContextRow(width, height, metrics, session, rowColors)
 	}
 	title := i18n.Text("TOKEN BARS")
@@ -303,9 +318,6 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	}
 	if session.attention != codex.SessionAttentionNone {
 		status = monitorAttentionStatus(session.attention)
-		if session.preview.Kind == codex.SessionContextReply && session.attention == codex.SessionAttentionInput {
-			status = i18n.Text("TURN COMPLETE")
-		}
 	}
 	innerWidth := max(width-4, 1)
 	memberLabel := "ROOT"
@@ -391,6 +403,8 @@ func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
 
 func monitorAttentionLabel(attention codex.SessionAttention) string {
 	switch attention {
+	case codex.SessionAttentionComplete:
+		return i18n.Text("TURN COMPLETE")
 	case codex.SessionAttentionApproval:
 		return i18n.Text("APPROVAL NEEDED")
 	case codex.SessionAttentionCheck:
@@ -402,6 +416,8 @@ func monitorAttentionLabel(attention codex.SessionAttention) string {
 
 func monitorAttentionStatus(attention codex.SessionAttention) string {
 	switch attention {
+	case codex.SessionAttentionComplete:
+		return i18n.Text("TURN COMPLETE")
 	case codex.SessionAttentionApproval:
 		return i18n.Text("APPROVAL")
 	case codex.SessionAttentionCheck:

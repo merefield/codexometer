@@ -11,7 +11,7 @@ func approvalFixture(t *testing.T, overrides map[string]any) (map[string]*daemon
 	t.Helper()
 	states := map[string]*daemonContextState{}
 	daemonContextEvent(states, "item/started", nil, json.RawMessage(`{"threadId":"root","turnId":"turn","item":{"id":"cmd","type":"commandExecution","command":"git push","cwd":"/work"}}`), time.Now())
-	p := map[string]any{"threadId": "root", "turnId": "turn", "itemId": "cmd", "reason": "Publish branch?"}
+	p := map[string]any{"threadId": "root", "turnId": "turn", "itemId": "cmd", "reason": "Publish branch?", "availableDecisions": []string{"accept", "decline"}}
 	for k, v := range overrides {
 		p[k] = v
 	}
@@ -37,7 +37,6 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 		"bidi":                    {"command": "echo \u202Ehidden"},
 		"network":                 {"networkApprovalContext": map[string]string{"host": "example.com", "protocol": "https"}},
 		"permissions":             {"additionalPermissions": map[string]any{"network": true}},
-		"session only":            {"availableDecisions": []string{"acceptForSession", "decline"}},
 		"no decisions":            {"availableDecisions": []string{}},
 		"ambiguous argv":          {"command": []string{"echo", "a b"}},
 	} {
@@ -64,5 +63,31 @@ func TestApprovalLifecycleAndReplay(t *testing.T) {
 	daemonContextEvent(states, "item/commandExecution/requestApproval", json.RawMessage(`"req"`), json.RawMessage(`{"threadId":"root","turnId":"turn","itemId":"cmd","command":"git status","cwd":"/work"}`), time.Now())
 	if next := states["root"].requests[`"req"`]; next.ApprovalToken == old.ApprovalToken || next.ApprovalToken == "" {
 		t.Fatal("replay reused old capability")
+	}
+}
+
+func TestApprovalRejectionDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		fields map[string]any
+		reason string
+	}{
+		{map[string]any{"networkApprovalContext": map[string]string{"host": "example.com"}}, "network"},
+		{map[string]any{"additionalPermissions": map[string]any{}}, "permissions"},
+		{map[string]any{"command": []string{"pwd"}}, "command-format"},
+		{map[string]any{"itemId": "unknown"}, "missing-command"},
+		{map[string]any{"itemId": "unknown", "command": "pwd"}, "missing-directory"},
+		{map[string]any{"turnId": "", "command": "pwd", "cwd": "/work"}, "missing-identity"},
+		{map[string]any{"availableDecisions": []string{}}, "decisions"},
+		{map[string]any{"command": strings.Repeat("x", 5000)}, "truncated"},
+		{map[string]any{"command": "pwd\t"}, "sanitised"},
+	} {
+		_, c := approvalFixture(t, tc.fields)
+		if c.ApprovalBlocked != tc.reason || c.ApprovalToken != "" {
+			t.Errorf("want %s, got reason=%s actionable=%v", tc.reason, c.ApprovalBlocked, c.ApprovalToken != "")
+		}
+	}
+	_, c := approvalFixture(t, nil)
+	if c.ApprovalBlocked != "" || c.ApprovalToken == "" {
+		t.Fatal("eligible request gained a rejection")
 	}
 }

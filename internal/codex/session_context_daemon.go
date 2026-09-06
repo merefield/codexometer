@@ -10,15 +10,21 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
-	latest   SessionContext
-	requests map[string]SessionContext
-	commands map[string]contextCommandItem
+	promptToken string
+	promptSpent bool
+	completed   bool
+	latest      SessionContext
+	requests    map[string]SessionContext
+	commands    map[string]contextCommandItem
 }
 
 type contextCommandItem struct{ Command, CWD string }
 
 func daemonContextEvent(states map[string]*daemonContextState, method string, id, raw json.RawMessage, now time.Time) {
 	var p struct {
+		Turn struct {
+			Status string `json:"status"`
+		} `json:"turn"`
 		TurnID               string            `json:"turnId"`
 		ItemID               string            `json:"itemId"`
 		CWD                  string            `json:"cwd"`
@@ -59,6 +65,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		delete(states, p.ThreadID)
 		return
 	case "turn/completed", "turn/interrupted":
+		state.promptToken, state.promptSpent = "", false
+		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
 		clear(state.commands)
 		return
@@ -84,21 +92,39 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if special(p.Permissions) {
 			c.Text += "\nPermissions: " + string(p.Permissions)
 		}
-		allowed := p.Decisions == nil
-		if !allowed {
-			var accept, decline bool
-			for _, raw := range p.Decisions {
-				accept = accept || string(raw) == `"accept"`
-				decline = decline || string(raw) == `"decline"`
+		c.ApprovalOptions, c.ApprovalDecisions = commandApprovalOptions(p.Decisions)
+		for _, option := range c.ApprovalOptions {
+			if option.Detail != "" {
+				c.Text += "\nPersistent command-prefix rule: " + option.Detail
 			}
-			allowed = accept && decline
 		}
+		allowed := c.ApprovalOptions[0].Kind != ""
 		// Fail closed if the display loses ANY command/request content, or if
 		// this is a broader grant rather than an ordinary command decision.
-		if commandValid && allowed && command != "" && p.CWD != "" && p.TurnID != "" && p.ItemID != "" && !special(p.Network) && !special(p.Permissions) && SanitizeSessionContext(c.Text) == c.Text && SanitizeSessionContext(command) == command && SanitizeSessionContext(p.CWD) == p.CWD {
+		switch {
+		case special(p.Network):
+			c.ApprovalBlocked = "network"
+		case special(p.Permissions):
+			c.ApprovalBlocked = "permissions"
+		case !commandValid:
+			c.ApprovalBlocked = "command-format"
+		case command == "":
+			c.ApprovalBlocked = "missing-command"
+		case p.CWD == "":
+			c.ApprovalBlocked = "missing-directory"
+		case p.TurnID == "" || p.ItemID == "":
+			c.ApprovalBlocked = "missing-identity"
+		case !allowed:
+			c.ApprovalBlocked = "decisions"
+		case len([]rune(c.Text)) > sessionContextLimit:
+			c.ApprovalBlocked = "truncated"
+		case SanitizeSessionContext(c.Text) != c.Text || SanitizeSessionContext(command) != command || SanitizeSessionContext(p.CWD) != p.CWD:
+			c.ApprovalBlocked = "sanitised"
+		default:
 			c.ApprovalToken = rand.Text()
 		}
 	case "item/fileChange/requestApproval":
+		c.ApprovalBlocked = "file-change"
 		c.Kind, c.Text = SessionContextApproval, p.Reason
 		if c.Text == "" {
 			c.Text = "File changes requested"
@@ -107,6 +133,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.Text += "\nRoot: " + p.GrantRoot
 		}
 	case "item/permissions/requestApproval":
+		c.ApprovalBlocked = "permissions"
 		c.Kind, c.Text = SessionContextApproval, p.Reason
 		if c.Text == "" {
 			c.Text = "Additional permissions requested"
@@ -122,6 +149,12 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			return
 		}
 		c.Kind, c.Text = SessionContextQuestion, questionContext(p.Questions)
+		if p.TurnID != "" && p.ItemID != "" && validPromptQuestions(p.Questions) && SanitizeSessionContext(c.Text) == c.Text {
+			encoded, _ := json.Marshal(p.Questions)
+			if len(encoded) <= 8192 {
+				c.InputToken, c.InputQuestions = rand.Text(), string(encoded)
+			}
+		}
 	case "item/completed":
 		for key, request := range state.requests {
 			if p.Item.ID != "" && request.ItemID == p.Item.ID && request.TurnID == p.TurnID {
@@ -164,6 +197,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		return
 	}
 	if c.pending() {
+		state.promptToken = ""
 		if len(id) == 0 || string(id) == "null" {
 			return
 		}

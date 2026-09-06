@@ -32,9 +32,6 @@ func (p *daemonStatusProvider) SessionApprovalPending(token string) bool {
 }
 
 func (p *daemonStatusProvider) RespondSessionApproval(ctx context.Context, token, decision string) error {
-	if decision != "accept" && decision != "decline" {
-		return errors.New("unsupported approval decision")
-	}
 	p.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		p.mu.Unlock()
@@ -45,11 +42,22 @@ func (p *daemonStatusProvider) RespondSessionApproval(ctx context.Context, token
 		p.mu.Unlock()
 		return errors.New("request expired or connection closed; check Codex")
 	}
+	var wire string
+	for _, option := range s.requests[id].ApprovalOptions {
+		if option.Kind != "" && option.Value == decision {
+			wire = option.Wire
+			break
+		}
+	}
+	if wire == "" {
+		p.mu.Unlock()
+		return errors.New("decision was not offered by this request")
+	}
 	// Consume before writing. A failed/ambiguous write must never auto-retry.
 	delete(s.requests, id)
 	connection := p.connection
 	p.mu.Unlock()
 	// Never hold the state lock during IO: rendering can check pending state
 	// without waiting for the network. The server arbitrates concurrent replies.
-	return p.write(connection, map[string]any{"id": json.RawMessage(id), "result": map[string]string{"decision": decision}})
+	return p.write(connection, map[string]any{"id": json.RawMessage(id), "result": map[string]any{"decision": json.RawMessage(wire)}})
 }

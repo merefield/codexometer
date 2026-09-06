@@ -119,6 +119,8 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 	alphaTokens := d.lifetimeTokens * 3 / 5
 	attention := codex.SessionAttentionApproval
 	preview := codex.SessionContext{Kind: codex.SessionContextApproval, Text: "DEMO ONLY — no command will run.\nAllow pushing the documentation update?\nCommand: git push origin main\nDirectory: /projects/alpha", ThreadID: "019d-demo-a1b2c", Source: "DEMO", At: time.Now().Add(-time.Minute), ApprovalToken: "demo-command"}
+	preview.ApprovalOptions = [8]codex.ApprovalOption{{Kind: "accept", Value: "accept", Wire: `"accept"`}, {Kind: "acceptForSession", Value: "acceptForSession", Wire: `"acceptForSession"`}, {Kind: "cancel", Value: "cancel", Wire: `"cancel"`}}
+	preview.ApprovalDecisions = "accept, acceptForSession, cancel"
 	if d.approvalDecision != "" {
 		attention = codex.SessionAttentionNone
 		preview.Kind = codex.SessionContextReply
@@ -133,7 +135,7 @@ func (d *demoFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot,
 			{ID: "019d-demo-a1b2c", WorkingDirectory: "/projects/alpha", TotalTokens: alphaTokens, LastActivity: time.Now(), AgentCount: 2, Active: true,
 				Attention: attention, Context: preview, ModelCalls: append([]codex.LiveModelCall(nil), d.alphaCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.alphaTurns...)},
 			{ID: "019d-demo-d4e5f", WorkingDirectory: "/projects/bravo", TotalTokens: d.lifetimeTokens - alphaTokens, LastActivity: time.Now(), Active: true,
-				Attention: codex.SessionAttentionInput, Context: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Pushed directly to main.\nIncludes both README and intro-post updates.", ThreadID: "019d-demo-d4e5f", Source: "DEMO", At: time.Now().Add(-2 * time.Minute)}, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
+				Attention: codex.SessionAttentionComplete, Context: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Pushed directly to main.\nIncludes both README and intro-post updates.", ThreadID: "019d-demo-d4e5f", Source: "DEMO", At: time.Now().Add(-2 * time.Minute)}, ModelCalls: append([]codex.LiveModelCall(nil), d.bravoCalls...), TurnTimings: append([]codex.LiveTurnTiming(nil), d.bravoTurns...)},
 		},
 	}, nil
 }
@@ -152,7 +154,7 @@ func (d *demoFetcher) RespondSessionApproval(ctx context.Context, token, decisio
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if token != "demo-command" || d.approvalDecision != "" || (decision != "accept" && decision != "decline") {
+	if token != "demo-command" || d.approvalDecision != "" || (decision != "accept" && decision != "acceptForSession" && decision != "cancel") {
 		return fmt.Errorf("invalid or resolved demo approval")
 	}
 	d.approvalDecision = decision

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +15,47 @@ import (
 type monitorApprovalResult struct {
 	sessionID string
 	err       error
+}
+
+func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
+	if m.monitorApprovalBusy {
+		return i18n.Text("Sending decision…")
+	}
+	if c.Kind == codex.SessionContextQuestion {
+		return i18n.Text("Questions must be answered in Codex.")
+	}
+	if c.Source == "LOCAL" {
+		return i18n.Text("Local observation cannot answer live approvals.")
+	}
+	switch c.ApprovalBlocked {
+	case "network":
+		return i18n.Text("Network approval is not supported here.")
+	case "permissions":
+		return i18n.Text("Additional permissions require approval in Codex.")
+	case "file-change":
+		return i18n.Text("File-change approval is not supported here.")
+	case "command-format":
+		return i18n.Text("Unsupported command format.")
+	case "missing-command":
+		return i18n.Text("Command details are missing.")
+	case "missing-directory":
+		return i18n.Text("Working directory is missing.")
+	case "missing-identity":
+		return i18n.Text("Turn or item identity is missing.")
+	case "decisions":
+		return i18n.Text("No supported approval choices were offered.")
+	case "truncated":
+		return i18n.Text("Request details exceed the display limit.")
+	case "sanitised":
+		return i18n.Text("Request text was altered for safe display.")
+	}
+	if c.ApprovalToken == "" {
+		return i18n.Text("No actionable live approval was received.")
+	}
+	if m.monitorApprovalToken() == "" {
+		return i18n.Text("Request resolved, expired, or disconnected.")
+	}
+	return i18n.Text("Enlarge the terminal to show approval controls.")
 }
 
 func (m Model) monitorApprovalToken() string {
@@ -27,21 +70,97 @@ func (m Model) monitorApprovalToken() string {
 	return s.preview.ApprovalToken
 }
 
-func (m Model) monitorApprovalLabels() (string, string) {
-	a := i18n.Text("[ APPROVE ONCE ]")
-	if token := m.monitorApprovalToken(); token != "" && m.monitorApprovalConfirm == token {
-		a = i18n.Text("[ CONFIRM APPROVAL ]")
+func approvalOptionLabel(kind string, confirm bool) string {
+	switch kind {
+	case "accept":
+		if confirm {
+			return i18n.Text("[ CONFIRM APPROVAL ]")
+		}
+		return i18n.Text("[ APPROVE ONCE ]")
+	case "acceptForSession":
+		if confirm {
+			return i18n.Text("[ CONFIRM SESSION GRANT ]")
+		}
+		return i18n.Text("[ ALLOW FOR SESSION ]")
+	case "acceptWithExecpolicyAmendment":
+		if confirm {
+			return i18n.Text("[ CONFIRM PERSISTENT RULE ]")
+		}
+		return i18n.Text("[ ALWAYS ALLOW PREFIX ]")
+	case "decline":
+		return i18n.Text("[ DECLINE ]")
+	case "cancel":
+		return i18n.Text("[ REJECT & STOP TURN ]")
 	}
-	return a, i18n.Text("[ DECLINE ]")
+	return ""
+}
+
+type monitorApprovalButton struct {
+	action, label string
+	x, y, slot    int
+}
+
+// Rendering and hit testing share this layout. Slots reserve confirmation
+// widths so neighbouring decisions never move underneath a user's pointer.
+func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton {
+	token := m.monitorApprovalToken()
+	if token == "" {
+		return nil
+	}
+	s, ok := m.contextDetailSession()
+	if !ok {
+		return nil
+	}
+	var buttons []monitorApprovalButton
+	x, y := 0, 0
+	for i, option := range s.preview.ApprovalOptions {
+		if option.Kind == "" {
+			continue
+		}
+		label := approvalOptionLabel(option.Kind, false)
+		slot := max(lipgloss.Width(label), lipgloss.Width(approvalOptionLabel(option.Kind, true)))
+		if slot > width-4 || label == "" {
+			return nil
+		}
+		if x+slot > width-4 {
+			x = 0
+			y++
+		}
+		if y+1 > height-5 {
+			return nil
+		}
+		action := "decision:" + strconv.Itoa(i)
+		if m.monitorApprovalConfirm == token+"/"+action {
+			label = approvalOptionLabel(option.Kind, true)
+		}
+		buttons = append(buttons, monitorApprovalButton{action, label, x, y, slot})
+		x += slot + 2
+	}
+	return buttons
 }
 
 func (m Model) monitorApprovalControls(width, height int) bool {
-	_, b := m.monitorApprovalLabels()
-	return height >= 6 && width-4 >= monitorApprovalSlotWidth()+lipgloss.Width(b)+2 && m.monitorApprovalToken() != ""
+	return len(m.monitorApprovalButtons(width, height)) > 0
 }
 
-func monitorApprovalSlotWidth() int {
-	return max(lipgloss.Width(i18n.Text("[ APPROVE ONCE ]")), lipgloss.Width(i18n.Text("[ CONFIRM APPROVAL ]")))
+func (m Model) monitorApprovalControlRows(width, height int) int {
+	b := m.monitorApprovalButtons(width, height)
+	if len(b) == 0 {
+		return 0
+	}
+	return b[len(b)-1].y + 1
+}
+
+func (m Model) renderMonitorApprovalControls(width, height int, colors palette) string {
+	buttons := m.monitorApprovalButtons(width, height)
+	if len(buttons) == 0 {
+		return ""
+	}
+	rows := make([]string, buttons[len(buttons)-1].y+1)
+	for _, b := range buttons {
+		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + m.renderContextAction(b.action, b.label, colors)
+	}
+	return strings.Join(rows, "\n")
 }
 
 func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
@@ -50,19 +169,25 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 		m.monitorApprovalConfirm = ""
 		return m, nil, true
 	}
-	if action == "approve" && m.monitorApprovalConfirm != token {
-		m.monitorApprovalConfirm = token
+	index, err := strconv.Atoi(strings.TrimPrefix(action, "decision:"))
+	s, ok := m.contextDetailSession()
+	if err != nil || !strings.HasPrefix(action, "decision:") || !ok || index < 0 || index >= len(s.preview.ApprovalOptions) {
 		return m, nil, true
 	}
-	decision := "decline"
-	if action == "approve" {
-		decision = "accept"
+	option := s.preview.ApprovalOptions[index]
+	if option.Kind == "" {
+		return m, nil, true
 	}
+	if option.GrantsPermission() && m.monitorApprovalConfirm != token+"/"+action {
+		m.monitorApprovalConfirm = token + "/" + action
+		return m, nil, true
+	}
+	decision := option.Value
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalBusy = true
 	m.monitorApprovalNotice = i18n.Text("Sending decision…")
 	p := m.fetcher.(codex.SessionApprovalClient)
-	id := m.monitorContextDetail
+	id := m.monitorContextTarget()
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()

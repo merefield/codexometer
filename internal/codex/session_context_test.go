@@ -19,6 +19,39 @@ func contextRecord(t *testing.T, kind string, payload any) []byte {
 	return b
 }
 
+func TestCompletedRootAttentionAndWorkingChild(t *testing.T) {
+	now := time.Now()
+	r := &LiveUsageReader{files: map[string]*rolloutCursor{
+		"root":  {threadID: "root", lastModified: now},
+		"child": {threadID: "child", parentThreadID: "root", nonRoot: true, lastModified: now},
+	}}
+	statuses := map[string]sessionRuntimeStatus{"root": sessionRuntimeComplete, "child": sessionRuntimeIdle}
+	sessions, _, _ := r.sessionSnapshots(now, nil, false, statuses)
+	if len(sessions) != 1 || sessions[0].Attention != SessionAttentionComplete {
+		t.Fatalf("completion missing: %+v", sessions)
+	}
+	for _, child := range []sessionRuntimeStatus{sessionRuntimeWorking, sessionRuntimeInput, sessionRuntimeApproval} {
+		statuses["child"] = child
+		sessions, _, _ = r.sessionSnapshots(now, nil, false, statuses)
+		want := SessionAttentionNone
+		if child == sessionRuntimeInput {
+			want = SessionAttentionInput
+		}
+		if child == sessionRuntimeApproval {
+			want = SessionAttentionApproval
+		}
+		if sessions[0].Attention != want {
+			t.Fatalf("child %v got %v want %v", child, sessions[0].Attention, want)
+		}
+	}
+	statuses["root"] = sessionRuntimeIdle
+	statuses["child"] = sessionRuntimeComplete
+	sessions, _, _ = r.sessionSnapshots(now, nil, false, statuses)
+	if sessions[0].Attention != SessionAttentionNone {
+		t.Fatal("child completion labelled whole root complete")
+	}
+}
+
 func TestSessionContextExtractsOnlyDisplayText(t *testing.T) {
 	cursor := &rolloutCursor{threadID: "root"}
 	for _, tc := range []struct {

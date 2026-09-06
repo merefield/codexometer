@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func contextTestModel() Model {
@@ -18,6 +19,22 @@ func contextTestModel() Model {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: id, active: true, displayed: true, preview: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Finished updating the documentation.\n次の手順を選んでください。", ThreadID: id, Source: "LOCAL", At: time.Now()}, samples: []monitorSample{{intervalTokens: 100}}})
 	}
 	return m
+}
+
+func TestMonitorCompletionIsIndependentOfPreview(t *testing.T) {
+	m := contextTestModel()
+	m.monitorSessionData[0].attention = codex.SessionAttentionComplete
+	m.monitorSessionData[0].preview = codex.SessionContext{}
+	for _, hidden := range []bool{false, true} {
+		m.monitorContextHidden = hidden
+		if out := ansi.Strip(m.render()); !strings.Contains(out, i18n.Text("TURN COMPLETE")) {
+			t.Fatal("completion badge missing without visible reply")
+		}
+	}
+	s := monitorSession{attention: codex.SessionAttentionInput, preview: codex.SessionContext{Kind: codex.SessionContextReply}}
+	if got := monitorSessionAttentionLabel(s); got != i18n.Text("INPUT NEEDED") {
+		t.Fatal("old reply hid actual input request", got)
+	}
 }
 
 func TestMonitorContextResponsiveHitTargets(t *testing.T) {
@@ -50,9 +67,10 @@ func TestMonitorContextResponsiveHitTargets(t *testing.T) {
 					}
 					updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft}))
 					detail := updated.(Model)
-					if detail.monitorContextDetail == "" {
+					if detail.monitorContextExpanded == "" {
 						t.Fatal("click failed")
 					}
+					detail.cycleMonitorContext("")
 					modal := detail.render()
 					if lipgloss.Width(modal) > size.w || lipgloss.Height(modal) > size.h {
 						t.Fatal("detail overflow")

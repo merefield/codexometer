@@ -43,8 +43,10 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	monitorPrompt                       monitorPromptState
 	monitorContextHidden                bool
 	monitorContextDetail                string
+	monitorContextExpanded              string
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
@@ -420,15 +422,20 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateMonitorPrompt(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	switch message := message.(type) {
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
-		if m.monitorContextDetail != message.sessionID {
+		if m.monitorContextTarget() != message.sessionID {
 			m.monitorApprovalNotice = ""
 			return m, nil
 		}
-		m.monitorApprovalNotice = i18n.Text("Decision sent; check Codex for the outcome.")
+		m.monitorApprovalNotice = i18n.Text("Decision sent…")
 		if message.err != nil {
 			m.monitorApprovalNotice = i18n.Text("Decision unconfirmed; check Codex. Do not retry here.")
 		}
@@ -1037,6 +1044,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	if view != viewMonitor {
 		m.monitorContextDetail = ""
+		m.monitorContextExpanded = ""
 		m.monitorContextHover = ""
 	}
 	m.resetConfirmUntil = time.Time{}
@@ -2128,6 +2136,7 @@ func (m Model) monitorHasVisibleWaitingSession() bool {
 
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {
 	m.monitorContextDetail = ""
+	m.monitorContextExpanded = ""
 	m.monitorContextScroll = 0
 	m.monitorStartedAt = message.at
 	m.monitorStoppedAt = time.Time{}
@@ -2487,6 +2496,11 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 }
 
 func (m *Model) dismissMonitorSession(id string) {
+	if id == m.monitorContextTarget() {
+		m.monitorContextDetail = ""
+		m.monitorContextExpanded = ""
+		m.monitorApprovalConfirm = ""
+	}
 	index := m.monitorSessionIndex(id)
 	if index < 0 {
 		return
@@ -2684,6 +2698,12 @@ func (m *Model) selectMonitorSession(direction int) {
 		selected = min(max(selected+direction, 0), len(visible)-1)
 	}
 	m.monitorSelectedID = visible[selected]
+	if m.monitorContextExpanded != "" && m.monitorContextExpanded != m.monitorSelectedID {
+		m.monitorContextExpanded = ""
+		m.monitorApprovalConfirm = ""
+		m.monitorApprovalNotice = ""
+		m.monitorPrompt = monitorPromptState{}
+	}
 	pageSize := max(m.monitorPageSize(), 1)
 	if selected < m.monitorScroll {
 		m.monitorScroll = selected

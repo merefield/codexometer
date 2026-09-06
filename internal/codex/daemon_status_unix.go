@@ -127,6 +127,9 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		if status, ok := p.statuses[threadID]; ok {
+			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
+				status = sessionRuntimeComplete
+			}
 			statuses[threadID] = status
 		}
 	}
@@ -287,7 +290,16 @@ func (p *daemonStatusProvider) isSubscribed(threadID string) bool {
 func (p *daemonStatusProvider) request(ctx context.Context, method string, params any, target any) error {
 	p.mu.Lock()
 	connection := p.connection
-	if connection == nil {
+	p.mu.Unlock()
+	return p.requestOn(ctx, connection, method, params, target)
+}
+
+func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if connection == nil || p.connection != connection {
 		p.mu.Unlock()
 		return errors.New("daemon connection is closed")
 	}
@@ -373,6 +385,7 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 			p.contexts = map[string]*daemonContextState{}
 		}
 		daemonContextEvent(p.contexts, envelope.Method, envelope.ID, envelope.Params, time.Now())
+		p.promptLifecycleLocked(envelope.Method, envelope.Params)
 		p.mu.Unlock()
 		p.handleNotification(envelope.Method, envelope.Params)
 	}

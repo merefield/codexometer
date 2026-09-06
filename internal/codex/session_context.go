@@ -25,15 +25,21 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
+	InputToken     string
+	InputQuestions string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.
 	ApprovalToken string
-	TurnID        string
-	ItemID        string
-	Kind          SessionContextKind
-	Text          string
-	At            time.Time
-	ThreadID      string
-	Source        string
+	// ApprovalBlocked is a canonical diagnostic, with no request content.
+	ApprovalBlocked   string
+	ApprovalOptions   [8]ApprovalOption
+	ApprovalDecisions string
+	TurnID            string
+	ItemID            string
+	Kind              SessionContextKind
+	Text              string
+	At                time.Time
+	ThreadID          string
+	Source            string
 }
 
 const sessionContextLimit = 4096
@@ -85,6 +91,9 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 }
 
 type contextQuestion struct {
+	ID       string `json:"id"`
+	IsOther  bool   `json:"isOther"`
+	IsSecret bool   `json:"isSecret"`
 	Question string `json:"question"`
 	Options  []struct {
 		Label       string `json:"label"`

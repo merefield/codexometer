@@ -83,6 +83,28 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 		t.Fatal("missing decline")
 	}
 	p.contexts, c = approvalFixture(t, nil)
+	for _, decision := range []any{"cancel", "acceptForSession", map[string]any{"acceptWithExecpolicyAmendment": map[string]any{"execpolicy_amendment": []string{"pwd"}}}} {
+		p.contexts, c = approvalFixture(t, map[string]any{"availableDecisions": []any{decision}})
+		if c.ApprovalToken == "" {
+			t.Fatal("advertised choice unavailable")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "decline"); err == nil {
+			t.Fatal("unadvertised choice accepted")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, c.ApprovalOptions[0].Value); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			want, _ := json.Marshal(map[string]any{"decision": decision})
+			if string(msg["result"]) != string(want) {
+				t.Fatalf("wire mismatch %s want %s", msg["result"], want)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing advertised decision")
+		}
+	}
+	p.contexts, c = approvalFixture(t, nil)
 	conn.Close()
 	if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "accept"); err == nil {
 		t.Fatal("closed transport succeeded")
@@ -97,5 +119,38 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 	}
 	if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "accept"); err == nil {
 		t.Fatal("disconnected response allowed")
+	}
+}
+
+func TestDaemonSuccessfulCompletionIsSeparateFromIdle(t *testing.T) {
+	for _, status := range []string{"completed", "interrupted", "failed", ""} {
+		t.Run(status, func(t *testing.T) {
+			p := &daemonStatusProvider{contexts: map[string]*daemonContextState{}, statuses: map[string]sessionRuntimeStatus{"root": sessionRuntimeIdle}}
+			emit := func(method, body string) {
+				daemonContextEvent(p.contexts, method, nil, json.RawMessage(body), time.Now())
+			}
+			if got := p.statusSnapshotLocked([]string{"root"}).Statuses["root"]; got != sessionRuntimeIdle {
+				t.Fatal("unobserved idle became completion")
+			}
+			emit("turn/completed", `{"threadId":"root","turn":{"id":"turn","status":"`+status+`"}}`)
+			want := sessionRuntimeIdle
+			if status == "completed" {
+				want = sessionRuntimeComplete
+			}
+			if got := p.statusSnapshotLocked([]string{"root"}).Statuses["root"]; got != want {
+				t.Fatalf("completion %q: got %v want %v", status, got, want)
+			}
+			for _, active := range []sessionRuntimeStatus{sessionRuntimeWorking, sessionRuntimeInput, sessionRuntimeApproval} {
+				p.statuses["root"] = active
+				if got := p.statusSnapshotLocked([]string{"root"}).Statuses["root"]; got != active {
+					t.Fatal("completion displaced active state")
+				}
+			}
+			p.statuses["root"] = sessionRuntimeIdle
+			emit("turn/started", `{"threadId":"root","turn":{"id":"next","status":"inProgress"}}`)
+			if got := p.statusSnapshotLocked([]string{"root"}).Statuses["root"]; got != sessionRuntimeIdle {
+				t.Fatal("completion survived new turn")
+			}
+		})
 	}
 }
