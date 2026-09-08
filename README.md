@@ -556,11 +556,13 @@ refresh. Theme, Quota view, benchmark result filter, and benchmark ranking
 weight are restored on the next launch.
 
 Click the Codexometer title/logo to return directly to **Quota → Bars** (this
-also becomes the remembered Quota view). Click the visible version number to
-open the GitHub repository with your operating system's browser launcher.
-Linux requires `xdg-open` and an available graphical browser; remote/headless
-terminals may not be able to launch one. Existing tab and button shortcuts are
-unchanged.
+also becomes the remembered Quota view). The title has no external hyperlink.
+The version number links to its release highlights
+(development builds link to their base release). Use your terminal's hyperlink gesture (usually
+Ctrl-click; some terminals use Cmd-click or a context menu). The version is
+underlined on hover and uses a standard OSC 8 hyperlink; Codexometer does not
+launch a browser process. Your terminal must support hyperlinks, including
+when running over SSH or in WSL. Existing tab and button shortcuts are unchanged.
 
 ### Quota health signal
 

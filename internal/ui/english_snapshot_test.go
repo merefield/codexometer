@@ -3,9 +3,11 @@ package ui
 import (
 	"crypto/sha256"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
 
@@ -19,7 +21,10 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 				snapshot.RateLimits.Secondary.ResetsAt = nil
 				snapshot.FetchedAt = time.Time{}
 				m := Model{snapshot: snapshot, width: size.w, height: size.h, meterView: view, theme: theme, appVersion: "1.2.3"}
-				fmt.Fprintf(hash, "%d/%d/%d/%d\n%s\n", theme, view, size.w, size.h, m.render())
+				// Hyperlink metadata is intentionally new; retain the original
+				// byte-for-byte check of all text, colour and layout sequences.
+				view := regexp.MustCompile(regexp.QuoteMeta(ansi.SetHyperlink(versionHighlightsURL(m.appVersion)))+`(.*?)`+regexp.QuoteMeta(ansi.ResetHyperlink())).ReplaceAllString(m.render(), "$1")
+				fmt.Fprintf(hash, "%d/%d/%d/%d\n%s\n", theme, m.meterView, size.w, size.h, view)
 			}
 		}
 	}

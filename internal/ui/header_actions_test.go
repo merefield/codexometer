@@ -32,8 +32,8 @@ func TestHeaderClickTargets(t *testing.T) {
 				if action == "home" && (n.meterView != viewBars || n.quotaMeterView != viewBars || n.monitorContextDetail != "") {
 					t.Fatal("title did not navigate home")
 				}
-				if action == "repository" && (cmd == nil || n.meterView != viewMonitor) {
-					t.Fatal("version did not return opener command")
+				if action == "repository" && (cmd != nil || n.meterView != viewMonitor || !n.versionHovered) {
+					t.Fatal("version click should only highlight the terminal hyperlink")
 				}
 			}
 		}
@@ -45,5 +45,45 @@ func TestHeaderClickTargets(t *testing.T) {
 		if width >= 80 && m.headerActionAt(2, 1) != "home" {
 			t.Fatal("logo not clickable")
 		}
+	}
+}
+
+func TestHeaderVersionHyperlink(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	header := renderHeader(120, 0, "", "", "0.14.0", colors)
+	plain := linkHeaderVersion(header, "0.14.0", false, colors)
+	hover := linkHeaderVersion(header, "0.14.0", true, colors)
+	if !strings.Contains(plain, ansi.SetHyperlink(repositoryURL+"/releases/tag/v0.14.0")) || !strings.Contains(plain, ansi.ResetHyperlink()) {
+		t.Fatal("missing terminal hyperlink")
+	}
+	if ansi.Strip(plain) != ansi.Strip(hover) || lipgloss.Width(plain) != lipgloss.Width(hover) {
+		t.Fatal("hover changed header geometry")
+	}
+	if plain == hover {
+		t.Fatal("hover did not change styling")
+	}
+	if strings.Contains(renderHeader(12, 0, "", "", "0.14.0", colors), repositoryURL) {
+		t.Fatal("invisible version is linked")
+	}
+}
+
+func TestHeaderReleaseDestinations(t *testing.T) {
+	for _, v := range []string{"0.14.0", "v0.14.0", "0.14.0-1-gec05240-dirty", "0.14.0-dev+abc"} {
+		if got := versionHighlightsURL(v); got != repositoryURL+"/releases/tag/v0.14.0" {
+			t.Fatal(got)
+		}
+	}
+	if versionHighlightsURL("DEVELOPMENT") != repositoryURL+"/releases" {
+		t.Fatal("unknown version invented a release")
+	}
+	m := contextTestModel()
+	m.appVersion = "0.14.0"
+	view := m.render()
+	if strings.Contains(view, ansi.SetHyperlink(repositoryURL)) || !strings.Contains(view, ansi.SetHyperlink(versionHighlightsURL(m.appVersion))) {
+		t.Fatal("only the version should have a header hyperlink")
+	}
+	next, _ := m.Update(tea.MouseClickMsg{X: 2, Y: 1, Button: tea.MouseLeft})
+	if next.(Model).meterView != viewBars {
+		t.Fatal("title must still return to Quota Bars")
 	}
 }

@@ -54,6 +54,7 @@ type Model struct {
 	monitorApprovalNotice               string
 	monitorApprovalNoticeToken          string
 	monitorDetailSent                   detailSentState
+	versionHovered                      bool
 	history                             accountHistoryState
 	resetThreshold                      int
 	resetHovered                        bool
@@ -430,11 +431,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
-	case repositoryOpenedMsg:
-		if message.err != nil {
-			return m, tea.Printf("Could not open %s: %v", repositoryURL, message.err)
-		}
-		return m, nil
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
@@ -671,12 +667,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
+		m.versionHovered = m.headerActionAt(message.Mouse().X, message.Mouse().Y) == "repository"
 		if click, ok := message.(tea.MouseClickMsg); ok && click.Mouse().Button == tea.MouseLeft {
 			switch m.headerActionAt(click.Mouse().X, click.Mouse().Y) {
 			case "home":
 				return m.pressViewTab(viewBars)
 			case "repository":
-				return m, openRepository
+				return m, nil
 			}
 		}
 		if m.meterView == viewMonitor {

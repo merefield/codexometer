@@ -1,16 +1,25 @@
 package ui
 
 import (
-	"os/exec"
-	"runtime"
+	"regexp"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 const repositoryURL = "https://github.com/merefield/codexometer"
+
+var releaseVersionPattern = regexp.MustCompile(`^v?([0-9]+\.[0-9]+\.[0-9]+)(?:$|[-+])`)
+
+// Development builds link to their base release rather than a nonexistent
+// Git-description tag. Unknown identities fall back to the releases list.
+func versionHighlightsURL(version string) string {
+	if match := releaseVersionPattern.FindStringSubmatch(strings.TrimSpace(version)); match != nil {
+		return repositoryURL + "/releases/tag/v" + match[1]
+	}
+	return repositoryURL + "/releases"
+}
 
 var headerLogo = []string{
 	"█▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█",
@@ -54,19 +63,20 @@ func (m Model) headerActionAt(x, y int) string {
 	return ""
 }
 
-// Use fixed arguments, never a shell or session-supplied URL.
-func openRepository() tea.Msg {
-	name, args := "xdg-open", []string{repositoryURL}
-	switch runtime.GOOS {
-	case "darwin":
-		name = "open"
-	case "windows":
-		name, args = "rundll32", []string{"url.dll,FileProtocolHandler", repositoryURL}
+// OSC 8 lets the terminal open the URL on the user's machine, including when
+// Codexometer runs remotely or in WSL. Never invoke a host browser process.
+func linkHeaderVersion(header, version string, hovered bool, colors palette) string {
+	lines := strings.Split(header, "\n")
+	i := len(lines) - 1
+	if strings.Contains(lines[i], version) {
+		label := version
+		if hovered {
+			label = colors.dimmed().Underline(true).Render(version)
+		}
+		lines[i] = strings.Replace(lines[i], version, ansi.SetHyperlink(versionHighlightsURL(version))+label+ansi.ResetHyperlink(), 1)
 	}
-	return repositoryOpenedMsg{err: exec.Command(name, args...).Run()}
+	return strings.Join(lines, "\n")
 }
-
-type repositoryOpenedMsg struct{ err error }
 
 func displayedHeaderVersion(version string) string {
 	version = strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(version, "v")))
