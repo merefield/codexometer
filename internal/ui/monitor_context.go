@@ -310,6 +310,9 @@ func (m Model) monitorContextAt(x, y int) string {
 		if r, ok := contextActionRect(g.contentWidth, 0, monitorDismissLabel); ok && r.contains(x, y) {
 			return "close"
 		}
+		if x >= 0 && x < g.contentWidth && y >= 0 && y < g.meterHeight {
+			return "cycle"
+		}
 		return ""
 	}
 	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
@@ -323,22 +326,12 @@ func (m Model) monitorContextAt(x, y int) string {
 	}
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	rowY := a.topHeight + a.gap - 1
+	mw, rightWidth, _ := monitorSessionColumnWidths(a.width)
 	for i, s := range sessions {
-		if m.rowContextMode(s.id) == contextWide {
-			rowY += heights[i]
-			continue
-		}
-		mw, cw, gw := m.contextColumns(a.width, s)
-		if cw == 0 {
-			cw = gw
-		}
-		if m.monitorContextActionVisible(s) {
-			if r, ok := contextActionRect(cw, rowY, monitorContextInfo); ok {
-				r.x += mw + 1
-				if r.contains(x, y) {
-					return s.id
-				}
-			}
+		// Controls above take priority; the rest of this row's detail/graph
+		// surface cycles only this session, including when it is not selected.
+		if x >= mw+1 && x < mw+1+rightWidth && y >= rowY && y < rowY+heights[i] {
+			return s.id
 		}
 		rowY += heights[i]
 	}

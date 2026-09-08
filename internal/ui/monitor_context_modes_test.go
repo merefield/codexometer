@@ -109,6 +109,40 @@ func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
 	}
 }
 
+func TestMonitorRowSurfaceCyclesOnlyClickedSession(t *testing.T) {
+	for _, width := range []int{40, 80, 120, 200} {
+		for _, edge := range []bool{false, true} {
+			m := contextTestModel()
+			m.width = width
+			m.monitorContextHidden = true
+			m.monitorSelectedID = "root-one"
+			for _, want := range []int{contextSplit, contextWide, contextFull, contextWide, contextSplit, contextGraph} {
+				g := m.dashboardLayout()
+				a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+				_, heights, _ := m.monitorSessionPage(a.graphHeight)
+				mw, rw, _ := monitorSessionColumnWidths(a.width)
+				x, y := 2+mw+1, g.meterY+a.topHeight+a.gap-1+heights[0]+1
+				if edge {
+					x += rw - 1
+				}
+				if m.monitorContextDetail != "" {
+					x, y = 4, g.meterY+2
+				} else if got := m.monitorContextAt(2+mw-1, y); got != "" {
+					t.Fatalf("metrics area cycles row: %q", got)
+				}
+				updated, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+				m = updated.(Model)
+				if got := m.rowContextMode("root-two"); got != want {
+					t.Fatalf("width %d edge %v: mode %d, want %d", width, edge, got, want)
+				}
+				if m.rowContextMode("root-one") != contextGraph || m.rowContextMode("root-three") != contextGraph {
+					t.Fatal("click changed another session")
+				}
+			}
+		}
+	}
+}
+
 func TestIndependentRowLayoutsAndApprovalOwnership(t *testing.T) {
 	m := approvalTestModel()
 	m.setRowContext("root-one", contextWide, false)

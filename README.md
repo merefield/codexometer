@@ -1043,6 +1043,9 @@ Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations 
 
 `i` cycles **graph → split → expanded → full detail → expanded → split → graph**.
 Each row retains its own presentation; cycling one does not resize other rows.
+Click anywhere in a row's detail/token-graph area to cycle that session, or in
+the full-detail background to step back. Approval buttons and reply editors
+keep their own actions; clicking the telemetry box does not cycle the view.
 `Esc`, `[×]` or `x` in full detail returns to that expanded row; subsequent `i`
 presses continue back through split and graph. `Esc` steps back one level too.
 The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
