@@ -53,6 +53,7 @@ type Model struct {
 	monitorApprovalBusy                 bool
 	monitorApprovalNotice               string
 	monitorApprovalNoticeToken          string
+	monitorDetailSent                   detailSentState
 	history                             accountHistoryState
 	resetThreshold                      int
 	resetHovered                        bool
@@ -429,6 +430,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
+	case repositoryOpenedMsg:
+		if message.err != nil {
+			return m, tea.Printf("Could not open %s: %v", repositoryURL, message.err)
+		}
+		return m, nil
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
@@ -438,6 +444,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.monitorApprovalNotice = i18n.Text("Decision sent ...")
+		if message.err == nil {
+			m.recordDetailSent(m.monitorApprovalNotice)
+		}
 		if message.err != nil {
 			m.monitorApprovalNotice = i18n.Text("Decision unconfirmed; check Codex. Do not retry here.")
 		}
@@ -662,6 +671,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
+		if click, ok := message.(tea.MouseClickMsg); ok && click.Mouse().Button == tea.MouseLeft {
+			switch m.headerActionAt(click.Mouse().X, click.Mouse().Y) {
+			case "home":
+				return m.pressViewTab(viewBars)
+			case "repository":
+				return m, openRepository
+			}
+		}
 		if m.meterView == viewMonitor {
 			next, cmd, handled := m.updateMonitorContextMouse(message)
 			m = next
@@ -1045,6 +1062,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	if view != viewMonitor {
+		m.monitorDetailSent = detailSentState{}
+		m.monitorPrompt = monitorPromptState{}
 		m.monitorContextDetail = ""
 		m.monitorContextExpanded = ""
 		m.monitorContextHover = ""

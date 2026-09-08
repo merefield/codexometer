@@ -555,6 +555,13 @@ mouse support. Theme and tab changes are immediate and do not trigger a network
 refresh. Theme, Quota view, benchmark result filter, and benchmark ranking
 weight are restored on the next launch.
 
+Click the Codexometer title/logo to return directly to **Quota → Bars** (this
+also becomes the remembered Quota view). Click the visible version number to
+open the GitHub repository with your operating system's browser launcher.
+Linux requires `xdg-open` and an available graphical browser; remote/headless
+terminals may not be able to launch one. Existing tab and button shortcuts are
+unchanged.
+
 ### Quota health signal
 
 The top-right signal keeps `ONLINE` in the selected theme color while its dot
@@ -1135,6 +1142,15 @@ become unavailable when resolved elsewhere, the turn ends, or the connection
 closes. The server arbitrates simultaneous responses from multiple clients.
 Sending a decision is not proof that the command ran: check Codex for the outcome.
 Failed or ambiguous sends are not automatically retried.
+
+In full Monitor detail only, successful **Text sent ...** and **Decision sent ...**
+notices use a subtle dot wave until the session context or attention state changes.
+After new context arrives, the wave continues on its own while the session is
+observed as active with no attention flag. It stops on completion, input/approval
+or check-session flags, inactive sessions, paused monitoring or observation errors.
+This is a best-effort activity indicator, not proof of execution or a progress
+percentage; ordinary local observation can lag behind the session. Compact and
+expanded-row presentations remain unchanged.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

@@ -251,6 +251,7 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalBusy = true
 	m.monitorApprovalNotice = i18n.Text("Sending decision…")
+	m.monitorDetailSent = detailSentState{}
 	m.monitorApprovalNoticeToken = token
 	p := m.fetcher.(codex.SessionApprovalClient)
 	id := m.monitorContextTarget()

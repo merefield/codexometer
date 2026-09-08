@@ -139,14 +139,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		lines[i] = line.render(colors)
 	}
 	rows := max(height-2, 1)
-	controls := ""
-	if m.monitorApprovalControls(width, height) {
-		controls = m.renderMonitorApprovalControls(width, height, colors)
-	} else if m.monitorPromptRows(width, height) > 0 {
-		controls = m.renderMonitorPrompt(width, height, colors)
-	} else if m.monitorApprovalHasOutcome() {
-		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
-	}
+	controls := m.detailControls(width, height, colors)
 	controlRows := 0
 	if controls != "" {
 		controlRows = strings.Count(controls, "\n") + 1
@@ -213,12 +206,9 @@ func (m *Model) openMonitorContext(id string) {
 
 func (m *Model) scrollMonitorContext(delta int) {
 	g := m.dashboardLayout()
-	n := m.monitorApprovalControlRows(g.contentWidth, g.meterHeight)
-	if n == 0 {
-		n = m.monitorPromptRows(g.contentWidth, g.meterHeight)
-	}
-	if n == 0 && m.monitorApprovalHasOutcome() {
-		n = 1
+	n := 0
+	if controls := m.detailControls(g.contentWidth, g.meterHeight, paletteFor(m.theme)); controls != "" {
+		n = strings.Count(controls, "\n") + 1
 	}
 	rows, _, _ := monitorContextBodyLayout(g.meterHeight, n)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
