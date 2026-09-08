@@ -62,6 +62,52 @@ func TestDetailWaveScrollReachesEnd(t *testing.T) {
 	}
 }
 
+func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
+	t.Run("prompt footer", func(t *testing.T) {
+		m, _ := promptTestModel()
+		m.monitorPrompt.notice = i18n.Text("Text sent ...")
+		m.recordDetailSent(m.monitorPrompt.notice)
+		m.monitorState = monitorPaused
+		layout := m.layoutDetailControls(100, 30)
+		if layout.kind != "prompt" || !strings.Contains(ansi.Strip(layout.render(m, 100, 30, paletteFor(m.theme))), m.monitorPrompt.notice) {
+			t.Fatal("prompt footer lost the successful acknowledgement")
+		}
+	})
+	for _, text := range []string{i18n.Text("Text sent ..."), i18n.Text("Decision sent ...")} {
+		for name, suppress := range map[string]func(*Model){
+			"paused":   func(m *Model) { m.monitorState = monitorPaused },
+			"error":    func(m *Model) { m.monitorError = "observation unavailable" },
+			"inactive": func(m *Model) { m.monitorSessionData[0].active = false },
+			"complete": func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionComplete },
+			"input":    func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionInput },
+			"approval": func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionApproval },
+			"check":    func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionCheck },
+		} {
+			t.Run(text+"/"+name, func(t *testing.T) {
+				m := contextTestModel()
+				m.monitorContextDetail = "root-one"
+				m.recordDetailSent(text)
+				suppress(&m)
+				if got := m.detailFeedback(); got != text {
+					t.Fatalf("plain acknowledgement lost: %q", got)
+				}
+				if layout := m.layoutDetailControls(100, 30); layout.notice != text || layout.rows != 1 {
+					t.Fatal("acknowledgement missing from layout")
+				}
+				m.monitorSessionData[0].preview.Text = "replacement context"
+				if got := m.detailFeedbackAt(m.monitorDetailSent.visibleUntil); got != "" {
+					t.Fatalf("expired acknowledgement leaked into new context: %q", got)
+				}
+				m.monitorContextDetail = "root-two"
+				m.monitorState = monitorPaused
+				if got := m.detailFeedback(); got != "" {
+					t.Fatal("acknowledgement leaked into another session")
+				}
+			})
+		}
+	}
+}
+
 func TestDetailControlLayoutMatchesRender(t *testing.T) {
 	prompt, _ := promptTestModel()
 	activity := contextTestModel()

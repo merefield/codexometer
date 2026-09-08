@@ -30,6 +30,27 @@ func (m Model) detailActivity() string {
 	return m.detailActivityAt(time.Now())
 }
 
+// An acknowledgement confirms delivery, not ongoing activity. Preserve it
+// without animation when observation is paused, stopped or unavailable.
+func (m Model) detailFeedback() string {
+	return m.detailFeedbackAt(time.Now())
+}
+
+func (m Model) detailFeedbackAt(now time.Time) string {
+	if activity := m.detailActivityAt(now); activity != "" {
+		return activity
+	}
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
+		return ""
+	}
+	s, ok := m.contextDetailSession()
+	n := m.monitorDetailSent
+	if ok && n.session == s.id && (n.preview == s.preview || now.Before(n.visibleUntil)) {
+		return n.text
+	}
+	return ""
+}
+
 func (m Model) detailActivityAt(now time.Time) string {
 	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
 		return ""
@@ -71,7 +92,7 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 	if rows := m.monitorPromptRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "prompt", rows: rows}
 	}
-	notice := m.detailActivity()
+	notice := m.detailFeedback()
 	if m.monitorApprovalHasOutcome() && !sentNotice(m.monitorApprovalNotice) {
 		notice = m.monitorApprovalNotice
 	}

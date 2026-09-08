@@ -1153,6 +1153,9 @@ switching to dots alone; new stop or attention-needed states take priority.
 After new context arrives, the wave continues on its own while the session is
 observed as active with no attention flag. It stops on completion, input/approval
 or check-session flags, inactive sessions, paused monitoring or observation errors.
+Stopping the animation retains the plain successful-send acknowledgement for the
+same context (or the remainder of its three-second minimum), rather than losing
+delivery confirmation. New context then replaces it normally.
 This is a best-effort activity indicator, not proof of execution or a progress
 percentage; ordinary local observation can lag behind the session. Compact and
 expanded-row presentations remain unchanged.

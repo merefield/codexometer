@@ -117,8 +117,8 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	if p.notice != "" {
 		if !sentNotice(p.notice) {
 			hint = p.notice
-		} else if activity := m.detailActivity(); activity != "" {
-			hint = activity
+		} else if feedback := m.detailFeedback(); feedback != "" {
+			hint = feedback
 		}
 	}
 	inputLines := strings.Split(line, "\n")
