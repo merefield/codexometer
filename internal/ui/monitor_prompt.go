@@ -29,7 +29,7 @@ type monitorPromptResult struct {
 }
 
 func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return codex.SessionPromptOffer{}
 	}
 	c, ok := m.fetcher.(codex.SessionPromptClient)
@@ -60,13 +60,13 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 }
 
 func (m Model) monitorPromptRows(width, height int) int {
-	if width < 24 || height < 8 || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if width < 24 || height < 8 || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return 0
 	}
 	if s, ok := m.contextDetailSession(); ok && s.preview.Kind == codex.SessionContextApproval {
 		return 0
 	}
-	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextDetail && (m.monitorPrompt.busy || m.monitorPrompt.notice != "") {
+	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextDetail && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
 		p := m.monitorPrompt
 		if p.input.Focused() && !p.busy {
 			p.input.configure(width, height)
@@ -115,7 +115,11 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 		line = i18n.Text("Sending…")
 	}
 	if p.notice != "" {
-		hint = p.notice
+		if !sentNotice(p.notice) {
+			hint = p.notice
+		} else if feedback := m.detailFeedback(); feedback != "" {
+			hint = feedback
+		}
 	}
 	inputLines := strings.Split(line, "\n")
 	for i := range inputLines {
@@ -133,6 +137,9 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.input.Blur()
 			p.answers = [3]string{}
 			p.notice = i18n.Text("Text sent ...")
+			if result.err == nil {
+				m.recordDetailSent(p.notice)
+			}
 			if result.err != nil {
 				p.notice = i18n.Text("Send unconfirmed; check Codex before retrying.")
 			}
@@ -151,7 +158,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if wasFocused && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		p.input.Blur()
 	}
-	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextDetail != p.session || m.monitorContextHidden) {
+	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextDetail != p.session || m.contextTargetHidden()) {
 		*p = monitorPromptState{}
 	} else if p.offer.Token != "" && !p.busy && m.monitorPromptOffer().Token != p.offer.Token {
 		*p = monitorPromptState{session: p.session, notice: i18n.Text("Prompt changed; review the session before replying.")}
@@ -245,6 +252,7 @@ func (m Model) submitMonitorPrompt() (Model, tea.Cmd, bool) {
 	answers := append([]string(nil), p.answers[:p.question+1]...)
 	token, session := p.offer.Token, p.session
 	p.busy = true
+	m.monitorDetailSent = detailSentState{}
 	p.input.Blur()
 	p.notice = ""
 	return m, func() tea.Msg {

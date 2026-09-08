@@ -148,11 +148,11 @@ func TestMonitorApprovalStaleAndKeyboardSafety(t *testing.T) {
 			t.Fatal("keyboard approved")
 		}
 	}
-	m.monitorContextHidden = true
+	m.toggleMonitorContext()
 	if m.monitorApprovalToken() != "" {
 		t.Fatal("hidden preview actionable")
 	}
-	m.monitorContextHidden = false
+	m.toggleMonitorContext()
 	m.monitorSessionData[0].preview.ApprovalToken = ""
 	if m.monitorApprovalToken() != "" {
 		t.Fatal("local request actionable")

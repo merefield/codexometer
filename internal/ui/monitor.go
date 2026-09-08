@@ -80,7 +80,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		return monitorView{view: m.renderMonitorContextDetail(width, height, colors)}
 	}
 	layout := layoutMonitorArea(width, height)
@@ -246,7 +246,7 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 	start := min(max(m.monitorScroll, 0), max(visibleCount-rowCount, 0))
 	// Keep the expanded target on screen as new sessions arrive. It never
 	// follows a newer approval to a different row implicitly.
-	if m.monitorContextExpanded != "" && !m.monitorContextHidden {
+	if m.monitorContextExpanded != "" && !m.contextTargetHidden() {
 		for i, s := range visible {
 			if s.id == m.monitorContextExpanded {
 				if i < start {
@@ -280,7 +280,7 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 		return m.renderMonitorGraphSamples(width, height, session.samples, i18n.Text("TOKENS"), rowColors)
 	}
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
-	if !m.monitorContextHidden && (session.preview.Text != "" || m.monitorContextExpanded == session.id || m.monitorContextActionVisible(session)) {
+	if session.preview.Text != "" || m.rowContextMode(session.id) != contextGraph || m.monitorContextActionVisible(session) {
 		return m.renderMonitorContextRow(width, height, metrics, session, rowColors)
 	}
 	title := i18n.Text("TOKEN BARS")
@@ -690,7 +690,7 @@ func renderMonitorBarRow(cells []rune, colors palette) string {
 }
 
 func (m Model) monitorButtonAt(x, y int) footerButtonID {
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		return footerButtonNone
 	}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
@@ -709,7 +709,7 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 }
 
 func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		return "", false
 	}
 	if m.meterView != viewMonitor || (m.loading && len(m.snapshot.Meters()) == 0) {

@@ -47,12 +47,15 @@ type Model struct {
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
+	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
 	monitorApprovalBusy                 bool
 	monitorApprovalNotice               string
 	monitorApprovalNoticeToken          string
+	monitorDetailSent                   detailSentState
+	versionHovered                      bool
 	history                             accountHistoryState
 	resetThreshold                      int
 	resetHovered                        bool
@@ -238,6 +241,7 @@ type monitorSession struct {
 	lastActivity     time.Time
 	agentCount       int
 	active           bool
+	working          bool
 	attention        codex.SessionAttention
 	displayed        bool
 	unattributed     bool
@@ -438,6 +442,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.monitorApprovalNotice = i18n.Text("Decision sent ...")
+		if message.err == nil {
+			m.recordDetailSent(m.monitorApprovalNotice)
+		}
 		if message.err != nil {
 			m.monitorApprovalNotice = i18n.Text("Decision unconfirmed; check Codex. Do not retry here.")
 		}
@@ -662,6 +669,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
+		headerAction := m.headerActionAt(message.Mouse().X, message.Mouse().Y)
+		m.versionHovered = headerAction == "version"
+		if click, ok := message.(tea.MouseClickMsg); ok && click.Mouse().Button == tea.MouseLeft {
+			switch headerAction {
+			case "home":
+				return m.pressViewTab(viewBars)
+			case "version":
+				return m, nil
+			}
+		}
 		if m.meterView == viewMonitor {
 			next, cmd, handled := m.updateMonitorContextMouse(message)
 			m = next
@@ -1045,6 +1062,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	if view != viewMonitor {
+		m.monitorDetailSent = detailSentState{}
+		m.monitorPrompt = monitorPromptState{}
 		m.monitorContextDetail = ""
 		m.monitorContextExpanded = ""
 		m.monitorContextHover = ""
@@ -2220,6 +2239,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		update, ok := updates[session.id]
 		if !ok {
 			session.active = false
+			session.working = false
 			session.attention = codex.SessionAttentionNone
 			continue
 		}
@@ -2230,6 +2250,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
+		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.callSequence = latestModelCallSequence(update.ModelCalls)
@@ -2252,7 +2273,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 			id: update.ID, workingDirectory: update.WorkingDirectory,
 			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
-			active: update.Active, attention: update.Attention, preview: update.Context, displayed: update.Active,
+			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
 			turnSequence: latestTurnTimingSequence(update.TurnTimings),
 		})
@@ -2413,7 +2434,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
-			active: session.Active, attention: session.Attention,
+			active: session.Active, working: session.Working, attention: session.Attention,
 			preview:   session.Context,
 			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
@@ -2432,6 +2453,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
+		m.monitorSessionData[index].working = false
 		m.monitorSessionData[index].attention = codex.SessionAttentionNone
 	}
 	for _, update := range usage.Sessions {
@@ -2445,7 +2467,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 				id: update.ID, workingDirectory: update.WorkingDirectory,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, attention: update.Attention,
+				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
 				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
@@ -2463,6 +2485,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
+		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
@@ -2707,6 +2730,9 @@ func (m *Model) selectMonitorSession(direction int) {
 		m.monitorPrompt = monitorPromptState{}
 	}
 	pageSize := max(m.monitorPageSize(), 1)
+	if m.rowContextMode(m.monitorSelectedID) == contextWide {
+		m.monitorContextExpanded = m.monitorSelectedID
+	}
 	if selected < m.monitorScroll {
 		m.monitorScroll = selected
 	} else if selected >= m.monitorScroll+pageSize {

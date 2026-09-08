@@ -74,23 +74,22 @@ func (m Model) render() string {
 	}
 
 	panel := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	return lipgloss.NewStyle().Margin(1, 2).Render(panel)
+	rendered := strings.Split(lipgloss.NewStyle().Margin(1, 2).Render(panel), "\n")
+	subtitleRow := strings.Count(header, "\n") + 1
+	if subtitleRow < len(rendered) {
+		rendered[subtitleRow] = linkHeaderVersion(rendered[subtitleRow], m.appVersion, m.versionHovered, colors)
+	}
+	return strings.Join(rendered, "\n")
 }
 
 func renderHeader(width, phase int, signal, account, appVersion string, colors palette) string {
-	displayedVersion := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(appVersion, "v")))
-	if displayedVersion == "" {
-		displayedVersion = "DEVELOPMENT"
-	}
+	displayedVersion := displayedHeaderVersion(appVersion)
 	if width < 64 {
 		title := colors.header().Render("▰ CODEXOMETER ▰")
 		subtitle := colors.dimmed().Render(ansi.Truncate(i18n.Text("QUOTA TELEMETRY // VERSION ")+displayedVersion, width, ""))
 		return joinRight(title, signal, width) + "\n" + joinRight(subtitle, account, width)
 	}
-	logo := []string{
-		"█▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█",
-		"█▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄",
-	}
+	logo := headerLogo
 	beacon := []string{"◉", "◎", "◌", "◎"}[phase%4]
 	subtitle := colors.dimmed().Render(i18n.Format("%s QUOTA TELEMETRY CONSOLE · VERSION %s", beacon, displayedVersion))
 	return joinRight(colors.header().Render(logo[0]), signal, width) + "\n" +

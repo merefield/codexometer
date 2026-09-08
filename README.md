@@ -522,8 +522,8 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
-| `h` | Hide/show Monitor context previews and close any open context detail |
-| `i` | Cycle Monitor context: compact → expanded row → full detail → compact; use the selected session, otherwise the latest approval-gated session |
+| `h` | Reset all Monitor rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `i` | Cycle the selected row back and forth: graph → split → wide detail → full detail → wide → split → graph; otherwise choose the latest approval-gated session |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -554,6 +554,16 @@ or keyboard. The keyboard assignments remain available in terminals without
 mouse support. Theme and tab changes are immediate and do not trigger a network
 refresh. Theme, Quota view, benchmark result filter, and benchmark ranking
 weight are restored on the next launch.
+
+Click the Codexometer title/logo to return directly to **Quota → Bars** (this
+also becomes the remembered Quota view). The title has no external hyperlink.
+The version number links to its release highlights
+(development builds link to their base release; prerelease tags are preserved).
+Use your terminal's hyperlink gesture (usually
+Ctrl-click; some terminals use Cmd-click or a context menu). The version is
+underlined on hover and uses a standard OSC 8 hyperlink; Codexometer does not
+launch a browser process. Your terminal must support hyperlinks, including
+when running over SSH or in WSL. Existing tab and button shortcuts are unchanged.
 
 ### Quota health signal
 
@@ -1016,20 +1026,32 @@ With no context available, the original metrics/graph layout remains.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
 
-Click a row's `[i]`, or press `i`/`Enter`, to cycle through three presentations:
+Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations are:
 
-1. **Compact:** the normal short preview beside the token graph; no approval buttons.
-2. **Expanded:** that session's context occupies the full space previously shared
+1. **Graph only:** the token graph fills the row's right-hand section.
+2. **Split:** a short detail preview and token graph share that section equally;
+   very narrow terminals prioritise readable detail. No approval buttons.
+3. **Expanded:** that session's context occupies the full space previously shared
    by its preview and token graph, while telemetry and the other sessions stay
    visible. Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, an
    **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
-3. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
    Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
-   `i` or `[i]` click returns directly to compact. When a reply editor is available,
+   `i` or `[i]` click returns to the same expanded row. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
-`Esc` steps back one level; `[×]` or `x` in full detail returns to expanded.
+`i` cycles **graph → split → expanded → full detail → expanded → split → graph**.
+Each row retains its own presentation; cycling one does not resize other rows.
+Click anywhere in a row's detail/token-graph area to cycle that session, or in
+the full-detail background to step back. Approval buttons and reply editors
+keep their own actions; clicking the telemetry box does not cycle the view.
+`Esc`, `[×]` or `x` in full detail returns to that expanded row; subsequent `i`
+presses continue back through split and graph. `Esc` steps back one level too.
+The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
+graph-only, closes full detail and clears per-row overrides. Only that global
+default is persisted across launches. While typing, `i` remains text and `Esc`
+leaves the editor first. Approval controls remain exclusive to the current target.
 The initial keyboard target is the explicitly selected session, otherwise the
 most recent approval-gated session with context, otherwise the first session
 with context. Once expanded, the target is pinned and kept on screen: newer
@@ -1135,6 +1157,26 @@ become unavailable when resolved elsewhere, the turn ends, or the connection
 closes. The server arbitrates simultaneous responses from multiple clients.
 Sending a decision is not proof that the command ran: check Codex for the outcome.
 Failed or ambiguous sends are not automatically retried.
+
+In full Monitor detail only, successful **Text sent ...** and **Decision sent ...**
+notices use a subtle dot wave until the session context or attention state changes.
+Fast activity updates retain the sent wording for at least three seconds before
+switching to dots alone; new stop or attention-needed states take priority.
+After new context arrives, the wave continues on its own while the session is
+observed as working with no attention flag. Recent activity alone is not enough:
+the reader must observe a working shared-server thread or a live local writer
+with an ongoing turn, including linked agents. It stops on completion, input/approval
+or check-session flags, inactive sessions, paused monitoring or observation errors.
+Stopping the animation retains the plain successful-send acknowledgement for the
+same context (or the remainder of its three-second minimum), rather than losing
+delivery confirmation. New context then replaces it normally.
+This is a best-effort activity indicator, not proof of execution or a progress
+percentage; ordinary local observation can lag behind the session.
+On the main Monitor screen, visible compact and expanded session-context boxes
+also show the same activity dots at the bottom left, independently for each
+session. Short boxes prioritise readable context and approval controls; the
+compact view omits the dots when fewer than three body rows fit. Sent-message
+acknowledgement animations remain confined to full detail.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

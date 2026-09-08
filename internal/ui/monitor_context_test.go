@@ -18,6 +18,9 @@ func contextTestModel() Model {
 	for _, id := range []string{"root-one", "root-two", "root-three"} {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: id, active: true, displayed: true, preview: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Finished updating the documentation.\n次の手順を選んでください。", ThreadID: id, Source: "LOCAL", At: time.Now()}, samples: []monitorSample{{intervalTokens: 100}}})
 	}
+	for i := range m.monitorSessionData {
+		m.monitorSessionData[i].working = true
+	}
 	return m
 }
 
@@ -200,11 +203,9 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(key('i'))
 	m = updated.(Model)
-	if m.monitorContextDetail != "" {
-		t.Fatal("opened hidden context")
+	if !m.monitorContextHidden || m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextSplit {
+		t.Fatal("i did not restore inline context")
 	}
-	updated, _ = m.Update(key('h'))
-	m = updated.(Model)
 	m.openMonitorContext("root-one")
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	m = updated.(Model)
@@ -223,6 +224,13 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
+	if m.rowContextMode("root-one") != contextSplit {
+		t.Fatal("Enter did not return to split context")
+	}
+	for range 4 {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = updated.(Model)
+	}
 	if m.monitorContextDetail != "root-one" {
 		t.Fatal("keyboard open failed")
 	}

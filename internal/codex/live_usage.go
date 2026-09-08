@@ -52,11 +52,13 @@ type LiveUsageSession struct {
 	LastActivity     time.Time
 	AgentCount       int
 	Active           bool
-	Attention        SessionAttention
-	Context          SessionContext
-	Unattributed     bool
-	ModelCalls       []LiveModelCall
-	TurnTimings      []LiveTurnTiming
+	// Working requires a live turn signal, not merely recent file activity.
+	Working      bool
+	Attention    SessionAttention
+	Context      SessionContext
+	Unattributed bool
+	ModelCalls   []LiveModelCall
+	TurnTimings  []LiveTurnTiming
 }
 
 // SessionAttention describes why a local Codex session may need the user.
@@ -1197,6 +1199,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	activeCount := 0
 	anyWorking := false
 	for _, session := range groups {
+		session.Working = groupWorking[session.ID]
 		if session.Attention == SessionAttentionComplete && groupWorking[session.ID] {
 			session.Attention = SessionAttentionNone
 		}
