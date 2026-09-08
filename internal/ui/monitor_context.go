@@ -191,6 +191,7 @@ func (m *Model) toggleMonitorContext() {
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalNotice = ""
 	m.monitorContextHidden = !m.monitorContextHidden
+	m.monitorContextReturning = false
 	m.monitorContextDetail = ""
 	m.monitorContextExpanded = ""
 	m.monitorContextHover = ""
@@ -208,6 +209,7 @@ func (m *Model) openMonitorContext(id string) {
 			m.monitorApprovalConfirm = ""
 			m.monitorApprovalNotice = ""
 			m.monitorContextDetail = id
+			m.monitorContextReturning = false
 			m.monitorContextExpanded = ""
 			m.monitorContextScroll = 0
 			return

@@ -47,6 +47,7 @@ type Model struct {
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
+	monitorContextReturning             bool
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string

@@ -203,11 +203,9 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(key('i'))
 	m = updated.(Model)
-	if m.monitorContextDetail != "" {
-		t.Fatal("opened hidden context")
+	if m.monitorContextHidden || m.monitorContextDetail != "" || m.monitorContextExpanded != "root-one" {
+		t.Fatal("i did not restore inline context")
 	}
-	updated, _ = m.Update(key('h'))
-	m = updated.(Model)
 	m.openMonitorContext("root-one")
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	m = updated.(Model)
@@ -226,6 +224,13 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
+	if !m.monitorContextHidden {
+		t.Fatal("Enter did not hide returning inline context")
+	}
+	for range 2 {
+		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = updated.(Model)
+	}
 	if m.monitorContextDetail != "root-one" {
 		t.Fatal("keyboard open failed")
 	}

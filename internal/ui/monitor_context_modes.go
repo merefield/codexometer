@@ -47,7 +47,7 @@ func (m Model) initialMonitorContextTarget() string {
 func (m *Model) cycleMonitorContext(id string) {
 	m.monitorPrompt = monitorPromptState{}
 	if m.monitorContextHidden {
-		return
+		m.toggleMonitorContext()
 	}
 	if id == "" {
 		id = m.monitorContextTarget()
@@ -65,18 +65,22 @@ func (m *Model) cycleMonitorContext(id string) {
 	m.monitorApprovalNotice = ""
 	m.monitorContextScroll = 0
 	if m.monitorContextDetail == id {
-		m.monitorContextDetail = ""
-		m.monitorContextExpanded = ""
+		m.stepBackMonitorContext()
 		return
 	}
 	if m.monitorContextExpanded == id {
-		m.openMonitorContext(id)
+		if m.monitorContextReturning {
+			m.toggleMonitorContext()
+		} else {
+			m.openMonitorContext(id)
+		}
 		return
 	}
 	for _, s := range m.monitorSessionData {
 		if s.id == id && m.monitorSessionVisible(s) {
 			m.monitorContextDetail = ""
 			m.monitorContextExpanded = id
+			m.monitorContextReturning = false
 			return
 		}
 	}
@@ -95,9 +99,11 @@ func (m *Model) stepBackMonitorContext() {
 	m.monitorContextScroll = 0
 	if m.monitorContextDetail != "" {
 		m.monitorContextExpanded = m.monitorContextDetail
+		m.monitorSelectedID = m.monitorContextDetail
 		m.monitorContextDetail = ""
+		m.monitorContextReturning = true
 	} else {
-		m.monitorContextExpanded = ""
+		m.toggleMonitorContext()
 	}
 }
 

@@ -43,8 +43,39 @@ func TestMonitorContextThreeStageCycleAndTarget(t *testing.T) {
 		t.Fatal("explicit selection ignored because text was missing")
 	}
 	step(key('i'))
+	if m.monitorContextExpanded != "root-one" || m.monitorContextDetail != "" {
+		t.Fatal("full detail did not step back to inline")
+	}
+	step(key('i'))
 	if m.monitorContextTarget() != "" {
 		t.Fatal("detail did not cycle to compact")
+	}
+}
+
+func TestMonitorContextBackAndForthCycle(t *testing.T) {
+	for _, back := range []tea.KeyPressMsg{key('i'), {Code: tea.KeyEscape}} {
+		m := contextTestModel()
+		m.monitorSelectedID = "root-two"
+		m.monitorContextHidden = true
+		step := func(k tea.KeyPressMsg) { n, _ := m.Update(k); m = n.(Model) }
+		for cycle := 0; cycle < 2; cycle++ {
+			step(key('i'))
+			if m.monitorContextHidden || m.monitorContextExpanded != "root-two" {
+				t.Fatal("hidden did not become inline for selected row")
+			}
+			step(key('i'))
+			if m.monitorContextDetail != "root-two" {
+				t.Fatal("inline did not become full detail")
+			}
+			step(back)
+			if m.monitorContextDetail != "" || m.monitorContextExpanded != "root-two" {
+				t.Fatal("full did not return to inline")
+			}
+			step(key('i'))
+			if !m.monitorContextHidden || m.monitorContextTarget() != "" {
+				t.Fatal("returning inline did not hide")
+			}
+		}
 	}
 }
 
@@ -180,7 +211,7 @@ func TestMonitorExpandedSelectionDismissalAndConfirmation(t *testing.T) {
 
 func TestMonitorContextMouseCyclesAllThreeStages(t *testing.T) {
 	m := contextTestModel()
-	for stage := 0; stage < 3; stage++ {
+	for stage := 0; stage < 4; stage++ {
 		wanted := "root-one"
 		if stage == 2 {
 			wanted = "cycle"
@@ -211,8 +242,11 @@ func TestMonitorContextMouseCyclesAllThreeStages(t *testing.T) {
 		if stage == 1 && m.monitorContextDetail != "root-one" {
 			t.Fatal("mouse did not open detail")
 		}
-		if stage == 2 && m.monitorContextTarget() != "" {
-			t.Fatal("mouse did not collapse")
+		if stage == 2 && m.monitorContextExpanded != "root-one" {
+			t.Fatal("mouse did not return to inline detail")
+		}
+		if stage == 3 && (!m.monitorContextHidden || m.monitorContextTarget() != "") {
+			t.Fatal("mouse did not hide context")
 		}
 	}
 }
