@@ -667,12 +667,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
-		m.versionHovered = m.headerActionAt(message.Mouse().X, message.Mouse().Y) == "repository"
+		headerAction := m.headerActionAt(message.Mouse().X, message.Mouse().Y)
+		m.versionHovered = headerAction == "version"
 		if click, ok := message.(tea.MouseClickMsg); ok && click.Mouse().Button == tea.MouseLeft {
-			switch m.headerActionAt(click.Mouse().X, click.Mouse().Y) {
+			switch headerAction {
 			case "home":
 				return m.pressViewTab(viewBars)
-			case "repository":
+			case "version":
 				return m, nil
 			}
 		}

@@ -139,12 +139,9 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		lines[i] = line.render(colors)
 	}
 	rows := max(height-2, 1)
-	controls := m.detailControls(width, height, colors)
-	controlRows := 0
-	if controls != "" {
-		controlRows = strings.Count(controls, "\n") + 1
-	}
-	textRows, gap, _ := monitorContextBodyLayout(height, controlRows)
+	layout := m.layoutDetailControls(width, height)
+	controls := layout.render(m, width, height, colors)
+	textRows, gap, _ := monitorContextBodyLayout(height, layout.rows)
 	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
 	end := min(start+textRows, len(lines))
 	bodyLines := append([]string(nil), lines[start:end]...)
@@ -206,11 +203,8 @@ func (m *Model) openMonitorContext(id string) {
 
 func (m *Model) scrollMonitorContext(delta int) {
 	g := m.dashboardLayout()
-	n := 0
-	if controls := m.detailControls(g.contentWidth, g.meterHeight, paletteFor(m.theme)); controls != "" {
-		n = strings.Count(controls, "\n") + 1
-	}
-	rows, _, _ := monitorContextBodyLayout(g.meterHeight, n)
+	layout := m.layoutDetailControls(g.contentWidth, g.meterHeight)
+	rows, _, _ := monitorContextBodyLayout(g.meterHeight, layout.rows)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
 	m.monitorContextScroll = min(max(m.monitorContextScroll+delta, 0), limit)
 }

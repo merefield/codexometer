@@ -58,6 +58,27 @@ func TestDetailWaveScrollReachesEnd(t *testing.T) {
 	}
 }
 
+func TestDetailControlLayoutMatchesRender(t *testing.T) {
+	prompt, _ := promptTestModel()
+	activity := contextTestModel()
+	activity.monitorContextDetail = "root-one"
+	for _, m := range []Model{approvalTestModel(), prompt, activity} {
+		for _, width := range []int{20, 40, 80, 120} {
+			for _, height := range []int{6, 12, 30} {
+				layout := m.layoutDetailControls(width, height)
+				rendered := layout.render(m, width, height, paletteFor(m.theme))
+				rows := 0
+				if rendered != "" {
+					rows = strings.Count(rendered, "\n") + 1
+				}
+				if rows != layout.rows {
+					t.Fatalf("%s %dx%d: layout %d rows, rendered %d", layout.kind, width, height, layout.rows, rows)
+				}
+			}
+		}
+	}
+}
+
 func TestDetailSuccessResultStartsWave(t *testing.T) {
 	m := approvalTestModel()
 	m, _, _ = m.monitorApprovalAction("decision:0")

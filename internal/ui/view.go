@@ -77,7 +77,7 @@ func (m Model) render() string {
 	rendered := strings.Split(lipgloss.NewStyle().Margin(1, 2).Render(panel), "\n")
 	subtitleRow := strings.Count(header, "\n") + 1
 	if subtitleRow < len(rendered) {
-		rendered[subtitleRow] = linkHeaderVersion(rendered[subtitleRow], displayedHeaderVersion(m.appVersion), m.versionHovered, colors)
+		rendered[subtitleRow] = linkHeaderVersion(rendered[subtitleRow], m.appVersion, m.versionHovered, colors)
 	}
 	return strings.Join(rendered, "\n")
 }
