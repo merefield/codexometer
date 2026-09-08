@@ -203,7 +203,7 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(key('i'))
 	m = updated.(Model)
-	if m.monitorContextHidden || m.monitorContextDetail != "" || m.monitorContextExpanded != "root-one" {
+	if !m.monitorContextHidden || m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextSplit {
 		t.Fatal("i did not restore inline context")
 	}
 	m.openMonitorContext("root-one")
@@ -224,10 +224,10 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
-	if !m.monitorContextHidden {
-		t.Fatal("Enter did not hide returning inline context")
+	if m.rowContextMode("root-one") != contextSplit {
+		t.Fatal("Enter did not return to split context")
 	}
-	for range 2 {
+	for range 4 {
 		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = updated.(Model)
 	}

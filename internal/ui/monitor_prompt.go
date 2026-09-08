@@ -29,7 +29,7 @@ type monitorPromptResult struct {
 }
 
 func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return codex.SessionPromptOffer{}
 	}
 	c, ok := m.fetcher.(codex.SessionPromptClient)
@@ -60,7 +60,7 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 }
 
 func (m Model) monitorPromptRows(width, height int) int {
-	if width < 24 || height < 8 || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if width < 24 || height < 8 || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return 0
 	}
 	if s, ok := m.contextDetailSession(); ok && s.preview.Kind == codex.SessionContextApproval {
@@ -158,7 +158,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if wasFocused && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		p.input.Blur()
 	}
-	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextDetail != p.session || m.monitorContextHidden) {
+	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextDetail != p.session || m.contextTargetHidden()) {
 		*p = monitorPromptState{}
 	} else if p.offer.Token != "" && !p.busy && m.monitorPromptOffer().Token != p.offer.Token {
 		*p = monitorPromptState{session: p.session, notice: i18n.Text("Prompt changed; review the session before replying.")}

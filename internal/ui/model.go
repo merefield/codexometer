@@ -47,7 +47,7 @@ type Model struct {
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
-	monitorContextReturning             bool
+	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
@@ -2730,6 +2730,9 @@ func (m *Model) selectMonitorSession(direction int) {
 		m.monitorPrompt = monitorPromptState{}
 	}
 	pageSize := max(m.monitorPageSize(), 1)
+	if m.rowContextMode(m.monitorSelectedID) == contextWide {
+		m.monitorContextExpanded = m.monitorSelectedID
+	}
 	if selected < m.monitorScroll {
 		m.monitorScroll = selected
 	} else if selected >= m.monitorScroll+pageSize {

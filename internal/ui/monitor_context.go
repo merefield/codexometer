@@ -64,12 +64,12 @@ func contextActionRect(width, y int, label string) (monitorRect, bool) {
 
 // Retain the metrics width so its dismiss target never shifts. Split only the
 // space previously owned by the graph; narrow terminals prioritise the text.
-func contextColumns(width int, s monitorSession) (metrics, context, graph int) {
+func (m Model) contextColumns(width int, s monitorSession) (metrics, context, graph int) {
 	metrics, graph, _ = monitorSessionColumnWidths(width)
-	if s.preview.Text == "" || s.preview.Kind == codex.SessionContextActivity && s.attention == codex.SessionAttentionNone {
+	if m.rowContextMode(s.id) == contextGraph {
 		return
 	}
-	if width >= 100 {
+	if graph >= 24 {
 		context = graph / 2
 		graph -= context + 1
 	} else {
@@ -86,11 +86,11 @@ func contextAge(c codex.SessionContext) string {
 }
 
 func (m Model) renderMonitorContextRow(width, height int, metrics string, s monitorSession, colors palette) string {
-	if m.monitorContextExpanded == s.id {
+	if m.rowContextMode(s.id) == contextWide {
 		_, cw, _ := monitorSessionColumnWidths(width)
 		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", m.renderExpandedContext(cw, height, s, colors))
 	}
-	_, cw, gw := contextColumns(width, s)
+	_, cw, gw := m.contextColumns(width, s)
 	info := ""
 	if m.monitorContextActionVisible(s) {
 		info = m.renderContextAction(s.id, monitorContextInfo, colors)
@@ -101,6 +101,9 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 	}
 	inner := max(cw-4, 1)
 	text := codex.SanitizeSessionContext(s.preview.Text)
+	if text == "" {
+		text = i18n.Text("NO CONTEXT")
+	}
 	lines := strings.Split(ansi.Hardwrap(text, inner, true), "\n")
 	bodyRows := max(height-2, 1)
 	dots := m.sessionActivityDots(s)
@@ -191,7 +194,7 @@ func (m *Model) toggleMonitorContext() {
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalNotice = ""
 	m.monitorContextHidden = !m.monitorContextHidden
-	m.monitorContextReturning = false
+	m.monitorContextRows = nil
 	m.monitorContextDetail = ""
 	m.monitorContextExpanded = ""
 	m.monitorContextHover = ""
@@ -200,18 +203,9 @@ func (m *Model) toggleMonitorContext() {
 }
 
 func (m *Model) openMonitorContext(id string) {
-	if m.monitorContextHidden {
-		return
-	}
 	for _, s := range m.monitorSessionData {
 		if s.id == id && (s.preview.Text != "" || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
-			m.monitorPrompt = monitorPromptState{}
-			m.monitorApprovalConfirm = ""
-			m.monitorApprovalNotice = ""
-			m.monitorContextDetail = id
-			m.monitorContextReturning = false
-			m.monitorContextExpanded = ""
-			m.monitorContextScroll = 0
+			m.setRowContext(id, contextFull, false)
 			return
 		}
 	}
@@ -233,7 +227,7 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		m.toggleMonitorContext()
 		return m, nil, true
 	}
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		switch key {
 		case "t", "r":
 			// These controls remain visible in the global footer. Keep detail
@@ -270,7 +264,7 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
-	if key == "esc" && m.monitorContextExpanded != "" {
+	if key == "esc" && (m.monitorContextExpanded != "" || m.monitorSelectedID != "" && m.rowContextMode(m.monitorSelectedID) > contextGraph) {
 		m.stepBackMonitorContext()
 		return m, nil, true
 	}
@@ -288,7 +282,7 @@ func (m Model) monitorContextAt(x, y int) string {
 	g := m.dashboardLayout()
 	x -= 2
 	y -= g.meterY
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		if rows := m.monitorPromptRows(g.contentWidth, g.meterHeight); rows > 0 && m.monitorPromptOffer().Token != "" {
 			_, _, controlY := monitorContextBodyLayout(g.meterHeight, rows)
 			if y >= controlY+1 && y < controlY+rows-1 && x >= 2 && x < g.contentWidth-2 {
@@ -324,20 +318,17 @@ func (m Model) monitorContextAt(x, y int) string {
 			return "privacy"
 		}
 	}
-	if m.monitorContextHidden {
-		return ""
-	}
 	if hit := m.expandedContextAt(x, y); hit != "" {
 		return hit
 	}
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	rowY := a.topHeight + a.gap - 1
 	for i, s := range sessions {
-		if s.id == m.monitorContextExpanded {
+		if m.rowContextMode(s.id) == contextWide {
 			rowY += heights[i]
 			continue
 		}
-		mw, cw, gw := contextColumns(a.width, s)
+		mw, cw, gw := m.contextColumns(a.width, s)
 		if cw == 0 {
 			cw = gw
 		}
@@ -377,7 +368,7 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		}
 		return m, nil, true
 	}
-	if m.monitorContextDetail != "" && !m.monitorContextHidden {
+	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		g := m.dashboardLayout()
 		if mouse.Y >= g.meterY && mouse.Y < g.meterY+g.meterHeight {
 			switch mouse.Button {

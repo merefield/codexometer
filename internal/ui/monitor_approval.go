@@ -67,7 +67,7 @@ func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
 }
 
 func (m Model) monitorApprovalToken() string {
-	if m.monitorContextHidden || m.monitorApprovalBusy {
+	if m.contextTargetHidden() || m.monitorApprovalBusy {
 		return ""
 	}
 	s, ok := m.contextDetailSession()
@@ -162,7 +162,7 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 // Shortcuts are enabled only for the buttons actually visible on the sole
 // expanded/detail target, never for compact rows or clipped inline controls.
 func (m Model) visibleMonitorApprovalButtons() []monitorApprovalButton {
-	if m.meterView != viewMonitor || m.monitorContextHidden || m.monitorPrompt.input.Focused() {
+	if m.meterView != viewMonitor || m.contextTargetHidden() || m.monitorPrompt.input.Focused() {
 		return nil
 	}
 	g := m.dashboardLayout()

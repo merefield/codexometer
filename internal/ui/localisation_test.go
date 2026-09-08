@@ -58,6 +58,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("detail_activity", TestDetailSentWaveLifecycle)
 	t.Run("session_context_activity", TestMainSessionContextDots)
 	t.Run("context_back_and_forth", TestMonitorContextBackAndForthCycle)
+	t.Run("independent_row_context", TestIndependentRowLayoutsAndApprovalOwnership)
 	t.Run("reset_click_surfaces", TestQuotaResetRenderedHitSurfaces)
 	t.Run("quota_estimator", TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend)
 	t.Run("canonical_restart_reasons", TestShortQuotaAPIRestartReasonsStayCanonical)

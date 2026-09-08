@@ -40,7 +40,7 @@ func (m Model) detailFeedbackAt(now time.Time) string {
 	if activity := m.detailActivityAt(now); activity != "" {
 		return activity
 	}
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return ""
 	}
 	s, ok := m.contextDetailSession()
@@ -52,7 +52,7 @@ func (m Model) detailFeedbackAt(now time.Time) string {
 }
 
 func (m Model) detailActivityAt(now time.Time) string {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
 		return ""
 	}
 	s, ok := m.contextDetailSession()
@@ -81,7 +81,7 @@ func monitorDotWave(phase int) string {
 
 // Main-screen rows show only activity dots, never another session's sent notice.
 func (m Model) sessionActivityDots(s monitorSession) string {
-	if m.meterView != viewMonitor || m.monitorContextHidden || m.monitorState != monitorRunning || m.monitorError != "" || !s.active || !s.working || s.attention != codex.SessionAttentionNone {
+	if m.meterView != viewMonitor || m.rowContextMode(s.id) == contextGraph || m.monitorState != monitorRunning || m.monitorError != "" || !s.active || !s.working || s.attention != codex.SessionAttentionNone {
 		return ""
 	}
 	return monitorDotWave(m.phase)

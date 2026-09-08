@@ -522,8 +522,8 @@ codexometer --codex /path/to/codex
 | `v` | Cycle the active Quota view |
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
-| `h` | Hide/show Monitor context previews and close any open context detail |
-| `i` | Cycle Monitor context back and forth: hidden → expanded row → full detail → expanded row → hidden; use the selected session, otherwise the latest approval-gated session |
+| `h` | Reset all Monitor rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `i` | Cycle the selected row back and forth: graph → split → wide detail → full detail → wide → split → graph; otherwise choose the latest approval-gated session |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -1028,23 +1028,27 @@ With no context available, the original metrics/graph layout remains.
 
 Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations are:
 
-1. **Compact:** the normal short preview beside the token graph; no approval buttons.
-2. **Expanded:** that session's context occupies the full space previously shared
+1. **Graph only:** the token graph fills the row's right-hand section.
+2. **Split:** a short detail preview and token graph share that section equally;
+   very narrow terminals prioritise readable detail. No approval buttons.
+3. **Expanded:** that session's context occupies the full space previously shared
    by its preview and token graph, while telemetry and the other sessions stay
    visible. Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, an
    **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
-3. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
    Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
    `i` or `[i]` click returns to the same expanded row. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
-`i` cycles **hidden → expanded row → full detail → expanded row → hidden**.
-From the normal compact preview, the first `i` expands the selected row.
-`Esc`, `[×]` or `x` in full detail also returns to that expanded row; the next
-`i` hides context rather than reopening full detail. `Esc` from an expanded row
-hides context too. Press `i` again to restore it, or use `h` to toggle the normal
-compact previews. While typing, `i` remains text and `Esc` leaves the editor first.
+`i` cycles **graph → split → expanded → full detail → expanded → split → graph**.
+Each row retains its own presentation; cycling one does not resize other rows.
+`Esc`, `[×]` or `x` in full detail returns to that expanded row; subsequent `i`
+presses continue back through split and graph. `Esc` steps back one level too.
+The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
+graph-only, closes full detail and clears per-row overrides. Only that global
+default is persisted across launches. While typing, `i` remains text and `Esc`
+leaves the editor first. Approval controls remain exclusive to the current target.
 The initial keyboard target is the explicitly selected session, otherwise the
 most recent approval-gated session with context, otherwise the first session
 with context. Once expanded, the target is pinned and kept on screen: newer
