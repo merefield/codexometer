@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -20,7 +21,10 @@ func TestDetailSentWaveLifecycle(t *testing.T) {
 			t.Fatal("sent notice did not animate")
 		}
 		m.monitorSessionData[0].preview.Text = "new activity"
-		if got := m.detailActivity(); got != "·●·" {
+		if got := m.detailActivityAt(m.monitorDetailSent.visibleUntil.Add(-time.Nanosecond)); !strings.HasPrefix(got, strings.TrimSuffix(notice, "...")) {
+			t.Fatal("fast update replaced the sent notice too soon")
+		}
+		if got := m.detailActivityAt(m.monitorDetailSent.visibleUntil); got != "·●·" {
 			t.Fatalf("new context did not replace notice: %q", got)
 		}
 		for _, attention := range []codex.SessionAttention{codex.SessionAttentionComplete, codex.SessionAttentionInput, codex.SessionAttentionApproval, codex.SessionAttentionCheck} {

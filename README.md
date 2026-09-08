@@ -1148,6 +1148,8 @@ Failed or ambiguous sends are not automatically retried.
 
 In full Monitor detail only, successful **Text sent ...** and **Decision sent ...**
 notices use a subtle dot wave until the session context or attention state changes.
+Fast activity updates retain the sent wording for at least three seconds before
+switching to dots alone; new stop or attention-needed states take priority.
 After new context arrives, the wave continues on its own while the session is
 observed as active with no attention flag. It stops on completion, input/approval
 or check-session flags, inactive sessions, paused monitoring or observation errors.

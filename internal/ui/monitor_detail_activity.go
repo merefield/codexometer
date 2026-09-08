@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -9,10 +10,11 @@ import (
 )
 
 type detailSentState struct {
-	session   string
-	preview   codex.SessionContext
-	text      string
-	attention codex.SessionAttention
+	session      string
+	preview      codex.SessionContext
+	text         string
+	attention    codex.SessionAttention
+	visibleUntil time.Time
 }
 
 func (m *Model) recordDetailSent(text string) {
@@ -20,11 +22,15 @@ func (m *Model) recordDetailSent(text string) {
 		return
 	}
 	if s, ok := m.contextDetailSession(); ok {
-		m.monitorDetailSent = detailSentState{session: s.id, preview: s.preview, text: text, attention: s.attention}
+		m.monitorDetailSent = detailSentState{session: s.id, preview: s.preview, text: text, attention: s.attention, visibleUntil: time.Now().Add(3 * time.Second)}
 	}
 }
 
 func (m Model) detailActivity() string {
+	return m.detailActivityAt(time.Now())
+}
+
+func (m Model) detailActivityAt(now time.Time) string {
 	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.monitorContextHidden {
 		return ""
 	}
@@ -33,8 +39,13 @@ func (m Model) detailActivity() string {
 		return ""
 	}
 	wave := []string{"●··", "·●·", "··●", "·●·"}[m.phase%4]
-	if n := m.monitorDetailSent; n.session == s.id && n.text != "" && n.preview == s.preview && n.attention == s.attention {
-		return strings.TrimSuffix(n.text, "...") + wave
+	if n := m.monitorDetailSent; n.session == s.id && n.text != "" {
+		unchanged := n.preview == s.preview && n.attention == s.attention
+		// Keep the acknowledgement readable through fast activity updates,
+		// but never postpone a fresh stop or attention-needed state.
+		if unchanged || now.Before(n.visibleUntil) && s.attention == codex.SessionAttentionNone {
+			return strings.TrimSuffix(n.text, "...") + wave
+		}
 	}
 	if s.attention == codex.SessionAttentionNone {
 		return wave
