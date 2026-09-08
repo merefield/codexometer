@@ -549,11 +549,27 @@ func TestSessionSnapshotsSuppressesQuietChildCheckWhileGroupIsActive(t *testing.
 	if len(sessions) != 1 || active != 1 {
 		t.Fatalf("grouped sessions = %#v, active %d; want one active root", sessions, active)
 	}
-	if !working {
+	if !working || !sessions[0].Working {
 		t.Fatal("fresh working root did not mark the group as working")
 	}
 	if got := sessions[0].Attention; got != SessionAttentionNone {
 		t.Fatalf("fresh root inherited quiet child's uncertain attention = %v", got)
+	}
+}
+
+func TestSessionWorkingRequiresTurnSignal(t *testing.T) {
+	now := time.Now()
+	r := &LiveUsageReader{files: map[string]*rolloutCursor{"root": {threadID: "root", lastModified: now, attention: sessionAttentionIdle}}}
+	writers := map[string]struct{}{"root": {}}
+	sessions, _, _ := r.sessionSnapshots(now, writers, true, nil)
+	if len(sessions) != 1 || !sessions[0].Active || sessions[0].Working {
+		t.Fatal("recent idle session treated as working")
+	}
+	r.files["child"] = &rolloutCursor{threadID: "child", parentThreadID: "root", nonRoot: true, lastModified: now, attention: sessionAttentionWorking}
+	writers["child"] = struct{}{}
+	sessions, _, _ = r.sessionSnapshots(now, writers, true, nil)
+	if len(sessions) != 1 || !sessions[0].Working {
+		t.Fatal("linked working child not aggregated")
 	}
 }
 
@@ -576,7 +592,7 @@ func TestSessionSnapshotsExactWorkingStatusSuppressesGroupedFallback(t *testing.
 	if len(sessions) != 1 || active != 1 {
 		t.Fatalf("daemon-working group = %#v, active %d; want one active root", sessions, active)
 	}
-	if !working {
+	if !working || !sessions[0].Working {
 		t.Fatal("exact daemon status did not mark the group as working")
 	}
 	if got := sessions[0].Attention; got != SessionAttentionNone {

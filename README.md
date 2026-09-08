@@ -1151,14 +1151,20 @@ notices use a subtle dot wave until the session context or attention state chang
 Fast activity updates retain the sent wording for at least three seconds before
 switching to dots alone; new stop or attention-needed states take priority.
 After new context arrives, the wave continues on its own while the session is
-observed as active with no attention flag. It stops on completion, input/approval
+observed as working with no attention flag. Recent activity alone is not enough:
+the reader must observe a working shared-server thread or a live local writer
+with an ongoing turn, including linked agents. It stops on completion, input/approval
 or check-session flags, inactive sessions, paused monitoring or observation errors.
 Stopping the animation retains the plain successful-send acknowledgement for the
 same context (or the remainder of its three-second minimum), rather than losing
 delivery confirmation. New context then replaces it normally.
 This is a best-effort activity indicator, not proof of execution or a progress
-percentage; ordinary local observation can lag behind the session. Compact and
-expanded-row presentations remain unchanged.
+percentage; ordinary local observation can lag behind the session.
+On the main Monitor screen, visible compact and expanded session-context boxes
+also show the same activity dots at the bottom left, independently for each
+session. Short boxes prioritise readable context and approval controls; the
+compact view omits the dots when fewer than three body rows fit. Sent-message
+acknowledgement animations remain confined to full detail.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

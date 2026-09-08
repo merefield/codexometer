@@ -147,6 +147,10 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		n = 1
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
+	if dots := m.sessionActivityDots(s); n == 0 && dots != "" && height >= 5 && width >= 7 {
+		n = 1
+		controls = colors.label().Render(dots)
+	}
 	textRows, gap, _ := monitorContextBodyLayout(height, n)
 	if len(lines) > textRows {
 		lines = lines[:textRows]

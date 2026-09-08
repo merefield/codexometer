@@ -56,26 +56,35 @@ func (m Model) detailActivityAt(now time.Time) string {
 		return ""
 	}
 	s, ok := m.contextDetailSession()
-	if !ok || m.monitorError != "" || !s.active || m.monitorState != monitorRunning {
+	wave := m.sessionActivityDots(s)
+	if !ok || wave == "" {
 		return ""
 	}
-	wave := []string{"●··", "·●·", "··●", "·●·"}[m.phase%4]
 	if n := m.monitorDetailSent; n.session == s.id && n.text != "" {
 		unchanged := n.preview == s.preview && n.attention == s.attention
 		// Keep the acknowledgement readable through fast activity updates,
 		// but never postpone a fresh stop or attention-needed state.
-		if unchanged || now.Before(n.visibleUntil) && s.attention == codex.SessionAttentionNone {
+		if unchanged || now.Before(n.visibleUntil) {
 			return strings.TrimSuffix(n.text, "...") + wave
 		}
 	}
-	if s.attention == codex.SessionAttentionNone {
-		return wave
-	}
-	return ""
+	return wave
 }
 
 func sentNotice(text string) bool {
 	return text == i18n.Text("Text sent ...") || text == i18n.Text("Decision sent ...")
+}
+
+func monitorDotWave(phase int) string {
+	return []string{"●··", "·●·", "··●", "·●·"}[phase%4]
+}
+
+// Main-screen rows show only activity dots, never another session's sent notice.
+func (m Model) sessionActivityDots(s monitorSession) string {
+	if m.meterView != viewMonitor || m.monitorContextHidden || m.monitorState != monitorRunning || m.monitorError != "" || !s.active || !s.working || s.attention != codex.SessionAttentionNone {
+		return ""
+	}
+	return monitorDotWave(m.phase)
 }
 
 type detailControlLayout struct {

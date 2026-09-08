@@ -103,17 +103,31 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 	text := codex.SanitizeSessionContext(s.preview.Text)
 	lines := strings.Split(ansi.Hardwrap(text, inner, true), "\n")
 	bodyRows := max(height-2, 1)
+	dots := m.sessionActivityDots(s)
+	if bodyRows < 3 || inner < 3 {
+		dots = ""
+	}
+	contentRows := bodyRows
+	if dots != "" {
+		contentRows--
+	}
 	// At most two text rows keep the preview compact; the detail has the rest.
-	textRows := min(bodyRows, 2)
+	textRows := min(contentRows, 2)
 	if len(lines) > textRows {
 		lines = lines[:textRows]
 		lines[textRows-1] = ansi.Truncate(lines[textRows-1], max(inner-1, 0), "") + "…"
 	}
-	if bodyRows > textRows {
+	if contentRows > textRows {
 		lines = append(lines, s.preview.Source+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}
 	for i := range lines {
 		lines[i] = colors.label().Render(ansi.Truncate(lines[i], inner, ""))
+	}
+	if dots != "" {
+		for len(lines) < bodyRows-1 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, colors.label().Render(dots))
 	}
 	panel := frameSizedWithTitleAction(cw, max(height-2, 1), contextTitle(s.preview), info, strings.Join(lines, "\n"), colors.primary, colors)
 	row := lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", panel)

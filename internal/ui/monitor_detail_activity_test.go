@@ -62,6 +62,84 @@ func TestDetailWaveScrollReachesEnd(t *testing.T) {
 	}
 }
 
+func TestMainSessionContextDots(t *testing.T) {
+	m := contextTestModel()
+	s := m.monitorSessionData[0]
+	idle := s
+	idle.working = false
+	if m.sessionActivityDots(idle) != "" {
+		t.Fatal("recently active but idle session animated")
+	}
+	colors := paletteFor(m.theme)
+	for _, expanded := range []bool{false, true} {
+		if expanded {
+			m.monitorContextExpanded = s.id
+		}
+		for _, size := range [][2]int{{80, 5}, {120, 8}, {200, 12}} {
+			render := func() string { return ansi.Strip(m.renderMonitorContextRow(size[0], size[1], "", s, colors)) }
+			m.phase = 0
+			lines := strings.Split(render(), "\n")
+			if !strings.Contains(lines[len(lines)-2], "●··") {
+				t.Fatalf("expanded=%v %v: dots not on bottom body row: %q", expanded, size, lines)
+			}
+			m.phase = 1
+			if !strings.Contains(render(), "·●·") {
+				t.Fatal("row dots did not animate")
+			}
+			for _, attention := range []codex.SessionAttention{codex.SessionAttentionComplete, codex.SessionAttentionInput, codex.SessionAttentionApproval, codex.SessionAttentionCheck} {
+				s.attention = attention
+				if strings.Contains(render(), "·●·") {
+					t.Fatal("stopped session still animated")
+				}
+			}
+			s.attention = codex.SessionAttentionNone
+			m.monitorError = "unavailable"
+			if strings.Contains(render(), "·●·") {
+				t.Fatal("observation error still animated")
+			}
+			m.monitorError = ""
+		}
+	}
+	other := m.monitorSessionData[1]
+	other.attention = codex.SessionAttentionComplete
+	if m.sessionActivityDots(s) == "" || m.sessionActivityDots(other) != "" {
+		t.Fatal("dots not session-specific")
+	}
+	m.monitorState = monitorPaused
+	if m.sessionActivityDots(s) != "" {
+		t.Fatal("paused monitor animated")
+	}
+	m.monitorState = monitorRunning
+	m.monitorContextHidden = true
+	if m.sessionActivityDots(s) != "" {
+		t.Fatal("hidden context animated")
+	}
+}
+
+func TestWorkingSignalReachesMonitor(t *testing.T) {
+	m := contextTestModel()
+	now := time.Now()
+	u := codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "root-one", Active: true, Working: true}}}
+	m.startMonitorSessions(u, now)
+	if !m.monitorSessionData[0].working {
+		t.Fatal("start dropped working state")
+	}
+	u.Sessions[0].Working = false
+	m.syncMonitorSessions(u, now)
+	if m.monitorSessionData[0].working {
+		t.Fatal("idle update retained working state")
+	}
+	u.Sessions[0].Working = true
+	m.resumeMonitorSessions(u, now, time.Minute)
+	if !m.monitorSessionData[0].working {
+		t.Fatal("resume dropped working state")
+	}
+	m.syncMonitorSessions(codex.LiveUsageSnapshot{}, now)
+	if m.monitorSessionData[0].working {
+		t.Fatal("missing session retained working state")
+	}
+}
+
 func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
 	t.Run("prompt footer", func(t *testing.T) {
 		m, _ := promptTestModel()
@@ -75,6 +153,7 @@ func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
 	})
 	for _, text := range []string{i18n.Text("Text sent ..."), i18n.Text("Decision sent ...")} {
 		for name, suppress := range map[string]func(*Model){
+			"idle":     func(m *Model) { m.monitorSessionData[0].working = false },
 			"paused":   func(m *Model) { m.monitorState = monitorPaused },
 			"error":    func(m *Model) { m.monitorError = "observation unavailable" },
 			"inactive": func(m *Model) { m.monitorSessionData[0].active = false },

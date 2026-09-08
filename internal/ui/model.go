@@ -240,6 +240,7 @@ type monitorSession struct {
 	lastActivity     time.Time
 	agentCount       int
 	active           bool
+	working          bool
 	attention        codex.SessionAttention
 	displayed        bool
 	unattributed     bool
@@ -2237,6 +2238,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		update, ok := updates[session.id]
 		if !ok {
 			session.active = false
+			session.working = false
 			session.attention = codex.SessionAttentionNone
 			continue
 		}
@@ -2247,6 +2249,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
+		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.callSequence = latestModelCallSequence(update.ModelCalls)
@@ -2269,7 +2272,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 			id: update.ID, workingDirectory: update.WorkingDirectory,
 			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
-			active: update.Active, attention: update.Attention, preview: update.Context, displayed: update.Active,
+			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
 			turnSequence: latestTurnTimingSequence(update.TurnTimings),
 		})
@@ -2430,7 +2433,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
-			active: session.Active, attention: session.Attention,
+			active: session.Active, working: session.Working, attention: session.Attention,
 			preview:   session.Context,
 			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
@@ -2449,6 +2452,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
+		m.monitorSessionData[index].working = false
 		m.monitorSessionData[index].attention = codex.SessionAttentionNone
 	}
 	for _, update := range usage.Sessions {
@@ -2462,7 +2466,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 				id: update.ID, workingDirectory: update.WorkingDirectory,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, attention: update.Attention,
+				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
 				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
@@ -2480,6 +2484,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
 		session.active = update.Active
+		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
