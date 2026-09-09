@@ -338,13 +338,19 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
+	badgeLabel := ""
 	if session.attention != codex.SessionAttentionNone {
+		badgeLabel = monitorSessionAttentionLabel(session)
+	} else if m.sessionObservedWorking(session) {
+		badgeLabel = i18n.Text("WORKING")
+	}
+	if badgeLabel != "" {
 		badgeColor := colors.primary
 		if monitorNeedsAttention(session.attention) {
 			badgeColor = colors.warning
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
-		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorSessionAttentionLabel(session)+" ", innerWidth, "")))
+		lines = append(lines, badge.Render(ansi.Truncate(" ● "+badgeLabel+" ", innerWidth, "")))
 	}
 	if len(lines) < bodyRows {
 		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
@@ -368,7 +374,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !session.lastActivity.IsZero() {
 		appendLine(i18n.Text("LAST // ") + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
-	if pageLabel != "" && (session.attention == codex.SessionAttentionNone || len(lines) > 1) {
+	if pageLabel != "" && (badgeLabel == "" || len(lines) > 1) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	borderColor := colors.primary

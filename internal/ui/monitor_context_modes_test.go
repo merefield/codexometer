@@ -52,6 +52,64 @@ func TestMonitorContextThreeStageCycleAndTarget(t *testing.T) {
 	}
 }
 
+func TestMonitorWorkingBadgeAndUntitledDetail(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		state           monitorState
+		active, working bool
+		attention       codex.SessionAttention
+		err             string
+	}{
+		{"working", monitorRunning, true, true, codex.SessionAttentionNone, ""},
+		{"recent only", monitorRunning, true, false, codex.SessionAttentionNone, ""},
+		{"inactive", monitorRunning, false, true, codex.SessionAttentionNone, ""},
+		{"paused", monitorPaused, true, true, codex.SessionAttentionNone, ""},
+		{"starting", monitorStarting, true, true, codex.SessionAttentionNone, ""},
+		{"pausing", monitorPausing, true, true, codex.SessionAttentionNone, ""},
+		{"resuming", monitorResuming, true, true, codex.SessionAttentionNone, ""},
+		{"resetting", monitorResetting, true, true, codex.SessionAttentionNone, ""},
+		{"error", monitorRunning, true, true, codex.SessionAttentionNone, "offline"},
+		{"complete", monitorRunning, true, true, codex.SessionAttentionComplete, ""},
+		{"input", monitorRunning, true, true, codex.SessionAttentionInput, ""},
+		{"approval", monitorRunning, true, true, codex.SessionAttentionApproval, ""},
+		{"check", monitorRunning, true, true, codex.SessionAttentionCheck, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := contextTestModel()
+			m.setRowContext("root-one", contextWide, false)
+			m.monitorState, m.monitorError = tc.state, tc.err
+			s := m.monitorSessionData[0]
+			s.active, s.working, s.attention = tc.active, tc.working, tc.attention
+			for _, height := range []int{3, 12} {
+				left := ansi.Strip(m.renderMonitorSessionMetrics(80, height, s, "1/3", paletteFor(m.theme)))
+				hasWorking := strings.Contains(left, i18n.Text("WORKING"))
+				if hasWorking != (tc.name == "working") || hasWorking != (m.sessionActivityDots(s) != "") {
+					t.Fatalf("working badge/dots disagree: %q", left)
+				}
+				if s.attention != codex.SessionAttentionNone && !strings.Contains(left, monitorSessionAttentionLabel(s)) {
+					t.Fatal("attention badge lost priority")
+				}
+			}
+			for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextActivity} {
+				s.preview.Kind = kind
+				out := strings.Split(ansi.Strip(m.renderExpandedContext(100, 10, s, paletteFor(m.theme))), "\n")
+				if strings.Contains(out[0], contextTitle(s.preview)) || strings.Contains(out[0], i18n.Text("WORKING")) || !strings.Contains(out[0], monitorContextInfo) {
+					t.Fatalf("wide border should have only its action: %q", out[0])
+				}
+				if !strings.Contains(strings.Join(out[1:], "\n"), contextTitle(s.preview)) {
+					t.Fatal("body lost content type")
+				}
+				m.setRowContext(s.id, contextSplit, false)
+				compact := strings.Split(ansi.Strip(m.renderMonitorContextRow(120, 10, "", s, paletteFor(m.theme))), "\n")
+				if !strings.Contains(compact[0], contextTitle(s.preview)) {
+					t.Fatal("compact title changed")
+				}
+				m.setRowContext(s.id, contextWide, false)
+			}
+		})
+	}
+}
+
 func TestMonitorContextBackAndForthCycle(t *testing.T) {
 	for _, back := range []tea.KeyPressMsg{key('i'), {Code: tea.KeyEscape}} {
 		m := contextTestModel()

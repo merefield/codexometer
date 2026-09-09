@@ -292,6 +292,9 @@ func renderFrameTitleWithAction(width int, title, action string, color imagecolo
 	}
 	title = strings.TrimSpace(ansi.Truncate(title, titleWidth, ""))
 	if title == "" {
+		if actionWidth > 0 {
+			return borderStyle.Render(border.TopLeft+strings.Repeat(border.Top, width-actionWidth-4)+" ") + action + borderStyle.Render(border.Top+border.TopRight)
+		}
 		return borderStyle.Render(border.TopLeft + strings.Repeat(border.Top, width-2) + border.TopRight)
 	}
 	prefix := border.TopLeft + border.Top + " "

@@ -81,10 +81,14 @@ func monitorDotWave(phase int) string {
 
 // Main-screen rows show only activity dots, never another session's sent notice.
 func (m Model) sessionActivityDots(s monitorSession) string {
-	if m.meterView != viewMonitor || m.rowContextMode(s.id) == contextGraph || m.monitorState != monitorRunning || m.monitorError != "" || !s.active || !s.working || s.attention != codex.SessionAttentionNone {
+	if m.meterView != viewMonitor || m.rowContextMode(s.id) == contextGraph || !m.sessionObservedWorking(s) {
 		return ""
 	}
 	return monitorDotWave(m.phase)
+}
+
+func (m Model) sessionObservedWorking(s monitorSession) bool {
+	return m.monitorState == monitorRunning && m.monitorError == "" && s.active && s.working && s.attention == codex.SessionAttentionNone
 }
 
 type detailControlLayout struct {

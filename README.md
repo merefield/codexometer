@@ -1040,7 +1040,14 @@ Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations 
    very narrow terminals prioritise readable detail. No approval buttons.
 3. **Expanded:** that session's context occupies the full space previously shared
    by its preview and token graph, while telemetry and the other sessions stay
-   visible. Eligible approval buttons sit below the complete command/request
+   visible. Its border is untitled, retaining the detail action at the top right;
+   **LAST REPLY**, **LAST ACTIVITY**, **QUESTION**, or **REQUEST** stays inside
+   above the text. Session state belongs in the left telemetry box: its prominent
+   **WORKING** badge uses the same observed-work evidence as the animated dots,
+   not merely recent activity. Completion and attention badges take priority;
+   paused/transitioning monitoring, observation errors, or inactive sessions
+   suppress **WORKING**. Compact previews keep their content-type title.
+   Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, an
    **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
 4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
