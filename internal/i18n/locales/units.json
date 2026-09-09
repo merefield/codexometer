@@ -1,4 +1,10 @@
 {
+  "pt-PT": {
+    "MINUTE": {"one": "%d MINUTO", "other": "%d MINUTOS"},
+    "HOUR": {"one": "%d HORA", "other": "%d HORAS"},
+    "DAY": {"one": "%d DIA", "other": "%d DIAS"},
+    "WEEK": {"one": "%d SEMANA", "other": "%d SEMANAS"}
+  },
   "pt-BR": {
     "MINUTE": {"one": "%d MINUTO", "other": "%d MINUTOS"},
     "HOUR": {"one": "%d HORA", "other": "%d HORAS"},

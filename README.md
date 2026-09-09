@@ -30,7 +30,7 @@ depending on the selected authentication.
 
 The four primary tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**.
 The interface supports mouse controls, keyboard navigation, five colour themes,
-and [sixteen languages](#language), with the original UK English presentation
+and [16 languages with 17 locale options](#language), with the original UK English presentation
 unchanged by default.
 
 ## Why use it?
@@ -79,13 +79,15 @@ To select another interface language, set `CODEXOMETER_LANG` before starting:
 | Estonian | `et` |
 | Finnish | `fi` |
 | Portuguese (Brazil) | `pt-BR` |
+| Portuguese (Portugal) | `pt-PT` |
 | Danish | `da` |
 
 Codes use BCP 47 language tags. Regional variants such as `de-DE`, `fr-CA`,
 `ja-JP`, `zh-CN`, `sv-SE`, `nb-NO`, `tr-TR`, `et-EE` and `fi-FI` match the
 corresponding supported language. `no` and `no-NO` also select Norwegian Bokmål.
-`pt`, `pt-PT` and other Portuguese variants select the Brazilian Portuguese
-translation; a separate European Portuguese catalogue is not included.
+Bare `pt` selects Brazilian Portuguese (`pt-BR`). Use `pt-PT` for European
+Portuguese, with its own wording, number formatting and plural rules.
+Regional tags such as `pt-AO` and `pt-MZ` match the European catalogue.
 `da-DK` and other Danish variants select Danish.
 Other English variants use the existing UK English presentation. An unset, invalid or
 unsupported code falls back to UK English. `LANG` and `LC_ALL` are deliberately
@@ -99,6 +101,7 @@ CODEXOMETER_LANG=ja codexometer --demo
 CODEXOMETER_LANG=sv codexometer
 CODEXOMETER_LANG=nb codexometer --demo
 CODEXOMETER_LANG=pt-BR codexometer
+CODEXOMETER_LANG=pt-PT codexometer
 CODEXOMETER_LANG=da codexometer --demo
 ```
 

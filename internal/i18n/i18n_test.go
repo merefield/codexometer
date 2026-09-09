@@ -76,7 +76,7 @@ func TestLanguageSelection(t *testing.T) {
 		"sv": "sv", "sv-SE": "sv", "sv-FI": "sv",
 		"nb": "nb", "nb-NO": "nb", "no": "nb", "no-NO": "nb",
 		"tr": "tr", "tr-TR": "tr", "et": "et", "et-EE": "et", "fi": "fi", "fi-FI": "fi",
-		"pt": "pt-BR", "pt-BR": "pt-BR", "pt-PT": "pt-BR", "pt-AO": "pt-BR",
+		"pt": "pt-BR", "pt-BR": "pt-BR", "pt-PT": "pt-PT", "pt-AO": "pt-PT", "pt-MZ": "pt-PT",
 		"da": "da", "da-DK": "da", "da-GL": "da",
 	} {
 		if got := New(input).Code(); got != want {
@@ -143,7 +143,7 @@ func TestCataloguesAndEnglishCompatibility(t *testing.T) {
 }
 
 func TestLiteralFallbackAndTranslations(t *testing.T) {
-	for code, want := range map[string]string{"sv": "ANVÄNDNING", "nb": "BRUK", "tr": "KULLANIM", "et": "KASUTUS", "fi": "KÄYTTÖ", "pt-BR": "USO", "da": "FORBRUG"} {
+	for code, want := range map[string]string{"sv": "ANVÄNDNING", "nb": "BRUK", "tr": "KULLANIM", "et": "KASUTUS", "fi": "KÄYTTÖ", "pt-BR": "USO", "pt-PT": "UTILIZAÇÃO", "da": "FORBRUG"} {
 		if got := New(code).Text("USAGE"); got != want {
 			t.Errorf("%s translation: %q, want %q", code, got, want)
 		}
@@ -177,6 +177,7 @@ func TestWindowNameUsesLocalePluralRules(t *testing.T) {
 		{"et", "1 MINUTE", "1 MINUT"}, {"et", "2 MINUTES", "2 MINUTIT"},
 		{"fi", "1 WEEK", "1 VIIKKO"}, {"fi", "2 WEEKS", "2 VIIKKOA"}, {"fi", "0 HOURS", "0 TUNTIA"},
 		{"pt-BR", "1 WEEK", "1 SEMANA"}, {"pt-BR", "2 WEEKS", "2 SEMANAS"}, {"pt-BR", "0 HOURS", "0 HORA"},
+		{"pt-PT", "1 WEEK", "1 SEMANA"}, {"pt-PT", "2 WEEKS", "2 SEMANAS"}, {"pt-PT", "0 HOURS", "0 HORAS"},
 		{"da", "1 WEEK", "1 UGE"}, {"da", "2 WEEKS", "2 UGER"}, {"da", "0 HOURS", "0 TIMER"},
 		{"fr", "custom-model-id", "custom-model-id"},
 	} {
@@ -186,10 +187,10 @@ func TestWindowNameUsesLocalePluralRules(t *testing.T) {
 	}
 }
 
-func TestPortugueseZeroUsesBrazilianCLDRRules(t *testing.T) {
+func TestPortugueseRegionalCLDRRules(t *testing.T) {
 	// CLDR pt includes integer 0 and 1 in "one"; pt-PT includes only 1.
 	// https://www.unicode.org/cldr/charts/48/supplemental/language_plural_rules.html#pt
-	// Follow the selected Brazilian catalogue's rules, not an ad-hoc zero override.
+	// Follow each regional catalogue's rules, not an ad-hoc zero override.
 	for _, tc := range []struct {
 		tag  language.Tag
 		want plural.Form
@@ -201,14 +202,32 @@ func TestPortugueseZeroUsesBrazilianCLDRRules(t *testing.T) {
 			t.Errorf("%s: zero category %v, want %v", tc.tag, got, tc.want)
 		}
 	}
-	for _, code := range []string{"pt", "pt-BR", "pt-PT"} {
-		// Regional variants currently select the Brazilian catalogue and formatter.
+	for _, code := range []string{"pt", "pt-BR", "pt-PT", "pt-AO", "pt-MZ"} {
+		zero := "0 HORA"
+		if New(code).Code() == "pt-PT" {
+			zero = "0 HORAS"
+		}
 		for _, tc := range []struct{ input, want string }{
-			{"0 HOURS", "0 HORA"}, {"1 HOUR", "1 HORA"}, {"2 HOURS", "2 HORAS"},
+			{"0 HOURS", zero}, {"1 HOUR", "1 HORA"}, {"2 HOURS", "2 HORAS"},
 		} {
 			if got := New(code).WindowName(tc.input); got != tc.want {
 				t.Errorf("%s %s: %q, want %q", code, tc.input, got, tc.want)
 			}
+		}
+	}
+}
+
+func TestPortugueseRegionalVocabularyAndNumbers(t *testing.T) {
+	for _, tc := range []struct{ code, working, quota, number string }{
+		{"pt-BR", "TRABALHANDO", "COTA", "1.234,5"},
+		{"pt-PT", "A TRABALHAR", "QUOTA", "1\u00a0234,5"},
+	} {
+		tr := New(tc.code)
+		if tr.Text("WORKING") != tc.working || tr.Text("QUOTA") != tc.quota {
+			t.Errorf("%s did not select regional vocabulary", tc.code)
+		}
+		if got := tr.Format("%.1f", 1234.5); got != tc.number {
+			t.Errorf("%s number: %q, want %q", tc.code, got, tc.number)
 		}
 	}
 }
