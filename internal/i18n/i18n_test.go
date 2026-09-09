@@ -73,6 +73,8 @@ func TestLanguageSelection(t *testing.T) {
 		"sv": "sv", "sv-SE": "sv", "sv-FI": "sv",
 		"nb": "nb", "nb-NO": "nb", "no": "nb", "no-NO": "nb",
 		"tr": "tr", "tr-TR": "tr", "et": "et", "et-EE": "et", "fi": "fi", "fi-FI": "fi",
+		"pt": "pt-BR", "pt-BR": "pt-BR", "pt-PT": "pt-BR", "pt-AO": "pt-BR",
+		"da": "da", "da-DK": "da", "da-GL": "da",
 	} {
 		if got := New(input).Code(); got != want {
 			t.Errorf("%q: %q, want %q", input, got, want)
@@ -138,7 +140,7 @@ func TestCataloguesAndEnglishCompatibility(t *testing.T) {
 }
 
 func TestLiteralFallbackAndTranslations(t *testing.T) {
-	for code, want := range map[string]string{"sv": "ANVÄNDNING", "nb": "BRUK", "tr": "KULLANIM", "et": "KASUTUS", "fi": "KÄYTTÖ"} {
+	for code, want := range map[string]string{"sv": "ANVÄNDNING", "nb": "BRUK", "tr": "KULLANIM", "et": "KASUTUS", "fi": "KÄYTTÖ", "pt-BR": "USO", "da": "FORBRUG"} {
 		if got := New(code).Text("USAGE"); got != want {
 			t.Errorf("%s translation: %q, want %q", code, got, want)
 		}
@@ -171,6 +173,8 @@ func TestWindowNameUsesLocalePluralRules(t *testing.T) {
 		{"tr", "1 DAY", "1 GÜN"}, {"tr", "2 DAYS", "2 GÜN"},
 		{"et", "1 MINUTE", "1 MINUT"}, {"et", "2 MINUTES", "2 MINUTIT"},
 		{"fi", "1 WEEK", "1 VIIKKO"}, {"fi", "2 WEEKS", "2 VIIKKOA"}, {"fi", "0 HOURS", "0 TUNTIA"},
+		{"pt-BR", "1 WEEK", "1 SEMANA"}, {"pt-BR", "2 WEEKS", "2 SEMANAS"}, {"pt-BR", "0 HOURS", "0 HORA"},
+		{"da", "1 WEEK", "1 UGE"}, {"da", "2 WEEKS", "2 UGER"}, {"da", "0 HOURS", "0 TIMER"},
 		{"fr", "custom-model-id", "custom-model-id"},
 	} {
 		if got := New(test.code).WindowName(test.name); got != test.want {
