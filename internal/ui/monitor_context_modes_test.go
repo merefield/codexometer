@@ -52,6 +52,98 @@ func TestMonitorContextThreeStageCycleAndTarget(t *testing.T) {
 	}
 }
 
+func TestMonitorStatusAndContentHeadings(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		state           monitorState
+		active, working bool
+		attention       codex.SessionAttention
+		err             string
+	}{
+		{"working", monitorRunning, true, true, codex.SessionAttentionNone, ""},
+		{"recent only", monitorRunning, true, false, codex.SessionAttentionNone, ""},
+		{"inactive", monitorRunning, false, true, codex.SessionAttentionNone, ""},
+		{"paused", monitorPaused, true, true, codex.SessionAttentionNone, ""},
+		{"starting", monitorStarting, true, true, codex.SessionAttentionNone, ""},
+		{"pausing", monitorPausing, true, true, codex.SessionAttentionNone, ""},
+		{"resuming", monitorResuming, true, true, codex.SessionAttentionNone, ""},
+		{"resetting", monitorResetting, true, true, codex.SessionAttentionNone, ""},
+		{"error", monitorRunning, true, true, codex.SessionAttentionNone, "offline"},
+		{"complete", monitorRunning, true, true, codex.SessionAttentionComplete, ""},
+		{"input", monitorRunning, true, true, codex.SessionAttentionInput, ""},
+		{"approval", monitorRunning, true, true, codex.SessionAttentionApproval, ""},
+		{"check", monitorRunning, true, true, codex.SessionAttentionCheck, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := contextTestModel()
+			m.setRowContext("root-one", contextWide, false)
+			m.monitorState, m.monitorError = tc.state, tc.err
+			s := m.monitorSessionData[0]
+			s.active, s.working, s.attention = tc.active, tc.working, tc.attention
+			m.monitorSessionData[0] = s
+			for _, height := range []int{3, 12} {
+				left := ansi.Strip(m.renderMonitorSessionMetrics(80, height, s, "1/3", paletteFor(m.theme)))
+				hasWorking := strings.Contains(left, i18n.Text("WORKING"))
+				if hasWorking != (tc.name == "working") || hasWorking != (m.sessionActivityDots(s) != "") {
+					t.Fatalf("working badge/dots disagree: %q", left)
+				}
+				if s.attention != codex.SessionAttentionNone && !strings.Contains(left, monitorSessionAttentionLabel(s)) {
+					t.Fatal("attention badge lost priority")
+				}
+				m.phase = 1
+				off := ansi.Strip(m.renderMonitorSessionMetrics(80, height, s, "1/3", paletteFor(m.theme)))
+				m.phase = 2
+				on := ansi.Strip(m.renderMonitorSessionMetrics(80, height, s, "1/3", paletteFor(m.theme)))
+				m.phase = 0
+				if tc.name == "working" {
+					if off != strings.Replace(left, "●", " ", 1) || on != left || lipgloss.Width(off) != lipgloss.Width(left) {
+						t.Fatal("working blink must change only the ball, retaining its space")
+					}
+				} else if off != left || on != left {
+					t.Fatal("non-working badge should not blink")
+				}
+			}
+			m.setRowContext(s.id, contextFull, false)
+			for phase := 0; phase < 2; phase++ {
+				m.phase = phase
+				full := strings.Split(ansi.Strip(m.renderMonitorContextDetail(120, 20, paletteFor(m.theme))), "\n")
+				badge := ansi.Strip(m.renderMonitorSessionBadge(s, 100, paletteFor(m.theme)))
+				if badge == "" {
+					badge = i18n.Text("SESSION CONTEXT")
+				}
+				if !strings.Contains(full[0], badge) {
+					t.Fatalf("full title lost telemetry badge %q: %q", badge, full[0])
+				}
+				body := strings.Join(full[1:], "\n")
+				if s.attention != codex.SessionAttentionNone && strings.Contains(body, monitorSessionAttentionLabel(s)) {
+					t.Fatal("full detail repeats status in body")
+				}
+				if !strings.Contains(body, contextTitle(s.preview)) || !strings.Contains(body, s.preview.ThreadID) || !strings.Contains(body, s.preview.Source) {
+					t.Fatal("full detail lost content heading or source metadata")
+				}
+			}
+			m.phase = 0
+			m.setRowContext(s.id, contextWide, false)
+			for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextActivity} {
+				s.preview.Kind = kind
+				out := strings.Split(ansi.Strip(m.renderExpandedContext(100, 10, s, paletteFor(m.theme))), "\n")
+				if !strings.Contains(out[0], contextTitle(s.preview)) || strings.Contains(out[0], i18n.Text("WORKING")) || !strings.Contains(out[0], monitorContextInfo) {
+					t.Fatalf("wide border should show content type and action: %q", out[0])
+				}
+				if strings.Contains(strings.Join(out[1:], "\n"), contextTitle(s.preview)) {
+					t.Fatal("wide body repeats content type")
+				}
+				m.setRowContext(s.id, contextSplit, false)
+				compact := strings.Split(ansi.Strip(m.renderMonitorContextRow(120, 10, "", s, paletteFor(m.theme))), "\n")
+				if !strings.Contains(compact[0], contextTitle(s.preview)) {
+					t.Fatal("compact title changed")
+				}
+				m.setRowContext(s.id, contextWide, false)
+			}
+		})
+	}
+}
+
 func TestMonitorContextBackAndForthCycle(t *testing.T) {
 	for _, back := range []tea.KeyPressMsg{key('i'), {Code: tea.KeyEscape}} {
 		m := contextTestModel()

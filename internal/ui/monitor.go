@@ -27,9 +27,8 @@ func (r monitorRect) contains(x, y int) bool {
 }
 
 type monitorView struct {
-	view     string
-	goRect   monitorRect
-	stopRect monitorRect
+	view      string
+	resetRect monitorRect
 }
 
 type monitorGeometry struct {
@@ -39,9 +38,7 @@ type monitorGeometry struct {
 	topHeight    int
 	graphHeight  int
 	readoutWidth int
-	buttonWidths [2]int
-	goRect       monitorRect
-	stopRect     monitorRect
+	resetRect    monitorRect
 }
 
 const monitorDismissLabel = "[×]"
@@ -56,14 +53,8 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	}
 	graphHeight := max(height-topHeight-gap, 1)
 
-	readoutWidth := max(width*3/5, 18)
-	controlsWidth := width - readoutWidth - gap
-	if controlsWidth < 17 {
-		controlsWidth = min(17, max(width/2, 1))
-		readoutWidth = max(width-controlsWidth-gap, 1)
-	}
-	buttonWidths := distributeSpace(max(controlsWidth-gap, 2), 2)
-	goX := readoutWidth + gap
+	resetWidth := min(max(width/5, 8), max(width-2, 1))
+	readoutWidth := max(width-resetWidth-gap, 1)
 	return monitorGeometry{
 		width:        width,
 		height:       height,
@@ -71,11 +62,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 		topHeight:    topHeight,
 		graphHeight:  graphHeight,
 		readoutWidth: readoutWidth,
-		buttonWidths: [2]int{buttonWidths[0], buttonWidths[1]},
-		goRect:       monitorRect{x: goX, width: buttonWidths[0], height: topHeight},
-		stopRect: monitorRect{
-			x: goX + buttonWidths[0] + gap, width: buttonWidths[1], height: topHeight,
-		},
+		resetRect:    monitorRect{x: readoutWidth + gap, width: resetWidth, height: topHeight},
 	}
 }
 
@@ -86,20 +73,12 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := layoutMonitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	toggleLabel, resetLabel := i18n.Text("(P)AUSE"), i18n.Text("RE(S)ET")
-	if m.monitorState == monitorPaused || m.monitorState == monitorResuming {
-		toggleLabel = i18n.Text("RESUME (P)")
-	}
-	if layout.buttonWidths[0] < lipgloss.Width(toggleLabel)+2 {
-		toggleLabel = "(P)"
-	}
-	if layout.buttonWidths[1] < lipgloss.Width(resetLabel)+2 {
+	resetLabel := i18n.Text("RE(S)ET")
+	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
 		resetLabel = "(S)"
 	}
-	toggleButton := m.renderMonitorButton(layout.buttonWidths[0], layout.topHeight, toggleLabel, footerButtonMonitorPause, m.monitorPauseEnabled(), colors)
-	resetButton := m.renderMonitorButton(layout.buttonWidths[1], layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	controls := lipgloss.JoinHorizontal(lipgloss.Top, toggleButton, strings.Repeat(" ", layout.gap), resetButton)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), controls)
+	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
+	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), resetButton)
 	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
@@ -107,7 +86,7 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	}
 
 	return monitorView{
-		view: view, goRect: layout.goRect, stopRect: layout.stopRect,
+		view: view, resetRect: layout.resetRect,
 	}
 }
 
@@ -338,13 +317,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
-	if session.attention != codex.SessionAttentionNone {
-		badgeColor := colors.primary
-		if monitorNeedsAttention(session.attention) {
-			badgeColor = colors.warning
-		}
-		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
-		lines = append(lines, badge.Render(ansi.Truncate(" ● "+monitorSessionAttentionLabel(session)+" ", innerWidth, "")))
+	badge := m.renderMonitorSessionBadge(session, innerWidth, colors)
+	if badge != "" {
+		lines = append(lines, badge)
 	}
 	if len(lines) < bodyRows {
 		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
@@ -368,7 +343,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !session.lastActivity.IsZero() {
 		appendLine(i18n.Text("LAST // ") + compactDuration(time.Since(session.lastActivity)) + " AGO")
 	}
-	if pageLabel != "" && (session.attention == codex.SessionAttentionNone || len(lines) > 1) {
+	if pageLabel != "" && (badge == "" || len(lines) > 1) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	borderColor := colors.primary
@@ -407,6 +382,28 @@ func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
 		return monitorRect{}, false
 	}
 	return monitorRect{x: metricsWidth - labelWidth - 2, y: rowY, width: labelWidth, height: 1}, true
+}
+
+func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colors palette) string {
+	badgeLabel := ""
+	if session.attention != codex.SessionAttentionNone {
+		badgeLabel = monitorSessionAttentionLabel(session)
+	} else if m.sessionObservedWorking(session) {
+		badgeLabel = i18n.Text("WORKING")
+	}
+	if badgeLabel != "" {
+		badgeColor := colors.primary
+		if monitorNeedsAttention(session.attention) {
+			badgeColor = colors.warning
+		}
+		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
+		ball := "●"
+		if session.attention == codex.SessionAttentionNone && m.phase%2 == 1 {
+			ball = " " // Blink only WORKING, reserving its cell to avoid layout movement.
+		}
+		return badge.Render(ansi.Truncate(" "+ball+" "+badgeLabel+" ", width, ""))
+	}
+	return ""
 }
 
 func monitorAttentionLabel(attention codex.SessionAttention) string {
@@ -699,10 +696,7 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	dashboard := m.dashboardLayout()
 	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
-	if m.monitorPauseEnabled() && area.goRect.contains(localX, localY) {
-		return footerButtonMonitorPause
-	}
-	if m.monitorResetEnabled() && area.stopRect.contains(localX, localY) {
+	if m.monitorResetEnabled() && area.resetRect.contains(localX, localY) {
 		return footerButtonMonitorReset
 	}
 	return footerButtonNone

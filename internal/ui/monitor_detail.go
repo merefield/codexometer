@@ -57,9 +57,6 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		}
 		lines = append(lines, detailLine{title, "heading"})
 	}
-	if status := monitorSessionAttentionLabel(s); status != "" {
-		appendText(status, "heading", "")
-	}
 	appendText(c.Source+" // "+c.ThreadID+" // "+contextAge(c), "metadata", "")
 	g := m.dashboardLayout()
 	if (c.Kind == codex.SessionContextApproval || c.Kind == codex.SessionContextQuestion) && !m.monitorApprovalHasOutcome() && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
@@ -67,6 +64,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		appendText(m.monitorApprovalBlockReason(c), "warning", "")
 	}
 	if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
+		section(contextTitle(c))
 		d := c.CommandDetails
 		if strings.TrimSpace(d.Justification) != "" {
 			section(i18n.Text("JUSTIFICATION"))

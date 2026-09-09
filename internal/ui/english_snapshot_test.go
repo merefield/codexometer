@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Captured from the released v0.12.0 renderer, before localisation: all
-	// themes, all views, and three terminal sizes (105 complete screens).
-	const want = "ea99652c4980b370759d19139e4e9eb52a554d95b11ccbb67c5f8e7a053cca41"
+	// Baseline intentionally updated when removing Monitor's Pause button and
+	// widening its readout; all themes, views and three terminal sizes are covered.
+	const want = "4ae2271f6559dc94bde5b965c13a398ba7a41d4be990c6d5dc9727cdcf9b9f1a"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

@@ -897,7 +897,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "(P)AUSE", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"MONITOR READOUT", "6,250 TOKENS", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -967,7 +967,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	dashboard := model.dashboardLayout()
 	geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	area := model.renderMonitorArea(dashboard.contentWidth, dashboard.meterHeight, colors)
-	if area.goRect != geometry.goRect || area.stopRect != geometry.stopRect {
+	if area.resetRect != geometry.resetRect {
 		t.Fatalf("rendered controls diverged from pure layout: rendered=%#v layout=%#v", area, geometry)
 	}
 	originX := 2
@@ -976,7 +976,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	for _, test := range []struct {
 		rect monitorRect
 		want footerButtonID
-	}{{geometry.goRect, footerButtonMonitorPause}, {geometry.stopRect, footerButtonMonitorReset}} {
+	}{{geometry.resetRect, footerButtonMonitorReset}} {
 		// Hit an otherwise blank spot inside the large box, not merely its label.
 		x := originX + test.rect.x + 1
 		y := originY + test.rect.y + 1
@@ -984,26 +984,26 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 			t.Errorf("button hit = %d, want %d at %d,%d", got, test.want, x, y)
 		}
 	}
-	hoverX := originX + geometry.goRect.x + 1
-	hoverY := originY + geometry.goRect.y + 1
+	hoverX := originX + geometry.resetRect.x + 1
+	hoverY := originY + geometry.resetRect.y + 1
 	updated, command := model.Update(tea.MouseMotionMsg{X: hoverX, Y: hoverY})
 	model = updated.(Model)
-	if command != nil || model.hoveredButton != footerButtonMonitorPause {
-		t.Fatal("hovering the Pause box did not select it")
+	if command != nil || model.hoveredButton != footerButtonMonitorReset {
+		t.Fatal("hovering the Reset box did not select it")
 	}
-	hovered := model.renderMonitorButton(14, 6, "(P)AUSE", footerButtonMonitorPause, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(P)AUSE")
+	hovered := model.renderMonitorButton(14, 6, "RE(S)ET", footerButtonMonitorReset, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("RE(S)ET")
 	if !strings.Contains(hovered, wantHover) {
-		t.Fatal("hovering the Pause box did not highlight its label")
+		t.Fatal("hovering the Reset box did not highlight its label")
 	}
 
 	updated, command = model.Update(tea.MouseClickMsg{
-		X: originX + geometry.goRect.x + 1, Y: originY + geometry.goRect.y + 1,
+		X: originX + geometry.resetRect.x + 1, Y: originY + geometry.resetRect.y + 1,
 		Button: tea.MouseLeft,
 	})
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorPausing {
-		t.Fatal("clicking the Pause box did not pause the monitor")
+	if command == nil || model.monitorState != monitorResetting {
+		t.Fatal("clicking the Reset box did not reset the monitor")
 	}
 }
 
@@ -1017,7 +1017,7 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 			t.Errorf("%dx%d readout rendered %dx%d, want %dx%d", size.width, size.height, gotWidth, gotHeight, geometry.readoutWidth, geometry.topHeight)
 		}
 
-		for index, width := range geometry.buttonWidths {
+		for index, width := range []int{geometry.resetRect.width} {
 			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorPause, true, colors)
 			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
 				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
@@ -1038,13 +1038,23 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+			// The former Pause surface is now readout, never a hidden control.
+			for y := 0; y < geometry.topHeight; y++ {
+				for x := 0; x < geometry.readoutWidth; x++ {
+					if got := model.monitorButtonAt(2+x, dashboard.meterY+y); got != footerButtonNone {
+						t.Fatalf("readout cell %d,%d has button %d", x, y, got)
+					}
+				}
+			}
+			if geometry.readoutWidth < geometry.width*3/4 {
+				t.Fatal("readout did not reclaim Pause space")
+			}
 			for _, button := range []struct {
 				rect    monitorRect
 				id      footerButtonID
 				enabled bool
 			}{
-				{geometry.goRect, footerButtonMonitorPause, model.monitorPauseEnabled()},
-				{geometry.stopRect, footerButtonMonitorReset, model.monitorResetEnabled()},
+				{geometry.resetRect, footerButtonMonitorReset, model.monitorResetEnabled()},
 			} {
 				want := footerButtonNone
 				if button.enabled {

@@ -17,7 +17,7 @@ It is useful when you want to:
 - compare available models and reasoning levels on the same checked tasks; or
 - inspect how a benchmark was solved rather than seeing only a final score.
 
-The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and fourteen interface languages. Extra rate-limit windows are accommodated as Codex returns them. Theme, Quota view, benchmark filter, and ranking preferences survive restarts.
+The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and 16 languages with 17 locale options, including Brazilian and European Portuguese. Extra rate-limit windows are accommodated as Codex returns them. Theme, Quota view, benchmark filter, and ranking preferences survive restarts.
 
 ## What does it show?
 
@@ -50,15 +50,18 @@ Ordinary Codex CLI sessions work out of the box. For the best Monitor feedback, 
 
 ## Make it yours
 
-Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Swedish (`sv`), Norwegian Bokmål (`nb`, also `no`), Turkish (`tr`), Estonian (`et`), or Finnish (`fi`):
+Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Swedish (`sv`), Norwegian Bokmål (`nb`, also `no`), Turkish (`tr`), Estonian (`et`), Finnish (`fi`), Brazilian Portuguese (`pt-BR`), European Portuguese (`pt-PT`), or Danish (`da`):
 
 ```sh
 CODEXOMETER_LANG=fr codexometer
 CODEXOMETER_LANG=ja codexometer --demo
 CODEXOMETER_LANG=fi codexometer
+CODEXOMETER_LANG=pt-BR codexometer
+CODEXOMETER_LANG=pt-PT codexometer
+CODEXOMETER_LANG=da codexometer --demo
 ```
 
-On PowerShell, use `$env:CODEXOMETER_LANG = 'fr'` before launching. Retain the setting in your shell profile or Windows user environment; restart Codexometer after changing it. Set `en-GB` or remove the variable to restore English. Translations are embedded in the binary; existing hotkeys, model names, and benchmark prompts stay unchanged. These are initial UI translations, and native-language corrections are welcome.
+On PowerShell, use `$env:CODEXOMETER_LANG = 'fr'` before launching. Retain the setting in your shell profile or Windows user environment; restart Codexometer after changing it. Set `en-GB` or remove the variable to restore English. Bare `pt` selects Brazilian Portuguese; `pt-PT` selects European Portuguese with regional wording, number formatting and plural rules. `pt-AO` and `pt-MZ` match European Portuguese; `da-DK` selects Danish. Translations are embedded in the binary; existing hotkeys, model names, and benchmark prompts stay unchanged. These are initial UI translations, and native-language corrections are welcome.
 
 ## Benchmarking
 
