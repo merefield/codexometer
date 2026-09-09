@@ -14,6 +14,9 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"golang.org/x/text/feature/plural"
+	"golang.org/x/text/language"
 )
 
 func TestPresentationKeysHaveCatalogueEntries(t *testing.T) {
@@ -179,6 +182,33 @@ func TestWindowNameUsesLocalePluralRules(t *testing.T) {
 	} {
 		if got := New(test.code).WindowName(test.name); got != test.want {
 			t.Errorf("%s %q: %q, want %q", test.code, test.name, got, test.want)
+		}
+	}
+}
+
+func TestPortugueseZeroUsesBrazilianCLDRRules(t *testing.T) {
+	// CLDR pt includes integer 0 and 1 in "one"; pt-PT includes only 1.
+	// https://www.unicode.org/cldr/charts/48/supplemental/language_plural_rules.html#pt
+	// Follow the selected Brazilian catalogue's rules, not an ad-hoc zero override.
+	for _, tc := range []struct {
+		tag  language.Tag
+		want plural.Form
+	}{
+		{language.BrazilianPortuguese, plural.One},
+		{language.MustParse("pt-PT"), plural.Other},
+	} {
+		if got := plural.Cardinal.MatchPlural(tc.tag, 0, 0, 0, 0, 0); got != tc.want {
+			t.Errorf("%s: zero category %v, want %v", tc.tag, got, tc.want)
+		}
+	}
+	for _, code := range []string{"pt", "pt-BR", "pt-PT"} {
+		// Regional variants currently select the Brazilian catalogue and formatter.
+		for _, tc := range []struct{ input, want string }{
+			{"0 HOURS", "0 HORA"}, {"1 HOUR", "1 HORA"}, {"2 HOURS", "2 HORAS"},
+		} {
+			if got := New(code).WindowName(tc.input); got != tc.want {
+				t.Errorf("%s %s: %q, want %q", code, tc.input, got, tc.want)
+			}
 		}
 	}
 }
