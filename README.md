@@ -1004,13 +1004,13 @@ another source of uncertainty.
 
 #### Session context previews
 
-Previews are visible by default. Wide terminals (at least 100 columns of usable
-Monitor space) show a third box between session metrics and the graph. It holds
-at most two text rows plus the source session and age when height permits.
-On narrower terminals, a last reply or pending question/request takes the graph
-column temporarily. Ordinary busy-session commentary stays collapsed to an
-`[i]` action on the graph; `CHECK SESSION` can expose its last known activity.
-With no context available, the original metrics/graph layout remains.
+Previews are visible by default in the split presentation: the space to the
+right of session metrics is shared roughly equally between detail and the token
+graph. The preview holds at most two text rows plus the source session and age
+when height permits. When that right-hand section is too narrow to split, detail
+takes priority over the graph. An empty preview shows `NO CONTEXT`; it does not
+automatically change the row's chosen presentation. Each row can independently
+switch between graph-only, split, expanded, and full detail as described below.
 
 - **LAST REPLY** is the last completed assistant reply, not a new question. An
   observed local completed-turn prompt is labelled **TURN COMPLETE**.
@@ -1061,8 +1061,10 @@ clears unsubmitted approval confirmations. Hiding previews or dismissing the
 target clears its expansion.
 When a row is explicitly selected, only that row shows `[i]`, even if it has no
 context yet; `Enter`/`i` opens that session rather than falling back to another.
-Moving the selection collapses any other expanded row and clears its pending
-confirmation. With no selected row, the default targeting described above applies.
+Moving the selection preserves other rows' chosen presentations, but clears the
+previous target's pending confirmation. Only the current target can expose
+approval controls, even when several rows have full-width detail. With no
+selected row, the default targeting described above applies.
 Outstanding requests take priority over ordinary activity when linked agents
 share a root row, and the source ID identifies the actual member.
 

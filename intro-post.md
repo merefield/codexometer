@@ -30,6 +30,16 @@ The interface has four main tabs:
 
 Use `Tab` / `Shift+Tab` or the mouse to navigate. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; benchmark runs consume subscription quota or API-billed tokens, depending on your chosen authentication.
 
+Click the **Codexometer title** to jump back to Quota’s Bars view. The **version label** links to that version’s release highlights through your terminal’s hyperlink support—typically Ctrl-click.
+
+## Your terminal command centre
+
+Give each Monitor session as much space as it needs. Press `i` or click anywhere in that row’s detail/graph area to cycle **graph only → split detail/graph → full-width detail → full-screen detail**, then back through the same views. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, `i` or Escape returns to the same expanded row.
+
+Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts; individual row layouts are temporary.
+
+Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
+
 ## Quota estimates, resets, and session attention
 
 API-equivalent figures are workload-dependent estimates, not your subscription’s cash value or a statement of OpenAI’s private quota formula. They need clean observed quota movement to learn, show uncertainty, and restart learning when Codexometer is relaunched. Pricing uses published input, cached-input, and output rates where the model and usage are known; missing data is not treated as free.
@@ -92,7 +102,7 @@ Prefer a non-interactive run? `codexometer --digbench-game P-1` runs a named gam
 
 ## Privacy, authentication, and cost
 
-Quota monitoring uses the prevailing Codex login. Monitor can show a bounded last-reply, activity, question, or approval preview beside each session, with an `[i]` detail view. Excerpts remain in memory and do not trigger another model call; `h` hides them, and that display preference is remembered. With a shared app-server, full detail lets you answer supported blocking questions or explicitly send a follow-up to an idle session. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (`C` or a second click), and persistent-prefix rules are shown for review. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Monitor does not harvest user prompts, reasoning, or arbitrary tool output.
+Quota monitoring uses the prevailing Codex login. Monitor can show a bounded last-reply, activity, question, or approval preview beside each session. Excerpts remain in memory and do not trigger another model call; global Hide Detail hides them until you choose to show them again, including by expanding an individual row. With a shared app-server, full detail lets you answer supported blocking questions or explicitly send a follow-up to an idle session. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (`C` or a second click), and persistent-prefix rules are shown for review. Approval controls belong to only the current target session. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Monitor does not harvest user prompts, reasoning, or arbitrary tool output.
 
 Benchmark transcripts are bounded and sanitized. Credentials, request headers, known runtime identifiers, temporary paths, terminal controls, Codex reasoning, and unrelated local session content are not retained in the detail view.
 
