@@ -18,13 +18,16 @@ func monitorSessionAttentionLabel(s monitorSession) string {
 }
 
 func contextTitle(c codex.SessionContext) string {
+	if c.Text == "" {
+		return i18n.Text("NO CONTEXT")
+	}
 	switch c.Kind {
 	case codex.SessionContextReply:
 		return i18n.Text("LAST REPLY")
 	case codex.SessionContextQuestion:
 		return i18n.Text("QUESTION")
 	case codex.SessionContextApproval:
-		return i18n.Text("REQUEST")
+		return i18n.Text("APPROVAL REQUEST")
 	default:
 		return i18n.Text("LAST ACTIVITY")
 	}
@@ -173,7 +176,13 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	if width >= lipgloss.Width(monitorContextInfo+" "+monitorDismissLabel)+8 {
 		action = m.renderContextAction("cycle", monitorContextInfo, colors) + " " + action
 	}
-	return frameSizedWithTitleAction(width, rows, i18n.Text("SESSION CONTEXT"), action, body, colors.primary, colors)
+	title := i18n.Text("SESSION CONTEXT")
+	if s, ok := m.contextDetailSession(); ok {
+		if badge := m.renderMonitorSessionBadge(s, max(width-4, 1), colors); badge != "" {
+			title = badge
+		}
+	}
+	return frameSizedWithTitleAction(width, rows, title, action, body, colors.primary, colors)
 }
 
 // Reserve the footer before allocating the scroll viewport. Short terminals

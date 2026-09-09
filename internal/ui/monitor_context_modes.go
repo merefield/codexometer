@@ -147,7 +147,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 	if s.preview.Text == "" {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
-	header := contextTitle(s.preview) + " // " + s.preview.ThreadID + " // " + s.preview.Source
+	header := s.preview.ThreadID + " // " + s.preview.Source
 	text := header + "\n" + codex.SanitizeSessionContext(s.preview.Text)
 	return strings.Split(ansi.Hardwrap(text, max(width-4, 1), true), "\n")
 }
@@ -215,7 +215,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		}
 		lines = append(lines, controls)
 	}
-	return frameSizedWithTitleAction(width, max(height-2, 1), "", m.renderContextAction(s.id, m.expandedContextAction(width, height, s), colors), strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), m.renderContextAction(s.id, m.expandedContextAction(width, height, s), colors), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) expandedContextAt(x, y int) string {

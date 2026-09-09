@@ -189,7 +189,7 @@ English rendering baseline captured from v0.12.0.
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
 - An always-on Monitor view that measures local token activity while Codexometer
-  is running, with Pause/Resume and Reset controls.
+  is running, with a Reset button and a `p` hotkey for Pause/Resume.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
 - Dismissible Monitor session rows that automatically return on fresh activity,
@@ -843,7 +843,8 @@ The other top-level views are:
 - **Monitor** — automatically establishes a zero baseline across locally active
   Codex sessions when Codexometer starts. A large readout follows newly appended
   token telemetry and shows total observed tokens, elapsed time, and average
-  rate; clickable Pause/Resume and Reset controls sit beside it. Active sessions
+  rate; a clickable Reset control sits beside it. Pause/Resume remains available
+  through `p`, without taking space from the readout. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
   The Monitor tab light and status label pulse between bright and dim amber
   whenever any session needs input, approval, or a check. With nothing waiting,
@@ -1029,7 +1030,7 @@ switch between graph-only, split, expanded, and full detail as described below.
   and actual input/approval requests take priority. Attaching after a turn
   finished may miss its live completion event; the next completed turn qualifies.
 - **QUESTION** contains an observed blocking input request and any choices.
-- **REQUEST** contains an observed approval reason/command when available.
+- **APPROVAL REQUEST** contains an observed approval reason/command when available.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
 
@@ -1040,10 +1041,12 @@ Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations 
    very narrow terminals prioritise readable detail. No approval buttons.
 3. **Expanded:** that session's context occupies the full space previously shared
    by its preview and token graph, while telemetry and the other sessions stay
-   visible. Its border is untitled, retaining the detail action at the top right;
-   **LAST REPLY**, **LAST ACTIVITY**, **QUESTION**, or **REQUEST** stays inside
-   above the text. Session state belongs in the left telemetry box: its prominent
-   **WORKING** badge uses the same observed-work evidence as the animated dots,
+   visible. Its border shows **LAST REPLY**, **LAST ACTIVITY**, **QUESTION**,
+   **APPROVAL REQUEST**, or **NO CONTEXT**, just like the compact preview.
+   The body retains source/session details and text without repeating that heading.
+   Session state belongs in the left telemetry box: its prominent
+   **WORKING** badge blinks only its ball, keeping the text and colour steady,
+   and uses the same observed-work evidence as the animated dots,
    not merely recent activity. Completion and attention badges take priority;
    paused/transitioning monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
@@ -1051,6 +1054,10 @@ Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations 
    and source session. If the complete request plus controls cannot fit, an
    **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
 4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+   Its box title mirrors the left telemetry badge (including the blinking
+   **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
+   The body keeps content-type headings and source details, but does not repeat
+   the session status. The left telemetry box is hidden in this view.
    Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
    `i` or `[i]` click returns to the same expanded row. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
