@@ -177,7 +177,7 @@ English rendering baseline captured from v0.12.0.
 - A live countdown and local clock time for each reset.
 - On every Quota view, a separate reset-cycle gauge comparing elapsed window time
   with quota consumed. It uses the same active colour as its quota meter.
-- A learned standard API-equivalent estimate for primary Codex windows of both
+- A learned, Fast-aware API-equivalent estimate for primary Codex windows of both
   quota consumed and inferred 100% capacity, including a range, sample count,
   and deliberately conservative confidence level.
 - The current ChatGPT plan when Codex supplies it.
@@ -630,7 +630,8 @@ or less, and Exhausted at 0%.
 
 ### Observed quota API equivalent
 
-Every Quota presentation also learns an **observed standard API-equivalent**
+Every Quota presentation also learns an **observed API-equivalent**, including
+the requested Fast-mode premium where supported,
 for the primary `codex` rate-limit windows. Additional/model-specific limits
 show `LIMIT ATTRIBUTION UNKNOWN`, because the rate-limit API does not say which
 local model calls consumed those buckets. The primary windows show two estimates:
@@ -642,9 +643,60 @@ local model calls consumed those buckets. The primary windows show two estimates
 
 These figures are not an account balance, subscription valuation, token
 allowance, invoice, or claim about OpenAI's private quota formula. They answer a
-narrower question: “At published standard API text-token prices, roughly what
+narrower question: “At published API text-token prices, roughly what
 would this observed mix of model work cost when mapped onto the movement in my
 quota meter?”
+
+#### Fast mode and service-tier uncertainty
+
+Codexometer prices each newly observed response separately. Standard token cost
+and the requested-tier premium are maintained independently; quota learning uses
+their sum. For example, $1 at standard prices plus a $1 Fast premium over **5
+percentage points** of quota movement implies roughly **$40 per 100%**, compared
+with **$20 at standard prices**. It never multiplies the observed quota percentage
+or applies today's `/fast` setting retroactively.
+
+- `TIER*` means the estimate includes a **requested**, not billing-confirmed,
+  Fast premium. The current Codex sources expose persisted
+  `thread_settings_applied` settings, but neither local token events nor the
+  shared app-server's response-usage notifications expose the actual billed tier.
+  Settings are kept per session and captured for each turn; an in-flight turn
+  retains its original setting when the next turn's settings change. Linked
+  sub-agents keep their own attribution before their totals are combined.
+- `STD?` means tier information was unavailable for some observations: those
+  responses use explicitly qualified **standard-price estimates**. `TIER*?`
+  means a mixture of requested Fast premiums and this unknown-tier fallback.
+  Missing tier coverage caps confidence at `LOW`. Older Codex logs, inherited
+  child histories without an owned settings event, and subscription benchmark
+  results may lack tier evidence. Startup searches at most 4 MiB backwards for
+  tier settings once it finds the latest model, keeping discovery responsive for
+  large histories; settings outside that tail are also unknown until a new
+  settings event is observed. No global configuration is used to guess it.
+- When the line is wide enough, `STD 100%` retains the **standard-price midpoint
+  comparison** for the same sample windows. Narrower layouts omit that comparison.
+- A known default setting has no premium. An explicitly unsupported tier/model
+  combination is unpriced and interrupts clean learning rather than silently
+  applying an invented multiplier. Standard benchmark rankings are unchanged.
+
+Fast rates were verified on **10 September 2026**: **GPT-6 Astra and GPT-5.6
+(Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
+legacy `priority` alias. The premium is applied after the existing per-response
+long-context and cache-read/cache-write calculations; reasoning output is not
+counted twice. Other models' Fast prices are not yet maintained. See the official
+[Astra pricing](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[Codex speed guidance](https://learn.chatgpt.com/docs/agent-configuration/speed),
+and [API Fast-mode guide](https://developers.openai.com/api/docs/guides/fast-mode).
+The footer's standard-price retrieval date remains separate from this tier review.
+
+**This is still an estimate, not a bill.** A requested Fast response can be served
+at standard tier, and the observed interfaces cannot confirm that downgrade.
+Codex's **2.5× subscription credit multiplier** is deliberately **not** used as
+an API-dollar multiplier. Even with the Fast premium included, 100% can therefore
+have a different equivalent value than a standard-only workload. Samples blend
+the observed workload; changing model/tier mixtures can move the estimate while
+new evidence accumulates. Future improvement: consume the actual response
+`service_tier` if Codex exposes it with matching per-response token usage, then
+prefer that evidence to requested settings.
 
 Codexometer normally prices each newly completed local model call using the
 requested model durably recorded in its turn context. Current Codex rollout

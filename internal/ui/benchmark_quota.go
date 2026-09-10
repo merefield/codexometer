@@ -131,6 +131,9 @@ func (a benchmarkQuotaAccounting) combine(usage codex.LiveUsageSnapshot) codex.L
 	}
 	usage.APIEqUSD += a.costUSD
 	usage.APIEqPricedCalls += a.pricedCalls
+	// Benchmark results remain a standard-price comparison; their service
+	// tier is not established by the benchmark result contract.
+	usage.APIEqUnknownTierCalls += a.pricedCalls
 	usage.APIEqUnpricedCalls += a.unpricedCalls
 	if a.active {
 		usage.APIEqPendingCalls++
