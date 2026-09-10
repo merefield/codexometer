@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
 )
@@ -21,6 +23,8 @@ var errQuotaObservationChanged = fmt.Errorf("local accounting changed during quo
 
 func quotaAPIAccountingEqual(left, right codex.LiveUsageSnapshot) bool {
 	return left.APIEqUSD == right.APIEqUSD &&
+		left.APIEqTierPremiumUSD == right.APIEqTierPremiumUSD &&
+		left.APIEqUnknownTierCalls == right.APIEqUnknownTierCalls &&
 		left.APIEqPricedCalls == right.APIEqPricedCalls &&
 		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls &&
 		left.APIEqPendingCalls == right.APIEqPendingCalls
@@ -37,15 +41,19 @@ type quotaAPISample struct {
 	DeltaPercent       int     `json:"deltaPercent"`
 	ObservedAtUnix     int64   `json:"observedAt"`
 	PricingRetrievedOn string  `json:"pricingRetrievedOn"`
+	PremiumCapacityUSD float64 `json:"premiumCapacityUsd"`
+	UnknownTier        bool    `json:"unknownTier"`
 }
 
 type quotaAPIAnchor struct {
-	usedPercent   int
-	resetAt       int64
-	costUSD       float64
-	pricedCalls   int64
-	unpricedCalls int64
-	restartReason string
+	usedPercent      int
+	resetAt          int64
+	costUSD          float64
+	premiumUSD       float64
+	unknownTierCalls int64
+	pricedCalls      int64
+	unpricedCalls    int64
+	restartReason    string
 }
 
 const (
@@ -58,12 +66,15 @@ const (
 )
 
 type quotaAPIEstimate struct {
-	currentLow  float64
-	currentHigh float64
-	fullLow     float64
-	fullHigh    float64
-	samples     int
-	confidence  string
+	currentLow   float64
+	currentHigh  float64
+	fullLow      float64
+	fullHigh     float64
+	samples      int
+	confidence   string
+	standardFull float64
+	hasPremium   bool
+	unknownTier  bool
 }
 
 func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsageSnapshot, at time.Time) {
@@ -99,7 +110,8 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		key := quotaAPIKey(snapshot, meter)
 		current := quotaAPIAnchor{
 			usedPercent: min(max(meter.Window.UsedPercent, 0), 100),
-			resetAt:     optionalUnix(meter.Window.ResetsAt), costUSD: usage.APIEqUSD,
+			resetAt:     optionalUnix(meter.Window.ResetsAt), costUSD: usage.APIEqUSD + usage.APIEqTierPremiumUSD,
+			premiumUSD: usage.APIEqTierPremiumUSD, unknownTierCalls: usage.APIEqUnknownTierCalls,
 			pricedCalls: usage.APIEqPricedCalls, unpricedCalls: usage.APIEqUnpricedCalls,
 		}
 		anchor, exists := m.quotaAPIAnchors[key]
@@ -121,7 +133,8 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 			continue
 		}
 		if current.costUSD < anchor.costUSD || current.pricedCalls < anchor.pricedCalls ||
-			current.unpricedCalls < anchor.unpricedCalls {
+			current.unpricedCalls < anchor.unpricedCalls || current.premiumUSD < anchor.premiumUSD ||
+			current.unknownTierCalls < anchor.unknownTierCalls {
 			current.restartReason = quotaAPIRestartAccountingRebased
 			m.quotaAPIAnchors[key] = current
 			m.quotaAPIIssues[key] = ""
@@ -159,6 +172,8 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 			Key: key, CapacityUSD: capacity, LowUSD: low, HighUSD: high,
 			DeltaPercent: deltaPercent, ObservedAtUnix: at.Unix(),
 			PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
+			PremiumCapacityUSD: (current.premiumUSD - anchor.premiumUSD) * 100 / float64(deltaPercent),
+			UnknownTier:        current.unknownTierCalls > anchor.unknownTierCalls,
 		})
 		m.quotaAPIEvidence = trimQuotaAPISamples(m.quotaAPIEvidence, key)
 		m.quotaAPIAnchors[key] = current
@@ -229,6 +244,8 @@ func validQuotaAPISamples(samples []quotaAPISample, now time.Time) []quotaAPISam
 			sample.ObservedAtUnix < cutoff || sample.ObservedAtUnix > now.Add(time.Hour).Unix() ||
 			sample.DeltaPercent < quotaAPIMinimumDelta || !positiveFinite(sample.CapacityUSD) ||
 			!positiveFinite(sample.LowUSD) || !positiveFinite(sample.HighUSD) ||
+			math.IsNaN(sample.PremiumCapacityUSD) || math.IsInf(sample.PremiumCapacityUSD, 0) ||
+			sample.PremiumCapacityUSD < 0 || sample.PremiumCapacityUSD >= sample.CapacityUSD ||
 			sample.LowUSD > sample.CapacityUSD || sample.CapacityUSD > sample.HighUSD {
 			continue
 		}
@@ -277,11 +294,16 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 	lows := make([]float64, 0, len(matching))
 	highs := make([]float64, 0, len(matching))
 	centers := make([]float64, 0, len(matching))
+	standardCenters := make([]float64, 0, len(matching))
+	hasPremium, unknownTier := false, false
 	totalDelta := 0
 	for _, sample := range matching {
 		lows = append(lows, sample.LowUSD)
 		highs = append(highs, sample.HighUSD)
 		centers = append(centers, sample.CapacityUSD)
+		standardCenters = append(standardCenters, sample.CapacityUSD-sample.PremiumCapacityUSD)
+		hasPremium = hasPremium || sample.PremiumCapacityUSD > 0
+		unknownTier = unknownTier || sample.UnknownTier
 		totalDelta += sample.DeltaPercent
 	}
 	fullLow, fullHigh := medianFloat(lows), medianFloat(highs)
@@ -289,7 +311,7 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 	minCenter, maxCenter := slicesMinMax(centers)
 	// Keep this identifier canonical: compact presentations use L/M codes.
 	confidence := "LOW"
-	if len(matching) >= 3 && totalDelta >= 15 && center > 0 &&
+	if !unknownTier && len(matching) >= 3 && totalDelta >= 15 && center > 0 &&
 		(fullHigh-fullLow)/center <= 0.45 && (maxCenter-minCenter)/center <= 0.50 {
 		// Local rollout coverage cannot prove that another machine or client did
 		// not consume quota, so the estimator intentionally caps at MEDIUM.
@@ -299,6 +321,7 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 	return quotaAPIEstimate{
 		currentLow: fullLow * used, currentHigh: fullHigh * used,
 		fullLow: fullLow, fullHigh: fullHigh, samples: len(matching), confidence: confidence,
+		standardFull: medianFloat(standardCenters), hasPremium: hasPremium, unknownTier: unknownTier,
 	}, true
 }
 
@@ -346,7 +369,7 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 	return meters
 }
 
-func (m Model) quotaAPILine(meter codex.Meter, width int) string {
+func (m Model) quotaAPILine(meter codex.Meter, width int) (line string) {
 	if m.benchmarkQuotaAccounting.deferred() {
 		return m.benchmarkQuotaAccounting.deferredLabel(width)
 	}
@@ -357,12 +380,35 @@ func (m Model) quotaAPILine(meter codex.Meter, width int) string {
 		return i18n.Text("API-EQ LEARNING // ") + m.quotaAPITelemetryIssue
 	}
 	if estimate, ok := m.quotaAPIEstimate(m.snapshot, meter); ok {
+		basis := ""
+		if estimate.hasPremium {
+			basis = " TIER*"
+			if estimate.unknownTier {
+				basis += "?"
+			}
+		} else if estimate.unknownTier {
+			basis = " STD?"
+		}
+		// Compact, language-neutral accounting notation. The asterisk is
+		// explained in the README: requested tier, not confirmed billing.
+		defer func() {
+			line = strings.Replace(line, "API-EQ", "API-EQ"+basis, 1)
+			if !strings.Contains(line, "API-EQ") {
+				line = strings.Replace(line, "EQ", "EQ"+basis, 1)
+			}
+			if estimate.hasPremium {
+				comparison := fmt.Sprintf(" // STD 100%% ~%s", formatUSD(estimate.standardFull))
+				if ansi.StringWidth(line+comparison) <= width {
+					line += comparison
+				}
+			}
+		}()
 		current := formatAPIRange(estimate.currentLow, estimate.currentHigh)
 		full := formatAPIRange(estimate.fullLow, estimate.fullHigh)
 		switch {
-		case width >= 72:
+		case width-len(basis) >= 72:
 			return i18n.Format("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d", current, full, i18n.Text(estimate.confidence), estimate.samples)
-		case width >= 52:
+		case width-len(basis) >= 52:
 			return i18n.Format("API-EQ NOW ~%s // 100%% ~%s · %s%d", current, full, estimate.confidence[:1], estimate.samples)
 		default:
 			currentMid := formatUSD((estimate.currentLow + estimate.currentHigh) / 2)

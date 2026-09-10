@@ -1675,17 +1675,22 @@ func EstimateStandardAPIEqAggregateCost(model string, usage BenchmarkUsage) (flo
 }
 
 func priceForModel(model string) (apiPrice, bool) {
+	price, ok := standardAPIPrices[pricedModelName(model)]
+	return price, ok
+}
+
+func pricedModelName(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))
-	if price, ok := standardAPIPrices[model]; ok {
-		return price, true
+	if _, ok := standardAPIPrices[model]; ok {
+		return model
 	}
-	for name, price := range standardAPIPrices {
+	for name := range standardAPIPrices {
 		if suffix := strings.TrimPrefix(model, name+"-"); suffix != model {
 			if _, err := time.Parse("2006-01-02", suffix); err != nil {
 				continue
 			}
-			return price, true
+			return name
 		}
 	}
-	return apiPrice{}, false
+	return ""
 }

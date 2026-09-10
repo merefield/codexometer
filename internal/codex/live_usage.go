@@ -28,18 +28,22 @@ const (
 // events appended to locally persisted Codex rollouts. Finalized API-equivalent
 // totals increase monotonically; APIEqPendingCalls is an instantaneous count
 // kept separate until daemon model resolution or requested-model fallback.
+// APIEqUSD remains standard cost. Quota learning adds APIEqTierPremiumUSD;
+// APIEqUnknownTierCalls identifies standard fallbacks with missing tier evidence.
 type LiveUsageSnapshot struct {
-	TotalTokens        int64
-	LastActivity       time.Time
-	SessionCount       int
-	Sessions           []LiveUsageSession
-	CodexStatusKnown   bool
-	CodexUp            bool
-	CodexWorking       bool
-	APIEqUSD           float64
-	APIEqPricedCalls   int64
-	APIEqUnpricedCalls int64
-	APIEqPendingCalls  int64
+	TotalTokens           int64
+	LastActivity          time.Time
+	SessionCount          int
+	Sessions              []LiveUsageSession
+	CodexStatusKnown      bool
+	CodexUp               bool
+	CodexWorking          bool
+	APIEqUSD              float64
+	APIEqPricedCalls      int64
+	APIEqUnpricedCalls    int64
+	APIEqPendingCalls     int64
+	APIEqTierPremiumUSD   float64
+	APIEqUnknownTierCalls int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -78,14 +82,16 @@ const (
 // LiveModelCall is the small, content-free usage pulse persisted after one
 // upstream model response.
 type LiveModelCall struct {
-	Sequence        uint64
-	At              time.Time
-	OutputTokens    int64
-	OutputAvailable bool
-	Model           string
-	APIEqUSD        float64
-	APIEqKnown      bool
-	apiEqFinalized  bool
+	Sequence             uint64
+	At                   time.Time
+	OutputTokens         int64
+	OutputAvailable      bool
+	Model                string
+	APIEqUSD             float64
+	APIEqKnown           bool
+	apiEqFinalized       bool
+	RequestedServiceTier string
+	APIEqTierPremiumUSD  float64
 }
 
 // LiveTurnTiming contains the persisted latency measurement for one completed
@@ -114,6 +120,8 @@ type LiveUsageReader struct {
 	files                     map[string]*rolloutCursor
 	totalTokens               int64
 	apiEqUSD                  float64
+	apiEqTierPremiumUSD       float64
+	apiEqUnknownTierCalls     int64
 	apiEqPricedCalls          int64
 	apiEqUnknownCalls         int64
 	lastActivity              time.Time
@@ -135,6 +143,8 @@ type rolloutCursor struct {
 	workingDirectory            string
 	startedAt                   time.Time
 	currentModel                string
+	currentServiceTier          string
+	nextServiceTier             string
 	currentTurnID               string
 	nonRoot                     bool
 	subagentHistoryStartOrdinal *uint64
@@ -374,8 +384,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		CodexUp:          codexUp,
 		CodexWorking:     codexWorking,
 		APIEqUSD:         r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
-		APIEqUnpricedCalls: r.apiEqUnknownCalls,
-		APIEqPendingCalls:  int64(len(r.pendingModelResolutions)),
+		APIEqUnpricedCalls:    r.apiEqUnknownCalls,
+		APIEqPendingCalls:     int64(len(r.pendingModelResolutions)),
+		APIEqTierPremiumUSD:   r.apiEqTierPremiumUSD,
+		APIEqUnknownTierCalls: r.apiEqUnknownTierCalls,
 	}, nil
 }
 
@@ -572,9 +584,14 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.currentTurnID = turnID
 			}
+			if tier, ordinal, at, ok := rolloutTierRecord(line); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.nextServiceTier = tier
+			}
 			if model, ordinal, at, ok := rolloutModelRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.currentModel = model
+				cursor.currentServiceTier = cursor.nextServiceTier
 			}
 			if attention, ordinal, at, ok := sessionAttentionRecord(line); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
@@ -615,16 +632,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 						call := LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
 							OutputAvailable: record.outputKnown, Model: model,
+							RequestedServiceTier: cursor.currentServiceTier,
 						}
 						if usageMatchesDelta && (!resolutionPending || resolved) {
-							if cost, known, _ := EstimateStandardAPIEqCost(model, pricingUsage); known {
-								call.APIEqUSD, call.APIEqKnown, call.apiEqFinalized = cost, true, true
-								r.apiEqUSD += cost
-								r.apiEqPricedCalls++
-							} else {
-								call.apiEqFinalized = true
-								r.apiEqUnknownCalls++
-							}
+							r.finalizeCallPricing(&call, pricingUsage)
 						} else if !resolutionDeferred {
 							call.apiEqFinalized = true
 							r.apiEqUnknownCalls++
@@ -701,14 +712,7 @@ func (r *LiveUsageReader) reconcilePendingModelResolutions() {
 			call.Model = observation.Model
 			pricingUsage = observation.Usage
 		}
-		call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(call.Model, pricingUsage)
-		call.apiEqFinalized = true
-		if call.APIEqKnown {
-			r.apiEqUSD += call.APIEqUSD
-			r.apiEqPricedCalls++
-		} else {
-			r.apiEqUnknownCalls++
-		}
+		r.finalizeCallPricing(call, pricingUsage)
 	}
 	r.pendingModelResolutions = nil
 }
@@ -914,6 +918,11 @@ func rolloutModelRecord(line []byte) (string, *uint64, time.Time, bool) {
 	return "", nil, time.Time{}, false
 }
 
+// latestRolloutModel also restores the settings before the latest turn context
+// and any later settings queued for the next turn. It scans backward in chunks
+// because a long-running session can retain the same tier across many turns.
+// Once the model is known, search up to 4 MiB of older chunks for tier evidence.
+// Otherwise leave it unknown rather than rescanning gigabytes of old sessions.
 func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -927,6 +936,8 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 	const chunkSize = int64(64 * 1024)
 	position := info.Size()
 	var carry []byte
+	modelFound := ""
+	var tierSearchStart int64
 	for position > 0 {
 		readSize := min(chunkSize, position)
 		position -= readSize
@@ -943,14 +954,31 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 			firstComplete = 0
 		}
 		for index := len(lines) - 1; index >= firstComplete; index-- {
+			if tier, ordinal, at, ok := rolloutTierRecord(lines[index]); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				if cursor.nextServiceTier == "" {
+					cursor.nextServiceTier = tier
+				}
+				if modelFound != "" {
+					cursor.currentServiceTier = tier
+					return modelFound, nil
+				}
+			}
 			if model, ordinal, at, ok := rolloutModelRecord(lines[index]); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
-				return model, nil
+				if modelFound == "" {
+					modelFound = model
+					// Records after this context must not consume its tier budget.
+					tierSearchStart = position
+				}
 			}
 		}
 		carry = append(carry[:0], lines[0]...)
+		if modelFound != "" && tierSearchStart-position >= 4*1024*1024 {
+			break
+		}
 	}
-	return "", nil
+	return modelFound, nil
 }
 
 func latestRolloutTurnID(path string, cursor *rolloutCursor) (string, error) {
