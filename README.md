@@ -668,9 +668,10 @@ or applies today's `/fast` setting retroactively.
   means a mixture of requested Fast premiums and this unknown-tier fallback.
   Missing tier coverage caps confidence at `LOW`. Older Codex logs, inherited
   child histories without an owned settings event, and subscription benchmark
-  results may lack tier evidence. Startup searches at most 4 MiB backwards for
-  tier settings once it finds the latest model, keeping discovery responsive for
-  large histories; settings outside that tail are also unknown until a new
+  results may lack tier evidence. Once startup finds the latest model's chunk,
+  it searches up to 4 MiB of older chunks for tier settings, keeping discovery
+  responsive for large histories. Records after that context do not consume
+  this budget; settings outside the lookback are also unknown until a new
   settings event is observed. No global configuration is used to guess it.
 - When the line is wide enough, `STD 100%` retains the **standard-price midpoint
   comparison** for the same sample windows. Narrower layouts omit that comparison.

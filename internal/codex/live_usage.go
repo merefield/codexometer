@@ -921,8 +921,8 @@ func rolloutModelRecord(line []byte) (string, *uint64, time.Time, bool) {
 // latestRolloutModel also restores the settings before the latest turn context
 // and any later settings queued for the next turn. It scans backward in chunks
 // because a long-running session can retain the same tier across many turns.
-// Once the model is known, missing tier evidence beyond a 4 MiB tail is left
-// unknown rather than rescanning gigabytes of old sessions during discovery.
+// Once the model is known, search up to 4 MiB of older chunks for tier evidence.
+// Otherwise leave it unknown rather than rescanning gigabytes of old sessions.
 func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -937,6 +937,7 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 	position := info.Size()
 	var carry []byte
 	modelFound := ""
+	var tierSearchStart int64
 	for position > 0 {
 		readSize := min(chunkSize, position)
 		position -= readSize
@@ -967,11 +968,13 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				if modelFound == "" {
 					modelFound = model
+					// Records after this context must not consume its tier budget.
+					tierSearchStart = position
 				}
 			}
 		}
 		carry = append(carry[:0], lines[0]...)
-		if modelFound != "" && info.Size()-position >= 4*1024*1024 {
+		if modelFound != "" && tierSearchStart-position >= 4*1024*1024 {
 			break
 		}
 	}

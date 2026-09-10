@@ -136,18 +136,22 @@ func TestTierBootstrapLookbackAndOwnership(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		padding int
+		tail    int
 		child   bool
 		want    string
 	}{
-		{"chunk boundary", 70000, false, "fast"},
-		{"bounded startup", 5 * 1024 * 1024, false, ""},
-		{"inherited settings", 0, true, ""},
+		{"chunk boundary", 70000, 0, false, "fast"},
+		{"long tail after model", 70000, 5 * 1024 * 1024, false, "fast"},
+		{"bounded startup", 5 * 1024 * 1024, 0, false, ""},
+		{"bounded startup with long tail", 5 * 1024 * 1024, 5 * 1024 * 1024, false, ""},
+		{"inherited settings", 0, 0, true, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := testRolloutPath(t, t.TempDir(), now, "bootstrap")
 			// A child's copied legacy history precedes its own creation.
 			writeRollout(t, path, tierSettingsLine(now.Add(-time.Hour), `"fast"`)+"\n"+
-				strings.Repeat("{}\n", test.padding/3)+turnContextLine(now, "gpt-6-astra")+"\n")
+				strings.Repeat("{}\n", test.padding/3)+turnContextLine(now, "gpt-6-astra")+"\n"+
+				strings.Repeat("{}\n", test.tail/3))
 			cursor := &rolloutCursor{nonRoot: test.child, startedAt: now}
 			model, err := latestRolloutModel(path, cursor)
 			if err != nil || model != "gpt-6-astra" || cursor.currentServiceTier != test.want {
