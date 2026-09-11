@@ -1998,6 +1998,12 @@ the bottom right, and a high-contrast dot marks the current observation. This is
 a position comparison, not a usage-history graph or a prediction of future use.
 Windows without a known duration and reset date cannot be plotted.
 
+The browser uses a compact dashboard layout: quota plots share the available
+width and height below the tabs. Pie charts retain their circular shape, while
+Consumption Zone scales each axis independently and keeps text legible. On short
+windows or with many quota windows, content scrolls without hiding the footer
+controls or shrinking plots below a readable minimum.
+
 Approvals, prompt sending, benchmark execution and quota-reset redemption are
 **not exposed by the web server**, even if the shared Codex daemon supports them.
 Use Codex or the terminal interface for those actions. Quota API-equivalent

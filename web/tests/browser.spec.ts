@@ -151,15 +151,23 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
     .click();
   await expect(page.locator('.consumption-zone')).toHaveCount(3);
   expect(
-    await page
-      .locator('.position-dot')
-      .evaluateAll((nodes) =>
-        nodes.map((node) => [node.getAttribute('cx'), node.getAttribute('cy')]),
-      ),
+    await page.locator('.position-dot').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const field = node.closest('svg')!.querySelector('.zone-field')!;
+        const x = Number(field.getAttribute('x'));
+        const y = Number(field.getAttribute('y'));
+        const w = Number(field.getAttribute('width'));
+        const h = Number(field.getAttribute('height'));
+        return [
+          Math.round((100 * (Number(node.getAttribute('cx')) - x)) / w),
+          Math.round((100 * (y + h - Number(node.getAttribute('cy')))) / h),
+        ];
+      }),
+    ),
   ).toEqual([
-    ['50', '260'],
-    ['130', '80'],
-    ['370', '20'],
+    [0, 0],
+    [25, 75],
+    [100, 100],
   ]);
   await expect(
     page.getByText('ABOVE THE LINE — CONSUMING FASTER THAN TIME'),
@@ -185,6 +193,51 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
     path: 'test-results/consumption-zone.png',
     fullPage: true,
   });
+});
+
+test('quota graphics use viewport height and keep compact navigation accessible', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.goto(pairingURL);
+  for (const [name, graphic] of [
+    ['BARS', '.gauge:not(.timeline)'],
+    ['CONSUMPTION PACE', '.pace'],
+    ['CONSUMPTION ZONE', '.zone-canvas'],
+    ['PIE', '.pie-wrap'],
+    ['FUEL TANK', '.gauge:not(.timeline)'],
+  ]) {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.getByRole('link', { name, exact: true }).click();
+    const plot = page.locator(graphic).first();
+    await expect(plot).toBeVisible();
+    const small = (await plot.boundingBox())!.height;
+    await page.setViewportSize({ width: 1280, height: 1100 });
+    await expect
+      .poll(async () => (await plot.boundingBox())!.height)
+      .toBeGreaterThan(small + 80);
+    expect(
+      await page
+        .locator('main')
+        .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+    ).toBe(true);
+    await page.setViewportSize({ width: 360, height: 400 });
+    await expect(page.getByLabel('Theme', { exact: true })).toBeInViewport();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await plot.scrollIntoViewIfNeeded();
+    await expect(plot).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+  await expect(page.locator('.zone-canvas')).toHaveCount(2);
+  await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
 
 test('session detail deep links and responsive layout', async ({

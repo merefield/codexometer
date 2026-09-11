@@ -85,78 +85,86 @@
                 >FREE {100 - meter.used}%</span
               >{/if}
           </div>
-          {#if view === 'pie'}
-            <div class="pie-wrap">
-              <svg
-                viewBox="0 0 120 120"
-                role="img"
-                aria-label={`${meter.used}% quota used`}
-              >
-                <circle class="pie-base" cx="60" cy="60" r="46" />
-                {#if meter.used >= 100}<circle
-                    class="pie-fill"
-                    cx="60"
-                    cy="60"
-                    r="46"
-                  />{:else if meter.used > 0}<path
-                    class="pie-fill"
-                    d={sector(meter.used)}
-                  />{/if}
-              </svg>
-            </div>
-          {:else if view === 'zone'}
-            {#if cycle !== null}
-              <ConsumptionZone used={meter.used} elapsed={cycle} />
-            {:else}<p class="empty">
-                Cycle duration or reset date unavailable — position cannot be
-                plotted.
-              </p>{/if}
-          {:else if view === 'pace'}
-            {#if pace !== null}
-              <div class="pace">
-                <div class="pace-mid"></div>
-                <span class="pace-marker" style:left={`${(pace + 100) / 2}%`}
-                  >▼</span
+          <div
+            class="meter-graphic"
+            class:bar-graphic={view === 'bars' || view === 'fuel'}
+          >
+            {#if view === 'pie'}
+              <div class="pie-wrap">
+                <svg
+                  viewBox="0 0 120 120"
+                  role="img"
+                  aria-label={`${meter.used}% quota used`}
                 >
+                  <circle class="pie-base" cx="60" cy="60" r="46" />
+                  {#if meter.used >= 100}<circle
+                      class="pie-fill"
+                      cx="60"
+                      cy="60"
+                      r="46"
+                    />{:else if meter.used > 0}<path
+                      class="pie-fill"
+                      d={sector(meter.used)}
+                    />{/if}
+                </svg>
               </div>
-              <div class="spread muted">
-                <span>−100 // AHEAD OF BUDGET</span><span>+100 // HEADROOM</span
-                >
-              </div>
-              <p class="readout">
-                {pace >= 0 ? '+' : ''}{pace.toFixed(1)} PP
-                <small
-                  >{pace >= 0 ? 'WITHIN PACE' : 'USING FASTER THAN TIME'}</small
-                >
-              </p>
-            {:else}<p class="empty">
-                Cycle duration unavailable — pace cannot be calculated.
-              </p>{/if}
-          {:else}
-            <div
-              class="gauge"
-              role="meter"
-              aria-label={view === 'fuel' ? 'Fuel remaining' : 'Quota used'}
-              aria-valuenow={view === 'fuel' ? 100 - meter.used : meter.used}
-              aria-valuemin="0"
-              aria-valuemax="100"
-            >
+            {:else if view === 'zone'}
+              {#if cycle !== null}
+                <ConsumptionZone used={meter.used} elapsed={cycle} />
+              {:else}<p class="empty">
+                  Cycle duration or reset date unavailable — position cannot be
+                  plotted.
+                </p>{/if}
+            {:else if view === 'pace'}
+              {#if pace !== null}
+                <div class="pace">
+                  <div class="pace-mid"></div>
+                  <span class="pace-marker" style:left={`${(pace + 100) / 2}%`}
+                    >▼</span
+                  >
+                </div>
+                <div class="spread muted">
+                  <span>−100 // AHEAD OF BUDGET</span><span
+                    >+100 // HEADROOM</span
+                  >
+                </div>
+                <p class="readout">
+                  {pace >= 0 ? '+' : ''}{pace.toFixed(1)} PP
+                  <small
+                    >{pace >= 0
+                      ? 'WITHIN PACE'
+                      : 'USING FASTER THAN TIME'}</small
+                  >
+                </p>
+              {:else}<p class="empty">
+                  Cycle duration unavailable — pace cannot be calculated.
+                </p>{/if}
+            {:else}
               <div
-                style:width={`${view === 'fuel' ? 100 - meter.used : meter.used}%`}
-              ></div>
-            </div>
-            {#if view === 'fuel'}<div class="spread muted">
-                <span>EMPTY</span><span>FULL</span>
-              </div>{/if}
-            {#if cycle !== null}<p class="eyebrow">
-                RESET CYCLE // {Math.floor(cycle)}% ELAPSED
-              </p>
-              <div class="gauge timeline">
+                class="gauge"
+                role="meter"
+                aria-label={view === 'fuel' ? 'Fuel remaining' : 'Quota used'}
+                aria-valuenow={view === 'fuel' ? 100 - meter.used : meter.used}
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
                 <div
-                  style:width={`${view === 'fuel' ? 100 - cycle : cycle}%`}
+                  style:width={`${view === 'fuel' ? 100 - meter.used : meter.used}%`}
                 ></div>
-              </div>{/if}
-          {/if}
+              </div>
+              {#if view === 'fuel'}<div class="spread muted">
+                  <span>EMPTY</span><span>FULL</span>
+                </div>{/if}
+              {#if cycle !== null}<p class="eyebrow">
+                  RESET CYCLE // {Math.floor(cycle)}% ELAPSED
+                </p>
+                <div class="gauge timeline">
+                  <div
+                    style:width={`${view === 'fuel' ? 100 - cycle : cycle}%`}
+                  ></div>
+                </div>{/if}
+            {/if}
+          </div>
           <p class="muted">RESETS // {date(meter.reset)}</p>
           {#if meter.details}<p>{meter.details}</p>{/if}
         </section>
