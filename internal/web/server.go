@@ -46,7 +46,7 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		return err
 	}
 	defer listener.Close()
-	s := &server{store: newStore(), host: listener.Addr().String(), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
+	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	wait := s.store.collect(ctx, source, refresh)
@@ -61,6 +61,12 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		return nil
 	}
 	return err
+}
+
+// Run only binds IPv4 loopback. Browsers omit the default HTTP port from
+// both Host and Origin, so print and validate that same canonical authority.
+func loopbackAuthority(address string) string {
+	return strings.TrimSuffix(address, ":80")
 }
 
 func (s *server) handler() http.Handler {
@@ -155,6 +161,12 @@ func (s *server) authorize(next http.Handler) http.Handler {
 }
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
+	// ServeMux also matches HEAD to GET routes. Never allocate a stream for it.
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	select {
 	case s.streams <- struct{}{}:
 		defer func() { <-s.streams }()

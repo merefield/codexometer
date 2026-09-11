@@ -1,18 +1,14 @@
 <script lang="ts">
   import { live, date, number } from './state.svelte';
   import Graph from './Graph.svelte';
+  import { usageRange } from './calendar';
   let mode = $state('daily');
   let months = $state(12);
   let offset = $state(0);
   let days = $derived.by(() => {
     const buckets = live.data?.usage?.dailyUsageBuckets;
     if (!buckets) return [];
-    const end = new Date();
-    end.setUTCHours(0, 0, 0, 0);
-    end.setUTCMonth(end.getUTCMonth() - offset * months);
-    const start = new Date(end);
-    start.setUTCMonth(start.getUTCMonth() - months);
-    start.setUTCDate(start.getUTCDate() + 1);
+    const { start, end } = usageRange(new Date(), months, offset);
     const lookup = new Map<string, number>();
     for (const bucket of buckets) {
       if (!Number.isFinite(bucket.tokens) || bucket.tokens < 0) continue;

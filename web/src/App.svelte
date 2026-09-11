@@ -14,6 +14,11 @@
     '/usage': Usage,
     '*': Missing,
   };
+  const tabPaths = {
+    quota: /^(?:\/|\/quota(?:\/[^/]+)?\/?)$/,
+    sessions: /^\/sessions(?:\/[^/]+)?\/?$/,
+    usage: /^\/usage\/?$/,
+  };
   let theme = $state('hacker');
   const themes = ['hacker', 'rust', 'blue-steel', 'ultraviolet', 'nightshade'];
   onMount(() => {
@@ -47,10 +52,8 @@
     </div>
   </header>
   <nav aria-label="Main navigation">
-    {#each ['quota', 'sessions', 'usage'] as tab}
-      {@const current =
-        router.location.startsWith('/' + tab) ||
-        (tab === 'quota' && router.location === '/')}
+    {#each Object.entries(tabPaths) as [tab, pattern]}
+      {@const current = pattern.test(router.location)}
       <a
         class:active={current}
         href={'#/' + tab}

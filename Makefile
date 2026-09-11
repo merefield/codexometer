@@ -31,5 +31,6 @@ release-snapshot:
 web-build:
 	cd web && npm ci && npm run check && npm run build
 
-web-test: build
+web-test: web-build
+	$(MAKE) build
 	cd web && npm test

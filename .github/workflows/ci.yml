@@ -30,14 +30,11 @@ jobs:
         run: npm ci && npm run check && npm run build
       - name: Verify embedded assets match source
         run: test -z "$(git status --porcelain -- internal/web/dist)"
-      - name: Build demo binary
-        run: go build -trimpath -o codexometer .
       - name: Install browser
         working-directory: web
         run: npx playwright install --with-deps chromium
       - name: Browser regression tests
-        working-directory: web
-        run: npm test
+        run: make web-test
 
   test:
     name: Go ${{ matrix.os }}

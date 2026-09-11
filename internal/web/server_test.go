@@ -211,6 +211,46 @@ func TestStreamCapacity(t *testing.T) {
 	}
 }
 
+func TestBrowserAuthority(t *testing.T) {
+	for address, want := range map[string]string{"127.0.0.1:80": "127.0.0.1", "127.0.0.1:8080": "127.0.0.1:8080"} {
+		t.Run(address, func(t *testing.T) {
+			s := testServer()
+			s.host = loopbackAuthority(address)
+			if s.host != want {
+				t.Fatalf("authority = %q, want %q", s.host, want)
+			}
+			token := pairBrowser(t, s)
+			w := httptest.NewRecorder()
+			s.handler().ServeHTTP(w, request(s, "GET", "/api/state", "", token))
+			if w.Code != http.StatusOK {
+				t.Fatalf("state: %d", w.Code)
+			}
+		})
+	}
+}
+
+func TestHeadEventsDoesNotAllocateStream(t *testing.T) {
+	s := testServer()
+	token := pairBrowser(t, s)
+	for i := 0; i <= cap(s.streams); i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		w := httptest.NewRecorder()
+		s.handler().ServeHTTP(w, request(s, "HEAD", "/api/events", "", token).WithContext(ctx))
+		cancel()
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "GET" || len(s.streams) != 0 {
+			t.Fatalf("HEAD: status=%d Allow=%q streams=%d", w.Code, w.Header().Get("Allow"), len(s.streams))
+		}
+	}
+	for range cap(s.streams) {
+		s.streams <- struct{}{}
+	}
+	w := httptest.NewRecorder()
+	s.handler().ServeHTTP(w, request(s, "HEAD", "/api/events", "", token))
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("HEAD with full capacity: %d", w.Code)
+	}
+}
+
 type cancelledSource struct{}
 
 func (cancelledSource) Fetch(ctx context.Context) (codex.Snapshot, error) {

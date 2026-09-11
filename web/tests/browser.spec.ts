@@ -52,6 +52,44 @@ const test = base.extend<{ pairingURL: string }>({
   },
 });
 
+test('main tabs match only declared route shapes', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await expect(page.getByRole('meter').first()).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  for (const [path, tab] of [
+    ['/', 'QUOTA'],
+    ['/quota', 'QUOTA'],
+    ['/quota/pie', 'QUOTA'],
+    ['/sessions', 'SESSIONS'],
+    ['/sessions/example', 'SESSIONS'],
+    ['/usage', 'USAGE'],
+    ['/usage/', 'USAGE'],
+  ]) {
+    await page.evaluate((path) => {
+      location.hash = path;
+    }, path);
+    await expect(nav.locator('[aria-current="page"]')).toHaveText(tab);
+    await expect(nav.locator('.active')).toHaveText(tab);
+  }
+  for (const path of [
+    '/usage-old',
+    '/sessionsx',
+    '/quotafoo',
+    '/usage/extra',
+    '/quota/pie/extra',
+    '/sessions/id/extra',
+  ]) {
+    await page.evaluate((path) => {
+      location.hash = path;
+    }, path);
+    await expect(page.getByText('Page not found')).toBeVisible();
+    await expect(nav.locator('[aria-current], .active')).toHaveCount(0);
+  }
+});
+
 test('pairing, all quota views, navigation and refresh', async ({
   page,
   pairingURL,
