@@ -64,7 +64,7 @@ func (s meterViewID) nextQuota() meterViewID {
 func (s meterViewID) name() string {
 	return [...]string{
 		i18n.Text("BARS"),
-		i18n.Text("MONITOR"),
+		i18n.Text("SESSIONS"),
 		i18n.Text("PIE"),
 		i18n.Text("CONSUMPTION PACE"),
 		i18n.Text("FUEL TANK"),

@@ -32,7 +32,7 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 				t.Errorf("view %d name missing from view", view)
 			}
 			if view == viewMonitor {
-				if !strings.Contains(output, "MONITOR READOUT") || !strings.Contains(output, "30 SEC LOCAL TOKEN BARS") {
+				if !strings.Contains(output, "SESSION TOTALS") || !strings.Contains(output, "30 SEC LOCAL TOKEN BARS") {
 					t.Errorf("monitor components missing for theme %d", theme)
 				}
 			} else if view == viewBenchmark {

@@ -10,7 +10,7 @@ Codexometer is a retro terminal dashboard and **session command centre** for
 sessions to follow their activity, see which need attention, and keep quota
 and reset timing visible without repeatedly opening `/status`.
 
-The **Monitor** brings your sessions into one place: read their latest context,
+The **Sessions** brings your sessions into one place: read their latest context,
 compare token activity, and—with the [shared local app-server setup](#recommended-codex-cli-setup)—
 answer supported questions, review and confirm command approvals, and send
 follow-ups to idle sessions. Quota views, account usage history and optional
@@ -28,14 +28,14 @@ best-effort local monitoring; interactive controls require live server support.
 _Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
 
 Codexometer refreshes quota once a minute by default. Passive quota monitoring
-and the Usage history tab are read-only and do not start model turns. Monitor
+and the Usage history tab are read-only and do not start model turns. Sessions
 previews are passive too; explicitly sending a follow-up starts a Codex turn
 and consumes model usage. Redeeming
 a banked quota reset is an explicit, separately confirmed action. Benchmark
 runs also require an explicit action and consume Codex quota or API-billed tokens,
 depending on the selected authentication.
 
-The four primary tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**.
+The four primary tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**.
 The interface supports mouse controls, keyboard navigation, five colour themes,
 and [16 languages with 17 locale options](#language), with the original UK English presentation
 unchanged by default.
@@ -199,11 +199,11 @@ English rendering baseline captured from v0.12.0.
 - Account token history in a daily activity grid, weekly bars, or a cumulative
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
-- An always-on Monitor view that measures local token activity while Codexometer
+- An always-on Sessions view that measures local token activity while Codexometer
   is running, with a Reset button and a `p` hotkey for Pause/Resume.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
-- Dismissible Monitor session rows that automatically return on fresh activity,
+- Dismissible session rows that automatically return on fresh activity,
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
   exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
@@ -331,11 +331,11 @@ Codexometer works with an ordinary Codex CLI process, but connecting your CLI
 sessions through one shared app-server unlocks its most accurate live
 telemetry on macOS, Linux, and WSL:
 
-- **Definite attention states** — Monitor can distinguish `INPUT NEEDED` from
+- **Definite attention states** — Sessions can distinguish `INPUT NEEDED` from
   `APPROVAL NEEDED` using live per-thread status instead of eventually showing
   the cautious `CHECK SESSION` inactivity fallback.
 - **Command approval details and controls** — supported live requests show the
-  command, directory and reason in Monitor's full detail page, with
+  command, directory and reason in the Sessions tab's full detail page, with
   buttons matching Codex's offered decisions, with confirmation for grants. Incomplete or
   unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
@@ -343,7 +343,7 @@ telemetry on macOS, Linux, and WSL:
   actually served it, rather than relying only on the requested model saved in
   the rollout.
 - **Better multi-session visibility** — every connected CLI tab or pane remains
-  a separate Monitor session while sharing the same accurate status source;
+  a separate session while sharing the same accurate status source;
   explicitly linked subagents are still folded into their root session.
 - **No extra Codexometer authentication** — the server, CLI clients, and
   Codexometer continue to use the prevailing Codex login under the same
@@ -431,7 +431,7 @@ Set up the recommended arrangement as follows.
    the live approval-request events. An older local excerpt can remain until
    new live context arrives.
 
-5. Leave Codexometer running while you work. The Monitor starts automatically;
+5. Leave Codexometer running while you work. Session monitoring starts automatically;
    use Reset when you want a fresh measured interval, and keep unrelated Codex
    activity quiet while running Benchmarks if you want the cleanest comparisons.
 
@@ -482,7 +482,7 @@ Codexometer deliberately does not:
 - send Codex credentials to another service;
 - invoke a model merely to discover quota information.
 
-The Monitor and observed quota estimator additionally read locally persisted
+Sessions and the observed quota estimator additionally read locally persisted
 Codex rollout files under `$CODEX_HOME/sessions` (normally
 `~/.codex/sessions`). They decode `token_count` totals, each last response's
 input/cache/cache-write/output counts, requested model name, timestamps, and
@@ -492,13 +492,13 @@ ID, source classification, working directory, and the inherited-history
 boundary. It also reads lifecycle event names and blocking flags to identify an
 explicit unresolved input or approval request. To distinguish an open CLI
 waiting at its prompt from a closed historical session, it inspects the lock
-state—not the contents—of Codex's per-thread writer lock. Monitor also extracts
+state—not the contents—of Codex's per-thread writer lock. Sessions also extracts
 bounded assistant replies/commentary, input questions and choices, approval
 reasons, and command descriptions for its session-context previews. Excerpts
 stay in process memory, never in preferences or a summarisation service. User
 prompts, reasoning and arbitrary tool results are not retained by that reader.
 Text may contain sensitive material the assistant already displayed: terminal
-sanitisation is not secret redaction. Press `h` in Monitor to hide previews and
+sanitisation is not secret redaction. Press `h` in Sessions to hide previews and
 close the detail view; this saved preference controls display, not collection.
 
 Benchmark turns explicitly started by Codexometer have separate content capture.
@@ -514,11 +514,11 @@ app-server subscription for already-loaded thread IDs. From that stream it
 retains runtime flags, model-reroute/token-usage correlations, and bounded
 context from assistant messages and input/approval requests. Resolved requests
 and new turns clear stale pending context. Observation alone never starts a turn
-or answers a question. Explicit actions in Monitor can submit follow-up turns
+or answers a question. Explicit actions in Sessions can submit follow-up turns
 to idle sessions, answer supported blocking questions, and send selected command
 decisions (with confirmation for permission grants). Drafts stay in memory;
 submitted text enters Codex's normal session history and follow-ups consume
-model usage. Nothing is sent automatically; see the Monitor controls below.
+model usage. Nothing is sent automatically; see the Sessions controls below.
 Without a shared daemon, previews use
 available local rollout text rather than fetching full thread histories.
 Missing request details are left unavailable; there is no extra model call.
@@ -534,33 +534,33 @@ codexometer --codex /path/to/codex
 | Key | Action |
 | --- | --- |
 | `t` | Cycle color themes |
-| `Tab` | Select the next top-level tab: Quota, Monitor, Usage, or Benchmark |
+| `Tab` | Select the next top-level tab: Quota, Sessions, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle the active Quota view |
-| `s` | Reset the Monitor baseline, or open Benchmark Scope |
-| `p` | Pause or resume live monitoring (Monitor view only) |
-| `h` | Reset all Monitor rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
-| `Left` / `Right` | In Monitor, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
+| `s` | Reset the Sessions baseline, or open Benchmark Scope |
+| `p` | Pause or resume live monitoring (Sessions view only) |
+| `h` | Reset all Sessions rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
-| `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
+| `x` | Dismiss the selected Sessions row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
 | `d` | Select Daily in Usage, or close the Benchmark Scope screen |
 | `6` / `1` | Select 6/12 months of Usage history |
 | `[` / `]` | Select the previous or next benchmark suite |
 | `Left` / `Right` | Page Usage history, or select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
-| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Monitor full detail, `Enter` focuses an available reply editor or submits its text |
+| `Up` / `Down` | Select a session row or Benchmark row, or scroll open Benchmark detail |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions full detail, `Enter` focuses an available reply editor or submits its text |
 | `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `l` | Clear accumulated Benchmark results while no suite is running |
-| `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
+| `Page Up` / `Page Down` | Page Usage history, session rows, or Benchmark results |
 | `q` | Quit |
-| `Esc` | Step back one Monitor context level, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
+| `Esc` | Step back one Sessions context level, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
 
-The responsive top rail below the account status selects Quota, Monitor, Usage, or
+The responsive top rail below the account status selects Quota, Sessions, Usage, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
 Consumption Pace, Pie, and Fuel Tank; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
@@ -737,7 +737,7 @@ folded into the same process-local accounting used for quota learning; missing
 or unpriceable benchmark usage fails closed and restarts the learning anchor.
 Benchmarks funded by `CODEXOMETER_BENCHMARK_API_KEY` are excluded because they
 do not consume the displayed subscription quota. Benchmark threads remain
-hidden from Monitor; hiding presentation does not exclude their aggregate
+hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
@@ -823,7 +823,7 @@ The default remains the original green hacker-terminal presentation.
 
 ## Views and quota presentations
 
-The top-level tabs are **Quota**, **Monitor**, **Usage**, and **Benchmark**. Within Quota,
+The top-level tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**. Within Quota,
 choose one of these four views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
@@ -844,7 +844,7 @@ choose one of these four views with its sub-tab or `v`:
 **Usage** is a read-only companion to Codex CLI's `/usage` command. It fetches
 `account/usage/read` through a short-lived local Codex app-server using your
 prevailing ChatGPT login. No model turn is started and no reset credit is used.
-It does not require the shared-daemon configuration used for live Monitor events.
+It does not require the shared-daemon configuration used for live Sessions events.
 
 - **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.
@@ -889,7 +889,7 @@ available (`—` otherwise).
 
 History refreshes when you enter Usage, on the normal refresh interval while
 Usage is selected, or with `r` / the Refresh button. These are server-side account
-statistics, **not live Monitor telemetry**: updates may lag ongoing work.
+statistics, **not live Sessions telemetry**: updates may lag ongoing work.
 Older CLI versions or unsupported accounts can return an unavailable/error state;
 missing history is never silently presented as zero. A failed refresh labels
 previously fetched data **STALE**, and a detected account change discards it.
@@ -897,23 +897,23 @@ previously fetched data **STALE**, and a detected account change discards it.
 The endpoint currently exposes daily **total tokens**, not historical per-model,
 input/output/cache splits, quota percentages, or dollar spend. Consequently this
 tab does not infer historical API-equivalent cost or combine these totals with
-Monitor's local counters. History is held in memory only; restarting fetches it
+the Sessions tab's local counters. History is held in memory only; restarting fetches it
 again from Codex. `--demo` includes sample history for previewing the charts.
 
 ### Other top-level views
 
 The other top-level views are:
 
-- **Monitor** — the session command centre: inspect context, track activity,
+- **Sessions** — the session command centre: inspect context, track activity,
   and respond through eligible live approval and reply controls for the selected
   session. It automatically establishes a zero baseline across locally active
-  Codex sessions when Codexometer starts. A large readout follows newly appended
+  Codex sessions when Codexometer starts. The **SESSION TOTALS** readout follows newly appended
   token telemetry and shows total observed tokens, elapsed time, and average
   rate; a clickable Reset control sits beside it. Pause/Resume remains available
   through the `p` hotkey only, without a large Pause button taking space from
   the readout. This pauses measurement, not Codex sessions. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
-  The Monitor tab light and status label pulse between bright and dim amber
+  The Sessions tab light and status label pulse between bright and dim amber
   whenever any session needs input, approval, or a check. With nothing waiting,
   they pulse green while at least one session is working and remain steady green
   while the Codex runtime is healthy but idle. They turn red only when local
@@ -944,7 +944,7 @@ The other top-level views are:
   linked agent clears the uncertain group-level warning.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
   releases its per-thread writer lock and clears every attention badge.
-  A session already included in the current Monitor recording can remain as an
+  A session already included in the current Sessions recording can remain as an
   `IDLE` historical row so its completed metrics and graph are not discarded.
   Click the themed `[×]` in a session metrics box to hide that row for the
   current run without closing or altering the Codex session. Codexometer keeps
@@ -952,7 +952,7 @@ The other top-level views are:
   when tokens, model calls, turn timing, durable activity, or attention moves
   forward, or when an inactive session becomes active again. An alert already
   visible when `[×]` is clicked is dismissed with its row; a later new or
-  changed alert restores it. Resetting the Monitor also restores every dismissed
+  changed alert restores it. Resetting session monitoring also restores every dismissed
   row. With the keyboard, `Down` initially selects the top row, `Up` initially
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
   closes the selected row.
@@ -1000,7 +1000,7 @@ receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
 
-The Monitor is deliberately separate from the percentage gauges: no token
+Session monitoring is deliberately separate from the percentage gauges: no token
 ceiling is exposed for those quota windows, so a percentage-based bar would be
 misleading. It follows the local token telemetry underlying Codex's live
 [`thread/tokenUsage/updated`](https://developers.openai.com/codex/app-server)
@@ -1026,7 +1026,7 @@ including nested descendants, are folded into their root by following persisted
 parent IDs. Review, compact, or other internal work that lacks an explicit
 parent is never guessed onto a root; if observed, it appears in an
 `UNATTRIBUTED // INTERNAL` row. When Codex records inherited child history, the
-Monitor honors its ownership boundary so copied parent telemetry is not counted
+Sessions honors its ownership boundary so copied parent telemetry is not counted
 twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
@@ -1039,14 +1039,14 @@ new rollout-file activity produces only `CHECK SESSION`, because persisted data
 cannot distinguish an approval wait from every long-running local tool. The
 context preview does not infer attention from prose. A linked child's attention
 state is folded into its root
-so one remote Monitor row identifies the CLI session that needs intervention.
+so one remote Sessions row identifies the CLI session that needs intervention.
 A definite approval signal takes precedence, then definite input, then the
 inferred check state when linked members have mixed states. Because `CHECK
 SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
-`CALLS` counts upstream model-response cycles observed after the current Monitor
+`CALLS` counts upstream model-response cycles observed after the current Sessions
 baseline, not complete user turns. A single Codex turn can make several calls while using
 tools or progressing through an agent loop. `LAST OUT` is the provider-reported
 output-token count for the latest such call. `TTFT` comes from the completed
@@ -1054,7 +1054,7 @@ turn's persisted time-to-first-token measurement; older Codex rollouts that do
 not contain it display `N/A`. Spawned descendants contribute these pulses to
 the same root row as their token activity.
 
-The Monitor's per-session quota figure is an estimate, not API attribution.
+The per-session quota figure in Sessions is an estimate, not API attribution.
 Codex exposes account-level quota percentages and local per-session token
 telemetry separately; it does not report which session consumed each percentage
 point. Codexometer therefore multiplies the observed account-wide change by a
@@ -1139,13 +1139,13 @@ same action on that session. The presentations are:
    the context above. Resizing to hide the composer releases keyboard focus;
    enlarge the window and refocus to continue the draft. Approval requests and
    structured questions do not use this inline composer; use full detail instead.
-4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
+4. **Full detail:** the existing scrollable Sessions-area view with pinned buttons.
    Its box title mirrors the left telemetry badge (including the blinking
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
    The body keeps content-type headings and source details, but does not repeat
    the session status. The left telemetry box is hidden in this view.
    Use Up/Down, Page Up/Down, or the mouse wheel to read long requests.
-   `Left` or `Esc` returns to the main Monitor with the same session showing
+   `Left` or `Esc` returns to the Sessions overview with the same session showing
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
@@ -1162,7 +1162,7 @@ The old `i` and Enter detail-navigation shortcuts have been removed.
 Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost box
 (graph or detail), and on the full-detail box. They mirror the cursor keys:
 Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
-detail. The Monitor readout header also has **[↑] [↓]** session-selection buttons,
+detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons,
 disabled at the first/last visible session. Dismissed sessions are skipped.
 These session buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
@@ -1311,7 +1311,7 @@ closes. The server arbitrates simultaneous responses from multiple clients.
 Sending a decision is not proof that the command ran: check Codex for the outcome.
 Failed or ambiguous sends are not automatically retried.
 
-In full Monitor detail only, successful **Text sent ...** and **Decision sent ...**
+In full Sessions detail only, successful **Text sent ...** and **Decision sent ...**
 notices use a subtle dot wave until the session context or attention state changes.
 Fast activity updates retain the sent wording for at least three seconds before
 switching to dots alone; new stop or attention-needed states take priority.
@@ -1325,7 +1325,7 @@ same context (or the remainder of its three-second minimum), rather than losing
 delivery confirmation. New context then replaces it normally.
 This is a best-effort activity indicator, not proof of execution or a progress
 percentage; ordinary local observation can lag behind the session.
-On the main Monitor screen, visible compact and expanded session-context boxes
+On the main Sessions screen, visible compact and expanded session-context boxes
 also show the same activity dots at the bottom left, independently for each
 session. Short boxes prioritise readable context and approval controls; the
 compact view omits the dots when fewer than three body rows fit. Sent-message
@@ -1359,7 +1359,7 @@ any command; restart the demo to reset its approval.
 ### Saved presentation preferences
 
 Codexometer stores only the selected theme, main tab, Quota view, benchmark filter,
-benchmark ranking weight, and the Monitor context hide/show preference.
+benchmark ranking weight, and the Sessions context hide/show preference.
 No quota estimate or snapshot, raw session telemetry,
 benchmark result, message content, credential, session ID, email, account
 fingerprint, or account ID is written. The small JSON file uses the
@@ -1879,7 +1879,7 @@ deterministic PASS/FAIL verifier.
 ```text
 --codex PATH       path to the Codex CLI (default: codex)
 --check-auth       verify the current Codex login and exit
---demo             preview simulated quota, Monitor, Usage, and benchmark data
+--demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --refresh DURATION refresh interval (default: 1m)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
@@ -1992,7 +1992,7 @@ interval. Pressing `r` refreshes immediately. If a refresh fails after valid
 data has already been displayed, Codexometer retains the last snapshot and
 marks it as stale instead of blanking the dashboard.
 
-The Monitor starts with Codexometer and checks appended local token telemetry
+Session monitoring starts with Codexometer and checks appended local token telemetry
 once per second while sessions are active, relaxing to once every five seconds
 when none are active. It groups explicit agent descendants under their root and
 rolls each root's observed deltas into synchronized graph buckets. It also updates the
@@ -2044,9 +2044,9 @@ Codexometer adapts its header and meter widths, but rich gauges need enough
 rows to display every quota window. Increase the pane height or press `v` in
 Quota to return to the compact default Bars view.
 
-### Monitor remains at zero
+### Sessions remains at zero
 
-The Monitor observes rollout telemetry under the same `CODEX_HOME` visible to
+Sessions observes rollout telemetry under the same `CODEX_HOME` visible to
 the Codexometer process. Confirm that the Codex session doing work is local and
 uses that home. A native Windows Codex session and a native Windows Codexometer
 normally share the same user profile; WSL and native Windows have different
@@ -2057,20 +2057,20 @@ appear until its next telemetry event.
 
 ## Roadmap
 
-Potential Monitor follow-ups (not implemented):
+Potential Sessions follow-ups (not implemented):
 
 - **Remember session visibility across restarts.** Persist dismissed rows using
   durable activity markers, not connection-local counters or approval tokens.
   Restore them on genuine new activity or verified pending approval, with a
   conservative fallback that favours showing a session needing attention.
-- **Remember the Monitor workspace.** Restore the selected session and each
+- **Remember the Sessions workspace.** Restore the selected session and each
   session's detail level, alongside visibility. Handle missing sessions and
   smaller terminals gracefully; restoring the layout must not restore editor
   focus, unsent drafts, or armed approval confirmations. Session identifiers
   would become persisted data and the saved-preferences documentation would
   need updating accordingly.
 
-Currently, the main tab, Quota view and global Monitor hide/show preference are
+Currently, the main tab, Quota view and global Sessions hide/show preference are
 saved, but session selection, per-session detail levels and dismissals remain
 temporary.
 
@@ -2097,7 +2097,7 @@ Codexometer uses:
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation
 - Codex app-server JSON-RPC for authenticated quota data
-- Local Codex rollout `token_count` records for live Monitor telemetry
+- Local Codex rollout `token_count` records for live Sessions telemetry
 
 ## License
 

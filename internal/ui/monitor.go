@@ -152,7 +152,7 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
 	action := m.renderMonitorNavigation(width, "", false, colors)
-	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), action, strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("SESSION TOTALS"), action, strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) renderMonitorButton(width, height int, label string, id footerButtonID, enabled bool, colors palette) string {

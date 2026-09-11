@@ -41,6 +41,23 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	}
 }
 
+func TestSessionsBrandingAndLegacyPreference(t *testing.T) {
+	store := &memoryPreferenceStore{preferences: Preferences{MainTab: "monitor", QuotaView: "pie"}}
+	m := NewWithPreferences(nil, time.Minute, store)
+	if m.currentMainTab() != mainTabMonitor || m.selectedQuotaView() != viewPie || m.meterView.name() != "SESSIONS" {
+		t.Fatal("renaming lost the legacy saved tab or its new display name")
+	}
+	for _, test := range []struct {
+		width int
+		want  string
+	}{{100, "╭ SESSIONS ●╮"}, {22, "╭SES●╮"}, {14, "[S●]"}, {4, "●"}} {
+		tabs, _ := mainTabLayout(test.width, true)
+		if tabs[mainTabMonitor].label != test.want {
+			t.Fatalf("width %d session tab = %q, want %q", test.width, tabs[mainTabMonitor].label, test.want)
+		}
+	}
+}
+
 func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 	for _, test := range []struct {
 		width int
