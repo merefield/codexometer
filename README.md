@@ -851,7 +851,7 @@ fixed through confirmation and any retry of an uncertain request; it never
 silently switches credits. A credit that expires or disappears before a new
 request is submitted requires a fresh confirmation.
 
-An amber warning such as `⚠ RESET EXPIRES IN 2D 4H` appears immediately before
+An amber warning such as `⚠  RESET EXPIRES IN 2D 4H` appears immediately before
 the normal `[ RESET // N ]` button when a known available reset has less than
 72 hours left by default, even below `--reset-threshold`. Clicking the warning opens
 **Quota → Resets** without arming confirmation or submitting a reset. It
@@ -860,6 +860,10 @@ row when necessary. This is an expiry
 warning, not a recommendation to reset unused quota. Redemption still requires
 fresh account data and explicit confirmation. The Resets view always permits
 review regardless of usage percentage.
+
+The Resets page repeats the actual countdown, for example
+`FIRST EXPIRATION IN 2D 4H // within 72 hours`: the first value is the remaining time
+until the earliest known expiry; the second is your configured warning lead time.
 
 The confirmation explicitly warns that unused allowance does not carry over or
 stack and that the weekly reset schedule changes. Treat an expiry warning as a

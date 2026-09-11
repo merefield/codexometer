@@ -90,7 +90,7 @@ func TestResetWarningsUseLocale(t *testing.T) {
 	}
 	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("first", time.Hour)}
 	body = strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n")
-	if !strings.Contains(body, i18n.Format("EXPIRING SOON // within %d hours", m.resetWarningHours)) {
+	if !strings.Contains(body, i18n.Format("FIRST EXPIRATION IN %s // within %d hours", resetExpiryRemaining(*m.snapshot.RateLimitResetCredits.Credits[0].ExpiresAt, false), m.resetWarningHours)) {
 		t.Fatal("expiry status is not localised")
 	}
 	unknown := codex.ResetCredit{}
@@ -119,6 +119,36 @@ func TestResetWarningVisibility(t *testing.T) {
 	m.meterView = viewMonitor
 	if m.resetControlsLayout(100).warning != "" {
 		t.Fatal("warning leaked outside quota")
+	}
+}
+
+func TestResetExpiryCountdownAndSpacing(t *testing.T) {
+	m, _ := resetModel()
+	m.width = 180
+	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("first", 51*time.Hour+30*time.Minute)}
+	warning := m.resetControlsLayout(176).warning
+	if !strings.HasPrefix(warning, "⚠  ") || !strings.Contains(warning, "2D 3H") {
+		t.Fatalf("warning spacing/countdown: %q", warning)
+	}
+	want := i18n.Format("FIRST EXPIRATION IN %s // within %d hours", "2D 3H", 72)
+	if body := strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n"); !strings.Contains(body, want) {
+		t.Fatalf("actual expiry missing: %q", body)
+	}
+	m.snapshot.RateLimitResetCredits.Credits[0] = credit("first", 50*time.Hour+30*time.Minute)
+	want = i18n.Format("FIRST EXPIRATION IN %s // within %d hours", "2D 2H", 72)
+	if body := strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n"); !strings.Contains(body, want) {
+		t.Fatal("countdown did not update independently of warning setting")
+	}
+	if compact := m.resetControlsLayout(50).warning; !strings.HasPrefix(compact, "⚠  ") {
+		t.Fatalf("compact spacing: %q", compact)
+	}
+	for _, test := range []struct {
+		duration time.Duration
+		want     string
+	}{{30 * time.Minute, "<1H"}, {3*time.Hour + 30*time.Minute, "3H"}, {51*time.Hour + 30*time.Minute, "2D 3H"}} {
+		if got := resetExpiryRemaining(time.Now().Add(test.duration).Unix(), false); got != test.want {
+			t.Fatalf("duration %v: %q", test.duration, got)
+		}
 	}
 }
 
