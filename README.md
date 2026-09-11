@@ -1251,7 +1251,8 @@ the decision list, only the legacy Accept/Cancel pair is offered.
 Closing the detail page cancels an unsubmitted confirmation. Each visible
 approval button has a numbered shortcut (`1`–`8`, following the offered order).
 A grant shortcut selects the choice. For **APPROVE ONCE**, terminals supporting
-key-release events allow the same number again after releasing it (`1`, release,
+key-release events through the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
+allow the same number again after releasing it (`1`, release,
 `1` for the first option). The confirmation button displays that number; held-key
 repeats cannot confirm. `C` remains an alternative, whether selected by keyboard
 or mouse. Terminals without key-release support retain the displayed `C`
@@ -1263,12 +1264,33 @@ and reject/stop shortcuts act immediately, just like their buttons. Only one
 session—the expanded row or full-detail target—can display approval controls
 at a time. Hidden, clipped and compact controls have no active shortcuts, and
 typing in the reply editor never triggers approval shortcuts.
+
+This enhanced shortcut depends on the **terminal application and detected
+keyboard protocol**, not just the operating system:
+
+- **Windows Terminal 1.24 with Ubuntu/WSL:** uses `1` then `C`. Microsoft
+  introduced Kitty keyboard-protocol support in
+  [Windows Terminal Preview 1.25](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0).
+  Preview can be installed alongside Stable; open Ubuntu inside Preview to try
+  the enhanced shortcut. No particular Stable rollout date is assumed here.
+- **Apple's built-in Terminal.app:** uses `1` then `C`; it lacks Kitty
+  keyboard-protocol support. The separate [kitty terminal app](https://sw.kovidgoyal.net/kitty/)
+  supports the protocol on macOS. See also this
+  [terminal compatibility guide](https://silvery.dev/guide/kitty-protocol#terminal-support).
+- **Other terminals or intermediary layers:** follow the confirmation button's
+  displayed shortcut. Codexometer only offers repeat-number confirmation after
+  detecting event-type support and requires a key release between presses.
+
+Kitty protocol support is **not required to run Codexometer or approve commands**.
+If the confirmation button shows `C`, use `C` or click it; this is the safe
+fallback in both inline and full-screen detail, not a missing approval feature.
+
 Buttons wrap into rows when needed, reserve their
 confirmation widths so other targets do not move, and sit in a pinned footer
 below the scrolling request text, separated by one blank line when space allows.
 Very short terminals omit that spacer first. Controls are hidden if the terminal
 cannot fit them with room to read the request. All permission grants require
-their own explicit second click; confirming one choice cannot confirm another.
+their own explicit second confirmation; confirming one choice cannot confirm another.
 
 Actions are bound to a single pending request on the current connection. They
 become unavailable when resolved elsewhere, the turn ends, or the connection

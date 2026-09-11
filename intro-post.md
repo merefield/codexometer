@@ -36,11 +36,13 @@ Click the **Codexometer title** to jump back to Quota’s Bars view. The **versi
 
 Give each Monitor session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the main Monitor with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.
 
-Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts; individual row layouts are temporary.
+Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts, as do your last main tab and Quota view; individual row layouts, selection and dismissals are temporary.
 
 Prefer visible controls? Click **[←] [→]** at the top-right of each row's rightmost box to adjust detail, or **[↑] [↓]** in the Monitor header to select sessions. Unavailable directions are dimmed. The session-selection buttons stay out of full-screen detail, where Up/Down scroll the text; tiny boxes fall back to keyboard and background clicks.
 
 If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
+
+For **Approve Once**, press its number, release it, then press it again to confirm on terminals with detected **Kitty keyboard-protocol key-release support**. `C` remains an alternative; session-wide and persistent grants still require `C` or clicking confirmation. Confirmations expire after five seconds. Windows Terminal 1.24 inside Ubuntu/WSL and Apple's built-in Terminal.app use the `1` → `C` fallback. [Windows Terminal Preview 1.25](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0) introduced the protocol, and the separate [kitty app](https://sw.kovidgoyal.net/kitty/) supports it on macOS. Follow the shortcut shown on the button—this terminal capability is optional, not a requirement for using Codexometer or approving commands.
 
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
 
