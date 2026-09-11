@@ -861,6 +861,13 @@ warning, not a recommendation to reset unused quota. Redemption still requires
 fresh account data and explicit confirmation. The Resets view always permits
 review regardless of usage percentage.
 
+The confirmation explicitly warns that unused allowance does not carry over or
+stack and that the weekly reset schedule changes. Treat an expiry warning as a
+prompt to **review**, not a recommendation to redeem immediately. When expiry
+information is missing or incomplete, both the inventory and confirmation say
+so: no warning does not prove there is no upcoming expiry, and undisclosed
+credits may expire sooner than the selected known credit.
+
 Set the lead time with `--reset-warning-hours HOURS`: for example,
 `./codexometer --reset-warning-hours 24` warns one day ahead, while
 `./codexometer --reset-warning-hours 168` warns a week ahead (useful for testing

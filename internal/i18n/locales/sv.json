@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Oanvänd kvot förs inte över eller läggs till.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Information om utgångsdatum saknas. Ingen varning betyder inte att inget löper ut.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Information om utgångsdatum är ofullständig. Andra krediter kan löpa ut tidigare.",
   "⚠ RESET EXPIRES IN %s": "⚠ ÅTERSTÄLLNING UPPHÖR OM %s",
   "⚠ EXPIRES %s": "⚠ UPPHÖR %s",
   "RESETS": "ÅTERSTÄLLNINGAR",

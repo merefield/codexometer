@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "未使用的额度不会结转或叠加。",
+  "Expiry information unavailable. No warning does not mean no expiry.": "有效期信息不可用。没有警告不代表不会过期。",
+  "Expiry information incomplete. Other credits may expire sooner.": "有效期信息不完整。其他重置额度可能更早过期。",
   "⚠ RESET EXPIRES IN %s": "⚠ 重置将在 %s 后过期",
   "⚠ EXPIRES %s": "⚠ 过期 %s",
   "RESETS": "重置",

@@ -125,13 +125,62 @@ func TestResetConfirmationRejectsStaleData(t *testing.T) {
 func TestResetDetailsMissingAndPartial(t *testing.T) {
 	m, _ := resetModel()
 	colors := paletteFor(m.theme)
-	if !strings.Contains(strings.Join(m.resetDetailLines(100, colors), "\n"), "Expiry details unavailable") {
+	if !strings.Contains(strings.Join(m.resetDetailLines(100, colors), "\n"), "Expiry information unavailable") {
 		t.Fatal("missing details presented as no resets")
 	}
 	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("one", 24*time.Hour)}
 	lines := strings.Join(m.resetDetailLines(100, colors), "\n")
 	if !strings.Contains(lines, "Showing 1 of 2") || !strings.Contains(lines, "Expires") {
 		t.Fatal("missing partial disclosure")
+	}
+}
+
+func TestResetSafetyMessages(t *testing.T) {
+	for _, mode := range []string{"missing", "partial", "complete", "non-expiring", "none"} {
+		t.Run(mode, func(t *testing.T) {
+			m, _ := resetModel()
+			m.fetcher = &specificResetFake{}
+			if mode != "missing" {
+				m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("known", time.Hour)}
+			}
+			if mode == "complete" || mode == "non-expiring" {
+				m.snapshot.RateLimitResetCredits.AvailableCount = 1
+			}
+			if mode == "non-expiring" {
+				m.snapshot.RateLimitResetCredits.Credits[0].ExpiresAt = nil
+			}
+			if mode == "none" {
+				m.snapshot.RateLimitResetCredits.AvailableCount = 0
+			}
+			notice := m.resetExpiryDataNotice()
+			if mode == "missing" && !strings.Contains(notice, "No warning does not mean no expiry") {
+				t.Fatal("missing data implies safety")
+			}
+			if mode == "partial" && !strings.Contains(notice, "Other credits may expire sooner") {
+				t.Fatal("partial inventory implies global earliest expiry")
+			}
+			if mode != "missing" && mode != "partial" && notice != "" {
+				t.Fatal("invented missing data")
+			}
+			body := strings.Join(m.resetDetailLines(500, paletteFor(m.theme)), "\n")
+			if notice != "" && !strings.Contains(body, notice) {
+				t.Fatal("inventory omitted disclosure")
+			}
+			if mode == "non-expiring" && !strings.Contains(body, "Does not expire") {
+				t.Fatal("non-expiring credit confused with missing information")
+			}
+			if mode == "none" {
+				return
+			}
+			u, cmd := m.pressQuotaReset()
+			m = u.(Model)
+			if cmd != nil || !strings.Contains(m.resetNotice, "Unused allowance does not carry over or stack") || !strings.Contains(m.resetNotice, "weekly reset schedule") {
+				t.Fatal("confirmation omitted trade-off")
+			}
+			if notice != "" && !strings.Contains(m.resetNotice, notice) {
+				t.Fatal("confirmation omitted disclosure")
+			}
+		})
 	}
 }
 

@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Ungenutztes Kontingent wird nicht übertragen oder addiert.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Ablaufinformationen nicht verfügbar. Keine Warnung bedeutet nicht, dass nichts verfällt.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Ablaufinformationen unvollständig. Andere Guthaben können früher verfallen.",
   "⚠ RESET EXPIRES IN %s": "⚠ RESET VERFÄLLT IN %s",
   "⚠ EXPIRES %s": "⚠ VERFÄLLT %s",
   "RESETS": "ZURÜCKSETZUNGEN",

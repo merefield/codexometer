@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Ongebruikte capaciteit wordt niet meegenomen of opgeteld.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Vervalinformatie niet beschikbaar. Geen waarschuwing betekent niet dat niets verloopt.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Vervalinformatie onvolledig. Andere tegoeden kunnen eerder verlopen.",
   "⚠ RESET EXPIRES IN %s": "⚠ RESET VERLOOPT OVER %s",
   "⚠ EXPIRES %s": "⚠ VERLOOPT %s",
   "RESETS": "RESETS",

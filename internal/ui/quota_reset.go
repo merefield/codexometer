@@ -263,6 +263,10 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 		m.persistPreferences()
 		m.resetConfirmUntil = time.Now().Add(10 * time.Second)
 		m.resetNotice = i18n.Text("Use one reset? Refreshes eligible quota and changes the weekly reset schedule. Click CONFIRM; Esc cancels.")
+		m.resetNotice += " " + i18n.Text("Unused allowance does not carry over or stack.")
+		if notice := m.resetExpiryDataNotice(); notice != "" {
+			m.resetNotice += " " + notice
+		}
 		if m.resetCreditID == "" {
 			m.resetNotice += " Expiry order unavailable; backend chooses the credit."
 		} else {
@@ -342,14 +346,32 @@ func resetCreditExpiry(c codex.ResetCredit) string {
 	return "Expires " + time.Unix(*c.ExpiresAt, 0).Local().Format("02 Jan 2006 15:04 MST")
 }
 
+func (m Model) resetExpiryDataNotice() string {
+	summary := m.snapshot.RateLimitResetCredits
+	if summary != nil && summary.AvailableCount <= 0 {
+		return ""
+	}
+	credits := m.availableResetCredits()
+	if len(credits) == 0 {
+		return i18n.Text("Expiry information unavailable. No warning does not mean no expiry.")
+	}
+	if len(credits) < summary.AvailableCount {
+		return i18n.Text("Expiry information incomplete. Other credits may expire sooner.")
+	}
+	return ""
+}
+
 func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 	defer func() { result = strings.Split(ansi.Hardwrap(strings.Join(result, "\n"), max(width, 1), true), "\n") }()
 	summary := m.snapshot.RateLimitResetCredits
 	if summary == nil {
-		return []string{"Reset information unavailable."}
+		return []string{"Reset information unavailable.", m.resetExpiryDataNotice()}
 	}
 	lines := []string{fmt.Sprintf("AVAILABLE // %d", summary.AvailableCount)}
 	credits := m.availableResetCredits()
+	if notice := m.resetExpiryDataNotice(); notice != "" {
+		lines = append(lines, colors.label().Foreground(colors.warning).Render(notice))
+	}
 	if m.resetExpiringSoon() {
 		lines = append(lines, colors.label().Foreground(colors.warning).Render(fmt.Sprintf("EXPIRING SOON // within %d hours", m.resetWarningHours)))
 	}
@@ -357,7 +379,7 @@ func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 		return append(lines, "No resets available.")
 	}
 	if len(credits) == 0 {
-		return append(lines, "Expiry details unavailable. Backend selects the next credit.")
+		return append(lines, "Backend selects the next credit; expiry order is unknown.")
 	}
 	lines = append(lines, fmt.Sprintf("Showing %d of %d available resets. Earliest known expiry first.", len(credits), summary.AvailableCount))
 	for index, credit := range credits {

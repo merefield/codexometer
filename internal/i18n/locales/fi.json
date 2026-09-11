@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Käyttämätön kiintiö ei siirry eikä kerry.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Vanhenemistietoja ei ole saatavilla. Varoituksen puuttuminen ei tarkoita, ettei mikään vanhene.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Vanhenemistiedot ovat puutteelliset. Muut krediitit voivat vanhentua aiemmin.",
   "⚠ RESET EXPIRES IN %s": "⚠ NOLLAUS VANHENEE %s KULUTTUA",
   "⚠ EXPIRES %s": "⚠ VANHENEE %s",
   "RESETS": "NOLLAUKSET",

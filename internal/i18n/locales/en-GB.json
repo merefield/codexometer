@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Unused allowance does not carry over or stack.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Expiry information unavailable. No warning does not mean no expiry.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Expiry information incomplete. Other credits may expire sooner.",
   "⚠ RESET EXPIRES IN %s": "⚠ RESET EXPIRES IN %s",
   "⚠ EXPIRES %s": "⚠ EXPIRES %s",
   "RESETS": "RESETS",

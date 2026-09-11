@@ -63,6 +63,8 @@ Ordinary Codex CLI sessions work out of the box. For the best Sessions feedback,
 
 Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 168` for a week (handy for testing known later expiries). The default is 72 hours; `0` disables expiry warnings while retaining the consumption-based reset button.
 
+Expiry warnings are reminders to review, not instructions to reset immediately. Confirmation warns that unused allowance does not carry over or stack and that the weekly schedule changes. Missing or incomplete expiry information is explicitly flagged: no warning is not proof that nothing expires soon, and undisclosed credits may expire sooner.
+
 ## Make it yours
 
 Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Swedish (`sv`), Norwegian Bokmål (`nb`, also `no`), Turkish (`tr`), Estonian (`et`), Finnish (`fi`), Brazilian Portuguese (`pt-BR`), European Portuguese (`pt-PT`), or Danish (`da`):

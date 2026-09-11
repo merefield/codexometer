@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "Неиспользованный лимит не переносится и не суммируется.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Сведения о сроках недоступны. Отсутствие предупреждения не означает отсутствие срока действия.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Сведения о сроках неполные. Другие кредиты могут истечь раньше.",
   "⚠ RESET EXPIRES IN %s": "⚠ СБРОС ИСТЕКАЕТ ЧЕРЕЗ %s",
   "⚠ EXPIRES %s": "⚠ ИСТЕКАЕТ %s",
   "RESETS": "СБРОСЫ",

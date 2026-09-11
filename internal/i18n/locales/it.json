@@ -1,4 +1,7 @@
 {
+  "Unused allowance does not carry over or stack.": "La quota inutilizzata non viene riportata né cumulata.",
+  "Expiry information unavailable. No warning does not mean no expiry.": "Informazioni sulla scadenza non disponibili. Nessun avviso non significa nessuna scadenza.",
+  "Expiry information incomplete. Other credits may expire sooner.": "Informazioni sulla scadenza incomplete. Altri crediti potrebbero scadere prima.",
   "⚠ RESET EXPIRES IN %s": "⚠ RIPRISTINO SCADE TRA %s",
   "⚠ EXPIRES %s": "⚠ SCADE %s",
   "RESETS": "RIPRISTINI",
