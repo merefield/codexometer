@@ -611,6 +611,12 @@ test('attention distinguishes observed signals, inference and stale state withou
     .click();
   const rows = page.locator('.session-row');
   await expect(rows.nth(0).locator('.attention-badge')).toBeVisible();
+  await expect(rows.nth(0).locator('.telemetry')).toContainText(
+    'APPROVE OR DECLINE IN CODEX',
+  );
+  await expect(rows.nth(2).locator('.telemetry')).toContainText(
+    'REPLY IN CODEX',
+  );
   await expect(rows.nth(0)).toContainText(
     'Command unavailable from this observation',
   );
@@ -670,6 +676,66 @@ test('attention distinguishes observed signals, inference and stale state withou
     snapshot,
   );
   await expect(rows.first()).toHaveClass(/selected/);
+});
+
+test('global detail controls cover more than 100 sessions and survive reload', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: Array.from({ length: 105 }, (_, index) => ({
+      id: String(index),
+      directory: '/test/' + index,
+      tokens: 0,
+      agents: 0,
+      status: 'IDLE',
+      contextKind: 'LAST ACTIVITY',
+      text: '',
+      command: '',
+      source: 'LOCAL',
+      activity: '',
+      samples: [],
+    })),
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
+    .click();
+  await expect(page.locator('.context')).toHaveCount(105);
+  // An explicit zero must override the nonzero global default.
+  await page
+    .getByRole('button', { name: 'HIDE DETAIL', exact: true })
+    .first()
+    .click();
+  await expect(
+    page.locator('.session-row').first().locator('.context'),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.context')).toHaveCount(104);
+  await page
+    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
+    .click();
+  await expect(page.locator('.context')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.session-row')).toHaveCount(105);
+  await expect(page.locator('.context')).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
+    .click();
+  await expect(page.locator('.context')).toHaveCount(105);
 });
 
 test('session totals count parent usage once and update for live, stale and empty lists', async ({
@@ -840,7 +906,10 @@ test('zone trail renders start, gap and live updates across navigation and reloa
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(page.locator('.trail-caption')).toContainText('1 OBSERVATIONS');
+  await expect(page.locator('.trail-caption')).toContainText('1 OBSERVATION');
+  await expect(page.locator('.trail-caption')).not.toContainText(
+    '1 OBSERVATIONS',
+  );
 });
 
 test('usage heatmap, period selection, bars and accessible table', async ({

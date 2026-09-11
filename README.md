@@ -2023,7 +2023,9 @@ available from the existing reader.
   detail and graph → wide detail → full-page detail**. Each row has its own layout.
 - **Escape** or **← ALL SESSIONS** returns from full-page detail to that session's
   wide detail row. **SHOW ALL DETAILS / HIDE ALL DETAILS** switches all current
-  rows between split detail and graph-only. Narrow screens stack panels.
+  rows between split detail and graph-only, clearing individual overrides and
+  setting the default for newly observed sessions too. This global default is
+  independent of the 100-entry saved per-session history. Narrow screens stack panels.
 - Attention links jump to the relevant session. Approval indicators remain
   outside scrollable reply text; available commands are separated from their
   justification. Missing commands are explicitly labelled, never reconstructed.

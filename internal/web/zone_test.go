@@ -2,11 +2,55 @@ package web
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
+
+func TestZoneTrailUsesLimitAndWindowIdentity(t *testing.T) {
+	s := newStore()
+	now := time.Now()
+	duration, reset := int64(10080), now.Add(7*24*time.Hour).Unix()
+	label := "Same display label"
+	q := codex.Snapshot{AccountFingerprint: "A", RateLimitsByLimitID: map[string]codex.RateLimitSnapshot{
+		"private-limit-a": {LimitName: &label, Primary: &codex.Window{UsedPercent: 10, WindowDurationMins: &duration, ResetsAt: &reset}, Secondary: &codex.Window{UsedPercent: 20, WindowDurationMins: &duration, ResetsAt: &reset}},
+		"private-limit-b": {LimitName: &label, Primary: &codex.Window{UsedPercent: 30, WindowDurationMins: &duration, ResetsAt: &reset}},
+	}}
+	s.quota(q, nil, now)
+	q.RateLimitsByLimitID["private-limit-a"].Primary.UsedPercent = 11
+	q.RateLimitsByLimitID["private-limit-a"].Secondary.UsedPercent = 21
+	q.RateLimitsByLimitID["private-limit-b"].Primary.UsedPercent = 31
+	s.quota(q, nil, now.Add(time.Minute))
+	for i, want := range []int{10, 20, 30} {
+		trail := s.state.Meters[i].Trail
+		if len(trail) != 2 || trail[0].Used != want || trail[1].Used != want+1 {
+			t.Fatalf("mixed trail %d: %+v", i, trail)
+		}
+	}
+	label = "Renamed display label"
+	s.quota(q, nil, now.Add(2*time.Minute))
+	if len(s.state.Meters[0].Trail) != 3 {
+		t.Fatal("display rename reset identity")
+	}
+	bucket := q.RateLimitsByLimitID["private-limit-a"]
+	bucket.Primary = nil
+	q.RateLimitsByLimitID["private-limit-a"] = bucket
+	s.quota(q, nil, now.Add(150*time.Second))
+	if s.state.Meters[0].Trail[0].Used != 20 || len(s.state.Meters[0].Trail) != 4 {
+		t.Fatal("secondary inherited removed primary")
+	}
+	delete(q.RateLimitsByLimitID, "private-limit-a")
+	s.quota(q, nil, now.Add(3*time.Minute))
+	if len(s.state.Meters) != 1 || s.state.Meters[0].Trail[0].Used != 30 {
+		t.Fatal("reordered meter inherited another limit")
+	}
+	data, _ := s.snapshot()
+	if strings.Contains(string(data), "private-limit-") || strings.Contains(string(data), "occurrence") {
+		t.Fatal("server identity leaked to browser")
+	}
+}
 
 func TestZoneTrailBoundariesAndBound(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
@@ -30,7 +74,7 @@ func TestZoneTrailBoundariesAndBound(t *testing.T) {
 		"reset":            func(m *meter) { r := reset + 100; m.Reset = &r },
 		"duration":         func(m *meter) { d := duration + 1; m.Duration = &d },
 		"counter decrease": func(m *meter) { m.Used = 9 },
-		"different window": func(m *meter) { m.Name = "other" },
+		"different window": func(m *meter) { m.identity.window = 1 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			next := m

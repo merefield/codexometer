@@ -5,6 +5,7 @@
     preferences,
     detailLevel,
     setDetailLevel,
+    setAllDetailLevels,
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
@@ -203,12 +204,8 @@
       ↑ ↓ SELECT SESSION // ← LESS DETAIL // → MORE DETAIL // ESC BACK
     </p>
     <div>
-      <button onclick={() => sessions.forEach((s) => setDetailLevel(s.id, 1))}
-        >SHOW ALL DETAILS</button
-      >
-      <button onclick={() => sessions.forEach((s) => setDetailLevel(s.id, 0))}
-        >HIDE ALL DETAILS</button
-      >
+      <button onclick={() => setAllDetailLevels(1)}>SHOW ALL DETAILS</button>
+      <button onclick={() => setAllDetailLevels(0)}>HIDE ALL DETAILS</button>
     </div>
   </div>
   {#each sessions as session (session.id)}
@@ -264,7 +261,9 @@
           >
             {session.status === 'CHECK SESSION'
               ? 'INFERRED INACTIVITY'
-              : 'REPLY IN CODEX'}
+              : session.status === 'APPROVAL NEEDED'
+                ? 'APPROVE OR DECLINE IN CODEX'
+                : 'REPLY IN CODEX'}
           </p>{/if}
       </div>
       {#if level > 0}<div class="panel context">

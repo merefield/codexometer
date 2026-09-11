@@ -40,12 +40,21 @@ type sample struct {
 }
 
 type meter struct {
+	identity meterIdentity
 	Name     string      `json:"name"`
 	Used     int         `json:"used"`
 	Duration *int64      `json:"duration"`
 	Reset    *int64      `json:"reset"`
 	Details  string      `json:"details"`
 	Trail    []zonePoint `json:"trail"`
+}
+
+// Never use presentation labels as identity or expose the source limit IDs.
+// Window is the source slot (0 primary, 1 secondary), even when names coincide.
+type meterIdentity struct {
+	limitID string
+	window  int
+	kind    codex.MeterKind
 }
 
 type zonePoint struct {
@@ -65,7 +74,7 @@ func observeZone(m meter, previous []meter, now time.Time, gap bool) []zonePoint
 	x := max(0, min(100, 100*(1-(float64(*m.Reset)-float64(now.Unix()))/(float64(*m.Duration)*60))))
 	var points []zonePoint
 	for _, old := range previous {
-		if old.Name == m.Name && old.Duration != nil && old.Reset != nil && *old.Duration == *m.Duration && *old.Reset == *m.Reset && len(old.Trail) > 0 {
+		if old.identity == m.identity && old.Duration != nil && old.Reset != nil && *old.Duration == *m.Duration && *old.Reset == *m.Reset && len(old.Trail) > 0 {
 			last := old.Trail[len(old.Trail)-1]
 			if now.After(last.At) && m.Used >= last.Used && x >= last.Elapsed {
 				points = append(points, old.Trail...)
@@ -147,8 +156,23 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 		s.account = q.AccountFingerprint
 		s.state.QuotaAt = now
 		s.state.Meters = []meter{}
+		windows := map[string]int{}
 		for _, m := range q.Meters() {
 			item := meter{Name: m.Bucket + " // " + m.Name, Used: max(0, min(100, m.Window.UsedPercent)), Duration: m.Window.WindowDurationMins, Reset: m.Window.ResetsAt, Details: m.Details}
+			item.identity = meterIdentity{limitID: m.LimitID, kind: m.Kind}
+			if m.Kind == codex.MeterQuotaWindow {
+				bucket := q.RateLimits
+				if len(q.RateLimitsByLimitID) > 0 {
+					bucket = q.RateLimitsByLimitID[m.LimitID]
+				}
+				// Meters emits primary before secondary. Preserve the secondary
+				// slot when a previously present primary disappears.
+				item.identity.window = windows[m.LimitID]
+				if bucket.Primary == nil {
+					item.identity.window++
+				}
+				windows[m.LimitID]++
+			}
 			item.Trail = observeZone(item, previous, now, gap)
 			s.state.Meters = append(s.state.Meters, item)
 		}

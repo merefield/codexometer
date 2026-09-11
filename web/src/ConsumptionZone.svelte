@@ -112,8 +112,9 @@
   >
 </p>
 {#if trail.length}<p class="muted trail-caption">
-    ○ START {date(trail[0].at)} // {trail.length} OBSERVATIONS<br />Observed
-    quota path, not individual session usage. Gaps are not interpolated.
+    ○ START {date(trail[0].at)} // {trail.length}
+    {trail.length === 1 ? 'OBSERVATION' : 'OBSERVATIONS'}<br />Observed quota
+    path, not individual session usage. Gaps are not interpolated.
   </p>{/if}
 
 <style>
