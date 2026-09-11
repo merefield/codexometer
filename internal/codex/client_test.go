@@ -154,9 +154,10 @@ func runFakeAppServer() {
 				continue
 			}
 			var params struct {
-				Key string `json:"idempotencyKey"`
+				Key      string `json:"idempotencyKey"`
+				CreditID string `json:"creditId"`
 			}
-			if json.Unmarshal(request.Params, &params) != nil || params.Key != "test-attempt" {
+			if json.Unmarshal(request.Params, &params) != nil || params.Key != "test-attempt" || params.CreditID != os.Getenv("CODEXOMETER_FAKE_RESET_CREDIT") {
 				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32602, "message": "invalid attempt"}})
 				continue
 			}
@@ -235,6 +236,12 @@ func TestConsumeResetAccountBindingAndOutcomes(t *testing.T) {
 			t.Fatalf("%s: %q %v", outcome, got, err)
 		}
 	}
+	t.Setenv("CODEXOMETER_FAKE_RESET_CREDIT", "earliest-credit")
+	t.Setenv("CODEXOMETER_FAKE_RESET_OUTCOME", "reset")
+	if got, err := c.ConsumeResetCredit(context.Background(), "test-attempt", snapshot.AccountFingerprint, "earliest-credit"); err != nil || got != "reset" {
+		t.Fatalf("targeted credit: %q %v", got, err)
+	}
+	t.Setenv("CODEXOMETER_FAKE_RESET_CREDIT", "")
 	if _, err := c.ConsumeReset(context.Background(), "test-attempt", "different-account"); err == nil {
 		t.Fatal("account mismatch accepted")
 	}

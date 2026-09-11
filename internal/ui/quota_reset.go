@@ -4,17 +4,64 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type resetConsumer interface {
 	ConsumeReset(context.Context, string, string) (string, error)
+}
+
+type resetCreditConsumer interface {
+	ConsumeResetCredit(context.Context, string, string, string) (string, error)
+}
+
+const resetExpiryWarning = 72 * time.Hour
+
+// Details may be absent or capped. Never infer expiry from the quota window.
+func (m Model) availableResetCredits() []codex.ResetCredit {
+	summary := m.snapshot.RateLimitResetCredits
+	if summary == nil || summary.AvailableCount <= 0 {
+		return nil
+	}
+	credits := make([]codex.ResetCredit, 0, len(summary.Credits))
+	for _, credit := range summary.Credits {
+		if credit.ID != "" && credit.Status == "available" && credit.ResetType == "codexRateLimits" && (credit.ExpiresAt == nil || *credit.ExpiresAt > time.Now().Unix()) {
+			credits = append(credits, credit)
+		}
+	}
+	slices.SortStableFunc(credits, func(a, b codex.ResetCredit) int {
+		if a.ExpiresAt == nil && b.ExpiresAt == nil {
+			return strings.Compare(a.ID, b.ID)
+		}
+		if a.ExpiresAt == nil {
+			return 1
+		}
+		if b.ExpiresAt == nil {
+			return -1
+		}
+		if *a.ExpiresAt < *b.ExpiresAt {
+			return -1
+		}
+		if *a.ExpiresAt > *b.ExpiresAt {
+			return 1
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return credits[:min(len(credits), summary.AvailableCount)]
+}
+
+func (m Model) resetExpiringSoon() bool {
+	credits := m.availableResetCredits()
+	return len(credits) > 0 && credits[0].ExpiresAt != nil && time.Until(time.Unix(*credits[0].ExpiresAt, 0)) < resetExpiryWarning
 }
 
 // SetResetThreshold sets the consumed percentage required to offer a reset.
@@ -23,6 +70,9 @@ func (m *Model) SetResetThreshold(percent int) { m.resetThreshold = min(max(perc
 
 func (m Model) renderResetButton(label string, colors palette) string {
 	style := colors.label()
+	if m.resetExpiringSoon() {
+		style = style.Foreground(colors.warning)
+	}
 	if m.resetHovered && !m.resetBusy {
 		style = style.Foreground(colors.background).Background(colors.primary)
 	}
@@ -47,6 +97,14 @@ func (m Model) resetNoticeHeight(width int) int {
 }
 
 func (m Model) resetLabel() string {
+	width := m.width
+	if width == 0 {
+		width = 80
+	}
+	return ansi.Truncate(m.resetFullLabel(), max(width-4, 1), "")
+}
+
+func (m Model) resetFullLabel() string {
 	if !m.meterView.isQuota() {
 		return ""
 	}
@@ -65,7 +123,7 @@ func (m Model) resetLabel() string {
 		m.snapshot.FetchedAt.IsZero() || time.Since(m.snapshot.FetchedAt) > 2*m.refreshEvery {
 		return ""
 	}
-	if m.resetThreshold > 0 {
+	if m.resetThreshold > 0 && m.meterView != viewResets && !m.resetExpiringSoon() {
 		eligible := false
 		for _, meter := range m.snapshot.Meters() {
 			if meter.Window.UsedPercent >= m.resetThreshold {
@@ -76,6 +134,12 @@ func (m Model) resetLabel() string {
 		if !eligible {
 			return ""
 		}
+	}
+	if m.resetExpiringSoon() {
+		if m.width > 0 && m.width < 40 {
+			return fmt.Sprintf("[ RESET // %d ! ]", m.snapshot.RateLimitResetCredits.AvailableCount)
+		}
+		return fmt.Sprintf("[ RESET // %d // EXPIRING ]", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
 	return i18n.Format("[ RESET // %d ]", m.snapshot.RateLimitResetCredits.AvailableCount)
 }
@@ -117,9 +181,28 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 	if m.resetConfirmUntil.IsZero() || time.Now().After(m.resetConfirmUntil) {
 		if m.resetKey == "" {
 			m.resetAccount = m.snapshot.AccountFingerprint
+			m.resetCreditID = ""
+			if credits := m.availableResetCredits(); len(credits) > 0 {
+				if _, ok := m.fetcher.(resetCreditConsumer); ok {
+					m.resetCreditID = credits[0].ID
+				}
+			}
 		}
+		m.meterView, m.quotaMeterView = viewResets, viewResets
+		m.resetScroll = 0
+		m.persistPreferences()
 		m.resetConfirmUntil = time.Now().Add(10 * time.Second)
 		m.resetNotice = i18n.Text("Use one reset? Refreshes eligible quota and changes the weekly reset schedule. Click CONFIRM; Esc cancels.")
+		if m.resetCreditID == "" {
+			m.resetNotice += " Expiry order unavailable; backend chooses the credit."
+		} else {
+			for _, credit := range m.availableResetCredits() {
+				if credit.ID == m.resetCreditID {
+					m.resetNotice += " Selected: " + resetCreditTitle(credit) + " — " + resetCreditExpiry(credit) + "."
+					break
+				}
+			}
+		}
 		return m, nil
 	}
 	m.resetConfirmUntil = time.Time{}
@@ -128,6 +211,27 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.resetKey == "" {
+		if m.loading || m.err != nil || m.snapshot.FetchedAt.IsZero() || time.Since(m.snapshot.FetchedAt) > 2*m.refreshEvery {
+			m.resetNotice = "Quota data is not fresh; refresh and confirm again. No reset submitted."
+			return m, nil
+		}
+		if m.snapshot.RateLimitResetCredits == nil || m.snapshot.RateLimitResetCredits.AvailableCount <= 0 {
+			m.resetNotice = "No reset credits available; no reset submitted."
+			return m, nil
+		}
+		if m.resetCreditID != "" {
+			found := false
+			for _, credit := range m.availableResetCredits() {
+				if credit.ID == m.resetCreditID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.resetNotice = "Selected reset is no longer available; review and confirm again."
+				return m, nil
+			}
+		}
 		var id [16]byte
 		if _, err := rand.Read(id[:]); err != nil {
 			m.resetNotice = "Could not generate a reset request ID; no reset submitted: " + err.Error()
@@ -140,9 +244,77 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 	m.resetBusy = true
 	m.resetRevision++
 	m.resetNotice = "Resetting quota…"
-	key, account := m.resetKey, m.resetAccount
+	key, account, creditID := m.resetKey, m.resetAccount, m.resetCreditID
 	return m, func() tea.Msg {
+		if creditID != "" {
+			if specific, ok := consumer.(resetCreditConsumer); ok {
+				outcome, err := specific.ConsumeResetCredit(context.Background(), key, account, creditID)
+				return quotaResetResult{outcome, err}
+			}
+			return quotaResetResult{err: fmt.Errorf("selected-credit redemption is unavailable; no reset submitted")}
+		}
 		outcome, err := consumer.ConsumeReset(context.Background(), key, account)
 		return quotaResetResult{outcome, err}
 	}
+}
+
+func resetCreditTitle(c codex.ResetCredit) string {
+	if strings.TrimSpace(c.Title) != "" {
+		return codex.SanitizeSessionContext(c.Title)
+	}
+	return "Full reset"
+}
+
+func resetCreditExpiry(c codex.ResetCredit) string {
+	if c.ExpiresAt == nil {
+		return "Does not expire"
+	}
+	return "Expires " + time.Unix(*c.ExpiresAt, 0).Local().Format("02 Jan 2006 15:04 MST")
+}
+
+func (m Model) resetDetailLines(width int, colors palette) (result []string) {
+	defer func() { result = strings.Split(ansi.Hardwrap(strings.Join(result, "\n"), max(width, 1), true), "\n") }()
+	summary := m.snapshot.RateLimitResetCredits
+	if summary == nil {
+		return []string{"Reset information unavailable."}
+	}
+	lines := []string{fmt.Sprintf("AVAILABLE // %d", summary.AvailableCount)}
+	credits := m.availableResetCredits()
+	if m.resetExpiringSoon() {
+		lines = append(lines, colors.label().Foreground(colors.warning).Render("EXPIRING SOON // within 72 hours"))
+	}
+	if summary.AvailableCount == 0 {
+		return append(lines, "No resets available.")
+	}
+	if len(credits) == 0 {
+		return append(lines, "Expiry details unavailable. Backend selects the next credit.")
+	}
+	lines = append(lines, fmt.Sprintf("Showing %d of %d available resets. Earliest known expiry first.", len(credits), summary.AvailableCount))
+	for index, credit := range credits {
+		title := fmt.Sprintf("%d // %s", index+1, resetCreditTitle(credit))
+		if credit.ID == m.resetCreditID && (!m.resetConfirmUntil.IsZero() || m.resetKey != "") {
+			title += " // SELECTED"
+		} else if index == 0 {
+			title += " // NEXT"
+		}
+		lines = append(lines, "", colors.label().Render(title), resetCreditExpiry(credit))
+		if credit.GrantedAt > 0 {
+			lines = append(lines, "Granted "+time.Unix(credit.GrantedAt, 0).Local().Format("02 Jan 2006 15:04 MST"))
+		}
+		if credit.Description != "" {
+			lines = append(lines, codex.SanitizeSessionContext(credit.Description))
+		}
+	}
+	return lines
+}
+
+func (m Model) renderResets(width, height int, colors palette) string {
+	lines := m.resetDetailLines(max(width-4, 1), colors)
+	rows := max(height-2, 1)
+	start := min(m.resetScroll, max(len(lines)-rows, 0))
+	title := i18n.Text("RESETS")
+	if len(lines) > rows {
+		title += " // ↑↓ PgUp/PgDn"
+	}
+	return lipgloss.NewStyle().MaxWidth(width).MaxHeight(height).Render(frameSized(width, max(height-2, 1), title, strings.Join(lines[start:min(start+rows, len(lines))], "\n"), colors.primary, colors))
 }

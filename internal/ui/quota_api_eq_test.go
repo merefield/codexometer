@@ -339,6 +339,9 @@ func TestEveryQuotaViewDisplaysResponsiveAPIEqReadout(t *testing.T) {
 		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
 	for _, view := range quotaViewOrder {
+		if view == viewResets {
+			continue
+		} // Credit inventory has no quota-price readout.
 		model.meterView, model.quotaMeterView = view, view
 		rendered := ansi.Strip(model.render())
 		if !strings.Contains(rendered, "API-EQ") || !strings.Contains(rendered, "100%") {

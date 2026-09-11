@@ -33,6 +33,7 @@ const (
 	viewFuel
 	viewBenchmark
 	viewUsage
+	viewResets
 	viewCount
 )
 
@@ -41,6 +42,7 @@ var quotaViewOrder = [...]meterViewID{
 	viewConsumptionPace,
 	viewPie,
 	viewFuel,
+	viewResets,
 }
 
 func (s meterViewID) isQuota() bool {
@@ -70,6 +72,7 @@ func (s meterViewID) name() string {
 		i18n.Text("FUEL TANK"),
 		i18n.Text("BENCHMARK"),
 		i18n.Text("USAGE"),
+		i18n.Text("RESETS"),
 	}[s]
 }
 

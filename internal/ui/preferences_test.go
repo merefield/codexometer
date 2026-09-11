@@ -46,7 +46,7 @@ func TestPreferencesRestoreAndPersistPresentationChoices(t *testing.T) {
 		t.Fatalf("preference saves = %d, want one for each presentation change", len(store.saves))
 	}
 	last := store.saves[len(store.saves)-1]
-	if last.Theme != "hacker" || last.QuotaView != "bars" || last.BenchmarkFilter != "pass" || last.BenchmarkRank != "speed" {
+	if last.Theme != "hacker" || last.QuotaView != "resets" || last.BenchmarkFilter != "pass" || last.BenchmarkRank != "speed" {
 		t.Fatalf("persisted preferences = %#v", last)
 	}
 }

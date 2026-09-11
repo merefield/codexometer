@@ -195,7 +195,9 @@ English rendering baseline captured from v0.12.0.
   named in warning states and a celebratory fresh-reset signal at 0% usage.
 - A countdown to the next automatic refresh.
 - Confirmed redemption of available banked quota resets, normally offered only
-  when a displayed window is at least 80% consumed (configurable).
+  when a displayed window is at least 80% consumed (configurable), or a known
+  available reset expires in less than 72 hours. A dedicated Quota → Resets view
+  remains accessible below the usage threshold.
 - Account token history in a daily activity grid, weekly bars, or a cumulative
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
@@ -562,7 +564,7 @@ codexometer --codex /path/to/codex
 
 The responsive top rail below the account status selects Quota, Sessions, Usage, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
-Consumption Pace, Pie, and Fuel Tank; select these with the mouse or cycle them
+Consumption Pace, Pie, Fuel Tank, and Resets; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
 and return. Both rails condense automatically as the terminal narrows.
 The footer presents the remaining actions as clickable buttons, including View
@@ -824,7 +826,7 @@ The default remains the original green hacker-terminal presentation.
 ## Views and quota presentations
 
 The top-level tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**. Within Quota,
-choose one of these four views with its sub-tab or `v`:
+choose one of these five views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
 2. **Consumption Pace** — a signed horizontal scale comparing elapsed window
@@ -838,6 +840,30 @@ choose one of these four views with its sub-tab or `v`:
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
+5. **Resets** — available reset credits, grant dates, expiry dates and backend
+   descriptions. Expiring credits appear first, non-expiring credits last.
+   Scroll with Up/Down or Page Up/Page Down when necessary.
+
+The reset shortcut opens Resets and asks for confirmation before redeeming.
+When individual credit details are supplied, Codexometer sends the ID of the
+soonest-expiring available quota-reset credit it can identify. That ID remains
+fixed through confirmation and any retry of an uncertain request; it never
+silently switches credits. A credit that expires or disappears before a new
+request is submitted requires a fresh confirmation.
+
+An amber `EXPIRING` shortcut appears on Quota views when a known available reset
+has less than 72 hours left, even below `--reset-threshold`. This is an expiry
+warning, not a recommendation to reset unused quota. Redemption still requires
+fresh account data and explicit confirmation. The Resets view always permits
+review regardless of usage percentage.
+
+Credit details are optional and may be capped by the backend. The view shows
+how many of the available credits have usable details; earliest expiry means
+**earliest known**, not a guarantee about undisclosed credits. If only a count
+is available, expiry is unknown and the backend chooses the credit; its default
+selection order is not guaranteed by the public protocol. A supplied null expiry
+means “does not expire”, not “unknown”. Reset-credit expiry is separate from the
+automatic quota-window reset date.
 
 ### Usage: account token history
 
@@ -1903,12 +1929,14 @@ codexometer --codex ~/bin/codex
 
 On the Quota tab, `[ RESET // N ]` appears at the top right when a recent
 quota reading reports available banked resets, the account is verified, and
-at least one displayed quota window is **80% consumed or higher**.
+at least one displayed quota window is **80% consumed or higher**, or a known
+available reset expires in **less than 72 hours**. In the dedicated **Resets**
+view, the usage threshold does not apply.
 Set another threshold with `./codexometer --reset-threshold 60` (whole percentages
 from 0 to 100). For testing, `./codexometer --reset-threshold 0` bypasses the
 consumption threshold; an available credit and verified, fresh account data
 are still required. The default is 80 when the flag is omitted.
-It moves below the main tabs on narrow terminals. Click once to reveal
+It moves below the main tabs on narrow terminals. Click once to open Resets and reveal
 `[ CONFIRM RESET ]`, then click again within ten seconds to redeem one reset.
 `Esc` or changing tabs cancels confirmation. Redemption refreshes eligible
 quota windows and changes the weekly reset schedule; it does not add quota
@@ -1920,7 +1948,7 @@ Codexometer uses the prevailing Codex login and the
 Older servers that do not report reset availability leave the button hidden.
 The button is disabled during submission, and quota/count data is fetched
 again afterward. If the result is uncertain, `[ RETRY RESET ]` repeats the
-same attempt identifier, with another confirmation, to avoid consuming a second
+same attempt identifier and selected credit ID, with another confirmation, to avoid consuming a second
 reset. Keep Codexometer open to retain that retry identifier. Check Codex's
 Usage page before attempting another reset after restarting the application.
 

@@ -273,7 +273,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		refresh         = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo            = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline          = flags.Bool("inline", false, "render inline instead of using the alternate screen")
-		resetThreshold  = flags.Int("reset-threshold", 80, "quota consumption percentage required to show reset (0-100; 0 always shows available resets)")
+		resetThreshold  = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown if expiry is within 72h)")
 		checkAuth       = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
 		digBenchGame    = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
 		digBenchModel   = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")

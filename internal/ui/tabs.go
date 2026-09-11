@@ -97,10 +97,10 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 
 func quotaViewTabLayout(width int) ([]viewTab, string) {
 	labels, separator := responsiveTabLabels(width, [][]string{
-		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮")},
-		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮"},
-		{"[B]", "[C]", "[P]", "[F]"},
-		{"B", "C", "P", "F"},
+		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮"), i18n.Text("╭ RESETS ╮")},
+		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮", "╭RST╮"},
+		{"[B]", "[C]", "[P]", "[F]", "[R]"},
+		{"B", "C", "P", "F", "R"},
 	})
 
 	tabs := make([]viewTab, 0, len(quotaViewOrder))

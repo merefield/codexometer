@@ -47,7 +47,18 @@ type IndividualLimit struct {
 }
 
 type ResetCredits struct {
-	AvailableCount int `json:"availableCount"`
+	AvailableCount int           `json:"availableCount"`
+	Credits        []ResetCredit `json:"credits"`
+}
+
+type ResetCredit struct {
+	ID          string `json:"id"`
+	ResetType   string `json:"resetType"`
+	Status      string `json:"status"`
+	GrantedAt   int64  `json:"grantedAt"`
+	ExpiresAt   *int64 `json:"expiresAt"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 type Meter struct {
