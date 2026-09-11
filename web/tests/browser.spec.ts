@@ -70,6 +70,8 @@ test('pairing, all quota views, navigation and refresh', async ({
     .getByRole('link', { name: 'CONSUMPTION PACE', exact: true })
     .click();
   await expect(page.locator('.pace')).toHaveCount(2);
+  await expect(page.getByText('−100 // OVER BUDGET')).toHaveCount(2);
+  await expect(page.getByText('+100 // HEADROOM')).toHaveCount(2);
   await page
     .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
     .click();
@@ -104,7 +106,136 @@ test('pairing, all quota views, navigation and refresh', async ({
     'data-theme',
     'nightshade',
   );
+  await page.goto(pairingURL.split('#')[0] + '#/');
+  await expect(
+    page.getByRole('link', { name: 'QUOTA', exact: true }),
+  ).toHaveAttribute('aria-current', 'page');
+  await expect(
+    page.locator('nav[aria-label="Main navigation"] [aria-current="page"]'),
+  ).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+test('history aggregates duplicate dates and excludes negative buckets in every view', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.clock.setFixedTime(new Date('2026-09-11T12:00:00Z'));
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    usage: {
+      summary: {},
+      dailyUsageBuckets: [
+        { startDate: '2026-09-10', tokens: 100 },
+        { startDate: '2026-09-10', tokens: 250 },
+        { startDate: '2026-09-10', tokens: -50 },
+        { startDate: '2026-09-11', tokens: 20 },
+        { startDate: '2026-09-09', tokens: -500 },
+        { startDate: 'not-a-date', tokens: 900 },
+        { startDate: '2026-09-12', tokens: 800 },
+      ],
+    },
+  };
+  await page.route('**/api/events', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'data: ' + JSON.stringify(snapshot) + '\n\n',
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'USAGE', exact: true }).click();
+  await expect(
+    page.locator('.heat-cell[title="2026-09-10: 350 tokens"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('.heat-cell[title="2026-09-09: 0 tokens"]'),
+  ).toHaveCount(1);
+  await page.getByText('Accessible data table').click();
+  await expect(
+    page.getByRole('row').filter({
+      has: page.getByRole('cell', { name: '2026-09-10', exact: true }),
+    }),
+  ).toContainText('350');
+  await page.getByLabel('Usage view').selectOption('monthly');
+  await expect(
+    page.getByRole('row').filter({
+      has: page.getByRole('cell', { name: '2026-09', exact: true }),
+    }),
+  ).toContainText('370');
+  await page.getByLabel('Usage view').selectOption('cumulative');
+  await expect(
+    page.getByRole('row').filter({
+      has: page.getByRole('cell', { name: '2026-09-11', exact: true }),
+    }),
+  ).toContainText('370');
+});
+
+test('empty and all-zero graphs announce a zero peak without invalid heights', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: [[], [{ at: '2026-09-11T12:00:00Z', tokens: 0 }]].map(
+      (samples, index) => ({
+        id: String(index),
+        directory: '/test',
+        tokens: 0,
+        agents: 0,
+        status: 'IDLE',
+        contextKind: 'LAST ACTIVITY',
+        text: '',
+        command: '',
+        source: 'LOCAL',
+        activity: '',
+        samples,
+      }),
+    ),
+  };
+  await page.route('**/api/events', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'data: ' + JSON.stringify(snapshot) + '\n\n',
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await expect(
+    page.getByRole('img', {
+      name: 'Token activity. Peak 0 tokens.',
+      exact: true,
+    }),
+  ).toHaveCount(2);
+  await expect(
+    page.getByText('SCALE // 0 — 0 TOKENS', { exact: true }),
+  ).toHaveCount(2);
+  expect(
+    await page
+      .locator('.chart-bar')
+      .evaluateAll((nodes) =>
+        nodes.every((node) => (node as HTMLElement).style.height === '0%'),
+      ),
+  ).toBe(true);
 });
 
 test('consumption zone plots bounded coordinates and handles missing windows', async ({

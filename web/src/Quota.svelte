@@ -124,9 +124,7 @@
                   >
                 </div>
                 <div class="spread muted">
-                  <span>−100 // AHEAD OF BUDGET</span><span
-                    >+100 // HEADROOM</span
-                  >
+                  <span>−100 // OVER BUDGET</span><span>+100 // HEADROOM</span>
                 </div>
                 <p class="readout">
                   {pace >= 0 ? '+' : ''}{pace.toFixed(1)} PP

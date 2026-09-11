@@ -48,13 +48,13 @@
   </header>
   <nav aria-label="Main navigation">
     {#each ['quota', 'sessions', 'usage'] as tab}
+      {@const current =
+        router.location.startsWith('/' + tab) ||
+        (tab === 'quota' && router.location === '/')}
       <a
-        class:active={router.location.startsWith('/' + tab) ||
-          (tab === 'quota' && router.location === '/')}
+        class:active={current}
         href={'#/' + tab}
-        aria-current={router.location.startsWith('/' + tab)
-          ? 'page'
-          : undefined}>{tab.toUpperCase()}</a
+        aria-current={current ? 'page' : undefined}>{tab.toUpperCase()}</a
       >
     {/each}
   </nav>

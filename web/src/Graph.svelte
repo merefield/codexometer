@@ -4,7 +4,7 @@
     label = 'Token activity',
     capacity = 0,
   }: { values?: number[]; label?: string; capacity?: number } = $props();
-  let peak = $derived(Math.max(1, ...values));
+  let peak = $derived(Math.max(0, ...values));
   let plotted = $derived(
     capacity > values.length
       ? [...Array(capacity - values.length).fill(0), ...values]
@@ -13,7 +13,7 @@
 </script>
 
 <p class="eyebrow">
-  SCALE // 0 — {Math.max(0, ...values).toLocaleString('en-GB')} TOKENS
+  SCALE // 0 — {peak.toLocaleString('en-GB')} TOKENS
 </p>
 <div
   class="chart"
@@ -22,7 +22,7 @@
 >
   {#each plotted as value}<div
       class="chart-bar"
-      style:height={`${(100 * value) / peak}%`}
+      style:height={`${(100 * value) / Math.max(1, peak)}%`}
       title={value.toLocaleString('en-GB') + ' tokens'}
     ></div>{/each}
 </div>

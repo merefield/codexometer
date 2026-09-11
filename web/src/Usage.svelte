@@ -13,7 +13,14 @@
     const start = new Date(end);
     start.setUTCMonth(start.getUTCMonth() - months);
     start.setUTCDate(start.getUTCDate() + 1);
-    const lookup = new Map(buckets.map((b) => [b.startDate, b.tokens]));
+    const lookup = new Map<string, number>();
+    for (const bucket of buckets) {
+      if (!Number.isFinite(bucket.tokens) || bucket.tokens < 0) continue;
+      lookup.set(
+        bucket.startDate,
+        (lookup.get(bucket.startDate) || 0) + bucket.tokens,
+      );
+    }
     const result: { date: string; tokens: number }[] = [];
     for (
       let day = start;
