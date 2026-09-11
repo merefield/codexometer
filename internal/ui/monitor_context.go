@@ -239,6 +239,13 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		m.changeMonitorContext("", delta)
 		return m, nil, true
 	}
+	if key == "enter" && m.monitorContextDetail == "" {
+		w, h := m.monitorPromptSize()
+		if m.monitorPromptRows(w, h) > 0 && m.monitorPromptOffer().Token != "" {
+			cmd := m.focusMonitorPrompt()
+			return m, cmd, true
+		}
+	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		switch key {
 		case "t", "r":

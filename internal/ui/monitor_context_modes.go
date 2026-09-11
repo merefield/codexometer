@@ -163,6 +163,12 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		n = 1
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
+	if n == 0 && s.id == m.monitorContextTarget() {
+		if rows := m.monitorPromptRows(width, height); rows > 0 {
+			n = rows
+			controls = m.renderMonitorPrompt(width, height, colors)
+		}
+	}
 	if dots := m.sessionActivityDots(s); n == 0 && dots != "" && height >= 5 && width >= 7 {
 		n = 1
 		controls = colors.label().Render(dots)
@@ -231,6 +237,14 @@ func (m Model) expandedContextAt(x, y int) string {
 			mw, cw, _ := monitorSessionColumnWidths(a.width)
 			x -= mw + 1
 			y -= rowY
+			if s.id == m.monitorContextTarget() && m.monitorPromptOffer().Token != "" {
+				if rows := m.monitorPromptRows(cw, heights[i]); rows > 0 {
+					_, _, cy := monitorContextBodyLayout(heights[i], rows)
+					if y >= cy+1 && y < cy+rows-1 && x >= 2 && x < cw-2 {
+						return "prompt"
+					}
+				}
+			}
 			buttons := m.expandedApprovalButtons(cw, heights[i], s)
 			if len(buttons) > 0 {
 				_, _, cy := monitorContextBodyLayout(heights[i], buttons[len(buttons)-1].y+1)

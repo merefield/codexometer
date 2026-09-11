@@ -1120,6 +1120,14 @@ same action on that session. The presentations are:
    restores the warning. A live request that is no longer pending does not
    regain the warning while its old preview awaits a refresh. Unsupported requests
    can still require action in Codex.
+   The selected session also offers a **FOLLOW-UP** composer here when the shared
+   server confirms it is ready for input and the complete context plus composer
+   fit. Only one inline composer is available at a time. Click its input line or
+   press `Enter` to focus, then `Enter` to send; `Esc` leaves the editor without
+   changing the row view. Drafts wrap and scroll within spare space, preserving
+   the context above. Resizing to hide the composer releases keyboard focus;
+   enlarge the window and refocus to continue the draft. Approval requests and
+   structured questions do not use this inline composer; use full detail instead.
 4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
    Its box title mirrors the left telemetry badge (including the blinking
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
@@ -1308,7 +1316,7 @@ any command; restart the demo to reset its approval.
 
 ### Saved presentation preferences
 
-Codexometer stores only the selected theme, Quota view, benchmark filter,
+Codexometer stores only the selected theme, main tab, Quota view, benchmark filter,
 benchmark ranking weight, and the Monitor context hide/show preference.
 No quota estimate or snapshot, raw session telemetry,
 benchmark result, message content, credential, session ID, email, account
@@ -1321,7 +1329,10 @@ platform-standard user configuration directory:
 - Windows: `%AppData%\codexometer\preferences.json`.
 
 Missing, unreadable, or malformed preferences never prevent startup;
-Codexometer falls back to its safe defaults.
+Codexometer falls back to its safe defaults. Restarting returns to your last main
+tab and remembers your Quota view separately. First launch defaults to Quota →
+Bars; older preferences without a main tab reopen the saved Quota view.
+Restoring a tab does not resume a benchmark run or reopen an approval dialog.
 
 ### Benchmark authentication and usage boundary
 
@@ -2001,6 +2012,25 @@ homes unless `CODEX_HOME` is deliberately shared. Cloud activity and sessions on
 other machines are not visible. Usage is generally appended after a model
 response reports its token totals, so a currently streaming response may not
 appear until its next telemetry event.
+
+## Roadmap
+
+Potential Monitor follow-ups (not implemented):
+
+- **Remember session visibility across restarts.** Persist dismissed rows using
+  durable activity markers, not connection-local counters or approval tokens.
+  Restore them on genuine new activity or verified pending approval, with a
+  conservative fallback that favours showing a session needing attention.
+- **Remember the Monitor workspace.** Restore the selected session and each
+  session's detail level, alongside visibility. Handle missing sessions and
+  smaller terminals gracefully; restoring the layout must not restore editor
+  focus, unsent drafts, or armed approval confirmations. Session identifiers
+  would become persisted data and the saved-preferences documentation would
+  need updating accordingly.
+
+Currently, the main tab, Quota view and global Monitor hide/show preference are
+saved, but session selection, per-session detail levels and dismissals remain
+temporary.
 
 ## Development
 

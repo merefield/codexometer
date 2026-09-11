@@ -44,6 +44,8 @@ If an approval request is too long for inline controls, a highlighted **APPROVAL
 
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
 
+On a shared-server session ready for input, the selected full-width detail row also offers a follow-up composer when there is room for the complete context. Click or press Enter to write, Enter to send, and Escape to leave the editor. Smaller panels and structured questions keep full-screen detail as the fallback.
+
 ## Quota estimates, resets, and session attention
 
 API-equivalent figures are workload-dependent estimates, not your subscription’s cash value or a statement of OpenAI’s private quota formula. They need clean observed quota movement to learn, show uncertainty, and restart learning when Codexometer is relaunched. Pricing uses published input, cached-input, and output rates where the model and usage are known; missing data is not treated as free.

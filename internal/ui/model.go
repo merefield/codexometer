@@ -422,8 +422,10 @@ func (m *Model) SetInline(inline bool) {
 	m.inline = inline
 }
 
+type initialViewMsg struct{}
+
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery))
+	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery), func() tea.Msg { return initialViewMsg{} })
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -433,6 +435,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
+	case initialViewMsg:
+		command := m.loadCurrentView()
+		return m, command
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
@@ -1087,14 +1092,21 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	commands := []tea.Cmd{tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
 		return viewTabFlashExpiredMsg{view: view, sequence: sequence}
 	})}
-	if view == viewUsage {
-		commands = append(commands, m.requestHistory())
-	}
-	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
-		m.benchmarkPlanning = true
-		commands = append(commands, planBenchmark(m.benchmarkRunner))
-	}
+	commands = append(commands, m.loadCurrentView())
 	return m, tea.Batch(commands...)
+}
+
+// Restoring a tab loads its data just like selecting it, without restoring a
+// running benchmark, an approval dialog, or other operational state.
+func (m *Model) loadCurrentView() tea.Cmd {
+	if m.meterView == viewUsage {
+		return m.requestHistory()
+	}
+	if m.meterView == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
+		m.benchmarkPlanning = true
+		return planBenchmark(m.benchmarkRunner)
+	}
+	return nil
 }
 
 func (m Model) pressFooterButton(button footerButtonID) (tea.Model, tea.Cmd) {

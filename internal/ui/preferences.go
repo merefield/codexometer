@@ -14,6 +14,7 @@ import (
 type Preferences struct {
 	HideSessionContext bool   `json:"hideSessionContext,omitempty"`
 	Theme              string `json:"theme,omitempty"`
+	MainTab            string `json:"mainTab,omitempty"`
 	QuotaView          string `json:"quotaView,omitempty"`
 	BenchmarkFilter    string `json:"benchmarkFilter,omitempty"`
 	BenchmarkRank      string `json:"benchmarkRank,omitempty"`
@@ -84,6 +85,14 @@ func (m *Model) applyPreferences(preferences Preferences) {
 		m.meterView = view
 		m.quotaMeterView = view
 	}
+	switch preferences.MainTab {
+	case "monitor":
+		m.meterView = viewMonitor
+	case "usage":
+		m.meterView = viewUsage
+	case "benchmark":
+		m.meterView = viewBenchmark
+	}
 	if filter, ok := benchmarkFilterPreferenceIDs[preferences.BenchmarkFilter]; ok {
 		m.benchmarkFilter = filter
 	}
@@ -99,10 +108,15 @@ func (m Model) persistPreferences() {
 	_ = m.preferenceStore.Save(Preferences{
 		HideSessionContext: m.monitorContextHidden,
 		Theme:              themePreferenceNames[m.theme],
+		MainTab:            mainTabPreferenceNames[m.currentMainTab()],
 		QuotaView:          quotaViewPreferenceNames[m.selectedQuotaView()],
 		BenchmarkFilter:    benchmarkFilterPreferenceNames[m.benchmarkFilter],
 		BenchmarkRank:      benchmarkRankPreferenceNames[m.benchmarkRankMode],
 	})
+}
+
+var mainTabPreferenceNames = map[mainTabID]string{
+	mainTabQuota: "quota", mainTabMonitor: "monitor", mainTabUsage: "usage", mainTabBenchmark: "benchmark",
 }
 
 var themePreferenceNames = map[themeID]string{

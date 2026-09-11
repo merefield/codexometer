@@ -29,7 +29,8 @@ type monitorPromptResult struct {
 }
 
 func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
+	if m.meterView != viewMonitor || m.monitorContextTarget() == "" || m.contextTargetHidden() ||
+		(m.monitorContextDetail == "" && (m.monitorSelectedID != m.monitorContextTarget() || m.rowContextMode(m.monitorSelectedID) != contextWide)) {
 		return codex.SessionPromptOffer{}
 	}
 	c, ok := m.fetcher.(codex.SessionPromptClient)
@@ -50,6 +51,10 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 		thread = s.preview.ThreadID
 	}
 	o := c.SessionPrompt(thread)
+	// Structured questions retain the full-detail interface.
+	if m.monitorContextDetail == "" && len(o.Questions) > 0 {
+		return codex.SessionPromptOffer{}
+	}
 	if len(o.Questions) > 0 && (s.preview.Kind != codex.SessionContextQuestion || s.preview.InputToken != o.Token) {
 		return codex.SessionPromptOffer{}
 	}
@@ -60,34 +65,72 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 }
 
 func (m Model) monitorPromptRows(width, height int) int {
-	if width < 24 || height < 8 || m.monitorContextDetail == "" || m.contextTargetHidden() {
+	if width < 24 || height < 8 || m.monitorContextTarget() == "" || m.contextTargetHidden() {
 		return 0
 	}
 	if s, ok := m.contextDetailSession(); ok && s.preview.Kind == codex.SessionContextApproval {
 		return 0
 	}
-	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextDetail && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
+	if m.monitorContextDetail == "" && m.monitorSelectedID != m.monitorContextTarget() {
+		return 0
+	}
+	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextTarget() && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
 		p := m.monitorPrompt
+		rows := 3
 		if p.input.Focused() && !p.busy {
-			p.input.configure(width, height)
-			return p.input.Height() + 2
+			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
+			rows = p.input.Height() + 2
 		}
-		return 3
+		if m.monitorContextDetail == "" {
+			s, ok := m.contextDetailSession()
+			textRows, _, _ := monitorContextBodyLayout(height, rows)
+			if !ok || len(expandedContextLines(width, s)) > textRows {
+				return 0
+			}
+		}
+		return rows
 	}
 	return 0
 }
 
+// Inline drafts grow only into spare space, then scroll inside the editor;
+// they never displace the source context. Full detail keeps its usual viewport.
+func (m Model) monitorPromptEditorHeight(width, height int) int {
+	if m.monitorContextDetail == "" {
+		if s, ok := m.contextDetailSession(); ok {
+			return min(height, max(8, height+3-len(expandedContextLines(width, s))))
+		}
+	}
+	return height
+}
+
+func (m Model) monitorPromptSize() (int, int) {
+	g := m.dashboardLayout()
+	if m.monitorContextDetail != "" {
+		return g.contentWidth, g.meterHeight
+	}
+	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
+	for i, s := range sessions {
+		if s.id == m.monitorContextTarget() && m.rowContextMode(s.id) == contextWide {
+			_, width, _ := monitorSessionColumnWidths(a.width)
+			return width, heights[i]
+		}
+	}
+	return 0, 0
+}
+
 func (m *Model) focusMonitorPrompt() tea.Cmd {
 	o := m.monitorPromptOffer()
-	if o.Token == "" || m.monitorPrompt.busy {
+	w, h := m.monitorPromptSize()
+	if o.Token == "" || m.monitorPrompt.busy || m.monitorPromptRows(w, h) == 0 {
 		return nil
 	}
 	if m.monitorPrompt.offer.Token != o.Token {
-		m.monitorPrompt = monitorPromptState{session: m.monitorContextDetail, offer: o, input: newMonitorEditor(), choice: -1}
+		m.monitorPrompt = monitorPromptState{session: m.monitorContextTarget(), offer: o, input: newMonitorEditor(), choice: -1}
 	}
 	m.monitorPrompt.input.setSecret(len(o.Questions) > 0 && o.Questions[m.monitorPrompt.question].Secret)
-	g := m.dashboardLayout()
-	m.monitorPrompt.input.configure(g.contentWidth, g.meterHeight)
+	m.monitorPrompt.input.configure(w, m.monitorPromptEditorHeight(w, h))
 	m.monitorPrompt.notice = ""
 	return m.monitorPrompt.input.Focus()
 }
@@ -108,7 +151,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	if p.offer.Token == o.Token && p.input.Focused() && !p.busy {
 		input := p.input
-		input.configure(width, height)
+		input.configure(width, m.monitorPromptEditorHeight(width, height))
 		line = input.View(colors)
 	}
 	if p.busy {
@@ -148,17 +191,16 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	wasFocused := p.input.Focused()
-	g := m.dashboardLayout()
+	layout := m
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		resized := m
-		resized.width, resized.height = size.Width, size.Height
-		g = resized.dashboardLayout()
+		layout.width, layout.height = size.Width, size.Height
 	}
-	p.input.configure(g.contentWidth, g.meterHeight)
-	if wasFocused && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
+	w, h := layout.monitorPromptSize()
+	p.input.configure(w, layout.monitorPromptEditorHeight(w, h))
+	if wasFocused && layout.monitorPromptRows(w, h) == 0 {
 		p.input.Blur()
 	}
-	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextDetail != p.session || m.contextTargetHidden()) {
+	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextTarget() != p.session || m.contextTargetHidden() || m.monitorContextDetail == "" && m.monitorSelectedID != p.session) {
 		*p = monitorPromptState{}
 	} else if p.offer.Token != "" && !p.busy && m.monitorPromptOffer().Token != p.offer.Token {
 		*p = monitorPromptState{session: p.session, notice: i18n.Text("Prompt changed; review the session before replying.")}
