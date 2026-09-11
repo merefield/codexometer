@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,9 @@ type Model struct {
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
+	monitorApprovalConfirmUntil         time.Time
+	monitorApprovalNumberReleased       bool
+	keyboardEventTypes                  bool
 	monitorApprovalBusy                 bool
 	monitorApprovalNotice               string
 	monitorApprovalNoticeToken          string
@@ -422,8 +426,10 @@ func (m *Model) SetInline(inline bool) {
 	m.inline = inline
 }
 
+type initialViewMsg struct{}
+
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery))
+	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery), func() tea.Msg { return initialViewMsg{} })
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -433,6 +439,20 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
+	case tea.KeyboardEnhancementsMsg:
+		m.keyboardEventTypes = message.SupportsEventTypes()
+		m.monitorApprovalNumberReleased = false
+		return m, nil
+	case tea.KeyReleaseMsg:
+		key := message.String()
+		if m.keyboardEventTypes && len(key) == 1 && key[0] >= '1' && key[0] <= '8' &&
+			m.approvalConfirmationActive(m.monitorApprovalToken(), "decision:"+strconv.Itoa(int(key[0]-'1'))) {
+			m.monitorApprovalNumberReleased = true
+		}
+		return m, nil
+	case initialViewMsg:
+		command := m.loadCurrentView()
+		return m, command
 	case monitorApprovalResult:
 		m.monitorApprovalBusy = false
 		m.monitorApprovalConfirm = ""
@@ -467,6 +487,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, m.fetch()
 	case tea.KeyPressMsg:
+		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
+			return m, nil
+		}
 		if m.meterView == viewMonitor {
 			next, cmd, handled := m.updateMonitorContextKey(strings.ToLower(message.String()))
 			m = next
@@ -885,6 +908,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case secondMsg:
+		if !m.monitorApprovalConfirmUntil.IsZero() && !time.Now().Before(m.monitorApprovalConfirmUntil) {
+			m.monitorApprovalConfirm = ""
+			m.monitorApprovalNumberReleased = false
+		}
 		if !m.resetConfirmUntil.IsZero() && time.Now().After(m.resetConfirmUntil) {
 			m.resetConfirmUntil = time.Time{}
 			m.resetNotice = ""
@@ -1061,6 +1088,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	if view != m.meterView {
+		m.monitorApprovalConfirm = ""
+	}
 	if view != viewMonitor {
 		m.monitorDetailSent = detailSentState{}
 		m.monitorPrompt = monitorPromptState{}
@@ -1087,14 +1117,21 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	commands := []tea.Cmd{tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
 		return viewTabFlashExpiredMsg{view: view, sequence: sequence}
 	})}
-	if view == viewUsage {
-		commands = append(commands, m.requestHistory())
-	}
-	if view == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
-		m.benchmarkPlanning = true
-		commands = append(commands, planBenchmark(m.benchmarkRunner))
-	}
+	commands = append(commands, m.loadCurrentView())
 	return m, tea.Batch(commands...)
+}
+
+// Restoring a tab loads its data just like selecting it, without restoring a
+// running benchmark, an approval dialog, or other operational state.
+func (m *Model) loadCurrentView() tea.Cmd {
+	if m.meterView == viewUsage {
+		return m.requestHistory()
+	}
+	if m.meterView == viewBenchmark && m.benchmarkRunner != nil && m.benchmarkPlanNeeded() && !m.benchmarkPlanning {
+		m.benchmarkPlanning = true
+		return planBenchmark(m.benchmarkRunner)
+	}
+	return nil
 }
 
 func (m Model) pressFooterButton(button footerButtonID) (tea.Model, tea.Cmd) {

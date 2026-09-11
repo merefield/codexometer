@@ -18,6 +18,12 @@ type monitorApprovalResult struct {
 	err       error
 }
 
+const monitorApprovalConfirmDuration = 5 * time.Second
+
+func (m Model) approvalConfirmationActive(token, action string) bool {
+	return token != "" && m.monitorApprovalConfirm == token+"/"+action && time.Now().Before(m.monitorApprovalConfirmUntil)
+}
+
 func (m Model) monitorApprovalHasOutcome() bool {
 	s, ok := m.contextDetailSession()
 	return ok && s.preview.Kind == codex.SessionContextApproval && s.preview.ApprovalToken != "" && s.preview.ApprovalToken == m.monitorApprovalNoticeToken && (m.monitorApprovalBusy || m.monitorApprovalNotice != "")
@@ -120,6 +126,14 @@ func approvalShortcutLabel(kind string, confirm bool, index int) string {
 	return "[ (" + shortcut + ") " + strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(label, "["), "]")) + " ]"
 }
 
+func (m Model) approvalButtonLabel(kind string, confirm bool, index int) string {
+	label := approvalShortcutLabel(kind, confirm, index)
+	if confirm && kind == "accept" && m.keyboardEventTypes {
+		label = strings.Replace(label, "(C)", "("+strconv.Itoa(index+1)+")", 1)
+	}
+	return label
+}
+
 // Rendering and hit testing share this layout. Slots reserve confirmation
 // widths so neighbouring decisions never move underneath a user's pointer.
 func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton {
@@ -137,8 +151,8 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 		if option.Kind == "" {
 			continue
 		}
-		label := approvalShortcutLabel(option.Kind, false, i)
-		slot := max(lipgloss.Width(label), lipgloss.Width(approvalShortcutLabel(option.Kind, true, i)))
+		label := m.approvalButtonLabel(option.Kind, false, i)
+		slot := max(lipgloss.Width(label), lipgloss.Width(m.approvalButtonLabel(option.Kind, true, i)))
 		if slot > width-4 || label == "" {
 			return nil
 		}
@@ -150,8 +164,8 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 			return nil
 		}
 		action := "decision:" + strconv.Itoa(i)
-		if m.monitorApprovalConfirm == token+"/"+action {
-			label = approvalShortcutLabel(option.Kind, true, i)
+		if m.approvalConfirmationActive(token, action) {
+			label = m.approvalButtonLabel(option.Kind, true, i)
 		}
 		buttons = append(buttons, monitorApprovalButton{action, label, x, y, slot})
 		x += slot + 2
@@ -191,13 +205,15 @@ func (m Model) updateMonitorApprovalKey(key string) (Model, tea.Cmd, bool) {
 	token := m.monitorApprovalToken()
 	for _, b := range buttons {
 		if key == "c" {
-			if m.monitorApprovalConfirm == token+"/"+b.action {
+			if m.approvalConfirmationActive(token, b.action) {
 				return m.monitorApprovalAction(b.action)
 			}
 		} else if b.action == "decision:"+strconv.Itoa(int(key[0]-'1')) {
-			// Repeating a number must never turn selection into a grant. Only C
-			// or the explicitly relabelled confirmation button can confirm it.
-			m.monitorApprovalConfirm = ""
+			s, ok := m.contextDetailSession()
+			index := int(key[0] - '1')
+			if !ok || s.preview.ApprovalOptions[index].Kind != "accept" || !m.keyboardEventTypes || !m.monitorApprovalNumberReleased {
+				m.monitorApprovalConfirm = ""
+			}
 			return m.monitorApprovalAction(b.action)
 		}
 	}
@@ -243,8 +259,10 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 	if option.Kind == "" {
 		return m, nil, true
 	}
-	if option.GrantsPermission() && m.monitorApprovalConfirm != token+"/"+action {
+	if option.GrantsPermission() && !m.approvalConfirmationActive(token, action) {
 		m.monitorApprovalConfirm = token + "/" + action
+		m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
+		m.monitorApprovalNumberReleased = false
 		return m, nil, true
 	}
 	decision := option.Value

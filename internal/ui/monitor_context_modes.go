@@ -163,6 +163,12 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		n = 1
 		controls = colors.label().Render(ansi.Truncate(m.monitorApprovalNotice, max(width-4, 1), ""))
 	}
+	if n == 0 && s.id == m.monitorContextTarget() {
+		if rows := m.monitorPromptRows(width, height); rows > 0 {
+			n = rows
+			controls = m.renderMonitorPrompt(width, height, colors)
+		}
+	}
 	if dots := m.sessionActivityDots(s); n == 0 && dots != "" && height >= 5 && width >= 7 {
 		n = 1
 		controls = colors.label().Render(dots)
@@ -183,7 +189,42 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		}
 		lines = append(lines, controls)
 	}
-	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), m.renderMonitorNavigation(width, s.id, false, colors), strings.Join(lines, "\n"), colors.primary, colors)
+	action := m.renderMonitorNavigationButtons(m.expandedContextNavigation(width, height, s), colors)
+	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), action, strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+// Keep an explicit route to the complete request when inline decisions cannot
+// be safely offered. The warning never grants approval; it only opens detail.
+func (m Model) expandedContextNavigation(width, height int, s monitorSession) []monitorNavigationButton {
+	buttons := m.monitorNavigationButtons(width, s.id, false)
+	if s.preview.Kind != codex.SessionContextApproval || len(m.expandedApprovalButtons(width, height, s)) > 0 ||
+		(s.id == m.monitorContextTarget() && m.monitorApprovalHasOutcome()) {
+		return buttons
+	}
+	// The provider consumes a live request before the next context snapshot
+	// arrives. A stale preview must not turn vanished controls into a warning.
+	// Tokenless local/unsupported requests still need the diagnostic route.
+	if p, ok := m.fetcher.(codex.SessionApprovalClient); ok && s.preview.ApprovalToken != "" && !p.SessionApprovalPending(s.preview.ApprovalToken) {
+		return buttons
+	}
+	labels := []string{i18n.Text("APPROVAL — OPEN DETAIL →"), i18n.Text("APPROVAL →"), "!→"}
+	end := width - 2
+	if len(buttons) > 0 {
+		end = buttons[0].rect.x - 1
+	}
+	for _, label := range labels {
+		x := end - lipgloss.Width(label)
+		if x >= 6 {
+			warning := monitorNavigationButton{label: label, action: "detail:" + s.id, enabled: true, rect: monitorRect{x: x, y: 0, width: lipgloss.Width(label), height: 1}}
+			return append([]monitorNavigationButton{warning}, buttons...)
+		}
+	}
+	// On the smallest boxes prioritise the warning; arrow keys and half-clicks
+	// remain available even when the visible arrow pair must be omitted.
+	if width >= 10 {
+		return []monitorNavigationButton{{label: "!→", action: "detail:" + s.id, enabled: true, rect: monitorRect{x: width - 4, y: 0, width: 2, height: 1}}}
+	}
+	return buttons
 }
 
 func (m Model) expandedContextAt(x, y int) string {
@@ -196,6 +237,14 @@ func (m Model) expandedContextAt(x, y int) string {
 			mw, cw, _ := monitorSessionColumnWidths(a.width)
 			x -= mw + 1
 			y -= rowY
+			if s.id == m.monitorContextTarget() && m.monitorPromptOffer().Token != "" {
+				if rows := m.monitorPromptRows(cw, heights[i]); rows > 0 {
+					_, _, cy := monitorContextBodyLayout(heights[i], rows)
+					if y >= cy+1 && y < cy+rows-1 && x >= 2 && x < cw-2 {
+						return "prompt"
+					}
+				}
+			}
 			buttons := m.expandedApprovalButtons(cw, heights[i], s)
 			if len(buttons) > 0 {
 				_, _, cy := monitorContextBodyLayout(heights[i], buttons[len(buttons)-1].y+1)

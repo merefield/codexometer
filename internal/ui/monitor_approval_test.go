@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -83,6 +84,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 				m.height = height
 				if confirmed {
 					m.monitorApprovalConfirm = "live/decision:0"
+					m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
 				}
 				out := m.render()
 				if lipgloss.Width(out) > width || lipgloss.Height(out) > height {
