@@ -1,38 +1,41 @@
-# Codexometer: a retro companion dashboard for Codex
+# Codexometer: your retro Codex session command centre
 
-[Codexometer](https://github.com/merefield/codexometer) is a small, retro terminal dashboard for [Codex](https://github.com/openai/codex): live quota, session monitoring, token-usage history, and model benchmarks. Leave it open in a second terminal window or pane to see every active quota window, its remaining capacity, and its reset time without repeatedly opening `/status` in the Codex session where you are working.
+[Codexometer](https://github.com/merefield/codexometer) is a retro terminal dashboard and **session command centre** for [Codex](https://github.com/openai/codex). Keep it beside your working sessions to see who's busy, who needs attention, and how much quota you have left. With a shared local app-server, Monitor also lets you answer supported questions, review and confirm command approvals, and send follow-ups—all from one place. Quota, token-usage history and model benchmarks remain a tab away.
 
 ![codexometer|690x454](upload://xcWugpZYodk0zuFVYsDzluTemtf.png)
 
 ## Why use it?
 
-`/status` is useful, but it lives inside the session where you are working. Codexometer turns that information into an always-visible companion display, with a `/usage`-inspired history tab, local session monitoring, and an optional benchmark runner alongside it.
+`/status` is useful, but it lives inside the session where you are working. Codexometer keeps quota visible without interrupting that work, while Monitor brings several sessions together so you can inspect the latest context and, where live controls are available, respond without hunting through CLI tabs.
 
 It is useful when you want to:
 
 - keep quota and reset timing visible without interrupting your current task;
 - see whether local Codex sessions are active, waiting for input, or awaiting approval;
+- answer supported questions, approve commands deliberately, and send follow-ups from one session command centre;
 - understand locally observed token activity and API-equivalent cost;
 - explore up to a year of account token history, peak days, and activity streaks;
 - compare available models and reasoning levels on the same checked tasks; or
 - inspect how a benchmark was solved rather than seeing only a final score.
 
-The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and 16 languages with 17 locale options, including Brazilian and European Portuguese. Extra rate-limit windows are accommodated as Codex returns them. Theme, Quota view, benchmark filter, and ranking preferences survive restarts.
+The interface runs locally in a terminal, with clickable and hover-highlighted controls, keyboard shortcuts, responsive layouts, five colour themes, and 16 languages with 17 locale options, including Brazilian and European Portuguese. Extra rate-limit windows are accommodated as Codex returns them. Your main tab, theme, Quota view, benchmark filter, ranking and global Monitor hide/show preferences survive restarts.
 
 ## What does it show?
 
 The interface has four main tabs:
 
 - **Quota** — switch between Bars, Consumption Pace, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal or an early-exhaustion projection. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
-- **Monitor** — see one metrics box and scrolling, auto-scaling graph per root Codex session, all sampled on the same 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. Pause/resume or reset the measurement, page through sessions, and dismiss finished rows with `[×]` without closing the session: fresh activity brings them back.
+- **Monitor** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The wider readout keeps a clickable Reset beside it; Pause/Resume is keyboard-only with `p` and pauses measurement, not Codex. Page through sessions and dismiss finished rows with `[×]` without closing them: fresh activity brings them back.
 - **Usage** — explore account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see reported lifetime tokens, peak daily usage, and the current streak. This is server-side history, not the Monitor’s live local counters, so it can lag ongoing work; it does not invent historical dollar costs or per-model breakdowns.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
 
-Use `Tab` / `Shift+Tab` or the mouse to navigate. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; benchmark runs consume subscription quota or API-billed tokens, depending on your chosen authentication.
+Use `Tab` / `Shift+Tab` or the mouse to navigate. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; explicitly sent follow-ups and benchmark runs do consume model usage.
 
 Click the **Codexometer title** to jump back to Quota’s Bars view. The **version label** links to that version’s release highlights through your terminal’s hyperlink support—typically Ctrl-click.
 
-## Your terminal command centre
+## Monitor: your session command centre
+
+Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 
 Give each Monitor session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the main Monitor with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.
 
@@ -51,6 +54,8 @@ On a shared-server session ready for input, the selected full-width detail row a
 ## Quota estimates, resets, and session attention
 
 API-equivalent figures are workload-dependent estimates, not your subscription’s cash value or a statement of OpenAI’s private quota formula. They need clean observed quota movement to learn, show uncertainty, and restart learning when Codexometer is relaunched. Pricing uses published input, cached-input, and output rates where the model and usage are known; missing data is not treated as free.
+
+Quota API-EQ also accounts for **requested Fast-mode premiums** on maintained Astra and GPT-5.6 models, per response, including applicable cache and long-context pricing. `TIER*` marks requested-tier estimates; `STD 100%` provides a standard-price comparison when space permits. Missing tier evidence is flagged `STD?` or `TIER*?` with LOW confidence. These are not confirmed charges: the observed data does not expose the actual billed tier, and quota percentages are never multiplied. Benchmark rankings remain standard-price comparisons. See the [Fast-mode estimation guidance](https://github.com/merefield/codexometer#fast-mode-and-service-tier-uncertainty).
 
 The reset button normally appears only when Codex reports an available reset and a quota window is at least **80% consumed**. Change that threshold with `--reset-threshold 60`. Click once to reveal confirmation, then again within ten seconds to redeem; `Esc` cancels. A reset refreshes eligible quota and changes the weekly reset schedule—it does not stack additional allowance.
 
@@ -113,7 +118,7 @@ Prefer a non-interactive run? `codexometer --digbench-game P-1` runs a named gam
 
 ## Privacy, authentication, and cost
 
-Quota monitoring uses the prevailing Codex login. Monitor can show a bounded last-reply, activity, question, or approval preview beside each session. Excerpts remain in memory and do not trigger another model call; global Hide Detail hides them until you choose to show them again, including by expanding an individual row. With a shared app-server, full detail lets you answer supported blocking questions or explicitly send a follow-up to an idle session. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (`C` or a second click), and persistent-prefix rules are shown for review. Approval controls belong to only the current target session. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Monitor does not harvest user prompts, reasoning, or arbitrary tool output.
+Quota monitoring uses the prevailing Codex login. Monitor can show a bounded last-reply, activity, question, or approval preview beside each session. Excerpts remain in memory and do not trigger another model call; global Hide Detail hides them until you choose to show them again, including by expanding an individual row. With a shared app-server, full detail lets you answer supported blocking questions or send a follow-up to an idle session; a selected wide inline row also offers follow-ups when space permits. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (the same number for one-time approval where key-release support is detected, `C`, or a second click). Broader grants retain `C` or click confirmation, and persistent-prefix rules are shown for review. Approval controls belong to only the current target session. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Monitor does not harvest user prompts, reasoning, or arbitrary tool output.
 
 Benchmark transcripts are bounded and sanitized. Credentials, request headers, known runtime identifiers, temporary paths, terminal controls, Codex reasoning, and unrelated local session content are not retained in the detail view.
 

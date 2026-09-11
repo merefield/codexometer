@@ -5,12 +5,17 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/merefield/codexometer)](go.mod)
 [![License](https://img.shields.io/github/license/merefield/codexometer)](LICENSE)
 
-Codexometer is a small, retro terminal dashboard for your current
-[Codex](https://github.com/openai/codex) quota, live sessions, token-usage history,
-and model benchmarks.
-Keep it open in a second terminal window or pane and you can see every active
-usage window, its remaining capacity, and its reset time without repeatedly
-opening `/status` in your working Codex session.
+Codexometer is a retro terminal dashboard and **session command centre** for
+[Codex](https://github.com/openai/codex). Keep it open beside your working
+sessions to follow their activity, see which need attention, and keep quota
+and reset timing visible without repeatedly opening `/status`.
+
+The **Monitor** brings your sessions into one place: read their latest context,
+compare token activity, and—with the [shared local app-server setup](#recommended-codex-cli-setup)—
+answer supported questions, review and confirm command approvals, and send
+follow-ups to idle sessions. Quota views, account usage history and optional
+model benchmarks round out the dashboard. Ordinary CLI sessions retain
+best-effort local monitoring; interactive controls require live server support.
 
 ```text
 █▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█
@@ -23,7 +28,9 @@ opening `/status` in your working Codex session.
 _Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
 
 Codexometer refreshes quota once a minute by default. Passive quota monitoring
-and the Usage history tab are read-only and do not start model turns. Redeeming
+and the Usage history tab are read-only and do not start model turns. Monitor
+previews are passive too; explicitly sending a follow-up starts a Codex turn
+and consumes model usage. Redeeming
 a banked quota reset is an explicit, separately confirmed action. Benchmark
 runs also require an explicit action and consume Codex quota or API-billed tokens,
 depending on the selected authentication.
@@ -36,8 +43,9 @@ unchanged by default.
 ## Why use it?
 
 Codex already exposes quota information through `/status`, but that view lives
-inside the session you are using. Codexometer is designed as a companion
-display:
+inside the session you are using. Codexometer adds a companion display and a
+single place to check on several sessions—then respond to the selected session
+without searching through terminal tabs when live interaction is available:
 
 ```text
 ┌──────────────────────────────┬──────────────────────────┐
@@ -896,11 +904,14 @@ again from Codex. `--demo` includes sample history for previewing the charts.
 
 The other top-level views are:
 
-- **Monitor** — automatically establishes a zero baseline across locally active
+- **Monitor** — the session command centre: inspect context, track activity,
+  and respond through eligible live approval and reply controls for the selected
+  session. It automatically establishes a zero baseline across locally active
   Codex sessions when Codexometer starts. A large readout follows newly appended
   token telemetry and shows total observed tokens, elapsed time, and average
   rate; a clickable Reset control sits beside it. Pause/Resume remains available
-  through `p`, without taking space from the readout. Active sessions
+  through the `p` hotkey only, without a large Pause button taking space from
+  the readout. This pauses measurement, not Codex sessions. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
   The Monitor tab light and status label pulse between bright and dim amber
   whenever any session needs input, approval, or a check. With nothing waiting,
@@ -1177,7 +1188,9 @@ selected row, the default targeting described above applies.
 Outstanding requests take priority over ordinary activity when linked agents
 share a root row, and the source ID identifies the actual member.
 
-**Replies and follow-ups (shared app-server only):** full detail reserves a
+**Replies and follow-ups (shared app-server only):** the selected wide inline
+row offers a follow-up composer when the complete context fits, as described
+above; structured questions use full detail. Full detail reserves a
 compact prompt at the bottom when a loaded session is idle (including **TURN
 COMPLETE**), or has a supported blocking question. Click the input line or press
 `Enter` to focus it; type your text, then press `Enter` to submit. Dashboard
