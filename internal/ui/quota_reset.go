@@ -48,6 +48,12 @@ func (m Model) availableResetCredits() []codex.ResetCredit {
 		}
 	}
 	slices.SortStableFunc(credits, func(a, b codex.ResetCredit) int {
+		if a.HasKnownExpiry() != b.HasKnownExpiry() {
+			if a.HasKnownExpiry() {
+				return -1
+			}
+			return 1
+		}
 		if a.ExpiresAt == nil && b.ExpiresAt == nil {
 			return strings.Compare(a.ID, b.ID)
 		}
@@ -252,7 +258,7 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 		if m.resetKey == "" {
 			m.resetAccount = m.snapshot.AccountFingerprint
 			m.resetCreditID = ""
-			if credits := m.availableResetCredits(); len(credits) > 0 {
+			if credits := m.availableResetCredits(); len(credits) > 0 && credits[0].HasKnownExpiry() {
 				if _, ok := m.fetcher.(resetCreditConsumer); ok {
 					m.resetCreditID = credits[0].ID
 				}
@@ -268,7 +274,7 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 			m.resetNotice += " " + notice
 		}
 		if m.resetCreditID == "" {
-			m.resetNotice += " Expiry order unavailable; backend chooses the credit."
+			m.resetNotice += " " + i18n.Text("Expiry order unavailable; backend chooses the credit.")
 		} else {
 			for _, credit := range m.availableResetCredits() {
 				if credit.ID == m.resetCreditID {
@@ -296,7 +302,7 @@ func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
 		if m.resetCreditID != "" {
 			found := false
 			for _, credit := range m.availableResetCredits() {
-				if credit.ID == m.resetCreditID {
+				if credit.ID == m.resetCreditID && credit.HasKnownExpiry() {
 					found = true
 					break
 				}
@@ -340,6 +346,9 @@ func resetCreditTitle(c codex.ResetCredit) string {
 }
 
 func resetCreditExpiry(c codex.ResetCredit) string {
+	if !c.HasKnownExpiry() {
+		return i18n.Text("Expiry information unavailable.")
+	}
 	if c.ExpiresAt == nil {
 		return "Does not expire"
 	}
@@ -351,11 +360,16 @@ func (m Model) resetExpiryDataNotice() string {
 	if summary != nil && summary.AvailableCount <= 0 {
 		return ""
 	}
-	credits := m.availableResetCredits()
-	if len(credits) == 0 {
+	known := 0
+	for _, credit := range m.availableResetCredits() {
+		if credit.HasKnownExpiry() {
+			known++
+		}
+	}
+	if known == 0 {
 		return i18n.Text("Expiry information unavailable. No warning does not mean no expiry.")
 	}
-	if len(credits) < summary.AvailableCount {
+	if known < summary.AvailableCount {
 		return i18n.Text("Expiry information incomplete. Other credits may expire sooner.")
 	}
 	return ""
@@ -373,20 +387,20 @@ func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 		lines = append(lines, colors.label().Foreground(colors.warning).Render(notice))
 	}
 	if m.resetExpiringSoon() {
-		lines = append(lines, colors.label().Foreground(colors.warning).Render(fmt.Sprintf("EXPIRING SOON // within %d hours", m.resetWarningHours)))
+		lines = append(lines, colors.label().Foreground(colors.warning).Render(i18n.Format("EXPIRING SOON // within %d hours", m.resetWarningHours)))
 	}
 	if summary.AvailableCount == 0 {
 		return append(lines, "No resets available.")
 	}
 	if len(credits) == 0 {
-		return append(lines, "Backend selects the next credit; expiry order is unknown.")
+		return append(lines, i18n.Text("Expiry order unavailable; backend chooses the credit."))
 	}
 	lines = append(lines, fmt.Sprintf("Showing %d of %d available resets. Earliest known expiry first.", len(credits), summary.AvailableCount))
 	for index, credit := range credits {
 		title := fmt.Sprintf("%d // %s", index+1, resetCreditTitle(credit))
 		if credit.ID == m.resetCreditID && (!m.resetConfirmUntil.IsZero() || m.resetKey != "") {
 			title += " // SELECTED"
-		} else if index == 0 {
+		} else if index == 0 && credit.HasKnownExpiry() {
 			title += " // NEXT"
 		}
 		lines = append(lines, "", colors.label().Render(title), resetCreditExpiry(credit))

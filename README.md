@@ -882,7 +882,10 @@ how many of the available credits have usable details; earliest expiry means
 **earliest known**, not a guarantee about undisclosed credits. If only a count
 is available, expiry is unknown and the backend chooses the credit; its default
 selection order is not guaranteed by the public protocol. A supplied null expiry
-means “does not expire”, not “unknown”. Reset-credit expiry is separate from the
+means “does not expire”; an omitted expiry field means “unknown”. Credits with
+unknown expiry remain visible with a disclosure, but are not selected as the
+earliest known expiry. With no comparable expiries, the backend selects the credit.
+Reset-credit expiry is separate from the
 automatic quota-window reset date.
 
 ### Usage: account token history

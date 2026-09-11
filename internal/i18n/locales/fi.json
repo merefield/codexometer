@@ -1,4 +1,7 @@
 {
+  "Expiry order unavailable; backend chooses the credit.": "Vanhenemisjärjestys ei ole tiedossa; palvelin valitsee krediitin.",
+  "EXPIRING SOON // within %d hours": "VANHENEE PIAN // %d tunnin kuluessa",
+  "Expiry information unavailable.": "Vanhenemistietoja ei ole saatavilla.",
   "Unused allowance does not carry over or stack.": "Käyttämätön kiintiö ei siirry eikä kerry.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Vanhenemistietoja ei ole saatavilla. Varoituksen puuttuminen ei tarkoita, ettei mikään vanhene.",
   "Expiry information incomplete. Other credits may expire sooner.": "Vanhenemistiedot ovat puutteelliset. Muut krediitit voivat vanhentua aiemmin.",

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,44 @@ import (
 type specificResetFake struct {
 	resetFake
 	ids []string
+}
+
+func TestUndisclosedResetExpiry(t *testing.T) {
+	m, _ := resetModel()
+	m.fetcher = &specificResetFake{}
+	var unknown codex.ResetCredit
+	if err := json.Unmarshal([]byte(`{"id":"unknown","status":"available","resetType":"codexRateLimits"}`), &unknown); err != nil {
+		t.Fatal(err)
+	}
+	m.snapshot.RateLimitResetCredits.AvailableCount = 1
+	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{unknown}
+	if resetCreditExpiry(unknown) == "Does not expire" || !strings.Contains(m.resetExpiryDataNotice(), "unavailable") {
+		t.Fatal("omitted expiry treated as non-expiring")
+	}
+	u, cmd := m.pressQuotaReset()
+	if cmd != nil || u.(Model).resetCreditID != "" {
+		t.Fatal("unknown expiry selected as known earliest")
+	}
+	forever := credit("forever", time.Hour)
+	forever.ExpiresAt, forever.ExpiryKnown = nil, true
+	m.snapshot.RateLimitResetCredits.AvailableCount = 3
+	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{unknown, forever, credit("soon", time.Hour)}
+	ordered := m.availableResetCredits()
+	if ordered[0].ID != "soon" || ordered[1].ID != "forever" || ordered[2].ID != "unknown" || !m.resetExpiringSoon() {
+		t.Fatal("unknown expiry displaced known expiring credit")
+	}
+	if !strings.Contains(m.resetExpiryDataNotice(), "incomplete") {
+		t.Fatal("unknown expiry omitted from coverage warning")
+	}
+	u, _ = m.pressQuotaReset()
+	m = u.(Model)
+	if m.resetCreditID != "soon" {
+		t.Fatal("did not choose known soonest expiry")
+	}
+	m.snapshot.RateLimitResetCredits.Credits[2].ExpiresAt = nil // refreshed source no longer discloses the selected expiry
+	if _, cmd := m.pressQuotaReset(); cmd != nil {
+		t.Fatal("submitted after selected expiry became unknown")
+	}
 }
 
 func (f *specificResetFake) ConsumeResetCredit(ctx context.Context, key, account, id string) (string, error) {
@@ -32,6 +71,7 @@ func TestResetCreditOrderingAndWarning(t *testing.T) {
 	m.snapshot.RateLimitResetCredits.AvailableCount = 8
 	noExpiry := credit("forever", time.Hour)
 	noExpiry.ExpiresAt = nil
+	noExpiry.ExpiryKnown = true
 	redeemed := credit("redeemed", time.Minute)
 	redeemed.Status = "redeemed"
 	unknown := credit("unknown", time.Minute)
@@ -148,6 +188,7 @@ func TestResetSafetyMessages(t *testing.T) {
 			}
 			if mode == "non-expiring" {
 				m.snapshot.RateLimitResetCredits.Credits[0].ExpiresAt = nil
+				m.snapshot.RateLimitResetCredits.Credits[0].ExpiryKnown = true
 			}
 			if mode == "none" {
 				m.snapshot.RateLimitResetCredits.AvailableCount = 0

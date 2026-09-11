@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func TestResetWarningClickSurfaces(t *testing.T) {
@@ -73,6 +74,28 @@ func TestResetWarningClickSurfaces(t *testing.T) {
 				t.Fatal("quota tabs not moved with warning")
 			}
 		}
+	}
+}
+
+func TestResetWarningsUseLocale(t *testing.T) {
+	m, _ := resetModel()
+	want := i18n.Text("Expiry order unavailable; backend chooses the credit.")
+	body := strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n")
+	if !strings.Contains(body, want) {
+		t.Fatal("inventory fallback is not localised")
+	}
+	u, _ := m.pressQuotaReset()
+	if !strings.Contains(u.(Model).resetNotice, want) {
+		t.Fatal("confirmation fallback is not localised")
+	}
+	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("first", time.Hour)}
+	body = strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n")
+	if !strings.Contains(body, i18n.Format("EXPIRING SOON // within %d hours", m.resetWarningHours)) {
+		t.Fatal("expiry status is not localised")
+	}
+	unknown := codex.ResetCredit{}
+	if resetCreditExpiry(unknown) != i18n.Text("Expiry information unavailable.") {
+		t.Fatal("unknown expiry is not localised")
 	}
 }
 

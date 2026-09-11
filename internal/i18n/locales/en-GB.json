@@ -1,4 +1,7 @@
 {
+  "Expiry order unavailable; backend chooses the credit.": "Expiry order unavailable; backend chooses the credit.",
+  "EXPIRING SOON // within %d hours": "EXPIRING SOON // within %d hours",
+  "Expiry information unavailable.": "Expiry information unavailable.",
   "Unused allowance does not carry over or stack.": "Unused allowance does not carry over or stack.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Expiry information unavailable. No warning does not mean no expiry.",
   "Expiry information incomplete. Other credits may expire sooner.": "Expiry information incomplete. Other credits may expire sooner.",
