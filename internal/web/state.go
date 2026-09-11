@@ -40,11 +40,45 @@ type sample struct {
 }
 
 type meter struct {
-	Name     string `json:"name"`
-	Used     int    `json:"used"`
-	Duration *int64 `json:"duration"`
-	Reset    *int64 `json:"reset"`
-	Details  string `json:"details"`
+	Name     string      `json:"name"`
+	Used     int         `json:"used"`
+	Duration *int64      `json:"duration"`
+	Reset    *int64      `json:"reset"`
+	Details  string      `json:"details"`
+	Trail    []zonePoint `json:"trail"`
+}
+
+type zonePoint struct {
+	At      time.Time `json:"at"`
+	Elapsed float64   `json:"elapsed"`
+	Used    int       `json:"used"`
+	Break   bool      `json:"break"`
+}
+
+// Bound memory and snapshot size while retaining the original observation.
+const maxZonePoints = 720
+
+func observeZone(m meter, previous []meter, now time.Time, gap bool) []zonePoint {
+	if m.Duration == nil || *m.Duration <= 0 || m.Reset == nil || *m.Reset <= 0 {
+		return nil
+	}
+	x := max(0, min(100, 100*(1-(float64(*m.Reset)-float64(now.Unix()))/(float64(*m.Duration)*60))))
+	var points []zonePoint
+	for _, old := range previous {
+		if old.Name == m.Name && old.Duration != nil && old.Reset != nil && *old.Duration == *m.Duration && *old.Reset == *m.Reset && len(old.Trail) > 0 {
+			last := old.Trail[len(old.Trail)-1]
+			if now.After(last.At) && m.Used >= last.Used && x >= last.Elapsed {
+				points = append(points, old.Trail...)
+			}
+			break
+		}
+	}
+	points = append(points, zonePoint{At: now, Elapsed: x, Used: m.Used, Break: gap})
+	if len(points) > maxZonePoints {
+		points = append(points[:1], points[len(points)-(maxZonePoints-1):]...)
+		points[1].Break = true
+	}
+	return points
 }
 
 type credit struct {
@@ -103,13 +137,20 @@ func (s *store) snapshot() ([]byte, <-chan struct{}) {
 func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	gap := s.state.QuotaError
 	s.state.QuotaError = err != nil
 	if err == nil {
+		previous := s.state.Meters
+		if s.account != q.AccountFingerprint {
+			previous = nil
+		}
 		s.account = q.AccountFingerprint
 		s.state.QuotaAt = now
 		s.state.Meters = []meter{}
 		for _, m := range q.Meters() {
-			s.state.Meters = append(s.state.Meters, meter{Name: m.Bucket + " // " + m.Name, Used: max(0, min(100, m.Window.UsedPercent)), Duration: m.Window.WindowDurationMins, Reset: m.Window.ResetsAt, Details: m.Details})
+			item := meter{Name: m.Bucket + " // " + m.Name, Used: max(0, min(100, m.Window.UsedPercent)), Duration: m.Window.WindowDurationMins, Reset: m.Window.ResetsAt, Details: m.Details}
+			item.Trail = observeZone(item, previous, now, gap)
+			s.state.Meters = append(s.state.Meters, item)
 		}
 		s.state.CreditCount = 0
 		s.state.Credits = []credit{}

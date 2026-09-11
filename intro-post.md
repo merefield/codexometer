@@ -69,8 +69,18 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 
 Prefer a browser window? `codexometer --web` now offers an **experimental,
 read-only** Quota, Sessions and Usage dashboard with the same retro spirit:
-responsive gauges, expandable session context, live activity graphs and usage
-heatmaps. Try `codexometer --web --demo` with simulated data first.
+responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
+now traces the observed quota path, with a marked starting point and gaps for
+failed observations. Sessions offers graph-only, split, wide and full-page
+detail: select with ↑/↓, adjust detail with ←/→, or use the clickable controls.
+Prominent attention links distinguish observed requests from inferred inactivity,
+and commands are separated from the explanation when available. It's a read-only
+step towards a browser command centre — actions still happen in Codex or the TUI.
+
+Your theme, tab, quota view and session layouts are remembered in the browser;
+use a fixed `--web-port` to retain preferences across launches. Trails live only
+until the server stops and represent quota-window observations, not individual
+session usage. Try `codexometer --web --demo` with simulated data first.
 
 Open the private, one-use pairing link printed in your terminal and keep that
 process running. Everything is served from the local Go binary; no Node runtime

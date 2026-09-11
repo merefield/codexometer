@@ -1,6 +1,38 @@
 import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import type { Page } from '@playwright/test';
+
+// Keep the stream open so tests can distinguish fresh signals from disconnected
+// cached snapshots and can deliver updates without reloading the presentation.
+async function mockStream(page: Page, snapshot: object) {
+  await page.addInitScript((snapshot) => {
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (input === '/api/events')
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                const send = (value: unknown) =>
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      'data: ' + JSON.stringify(value) + '\n\n',
+                    ),
+                  );
+                send(snapshot);
+                window.addEventListener('test-snapshot', (event) =>
+                  send((event as CustomEvent).detail),
+                );
+              },
+            }),
+            { headers: { 'Content-Type': 'text/event-stream' } },
+          ),
+        );
+      return original(input, init);
+    };
+  }, snapshot);
+}
 
 const test = base.extend<{ pairingURL: string }>({
   pairingURL: async ({}, use) => {
@@ -427,7 +459,7 @@ test('session detail deep links and responsive layout', async ({
     'git push origin main',
   );
   await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
-  await page.getByRole('button', { name: 'SHOW DETAIL' }).first().click();
+  await expect(page.locator('.session-row').first()).toHaveClass(/wide/);
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
@@ -445,6 +477,265 @@ test('session detail deep links and responsive layout', async ({
   await expect(
     page.getByText('This session is no longer', { exact: false }),
   ).toBeVisible();
+});
+
+test('per-session detail navigation, selection and preferences survive reload', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'PIE', exact: true }).click();
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const rows = page.locator('.session-row');
+  await expect(rows).toHaveCount(2);
+  await page.keyboard.press('ArrowDown');
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await page.keyboard.press('ArrowRight');
+  await expect(rows.nth(1).locator('.context')).toHaveCount(1);
+  await expect(rows.first().locator('.context')).toHaveCount(0);
+  await rows.nth(1).getByRole('button', { name: 'More detail' }).click();
+  await expect(rows.nth(1).locator('.graph-panel')).toHaveCount(0);
+  const widths = await rows
+    .locator('.telemetry')
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().width),
+    );
+  expect(Math.abs(widths[0] - widths[1])).toBeLessThan(1);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.full-detail')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(rows.nth(1)).toHaveClass(/wide/);
+  await page.reload();
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await expect(rows.nth(1)).toHaveClass(/wide/);
+  await page.keyboard.press('ArrowLeft');
+  await expect(rows.nth(1).locator('.graph-panel')).toHaveCount(1);
+  await page.keyboard.press('ArrowLeft');
+  await expect(rows.nth(1).locator('.context')).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
+    .click();
+  await expect(page.locator('.context')).toHaveCount(2);
+  await page
+    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
+    .click();
+  await expect(page.locator('.context')).toHaveCount(0);
+  await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
+  await expect(page).toHaveURL(/#\/quota\/pie$/);
+  await page.getByRole('link', { name: 'CODEXOMETER', exact: true }).click();
+  await expect(page).toHaveURL(/#\/quota\/bars$/);
+});
+
+test('saved landing tab restores on pairing and invalid preferences are ignored', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'codexometer.web.preferences.v1',
+      JSON.stringify({
+        tab: 'sessions',
+        view: 'pie',
+        layouts: [null, { id: 'bad', level: 99 }],
+      }),
+    );
+  });
+  await page.goto(pairingURL);
+  await expect(page).toHaveURL(/#\/sessions$/);
+  await expect(page.locator('.session-row')).toHaveCount(2);
+  await expect(page.locator('.context')).toHaveCount(0);
+});
+
+test('blocked preference storage keeps navigation functional', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      get() {
+        throw new Error('blocked');
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'More detail' }).first().click();
+  await expect(page.locator('.context')).toHaveCount(1);
+});
+
+test('attention distinguishes observed signals, inference and stale state without actions', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: [
+      'APPROVAL NEEDED',
+      'CHECK SESSION',
+      'INPUT NEEDED',
+      'TURN COMPLETE',
+    ].map((status, index) => ({
+      id: String(index),
+      directory: '/test/' + index,
+      tokens: 0,
+      agents: 0,
+      status,
+      contextKind: 'LAST REPLY',
+      text: 'A lengthy explanation. '.repeat(100),
+      command: '',
+      source: 'LOCAL',
+      activity: '',
+      samples: [],
+    })),
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Sessions needing attention' })
+      .getByRole('link'),
+  ).toHaveCount(3);
+  await page
+    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
+    .click();
+  const rows = page.locator('.session-row');
+  await expect(rows.nth(0).locator('.attention-badge')).toBeVisible();
+  await expect(rows.nth(0)).toContainText(
+    'Command unavailable from this observation',
+  );
+  await expect(rows.nth(1)).toContainText(
+    'not a confirmed input or approval request',
+  );
+  await expect(rows.nth(2)).toContainText('OBSERVED INPUT SIGNAL');
+  await expect(rows.nth(3)).toContainText(
+    'informational, not an approval request',
+  );
+  snapshot.sessions[0].command = 'git status';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(rows.nth(0).locator('.command')).toHaveText('git status');
+  await page.setViewportSize({ width: 360, height: 700 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await rows.nth(0).locator('.attention-badge').click();
+  await expect(page.locator('.full-detail .command')).toHaveText('git status');
+  await expect(
+    page.getByRole('button', { name: /APPROVE|DECLINE|SEND|CONFIRM/ }),
+  ).toHaveCount(0);
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.full-detail h2')).toContainText('STALE');
+  await expect(
+    page.getByRole('navigation', { name: 'Sessions needing attention' }),
+  ).toHaveCount(0);
+  await expect(page.locator('.full-detail')).toContainText(
+    'LAST OBSERVED COMMAND',
+  );
+  snapshot.sessionsError = false;
+  snapshot.sessions[0].status = 'WORKING';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.full-detail h2')).toContainText('WORKING');
+  await page.keyboard.press('Escape');
+  await expect(rows.first().locator('.attention-badge')).toHaveCount(0);
+  await rows.nth(1).locator('.session-select').click();
+  snapshot.sessions.splice(1, 1);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(rows.first()).toHaveClass(/selected/);
+});
+
+test('zone trail renders start, gap and live updates across navigation and reload', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    sessions: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      {
+        name: 'Weekly',
+        used: 40,
+        duration: 10080,
+        reset: Math.floor(Date.now() / 1000) + 3600,
+        details: '',
+        trail: [
+          { at: '2026-09-10T12:00:00Z', elapsed: 10, used: 5, break: false },
+          { at: '2026-09-10T13:00:00Z', elapsed: 20, used: 15, break: false },
+          { at: '2026-09-10T15:00:00Z', elapsed: 40, used: 40, break: true },
+        ],
+      },
+    ],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+  const trail = page.locator('.observation-trail');
+  await expect(page.locator('.trail-start')).toHaveCount(1);
+  expect((await trail.getAttribute('d'))?.match(/M/g)).toHaveLength(2);
+  expect((await trail.getAttribute('d'))?.match(/L/g)).toHaveLength(1);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
+  await expect(trail).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.trail-caption')).toContainText('3 OBSERVATIONS');
+  snapshot.meters[0].trail.push({
+    at: '2026-09-10T16:00:00Z',
+    elapsed: 50,
+    used: 45,
+    break: false,
+  });
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.trail-caption')).toContainText('4 OBSERVATIONS');
+  snapshot.meters[0].trail = [snapshot.meters[0].trail[3]];
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.trail-caption')).toContainText('1 OBSERVATIONS');
 });
 
 test('usage heatmap, period selection, bars and accessible table', async ({

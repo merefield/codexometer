@@ -1,3 +1,4 @@
+import { homeRoute } from './preferences.svelte';
 export interface Sample {
   at: string;
   tokens: number;
@@ -21,6 +22,7 @@ export interface Meter {
   duration: number | null;
   reset: number | null;
   details: string;
+  trail?: { at: string; elapsed: number; used: number; break: boolean }[];
 }
 export interface Credit {
   title: string;
@@ -79,8 +81,8 @@ export function connect(): () => void {
   }
   const fragment = location.hash;
   const secret = fragment.startsWith('#pair=') ? fragment.slice(6) : '';
-  if (secret) {
-    history.replaceState(null, '', '/#/quota/bars');
+  if (secret || !fragment || fragment === '#') {
+    history.replaceState(null, '', '/#' + homeRoute());
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }
 

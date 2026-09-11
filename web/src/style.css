@@ -337,21 +337,58 @@ a {
   margin-top: 24px;
 }
 .session-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(210px, 1.1fr) minmax(0, 1.2fr) minmax(0, 1.5fr);
   gap: 14px;
   margin: 18px 0;
   align-items: stretch;
 }
-.session-row .telemetry {
-  flex: 1.1;
+.session-row.selected {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
 }
-.session-row .context {
-  flex: 1.2;
+.session-row.wide .context {
+  grid-column: 2 / -1;
+}
+.detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attention-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 8px;
+}
+.attention-note,
+.attention-badge {
+  color: var(--accent);
+  border-left: 3px solid currentColor;
+  padding-left: 8px;
+}
+.attention-note.inferred {
+  color: var(--muted);
+}
+.attention-badge {
+  font-size: 12px;
+}
+.session-select {
+  text-align: left;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .session-row .graph-panel {
-  flex: 1.5;
+  grid-column: 2 / -1;
   display: flex;
   flex-direction: column;
+}
+.session-row.split .graph-panel {
+  grid-column: auto;
 }
 .session-row .button,
 .session-row button {
@@ -457,7 +494,11 @@ footer select {
 }
 @media (max-width: 850px) {
   .session-row {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-row.wide .context,
+  .session-row .graph-panel {
+    grid-column: auto;
   }
   .connection {
     text-align: left;

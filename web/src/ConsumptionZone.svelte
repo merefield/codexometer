@@ -1,5 +1,11 @@
 <script lang="ts">
-  let { used, elapsed }: { used: number; elapsed: number } = $props();
+  import type { Meter } from './state.svelte';
+  import { date } from './state.svelte';
+  let {
+    used,
+    elapsed,
+    trail = [],
+  }: { used: number; elapsed: number; trail?: Meter['trail'] } = $props();
   const gradient = $props.id();
   const ticks = [0, 25, 50, 75, 100];
   let width = $state(400);
@@ -15,6 +21,14 @@
     bottom - (Math.max(0, Math.min(100, used)) / 100) * plotHeight,
   );
   let difference = $derived(used - elapsed);
+  let path = $derived(
+    trail
+      .map(
+        (p, i) =>
+          `${i === 0 || p.break ? 'M' : 'L'}${48 + (p.elapsed / 100) * plotWidth} ${bottom - (p.used / 100) * plotHeight}`,
+      )
+      .join(' '),
+  );
 </script>
 
 <div class="zone-canvas" bind:clientWidth={width} bind:clientHeight={height}>
@@ -65,6 +79,15 @@
     {/each}
     <path class="axes" d={`M48 20 V${bottom} H${right}`} />
     <line class="pace-line" x1="48" y1={bottom} x2={right} y2="20" />
+    {#if trail.length}
+      <path class="observation-trail" d={path} />
+      <circle
+        class="trail-start"
+        cx={48 + (trail[0].elapsed / 100) * plotWidth}
+        cy={bottom - (trail[0].used / 100) * plotHeight}
+        r="5"><title>First observation: {date(trail[0].at)}</title></circle
+      >
+    {/if}
     <text x="48" y="12" class="axis-title">CONSUMPTION</text>
     <text
       x={48 + plotWidth / 2}
@@ -88,6 +111,10 @@
         : 'BELOW THE LINE — WITHIN PACE'}</span
   >
 </p>
+{#if trail.length}<p class="muted trail-caption">
+    ○ START {date(trail[0].at)} // {trail.length} OBSERVATIONS<br />Observed
+    quota path, not individual session usage. Gaps are not interpolated.
+  </p>{/if}
 
 <style>
   .zone-canvas {
@@ -136,6 +163,21 @@
   }
   .position-dot {
     fill: #fff;
+  }
+  .observation-trail {
+    fill: none;
+    stroke: white;
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+  }
+  .trail-start {
+    fill: none;
+    stroke: white;
+    stroke-width: 2;
+  }
+  .trail-caption {
+    font-size: 11px;
+    text-align: center;
   }
   .zone-caption {
     color: var(--accent);

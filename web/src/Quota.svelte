@@ -3,8 +3,9 @@
   import { live, date } from './state.svelte';
   import type { Meter } from './state.svelte';
   import ConsumptionZone from './ConsumptionZone.svelte';
+  import { preferences, quotaViews } from './preferences.svelte';
   let { params = {} }: { params?: { view?: string } } = $props();
-  const views = ['bars', 'pace', 'zone', 'pie', 'fuel', 'resets'];
+  const views = quotaViews;
   let now = $state(Date.now());
   let view = $derived(
     views.includes(params.view || '') ? params.view! : 'bars',
@@ -20,6 +21,9 @@
       Math.min(100, 100 * (1 - (m.reset * 1000 - now) / (m.duration * 60000))),
     );
   }
+  $effect(() => {
+    preferences.view = view;
+  });
   function sector(used: number): string {
     const angle = (used / 100) * Math.PI * 2;
     return `M60 60 L60 14 A46 46 0 ${used > 50 ? 1 : 0} 1 ${60 + 46 * Math.sin(angle)} ${60 - 46 * Math.cos(angle)} Z`;
@@ -110,7 +114,11 @@
               </div>
             {:else if view === 'zone'}
               {#if cycle !== null}
-                <ConsumptionZone used={meter.used} elapsed={cycle} />
+                <ConsumptionZone
+                  used={meter.used}
+                  elapsed={cycle}
+                  trail={meter.trail || []}
+                />
               {:else}<p class="empty">
                   Cycle duration or reset date unavailable — position cannot be
                   plotted.
