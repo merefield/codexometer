@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import { live, date } from './state.svelte';
   import type { Meter } from './state.svelte';
+  import ConsumptionZone from './ConsumptionZone.svelte';
   let { params = {} }: { params?: { view?: string } } = $props();
-  const views = ['bars', 'pace', 'pie', 'fuel', 'resets'];
+  const views = ['bars', 'pace', 'zone', 'pie', 'fuel', 'resets'];
   let now = $state(Date.now());
   let view = $derived(
     views.includes(params.view || '') ? params.view! : 'bars',
@@ -32,9 +33,11 @@
       aria-current={view === item ? 'page' : undefined}
       >{item === 'pace'
         ? 'CONSUMPTION PACE'
-        : item === 'fuel'
-          ? 'FUEL TANK'
-          : item.toUpperCase()}</a
+        : item === 'zone'
+          ? 'CONSUMPTION ZONE'
+          : item === 'fuel'
+            ? 'FUEL TANK'
+            : item.toUpperCase()}</a
     >{/each}
 </nav>
 {#if live.data}
@@ -65,7 +68,11 @@
       </p>
     </section>
   {:else}
-    <div class:radial={view === 'pie'} class="quota-grid">
+    <div
+      class:radial={view === 'pie'}
+      class:zone={view === 'zone'}
+      class="quota-grid"
+    >
       {#each live.data.meters as meter}
         {@const cycle = elapsed(meter)}
         {@const pace = cycle === null ? null : cycle - meter.used}
@@ -97,6 +104,13 @@
                   />{/if}
               </svg>
             </div>
+          {:else if view === 'zone'}
+            {#if cycle !== null}
+              <ConsumptionZone used={meter.used} elapsed={cycle} />
+            {:else}<p class="empty">
+                Cycle duration or reset date unavailable — position cannot be
+                plotted.
+              </p>{/if}
           {:else if view === 'pace'}
             {#if pace !== null}
               <div class="pace">

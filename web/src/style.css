@@ -205,6 +205,9 @@ a {
   display: grid;
   gap: 20px;
 }
+.quota-grid.zone {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
 .quota-grid.radial {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
 }

@@ -70,6 +70,11 @@ test('pairing, all quota views, navigation and refresh', async ({
     .getByRole('link', { name: 'CONSUMPTION PACE', exact: true })
     .click();
   await expect(page.locator('.pace')).toHaveCount(2);
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+  await expect(page.locator('.consumption-zone')).toHaveCount(2);
+  await expect(page.locator('.position-dot')).toHaveCount(2);
   await page.getByRole('link', { name: 'FUEL TANK', exact: true }).click();
   await expect(page.getByRole('meter', { name: 'Fuel remaining' })).toHaveCount(
     2,
@@ -100,6 +105,86 @@ test('pairing, all quota views, navigation and refresh', async ({
     'nightshade',
   );
   expect(errors).toEqual([]);
+});
+
+test('consumption zone plots bounded coordinates and handles missing windows', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const end = Math.floor(now.getTime() / 1000);
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      { name: 'Start', used: 0, duration: 100, reset: end + 7500, details: '' },
+      {
+        name: 'Fast consumption',
+        used: 75,
+        duration: 100,
+        reset: end + 4500,
+        details: '',
+      },
+      { name: 'End', used: 100, duration: 100, reset: end - 3000, details: '' },
+      { name: 'Unknown', used: 40, duration: null, reset: null, details: '' },
+    ],
+  };
+  await page.route('**/api/events', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'data: ' + JSON.stringify(snapshot) + '\n\n',
+    }),
+  );
+  await page.goto(pairingURL);
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+  await expect(page.locator('.consumption-zone')).toHaveCount(3);
+  expect(
+    await page
+      .locator('.position-dot')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => [node.getAttribute('cx'), node.getAttribute('cy')]),
+      ),
+  ).toEqual([
+    ['50', '260'],
+    ['130', '80'],
+    ['370', '20'],
+  ]);
+  await expect(
+    page.getByText('ABOVE THE LINE — CONSUMING FASTER THAN TIME'),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Cycle duration or reset date unavailable', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const ids = await page
+    .locator('linearGradient')
+    .evaluateAll((nodes) => nodes.map((node) => node.id));
+  expect(new Set(ids).size).toBe(3);
+  for (const width of [360, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.screenshot({
+    path: 'test-results/consumption-zone.png',
+    fullPage: true,
+  });
 });
 
 test('session detail deep links and responsive layout', async ({

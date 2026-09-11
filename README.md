@@ -1983,12 +1983,20 @@ codexometer --web --web-port 8765
 5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
 
 This first preview is **read-only and UK-English-only**, not feature parity with
-the terminal. It includes Bars, Consumption Pace, Pie and Fuel Tank quota
+the terminal. It includes Bars, Consumption Pace, Consumption Zone, Pie and Fuel Tank quota
 presentations; reset inventory with disclosed expiry information; local session
 telemetry with expandable/full-page context and synchronised activity graphs;
 and account history with a daily heatmap, monthly/cumulative bars, a 6/12-month
 selector and an accessible data table. Five browser themes are available.
 `CODEXOMETER_LANG` continues to configure the terminal, not this preview.
+
+**Consumption Zone** plots each window's elapsed quota period horizontally and
+0–100% consumption vertically. The bottom-left to top-right diagonal represents
+steady consumption: above it means usage is outpacing elapsed time, below it means
+headroom. The background fades from red at the top left through amber to green at
+the bottom right, and a high-contrast dot marks the current observation. This is
+a position comparison, not a usage-history graph or a prediction of future use.
+Windows without a known duration and reset date cannot be plotted.
 
 Approvals, prompt sending, benchmark execution and quota-reset redemption are
 **not exposed by the web server**, even if the shared Codex daemon supports them.
