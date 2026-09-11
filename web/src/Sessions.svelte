@@ -16,6 +16,21 @@
       : sessions[0]?.id,
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
+  // Parent rows already include linked-agent usage. Sum each listed row once;
+  // do not add agent counts or activity samples to its observed token counter.
+  let totals = $derived([
+    ['OBSERVED TOKENS', number(sessions.reduce((sum, s) => sum + s.tokens, 0))],
+    ['LISTED SESSIONS', number(sessions.length)],
+    ...[
+      ['WORKING', 'WORKING'],
+      ['AWAITING APPROVAL', 'APPROVAL NEEDED'],
+      ['AWAITING INPUT', 'INPUT NEEDED'],
+      ['CHECK · INFERRED', 'CHECK SESSION'],
+    ].map(([label, status]) => [
+      label,
+      stale ? '—' : number(sessions.filter((s) => s.status === status).length),
+    ]),
+  ]);
   let attention = $derived(
     sessions.filter((s) =>
       ['INPUT NEEDED', 'APPROVAL NEEDED', 'CHECK SESSION'].includes(s.status),
@@ -131,10 +146,17 @@
   <h1>SESSION TOTALS</h1>
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
 </div>
+<dl class="session-totals" aria-label="Session totals" class:stale>
+  {#each totals as [label, value]}<div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>{/each}
+</dl>
 <p class="muted">
-  Local session tokens observed since this server started; linked agents are
-  grouped with their parent. History samples every 30 seconds. These are not
-  account-wide totals.
+  {stale ? 'LAST KNOWN TOTALS — live state counts unavailable. ' : ''}Tokens
+  observed since this server started for currently listed sessions; linked
+  agents are already included. Totals can decrease when a session leaves the
+  list. History samples every 30 seconds. Not account-wide totals.
 </p>
 {#if stale}<p class="notice">
     Session connection or refresh unavailable. Context and telemetry may be

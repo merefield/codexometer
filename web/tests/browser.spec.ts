@@ -672,6 +672,111 @@ test('attention distinguishes observed signals, inference and stale state withou
   await expect(rows.first()).toHaveClass(/selected/);
 });
 
+test('session totals count parent usage once and update for live, stale and empty lists', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: [
+      'WORKING',
+      'WORKING',
+      'APPROVAL NEEDED',
+      'INPUT NEEDED',
+      'CHECK SESSION',
+      'TURN COMPLETE',
+    ].map((status, index) => ({
+      id: String(index),
+      directory: '/session/' + index,
+      tokens: 1000,
+      agents: 3,
+      status,
+      contextKind: 'LAST REPLY',
+      text: '',
+      command: '',
+      source: 'LOCAL',
+      activity: '',
+      samples: [{ at: '', tokens: 500 }],
+    })),
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const total = (label: string) =>
+    page
+      .locator('.session-totals > div')
+      .filter({ has: page.getByText(label, { exact: true }) })
+      .locator('dd');
+  for (const [label, value] of [
+    ['OBSERVED TOKENS', '6,000'],
+    ['LISTED SESSIONS', '6'],
+    ['WORKING', '2'],
+    ['AWAITING APPROVAL', '1'],
+    ['AWAITING INPUT', '1'],
+    ['CHECK · INFERRED', '1'],
+  ])
+    await expect(total(label)).toHaveText(value);
+  // Changing detail never narrows the aggregate to the selected session.
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(total('OBSERVED TOKENS')).toHaveText('6,000');
+  snapshot.sessions[0].tokens += 250;
+  snapshot.sessions.splice(1, 1);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(total('OBSERVED TOKENS')).toHaveText('5,250');
+  await expect(total('LISTED SESSIONS')).toHaveText('5');
+  await expect(total('WORKING')).toHaveText('1');
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(total('OBSERVED TOKENS')).toHaveText('5,250');
+  await expect(page.getByText(/LAST KNOWN TOTALS/)).toBeVisible();
+  for (const label of [
+    'WORKING',
+    'AWAITING APPROVAL',
+    'AWAITING INPUT',
+    'CHECK · INFERRED',
+  ])
+    await expect(total(label)).toHaveText('—');
+  snapshot.sessionsError = false;
+  snapshot.sessions = [];
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.session-totals dd')).toHaveText([
+    '0',
+    '0',
+    '0',
+    '0',
+    '0',
+    '0',
+  ]);
+  await page.setViewportSize({ width: 360, height: 600 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test('zone trail renders start, gap and live updates across navigation and reload', async ({
   page,
   pairingURL,

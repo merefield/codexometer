@@ -72,7 +72,10 @@ read-only** Quota, Sessions and Usage dashboard with the same retro spirit:
 responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
 now traces the observed quota path, with a marked starting point and gaps for
 failed observations. Sessions offers graph-only, split, wide and full-page
-detail: select with ↑/↓, adjust detail with ←/→, or use the clickable controls.
+detail, with a compact totals strip for observed tokens, listed sessions and
+separate working/approval/input/inferred-check counts. Linked-agent tokens are
+already included, and stale observations are labelled. Select sessions with ↑/↓,
+adjust detail with ←/→, or use the clickable controls.
 Prominent attention links distinguish observed requests from inferred inactivity,
 and commands are separated from the explanation when available. It's a read-only
 step towards a browser command centre — actions still happen in Codex or the TUI.

@@ -343,6 +343,30 @@ a {
   margin: 18px 0;
   align-items: stretch;
 }
+.session-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.session-totals > div {
+  border: 1px solid var(--edge);
+  padding: 10px;
+  min-width: 0;
+}
+.session-totals dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.session-totals dd {
+  color: var(--accent);
+  font-size: 24px;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.session-totals.stale dd {
+  color: var(--muted);
+}
 .session-row.selected {
   outline: 1px solid var(--accent);
   outline-offset: 4px;

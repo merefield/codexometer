@@ -2012,6 +2012,12 @@ available from the existing reader.
 
 ### Read-only Sessions command centre
 
+- **SESSION TOTALS** shows observed tokens and the number of currently listed
+  sessions, plus separate working, awaiting-approval, awaiting-input and inferred
+  check counts. Parent counters already include linked agents; they are summed
+  once. These are not account-wide or permanent cumulative totals: removing a
+  session from the observation can reduce the sum. On stale data, token/session
+  totals are labelled last-known and live state counts become unavailable (—).
 - Select a session by clicking its directory/name, or use **↑ / ↓**.
 - Use **← / →** or the row's arrow buttons to move through **graph only → split
   detail and graph → wide detail → full-page detail**. Each row has its own layout.
