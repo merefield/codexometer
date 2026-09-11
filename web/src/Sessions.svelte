@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { live, date, number, type Session } from './state.svelte';
   import {
     preferences,
@@ -10,6 +10,16 @@
   import Graph from './Graph.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
+  // Every entry route (links, arrows, deep links and browser Forward) leaves a
+  // wide row behind, so native browser Back agrees with Escape/All Sessions.
+  $effect(() => {
+    const id = params.id;
+    if (id)
+      untrack(() => {
+        preferences.selected = id;
+        setDetailLevel(id, 2);
+      });
+  });
   let selected = $derived(sessions.find((s) => s.id === params.id));
   let selectedID = $derived(
     sessions.some((s) => s.id === preferences.selected)

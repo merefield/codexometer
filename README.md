@@ -2000,6 +2000,9 @@ quota observations, with an open circle marking the first observation. This is
 the quota window's observed path, **not usage attributed to an individual Codex
 session**, a reconstruction of earlier history, or a prediction of future use.
 Windows without a known duration and reset date cannot be plotted.
+An expandable, keyboard-accessible **OBSERVATION TABLE** supplies the same
+retained history as text: observation time, elapsed period, consumed percentage
+and breaks between segments. It updates alongside the plotted trail.
 
 Trails are held only in the web server's memory, survive browser reloads and tab
 changes, and restart when the server stops. A changed account, reset date or

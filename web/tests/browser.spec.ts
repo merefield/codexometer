@@ -526,6 +526,42 @@ test('per-session detail navigation, selection and preferences survive reload', 
   await expect(page).toHaveURL(/#\/quota\/bars$/);
 });
 
+test('all full-detail entry routes return to a selected wide row with browser Back', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const row = page.locator('.session-row').first();
+  for (const entry of ['attention', 'full link', 'badge', 'arrows']) {
+    await page
+      .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
+      .click();
+    if (entry === 'attention')
+      await page
+        .getByRole('navigation', { name: 'Sessions needing attention' })
+        .getByRole('link')
+        .first()
+        .click();
+    else if (entry === 'full link')
+      await row.getByRole('link', { name: 'FULL DETAIL →' }).click();
+    else if (entry === 'badge') {
+      await row
+        .getByRole('button', { name: 'SHOW DETAIL', exact: true })
+        .click();
+      await row.locator('.attention-badge').click();
+    } else {
+      for (let step = 0; step < 3; step++)
+        await row.getByRole('button', { name: 'More detail' }).click();
+    }
+    await expect(page.locator('.full-detail')).toBeVisible();
+    await page.goBack();
+    await expect(row).toHaveClass(/wide/);
+    await expect(row).toHaveClass(/selected/);
+    await expect(row.locator('.graph-panel')).toHaveCount(0);
+  }
+});
+
 test('saved landing tab restores on pairing and invalid preferences are ignored', async ({
   page,
   pairingURL,
@@ -883,6 +919,24 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   await expect(page.locator('.trail-start')).toHaveCount(1);
   expect((await trail.getAttribute('d'))?.match(/M/g)).toHaveLength(2);
   expect((await trail.getAttribute('d'))?.match(/L/g)).toHaveLength(1);
+  const summary = page.locator('.observation-details summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  const table = page.getByRole('table', { name: 'Quota observations' });
+  await expect(table).toBeVisible();
+  const dataRows = table.locator('tbody tr');
+  await expect(dataRows).toHaveCount(3);
+  await expect(dataRows.nth(0)).toContainText('10.0%');
+  await expect(dataRows.nth(0)).toContainText('5%');
+  await expect(dataRows.nth(0)).toContainText('First observation');
+  await expect(dataRows.nth(0).locator('time')).toHaveAttribute(
+    'datetime',
+    '2026-09-10T12:00:00Z',
+  );
+  await expect(dataRows.nth(1)).toContainText(
+    'Connected to previous observation',
+  );
+  await expect(dataRows.nth(2)).toContainText('Gap before this observation');
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
   await expect(trail).toHaveCount(1);
@@ -900,6 +954,8 @@ test('zone trail renders start, gap and live updates across navigation and reloa
     snapshot,
   );
   await expect(page.locator('.trail-caption')).toContainText('4 OBSERVATIONS');
+  await page.locator('.observation-details summary').click();
+  await expect(table.locator('tbody tr')).toHaveCount(4);
   snapshot.meters[0].trail = [snapshot.meters[0].trail[3]];
   await page.evaluate(
     (detail) =>
@@ -910,6 +966,7 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   await expect(page.locator('.trail-caption')).not.toContainText(
     '1 OBSERVATIONS',
   );
+  await expect(table.locator('tbody tr')).toHaveCount(1);
 });
 
 test('usage heatmap, period selection, bars and accessible table', async ({

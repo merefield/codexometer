@@ -7,6 +7,7 @@
     trail = [],
   }: { used: number; elapsed: number; trail?: Meter['trail'] } = $props();
   const gradient = $props.id();
+  let showObservations = $state(false);
   const ticks = [0, 25, 50, 75, 100];
   let width = $state(400);
   let height = $state(240);
@@ -36,6 +37,7 @@
     class="consumption-zone"
     viewBox={`0 0 ${width} ${height}`}
     role="img"
+    aria-describedby={trail.length ? gradient + '-trail-summary' : undefined}
     aria-label={`Consumption zone: ${used}% consumed, ${elapsed.toFixed(1)}% of quota period elapsed. ${difference > 0 ? 'Above' : difference < 0 ? 'Below' : 'On'} the steady-consumption line.`}
   >
     <defs>
@@ -111,13 +113,57 @@
         : 'BELOW THE LINE — WITHIN PACE'}</span
   >
 </p>
-{#if trail.length}<p class="muted trail-caption">
+{#if trail.length}<p
+    class="muted trail-caption"
+    id={gradient + '-trail-summary'}
+  >
     ○ START {date(trail[0].at)} // {trail.length}
     {trail.length === 1 ? 'OBSERVATION' : 'OBSERVATIONS'}<br />Observed quota
-    path, not individual session usage. Gaps are not interpolated.
-  </p>{/if}
+    path, not individual session usage. Gaps are not interpolated. Expand the
+    observation table for times, positions and gaps.
+  </p>
+  <details class="observation-details" bind:open={showObservations}>
+    <summary>OBSERVATION TABLE</summary>
+    {#if showObservations}<div class="observation-table">
+        <table>
+          <caption>Quota observations</caption>
+          <thead
+            ><tr
+              ><th scope="col">Observed at</th><th scope="col"
+                >Period elapsed</th
+              ><th scope="col">Consumed</th><th scope="col">Trail segment</th
+              ></tr
+            ></thead
+          >
+          <tbody
+            >{#each trail as point, index}<tr>
+                <td><time datetime={point.at}>{date(point.at)}</time></td>
+                <td>{point.elapsed.toFixed(1)}%</td><td>{point.used}%</td>
+                <td
+                  >{index === 0
+                    ? 'First observation'
+                    : point.break
+                      ? 'Gap before this observation'
+                      : 'Connected to previous observation'}</td
+                >
+              </tr>{/each}</tbody
+          >
+        </table>
+      </div>{/if}
+  </details>{/if}
 
 <style>
+  .observation-details {
+    font-size: 12px;
+  }
+  summary {
+    cursor: pointer;
+    color: var(--accent);
+  }
+  .observation-table {
+    overflow: auto;
+    max-height: 240px;
+  }
   .zone-canvas {
     position: relative;
     flex: 1;
