@@ -208,7 +208,7 @@ func (m *Model) toggleMonitorContext() {
 
 func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
-		if s.id == id && (s.preview.Text != "" || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
+		if s.id == id && (s.preview.Text != "" || s.preview.Kind == codex.SessionContextApproval || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
 			m.setRowContext(id, contextFull)
 			return
 		}
@@ -337,7 +337,11 @@ func (m Model) monitorContextAt(x, y int) string {
 				boxWidth = gw
 			}
 		}
-		if hit := m.monitorNavigationHit(boxWidth, s.id, false, x-boxX, y-rowY); hit != "" {
+		navigation := m.monitorNavigationButtons(boxWidth, s.id, false)
+		if m.rowContextMode(s.id) == contextWide {
+			navigation = m.expandedContextNavigation(boxWidth, heights[i], s)
+		}
+		if hit := monitorNavigationButtonsHit(navigation, x-boxX, y-rowY); hit != "" {
 			return hit
 		}
 		// Controls above take priority; the rest of this row's detail/graph
@@ -376,7 +380,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		case "close":
 			m.stepBackMonitorContext()
 		default:
-			if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {
+			if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
+				m.openMonitorContext(id)
+			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {
 				m.changeMonitorContext(id, -1)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "more:"); ok {
 				m.changeMonitorContext(id, 1)

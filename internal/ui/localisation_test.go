@@ -60,6 +60,8 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("context_back_and_forth", TestMonitorContextBackAndForthCycle)
 	t.Run("independent_row_context", TestIndependentRowLayoutsAndApprovalOwnership)
 	t.Run("monitor_navigation_buttons", TestMonitorNavigationRenderedButtons)
+	t.Run("approval_warning", TestMonitorApprovalWarningResponsiveClicks)
+	t.Run("approval_reflow", TestMonitorApprovalButtonsReappearAfterDismissal)
 	t.Run("status_and_content_headings", TestMonitorStatusAndContentHeadings)
 	t.Run("reset_click_surfaces", TestQuotaResetRenderedHitSurfaces)
 	t.Run("quota_estimator", TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend)

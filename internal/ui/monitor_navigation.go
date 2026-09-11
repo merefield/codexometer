@@ -74,10 +74,20 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 }
 
 func (m Model) renderMonitorNavigation(width int, id string, full bool, colors palette) string {
+	return m.renderMonitorNavigationButtons(m.monitorNavigationButtons(width, id, full), colors)
+}
+
+func (m Model) renderMonitorNavigationButtons(buttons []monitorNavigationButton, colors palette) string {
 	var labels []string
-	for _, b := range m.monitorNavigationButtons(width, id, full) {
+	for _, b := range buttons {
 		if !b.enabled {
 			labels = append(labels, colors.dimmed().Render(b.label))
+		} else if strings.HasPrefix(b.action, "detail:") {
+			style := colors.label().Foreground(colors.warning).Bold(true)
+			if m.monitorContextHover == b.action {
+				style = style.Foreground(colors.background).Background(colors.warning)
+			}
+			labels = append(labels, style.Render(b.label))
 		} else {
 			labels = append(labels, m.renderContextAction(b.action, b.label, colors))
 		}
@@ -86,7 +96,11 @@ func (m Model) renderMonitorNavigation(width int, id string, full bool, colors p
 }
 
 func (m Model) monitorNavigationHit(width int, id string, full bool, x, y int) string {
-	for _, b := range m.monitorNavigationButtons(width, id, full) {
+	return monitorNavigationButtonsHit(m.monitorNavigationButtons(width, id, full), x, y)
+}
+
+func monitorNavigationButtonsHit(buttons []monitorNavigationButton, x, y int) string {
+	for _, b := range buttons {
 		if b.rect.contains(x, y) {
 			if !b.enabled {
 				return "navigation-disabled"

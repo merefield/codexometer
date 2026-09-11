@@ -1109,8 +1109,17 @@ same action on that session. The presentations are:
    paused/transitioning monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
    Eligible approval buttons sit below the complete command/request
-   and source session. If the complete request plus controls cannot fit, use
-   `Right` to review and act on it in full detail instead.
+   and source session. If the complete request plus controls cannot fit, a
+   highlighted **APPROVAL — OPEN DETAIL →** warning appears beside the navigation
+   arrows. Click it, or press `Right`, to review the request in full detail; the
+   warning itself never approves anything. Narrow boxes shorten it to
+   **APPROVAL →** or **!→**, prioritising the warning if the arrow pair cannot fit.
+   Layout is recalculated on every render: dismissing another session or enlarging
+   the terminal restores inline approval buttons as soon as the complete request
+   fits, and the warning disappears. Shrinking the space hides the buttons and
+   restores the warning. A live request that is no longer pending does not
+   regain the warning while its old preview awaits a refresh. Unsupported requests
+   can still require action in Codex.
 4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
    Its box title mirrors the left telemetry badge (including the blinking
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.

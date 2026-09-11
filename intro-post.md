@@ -40,6 +40,8 @@ Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph
 
 Prefer visible controls? Click **[←] [→]** at the top-right of each row's rightmost box to adjust detail, or **[↑] [↓]** in the Monitor header to select sessions. Unavailable directions are dimmed. The session-selection buttons stay out of full-screen detail, where Up/Down scroll the text; tiny boxes fall back to keyboard and background clicks.
 
+If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
+
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
 
 ## Quota estimates, resets, and session attention
