@@ -19,6 +19,7 @@ func (m Model) View() tea.View {
 	view := tea.NewView(m.render())
 	view.AltScreen = !m.inline
 	view.MouseMode = tea.MouseModeAllMotion
+	view.KeyboardEnhancements.ReportEventTypes = true
 	return view
 }
 

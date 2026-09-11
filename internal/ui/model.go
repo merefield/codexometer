@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,9 @@ type Model struct {
 	monitorContextScroll                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
+	monitorApprovalConfirmUntil         time.Time
+	monitorApprovalNumberReleased       bool
+	keyboardEventTypes                  bool
 	monitorApprovalBusy                 bool
 	monitorApprovalNotice               string
 	monitorApprovalNoticeToken          string
@@ -435,6 +439,17 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
+	case tea.KeyboardEnhancementsMsg:
+		m.keyboardEventTypes = message.SupportsEventTypes()
+		m.monitorApprovalNumberReleased = false
+		return m, nil
+	case tea.KeyReleaseMsg:
+		key := message.String()
+		if m.keyboardEventTypes && len(key) == 1 && key[0] >= '1' && key[0] <= '8' &&
+			m.approvalConfirmationActive(m.monitorApprovalToken(), "decision:"+strconv.Itoa(int(key[0]-'1'))) {
+			m.monitorApprovalNumberReleased = true
+		}
+		return m, nil
 	case initialViewMsg:
 		command := m.loadCurrentView()
 		return m, command
@@ -472,6 +487,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, m.fetch()
 	case tea.KeyPressMsg:
+		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
+			return m, nil
+		}
 		if m.meterView == viewMonitor {
 			next, cmd, handled := m.updateMonitorContextKey(strings.ToLower(message.String()))
 			m = next
@@ -890,6 +908,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case secondMsg:
+		if !m.monitorApprovalConfirmUntil.IsZero() && !time.Now().Before(m.monitorApprovalConfirmUntil) {
+			m.monitorApprovalConfirm = ""
+			m.monitorApprovalNumberReleased = false
+		}
 		if !m.resetConfirmUntil.IsZero() && time.Now().After(m.resetConfirmUntil) {
 			m.resetConfirmUntil = time.Time{}
 			m.resetNotice = ""
@@ -1066,6 +1088,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	if view != m.meterView {
+		m.monitorApprovalConfirm = ""
+	}
 	if view != viewMonitor {
 		m.monitorDetailSent = detailSentState{}
 		m.monitorPrompt = monitorPromptState{}

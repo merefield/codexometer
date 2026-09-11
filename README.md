@@ -1250,8 +1250,15 @@ the decision list, only the legacy Accept/Cancel pair is offered.
 
 Closing the detail page cancels an unsubmitted confirmation. Each visible
 approval button has a numbered shortcut (`1`–`8`, following the offered order).
-A grant shortcut selects the choice; `C` confirms that specific choice, whether
-selected by keyboard or mouse. Repeating the number does not confirm. Decline
+A grant shortcut selects the choice. For **APPROVE ONCE**, terminals supporting
+key-release events allow the same number again after releasing it (`1`, release,
+`1` for the first option). The confirmation button displays that number; held-key
+repeats cannot confirm. `C` remains an alternative, whether selected by keyboard
+or mouse. Terminals without key-release support retain the displayed `C`
+confirmation. Session-wide and persistent grants always require `C` or clicking
+the confirmation button, not repeating their number. Armed confirmations expire
+after five seconds and are cancelled by changing the target or leaving its view;
+a new request requires a new confirmation. Decline
 and reject/stop shortcuts act immediately, just like their buttons. Only one
 session—the expanded row or full-detail target—can display approval controls
 at a time. Hidden, clipped and compact controls have no active shortcuts, and
