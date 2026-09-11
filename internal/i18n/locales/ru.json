@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ ПОДРОБНОСТИ",
   "APPROVAL REQUEST": "ЗАПРОС ОДОБРЕНИЯ",
   "WORKING": "РАБОТАЕТ",
   "[ H: HIDE DETAIL ]": "[ H: СКРЫТЬ ПОДРОБНОСТИ ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Отправка не подтверждена; проверьте Codex перед повтором.",
   "Prompt changed; review the session before replying.": "Запрос изменился; проверьте сессию перед ответом.",
   "Choose an offered answer with ↑/↓.": "Выберите предложенный ответ с помощью ↑/↓.",
-  "OPEN DETAIL": "ОТКРЫТЬ ПОДРОБНОСТИ",
   "No supported approval choices were offered.": "Поддерживаемые варианты разрешения не предложены.",
   "[ ALLOW FOR SESSION ]": "[ РАЗРЕШИТЬ ДЛЯ СЕАНСА ]",
   "[ CONFIRM SESSION GRANT ]": "[ ПОДТВЕРДИТЬ ДЛЯ СЕАНСА ]",

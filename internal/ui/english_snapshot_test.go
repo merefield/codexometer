@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated when removing Monitor's Pause button and
-	// widening its readout; all themes, views and three terminal sizes are covered.
-	const want = "4ae2271f6559dc94bde5b965c13a398ba7a41d4be990c6d5dc9727cdcf9b9f1a"
+	// Baseline intentionally updated for the Monitor's directional detail hint;
+	// all themes, views and three terminal sizes are covered.
+	const want = "a17b202b9a8c1ca801640b3c0a916a14e1060018225166d02a448848d6053bd6"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ DETALJER",
   "APPROVAL REQUEST": "BEGÄRAN OM GODKÄNNANDE",
   "WORKING": "ARBETAR",
   "[ H: HIDE DETAIL ]": "[ H: DÖLJ DETALJER ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Sändning obekräftad; kontrollera Codex innan du försöker igen.",
   "Prompt changed; review the session before replying.": "Frågan ändrades; kontrollera sessionen innan du svarar.",
   "Choose an offered answer with ↑/↓.": "Välj ett svar med ↑/↓.",
-  "OPEN DETAIL": "ÖPPNA DETALJER",
   "No supported approval choices were offered.": "Inga godkännandealternativ som stöds erbjöds.",
   "[ ALLOW FOR SESSION ]": "[ TILLÅT FÖR SESSIONEN ]",
   "[ CONFIRM SESSION GRANT ]": "[ BEKRÄFTA SESSIONSBEHÖRIGHET ]",

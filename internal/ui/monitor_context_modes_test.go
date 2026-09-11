@@ -18,12 +18,12 @@ func TestMonitorContextThreeStageCycleAndTarget(t *testing.T) {
 	m.monitorSessionData[2].attention = codex.SessionAttentionApproval
 	m.monitorSessionData[2].preview.At = time.Now().Add(time.Minute)
 	step := func(k tea.KeyPressMsg) { updated, _ := m.Update(k); m = updated.(Model) }
-	step(key('i'))
+	step(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.monitorContextExpanded != "root-three" || m.monitorContextDetail != "" {
 		t.Fatal("did not choose newest approval")
 	}
 	m.monitorSessionData[1].preview.At = time.Now().Add(time.Hour)
-	step(key('i'))
+	step(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.monitorContextDetail != "root-three" || m.monitorContextExpanded != "" {
 		t.Fatal("target changed on new approval")
 	}
@@ -37,16 +37,16 @@ func TestMonitorContextThreeStageCycleAndTarget(t *testing.T) {
 	}
 	m.monitorSelectedID = "root-one"
 	m.monitorSessionData[0].preview = codex.SessionContext{}
-	step(key('i'))
-	step(key('i'))
+	step(tea.KeyPressMsg{Code: tea.KeyRight})
+	step(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.monitorContextDetail != "root-one" {
 		t.Fatal("explicit selection ignored because text was missing")
 	}
-	step(key('i'))
+	step(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.monitorContextExpanded != "root-one" || m.monitorContextDetail != "" {
 		t.Fatal("full detail did not step back to inline")
 	}
-	step(key('i'))
+	step(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.monitorContextTarget() != "" {
 		t.Fatal("detail did not cycle to compact")
 	}
@@ -76,7 +76,7 @@ func TestMonitorStatusAndContentHeadings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := contextTestModel()
-			m.setRowContext("root-one", contextWide, false)
+			m.setRowContext("root-one", contextWide)
 			m.monitorState, m.monitorError = tc.state, tc.err
 			s := m.monitorSessionData[0]
 			s.active, s.working, s.attention = tc.active, tc.working, tc.attention
@@ -103,7 +103,7 @@ func TestMonitorStatusAndContentHeadings(t *testing.T) {
 					t.Fatal("non-working badge should not blink")
 				}
 			}
-			m.setRowContext(s.id, contextFull, false)
+			m.setRowContext(s.id, contextFull)
 			for phase := 0; phase < 2; phase++ {
 				m.phase = phase
 				full := strings.Split(ansi.Strip(m.renderMonitorContextDetail(120, 20, paletteFor(m.theme))), "\n")
@@ -123,46 +123,45 @@ func TestMonitorStatusAndContentHeadings(t *testing.T) {
 				}
 			}
 			m.phase = 0
-			m.setRowContext(s.id, contextWide, false)
+			m.setRowContext(s.id, contextWide)
 			for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextActivity} {
 				s.preview.Kind = kind
 				out := strings.Split(ansi.Strip(m.renderExpandedContext(100, 10, s, paletteFor(m.theme))), "\n")
-				if !strings.Contains(out[0], contextTitle(s.preview)) || strings.Contains(out[0], i18n.Text("WORKING")) || !strings.Contains(out[0], monitorContextInfo) {
+				if !strings.Contains(out[0], contextTitle(s.preview)) || strings.Contains(out[0], i18n.Text("WORKING")) {
 					t.Fatalf("wide border should show content type and action: %q", out[0])
 				}
 				if strings.Contains(strings.Join(out[1:], "\n"), contextTitle(s.preview)) {
 					t.Fatal("wide body repeats content type")
 				}
-				m.setRowContext(s.id, contextSplit, false)
+				m.setRowContext(s.id, contextSplit)
 				compact := strings.Split(ansi.Strip(m.renderMonitorContextRow(120, 10, "", s, paletteFor(m.theme))), "\n")
 				if !strings.Contains(compact[0], contextTitle(s.preview)) {
 					t.Fatal("compact title changed")
 				}
-				m.setRowContext(s.id, contextWide, false)
+				m.setRowContext(s.id, contextWide)
 			}
 		})
 	}
 }
 
 func TestMonitorContextBackAndForthCycle(t *testing.T) {
-	for _, back := range []tea.KeyPressMsg{key('i'), {Code: tea.KeyEscape}} {
+	for _, back := range []tea.KeyPressMsg{{Code: tea.KeyLeft}, {Code: tea.KeyEscape}} {
 		m := contextTestModel()
 		m.monitorSelectedID = "root-two"
 		m.monitorContextHidden = true
-		step := func(k tea.KeyPressMsg) { n, _ := m.Update(k); m = n.(Model) }
-		for cycle := 0; cycle < 2; cycle++ {
-			for _, mode := range []int{contextSplit, contextWide, contextFull, contextWide, contextSplit, contextGraph} {
-				if m.monitorContextDetail != "" {
-					step(back)
-				} else {
-					step(key('i'))
-				}
-				if got := m.rowContextMode("root-two"); got != mode {
-					t.Fatalf("row mode %d, want %d", got, mode)
-				}
-				if m.rowContextMode("root-one") != contextGraph || !m.monitorContextHidden {
-					t.Fatal("per-row cycle changed another row/global default")
-				}
+		for _, delta := range []int{-1, 1, 1, 1, 1, -1, -1, -1, -1} {
+			k := tea.KeyPressMsg{Code: tea.KeyRight}
+			if delta < 0 {
+				k = back
+			}
+			before := m.rowContextMode("root-two")
+			n, _ := m.Update(k)
+			m = n.(Model)
+			if got, want := m.rowContextMode("root-two"), min(max(before+delta, contextGraph), contextFull); got != want {
+				t.Fatalf("got %d want %d", got, want)
+			}
+			if m.rowContextMode("root-one") != contextGraph || !m.monitorContextHidden {
+				t.Fatal("changed another row")
 			}
 		}
 	}
@@ -171,16 +170,16 @@ func TestMonitorContextBackAndForthCycle(t *testing.T) {
 func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
 	m := contextTestModel()
 	m.monitorContextHidden = true
-	m.cycleMonitorContext("root-one")
+	m.changeMonitorContext("root-one", 1)
 	if m.rowContextMode("root-one") != contextSplit || m.rowContextMode("root-two") != contextGraph {
 		t.Fatal("first row affected second row")
 	}
-	m.cycleMonitorContext("root-one")
-	m.cycleMonitorContext("root-two")
+	m.changeMonitorContext("root-one", 1)
+	m.changeMonitorContext("root-two", 1)
 	if m.rowContextMode("root-one") != contextWide || m.rowContextMode("root-two") != contextSplit {
 		t.Fatal("switching rows discarded presentation")
 	}
-	m.cycleMonitorContext("root-two")
+	m.changeMonitorContext("root-two", 1)
 	if m.rowContextMode("root-one") != contextWide || m.rowContextMode("root-two") != contextWide {
 		t.Fatal("cannot independently expand two rows")
 	}
@@ -201,35 +200,48 @@ func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
 	}
 }
 
+func monitorDetailPoint(m Model, id string, delta int) (int, int) {
+	g := m.dashboardLayout()
+	if m.monitorContextDetail != "" {
+		x := 3
+		if delta > 0 {
+			x = 2 + g.contentWidth - 2
+		}
+		return x, g.meterY + 1
+	}
+	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
+	mw, rw, _ := monitorSessionColumnWidths(a.width)
+	x := 2 + mw + 1
+	if delta > 0 {
+		x += rw - 1
+	}
+	y := g.meterY + a.topHeight + a.gap
+	for i, s := range sessions {
+		if s.id == id {
+			return x, y
+		}
+		y += heights[i]
+	}
+	panic("session not on page")
+}
+
 func TestMonitorRowSurfaceCyclesOnlyClickedSession(t *testing.T) {
 	for _, width := range []int{40, 80, 120, 200} {
-		for _, edge := range []bool{false, true} {
-			m := contextTestModel()
-			m.width = width
-			m.monitorContextHidden = true
-			m.monitorSelectedID = "root-one"
-			for _, want := range []int{contextSplit, contextWide, contextFull, contextWide, contextSplit, contextGraph} {
-				g := m.dashboardLayout()
-				a := layoutMonitorArea(g.contentWidth, g.meterHeight)
-				_, heights, _ := m.monitorSessionPage(a.graphHeight)
-				mw, rw, _ := monitorSessionColumnWidths(a.width)
-				x, y := 2+mw+1, g.meterY+a.topHeight+a.gap-1+heights[0]+1
-				if edge {
-					x += rw - 1
-				}
-				if m.monitorContextDetail != "" {
-					x, y = 4, g.meterY+2
-				} else if got := m.monitorContextAt(2+mw-1, y); got != "" {
-					t.Fatalf("metrics area cycles row: %q", got)
-				}
-				updated, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-				m = updated.(Model)
-				if got := m.rowContextMode("root-two"); got != want {
-					t.Fatalf("width %d edge %v: mode %d, want %d", width, edge, got, want)
-				}
-				if m.rowContextMode("root-one") != contextGraph || m.rowContextMode("root-three") != contextGraph {
-					t.Fatal("click changed another session")
-				}
+		m := contextTestModel()
+		m.width = width
+		m.monitorContextHidden = true
+		m.monitorSelectedID = "root-one"
+		for _, delta := range []int{-1, 1, 1, 1, 1, -1, -1, -1, -1} {
+			before := m.rowContextMode("root-two")
+			x, y := monitorDetailPoint(m, "root-two", delta)
+			n, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			m = n.(Model)
+			if got, want := m.rowContextMode("root-two"), min(max(before+delta, contextGraph), contextFull); got != want {
+				t.Fatalf("width %d got %d want %d", width, got, want)
+			}
+			if m.rowContextMode("root-one") != contextGraph || m.rowContextMode("root-three") != contextGraph {
+				t.Fatal("changed other session")
 			}
 		}
 	}
@@ -237,14 +249,11 @@ func TestMonitorRowSurfaceCyclesOnlyClickedSession(t *testing.T) {
 
 func TestIndependentRowLayoutsAndApprovalOwnership(t *testing.T) {
 	m := approvalTestModel()
-	m.setRowContext("root-one", contextWide, false)
-	m.setRowContext("root-two", contextWide, false)
-	for y, line := range strings.Split(ansi.Strip(m.render()), "\n") {
-		if pos := strings.Index(line, monitorContextInfo); pos >= 0 {
-			if hit := m.monitorContextAt(lipgloss.Width(line[:pos]), y); hit != "root-two" {
-				t.Fatalf("earlier wide row swallowed second row's info click: %q", hit)
-			}
-		}
+	m.setRowContext("root-one", contextWide)
+	m.setRowContext("root-two", contextWide)
+	x, y := monitorDetailPoint(m, "root-two", 1)
+	if hit := m.monitorContextAt(x, y); hit != "more:root-two" {
+		t.Fatalf("earlier wide row swallowed second row's detail click: %q", hit)
 	}
 	if len(m.expandedApprovalButtons(100, 20, m.monitorSessionData[0])) != 0 {
 		t.Fatal("unselected row exposed another target's buttons")
@@ -256,7 +265,7 @@ func TestIndependentRowLayoutsAndApprovalOwnership(t *testing.T) {
 	}
 	for _, width := range []int{40, 80, 120, 200} {
 		for _, mode := range []int{contextGraph, contextSplit, contextWide} {
-			m.setRowContext("root-one", mode, false)
+			m.setRowContext("root-one", mode)
 			m.width = width
 			out := m.render()
 			if lipgloss.Width(out) > width {
@@ -276,41 +285,18 @@ func TestIndependentRowLayoutsAndApprovalOwnership(t *testing.T) {
 func TestMonitorContextSelectionOverridesExpandedRow(t *testing.T) {
 	m := contextTestModel()
 	m.monitorSessionData[1].preview = codex.SessionContext{}
-	m.cycleMonitorContext("root-one")
-	m.monitorSelectedID = "root-one"
+	m.changeMonitorContext("root-one", 1)
 	m.selectMonitorSession(1)
 	if m.monitorSelectedID != "root-two" || m.monitorContextExpanded != "" {
-		t.Fatal("selection left an unrelated expanded target", m.monitorSelectedID, m.monitorContextExpanded)
+		t.Fatal("selection retained wrong target")
 	}
-	for _, size := range [][2]int{{40, 16}, {80, 24}, {120, 40}, {180, 50}} {
-		m.width, m.height = size[0], size[1]
-		m.selectMonitorSession(0)
-		out := ansi.Strip(m.render())
-		if got := strings.Count(out, monitorContextInfo); got != 1 {
-			t.Fatalf("%v: got %d info actions\n%s", size, got, out)
-		}
-		for y, line := range strings.Split(out, "\n") {
-			if pos := strings.Index(line, monitorContextInfo); pos >= 0 {
-				x := lipgloss.Width(line[:pos])
-				for dx := 0; dx < 3; dx++ {
-					if got := m.monitorContextAt(x+dx, y); got != "root-two" {
-						t.Fatalf("selected empty row click target=%q", got)
-					}
-				}
-			}
-		}
-	}
-	// Also defend against a pre-existing expansion restored alongside selection.
 	m.monitorContextExpanded = "root-one"
-	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = updated.(Model)
-	if m.monitorContextExpanded != "root-two" {
-		t.Fatal("Enter followed old expansion")
-	}
-	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = updated.(Model)
-	if m.monitorContextDetail != "root-two" {
-		t.Fatal("empty selected row could not open detail")
+	for _, want := range []int{contextWide, contextFull} {
+		n, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+		m = n.(Model)
+		if m.rowContextMode("root-two") != want {
+			t.Fatal("right ignored empty selected session")
+		}
 	}
 }
 
@@ -332,7 +318,7 @@ func TestExpandedContextResponsiveHitTargets(t *testing.T) {
 		if strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel("accept", false, 0)) {
 			t.Fatal("compact exposed approval")
 		}
-		m.cycleMonitorContext(m.monitorSessionData[0].id)
+		m.changeMonitorContext(m.monitorSessionData[0].id, 1)
 		for _, long := range []bool{false, true} {
 			if long {
 				m.monitorSessionData[0].preview.Text = strings.Repeat("long request\n", 200)
@@ -377,9 +363,6 @@ func TestExpandedContextResponsiveHitTargets(t *testing.T) {
 			if found != len(buttons) {
 				t.Fatal("rendered decision count mismatch")
 			}
-			if len(buttons) == 0 && cw >= lipgloss.Width(monitorContextInfo+" "+i18n.Text("OPEN DETAIL"))+8 && !strings.Contains(ansi.Strip(out), i18n.Text("OPEN DETAIL")) {
-				t.Fatal("missing detail fallback")
-			}
 		}
 	}
 }
@@ -388,12 +371,12 @@ func TestMonitorExpandedSelectionDismissalAndConfirmation(t *testing.T) {
 	m := approvalTestModel()
 	m.monitorContextDetail = ""
 	m.monitorContextExpanded = ""
-	m.cycleMonitorContext("root-one")
+	m.changeMonitorContext("root-one", 1)
 	m, _, _ = m.monitorApprovalAction("decision:0")
 	if m.monitorApprovalConfirm == "" {
 		t.Fatal("confirmation missing")
 	}
-	m.cycleMonitorContext("")
+	m.changeMonitorContext("", -1)
 	if m.monitorApprovalConfirm != "" {
 		t.Fatal("confirmation survived mode transition")
 	}
@@ -404,47 +387,16 @@ func TestMonitorExpandedSelectionDismissalAndConfirmation(t *testing.T) {
 	}
 }
 
-func TestMonitorContextMouseCyclesAllThreeStages(t *testing.T) {
+func TestMonitorObsoleteNavigationKeysDoNotChangeDetail(t *testing.T) {
 	m := contextTestModel()
-	for stage := 0; stage < 5; stage++ {
-		wanted := "root-one"
-		if stage == 2 {
-			wanted = "cycle"
-		}
-		clicked := false
-		for y, line := range strings.Split(ansi.Strip(m.render()), "\n") {
-			if clicked {
-				break
+	for _, mode := range []int{contextGraph, contextSplit, contextWide, contextFull} {
+		m.setRowContext("root-one", mode)
+		for _, k := range []tea.KeyPressMsg{key('i'), {Code: tea.KeyEnter}} {
+			n, _ := m.Update(k)
+			m = n.(Model)
+			if m.rowContextMode("root-one") != mode {
+				t.Fatal("obsolete navigation key changed detail")
 			}
-			pos := strings.Index(line, monitorContextInfo)
-			if pos < 0 {
-				continue
-			}
-			x := lipgloss.Width(line[:pos])
-			if m.monitorContextAt(x, y) != wanted {
-				continue
-			}
-			next, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft}))
-			m = next.(Model)
-			clicked = true
-		}
-		if !clicked {
-			t.Fatalf("stage %d info action missing", stage)
-		}
-		if stage == 0 && m.monitorContextExpanded != "root-one" {
-			t.Fatal("mouse did not expand")
-		}
-		if stage == 1 && m.monitorContextDetail != "root-one" {
-			t.Fatal("mouse did not open detail")
-		}
-		if stage == 2 && m.monitorContextExpanded != "root-one" {
-			t.Fatal("mouse did not return to inline detail")
-		}
-		if stage == 3 && m.rowContextMode("root-one") != contextSplit {
-			t.Fatal("mouse skipped split view")
-		}
-		if stage == 4 && m.rowContextMode("root-one") != contextGraph {
-			t.Fatal("mouse did not show full graph")
 		}
 	}
 }

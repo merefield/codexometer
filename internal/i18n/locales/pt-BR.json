@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ DETALHES",
   "APPROVAL REQUEST": "SOLICITAÇÃO DE APROVAÇÃO",
   "WORKING": "TRABALHANDO",
   "[ H: HIDE DETAIL ]": "[ H: OCULTAR DETALHES ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Envio não confirmado; verifique o Codex antes de tentar novamente.",
   "Prompt changed; review the session before replying.": "A solicitação mudou; revise a sessão antes de responder.",
   "Choose an offered answer with ↑/↓.": "Escolha uma resposta oferecida com ↑/↓.",
-  "OPEN DETAIL": "ABRIR DETALHES",
   "No supported approval choices were offered.": "Nenhuma opção de aprovação compatível foi oferecida.",
   "[ ALLOW FOR SESSION ]": "[ PERMITIR NESTA SESSÃO ]",
   "[ CONFIRM SESSION GRANT ]": "[ CONFIRMAR PERMISSÃO DA SESSÃO ]",

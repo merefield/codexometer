@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ DETAIL",
   "APPROVAL REQUEST": "APPROVAL REQUEST",
   "WORKING": "WORKING",
   "[ H: HIDE DETAIL ]": "[ H: HIDE DETAIL ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Send unconfirmed; check Codex before retrying.",
   "Prompt changed; review the session before replying.": "Prompt changed; review the session before replying.",
   "Choose an offered answer with ↑/↓.": "Choose an offered answer with ↑/↓.",
-  "OPEN DETAIL": "OPEN DETAIL",
   "No supported approval choices were offered.": "No supported approval choices were offered.",
   "[ ALLOW FOR SESSION ]": "[ ALLOW FOR SESSION ]",
   "[ CONFIRM SESSION GRANT ]": "[ CONFIRM SESSION GRANT ]",

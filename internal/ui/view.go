@@ -172,6 +172,12 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
+	if m.meterView == viewMonitor {
+		hint := i18n.Text("←/→ DETAIL")
+		if lipgloss.Width(status)+2+lipgloss.Width(hint) <= width {
+			status = joinRight(status, colors.dimmed().Render(hint), width)
+		}
+	}
 	if m.meterView == viewBenchmark || m.meterView.isQuota() {
 		status = renderPricingFooter(status, width, colors)
 	}

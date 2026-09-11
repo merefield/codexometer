@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ ÜKSIKASJAD",
   "APPROVAL REQUEST": "KINNITUSE TAOTLUS",
   "WORKING": "TÖÖTAB",
   "[ H: HIDE DETAIL ]": "[ H: PEIDA ÜKSIKASJAD ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Saatmine kinnitamata; enne uuesti proovimist kontrolli Codexit.",
   "Prompt changed; review the session before replying.": "Küsimus muutus; enne vastamist kontrolli seanssi.",
   "Choose an offered answer with ↑/↓.": "Vali pakutud vastus klahvidega ↑/↓.",
-  "OPEN DETAIL": "AVA ÜKSIKASJAD",
   "No supported approval choices were offered.": "Toetatud kinnitusvalikuid ei pakutud.",
   "[ ALLOW FOR SESSION ]": "[ LUBA SEANSIKS ]",
   "[ CONFIRM SESSION GRANT ]": "[ KINNITA SEANSI LUBA ]",

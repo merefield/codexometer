@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ 詳細",
   "APPROVAL REQUEST": "承認リクエスト",
   "WORKING": "処理中",
   "[ H: HIDE DETAIL ]": "[ H: 詳細を非表示 ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "送信未確認。再試行前に Codex を確認してください。",
   "Prompt changed; review the session before replying.": "プロンプトが変わりました。回答前にセッションを確認してください。",
   "Choose an offered answer with ↑/↓.": "↑/↓ で提示された回答を選んでください。",
-  "OPEN DETAIL": "詳細を開く",
   "No supported approval choices were offered.": "対応する承認の選択肢がありません。",
   "[ ALLOW FOR SESSION ]": "[ セッション中は許可 ]",
   "[ CONFIRM SESSION GRANT ]": "[ セッション許可を確定 ]",

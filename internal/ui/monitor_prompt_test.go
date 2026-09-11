@@ -78,6 +78,30 @@ func TestMonitorPromptEnterAndHotkeyIsolation(t *testing.T) {
 	}
 }
 
+func TestMonitorPromptArrowsEditRatherThanNavigate(t *testing.T) {
+	m, _ := promptTestModel()
+	m, _ = promptKey(m, tea.KeyEnter, "")
+	m, _ = promptKey(m, 'a', "ab")
+	m, _ = promptKey(m, tea.KeyLeft, "")
+	m, _ = promptKey(m, 'X', "X")
+	if m.monitorPrompt.input.Value() != "aXb" || m.monitorContextDetail != "root-one" {
+		t.Fatal("Left navigated instead of editing")
+	}
+	m, _ = promptKey(m, tea.KeyRight, "")
+	m, _ = promptKey(m, 'Y', "Y")
+	if m.monitorPrompt.input.Value() != "aXbY" || m.monitorContextDetail != "root-one" {
+		t.Fatal("Right navigated instead of editing")
+	}
+	m, _ = promptKey(m, tea.KeyEscape, "")
+	if m.monitorPrompt.input.Focused() || m.monitorContextDetail != "root-one" {
+		t.Fatal("first Escape should leave the editor")
+	}
+	m, _ = promptKey(m, tea.KeyEscape, "")
+	if m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextWide {
+		t.Fatal("second Escape should restore the wide inline view")
+	}
+}
+
 func TestMonitorPromptQuestionsAndSecret(t *testing.T) {
 	m, c := promptTestModel()
 	c.offer.Questions = []codex.PromptQuestion{{ID: "a", Text: "Pick one", Options: []string{"First", "Second"}}, {ID: "b", Text: "Why?", FreeText: true, Secret: true}}
