@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ AYRINTILAR",
   "APPROVAL REQUEST": "ONAY İSTEĞİ",
   "WORKING": "ÇALIŞIYOR",
   "[ H: HIDE DETAIL ]": "[ H: AYRINTILARI GİZLE ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Gönderim doğrulanmadı; yeniden denemeden önce Codex'i kontrol edin.",
   "Prompt changed; review the session before replying.": "İstem değişti; yanıtlamadan önce oturumu inceleyin.",
   "Choose an offered answer with ↑/↓.": "Sunulan bir yanıtı ↑/↓ ile seçin.",
-  "OPEN DETAIL": "AYRINTILARI AÇ",
   "No supported approval choices were offered.": "Desteklenen bir onay seçeneği sunulmadı.",
   "[ ALLOW FOR SESSION ]": "[ OTURUM İÇİN İZİN VER ]",
   "[ CONFIRM SESSION GRANT ]": "[ OTURUM İZNİNİ ONAYLA ]",

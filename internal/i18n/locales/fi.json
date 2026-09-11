@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ TIEDOT",
   "APPROVAL REQUEST": "HYVÄKSYNTÄPYYNTÖ",
   "WORKING": "TYÖSKENTELEE",
   "[ H: HIDE DETAIL ]": "[ H: PIILOTA TIEDOT ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Lähetystä ei vahvistettu; tarkista Codex ennen uutta yritystä.",
   "Prompt changed; review the session before replying.": "Kehote muuttui; tarkista istunto ennen vastaamista.",
   "Choose an offered answer with ↑/↓.": "Valitse tarjottu vastaus näppäimillä ↑/↓.",
-  "OPEN DETAIL": "AVAA TIEDOT",
   "No supported approval choices were offered.": "Tuettuja hyväksyntävaihtoehtoja ei tarjottu.",
   "[ ALLOW FOR SESSION ]": "[ SALLI ISTUNNON AJAKSI ]",
   "[ CONFIRM SESSION GRANT ]": "[ VAHVISTA ISTUNNON LUPA ]",

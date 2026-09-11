@@ -11,8 +11,6 @@ import (
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
-const monitorContextInfo = "[i]"
-
 func monitorSessionAttentionLabel(s monitorSession) string {
 	return monitorAttentionLabel(s.attention)
 }
@@ -94,12 +92,8 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", m.renderExpandedContext(cw, height, s, colors))
 	}
 	_, cw, gw := m.contextColumns(width, s)
-	info := ""
-	if m.monitorContextActionVisible(s) {
-		info = m.renderContextAction(s.id, monitorContextInfo, colors)
-	}
 	if cw == 0 {
-		graph := m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), info, colors)
+		graph := m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), m.renderMonitorNavigation(gw, s.id, false, colors), colors)
 		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
 	}
 	inner := max(cw-4, 1)
@@ -135,10 +129,14 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		}
 		lines = append(lines, colors.label().Render(dots))
 	}
-	panel := frameSizedWithTitleAction(cw, max(height-2, 1), contextTitle(s.preview), info, strings.Join(lines, "\n"), colors.primary, colors)
+	action := ""
+	if gw == 0 {
+		action = m.renderMonitorNavigation(cw, s.id, false, colors)
+	}
+	panel := frameSizedWithTitleAction(cw, max(height-2, 1), contextTitle(s.preview), action, strings.Join(lines, "\n"), colors.primary, colors)
 	row := lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", panel)
 	if gw > 0 {
-		row = lipgloss.JoinHorizontal(lipgloss.Top, row, " ", m.renderMonitorGraphSamples(gw, height, s.samples, i18n.Text("TOKEN BARS"), colors))
+		row = lipgloss.JoinHorizontal(lipgloss.Top, row, " ", m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), m.renderMonitorNavigation(gw, s.id, false, colors), colors))
 	}
 	return row
 }
@@ -172,10 +170,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		bodyLines = append(bodyLines, controls)
 	}
 	body := strings.Join(bodyLines, "\n")
-	action := m.renderContextAction("close", monitorDismissLabel, colors)
-	if width >= lipgloss.Width(monitorContextInfo+" "+monitorDismissLabel)+8 {
-		action = m.renderContextAction("cycle", monitorContextInfo, colors) + " " + action
-	}
+	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
 	title := i18n.Text("SESSION CONTEXT")
 	if s, ok := m.contextDetailSession(); ok {
 		if badge := m.renderMonitorSessionBadge(s, max(width-4, 1), colors); badge != "" {
@@ -214,7 +209,7 @@ func (m *Model) toggleMonitorContext() {
 func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
 		if s.id == id && (s.preview.Text != "" || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
-			m.setRowContext(id, contextFull, false)
+			m.setRowContext(id, contextFull)
 			return
 		}
 	}
@@ -236,6 +231,14 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		m.toggleMonitorContext()
 		return m, nil, true
 	}
+	if key == "left" || key == "right" {
+		delta := 1
+		if key == "left" {
+			delta = -1
+		}
+		m.changeMonitorContext("", delta)
+		return m, nil, true
+	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		switch key {
 		case "t", "r":
@@ -248,13 +251,9 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 				cmd := m.focusMonitorPrompt()
 				return m, cmd, true
 			}
-			m.cycleMonitorContext("")
 			return m, nil, true
 		case "esc", "x":
 			m.stepBackMonitorContext()
-			return m, nil, true
-		case "i":
-			m.cycleMonitorContext("")
 			return m, nil, true
 		case "up":
 			m.scrollMonitorContext(-1)
@@ -277,10 +276,6 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		m.stepBackMonitorContext()
 		return m, nil, true
 	}
-	if key == "i" || key == "enter" {
-		m.cycleMonitorContext("")
-		return m, nil, true
-	}
 	return m, nil, false
 }
 
@@ -292,17 +287,13 @@ func (m Model) monitorContextAt(x, y int) string {
 	x -= 2
 	y -= g.meterY
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
+		if hit := m.monitorNavigationHit(g.contentWidth, m.monitorContextDetail, true, x, y); hit != "" {
+			return hit
+		}
 		if rows := m.monitorPromptRows(g.contentWidth, g.meterHeight); rows > 0 && m.monitorPromptOffer().Token != "" {
 			_, _, controlY := monitorContextBodyLayout(g.meterHeight, rows)
 			if y >= controlY+1 && y < controlY+rows-1 && x >= 2 && x < g.contentWidth-2 {
 				return "prompt"
-			}
-		}
-		label := monitorContextInfo + " " + monitorDismissLabel
-		if r, ok := contextActionRect(g.contentWidth, 0, label); ok {
-			r.width = lipgloss.Width(monitorContextInfo)
-			if r.contains(x, y) {
-				return "cycle"
 			}
 		}
 		buttons := m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
@@ -320,15 +311,16 @@ func (m Model) monitorContextAt(x, y int) string {
 			return "close"
 		}
 		if x >= 0 && x < g.contentWidth && y >= 0 && y < g.meterHeight {
-			return "cycle"
+			if x < g.contentWidth/2 {
+				return "less:" + m.monitorContextDetail
+			}
+			return "more:" + m.monitorContextDetail
 		}
 		return ""
 	}
 	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
-	if len(m.monitorSessionData) > 0 && a.readoutWidth >= 16 {
-		if r, ok := contextActionRect(a.readoutWidth, 0, m.monitorPrivacyLabel(a.readoutWidth)); ok && r.contains(x, y) {
-			return "privacy"
-		}
+	if hit := m.monitorNavigationHit(a.readoutWidth, "", false, x, y); hit != "" {
+		return hit
 	}
 	if hit := m.expandedContextAt(x, y); hit != "" {
 		return hit
@@ -337,10 +329,24 @@ func (m Model) monitorContextAt(x, y int) string {
 	rowY := a.topHeight + a.gap - 1
 	mw, rightWidth, _ := monitorSessionColumnWidths(a.width)
 	for i, s := range sessions {
+		boxX, boxWidth := mw+1, rightWidth
+		if m.rowContextMode(s.id) == contextSplit {
+			_, cw, gw := m.contextColumns(a.width, s)
+			if gw > 0 {
+				boxX += cw + 1
+				boxWidth = gw
+			}
+		}
+		if hit := m.monitorNavigationHit(boxWidth, s.id, false, x-boxX, y-rowY); hit != "" {
+			return hit
+		}
 		// Controls above take priority; the rest of this row's detail/graph
-		// surface cycles only this session, including when it is not selected.
+		// surface adjusts only this session, including when it is not selected.
 		if x >= mw+1 && x < mw+1+rightWidth && y >= rowY && y < rowY+heights[i] {
-			return s.id
+			if x-(mw+1) < rightWidth/2 {
+				return "less:" + s.id
+			}
+			return "more:" + s.id
 		}
 		rowY += heights[i]
 	}
@@ -356,17 +362,25 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			return m.monitorApprovalAction(m.monitorContextHover)
 		}
 		switch m.monitorContextHover {
+		case "navigation-disabled":
+			return m, nil, true
+		case "session-up":
+			m.selectMonitorSession(-1)
+		case "session-down":
+			m.selectMonitorSession(1)
 		case "prompt":
 			cmd := m.focusMonitorPrompt()
 			return m, cmd, true
-		case "cycle":
-			m.cycleMonitorContext("")
 		case "privacy":
 			m.toggleMonitorContext()
 		case "close":
 			m.stepBackMonitorContext()
 		default:
-			m.cycleMonitorContext(m.monitorContextHover)
+			if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {
+				m.changeMonitorContext(id, -1)
+			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "more:"); ok {
+				m.changeMonitorContext(id, 1)
+			}
 		}
 		return m, nil, true
 	}

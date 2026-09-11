@@ -1,4 +1,5 @@
 {
+  "←/→ DETAIL": "←/→ DETALJER",
   "APPROVAL REQUEST": "GODKENDELSESANMODNING",
   "WORKING": "ARBEJDER",
   "[ H: HIDE DETAIL ]": "[ H: SKJUL DETALJER ]",
@@ -17,7 +18,6 @@
   "Send unconfirmed; check Codex before retrying.": "Afsendelse ikke bekræftet; tjek Codex, før du prøver igen.",
   "Prompt changed; review the session before replying.": "Anmodningen er ændret; gennemgå sessionen, før du svarer.",
   "Choose an offered answer with ↑/↓.": "Vælg et af de tilbudte svar med ↑/↓.",
-  "OPEN DETAIL": "ÅBN DETALJER",
   "No supported approval choices were offered.": "Ingen understøttede godkendelsesvalg blev tilbudt.",
   "[ ALLOW FOR SESSION ]": "[ TILLAD I SESSIONEN ]",
   "[ CONFIRM SESSION GRANT ]": "[ BEKRÆFT SESSIONSTILLADELSE ]",

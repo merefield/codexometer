@@ -327,7 +327,7 @@ telemetry on macOS, Linux, and WSL:
   `APPROVAL NEEDED` using live per-thread status instead of eventually showing
   the cautious `CHECK SESSION` inactivity fallback.
 - **Command approval details and controls** — supported live requests show the
-  command, directory and reason in Monitor's `[i]` detail page, with
+  command, directory and reason in Monitor's full detail page, with
   buttons matching Codex's offered decisions, with confirmation for grants. Incomplete or
   unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
@@ -533,7 +533,7 @@ codexometer --codex /path/to/codex
 | `s` | Reset the Monitor baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Monitor view only) |
 | `h` | Reset all Monitor rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
-| `i` | Cycle the selected row back and forth: graph → split → wide detail → full detail → wide → split → graph; otherwise choose the latest approval-gated session |
+| `Left` / `Right` | In Monitor, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Monitor row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -544,7 +544,7 @@ codexometer --codex /path/to/codex
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a Monitor session row or Benchmark row, or scroll open Benchmark detail |
-| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; `Enter` cycles Monitor context like `i` |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Monitor full detail, `Enter` focuses an available reply editor or submits its text |
 | `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, Monitor session rows, or Benchmark results |
@@ -1090,7 +1090,9 @@ switch between graph-only, split, expanded, and full detail as described below.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
 
-Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations are:
+Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
+more. Click the left/right half of that row's combined detail/graph area for the
+same action on that session. The presentations are:
 
 1. **Graph only:** the token graph fills the row's right-hand section.
 2. **Split:** a short detail preview and token graph share that section equally;
@@ -1107,37 +1109,50 @@ Click a row's `[i]`, or press `i`/`Enter`, to expand context. The presentations 
    paused/transitioning monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
    Eligible approval buttons sit below the complete command/request
-   and source session. If the complete request plus controls cannot fit, an
-   **OPEN DETAIL** action is offered instead (just `[i]` on very narrow terminals).
+   and source session. If the complete request plus controls cannot fit, use
+   `Right` to review and act on it in full detail instead.
 4. **Full detail:** the existing scrollable Monitor-area view with pinned buttons.
    Its box title mirrors the left telemetry badge (including the blinking
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
    The body keeps content-type headings and source details, but does not repeat
    the session status. The left telemetry box is hidden in this view.
-   Use arrows, Page Up/Down, or the mouse wheel to read long requests. Another
-   `i` or `[i]` click returns to the same expanded row. When a reply editor is available,
+   Use Up/Down, Page Up/Down, or the mouse wheel to read long requests.
+   `Left` or `Esc` returns to the main Monitor with the same session showing
+   full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
-`i` cycles **graph → split → expanded → full detail → expanded → split → graph**.
-Each row retains its own presentation; cycling one does not resize other rows.
-Click anywhere in a row's detail/token-graph area to cycle that session, or in
-the full-detail background to step back. Approval buttons and reply editors
-keep their own actions; clicking the telemetry box does not cycle the view.
-`Esc`, `[×]` or `x` in full detail returns to that expanded row; subsequent `i`
-presses continue back through split and graph. `Esc` steps back one level too.
+`Left` / `Right` move along **graph ↔ split ↔ expanded ↔ full detail** without
+wrapping. Each row retains its own presentation; adjusting one does not resize
+other rows. The left half of the combined detail/token area reduces detail and
+the right half increases it, including its borders. In full-screen detail the
+left half of the background steps back; the right half stays at maximum detail.
+Approval buttons and reply editors keep their own actions; clicking the telemetry
+box does not change detail. `Esc`, `[×]` or `x` in full detail returns to that
+expanded row. Subsequent `Left` presses step back through split and graph.
+The old `i` and Enter detail-navigation shortcuts have been removed.
+
+Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost box
+(graph or detail), and on the full-detail box. They mirror the cursor keys:
+Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
+detail. The Monitor readout header also has **[↑] [↓]** session-selection buttons,
+disabled at the first/last visible session. Dismissed sessions are skipped.
+These session buttons disappear in full detail, where Up/Down scroll the text.
+On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
+background half-click navigation still work. Hide/Show and Close retain priority.
 The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
 graph-only, closes full detail and clears per-row overrides. Only that global
-default is persisted across launches. While typing, `i` remains text and `Esc`
-leaves the editor first. Approval controls remain exclusive to the current target.
+default is persisted across launches. While typing, arrows move the text cursor,
+Enter submits, and `Esc` leaves the editor first. Approval controls remain
+exclusive to the current target.
 The initial keyboard target is the explicitly selected session, otherwise the
 most recent approval-gated session with context, otherwise the first session
 with context. Once expanded, the target is pinned and kept on screen: newer
 approvals cannot silently switch the session behind the buttons. Clicking
-another row's `[i]` explicitly changes the target. Switching context levels
+another row's detail/graph area explicitly changes the target. Switching context levels
 clears unsubmitted approval confirmations. Hiding previews or dismissing the
 target clears its expansion.
-When a row is explicitly selected, only that row shows `[i]`, even if it has no
-context yet; `Enter`/`i` opens that session rather than falling back to another.
+When a row is explicitly selected, `Left`/`Right` targets that row even if it has
+no context yet, rather than falling back to another session.
 Moving the selection preserves other rows' chosen presentations, but clears the
 previous target's pending confirmation. Only the current target can expose
 approval controls, even when several rows have full-width detail. With no

@@ -34,9 +34,11 @@ Click the **Codexometer title** to jump back to Quota’s Bars view. The **versi
 
 ## Your terminal command centre
 
-Give each Monitor session as much space as it needs. Press `i` or click anywhere in that row’s detail/graph area to cycle **graph only → split detail/graph → full-width detail → full-screen detail**, then back through the same views. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, `i` or Escape returns to the same expanded row.
+Give each Monitor session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the main Monitor with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.
 
 Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts; individual row layouts are temporary.
+
+Prefer visible controls? Click **[←] [→]** at the top-right of each row's rightmost box to adjust detail, or **[↑] [↓]** in the Monitor header to select sessions. Unavailable directions are dimmed. The session-selection buttons stay out of full-screen detail, where Up/Down scroll the text; tiny boxes fall back to keyboard and background clicks.
 
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
 

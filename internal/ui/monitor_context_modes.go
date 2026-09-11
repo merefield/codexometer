@@ -45,7 +45,7 @@ func (m Model) initialMonitorContextTarget() string {
 	return first
 }
 
-func (m *Model) cycleMonitorContext(id string) {
+func (m *Model) changeMonitorContext(id string, delta int) {
 	if id == "" {
 		id = m.monitorContextTarget()
 		if m.monitorContextDetail == "" && m.monitorSelectedID != "" {
@@ -61,40 +61,21 @@ func (m *Model) cycleMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
 		if s.id == id && m.monitorSessionVisible(s) {
 			mode := m.rowContextMode(id)
-			returning := mode == contextFull || m.monitorContextRows[id].returning
-			if returning {
-				mode--
-			} else {
-				mode++
+			next := min(max(mode+delta, contextGraph), contextFull)
+			if next != mode || m.monitorSelectedID != id {
+				m.setRowContext(id, next)
 			}
-			m.setRowContext(id, mode, returning && mode > contextGraph)
 			return
 		}
 	}
 }
 
-// With an explicit selection, expose the keyboard action only on that row.
-// An empty preview is still a valid destination (and may offer a live prompt).
-func (m Model) monitorContextActionVisible(s monitorSession) bool {
-	return (m.monitorSelectedID == s.id ||
-		m.monitorSelectedID == "" && s.preview.Text != "")
-}
-
 func (m *Model) stepBackMonitorContext() {
-	id := m.monitorContextTarget()
-	if id == "" {
-		id = m.monitorSelectedID
-	}
-	if id == "" {
-		return
-	}
-	mode := max(m.rowContextMode(id)-1, contextGraph)
-	m.setRowContext(id, mode, mode > contextGraph)
+	m.changeMonitorContext("", -1)
 }
 
 type rowContextState struct {
-	mode      int
-	returning bool
+	mode int
 }
 
 const (
@@ -124,12 +105,12 @@ func (m Model) contextTargetHidden() bool {
 	return m.rowContextMode(m.monitorContextTarget()) == contextGraph
 }
 
-func (m *Model) setRowContext(id string, mode int, returning bool) {
+func (m *Model) setRowContext(id string, mode int) {
 	m.monitorContextRows = maps.Clone(m.monitorContextRows)
 	if m.monitorContextRows == nil {
 		m.monitorContextRows = make(map[string]rowContextState)
 	}
-	m.monitorContextRows[id] = rowContextState{min(mode, contextWide), returning}
+	m.monitorContextRows[id] = rowContextState{mode: min(max(mode, contextGraph), contextWide)}
 	m.monitorSelectedID = id
 	m.monitorContextDetail, m.monitorContextExpanded = "", ""
 	if mode == contextFull {
@@ -170,19 +151,6 @@ func (m Model) expandedApprovalButtons(width, height int, s monitorSession) []mo
 	return buttons
 }
 
-func (m Model) expandedContextAction(width, height int, s monitorSession) string {
-	if !m.monitorContextActionVisible(s) {
-		return ""
-	}
-	if len(m.expandedApprovalButtons(width, height, s)) == 0 && s.preview.Kind == codex.SessionContextApproval {
-		label := monitorContextInfo + " " + i18n.Text("OPEN DETAIL")
-		if width >= lipgloss.Width(label)+8 {
-			return label
-		}
-	}
-	return monitorContextInfo
-}
-
 func (m Model) renderExpandedContext(width, height int, s monitorSession, colors palette) string {
 	lines := expandedContextLines(width, s)
 	buttons := m.expandedApprovalButtons(width, height, s)
@@ -215,7 +183,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		}
 		lines = append(lines, controls)
 	}
-	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), m.renderContextAction(s.id, m.expandedContextAction(width, height, s), colors), strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), m.renderMonitorNavigation(width, s.id, false, colors), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) expandedContextAt(x, y int) string {
@@ -228,15 +196,6 @@ func (m Model) expandedContextAt(x, y int) string {
 			mw, cw, _ := monitorSessionColumnWidths(a.width)
 			x -= mw + 1
 			y -= rowY
-			if r, ok := contextActionRect(cw, 0, m.expandedContextAction(cw, heights[i], s)); m.monitorContextActionVisible(s) && ok && r.contains(x, y) {
-				return s.id
-			}
-			// If a long action label cannot fit, retain a minimal clickable [i].
-			if m.monitorContextActionVisible(s) && cw < lipgloss.Width(m.expandedContextAction(cw, heights[i], s))+8 {
-				if r, ok := contextActionRect(cw, 0, monitorContextInfo); ok && r.contains(x, y) {
-					return s.id
-				}
-			}
 			buttons := m.expandedApprovalButtons(cw, heights[i], s)
 			if len(buttons) > 0 {
 				_, _, cy := monitorContextBodyLayout(heights[i], buttons[len(buttons)-1].y+1)

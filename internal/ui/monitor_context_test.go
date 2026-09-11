@@ -142,51 +142,27 @@ func TestMonitorResumeNewSessionRetainsContext(t *testing.T) {
 }
 
 func TestMonitorContextResponsiveHitTargets(t *testing.T) {
-	for _, size := range []struct{ w, h int }{{40, 16}, {60, 24}, {80, 24}, {100, 30}, {120, 40}, {180, 50}} {
+	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 24}, {120, 40}, {180, 50}} {
 		m := contextTestModel()
-		m.width, m.height = size.w, size.h
-		for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextActivity, codex.SessionContextQuestion} {
-			for i := range m.monitorSessionData {
-				m.monitorSessionData[i].preview.Kind = kind
-			}
+		m.width, m.height = size[0], size[1]
+		for _, mode := range []int{contextGraph, contextSplit, contextWide, contextFull} {
+			m.setRowContext("root-one", mode)
 			out := m.render()
-			if lipgloss.Width(out) > size.w || lipgloss.Height(out) > size.h {
-				t.Fatalf("overflow %dx%d: %dx%d", size.w, size.h, lipgloss.Width(out), lipgloss.Height(out))
+			if lipgloss.Width(out) > m.width || lipgloss.Height(out) > m.height {
+				t.Fatalf("overflow %v mode %d", size, mode)
 			}
-			lines := strings.Split(ansi.Strip(out), "\n")
-			found := 0
-			for y, line := range lines {
-				for from := 0; from < len(line); {
-					n := strings.Index(line[from:], monitorContextInfo)
-					if n < 0 {
-						break
-					}
-					n += from
-					x := lipgloss.Width(line[:n])
-					found++
-					for offset := 0; offset < 3; offset++ {
-						if id := m.monitorContextAt(x+offset, y); id == "" {
-							t.Fatalf("info miss %dx%d at %d,%d layout=%+v\n%s", size.w, size.h, x+offset, y, m.dashboardLayout(), ansi.Strip(out))
-						}
-					}
-					updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft}))
-					detail := updated.(Model)
-					if detail.monitorContextExpanded == "" {
-						t.Fatal("click failed")
-					}
-					detail.cycleMonitorContext("")
-					modal := detail.render()
-					if lipgloss.Width(modal) > size.w || lipgloss.Height(modal) > size.h {
-						t.Fatal("detail overflow")
-					}
-					from = n + 3
+			if strings.Contains(ansi.Strip(out), "[i]") {
+				t.Fatal("obsolete info button")
+			}
+			for _, delta := range []int{-1, 1} {
+				x, y := monitorDetailPoint(m, "root-one", delta)
+				want := "more:root-one"
+				if delta < 0 {
+					want = "less:root-one"
 				}
-			}
-			g := m.dashboardLayout()
-			a := layoutMonitorArea(g.contentWidth, g.meterHeight)
-			visible, _, _ := m.monitorSessionPage(a.graphHeight)
-			if found != len(visible) {
-				t.Fatalf("expected %d info buttons, got %d at %dx%d", len(visible), found, size.w, size.h)
+				if got := m.monitorContextAt(x, y); got != want {
+					t.Fatalf("%v mode %d got %q want %q", size, mode, got, want)
+				}
 			}
 		}
 	}
@@ -201,7 +177,7 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	if !m.monitorContextHidden || m.monitorContextDetail != "" || strings.Contains(m.render(), "private context") {
 		t.Fatal("privacy leak")
 	}
-	updated, _ = m.Update(key('i'))
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updated.(Model)
 	if !m.monitorContextHidden || m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextSplit {
 		t.Fatal("i did not restore inline context")
@@ -222,13 +198,13 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	if m.monitorContextDetail != "" || cmd != nil {
 		t.Fatal("escape quit instead of closing")
 	}
-	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updated.(Model)
 	if m.rowContextMode("root-one") != contextSplit {
-		t.Fatal("Enter did not return to split context")
+		t.Fatal("Left did not return to split context")
 	}
 	for range 4 {
-		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 		m = updated.(Model)
 	}
 	if m.monitorContextDetail != "root-one" {

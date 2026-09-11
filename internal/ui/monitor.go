@@ -151,10 +151,7 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		telemetry := i18n.Format("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
 		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
 	}
-	action := ""
-	if len(m.monitorSessionData) > 0 && width >= 16 {
-		action = m.renderContextAction("privacy", m.monitorPrivacyLabel(width), colors)
-	}
+	action := m.renderMonitorNavigation(width, "", false, colors)
 	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("MONITOR READOUT"), action, strings.Join(lines, "\n"), colors.primary, colors)
 }
 
@@ -254,17 +251,12 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 	if session.id == m.monitorSelectedID || session.id == m.monitorContextExpanded {
 		rowColors.primary = colors.accent
 	}
-	metricsWidth, graphWidth, ok := monitorSessionColumnWidths(width)
+	metricsWidth, _, ok := monitorSessionColumnWidths(width)
 	if !ok {
 		return m.renderMonitorGraphSamples(width, height, session.samples, i18n.Text("TOKENS"), rowColors)
 	}
 	metrics := m.renderMonitorSessionMetrics(metricsWidth, height, session, pageLabel, rowColors)
-	if session.preview.Text != "" || m.rowContextMode(session.id) != contextGraph || m.monitorContextActionVisible(session) {
-		return m.renderMonitorContextRow(width, height, metrics, session, rowColors)
-	}
-	title := i18n.Text("TOKEN BARS")
-	graph := m.renderMonitorGraphSamples(graphWidth, height, session.samples, title, rowColors)
-	return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
+	return m.renderMonitorContextRow(width, height, metrics, session, rowColors)
 }
 
 func monitorNeedsAttention(attention codex.SessionAttention) bool {
