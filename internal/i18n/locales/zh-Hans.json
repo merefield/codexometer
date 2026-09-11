@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "有效期顺序未知；由后端选择重置额度。",
-  "EXPIRES IN %s // within %d hours": "将在 %s 后过期 // %d 小时内",
+  "FIRST EXPIRATION IN %s // within %d hours": "首次过期倒计时 %s // %d 小时内",
   "Expiry information unavailable.": "有效期信息不可用。",
   "Unused allowance does not carry over or stack.": "未使用的额度不会结转或叠加。",
   "Expiry information unavailable. No warning does not mean no expiry.": "有效期信息不可用。没有警告不代表不会过期。",

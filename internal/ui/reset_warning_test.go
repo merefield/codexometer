@@ -90,7 +90,7 @@ func TestResetWarningsUseLocale(t *testing.T) {
 	}
 	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("first", time.Hour)}
 	body = strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n")
-	if !strings.Contains(body, i18n.Format("EXPIRES IN %s // within %d hours", resetExpiryRemaining(*m.snapshot.RateLimitResetCredits.Credits[0].ExpiresAt, false), m.resetWarningHours)) {
+	if !strings.Contains(body, i18n.Format("FIRST EXPIRATION IN %s // within %d hours", resetExpiryRemaining(*m.snapshot.RateLimitResetCredits.Credits[0].ExpiresAt, false), m.resetWarningHours)) {
 		t.Fatal("expiry status is not localised")
 	}
 	unknown := codex.ResetCredit{}
@@ -130,12 +130,12 @@ func TestResetExpiryCountdownAndSpacing(t *testing.T) {
 	if !strings.HasPrefix(warning, "⚠  ") || !strings.Contains(warning, "2D 3H") {
 		t.Fatalf("warning spacing/countdown: %q", warning)
 	}
-	want := i18n.Format("EXPIRES IN %s // within %d hours", "2D 3H", 72)
+	want := i18n.Format("FIRST EXPIRATION IN %s // within %d hours", "2D 3H", 72)
 	if body := strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n"); !strings.Contains(body, want) {
 		t.Fatalf("actual expiry missing: %q", body)
 	}
 	m.snapshot.RateLimitResetCredits.Credits[0] = credit("first", 50*time.Hour+30*time.Minute)
-	want = i18n.Format("EXPIRES IN %s // within %d hours", "2D 2H", 72)
+	want = i18n.Format("FIRST EXPIRATION IN %s // within %d hours", "2D 2H", 72)
 	if body := strings.Join(m.resetDetailLines(1000, paletteFor(m.theme)), "\n"); !strings.Contains(body, want) {
 		t.Fatal("countdown did not update independently of warning setting")
 	}

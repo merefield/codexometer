@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "Ablaufreihenfolge unbekannt; das Backend wählt das Guthaben.",
-  "EXPIRES IN %s // within %d hours": "VERFÄLLT IN %s // innerhalb von %d Stunden",
+  "FIRST EXPIRATION IN %s // within %d hours": "ERSTER ABLAUF IN %s // innerhalb von %d Stunden",
   "Expiry information unavailable.": "Ablaufinformationen nicht verfügbar.",
   "Unused allowance does not carry over or stack.": "Ungenutztes Kontingent wird nicht übertragen oder addiert.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Ablaufinformationen nicht verfügbar. Keine Warnung bedeutet nicht, dass nichts verfällt.",

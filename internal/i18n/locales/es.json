@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "Orden de caducidad desconocido; el servidor elige el crédito.",
-  "EXPIRES IN %s // within %d hours": "CADUCA EN %s // en %d horas",
+  "FIRST EXPIRATION IN %s // within %d hours": "PRIMER VENCIMIENTO EN %s // en %d horas",
   "Expiry information unavailable.": "Información de caducidad no disponible.",
   "Unused allowance does not carry over or stack.": "La cuota sin usar no se transfiere ni se acumula.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Información de caducidad no disponible. Sin aviso no significa sin caducidad.",

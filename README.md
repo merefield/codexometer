@@ -862,7 +862,7 @@ fresh account data and explicit confirmation. The Resets view always permits
 review regardless of usage percentage.
 
 The Resets page repeats the actual countdown, for example
-`EXPIRES IN 2D 4H // within 72 hours`: the first value is the remaining time
+`FIRST EXPIRATION IN 2D 4H // within 72 hours`: the first value is the remaining time
 until the earliest known expiry; the second is your configured warning lead time.
 
 The confirmation explicitly warns that unused allowance does not carry over or

@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "Udløbsrækkefølgen er ukendt; serveren vælger kreditten.",
-  "EXPIRES IN %s // within %d hours": "UDLØBER OM %s // inden for %d timer",
+  "FIRST EXPIRATION IN %s // within %d hours": "FØRSTE UDLØB OM %s // inden for %d timer",
   "Expiry information unavailable.": "Udløbsoplysninger er ikke tilgængelige.",
   "Unused allowance does not carry over or stack.": "Ubrugt kvote overføres ikke eller lægges til.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Udløbsoplysninger er ikke tilgængelige. Ingen advarsel betyder ikke, at intet udløber.",

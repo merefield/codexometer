@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "有効期限の順序は不明です。バックエンドがクレジットを選択します。",
-  "EXPIRES IN %s // within %d hours": "期限まで %s // %d 時間以内",
+  "FIRST EXPIRATION IN %s // within %d hours": "最初の有効期限まで %s // %d 時間以内",
   "Expiry information unavailable.": "有効期限情報を取得できません。",
   "Unused allowance does not carry over or stack.": "未使用の利用枠は繰り越しも加算もされません。",
   "Expiry information unavailable. No warning does not mean no expiry.": "有効期限情報を取得できません。警告がなくても期限がないとは限りません。",

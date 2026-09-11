@@ -392,7 +392,7 @@ func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 		lines = append(lines, colors.label().Foreground(colors.warning).Render(notice))
 	}
 	if m.resetExpiringSoon() && len(credits) > 0 && credits[0].ExpiresAt != nil {
-		lines = append(lines, colors.label().Foreground(colors.warning).Render(i18n.Format("EXPIRES IN %s // within %d hours", resetExpiryRemaining(*credits[0].ExpiresAt, false), m.resetWarningHours)))
+		lines = append(lines, colors.label().Foreground(colors.warning).Render(i18n.Format("FIRST EXPIRATION IN %s // within %d hours", resetExpiryRemaining(*credits[0].ExpiresAt, false), m.resetWarningHours)))
 	}
 	if summary.AvailableCount == 0 {
 		return append(lines, "No resets available.")

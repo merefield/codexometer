@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "Ordre d’expiration inconnu ; le serveur choisit le crédit.",
-  "EXPIRES IN %s // within %d hours": "EXPIRE DANS %s // sous %d heures",
+  "FIRST EXPIRATION IN %s // within %d hours": "PREMIÈRE EXPIRATION DANS %s // sous %d heures",
   "Expiry information unavailable.": "Informations d’expiration indisponibles.",
   "Unused allowance does not carry over or stack.": "Le quota inutilisé n’est ni reporté ni cumulé.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Informations d’expiration indisponibles. L’absence d’alerte ne signifie pas l’absence d’expiration.",

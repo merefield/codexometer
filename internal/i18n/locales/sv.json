@@ -1,6 +1,6 @@
 {
   "Expiry order unavailable; backend chooses the credit.": "Utgångsordningen är okänd; servern väljer krediten.",
-  "EXPIRES IN %s // within %d hours": "LÖPER UT OM %s // inom %d timmar",
+  "FIRST EXPIRATION IN %s // within %d hours": "FÖRSTA UTGÅNG OM %s // inom %d timmar",
   "Expiry information unavailable.": "Information om utgångsdatum saknas.",
   "Unused allowance does not carry over or stack.": "Oanvänd kvot förs inte över eller läggs till.",
   "Expiry information unavailable. No warning does not mean no expiry.": "Information om utgångsdatum saknas. Ingen varning betyder inte att inget löper ut.",
