@@ -65,14 +65,14 @@ func responsiveTabLabels(width int, tiers [][]string) ([]string, string) {
 }
 
 func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
-	monitorFull := i18n.Text("╭ MONITOR ╮")
-	monitorCompact := "╭MON╮"
-	monitorMinimal := "[M]"
-	microMonitor := "M"
+	monitorFull := i18n.Text("╭ SESSIONS ╮")
+	monitorCompact := "╭SES╮"
+	monitorMinimal := "[S]"
+	microMonitor := "S"
 	if showMonitorLight {
-		monitorFull = i18n.Text("╭ MONITOR ●╮")
-		monitorCompact = "╭MON●╮"
-		monitorMinimal = "[M●]"
+		monitorFull = i18n.Text("╭ SESSIONS ●╮")
+		monitorCompact = "╭SES●╮"
+		monitorMinimal = "[S●]"
 		microMonitor = "●"
 	}
 	labels, separator := responsiveTabLabels(width, [][]string{

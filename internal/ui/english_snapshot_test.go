@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the Monitor's directional detail hint;
+	// Baseline intentionally updated for Sessions / SESSION TOTALS branding;
 	// all themes, views and three terminal sizes are covered.
-	const want = "a17b202b9a8c1ca801640b3c0a916a14e1060018225166d02a448848d6053bd6"
+	const want = "3813648a9bb9fcb16559f4eea5f1375f0e6fdc611d0c6d1191545966b7c0474d"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}
