@@ -156,6 +156,20 @@ type resetControls struct {
 	tabsWidth, extraRows                 int
 }
 
+func resetExpiryRemaining(expiresAt int64, compact bool) string {
+	hours := max(int(time.Until(time.Unix(expiresAt, 0)).Hours()), 0)
+	if hours >= 24 {
+		if compact {
+			return fmt.Sprintf("%dD", hours/24)
+		}
+		return fmt.Sprintf("%dD %dH", hours/24, hours%24)
+	}
+	if hours == 0 {
+		return "<1H"
+	}
+	return fmt.Sprintf("%dH", hours)
+}
+
 // One geometry source for rendering, tab allocation and both click surfaces.
 func (m Model) resetControlsLayout(width int) resetControls {
 	c := resetControls{tabsWidth: width, button: m.resetLabel()}
@@ -165,19 +179,10 @@ func (m Model) resetControlsLayout(width int) resetControls {
 	c.buttonX = max(width-lipgloss.Width(c.button), 0)
 	credits := m.availableResetCredits()
 	if m.resetWarningHours > 0 && len(credits) > 0 && credits[0].ExpiresAt != nil && time.Until(time.Unix(*credits[0].ExpiresAt, 0)) < m.resetExpiryWarning() && !m.loading && m.err == nil && !m.snapshot.FetchedAt.IsZero() && time.Since(m.snapshot.FetchedAt) <= 2*m.refreshEvery {
-		hours := max(int(time.Until(time.Unix(*credits[0].ExpiresAt, 0)).Hours()), 0)
-		remaining := fmt.Sprintf("%dH", hours)
-		if hours >= 24 {
-			remaining = fmt.Sprintf("%dD %dH", hours/24, hours%24)
-		} else if hours == 0 {
-			remaining = "<1H"
-		}
-		c.warning = i18n.Format("⚠ RESET EXPIRES IN %s", remaining)
+		remaining := resetExpiryRemaining(*credits[0].ExpiresAt, false)
+		c.warning = i18n.Format("⚠  RESET EXPIRES IN %s", remaining)
 		if lipgloss.Width(c.warning)+1+lipgloss.Width(c.button)+12 > width {
-			if hours >= 24 {
-				remaining = fmt.Sprintf("%dD", hours/24)
-			}
-			c.warning = i18n.Format("⚠ EXPIRES %s", remaining)
+			c.warning = i18n.Format("⚠  EXPIRES %s", resetExpiryRemaining(*credits[0].ExpiresAt, true))
 		}
 	}
 	total := lipgloss.Width(c.button)
@@ -386,8 +391,8 @@ func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 	if notice := m.resetExpiryDataNotice(); notice != "" {
 		lines = append(lines, colors.label().Foreground(colors.warning).Render(notice))
 	}
-	if m.resetExpiringSoon() {
-		lines = append(lines, colors.label().Foreground(colors.warning).Render(i18n.Format("EXPIRING SOON // within %d hours", m.resetWarningHours)))
+	if m.resetExpiringSoon() && len(credits) > 0 && credits[0].ExpiresAt != nil {
+		lines = append(lines, colors.label().Foreground(colors.warning).Render(i18n.Format("EXPIRES IN %s // within %d hours", resetExpiryRemaining(*credits[0].ExpiresAt, false), m.resetWarningHours)))
 	}
 	if summary.AvailableCount == 0 {
 		return append(lines, "No resets available.")
