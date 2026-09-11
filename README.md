@@ -10,7 +10,7 @@ Codexometer is a retro terminal dashboard and **session command centre** for
 sessions to follow their activity, see which need attention, and keep quota
 and reset timing visible without repeatedly opening `/status`.
 
-The **Sessions** brings your sessions into one place: read their latest context,
+The **Sessions** tab brings your sessions into one place: read their latest context,
 compare token activity, and—with the [shared local app-server setup](#recommended-codex-cli-setup)—
 answer supported questions, review and confirm command approvals, and send
 follow-ups to idle sessions. Quota views, account usage history and optional
