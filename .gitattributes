@@ -1,0 +1,2 @@
+# Bundler output may contain significant trailing whitespace in template literals.
+internal/web/dist/** linguist-generated=true -whitespace

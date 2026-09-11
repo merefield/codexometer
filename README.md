@@ -40,6 +40,10 @@ The interface supports mouse controls, keyboard navigation, five colour themes,
 and [16 languages with 17 locale options](#language), with the original UK English presentation
 unchanged by default.
 
+An opt-in [experimental browser interface](#experimental-browser-interface)
+provides read-only Quota, Sessions and Usage views with `codexometer --web`.
+The terminal remains the default and the full-featured command centre.
+
 ## Why use it?
 
 Codex already exposes quota information through `/status`, but that view lives
@@ -1934,6 +1938,8 @@ deterministic PASS/FAIL verifier.
 --check-auth       verify the current Codex login and exit
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
+--web              experimental read-only browser interface (loopback only)
+--web-port PORT    local browser port (default: 0/automatic; requires --web)
 --refresh DURATION refresh interval (default: 1m)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
 --reset-warning-hours HOURS expiry warning lead time (default: 72; 0 disables)
@@ -1952,6 +1958,149 @@ codexometer --inline
 # Use a separately installed Codex build
 codexometer --codex ~/bin/codex
 ```
+
+## Experimental browser interface
+
+Keep the terminal experience, or opt into a local Svelte browser dashboard:
+
+```sh
+codexometer --web
+
+# Explore with entirely simulated data
+codexometer --web --demo
+
+# Optional stable port; no configurable remote bind address
+codexometer --web --web-port 8765
+```
+
+1. Run one of these commands and keep that terminal open.
+2. Open the private `http://127.0.0.1:PORT/#pair=...` link printed in the terminal
+   within five minutes. The application does not automatically launch a browser.
+3. Pairing exchanges the one-use secret for a temporary browser capability and
+   removes the secret from the visible URL. Do not share the original link.
+4. Browse **Quota**, **Sessions**, and **Usage**. Refresh and browser Back/Forward
+   work; session-detail URLs support direct navigation in the paired tab.
+5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
+
+This first preview is **read-only and UK-English-only**, not feature parity with
+the terminal. It includes Bars, Consumption Pace, Consumption Zone, Pie and Fuel Tank quota
+presentations; reset inventory with disclosed expiry information; local session
+telemetry with expandable/full-page context and synchronised activity graphs;
+and account history with a daily heatmap, monthly/cumulative bars, a 6/12-month
+selector and an accessible data table. Five browser themes are available.
+`CODEXOMETER_LANG` continues to configure the terminal, not this preview.
+
+**Consumption Zone** plots each window's elapsed quota period horizontally and
+0–100% consumption vertically. The bottom-left to top-right diagonal represents
+steady consumption: above it means usage is outpacing elapsed time, below it means
+headroom. The background fades from red at the top left through amber to green at
+the bottom right, and a high-contrast dot marks the current observation. This is
+a position comparison, not a usage-history graph or a prediction of future use.
+Windows without a known duration and reset date cannot be plotted.
+
+The browser uses a compact dashboard layout: quota plots share the available
+width and height below the tabs. Pie charts retain their circular shape, while
+Consumption Zone scales each axis independently and keeps text legible. On short
+windows or with many quota windows, content scrolls without hiding the footer
+controls or shrinking plots below a readable minimum.
+
+Approvals, prompt sending, benchmark execution and quota-reset redemption are
+**not exposed by the web server**, even if the shared Codex daemon supports them.
+Use Codex or the terminal interface for those actions. Quota API-equivalent
+learning, status scoring, pricing readouts and other terminal-only controls
+are intentionally deferred; the web interface does not invent replacements.
+
+The same existing Codex readers provide the data and the same local/shared-daemon
+limitations apply. The browser cannot reveal an approval command missing from
+the source. Session counters measure tokens observed since this **web process**
+started, not session lifetime or account totals; linked child agents are grouped
+by the existing reader. Graphs collect up to 120 samples, approximately one hour,
+at 30-second intervals with automatic scaling. Initial samples establish a
+baseline, not historical usage. Delayed polls after sleep can cover longer
+intervals. Session text can contain private source code, paths or secrets.
+
+Quota refresh defaults to one minute (`--refresh`, minimum ten seconds in web
+mode); sessions poll every two seconds and account history every five minutes.
+Polls wait for each read to finish before scheduling the next, avoiding overlap.
+One collector set serves all connected browser views; changing routes does not
+start additional Codex readers. Updates use an authenticated event stream with
+full snapshots on reconnect. Refresh errors and disconnections are labelled;
+cached observations are not proof that a session is still working. Account
+history is hidden unless its account matches the current successful quota read.
+
+### Browser security and local access
+
+- The server binds **only `127.0.0.1`**. Remote/LAN hosting, reverse proxies,
+  tunnelling and exposing the port publicly are unsupported. There is no web
+  listener or browser collector during a normal terminal launch.
+- The one-use pairing link expires after five minutes. Its browser capability
+  expires after eight hours or on server restart. Restart `--web` for a fresh
+  pairing link if it expires or you need to pair a different browser.
+- The temporary capability is kept in the paired tab's **sessionStorage** so
+  reload works; it is sent in an Authorization header, never a cookie or URL
+  query. It is not a Codex credential. A fresh independent tab does not
+  automatically inherit access. Browser tab/session restoration may retain
+  sessionStorage, so closing a tab is not a reliable revocation mechanism;
+  stopping the server is. If browser storage is blocked, access is memory-only
+  and reloading will require a new pairing link.
+- Codex authentication, account fingerprints and approval/input capabilities
+  stay in Go. The browser receives explicit display-only fields, not raw client
+  objects or upstream error strings. No session content is saved by the web
+  server. Theme preferences alone use localStorage.
+- Exact Host, Origin and Fetch Metadata checks reject rebinding and cross-origin
+  access, including other localhost ports. Pairing requires same-origin JSON;
+  protected reads require the bearer capability. CORS is not enabled, and
+  state-changing Codex endpoints do not exist in this preview.
+- Responses use `no-store`, `no-referrer`, `nosniff` and a restrictive Content
+  Security Policy with framing disabled. Session replies and commands render as
+  text, never HTML/Markdown execution. No CDN assets, analytics or external reply
+  images are loaded. Inline CSS is allowed for responsive gauges; inline scripts
+  and JavaScript evaluation are not.
+
+Local HTTP is deliberate for loopback delivery; it does not offer HTTPS transport
+protection if forwarded elsewhere. These protections do not defend against
+malware running as your user, a compromised browser, or extensions with access
+to the page. Keep sensitive sessions out of screenshots and shared displays.
+
+On Ubuntu/WSL, try the exact printed `127.0.0.1` URL in your Windows browser;
+this depends on your WSL localhost-forwarding configuration. Native Windows,
+macOS and Linux use the same loopback design. Do not substitute a LAN address or
+disable the host checks as a workaround. Windows/WSL and Safari should still be
+treated as experimental until verified on your particular setup.
+
+### Web development and terminal regression protection
+
+The browser uses **Svelte + TypeScript + Vite**, a small hash router and CSS/SVG
+visualisations. Production assets are embedded in the Go executable. Release
+archives and `go install` remain standalone: end users need no Node runtime,
+frontend server or separate asset directory. The committed production bundle
+also means ordinary Go builds do not require an npm install.
+
+Frontend contributors need Node 24 and npm:
+
+```sh
+make web-build           # npm ci, Svelte/TypeScript checks, regenerate assets
+make build               # embed the new assets in the local executable
+cd web
+npx playwright install chromium
+npm test                 # real browser tests against ../codexometer --web --demo
+```
+
+Commit `web/package-lock.json` and regenerated `internal/web/dist` together with
+source changes. CI rebuilds the frontend and rejects stale generated assets,
+then runs browser tests against the production Go server, including its CSP.
+Frontend tests use simulated data only. Never point test traces or screenshots
+at real private sessions.
+
+The terminal UI and Codex reader implementation are unchanged by this initial
+web layer. Existing regression tests cover English presentation across themes
+and sizes, localisation, responsive layouts, mouse hit regions, session
+navigation, approvals, reset confirmation and quota learning. Additional launch
+tests ensure `--web` cannot start the terminal or benchmark discovery and normal
+launches never start web mode. CI retains `go test -race -cover ./...`, vet and
+build checks on Linux, macOS and Windows; browser tests currently run Chromium
+on Linux. These checks provide regression evidence, not a guarantee that every
+terminal emulator or OS/browser combination is covered.
 
 ## Redeeming a banked quota reset
 

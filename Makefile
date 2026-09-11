@@ -1,4 +1,4 @@
-.PHONY: build test integration-test check fmt vet release-snapshot
+.PHONY: build test integration-test check fmt vet release-snapshot web-build web-test
 
 # A tagged checkout gets the nearest semantic Git description. Repositories
 # without a reachable tag leave this empty so Go's embedded VCS revision and
@@ -25,3 +25,12 @@ vet:
 
 release-snapshot:
 	goreleaser release --snapshot --clean --skip=publish
+
+# Only frontend contributors need Node. Generated assets are committed for
+# ordinary Go builds, go install and all six GoReleaser distributions.
+web-build:
+	cd web && npm ci && npm run check && npm run build
+
+web-test: web-build
+	$(MAKE) build
+	cd web && npm test
