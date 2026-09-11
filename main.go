@@ -246,7 +246,7 @@ type dependencies struct {
 	checkAuth         func(context.Context, string) (codex.Snapshot, error)
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI           func(ui.Fetcher, time.Duration, bool, int) error
+	startUI           func(ui.Fetcher, time.Duration, bool, int, int) error
 }
 
 func defaultDependencies() dependencies {
@@ -269,17 +269,18 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	flags := flag.NewFlagSet("codexometer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var (
-		codexPath       = flags.String("codex", "codex", "path to the Codex CLI")
-		refresh         = flags.Duration("refresh", time.Minute, "quota refresh interval")
-		demo            = flags.Bool("demo", false, "show the UI with simulated quota data")
-		inline          = flags.Bool("inline", false, "render inline instead of using the alternate screen")
-		resetThreshold  = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown if expiry is within 72h)")
-		checkAuth       = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
-		digBenchGame    = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
-		digBenchModel   = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
-		digBenchEffort  = flags.String("digbench-effort", "high", "reasoning effort for --digbench-game")
-		digBenchTimeout = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
-		printVersion    bool
+		codexPath         = flags.String("codex", "codex", "path to the Codex CLI")
+		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
+		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
+		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
+		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
+		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
+		checkAuth         = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
+		digBenchGame      = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
+		digBenchModel     = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
+		digBenchEffort    = flags.String("digbench-effort", "high", "reasoning effort for --digbench-game")
+		digBenchTimeout   = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
+		printVersion      bool
 	)
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
 	flags.BoolVar(&printVersion, "v", false, "print the version and exit")
@@ -293,6 +294,10 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	if *resetThreshold < 0 || *resetThreshold > 100 {
 		fmt.Fprintln(stderr, "codexometer: --reset-threshold must be between 0 and 100")
+		return 2
+	}
+	if *resetWarningHours < 0 || *resetWarningHours > ui.MaxResetWarningHours {
+		fmt.Fprintf(stderr, "codexometer: --reset-warning-hours must be between 0 and %d\n", ui.MaxResetWarningHours)
 		return 2
 	}
 	// Capture credentials for the benchmark components, then remove them before
@@ -375,7 +380,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fetcher = &demoFetcher{}
 	}
 
-	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold); err != nil {
+	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours); err != nil {
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}
@@ -491,13 +496,14 @@ func formatDigBenchResult(result codex.DigBenchResult) string {
 	return line
 }
 
-func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold int) error {
+func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, resetWarningHours int) error {
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
 	}
 	model.SetInline(inline)
 	model.SetResetThreshold(resetThreshold)
+	model.SetResetWarningHours(resetWarningHours)
 	_, err := tea.NewProgram(model).Run()
 	return err
 }

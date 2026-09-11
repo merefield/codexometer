@@ -125,7 +125,7 @@ func TestResetThresholdOption(t *testing.T) {
 		t.Run(test.value, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			called := false
-			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, threshold int) error {
+			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, threshold, _ int) error {
 				called = true
 				if threshold != test.want {
 					t.Fatalf("threshold %d, want %d", threshold, test.want)
@@ -150,9 +150,9 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold int) error {
+		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, warningHours int) error {
 			called = true
-			if refresh != 30*time.Second || !inline || resetThreshold != 35 {
+			if refresh != 30*time.Second || !inline || resetThreshold != 35 || warningHours != 72 {
 				t.Fatalf("refresh=%s inline=%v", refresh, inline)
 			}
 			usageFetcher, ok := fetcher.(ui.TokenUsageFetcher)
@@ -192,6 +192,38 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	}
 }
 
+func TestRunResetWarningHours(t *testing.T) {
+	for _, test := range []struct {
+		value      string
+		want, code int
+	}{
+		{"", 72, 0}, {"0", 0, 0}, {"24", 24, 0}, {"168", 168, 0},
+		{"-1", 0, 2}, {"abc", 0, 2}, {"1.5", 0, 2}, {"2562048", 0, 2}, {"99999999999999999999", 0, 2},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			called := false
+			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _ int, hours int) error {
+				called = true
+				if hours != test.want {
+					t.Fatalf("got %d hours, want %d", hours, test.want)
+				}
+				return nil
+			}}
+			args := []string{"--demo"}
+			if test.value != "" {
+				args = append(args, "--reset-warning-hours", test.value)
+			}
+			if code := run(args, &stdout, &stderr, deps); code != test.code {
+				t.Fatalf("code %d: %s", code, stderr.String())
+			}
+			if called != (test.code == 0) {
+				t.Fatal("invalid hours launched UI")
+			}
+		})
+	}
+}
+
 func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 	return left.APIEqUSD == right.APIEqUSD && left.APIEqPricedCalls == right.APIEqPricedCalls &&
 		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls &&
@@ -201,7 +233,7 @@ func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 func TestRunReportsUIError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(ui.Fetcher, time.Duration, bool, int) error { return errors.New("terminal unavailable") },
+		startUI: func(ui.Fetcher, time.Duration, bool, int, int) error { return errors.New("terminal unavailable") },
 	}
 	code := run(nil, &stdout, &stderr, deps)
 	if code != 1 || !strings.Contains(stderr.String(), "terminal unavailable") {
@@ -292,7 +324,7 @@ func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ int) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.BenchmarkAPIKey != "openai-secret" {
 				t.Fatalf("benchmark API key was not attached to Codex client")
@@ -318,7 +350,7 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 			}
 			return []string{"P-2", "P-1", "P-2"}, nil
 		},
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _ int) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.DigBenchToken != "digbench-secret" {
 				t.Fatalf("DigBench token was not attached to Codex client")

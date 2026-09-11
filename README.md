@@ -196,7 +196,7 @@ English rendering baseline captured from v0.12.0.
 - A countdown to the next automatic refresh.
 - Confirmed redemption of available banked quota resets, normally offered only
   when a displayed window is at least 80% consumed (configurable), or a known
-  available reset expires in less than 72 hours. A dedicated Quota → Resets view
+  available reset expires in less than 72 hours (configurable). A dedicated Quota → Resets view
   remains accessible below the usage threshold.
 - Account token history in a daily activity grid, weekly bars, or a cumulative
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
@@ -851,11 +851,24 @@ fixed through confirmation and any retry of an uncertain request; it never
 silently switches credits. A credit that expires or disappears before a new
 request is submitted requires a fresh confirmation.
 
-An amber `EXPIRING` shortcut appears on Quota views when a known available reset
-has less than 72 hours left, even below `--reset-threshold`. This is an expiry
+An amber warning such as `⚠ RESET EXPIRES IN 2D 4H` appears immediately before
+the normal `[ RESET // N ]` button when a known available reset has less than
+72 hours left by default, even below `--reset-threshold`. Clicking the warning opens
+**Quota → Resets** without arming confirmation or submitting a reset. It
+underlines on hover, shortens on narrower terminals and moves onto an extra
+row when necessary. This is an expiry
 warning, not a recommendation to reset unused quota. Redemption still requires
 fresh account data and explicit confirmation. The Resets view always permits
 review regardless of usage percentage.
+
+Set the lead time with `--reset-warning-hours HOURS`: for example,
+`./codexometer --reset-warning-hours 24` warns one day ahead, while
+`./codexometer --reset-warning-hours 168` warns a week ahead (useful for testing
+with a known later expiry). `--reset-warning-hours 0` disables expiry warnings
+and their threshold bypass, without disabling the consumption-based reset
+button or the Resets view. Use whole, non-negative hours. This setting does not
+invent credit details or change expiry dates; it applies to the current launch.
+Keep the option in your usual shell alias or launch command to retain it.
 
 Credit details are optional and may be capped by the backend. The view shows
 how many of the available credits have usable details; earliest expiry means
@@ -1909,6 +1922,7 @@ deterministic PASS/FAIL verifier.
 --inline           render inline instead of using the alternate screen
 --refresh DURATION refresh interval (default: 1m)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
+--reset-warning-hours HOURS expiry warning lead time (default: 72; 0 disables)
 -v, --version      print the version and exit
 ```
 
@@ -1930,7 +1944,8 @@ codexometer --codex ~/bin/codex
 On the Quota tab, `[ RESET // N ]` appears at the top right when a recent
 quota reading reports available banked resets, the account is verified, and
 at least one displayed quota window is **80% consumed or higher**, or a known
-available reset expires in **less than 72 hours**. In the dedicated **Resets**
+available reset expires within the warning lead time (**72 hours** by default;
+configure with `--reset-warning-hours`). In the dedicated **Resets**
 view, the usage threshold does not apply.
 Set another threshold with `./codexometer --reset-threshold 60` (whole percentages
 from 0 to 100). For testing, `./codexometer --reset-threshold 0` bypasses the

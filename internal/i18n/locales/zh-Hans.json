@@ -1,4 +1,6 @@
 {
+  "⚠ RESET EXPIRES IN %s": "⚠ 重置将在 %s 后过期",
+  "⚠ EXPIRES %s": "⚠ 过期 %s",
   "RESETS": "重置",
   "╭ RESETS ╮": "╭ 重置 ╮",
   "APPROVAL — OPEN DETAIL →": "审批 — 打开详情 →",

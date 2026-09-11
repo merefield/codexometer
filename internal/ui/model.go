@@ -62,7 +62,9 @@ type Model struct {
 	versionHovered                      bool
 	history                             accountHistoryState
 	resetThreshold                      int
+	resetWarningHours                   int
 	resetHovered                        bool
+	resetWarningHovered                 bool
 	resetBusy                           bool
 	resetKey, resetAccount, resetNotice string
 	resetCreditID                       string
@@ -399,6 +401,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 	}
 	model := Model{
 		resetThreshold:    80,
+		resetWarningHours: 72,
 		fetcher:           fetcher,
 		refreshEvery:      refreshEvery,
 		monitorAutoStart:  true,
@@ -746,6 +749,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.resetHovered = m.resetAt(mouse.X, mouse.Y)
+		m.resetWarningHovered = m.resetWarningAt(mouse.X, mouse.Y)
+		if m.resetWarningHovered && clicked && mouse.Button == tea.MouseLeft {
+			m.resetScroll = 0
+			return m.pressViewTab(viewResets)
+		}
 		if m.resetAt(mouse.X, mouse.Y) && clicked && mouse.Button == tea.MouseLeft {
 			return m.pressQuotaReset()
 		}
@@ -1379,9 +1387,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if m.meterView.isQuota() {
 		tabsHeight++
 	}
-	if m.resetOwnRow(contentWidth) {
-		tabsHeight++
-	}
+	tabsHeight += m.resetControlsLayout(contentWidth).extraRows
 	const framedErrorHeight = 3
 	const footerHeight = 2
 	extraHeight := 0
@@ -1405,9 +1411,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	quotaTabsY := -1
 	if m.meterView.isQuota() {
 		quotaTabsY = tabsY + 1
-		if m.resetOwnRow(contentWidth) {
-			quotaTabsY++
-		}
+		quotaTabsY += m.resetControlsLayout(contentWidth).extraRows
 	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)

@@ -24,7 +24,16 @@ type resetCreditConsumer interface {
 	ConsumeResetCredit(context.Context, string, string, string) (string, error)
 }
 
-const resetExpiryWarning = 72 * time.Hour
+// MaxResetWarningHours prevents overflow when converting CLI hours to duration.
+const MaxResetWarningHours = int((1<<63 - 1) / int64(time.Hour))
+
+func (m *Model) SetResetWarningHours(hours int) {
+	m.resetWarningHours = min(max(hours, 0), MaxResetWarningHours)
+}
+
+func (m Model) resetExpiryWarning() time.Duration {
+	return time.Duration(m.resetWarningHours) * time.Hour
+}
 
 // Details may be absent or capped. Never infer expiry from the quota window.
 func (m Model) availableResetCredits() []codex.ResetCredit {
@@ -61,7 +70,7 @@ func (m Model) availableResetCredits() []codex.ResetCredit {
 
 func (m Model) resetExpiringSoon() bool {
 	credits := m.availableResetCredits()
-	return len(credits) > 0 && credits[0].ExpiresAt != nil && time.Until(time.Unix(*credits[0].ExpiresAt, 0)) < resetExpiryWarning
+	return m.resetWarningHours > 0 && len(credits) > 0 && credits[0].ExpiresAt != nil && time.Until(time.Unix(*credits[0].ExpiresAt, 0)) < m.resetExpiryWarning()
 }
 
 // SetResetThreshold sets the consumed percentage required to offer a reset.
@@ -70,9 +79,6 @@ func (m *Model) SetResetThreshold(percent int) { m.resetThreshold = min(max(perc
 
 func (m Model) renderResetButton(label string, colors palette) string {
 	style := colors.label()
-	if m.resetExpiringSoon() {
-		style = style.Foreground(colors.warning)
-	}
 	if m.resetHovered && !m.resetBusy {
 		style = style.Foreground(colors.background).Background(colors.primary)
 	}
@@ -135,37 +141,101 @@ func (m Model) resetFullLabel() string {
 			return ""
 		}
 	}
-	if m.resetExpiringSoon() {
-		if m.width > 0 && m.width < 40 {
-			return fmt.Sprintf("[ RESET // %d ! ]", m.snapshot.RateLimitResetCredits.AvailableCount)
-		}
-		return fmt.Sprintf("[ RESET // %d // EXPIRING ]", m.snapshot.RateLimitResetCredits.AvailableCount)
-	}
 	return i18n.Format("[ RESET // %d ]", m.snapshot.RateLimitResetCredits.AvailableCount)
 }
 
-// Reserve the same horizontal span for rendering and hit testing.
+type resetControls struct {
+	button, warning                      string
+	buttonX, buttonY, warningX, warningY int
+	tabsWidth, extraRows                 int
+}
+
+// One geometry source for rendering, tab allocation and both click surfaces.
+func (m Model) resetControlsLayout(width int) resetControls {
+	c := resetControls{tabsWidth: width, button: m.resetLabel()}
+	if c.button == "" {
+		return c
+	}
+	c.buttonX = max(width-lipgloss.Width(c.button), 0)
+	credits := m.availableResetCredits()
+	if m.resetWarningHours > 0 && len(credits) > 0 && credits[0].ExpiresAt != nil && time.Until(time.Unix(*credits[0].ExpiresAt, 0)) < m.resetExpiryWarning() && !m.loading && m.err == nil && !m.snapshot.FetchedAt.IsZero() && time.Since(m.snapshot.FetchedAt) <= 2*m.refreshEvery {
+		hours := max(int(time.Until(time.Unix(*credits[0].ExpiresAt, 0)).Hours()), 0)
+		remaining := fmt.Sprintf("%dH", hours)
+		if hours >= 24 {
+			remaining = fmt.Sprintf("%dD %dH", hours/24, hours%24)
+		} else if hours == 0 {
+			remaining = "<1H"
+		}
+		c.warning = i18n.Format("⚠ RESET EXPIRES IN %s", remaining)
+		if lipgloss.Width(c.warning)+1+lipgloss.Width(c.button)+12 > width {
+			if hours >= 24 {
+				remaining = fmt.Sprintf("%dD", hours/24)
+			}
+			c.warning = i18n.Format("⚠ EXPIRES %s", remaining)
+		}
+	}
+	total := lipgloss.Width(c.button)
+	if c.warning != "" {
+		total += lipgloss.Width(c.warning) + 1
+	}
+	if total+12 <= width {
+		c.tabsWidth = width - total - 1
+	} else {
+		c.extraRows, c.buttonY, c.warningY = 1, 1, 1
+		if total > width && c.warning != "" {
+			c.extraRows, c.buttonY = 2, 2
+			c.warning = ansi.Truncate(c.warning, width, "")
+		}
+	}
+	c.warningX = max(c.buttonX-lipgloss.Width(c.warning)-1, 0)
+	if c.warningY != c.buttonY {
+		c.warningX = max(width-lipgloss.Width(c.warning), 0)
+	}
+	return c
+}
+
 func (m Model) resetLayout(width int) (int, string) {
-	label := m.resetLabel()
-	if label == "" || width < lipgloss.Width(label)+12 {
+	c := m.resetControlsLayout(width)
+	if c.extraRows > 0 {
 		return width, ""
 	}
-	return width - lipgloss.Width(label) - 1, label
+	return c.tabsWidth, c.button
 }
 
 func (m Model) resetAt(x, y int) bool {
 	g := m.dashboardLayout()
-	w, label := m.resetLayout(g.contentWidth)
-	if m.resetOwnRow(g.contentWidth) {
-		label = m.resetLabel()
-		return y == g.tabsY+1 && x >= 2+max(g.contentWidth-lipgloss.Width(label), 0) && x < 2+g.contentWidth
+	c := m.resetControlsLayout(g.contentWidth)
+	return c.button != "" && !(m.loading && len(m.snapshot.Meters()) == 0) && y == g.tabsY+c.buttonY && x >= 2+c.buttonX && x < 2+c.buttonX+lipgloss.Width(c.button)
+}
+
+func (m Model) resetWarningAt(x, y int) bool {
+	g := m.dashboardLayout()
+	c := m.resetControlsLayout(g.contentWidth)
+	return c.warning != "" && !(m.loading && len(m.snapshot.Meters()) == 0) && y == g.tabsY+c.warningY && x >= 2+c.warningX && x < 2+c.warningX+lipgloss.Width(c.warning)
+}
+
+func (m Model) renderResetControls(width int, tabs string, colors palette) string {
+	c := m.resetControlsLayout(width)
+	if c.button == "" {
+		return tabs
 	}
-	return label != "" && !(m.loading && len(m.snapshot.Meters()) == 0) && y == g.tabsY && x >= 2+w+1 && x < 2+g.contentWidth
+	rows := []string{tabs}
+	for range c.extraRows {
+		rows = append(rows, "")
+	}
+	if c.warning != "" {
+		style := colors.label().Foreground(colors.warning)
+		if m.resetWarningHovered {
+			style = style.Underline(true)
+		}
+		rows[c.warningY] += strings.Repeat(" ", max(c.warningX-lipgloss.Width(rows[c.warningY]), 0)) + style.Render(c.warning)
+	}
+	rows[c.buttonY] += strings.Repeat(" ", max(c.buttonX-lipgloss.Width(rows[c.buttonY]), 0)) + m.renderResetButton(c.button, colors)
+	return strings.Join(rows, "\n")
 }
 
 func (m Model) resetOwnRow(width int) bool {
-	label := m.resetLabel()
-	return label != "" && width < lipgloss.Width(label)+12
+	return m.resetControlsLayout(width).extraRows > 0
 }
 
 func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
@@ -281,7 +351,7 @@ func (m Model) resetDetailLines(width int, colors palette) (result []string) {
 	lines := []string{fmt.Sprintf("AVAILABLE // %d", summary.AvailableCount)}
 	credits := m.availableResetCredits()
 	if m.resetExpiringSoon() {
-		lines = append(lines, colors.label().Foreground(colors.warning).Render("EXPIRING SOON // within 72 hours"))
+		lines = append(lines, colors.label().Foreground(colors.warning).Render(fmt.Sprintf("EXPIRING SOON // within %d hours", m.resetWarningHours)))
 	}
 	if summary.AvailableCount == 0 {
 		return append(lines, "No resets available.")

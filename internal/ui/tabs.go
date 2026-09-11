@@ -171,7 +171,7 @@ func mainTabForView(view meterViewID) mainTabID {
 }
 
 func (m Model) renderMainTabs(width int, colors palette) string {
-	tabWidth, resetLabel := m.resetLayout(width)
+	tabWidth, _ := m.resetLayout(width)
 	tabs, separator := mainTabLayout(tabWidth, true)
 	parts := make([]string, 0, len(tabs))
 	used := 0
@@ -186,13 +186,7 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 	if len(parts) > 1 {
 		used += (len(parts) - 1) * len(separator)
 	}
-	if resetLabel != "" {
-		return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(tabWidth-used+1, 0)) + m.renderResetButton(resetLabel, colors)
-	}
-	if m.resetOwnRow(width) {
-		return strings.Join(parts, colors.dimmed().Render(separator)) + "\n" + joinRight("", m.renderResetButton(m.resetLabel(), colors), width)
-	}
-	return strings.Join(parts, colors.dimmed().Render(separator)) + strings.Repeat(" ", max(width-used, 0))
+	return m.renderResetControls(width, strings.Join(parts, colors.dimmed().Render(separator))+strings.Repeat(" ", max(tabWidth-used, 0)), colors)
 }
 
 func (m Model) renderQuotaViewTabs(width int, colors palette) string {

@@ -41,7 +41,7 @@ func TestResetCreditOrderingAndWarning(t *testing.T) {
 	if len(got) != 3 || got[0].ID != "first" || got[2].ID != "forever" {
 		t.Fatalf("order: %#v", got)
 	}
-	if !m.resetExpiringSoon() || !strings.Contains(m.resetLabel(), "EXPIRING") {
+	if !m.resetExpiringSoon() || m.resetControlsLayout(100).warning == "" || m.resetLabel() != "[ RESET // 8 ]" {
 		t.Fatal("expiry did not bypass threshold")
 	}
 	m.snapshot.RateLimitResetCredits.Credits = []codex.ResetCredit{credit("later", 73*time.Hour)}
@@ -148,10 +148,7 @@ func TestResetsResponsiveGeometryAndScroll(t *testing.T) {
 		if lipgloss.Width(rendered) > g.contentWidth || lipgloss.Height(rendered) != g.meterHeight {
 			t.Fatalf("%d: wrong dimensions", width)
 		}
-		row := g.tabsY
-		if m.resetOwnRow(g.contentWidth) {
-			row++
-		}
+		row := g.tabsY + m.resetControlsLayout(g.contentWidth).buttonY
 		label := m.resetLabel()
 		for x := 2 + g.contentWidth - lipgloss.Width(label); x < 2+g.contentWidth; x++ {
 			if !m.resetAt(x, row) {
