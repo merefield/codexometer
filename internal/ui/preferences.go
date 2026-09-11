@@ -135,7 +135,7 @@ func reverseThemePreferences(values map[themeID]string) map[string]themeID {
 }
 
 var quotaViewPreferenceNames = map[meterViewID]string{
-	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank",
+	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank", viewResets: "resets",
 }
 
 var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)

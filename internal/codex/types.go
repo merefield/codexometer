@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,7 +48,59 @@ type IndividualLimit struct {
 }
 
 type ResetCredits struct {
-	AvailableCount int `json:"availableCount"`
+	AvailableCount int           `json:"availableCount"`
+	Credits        []ResetCredit `json:"credits"`
+}
+
+type ResetCredit struct {
+	ID          string `json:"id"`
+	ResetType   string `json:"resetType"`
+	Status      string `json:"status"`
+	GrantedAt   int64  `json:"grantedAt"`
+	ExpiresAt   *int64 `json:"expiresAt"`
+	ExpiryKnown bool   `json:"-"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// HasKnownExpiry distinguishes a disclosed non-expiring credit (explicit null)
+// from one for which the backend omitted expiry information altogether.
+func (c ResetCredit) HasKnownExpiry() bool { return c.ExpiresAt != nil || c.ExpiryKnown }
+
+func (c *ResetCredit) UnmarshalJSON(data []byte) error {
+	type plain ResetCredit
+	var wire struct {
+		plain
+		ExpiresAt json.RawMessage `json:"expiresAt"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	decoded := ResetCredit(wire.plain)
+	decoded.ExpiryKnown = len(wire.ExpiresAt) > 0
+	if decoded.ExpiryKnown {
+		if err := json.Unmarshal(wire.ExpiresAt, &decoded.ExpiresAt); err != nil {
+			return err
+		}
+	}
+	*c = decoded
+	return nil
+}
+
+func (c ResetCredit) MarshalJSON() ([]byte, error) {
+	type plain ResetCredit
+	var expiry json.RawMessage
+	if c.HasKnownExpiry() {
+		var err error
+		expiry, err = json.Marshal(c.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(struct {
+		plain
+		ExpiresAt json.RawMessage `json:"expiresAt,omitempty"`
+	}{plain(c), expiry})
 }
 
 type Meter struct {

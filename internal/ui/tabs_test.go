@@ -64,9 +64,9 @@ func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 		want  string
 	}{
 		{width: 100, want: "CONSUMPTION PACE"},
-		{width: 28, want: "PACE"},
-		{width: 12, want: "[C]"},
-		{width: 4, want: "C"},
+		{width: 34, want: "PACE"},
+		{width: 15, want: "[C]"},
+		{width: 5, want: "C"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := quotaViewTabLayout(test.width)
@@ -199,7 +199,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 
 func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model := Model{meterView: viewBars}
-	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewBars} {
+	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewResets, viewBars} {
 		updated, command := model.Update(key('v'))
 		model = updated.(Model)
 		if command == nil || model.meterView != want || model.quotaMeterView != want || model.flashedButton != footerButtonView {

@@ -39,6 +39,10 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 				if !strings.Contains(output, "ALGORITHM TRIAL") || !strings.Contains(output, "RESULT MATRIX") {
 					t.Errorf("benchmark components missing for theme %d", theme)
 				}
+			} else if view == viewResets {
+				if !strings.Contains(output, "AVAILABLE") {
+					t.Error("reset summary missing")
+				}
 			} else if view == viewUsage {
 				if !strings.Contains(output, "LIFETIME") {
 					t.Error("usage summary missing")
@@ -186,6 +190,9 @@ func TestPricingFooterCentersProvenanceOnEveryPricedView(t *testing.T) {
 	model := Model{nextRefresh: time.Now().Add(time.Minute)}
 	pricedViews := append([]meterViewID{viewBenchmark}, quotaViewOrder[:]...)
 	for _, view := range pricedViews {
+		if view == viewResets {
+			continue
+		}
 		model.meterView = view
 		raw := model.renderFooter(100, colors)
 		if !strings.Contains(raw, codex.StandardAPIPricingSourceURL) {
@@ -205,7 +212,7 @@ func TestPricingFooterCentersProvenanceOnEveryPricedView(t *testing.T) {
 		}
 	}
 
-	for _, view := range []meterViewID{viewMonitor} {
+	for _, view := range []meterViewID{viewMonitor, viewUsage, viewResets} {
 		model.meterView = view
 		footer := model.renderFooter(100, colors)
 		if strings.Contains(footer, codex.StandardAPIPricingSourceURL) || strings.Contains(ansi.Strip(footer), codex.StandardAPIPricingRetrievedOn) {
@@ -218,6 +225,9 @@ func TestPricingFooterRemainsResponsiveAcrossPricedViews(t *testing.T) {
 	model := Model{nextRefresh: time.Now().Add(time.Minute)}
 	pricedViews := append([]meterViewID{viewBenchmark}, quotaViewOrder[:]...)
 	for _, view := range pricedViews {
+		if view == viewResets {
+			continue
+		}
 		model.meterView = view
 		for _, width := range []int{12, 24, 40, 60, 79, 80, 100} {
 			footer := model.renderFooter(width, paletteFor(themeHacker))

@@ -55,6 +55,8 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_prompt_wrapping", TestMonitorPromptWrapsAndGrowsUpward)
 	t.Run("monitor_detail_sections", TestMonitorDetailStructuredSections)
 	t.Run("tab_click_surfaces", TestEveryRenderedTabCellIsClickableAcrossWidths)
+	t.Run("reset_warning_surfaces", TestResetWarningClickSurfaces)
+	t.Run("reset_warning_language", TestResetWarningsUseLocale)
 	t.Run("header_click_surfaces", TestHeaderClickTargets)
 	t.Run("detail_activity", TestDetailSentWaveLifecycle)
 	t.Run("session_context_activity", TestMainSessionContextDots)

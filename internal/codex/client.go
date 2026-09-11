@@ -68,15 +68,20 @@ func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
 
 type resetAttempt struct {
 	key, account, outcome string
+	creditID              string
 }
 
 // ConsumeReset uses the prevailing account, checking that it is the account
 // whose quota the user confirmed. Callers must reuse key after uncertain errors.
 func (c Client) ConsumeReset(ctx context.Context, key, account string) (string, error) {
+	return c.ConsumeResetCredit(ctx, key, account, "")
+}
+
+func (c Client) ConsumeResetCredit(ctx context.Context, key, account, creditID string) (string, error) {
 	if strings.TrimSpace(key) == "" || account == "" {
 		return "", errors.New("reset requires an attempt key and verified account")
 	}
-	attempt := &resetAttempt{key: key, account: account}
+	attempt := &resetAttempt{key: key, account: account, creditID: creditID}
 	_, err := c.fetch(ctx, attempt, nil)
 	return attempt.outcome, err
 }
@@ -171,9 +176,13 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 		if accountFingerprint == "" || accountFingerprint != reset.account {
 			return Snapshot{}, errors.New("Codex account changed or could not be verified; reset not submitted")
 		}
+		params := map[string]any{"idempotencyKey": reset.key}
+		if reset.creditID != "" {
+			params["creditId"] = reset.creditID
+		}
 		if err := encoder.Encode(map[string]any{
 			"method": "account/rateLimitResetCredit/consume", "id": 4,
-			"params": map[string]any{"idempotencyKey": reset.key},
+			"params": params,
 		}); err != nil {
 			return Snapshot{}, fmt.Errorf("send Codex quota reset request: %w", err)
 		}
