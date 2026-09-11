@@ -1994,9 +1994,64 @@ selector and an accessible data table. Five browser themes are available.
 0–100% consumption vertically. The bottom-left to top-right diagonal represents
 steady consumption: above it means usage is outpacing elapsed time, below it means
 headroom. The background fades from red at the top left through amber to green at
-the bottom right, and a high-contrast dot marks the current observation. This is
-a position comparison, not a usage-history graph or a prediction of future use.
+the bottom right, and a high-contrast dot marks the current position (last known
+consumption against the current elapsed time). A white trail connects successful
+quota observations, with an open circle marking the first observation. This is
+the quota window's observed path, **not usage attributed to an individual Codex
+session**, a reconstruction of earlier history, or a prediction of future use.
 Windows without a known duration and reset date cannot be plotted.
+An expandable, keyboard-accessible **OBSERVATION TABLE** supplies the same
+retained history as text: observation time, elapsed period, consumed percentage
+and breaks between segments. It updates alongside the plotted trail.
+
+Trails are held only in the web server's memory, survive browser reloads and tab
+changes, and restart when the server stops. A changed account, reset date or
+window duration, a lower consumption reading, a backwards clock or a removed
+window starts a fresh trail. Failed reads add no points and leave a break before
+the next observation. Each window retains at most 720 points: the original start
+plus the latest 719; the omitted interval is shown as a gap. Readings between
+polls are not known. Account-change isolation depends on the account identity
+available from the existing reader.
+
+### Read-only Sessions command centre
+
+- **SESSION TOTALS** shows observed tokens and the number of currently listed
+  sessions, plus separate working, awaiting-approval, awaiting-input and inferred
+  check counts. Parent counters already include linked agents; they are summed
+  once. These are not account-wide or permanent cumulative totals: removing a
+  session from the observation can reduce the sum. On stale data, token/session
+  totals are labelled last-known and live state counts become unavailable (—).
+- Select a session by clicking its directory/name, or use **↑ / ↓**.
+- Use **← / →** or the row's arrow buttons to move through **graph only → split
+  detail and graph → wide detail → full-page detail**. Each row has its own layout.
+- **Escape** or **← ALL SESSIONS** returns from full-page detail to that session's
+  wide detail row. **SHOW ALL DETAILS / HIDE ALL DETAILS** switches all current
+  rows between split detail and graph-only, clearing individual overrides and
+  setting the default for newly observed sessions too. This global default is
+  independent of the 100-entry saved per-session history. Narrow screens stack panels.
+- Attention links jump to the relevant session. Approval indicators remain
+  outside scrollable reply text; available commands are separated from their
+  justification. Missing commands are explicitly labelled, never reconstructed.
+- **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **CHECK SESSION**
+  is labelled inferred inactivity and is not proof that a reply is required.
+  **TURN COMPLETE** is informational. Disconnection or failed session refresh
+  suppresses live attention indicators and marks the display stale.
+- **CONTEXT SOURCE** describes the reply/command source, not necessarily the
+  provenance of the grouped session's status. No additional daemon certainty is
+  inferred from a LOCAL or app-server context label. The existing reader's
+  shared-daemon/fallback limitations still apply.
+
+The browser remembers its theme, last primary tab, quota view, selected session
+and up to 100 per-session row layouts. Pairing opens the saved primary tab;
+explicit deep links take precedence. Full-page detail returns via its URL on
+reload, but a fresh pairing opens the Sessions list. Clicking CODEXOMETER still
+returns to Quota → Bars. These preferences use browser localStorage on the same
+origin; **use a fixed `--web-port` to retain them across server restarts** because
+the automatically selected port may change. Blocked storage falls back to
+in-memory preferences. Clear this site's browser data to forget them (this also
+removes browser pairing access). No replies, commands, usage trails or Codex
+credentials are stored in localStorage; the saved selection/layouts do contain
+session IDs. None of these controls sends an action to Codex.
 
 The browser uses a compact dashboard layout: quota plots share the available
 width and height below the tabs. Pie charts retain their circular shape, while
@@ -2046,7 +2101,8 @@ history is hidden unless its account matches the current successful quota read.
 - Codex authentication, account fingerprints and approval/input capabilities
   stay in Go. The browser receives explicit display-only fields, not raw client
   objects or upstream error strings. No session content is saved by the web
-  server. Theme preferences alone use localStorage.
+  server on disk. Display preferences and session layout/selection IDs use
+  localStorage as described above; observation trails remain in server memory.
 - Exact Host, Origin and Fetch Metadata checks reject rebinding and cross-origin
   access, including other localhost ports. Pairing requires same-origin JSON;
   protected reads require the bearer capability. CORS is not enabled, and

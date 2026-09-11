@@ -6,6 +6,7 @@
   import Sessions from './Sessions.svelte';
   import Usage from './Usage.svelte';
   import Missing from './Missing.svelte';
+  import { preferences, savePreferences } from './preferences.svelte';
 
   const routes = {
     '/': Quota,
@@ -21,6 +22,16 @@
   };
   let theme = $state('hacker');
   const themes = ['hacker', 'rust', 'blue-steel', 'ultraviolet', 'nightshade'];
+  $effect(() => {
+    savePreferences();
+  });
+  $effect(() => {
+    if (!live.data) return;
+    for (const [tab, pattern] of Object.entries(tabPaths)) {
+      if (pattern.test(router.location))
+        preferences.tab = tab as typeof preferences.tab;
+    }
+  });
   onMount(() => {
     try {
       const saved = localStorage.getItem('codexometer.web.theme');
@@ -56,7 +67,7 @@
       {@const current = pattern.test(router.location)}
       <a
         class:active={current}
-        href={'#/' + tab}
+        href={tab === 'quota' ? '#/quota/' + preferences.view : '#/' + tab}
         aria-current={current ? 'page' : undefined}>{tab.toUpperCase()}</a
       >
     {/each}
