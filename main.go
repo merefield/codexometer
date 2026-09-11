@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/merefield/codexometer/internal/digbench"
 	"github.com/merefield/codexometer/internal/ui"
 	"github.com/merefield/codexometer/internal/version"
+	"github.com/merefield/codexometer/internal/web"
 )
 
 type demoFetcher struct {
@@ -247,6 +249,7 @@ type dependencies struct {
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
 	startUI           func(ui.Fetcher, time.Duration, bool, int, int) error
+	startWeb          func(web.Source, time.Duration, int, io.Writer) error
 }
 
 func defaultDependencies() dependencies {
@@ -262,6 +265,11 @@ func defaultDependencies() dependencies {
 			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
 		},
 		startUI: startUI,
+		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer) error {
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer cancel()
+			return web.Run(ctx, source, refresh, port, output)
+		},
 	}
 }
 
@@ -273,6 +281,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
+		webMode           = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
+		webPort           = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
 		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
 		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
 		checkAuth         = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
@@ -291,6 +301,14 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if printVersion {
 		fmt.Fprintln(stdout, "codexometer "+version.Current())
 		return 0
+	}
+	if *webPort < 0 || *webPort > 65535 || (*webPort != 0 && !*webMode) {
+		fmt.Fprintln(stderr, "codexometer: --web-port must be between 0 and 65535 and requires --web")
+		return 2
+	}
+	if *webMode && (*inline || *checkAuth || strings.TrimSpace(*digBenchGame) != "") {
+		fmt.Fprintln(stderr, "codexometer: --web cannot be combined with --inline, --check-auth or --digbench-game")
+		return 2
 	}
 	if *resetThreshold < 0 || *resetThreshold > 100 {
 		fmt.Fprintln(stderr, "codexometer: --reset-threshold must be between 0 and 100")
@@ -355,6 +373,23 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		}
 		fmt.Fprintln(stdout, formatDigBenchResult(result))
 		if result.Failure != "" {
+			return 1
+		}
+		return 0
+	}
+
+	if *webMode {
+		// Web mode deliberately gets no benchmark credentials or discovery calls.
+		client := codex.Client{Binary: *codexPath}
+		if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
+			client.LiveUsage = liveUsage
+		}
+		var source web.Source = client
+		if *demo {
+			source = &demoFetcher{}
+		}
+		if err := deps.startWeb(source, *refresh, *webPort, stdout); err != nil {
+			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
 		}
 		return 0

@@ -65,6 +65,20 @@ Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 
 
 Expiry warnings are reminders to review, not instructions to reset immediately. Confirmation warns that unused allowance does not carry over or stack and that the weekly schedule changes. Missing or incomplete expiry information is explicitly flagged: no warning is not proof that nothing expires soon, and undisclosed credits may expire sooner.
 
+## An experimental browser companion
+
+Prefer a browser window? `codexometer --web` now offers an **experimental,
+read-only** Quota, Sessions and Usage dashboard with the same retro spirit:
+responsive gauges, expandable session context, live activity graphs and usage
+heatmaps. Try `codexometer --web --demo` with simulated data first.
+
+Open the private, one-use pairing link printed in your terminal and keep that
+process running. Everything is served from the local Go binary; no Node runtime
+or hosted service is required. This first preview is UK-English-only and does
+not expose approvals, prompt sending, benchmarks, reset redemption or quota
+API-EQ learning. The terminal remains the full session command centre.
+See the [browser setup and security notes](https://github.com/merefield/codexometer#experimental-browser-interface).
+
 ## Make it yours
 
 Choose Hacker, Rust, Blue Steel, Ultraviolet, or Nightshade with `t`. UK English remains the default and retains the original presentation. Set `CODEXOMETER_LANG` to opt into Dutch (`nl`), German (`de`), French (`fr`), Italian (`it`), Spanish (`es`), Russian (`ru`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Swedish (`sv`), Norwegian Bokmål (`nb`, also `no`), Turkish (`tr`), Estonian (`et`), Finnish (`fi`), Brazilian Portuguese (`pt-BR`), European Portuguese (`pt-PT`), or Danish (`da`):
