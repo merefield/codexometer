@@ -2085,6 +2085,10 @@ history is hidden unless its account matches the current successful quota read.
 
 ### Browser security and local access
 
+See [the local interface security checklist](SECURITY.md) for maintainer rules,
+request/resource limits, terminal control-sequence handling and CI-only Go/npm
+vulnerability checks. These checks add no application startup or runtime cost.
+
 - The server binds **only `127.0.0.1`**. Remote/LAN hosting, reverse proxies,
   tunnelling and exposing the port publicly are unsupported. There is no web
   listener or browser collector during a normal terminal launch.

@@ -276,7 +276,7 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
 	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
-		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(session.workingDirectory))
+		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
 	}
 	if session.unattributed {
 		title = "UNATTRIBUTED // INTERNAL"
@@ -330,7 +330,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	appendLine(formatMonitorOutput(session))
 	appendLine(i18n.Text("RATE ") + formatTokens(rate) + "/MIN")
 	if session.workingDirectory != "" {
-		appendLine("DIR // " + filepath.Base(session.workingDirectory))
+		appendLine("DIR // " + filepath.Base(terminalLabel(session.workingDirectory)))
 	}
 	if !session.lastActivity.IsZero() {
 		appendLine(i18n.Text("LAST // ") + compactDuration(time.Since(session.lastActivity)) + " AGO")
@@ -571,13 +571,15 @@ func compactMonitorQuotaLabel(label string) string {
 }
 
 func shortSessionID(id string) string {
+	id = terminalLabel(id)
 	if id == "" {
 		return i18n.Text("UNKNOWN")
 	}
-	if len(id) <= 5 {
+	runes := []rune(id)
+	if len(runes) <= 5 {
 		return strings.ToUpper(id)
 	}
-	return strings.ToUpper(id[len(id)-5:])
+	return strings.ToUpper(string(runes[len(runes)-5:]))
 }
 
 func plural(count int, singular, plural string) string {

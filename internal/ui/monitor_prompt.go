@@ -138,7 +138,7 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	p := m.monitorPrompt
 	o := m.monitorPromptOffer()
-	header := i18n.Text("FOLLOW-UP") + " // " + o.ThreadID
+	header := i18n.Text("FOLLOW-UP") + " // " + terminalLabel(o.ThreadID)
 	if len(o.Questions) > 0 {
 		n := 0
 		if p.offer.Token == o.Token {
