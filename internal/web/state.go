@@ -1,5 +1,5 @@
-// Package web provides the opt-in, read-only browser presentation. It does not
-// import the terminal UI or own any Codex mutation capabilities.
+// Package web provides the opt-in browser presentation, read-only by default.
+// It does not import the terminal UI.
 package web
 
 import (
@@ -98,6 +98,7 @@ type credit struct {
 }
 
 type state struct {
+	Control       bool                `json:"control"`
 	Version       string              `json:"version"`
 	Meters        []meter             `json:"meters"`
 	Credits       []credit            `json:"credits"`
@@ -113,15 +114,17 @@ type state struct {
 }
 
 type store struct {
-	mu         sync.Mutex
-	state      state
-	account    string
-	history    codex.AccountUsage
-	previous   map[string]int64
-	samples    map[string][]sample
-	nextSample time.Time
-	data       []byte
-	changed    chan struct{}
+	contexts    map[string]codex.SessionContext // Private: never published in state/SSE.
+	directories map[string]string
+	mu          sync.Mutex
+	state       state
+	account     string
+	history     codex.AccountUsage
+	previous    map[string]int64
+	samples     map[string][]sample
+	nextSample  time.Time
+	data        []byte
+	changed     chan struct{}
 }
 
 func newStore() *store {
@@ -218,10 +221,18 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 	s.state.SessionsError = err != nil
 	if err == nil {
 		s.state.SessionsAt = now
+		if s.state.Control {
+			s.contexts = make(map[string]codex.SessionContext, len(l.Sessions))
+			s.directories = make(map[string]string, len(l.Sessions))
+		}
 		s.state.Sessions = []session{}
 		tick := !now.Before(s.nextSample)
 		seen := map[string]bool{}
 		for _, row := range l.Sessions {
+			if s.state.Control {
+				s.contexts[row.ID] = row.Context
+				s.directories[row.ID] = row.WorkingDirectory
+			}
 			seen[row.ID] = true
 			before, known := s.previous[row.ID]
 			if !known || row.TotalTokens < before {
@@ -240,7 +251,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				s.previous[row.ID] = row.TotalTokens
 			}
 			text := row.Context.Text
-			if row.Context.CommandDetails.Command != "" && row.Context.CommandDetails.Justification != "" {
+			if row.Context.Kind == codex.SessionContextApproval && row.Context.CommandDetails.Command != "" && row.Context.CommandDetails.Justification != "" {
 				text = row.Context.CommandDetails.Justification
 			}
 			s.state.Sessions = append(s.state.Sessions, session{

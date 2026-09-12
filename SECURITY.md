@@ -2,7 +2,8 @@
 
 Codexometer is a local companion, not a remotely hosted service. The terminal
 is the default; without `--web` no HTTP listener or browser collectors start.
-The experimental browser interface remains read-only. These controls reduce
+The experimental browser interface is read-only unless launched with the explicit
+`--web --web-control` flags. These controls reduce
 exposure; they do not defend against a compromised OS account or browser.
 
 ## Maintainer checklist
@@ -14,7 +15,9 @@ exposure; they do not defend against a compromised OS account or browser.
   bearer authentication: non-browser programs can forge browser headers.
 - Every data endpoint must use the shared authorization wrapper. Test missing,
   wrong, expired, cookie-only and query-only credentials. New Codex mutations
-  require separate review and explicit control permissions; this PR adds none.
+  require separate review and explicit control permissions. Session-control routes
+  must not be registered in default read-only mode. Never accept browser input
+  that enables control permissions for a running read-only server.
 - Pair only with same-origin JSON, a bounded strict body, and a short-lived
   one-use secret. Invalid attempts must not consume the legitimate pairing secret
   or create a permanent lockout. Never log tokens or put bearer tokens in URLs.
@@ -32,6 +35,41 @@ exposure; they do not defend against a compromised OS account or browser.
   bidi formatting; it is not secret redaction or a full visual-spoofing defence.
 - Preserve responsive click geometry, English presentation snapshots and existing
   approval tests when changing terminal display sanitisation.
+
+## Opt-in session writes
+
+The paired bearer capability permits supported session writes only when the
+process was launched with `--web-control`. There is no mixed read/write pairing
+on a single server. All control endpoints require exact same-origin JSON as well
+as bearer authorization. Do not add cookie, query-string or ambient authentication.
+
+Keep the offer DTO explicit. Its HMAC binds presentation, target, advertised
+decisions/questions and connection-local capability without exposing the raw
+Codex token. A separate prepare/commit flow fixes the submitted payload in Go;
+the browser cannot replace it during confirmation. Recheck session freshness,
+request identity and source capability at commit, consume before IO, and never
+automatically retry ambiguous writes. The existing Codex clients remain the final
+one-use/connection-state guard. Do not infer write permissions from status labels.
+
+Test request replacement, connection changes, stale/removed sessions, cross-session
+confirmation, replay/concurrent commits, arbitrary decision indices, invalid answers
+and ambiguous failures. Use synthetic clients, not live user approvals. Browser
+tests must cover confirmation, navigation/draft isolation, stale controls and text
+escaping. Prompt sending/approvals are the only web mutations; benchmarks and
+reset redemption still have no routes.
+
+Prepared bodies are limited to 64 KiB and each answer to 4,096 characters. At most
+one prepared action is retained for 30 seconds per server; replacement invalidates
+the previous confirmation. Drafts/answers are not logged or persisted. Secret
+inputs are masked in the browser, not protected against same-origin script access.
+Operation errors are generic rather than exposing upstream request/credential data.
+
+Recommend an updated, dedicated browser profile with **no extensions** for control
+mode. Do not expose loopback via tunnels/proxies. Keep pairing links private, lock
+the machine, check exact commands and scope, prefer one-time approvals, and preserve
+Codex sandbox/approval settings. Stop the server to revoke access. Browser control
+adds attack surface, and the terminal is not risk-free either; neither protects
+against a compromised local account.
 
 ## Resource bounds
 

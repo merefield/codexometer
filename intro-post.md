@@ -68,7 +68,7 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 ## An experimental browser companion
 
 Prefer a browser window? `codexometer --web` now offers an **experimental,
-read-only** Quota, Sessions and Usage dashboard with the same retro spirit:
+read-only by default** Quota, Sessions and Usage dashboard with the same retro spirit:
 responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
 now traces the observed quota path, with a marked starting point and gaps for
 failed observations. Sessions offers graph-only, split, wide and full-page
@@ -77,8 +77,11 @@ separate working/approval/input/inferred-check counts. Linked-agent tokens are
 already included, and stale observations are labelled. Select sessions with ↑/↓,
 adjust detail with ←/→, or use the clickable controls.
 Prominent attention links distinguish observed requests from inferred inactivity,
-and commands are separated from the explanation when available. It's a read-only
-step towards a browser command centre — actions still happen in Codex or the TUI.
+and commands are separated from the explanation when available. Add
+`--web-control` to opt into supported session approvals, input questions and
+follow-up messages from full-page detail, with an explicit review/confirmation
+step. These actions require live capabilities from connected shared-daemon
+sessions; local-only observations remain best-effort viewing.
 
 Your theme, tab, quota view and session layouts are remembered in the browser;
 use a fixed `--web-port` to retain preferences across launches. Trails live only
@@ -88,8 +91,11 @@ session usage. Try `codexometer --web --demo` with simulated data first.
 Open the private, one-use pairing link printed in your terminal and keep that
 process running. Everything is served from the local Go binary; no Node runtime
 or hosted service is required. This first preview is UK-English-only and does
-not expose approvals, prompt sending, benchmarks, reset redemption or quota
+not expose benchmarks, reset redemption or quota
 API-EQ learning. The terminal remains the full session command centre.
+For browser control, use a dedicated updated browser profile without extensions,
+keep pairing links private, and check the target/command before confirming.
+Never expose the server through tunnels or proxies; stop it to revoke access.
 See the [browser setup and security notes](https://github.com/merefield/codexometer#experimental-browser-interface).
 
 ## Make it yours

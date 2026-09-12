@@ -34,15 +34,16 @@ async function mockStream(page: Page, snapshot: object) {
   }, snapshot);
 }
 
-const test = base.extend<{ pairingURL: string }>({
-  pairingURL: async ({}, use) => {
+const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
+  controlMode: [false, { option: true }],
+  pairingURL: async ({ controlMode }, use) => {
     const child = spawn(
       process.env.CODEXOMETER_TEST_BINARY ||
         resolve(
           '..',
           process.platform === 'win32' ? 'codexometer.exe' : 'codexometer',
         ),
-      ['--web', '--demo'],
+      ['--web', '--demo', ...(controlMode ? ['--web-control'] : [])],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let output = '';
@@ -82,6 +83,255 @@ const test = base.extend<{ pairingURL: string }>({
       }
     }
   },
+});
+
+test.describe('opt-in real server with simulated Codex actions', () => {
+  test.use({ controlMode: true });
+  test('demo approval completes through pairing, prepare and commit', async ({
+    page,
+    pairingURL,
+  }) => {
+    await page.goto(pairingURL);
+    await expect(page.locator('header')).toContainText('SESSION CONTROL');
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+    await expect(page.locator('.full-detail')).toContainText(
+      'Simulated decision: accept. No command was executed.',
+    );
+    await expect(page.getByRole('radio')).toHaveCount(0);
+  });
+});
+
+// Browser contract tests use synthetic actions. The Go tests exercise the real
+// authorization/confirmation endpoints with fake Codex clients, never live work.
+async function mockActions(page: Page, kind = 'approval') {
+  const snapshot = {
+    control: true,
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: new Date().toISOString(),
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: ['parent', 'other'].map((id) => ({
+      id,
+      directory: '/project/' + id,
+      tokens: 100,
+      agents: 0,
+      status: kind === 'approval' ? 'APPROVAL NEEDED' : 'TURN COMPLETE',
+      contextKind: 'LAST REPLY',
+      text: 'Synthetic test context',
+      command: '',
+      source: 'APP SERVER',
+      activity: '',
+      samples: [],
+    })),
+  };
+  const offer = {
+    id: 'offer-1',
+    kind,
+    session: 'parent',
+    thread: 'child',
+    directory: '/project/child',
+    command: kind === 'approval' ? 'git status' : '',
+    choices: [
+      { label: 'APPROVE ONCE', detail: '', persistent: false },
+      { label: 'ALLOW FOR SESSION', detail: '', persistent: true },
+    ],
+    questions: [] as {
+      text: string;
+      secret: boolean;
+      freeText: boolean;
+      options: string[];
+    }[],
+  };
+  const calls: { action: string; body: Record<string, unknown> }[] = [];
+  await mockStream(page, snapshot);
+  await page.route('**/api/control/*', async (route) => {
+    const action = route.request().url().split('/').pop()!;
+    const body = route.request().postDataJSON();
+    calls.push({ action, body });
+    const result =
+      action === 'offer'
+        ? { ...offer, session: body.session }
+        : action === 'prepare'
+          ? {
+              confirmation: 'confirm-1',
+              expires: new Date(Date.now() + 30000).toISOString(),
+            }
+          : { message: 'Sent' };
+    await route.fulfill({ json: result });
+  });
+  return { snapshot, offer, calls };
+}
+
+test('session approval requires explicit review and confirmation of the target', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await expect(controls).toContainText('TARGET // child // /project/child');
+  await expect(controls.getByText('git status', { exact: true })).toBeVisible();
+  await controls
+    .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+    .check();
+  expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+  await controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+  await controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+  await expect(controls).toContainText('Sent. Waiting for Codex');
+  expect(calls.filter((c) => c.action === 'commit')).toEqual([
+    {
+      action: 'commit',
+      body: { session: 'parent', offer: 'offer-1', confirmation: 'confirm-1' },
+    },
+  ]);
+  await expect(controls.getByRole('radio')).toHaveCount(0);
+});
+
+test('changed requests, stale data and navigation invalidate browser confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.getByRole('radio', { name: /ALLOW FOR SESSION/ }).check();
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM ALLOW FOR SESSION' }),
+  ).toBeVisible();
+  offer.id = 'offer-2';
+  offer.command = 'git diff';
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM ALLOW FOR SESSION' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('radio', { name: /ALLOW FOR SESSION/ }),
+  ).not.toBeChecked();
+  await page.getByRole('radio', { name: /APPROVE ONCE/ }).check();
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
+  snapshot.sessionsError = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await page.evaluate(() => {
+    location.hash = '/sessions/other';
+  });
+  await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
+test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Synthetic private draft');
+  await text.press('ArrowLeft');
+  await text.press('Enter');
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(text).toBeDisabled();
+  await page.getByRole('button', { name: 'CANCEL', exact: true }).click();
+  await page.evaluate(() => {
+    location.hash = '/sessions/other';
+  });
+  await expect(text).toHaveValue('');
+  await text.fill('Please continue');
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await page.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await expect(
+    page.getByRole('region', { name: 'Session controls' }),
+  ).toContainText('Sent. Waiting');
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ session: 'other', answers: ['Please continue'] });
+  const storage = await page.evaluate(() =>
+    JSON.stringify({ ...localStorage, ...sessionStorage }),
+  );
+  expect(storage).not.toContain('Synthetic private draft');
+  expect(storage).not.toContain('Please continue');
+});
+
+test('structured questions and secret inputs fit narrow screens without executing text', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer, calls } = await mockActions(page, 'prompt');
+  offer.questions = [
+    {
+      text: 'Choose environment',
+      secret: false,
+      freeText: false,
+      options: ['Test', 'Production'],
+    },
+    { text: 'Secret answer', secret: true, freeText: true, options: [] },
+  ];
+  await page.setViewportSize({ width: 360, height: 700 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.getByLabel('Choose environment').selectOption('Test');
+  await page.getByLabel('Secret answer').fill('<img src=x onerror=alert(1)>');
+  await expect(page.getByLabel('Secret answer')).toHaveAttribute(
+    'type',
+    'password',
+  );
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(page.locator('.session-actions img')).toHaveCount(0);
+  expect(calls.filter((c) => c.action === 'prepare')[0].body.answers).toEqual([
+    'Test',
+    '<img src=x onerror=alert(1)>',
+  ]);
+  await page.screenshot({
+    path: 'test-results/session-control.png',
+    fullPage: true,
+  });
 });
 
 test('main tabs match only declared route shapes', async ({

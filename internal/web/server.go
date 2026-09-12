@@ -33,11 +33,11 @@ type server struct {
 	token      string
 	tokenUntil time.Time
 	streams    chan struct{}
+	control    *control
 }
 
-// Run binds IPv4 loopback only. Remote hosting, proxy forwarding and write
-// operations are intentionally not supported by this experimental release.
-func Run(ctx context.Context, source Source, refresh time.Duration, port int, output io.Writer) error {
+// Run binds IPv4 loopback only. Control must be explicitly enabled at launch.
+func Run(ctx context.Context, source Source, refresh time.Duration, port int, output io.Writer, writable bool) error {
 	if port < 0 || port > 65535 {
 		return fmt.Errorf("web port must be between 0 and 65535")
 	}
@@ -47,12 +47,19 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	}
 	defer listener.Close()
 	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
+	mode := "READ ONLY"
+	if writable {
+		s.control = newControl(source, s.store)
+		s.store.state.Control = true
+		s.store.publish()
+		mode = "SESSION CONTROL ENABLED — this paired browser can send prompts and decisions"
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	wait := s.store.collect(ctx, source, refresh)
 	defer func() { cancel(); wait() }()
 	httpServer := newHTTPServer(ctx, s.handler())
-	fmt.Fprintf(output, "Experimental web interface // READ ONLY\nOpen this private, one-use link within 5 minutes:\nhttp://%s/#pair=%s\nKeep this terminal open. Ctrl+C stops the server. Do not share the link.\n", s.host, s.pairSecret)
+	fmt.Fprintf(output, "Experimental web interface // %s\nOpen this private, one-use link within 5 minutes:\nhttp://%s/#pair=%s\nKeep this terminal open. Ctrl+C stops the server. Do not share the link.\n", mode, s.host, s.pairSecret)
 	stop := context.AfterFunc(ctx, func() { _ = httpServer.Close() })
 	defer stop()
 	err = httpServer.Serve(listener)
@@ -84,6 +91,11 @@ func (s *server) handler() http.Handler {
 		_, _ = w.Write(data)
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
+	if s.control != nil {
+		for _, action := range []string{"offer", "prepare", "commit"} {
+			mux.Handle("POST /api/control/"+action, s.authorize(http.HandlerFunc(s.control.handle(action, "http://"+s.host))))
+		}
+	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	root, _ := fs.Sub(assets, "dist")
 	files := http.FileServer(http.FS(root))

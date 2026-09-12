@@ -8,6 +8,7 @@
     setAllDetailLevels,
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
+  import SessionActions from './SessionActions.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   // Every entry route (links, arrows, deep links and browser Forward) leaves a
@@ -113,6 +114,11 @@
       return 'Last observation only — refresh unavailable. Check Codex for current state.';
     if (session.status === 'CHECK SESSION')
       return 'INFERRED INACTIVITY — a quiet session, not a confirmed input or approval request. Local tools may still be running.';
+    if (
+      live.data?.control &&
+      ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(session.status)
+    )
+      return 'Open full detail for supported live controls; otherwise reply in Codex.';
     if (session.status === 'APPROVAL NEEDED')
       return 'OBSERVED APPROVAL SIGNAL — approve or decline in Codex.';
     if (session.status === 'INPUT NEEDED')
@@ -139,7 +145,9 @@
     <h3>
       {stale || session.status !== 'APPROVAL NEEDED'
         ? 'LAST OBSERVED COMMAND'
-        : 'COMMAND TO APPROVE IN CODEX'}
+        : live.data?.control
+          ? 'COMMAND REQUEST'
+          : 'COMMAND TO APPROVE IN CODEX'}
     </h3>
     {#if session.command}<pre class="command">{session.command}</pre>{:else}<p
         class="notice"
@@ -149,7 +157,7 @@
       </p>{/if}
   {/if}
   <p class="muted">
-    CONTEXT SOURCE // {session.source || 'LOCAL'} // READ ONLY
+    CONTEXT SOURCE // {session.source || 'LOCAL'} // OBSERVATION
   </p>
 {/snippet}
 
@@ -202,7 +210,9 @@
       </h2>
       <p class="muted">{number(selected.tokens)} TOKENS // {selected.id}</p>
       {@render context(selected)}
-      <p class="notice">Read only — reply or approve in Codex.</p>
+      {#if live.data?.control}
+        {#key selected.id}<SessionActions session={selected.id} />{/key}
+      {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a
@@ -271,9 +281,11 @@
           >
             {session.status === 'CHECK SESSION'
               ? 'INFERRED INACTIVITY'
-              : session.status === 'APPROVAL NEEDED'
-                ? 'APPROVE OR DECLINE IN CODEX'
-                : 'REPLY IN CODEX'}
+              : live.data?.control
+                ? 'OPEN FULL DETAIL OR REPLY IN CODEX'
+                : session.status === 'APPROVAL NEEDED'
+                  ? 'APPROVE OR DECLINE IN CODEX'
+                  : 'REPLY IN CODEX'}
           </p>{/if}
       </div>
       {#if level > 0}<div class="panel context">
@@ -282,7 +294,9 @@
             {#if !stale && session.status === 'APPROVAL NEEDED'}<a
                 class="attention-badge"
                 href={'#/sessions/' + encodeURIComponent(session.id)}
-                >APPROVAL IN CODEX ↗</a
+                >{live.data?.control
+                  ? 'REVIEW IN FULL DETAIL ↗'
+                  : 'APPROVAL IN CODEX ↗'}</a
               >{/if}
           </div>
           {@render context(session, false)}

@@ -39,6 +39,7 @@ export interface Usage {
   dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
 }
 export interface Snapshot {
+  control?: boolean;
   version: string;
   meters: Meter[];
   credits: Credit[];
@@ -67,6 +68,24 @@ export const date = (s: string | number | null | undefined) =>
 
 const storageKey = 'codexometer.web.session';
 
+let sendControl:
+  | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
+  | undefined;
+export async function controlRequest<T>(
+  action: 'offer' | 'prepare' | 'commit',
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (
+    !sendControl ||
+    !live.connected ||
+    !live.data?.control ||
+    live.data.sessionsError
+  )
+    throw new Error('Session controls unavailable. Check the live connection.');
+  return (await sendControl(action, body, signal)) as T;
+}
+
 // Only this module owns the temporary browser capability. It is never a Codex
 // credential. sessionStorage is origin- and tab-scoped and permits page reload;
 // it is not an XSS boundary. Never place this token in links, logs or localStorage.
@@ -74,6 +93,29 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
+  sendControl = async (action, body, signal) => {
+    const response = await fetch('/api/control/' + action, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(8000),
+        ...(signal ? [signal] : []),
+      ]),
+      cache: 'no-store',
+    });
+    if (!response.ok)
+      throw new Error(
+        response.status === 502
+          ? 'Outcome uncertain. Check Codex before taking another action; nothing was retried.'
+          : 'Action unavailable, expired or changed. Refresh and check Codex.',
+      );
+    return response.json();
+  };
   try {
     token = sessionStorage.getItem(storageKey) || '';
   } catch {
@@ -170,6 +212,7 @@ export function connect(): () => void {
 
   void start();
   return () => {
+    sendControl = undefined;
     controller.abort();
     clearTimeout(retry);
     live.connected = false;
