@@ -229,6 +229,85 @@ test('session approval requires explicit review and confirmation of the target',
   );
 });
 
+test('approval navigation matches each terminal theme warning colour and stays clickable', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const button = page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link')
+    .first();
+  for (const [theme, colour] of [
+    ['hacker', 'rgb(255, 202, 88)'],
+    ['rust', 'rgb(255, 138, 61)'],
+    ['blue-steel', 'rgb(232, 196, 106)'],
+    ['ultraviolet', 'rgb(249, 168, 212)'],
+    ['nightshade', 'rgb(143, 124, 255)'],
+  ]) {
+    await page.getByLabel('Theme', { exact: true }).selectOption(theme);
+    await expect(button).toHaveCSS('color', colour);
+    await expect(button).toHaveCSS('border-top-color', colour);
+    await button.hover();
+    await expect(button).toHaveCSS('color', colour);
+  }
+  await button.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+});
+
+test('detail retains totals and one command in a single column at all widths', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer } = await mockActions(page);
+  snapshot.sessions[0].command = 'git status';
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await expect(
+    page.getByRole('heading', { name: 'SESSION TOTALS', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.full-detail pre.command')).toHaveCount(1);
+  const context = page.locator('.detail-context');
+  const actions = page.getByRole('region', { name: 'Session controls' });
+  const left = (await context.boundingBox())!;
+  const right = (await actions.boundingBox())!;
+  expect(right.y).toBeGreaterThanOrEqual(left.y + left.height);
+  expect(Math.abs(right.x - left.x)).toBeLessThan(2);
+  expect(Math.abs(right.width - left.width)).toBeLessThan(2);
+  await page.screenshot({ path: 'test-results/detail-workspace-wide.png' });
+  await page.setViewportSize({ width: 390, height: 800 });
+  const above = (await context.boundingBox())!;
+  const below = (await actions.boundingBox())!;
+  expect(below.y).toBeGreaterThanOrEqual(above.y + above.height);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  offer.id = '';
+  await expect(
+    actions.getByRole('heading', {
+      name: 'LAST OBSERVED COMMAND',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator('.full-detail pre.command')).toHaveCount(1);
+  await expect(actions.locator('pre.command')).toHaveText('git status');
+});
+
 test('changed requests, stale data and navigation invalidate browser confirmation', async ({
   page,
   pairingURL,

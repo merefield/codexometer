@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { live, controlRequest } from './state.svelte';
-  let { session }: { session: string } = $props();
+  let {
+    session,
+    observedCommand = '',
+  }: { session: string; observedCommand?: string } = $props();
   interface Offer {
     id: string;
     session: string;
@@ -34,6 +37,14 @@
     live.data?.sessions.find((row) => row.id === session)?.status,
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
+  let actionableCommand = $derived(
+    !stale &&
+      !offerError &&
+      !!offer?.id &&
+      offer.kind === 'approval' &&
+      sent !== offer.id,
+  );
+  let command = $derived(actionableCommand ? offer!.command : observedCommand);
   let confirming = $derived(!!confirmation && now < expires && !stale);
   let questions = $derived(
     offer?.questions?.length
@@ -160,11 +171,19 @@
 </script>
 
 <section class="session-actions" aria-label="Session controls">
-  <hr />
   <h3>SESSION CONTROL // EXPERIMENTAL</h3>
   {#if notice}<p class:notice={!success} class:sent={success} role="status">
       {notice}
     </p>{/if}
+  {#if command}
+    <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
+    <pre class="command">{command}</pre>
+  {:else if status === 'APPROVAL NEEDED' && !success}
+    <p class="muted">
+      Command unavailable from this observation. Open Codex to inspect the
+      request.
+    </p>
+  {/if}
   {#if stale || offerError}
     <p class="muted">
       Session controls temporarily unavailable. Check Codex for current state.
@@ -194,8 +213,6 @@
     <p class="muted">
       TARGET // {offer.thread} // {offer.directory || 'Directory unavailable'}
     </p>
-    {#if offer.command}<h3>EXACT COMMAND</h3>
-      <pre class="command">{offer.command}</pre>{/if}
     <fieldset disabled={busy || confirming || stale}>
       <legend
         >{offer.kind === 'approval'
@@ -318,9 +335,6 @@
   h3,
   p {
     margin-block: 0.4rem;
-  }
-  hr {
-    margin-block: 0.65rem;
   }
   .sent {
     color: var(--accent);

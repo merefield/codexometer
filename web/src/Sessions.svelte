@@ -131,8 +131,8 @@
 
 <svelte:window onkeydown={keydown} />
 
-{#snippet context(session: Session, heading = true)}
-  {#if explanation(session)}<p
+{#snippet context(session: Session, heading = true, full = false)}
+  {#if explanation(session) && (!full || stale || session.status === 'CHECK SESSION')}<p
       class="attention-note"
       class:inferred={session.status === 'CHECK SESSION'}
     >
@@ -140,7 +140,7 @@
     </p>{/if}
   {#if heading}<h3>{session.contextKind || 'LAST ACTIVITY'}</h3>{/if}
   <pre>{session.text || 'No session context available.'}</pre>
-  {#if session.command || session.status === 'APPROVAL NEEDED'}
+  {#if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>
       {stale || session.status !== 'APPROVAL NEEDED'
@@ -156,9 +156,9 @@
         request.
       </p>{/if}
   {/if}
-  <p class="muted">
-    CONTEXT SOURCE // {session.source || 'LOCAL'} // OBSERVATION
-  </p>
+  {#if !full}<p class="muted">
+      CONTEXT SOURCE // {session.source || 'LOCAL'} // OBSERVATION
+    </p>{/if}
 {/snippet}
 
 <div class="spread">
@@ -187,32 +187,45 @@
   >
     {#each attention as session}<a
         class="button"
+        class:approval={session.status === 'APPROVAL NEEDED'}
         href={'#/sessions/' + encodeURIComponent(session.id)}
         onclick={() => select(session.id)}
         >{session.status} // {session.directory || session.id}</a
       >{/each}
   </nav>{/if}
 {#if params.id}
-  <a
-    class="button"
-    href="#/sessions"
-    onclick={() => {
-      select(params.id!);
-      setDetailLevel(params.id!, 2);
-    }}>← ALL SESSIONS</a
-  >
   {#if selected}<section class="panel full-detail">
-      <h2>
-        <span
-          class="lamp lit"
-          class:working={selected.status === 'WORKING' && !stale}
-        ></span>{stale ? 'STALE' : selected.status} // {selected.directory}
-      </h2>
-      <p class="muted">{number(selected.tokens)} TOKENS // {selected.id}</p>
-      {@render context(selected)}
-      {#if live.data?.control}
-        {#key selected.id}<SessionActions session={selected.id} />{/key}
-      {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
+      <div class="detail-heading">
+        <h2>
+          <span
+            class="lamp lit"
+            class:working={selected.status === 'WORKING' && !stale}
+          ></span>{stale ? 'STALE' : selected.status} // {selected.directory}
+        </h2>
+        <a
+          class="button"
+          href="#/sessions"
+          onclick={() => {
+            select(params.id!);
+            setDetailLevel(params.id!, 2);
+          }}>← ALL SESSIONS</a
+        >
+      </div>
+      <p class="muted detail-metadata">
+        {number(selected.tokens)} TOKENS // {selected.id} // CONTEXT SOURCE // {selected.source ||
+          'LOCAL'}
+      </p>
+      <div class="detail-workspace">
+        <div class="detail-context">
+          {@render context(selected, true, true)}
+        </div>
+        {#if live.data?.control}
+          {#key selected.id}<SessionActions
+              session={selected.id}
+              observedCommand={selected.command}
+            />{/key}
+        {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
+      </div>
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a
