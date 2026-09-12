@@ -21,11 +21,17 @@ func TestSessionDisplayRejectsTerminalControlsWithoutChangingRequests(t *testing
 	before := *s
 	m.monitorSelectedID, m.monitorContextExpanded = s.id, s.id
 	m.monitorContextDetail = s.id
+	client := &promptTestClient{offer: codex.SessionPromptOffer{Token: "prompt", ThreadID: s.id}}
+	m.fetcher = client
+	if m.monitorPromptOffer().Token != "prompt" {
+		t.Fatal("composer did not route using the original session ID")
+	}
 	outputs := []string{
 		m.renderMonitorSessionMetrics(120, 20, *s, "", paletteFor(themeHacker)),
 		m.renderMonitorContextRow(120, 20, "", *s, paletteFor(themeHacker)),
 		strings.Join(expandedContextLines(120, *s), "\n"),
 		strings.Join(m.contextDetailLines(120), "\n"),
+		m.renderMonitorPrompt(120, 20, paletteFor(themeHacker)),
 	}
 	for _, output := range outputs {
 		for _, forbidden := range []string{"\x1b]", "\x1b[2J", "\u202e", "CLIPBOARD_PAYLOAD", "evil.invalid"} {
@@ -39,6 +45,9 @@ func TestSessionDisplayRejectsTerminalControlsWithoutChangingRequests(t *testing
 	}
 	if s.id != before.id || s.workingDirectory != before.workingDirectory || s.preview != before.preview {
 		t.Fatal("display sanitation mutated routing or command data")
+	}
+	if client.offer.ThreadID != before.id || m.monitorPromptOffer().Token != "prompt" {
+		t.Fatal("composer display changed the raw routing ID")
 	}
 }
 
