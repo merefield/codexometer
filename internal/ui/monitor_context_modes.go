@@ -128,7 +128,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 	if s.preview.Text == "" {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
-	header := s.preview.ThreadID + " // " + s.preview.Source
+	header := terminalLabel(s.preview.ThreadID) + " // " + terminalLabel(s.preview.Source)
 	text := header + "\n" + codex.SanitizeSessionContext(s.preview.Text)
 	return strings.Split(ansi.Hardwrap(text, max(width-4, 1), true), "\n")
 }

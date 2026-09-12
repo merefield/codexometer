@@ -118,7 +118,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		lines[textRows-1] = ansi.Truncate(lines[textRows-1], max(inner-1, 0), "") + "…"
 	}
 	if contentRows > textRows {
-		lines = append(lines, s.preview.Source+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
+		lines = append(lines, terminalLabel(s.preview.Source)+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}
 	for i := range lines {
 		lines[i] = colors.label().Render(ansi.Truncate(lines[i], inner, ""))

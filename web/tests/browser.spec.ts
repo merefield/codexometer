@@ -1023,6 +1023,16 @@ test('session content is text, not HTML or executable instructions', async ({
   page,
   pairingURL,
 }) => {
+  const dialogs: string[] = [];
+  const externalRequests: string[] = [];
+  page.on('dialog', async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.dismiss();
+  });
+  page.on('request', (request) => {
+    if (request.url().includes('evil.example'))
+      externalRequests.push(request.url());
+  });
   const snapshot = {
     version: 'test',
     meters: [],
@@ -1037,12 +1047,12 @@ test('session content is text, not HTML or executable instructions', async ({
     sessionsError: false,
     sessions: [
       {
-        id: 'untrusted',
-        directory: '/test',
+        id: 'untrusted" onclick="alert(1)',
+        directory: '<img src="https://evil.example" onerror="alert(1)">',
         tokens: 100,
         agents: 0,
         status: 'INPUT NEEDED',
-        contextKind: 'LAST REPLY',
+        contextKind: '<svg onload="alert(1)"></svg>',
         text: '<img src="https://evil.example" onerror="alert(1)"><script>alert(1)</script>',
         command: '<iframe src="https://evil.example"></iframe>',
         source: 'LOCAL',
@@ -1059,12 +1069,19 @@ test('session content is text, not HTML or executable instructions', async ({
   );
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await expect(page.locator('.session-select')).toHaveText(
+    snapshot.sessions[0].directory,
+  );
   await page.getByRole('link', { name: 'FULL DETAIL →' }).click();
   await expect(page.locator('.full-detail pre').first()).toContainText('<img');
   await expect(
-    page.locator('.full-detail img, .full-detail script, .full-detail iframe'),
+    page.locator(
+      '.full-detail img, .full-detail script, .full-detail iframe, .full-detail svg',
+    ),
   ).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: /APPROVE|CONFIRM|SEND/ }),
   ).toHaveCount(0);
+  expect(dialogs).toEqual([]);
+  expect(externalRequests).toEqual([]);
 });

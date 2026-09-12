@@ -51,7 +51,7 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	defer cancel()
 	wait := s.store.collect(ctx, source, refresh)
 	defer func() { cancel(); wait() }()
-	httpServer := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192, BaseContext: func(net.Listener) context.Context { return ctx }}
+	httpServer := newHTTPServer(ctx, s.handler())
 	fmt.Fprintf(output, "Experimental web interface // READ ONLY\nOpen this private, one-use link within 5 minutes:\nhttp://%s/#pair=%s\nKeep this terminal open. Ctrl+C stops the server. Do not share the link.\n", s.host, s.pairSecret)
 	stop := context.AfterFunc(ctx, func() { _ = httpServer.Close() })
 	defer stop()
@@ -61,6 +61,12 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		return nil
 	}
 	return err
+}
+
+func newHTTPServer(ctx context.Context, handler http.Handler) *http.Server {
+	// Bound slow ordinary responses too. SSE renews its own shorter per-write
+	// deadline, so a healthy event stream can outlive this response timeout.
+	return &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192, BaseContext: func(net.Listener) context.Context { return ctx }}
 }
 
 // Run only binds IPv4 loopback. Browsers omit the default HTTP port from
@@ -102,6 +108,8 @@ func (s *server) handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		// Host validation protects against DNS rebinding; Origin and Fetch Metadata
 		// reject other websites and other ports on localhost. CORS is never enabled.
