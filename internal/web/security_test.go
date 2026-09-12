@@ -3,22 +3,23 @@ package web
 import (
 	"bufio"
 	"context"
-	"github.com/merefield/codexometer/internal/codex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
 
 func assertSecurityHeaders(t *testing.T, w *httptest.ResponseRecorder) {
 	t.Helper()
-	for key, want := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Cross-Origin-Resource-Policy": "same-origin"} {
+	for key, want := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"} {
 		if w.Header().Get(key) != want {
 			t.Fatalf("%s: %q", key, w.Header().Get(key))
 		}
 	}
-	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") || !strings.Contains(w.Header().Get("Permissions-Policy"), "camera=()") || w.Header().Get("Access-Control-Allow-Origin") != "" || w.Header().Get("Set-Cookie") != "" {
+	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") || w.Header().Get("Access-Control-Allow-Origin") != "" || w.Header().Get("Set-Cookie") != "" {
 		t.Fatal("missing/unsafe security headers")
 	}
 }
@@ -66,6 +67,26 @@ func TestEveryDataEndpointRejectsInvalidAccess(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersOnSuccessfulResponses(t *testing.T) {
+	for _, path := range []string{"/", "/api/pair", "/api/state"} {
+		t.Run(path, func(t *testing.T) {
+			s := testServer()
+			method, body, token := "GET", "", ""
+			if path == "/api/pair" {
+				method, body = "POST", `{"secret":"one-use-secret"}`
+			} else if path == "/api/state" {
+				token = pairBrowser(t, s)
+			}
+			w := httptest.NewRecorder()
+			s.handler().ServeHTTP(w, request(s, method, path, body, token))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d", w.Code)
+			}
+			assertSecurityHeaders(t, w)
+		})
+	}
+}
+
 func TestRejectedPairingDoesNotConsumeSecret(t *testing.T) {
 	for _, body := range []string{"{", `{"secret":"wrong"}`, `{"secret":"one-use-secret","extra":true}`, strings.Repeat("x", 2048)} {
 		s := testServer()
@@ -99,8 +120,18 @@ func TestHTTPTimeoutsAndSSEOverride(t *testing.T) {
 	token := pairBrowser(t, s)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.Host = s.host; s.handler().ServeHTTP(w, r) })
 	cfg := newHTTPServer(context.Background(), h)
-	if cfg.ReadHeaderTimeout <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout <= 0 || cfg.MaxHeaderBytes != 8192 {
-		t.Fatal("unbounded HTTP config")
+	for name, pair := range map[string][2]time.Duration{
+		"header read":    {cfg.ReadHeaderTimeout, 5 * time.Second},
+		"request read":   {cfg.ReadTimeout, 10 * time.Second},
+		"response write": {cfg.WriteTimeout, 15 * time.Second},
+		"idle":           {cfg.IdleTimeout, 30 * time.Second},
+	} {
+		if pair[0] != pair[1] {
+			t.Fatalf("%s timeout = %s, want %s", name, pair[0], pair[1])
+		}
+	}
+	if cfg.MaxHeaderBytes != 8192 {
+		t.Fatalf("header limit = %d, want 8192", cfg.MaxHeaderBytes)
 	}
 	// SSE must not inherit an ordinary-response lifetime limit.
 	cfg.WriteTimeout = time.Millisecond

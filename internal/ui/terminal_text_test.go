@@ -64,3 +64,40 @@ func TestTerminalLabelPreservesOrdinaryTextAndUnicodeIDs(t *testing.T) {
 		t.Fatalf("split unicode ID: %q", id)
 	}
 }
+
+func TestApprovalCommandDisplaySanitization(t *testing.T) {
+	m := contextTestModel()
+	s := &m.monitorSessionData[0]
+	attack := "\x1b]52;c;CLIPBOARD_PAYLOAD\a\x1b[2J\x1b]8;;https://evil.invalid\a\x1b]8;;\a\u202e"
+	s.preview.Kind = codex.SessionContextApproval
+	s.preview.CommandDetails = codex.ApprovalCommandDetails{
+		Command:       attack + "git status",
+		Justification: attack + "Check working tree",
+		Directory:     attack + "/work/project",
+	}
+	before := s.preview
+	m.monitorSelectedID, m.monitorContextDetail = s.id, s.id
+	var command, document strings.Builder
+	for _, line := range m.contextDetailDocument(120) {
+		document.WriteString(line.text)
+		if line.kind == "command" {
+			command.WriteString(line.text)
+		}
+	}
+	if !strings.Contains(command.String(), "git status") {
+		t.Fatal("structured command branch not rendered")
+	}
+	for _, want := range []string{"Check working tree", "/work/project"} {
+		if !strings.Contains(document.String(), want) {
+			t.Fatalf("missing structured field %q", want)
+		}
+	}
+	for _, forbidden := range []string{"\x1b", "\u202e", "CLIPBOARD_PAYLOAD", "evil.invalid"} {
+		if strings.Contains(document.String(), forbidden) {
+			t.Fatalf("unsafe structured field %q", forbidden)
+		}
+	}
+	if s.preview != before {
+		t.Fatal("rendering changed original approval request")
+	}
+}
