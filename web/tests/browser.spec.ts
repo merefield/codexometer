@@ -435,6 +435,47 @@ test('structured questions and secret inputs fit narrow screens without executin
   });
 });
 
+test('secret fixed-choice answers remain masked through review and confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer, calls } = await mockActions(page, 'prompt');
+  offer.questions = [
+    {
+      text: 'Private choice',
+      secret: true,
+      freeText: false,
+      options: ['alpha-secret', 'beta-secret'],
+    },
+  ];
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const input = page.getByLabel('Private choice', { exact: true });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await expect(input).toHaveAttribute('type', 'password');
+  await expect(controls.locator('select')).toHaveCount(0);
+  await expect(
+    controls.getByText('alpha-secret', { exact: true }),
+  ).not.toBeVisible();
+  await input.fill('not-offered');
+  await expect(
+    controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }),
+  ).toBeDisabled();
+  await input.fill('alpha-secret');
+  await controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(input).toHaveAttribute('type', 'password');
+  await expect(input).toBeDisabled();
+  expect(await controls.innerText()).not.toContain('alpha-secret');
+  await controls.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await expect(controls).toContainText('Text sent.');
+  expect(calls.filter((c) => c.action === 'prepare')[0].body.answers).toEqual([
+    'alpha-secret',
+  ]);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(1);
+});
+
 test('main tabs match only declared route shapes', async ({
   page,
   pairingURL,

@@ -62,7 +62,12 @@
     offer?.kind === 'approval'
       ? choice !== null
       : answers.length === questions.length &&
-          answers.every((a) => a.trim().length > 0),
+          answers.every(
+            (a, index) =>
+              a.trim().length > 0 &&
+              (questions[index].freeText ||
+                questions[index].options?.includes(a)),
+          ),
   );
   $effect(() => {
     if (stale || now >= expires) confirmation = '';
@@ -240,20 +245,20 @@
         {#each questions as question, index}
           <label class="answer"
             >{question.text}
-            {#if !question.freeText}
-              <select bind:value={answers[index]}
-                ><option value="">Choose an answer…</option
-                >{#each question.options || [] as option}<option value={option}
-                    >{option}</option
-                  >{/each}</select
-              >
-            {:else if question.secret}
+            {#if question.secret}
               <input
                 type="password"
                 autocomplete="off"
                 maxlength="4096"
                 bind:value={answers[index]}
               />
+            {:else if !question.freeText}
+              <select bind:value={answers[index]}
+                ><option value="">Choose an answer…</option
+                >{#each question.options || [] as option}<option value={option}
+                    >{option}</option
+                  >{/each}</select
+              >
             {:else}
               <textarea
                 rows="3"
@@ -265,6 +270,17 @@
                 </p>{/if}
             {/if}
           </label>
+          {#if question.secret && !question.freeText}
+            <details>
+              <summary>View fixed choices</summary>
+              <p class="muted">
+                Type one of these choices exactly. Your answer stays masked.
+              </p>
+              <ul>
+                {#each question.options || [] as option}<li>{option}</li>{/each}
+              </ul>
+            </details>
+          {/if}
         {/each}
       {/if}
     </fieldset>
