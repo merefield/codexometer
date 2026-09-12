@@ -34,15 +34,16 @@ async function mockStream(page: Page, snapshot: object) {
   }, snapshot);
 }
 
-const test = base.extend<{ pairingURL: string }>({
-  pairingURL: async ({}, use) => {
+const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
+  controlMode: [false, { option: true }],
+  pairingURL: async ({ controlMode }, use) => {
     const child = spawn(
       process.env.CODEXOMETER_TEST_BINARY ||
         resolve(
           '..',
           process.platform === 'win32' ? 'codexometer.exe' : 'codexometer',
         ),
-      ['--web', '--demo'],
+      ['--web', '--demo', ...(controlMode ? ['--web-control'] : [])],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let output = '';
@@ -82,6 +83,397 @@ const test = base.extend<{ pairingURL: string }>({
       }
     }
   },
+});
+
+test.describe('opt-in real server with simulated Codex actions', () => {
+  test.use({ controlMode: true });
+  test('demo approval completes through pairing, prepare and commit', async ({
+    page,
+    pairingURL,
+  }) => {
+    await page.goto(pairingURL);
+    await expect(page.locator('header')).toContainText('SESSION CONTROL');
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+    await expect(page.locator('.full-detail')).toContainText(
+      'Simulated decision: accept. No command was executed.',
+    );
+    await expect(page.getByRole('radio')).toHaveCount(0);
+  });
+});
+
+// Browser contract tests use synthetic actions. The Go tests exercise the real
+// authorization/confirmation endpoints with fake Codex clients, never live work.
+async function mockActions(page: Page, kind = 'approval') {
+  const snapshot = {
+    control: true,
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: new Date().toISOString(),
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: ['parent', 'other'].map((id) => ({
+      id,
+      directory: '/project/' + id,
+      tokens: 100,
+      agents: 0,
+      status: kind === 'approval' ? 'APPROVAL NEEDED' : 'TURN COMPLETE',
+      contextKind: 'LAST REPLY',
+      text: 'Synthetic test context',
+      command: '',
+      source: 'APP SERVER',
+      activity: '',
+      samples: [],
+    })),
+  };
+  const offer = {
+    id: 'offer-1',
+    kind,
+    session: 'parent',
+    thread: 'child',
+    directory: '/project/child',
+    command: kind === 'approval' ? 'git status' : '',
+    choices: [
+      { label: 'APPROVE ONCE', detail: '', persistent: false },
+      { label: 'ALLOW FOR SESSION', detail: '', persistent: true },
+    ],
+    questions: [] as {
+      text: string;
+      secret: boolean;
+      freeText: boolean;
+      options: string[];
+    }[],
+  };
+  const calls: { action: string; body: Record<string, unknown> }[] = [];
+  await mockStream(page, snapshot);
+  await page.route('**/api/control/*', async (route) => {
+    const action = route.request().url().split('/').pop()!;
+    const body = route.request().postDataJSON();
+    calls.push({ action, body });
+    const result =
+      action === 'offer'
+        ? { ...offer, session: body.session }
+        : action === 'prepare'
+          ? {
+              confirmation: 'confirm-1',
+              expires: new Date(Date.now() + 30000).toISOString(),
+            }
+          : { message: 'Sent' };
+    await route.fulfill({ json: result });
+  });
+  return { snapshot, offer, calls };
+}
+
+test('session approval requires explicit review and confirmation of the target', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls, offer, snapshot } = await mockActions(page);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await expect(controls).toContainText('TARGET // child // /project/child');
+  await expect(controls.getByText('git status', { exact: true })).toBeVisible();
+  await controls
+    .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+    .check();
+  expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+  await controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+  await controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+  await expect(controls).toContainText('Decision sent.');
+  expect(calls.filter((c) => c.action === 'commit')).toEqual([
+    {
+      action: 'commit',
+      body: { session: 'parent', offer: 'offer-1', confirmation: 'confirm-1' },
+    },
+  ]);
+  await expect(controls.getByRole('radio')).toHaveCount(0);
+  offer.id = '';
+  snapshot.sessions[0].status = 'WORKING';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(controls).toContainText(
+    'Codex is working — nothing to respond to.',
+  );
+  await expect(controls).not.toContainText('Respond in Codex');
+  await expect(controls).not.toContainText('shared app-server');
+  await expect(controls.locator('.notice')).toHaveCount(0);
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(controls).toContainText(
+    'Session controls temporarily unavailable',
+  );
+});
+
+test('approval navigation matches each terminal theme warning colour and stays clickable', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const button = page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link')
+    .first();
+  for (const [theme, colour] of [
+    ['hacker', 'rgb(255, 202, 88)'],
+    ['rust', 'rgb(255, 138, 61)'],
+    ['blue-steel', 'rgb(232, 196, 106)'],
+    ['ultraviolet', 'rgb(249, 168, 212)'],
+    ['nightshade', 'rgb(143, 124, 255)'],
+  ]) {
+    await page.getByLabel('Theme', { exact: true }).selectOption(theme);
+    await expect(button).toHaveCSS('color', colour);
+    await expect(button).toHaveCSS('border-top-color', colour);
+    await button.hover();
+    await expect(button).toHaveCSS('color', colour);
+  }
+  await button.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+});
+
+test('detail retains totals and one command in a single column at all widths', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer } = await mockActions(page);
+  snapshot.sessions[0].command = 'git status';
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await expect(
+    page.getByRole('heading', { name: 'SESSION TOTALS', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.full-detail pre.command')).toHaveCount(1);
+  const context = page.locator('.detail-context');
+  const actions = page.getByRole('region', { name: 'Session controls' });
+  const left = (await context.boundingBox())!;
+  const right = (await actions.boundingBox())!;
+  expect(right.y).toBeGreaterThanOrEqual(left.y + left.height);
+  expect(Math.abs(right.x - left.x)).toBeLessThan(2);
+  expect(Math.abs(right.width - left.width)).toBeLessThan(2);
+  await page.screenshot({ path: 'test-results/detail-workspace-wide.png' });
+  await page.setViewportSize({ width: 390, height: 800 });
+  const above = (await context.boundingBox())!;
+  const below = (await actions.boundingBox())!;
+  expect(below.y).toBeGreaterThanOrEqual(above.y + above.height);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  offer.id = '';
+  await expect(
+    actions.getByRole('heading', {
+      name: 'LAST OBSERVED COMMAND',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator('.full-detail pre.command')).toHaveCount(1);
+  await expect(actions.locator('pre.command')).toHaveText('git status');
+});
+
+test('changed requests, stale data and navigation invalidate browser confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.getByRole('radio', { name: /ALLOW FOR SESSION/ }).check();
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM ALLOW FOR SESSION' }),
+  ).toBeVisible();
+  offer.id = 'offer-2';
+  offer.command = 'git diff';
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM ALLOW FOR SESSION' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('radio', { name: /ALLOW FOR SESSION/ }),
+  ).not.toBeChecked();
+  await page.getByRole('radio', { name: /APPROVE ONCE/ }).check();
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
+  snapshot.sessionsError = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await page.evaluate(() => {
+    location.hash = '/sessions/other';
+  });
+  await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
+test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Synthetic private draft');
+  await text.press('ArrowLeft');
+  await text.press('Enter');
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(text).toBeDisabled();
+  await page.getByRole('button', { name: 'CANCEL', exact: true }).click();
+  await page.evaluate(() => {
+    location.hash = '/sessions/other';
+  });
+  await expect(text).toHaveValue('');
+  await text.fill('Please continue');
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await page.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await expect(
+    page.getByRole('region', { name: 'Session controls' }),
+  ).toContainText('Text sent.');
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ session: 'other', answers: ['Please continue'] });
+  const storage = await page.evaluate(() =>
+    JSON.stringify({ ...localStorage, ...sessionStorage }),
+  );
+  expect(storage).not.toContain('Synthetic private draft');
+  expect(storage).not.toContain('Please continue');
+});
+
+test('structured questions and secret inputs fit narrow screens without executing text', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer, calls } = await mockActions(page, 'prompt');
+  offer.questions = [
+    {
+      text: 'Choose environment',
+      secret: false,
+      freeText: false,
+      options: ['Test', 'Production'],
+    },
+    { text: 'Secret answer', secret: true, freeText: true, options: [] },
+  ];
+  await page.setViewportSize({ width: 360, height: 700 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.getByLabel('Choose environment').selectOption('Test');
+  await page.getByLabel('Secret answer').fill('<img src=x onerror=alert(1)>');
+  await expect(page.getByLabel('Secret answer')).toHaveAttribute(
+    'type',
+    'password',
+  );
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(page.locator('.session-actions img')).toHaveCount(0);
+  expect(calls.filter((c) => c.action === 'prepare')[0].body.answers).toEqual([
+    'Test',
+    '<img src=x onerror=alert(1)>',
+  ]);
+  await page.screenshot({
+    path: 'test-results/session-control.png',
+    fullPage: true,
+  });
+});
+
+test('secret fixed-choice answers remain masked through review and confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer, calls } = await mockActions(page, 'prompt');
+  offer.questions = [
+    {
+      text: 'Private choice',
+      secret: true,
+      freeText: false,
+      options: ['alpha-secret', 'beta-secret'],
+    },
+  ];
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const input = page.getByLabel('Private choice', { exact: true });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await expect(input).toHaveAttribute('type', 'password');
+  await expect(controls.locator('select')).toHaveCount(0);
+  await expect(
+    controls.getByText('alpha-secret', { exact: true }),
+  ).not.toBeVisible();
+  await input.fill('not-offered');
+  await expect(
+    controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }),
+  ).toBeDisabled();
+  await input.fill('alpha-secret');
+  await controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(input).toHaveAttribute('type', 'password');
+  await expect(input).toBeDisabled();
+  expect(await controls.innerText()).not.toContain('alpha-secret');
+  await controls.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await expect(controls).toContainText('Text sent.');
+  expect(calls.filter((c) => c.action === 'prepare')[0].body.answers).toEqual([
+    'alpha-secret',
+  ]);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(1);
 });
 
 test('main tabs match only declared route shapes', async ({

@@ -12,6 +12,7 @@ body {
 }
 .shell {
   --accent: #80edac;
+  --approval: #ffca58;
   --muted: #98aaa0;
   --edge: #31473a;
   --panel: #101c16;
@@ -25,6 +26,7 @@ body {
   color: var(--ink);
 }
 .shell[data-theme='rust'] {
+  --approval: #ff8a3d;
   --accent: #ffbc75;
   --muted: #bfac95;
   --edge: #59412c;
@@ -32,6 +34,7 @@ body {
   --bg: #140e0a;
 }
 .shell[data-theme='blue-steel'] {
+  --approval: #e8c46a;
   --accent: #85c8ff;
   --muted: #9cacc4;
   --edge: #334d69;
@@ -39,6 +42,7 @@ body {
   --bg: #0b1421;
 }
 .shell[data-theme='ultraviolet'] {
+  --approval: #f9a8d4;
   --accent: #c5adff;
   --muted: #b3a6c9;
   --edge: #4b3c68;
@@ -46,6 +50,7 @@ body {
   --bg: #140d22;
 }
 .shell[data-theme='nightshade'] {
+  --approval: #8f7cff;
   --accent: #e59bff;
   --muted: #c6a7cf;
   --edge: #673976;
@@ -385,6 +390,16 @@ a {
   gap: 8px;
   margin-block: 8px;
 }
+.attention-summary .approval {
+  color: var(--approval);
+  border-color: var(--approval);
+}
+.attention-summary .approval:hover {
+  background: color-mix(in srgb, var(--approval) 12%, var(--panel));
+}
+.attention-summary .approval:focus-visible {
+  outline-color: var(--approval);
+}
 .attention-note,
 .attention-badge {
   color: var(--accent);
@@ -431,7 +446,52 @@ pre {
   line-height: 1.7;
 }
 .full-detail {
-  margin-top: 24px;
+  margin-top: 6px;
+}
+.detail-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.detail-heading h2 {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 250px;
+}
+.detail-metadata {
+  overflow-wrap: anywhere;
+}
+.detail-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--edge);
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.detail-context,
+.detail-workspace .session-actions {
+  min-width: 0;
+}
+.detail-workspace .session-actions {
+  border-top: 1px solid var(--edge);
+  padding-top: 6px;
+}
+.full-detail h3 {
+  margin-block: 8px;
+}
+.full-detail pre {
+  margin-block: 8px;
+  line-height: 1.5;
+}
+.full-detail hr {
+  margin-block: 12px;
+}
+.full-detail .command,
+.full-detail .notice {
+  padding: 8px 10px;
 }
 .command {
   padding: 16px;

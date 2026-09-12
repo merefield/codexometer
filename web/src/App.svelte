@@ -59,7 +59,11 @@
     <div class="connection">
       <span class:lit={live.connected} class="lamp"></span>{live.connected
         ? 'CONNECTED'
-        : 'OFFLINE'}<small>EXPERIMENTAL // READ ONLY</small>
+        : 'OFFLINE'}<small
+        >EXPERIMENTAL // {live.data?.control
+          ? 'SESSION CONTROL'
+          : 'READ ONLY'}</small
+      >
     </div>
   </header>
   <nav aria-label="Main navigation">
@@ -80,7 +84,11 @@
   </main>
   <footer>
     <span>v{live.data?.version || '…'} // LOCAL ONLY</span>
-    <span>No actions can be sent from this preview.</span>
+    <span
+      >{live.data?.control
+        ? 'Session control enabled. Stop the server to revoke access.'
+        : 'No actions can be sent from this preview.'}</span
+    >
     <label
       >THEME // <select
         aria-label="Theme"

@@ -42,6 +42,8 @@ unchanged by default.
 
 An opt-in [experimental browser interface](#experimental-browser-interface)
 provides read-only Quota, Sessions and Usage views with `codexometer --web`.
+Add `--web-control` explicitly to enable supported session approvals and prompts
+from full-page session detail; other browser views remain read-only.
 The terminal remains the default and the full-featured command centre.
 
 ## Why use it?
@@ -1939,6 +1941,7 @@ deterministic PASS/FAIL verifier.
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --web              experimental read-only browser interface (loopback only)
+--web-control      opt into browser session approvals/prompts (requires --web)
 --web-port PORT    local browser port (default: 0/automatic; requires --web)
 --refresh DURATION refresh interval (default: 1m)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
@@ -1982,7 +1985,7 @@ codexometer --web --web-port 8765
    work; session-detail URLs support direct navigation in the paired tab.
 5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
 
-This first preview is **read-only and UK-English-only**, not feature parity with
+This preview is **read-only by default and UK-English-only**, not feature parity with
 the terminal. It includes Bars, Consumption Pace, Consumption Zone, Pie and Fuel Tank quota
 presentations; reset inventory with disclosed expiry information; local session
 telemetry with expandable/full-page context and synchronised activity graphs;
@@ -2013,7 +2016,7 @@ plus the latest 719; the omitted interval is shown as a gap. Readings between
 polls are not known. Account-change isolation depends on the account identity
 available from the existing reader.
 
-### Read-only Sessions command centre
+### Browser Sessions command centre
 
 - **SESSION TOTALS** shows observed tokens and the number of currently listed
   sessions, plus separate working, awaiting-approval, awaiting-input and inferred
@@ -2051,7 +2054,7 @@ the automatically selected port may change. Blocked storage falls back to
 in-memory preferences. Clear this site's browser data to forget them (this also
 removes browser pairing access). No replies, commands, usage trails or Codex
 credentials are stored in localStorage; the saved selection/layouts do contain
-session IDs. None of these controls sends an action to Codex.
+session IDs. Navigation and layout controls never send actions to Codex.
 
 The browser uses a compact dashboard layout: quota plots share the available
 width and height below the tabs. Pie charts retain their circular shape, while
@@ -2059,9 +2062,9 @@ Consumption Zone scales each axis independently and keeps text legible. On short
 windows or with many quota windows, content scrolls without hiding the footer
 controls or shrinking plots below a readable minimum.
 
-Approvals, prompt sending, benchmark execution and quota-reset redemption are
-**not exposed by the web server**, even if the shared Codex daemon supports them.
-Use Codex or the terminal interface for those actions. Quota API-equivalent
+Benchmark execution and quota-reset redemption are **not exposed by the web
+server**. Session approvals and prompts require the explicit opt-in described
+below. Use Codex or the terminal interface for other actions. Quota API-equivalent
 learning, status scoring, pricing readouts and other terminal-only controls
 are intentionally deferred; the web interface does not invent replacements.
 
@@ -2083,6 +2086,62 @@ full snapshots on reconnect. Refresh errors and disconnections are labelled;
 cached observations are not proof that a session is still working. Account
 history is hidden unless its account matches the current successful quota read.
 
+### Optional browser session control
+
+```sh
+# Read-only remains the default
+codexometer --web
+
+# Explicitly grant the paired browser session-control access for this launch
+codexometer --web --web-control
+
+# Safely try the simulated approval; no command runs
+codexometer --web --web-control --demo
+```
+
+The header and launching terminal clearly identify **SESSION CONTROL** mode.
+The flag is not saved as a preference and cannot be enabled by a browser request.
+Without it, the control endpoints do not exist, even if Codex supports actions.
+This permission applies to the paired browser capability for that server launch;
+there is no separate read-only pairing link on a control-enabled server.
+
+1. Follow [Recommended Codex CLI setup](#recommended-codex-cli-setup): install the
+   managed standalone Codex CLI, start its local app-server daemon and connect
+   the CLI sessions to that daemon. Merely starting a daemon does not migrate
+   already-running local CLI sessions. Existing local-only sessions still supply
+   best-effort telemetry, but cannot supply browser approval/prompt capabilities.
+2. Launch with `--web --web-control` and open its private pairing link.
+3. Open **Sessions → FULL DETAIL** for the intended session. Controls appear only
+   for a supported, currently live request or an idle thread offering a follow-up.
+   Inferred inactivity, old reply text and a TURN COMPLETE label alone do not
+   grant permission to send anything. Unsupported requests remain **reply in Codex**.
+4. Check the target thread (including a linked agent where applicable), working
+   directory and exact command. Select one of the actual supported decisions,
+   answer the input questions, or write a follow-up. Session-wide and persistent
+   prefix grants are explicitly marked and show the supplied prefix details.
+5. Click **REVIEW BEFORE SENDING**, then the separate **CONFIRM** button within
+   30 seconds. Cancel returns to editing; Enter in a text area inserts a newline,
+   never submits. All decisions, including declines, use this two-step browser flow.
+
+The server binds preparation to the exact session, source request, chosen option
+and answers. Confirmation rechecks the offer against current reader/provider
+state; missing/failed observations or observations older than ten seconds fail
+closed. The existing Codex clients also validate connection-local, one-use
+capabilities; follow-ups recheck the thread is idle before starting a turn.
+The server consumes confirmation before dispatch. Double-clicks/replays cannot
+resend it, and failed or ambiguous sends **are never automatically retried**:
+check Codex before deciding what to do next. An acknowledgement means a decision
+or text was sent, not that Codex finished successfully. Sending a follow-up may
+start work and consume quota; approving a command can let that work proceed.
+
+Only full-page detail has write controls in this tranche. Drafts and confirmations
+are scoped to that session/request, cleared on navigation or request changes, and
+never saved in display preferences. Secret question answers use masked inputs.
+Go retains at most one prepared action per server for up to 30 seconds; a new
+preparation replaces the previous one. Raw Codex request tokens stay in Go;
+the browser receives opaque web offer/confirmation identifiers, not reusable
+Codex credentials. No actions run merely by opening a page or reconnecting.
+
 ### Browser security and local access
 
 See [the local interface security checklist](SECURITY.md) for maintainer rules,
@@ -2102,15 +2161,16 @@ vulnerability checks. These checks add no application startup or runtime cost.
   sessionStorage, so closing a tab is not a reliable revocation mechanism;
   stopping the server is. If browser storage is blocked, access is memory-only
   and reloading will require a new pairing link.
-- Codex authentication, account fingerprints and approval/input capabilities
-  stay in Go. The browser receives explicit display-only fields, not raw client
+- Codex authentication, account fingerprints and raw approval/input capabilities
+  stay in Go. The browser receives explicit presentation/action fields, not raw client
   objects or upstream error strings. No session content is saved by the web
   server on disk. Display preferences and session layout/selection IDs use
   localStorage as described above; observation trails remain in server memory.
 - Exact Host, Origin and Fetch Metadata checks reject rebinding and cross-origin
   access, including other localhost ports. Pairing requires same-origin JSON;
-  protected reads require the bearer capability. CORS is not enabled, and
-  state-changing Codex endpoints do not exist in this preview.
+  protected reads require the bearer capability. Control requests also require
+  same-origin JSON and bearer authorization. CORS is not enabled; control routes
+  exist only when launched with `--web-control`.
 - Responses use `no-store`, `no-referrer`, `nosniff` and a restrictive Content
   Security Policy with framing disabled. Session replies and commands render as
   text, never HTML/Markdown execution. No CDN assets, analytics or external reply
@@ -2121,6 +2181,33 @@ Local HTTP is deliberate for loopback delivery; it does not offer HTTPS transpor
 protection if forwarded elsewhere. These protections do not defend against
 malware running as your user, a compromised browser, or extensions with access
 to the page. Keep sensitive sessions out of screenshots and shared displays.
+
+**Good practice for opt-in write mode:**
+
+- Enable `--web-control` only when you need it; use ordinary `--web` for viewing.
+  Restart without the control flag when finished rather than leaving it enabled.
+- Use an updated browser and a **dedicated profile with no extensions**. Extensions
+  allowed to access the page may read session text or act through your paired
+  access. Private/incognito mode is not an equivalent guarantee: extensions can
+  be enabled there too. This reduces exposure, not all browser risk.
+- Keep the server local: no LAN sharing, tunnels, reverse proxies or public port
+  forwarding. Keep the original pairing link private and lock your computer when
+  away. A normal website must not be given your pairing link or bearer token.
+- Before confirming, verify the session, working directory, exact command and
+  permission scope. Prefer a one-time grant over session-wide or persistent
+  permission when appropriate. Generated explanations are **not proof of safety**.
+- Keep Codex's sandbox and approval protections enabled; do not weaken them to
+  make browser controls appear. If an action is unavailable, inspect it in Codex.
+- Stop the server with Ctrl+C to revoke access. Closing the browser tab alone
+  is insufficient. On an uncertain send outcome, inspect Codex before trying again.
+
+In plain English: opting in lets the paired browser send instructions and
+approval decisions to your Codex sessions, which may run commands or change files
+within their permissions. A compromised browser/profile or malicious code executing
+inside this application's origin could misuse that access; cross-site checks and
+confirmations cannot protect against code already running as the application.
+The terminal avoids that browser-specific attack surface, but its risk is not
+zero: local malware, unsafe approvals and compromised dependencies still matter.
 
 On Ubuntu/WSL, try the exact printed `127.0.0.1` URL in your Windows browser;
 this depends on your WSL localhost-forwarding configuration. Native Windows,

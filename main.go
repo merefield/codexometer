@@ -249,7 +249,7 @@ type dependencies struct {
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
 	startUI           func(ui.Fetcher, time.Duration, bool, int, int) error
-	startWeb          func(web.Source, time.Duration, int, io.Writer) error
+	startWeb          func(web.Source, time.Duration, int, io.Writer, bool) error
 }
 
 func defaultDependencies() dependencies {
@@ -265,10 +265,10 @@ func defaultDependencies() dependencies {
 			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
 		},
 		startUI: startUI,
-		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer) error {
+		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
-			return web.Run(ctx, source, refresh, port, output)
+			return web.Run(ctx, source, refresh, port, output, control)
 		},
 	}
 }
@@ -282,6 +282,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
 		webMode           = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
+		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals and prompts (requires --web)")
 		webPort           = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
 		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
 		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
@@ -304,6 +305,10 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	if *webPort < 0 || *webPort > 65535 || (*webPort != 0 && !*webMode) {
 		fmt.Fprintln(stderr, "codexometer: --web-port must be between 0 and 65535 and requires --web")
+		return 2
+	}
+	if *webControl && !*webMode {
+		fmt.Fprintln(stderr, "codexometer: --web-control requires --web")
 		return 2
 	}
 	if *webMode && (*inline || *checkAuth || strings.TrimSpace(*digBenchGame) != "") {
@@ -388,7 +393,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		if *demo {
 			source = &demoFetcher{}
 		}
-		if err := deps.startWeb(source, *refresh, *webPort, stdout); err != nil {
+		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl); err != nil {
 			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
 		}

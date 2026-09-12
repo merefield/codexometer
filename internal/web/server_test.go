@@ -271,7 +271,7 @@ func TestRunStopsCollectorsAndServer(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, cancelledSource{}, time.Minute, 0, writer); writer.Close() }()
+	go func() { done <- Run(ctx, cancelledSource{}, time.Minute, 0, writer, false); writer.Close() }()
 	buffer := make([]byte, 2048)
 	n, err := reader.Read(buffer)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestRunStopsCollectorsAndServer(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("server or poller leaked on shutdown")
 	}
-	if err := Run(context.Background(), cancelledSource{}, time.Minute, -1, io.Discard); err == nil {
+	if err := Run(context.Background(), cancelledSource{}, time.Minute, -1, io.Discard, false); err == nil {
 		t.Fatal("invalid port accepted")
 	}
 }

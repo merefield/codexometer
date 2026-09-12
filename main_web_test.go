@@ -29,9 +29,9 @@ func TestLaunchModesAreIsolated(t *testing.T) {
 					}
 					return nil
 				},
-				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer) error {
+				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool) error {
 					browser++
-					if refresh != time.Minute || port != 54321 {
+					if refresh != time.Minute || port != 54321 || control {
 						t.Fatal("web options missing")
 					}
 					client, ok := source.(codex.Client)
@@ -65,6 +65,10 @@ func TestLaunchModesAreIsolated(t *testing.T) {
 }
 
 func TestWebFlagsAndErrors(t *testing.T) {
+	var flagOut, flagErr bytes.Buffer
+	if code := run([]string{"--web-control"}, &flagOut, &flagErr, dependencies{}); code != 2 {
+		t.Fatal("control allowed without web")
+	}
 	for _, args := range [][]string{{"--web-port", "1"}, {"--web", "--web-port", "-1"}, {"--web", "--web-port", "65536"}, {"--web", "--inline"}, {"--web", "--check-auth"}, {"--web", "--digbench-game", "x"}} {
 		var out, err bytes.Buffer
 		if code := run(args, &out, &err, dependencies{}); code != 2 {
@@ -72,7 +76,7 @@ func TestWebFlagsAndErrors(t *testing.T) {
 		}
 	}
 	var out, err bytes.Buffer
-	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer) error {
+	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer, _ bool) error {
 		if _, ok := source.(*demoFetcher); !ok {
 			t.Fatal("web demo not isolated")
 		}
@@ -85,5 +89,18 @@ func TestWebFlagsAndErrors(t *testing.T) {
 	err.Reset()
 	if code := run([]string{"--web", "--version"}, &out, &err, dependencies{}); code != 0 {
 		t.Fatal("version started a server")
+	}
+}
+
+func TestWebControlExplicitOptIn(t *testing.T) {
+	var out, err bytes.Buffer
+	deps := dependencies{startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, control bool) error {
+		if !control {
+			t.Fatal("explicit control flag lost")
+		}
+		return nil
+	}}
+	if code := run([]string{"--web", "--web-control", "--demo"}, &out, &err, deps); code != 0 {
+		t.Fatalf("%d %s", code, &err)
 	}
 }
