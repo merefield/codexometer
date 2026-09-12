@@ -27,7 +27,12 @@
   let now = $state(Date.now());
   let busy = $state(false);
   let notice = $state('');
+  let success = $state(false);
+  let offerError = $state(false);
   let sent = $state('');
+  let status = $derived(
+    live.data?.sessions.find((row) => row.id === session)?.status,
+  );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
   let confirming = $derived(!!confirmation && now < expires && !stale);
   let questions = $derived(
@@ -65,15 +70,21 @@
           controller.signal,
         );
         if (controller.signal.aborted) return;
+        offerError = false;
         if (offer?.id !== next.id) {
           confirmation = '';
           choice = null;
           answers = Array(Math.max(1, next.questions?.length || 0)).fill('');
         }
         offer = next;
+        if (success && next.id && next.id !== sent) {
+          notice = '';
+          success = false;
+        }
       } catch {
         if (!controller.signal.aborted) {
           offer = null;
+          offerError = true;
           confirmation = '';
         }
       } finally {
@@ -92,6 +103,7 @@
     const id = offer.id;
     busy = true;
     notice = '';
+    success = false;
     confirmation = '';
     try {
       const result = await controlRequest<{
@@ -123,6 +135,7 @@
   async function commit() {
     if (!offer?.id || busy || !confirming) return;
     const id = offer.id;
+    const kind = offer.kind;
     const ticket = confirmation;
     confirmation = '';
     busy = true;
@@ -133,7 +146,8 @@
         { session, offer: id, confirmation: ticket },
         controller.signal,
       );
-      notice = 'Sent. Waiting for Codex to update…';
+      success = true;
+      notice = kind === 'approval' ? 'Decision sent.' : 'Text sent.';
     } catch {
       notice =
         'Outcome uncertain. Check Codex before taking another action; nothing was retried.';
@@ -148,13 +162,34 @@
 <section class="session-actions" aria-label="Session controls">
   <hr />
   <h3>SESSION CONTROL // EXPERIMENTAL</h3>
-  {#if notice}<p class="notice" role="status">{notice}</p>{/if}
-  {#if stale || !offer?.id}
+  {#if notice}<p class:notice={!success} class:sent={success} role="status">
+      {notice}
+    </p>{/if}
+  {#if stale || offerError}
     <p class="muted">
-      No supported live action available. Reply or approve in Codex. Browser
-      controls require a connected shared app-server session, not just local
-      observations.
+      Session controls temporarily unavailable. Check Codex for current state.
     </p>
+  {:else if !offer}
+    <p class="muted">Checking session controls…</p>
+  {:else if !offer.id}
+    {#if status === 'WORKING' || (!success && !busy)}
+      <p class="muted">
+        {status === 'WORKING'
+          ? 'Codex is working — nothing to respond to.'
+          : ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '')
+            ? 'Respond in Codex for this request.'
+            : 'Nothing needs a response right now.'}
+      </p>
+    {/if}
+    {#if ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '') && !success}
+      <details>
+        <summary>About browser controls</summary>
+        <p class="muted">
+          Controls require a supported live request from a connected shared
+          app-server session. Local observations alone cannot provide them.
+        </p>
+      </details>
+    {/if}
   {:else if sent !== offer.id}
     <p class="muted">
       TARGET // {offer.thread} // {offer.directory || 'Directory unavailable'}
@@ -248,12 +283,12 @@
   fieldset {
     border: 1px solid currentColor;
     margin: 0.5rem 0;
-    padding: 0.75rem;
+    padding: 0.35rem 0.6rem;
   }
   .decision,
   .answer {
     display: block;
-    margin: 0.5rem 0;
+    margin: 0.3rem 0;
   }
   .decision code,
   .decision span {
@@ -279,5 +314,15 @@
   }
   button {
     margin: 0.3rem 0.5rem 0.3rem 0;
+  }
+  h3,
+  p {
+    margin-block: 0.4rem;
+  }
+  hr {
+    margin-block: 0.65rem;
+  }
+  .sent {
+    color: var(--accent);
   }
 </style>

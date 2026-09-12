@@ -179,7 +179,7 @@ test('session approval requires explicit review and confirmation of the target',
   page,
   pairingURL,
 }) => {
-  const { calls } = await mockActions(page);
+  const { calls, offer, snapshot } = await mockActions(page);
   await page.goto(pairingURL);
   await page.evaluate(() => {
     location.hash = '/sessions/parent';
@@ -197,7 +197,7 @@ test('session approval requires explicit review and confirmation of the target',
   ).toBeVisible();
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
   await controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
-  await expect(controls).toContainText('Sent. Waiting for Codex');
+  await expect(controls).toContainText('Decision sent.');
   expect(calls.filter((c) => c.action === 'commit')).toEqual([
     {
       action: 'commit',
@@ -205,6 +205,28 @@ test('session approval requires explicit review and confirmation of the target',
     },
   ]);
   await expect(controls.getByRole('radio')).toHaveCount(0);
+  offer.id = '';
+  snapshot.sessions[0].status = 'WORKING';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(controls).toContainText(
+    'Codex is working — nothing to respond to.',
+  );
+  await expect(controls).not.toContainText('Respond in Codex');
+  await expect(controls).not.toContainText('shared app-server');
+  await expect(controls.locator('.notice')).toHaveCount(0);
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(controls).toContainText(
+    'Session controls temporarily unavailable',
+  );
 });
 
 test('changed requests, stale data and navigation invalidate browser confirmation', async ({
@@ -278,7 +300,7 @@ test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', 
   await page.getByRole('button', { name: 'CONFIRM SEND' }).click();
   await expect(
     page.getByRole('region', { name: 'Session controls' }),
-  ).toContainText('Sent. Waiting');
+  ).toContainText('Text sent.');
   expect(
     calls.filter((c) => c.action === 'prepare').at(-1)?.body,
   ).toMatchObject({ session: 'other', answers: ['Please continue'] });

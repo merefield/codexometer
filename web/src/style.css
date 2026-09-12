@@ -431,7 +431,21 @@ pre {
   line-height: 1.7;
 }
 .full-detail {
-  margin-top: 24px;
+  margin-top: 10px;
+}
+.full-detail h3 {
+  margin-block: 8px;
+}
+.full-detail pre {
+  margin-block: 8px;
+  line-height: 1.5;
+}
+.full-detail hr {
+  margin-block: 12px;
+}
+.full-detail .command,
+.full-detail .notice {
+  padding: 8px 10px;
 }
 .command {
   padding: 16px;
