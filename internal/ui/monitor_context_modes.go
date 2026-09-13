@@ -228,8 +228,8 @@ func (m Model) expandedContextNavigation(width, height int, s monitorSession) []
 }
 
 func (m Model) expandedContextAt(x, y int) string {
-	g := m.dashboardLayout()
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	g := m.monitorDashboardLayout()
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	rowY := a.topHeight + a.gap - 1
 	for i, s := range sessions {

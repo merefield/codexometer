@@ -50,6 +50,7 @@ type Model struct {
 	monitorContextExpanded              string
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
+	monitorAttentionPage                int
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
 	monitorApprovalConfirmUntil         time.Time
@@ -2746,8 +2747,8 @@ func (m Model) visibleMonitorSessionCount() int {
 }
 
 func (m Model) monitorPageSize() int {
-	dashboard := m.dashboardLayout()
-	layout := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+	dashboard := m.monitorDashboardLayout()
+	layout := m.monitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	return max(layout.graphHeight/3, 1)
 }
 

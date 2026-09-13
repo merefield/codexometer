@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the Resets expiry-data safety notice;
+	// Baseline intentionally updated for the terminal Sessions summary strip;
 	// all themes, views and three terminal sizes are covered.
-	const want = "411704f1771a2822de902584930a32a778a44b97d7e0d5b7fb4870d77493a0fc"
+	const want = "1cfb61b9afb806a99c6e373a53d5d6b682f7542687f48889f266fbedf100aefe"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

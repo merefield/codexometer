@@ -35,6 +35,14 @@ Click the **Codexometer title** to jump back to Quota’s Bars view. The **versi
 
 ## Sessions: your session command centre
 
+The terminal now has a compact summary strip for tokens, visible sessions and
+working/approval/input/inferred-check counts. Theme-coloured attention buttons
+take you straight to a waiting approval or input request—even from another
+session's full detail. They wrap into a bounded strip with an overflow button;
+on tall terminals, full detail retains the summary too. As space runs short,
+the summary disappears before the attention strip so text and action controls
+keep priority. These shortcuts navigate only; they never approve or send for you.
+
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 
 Give each session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the Sessions overview with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.

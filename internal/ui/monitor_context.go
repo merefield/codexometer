@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,8 +33,8 @@ func contextTitle(c codex.SessionContext) string {
 }
 
 func (m Model) monitorPrivacyLabel(widths ...int) string {
-	g := m.dashboardLayout()
-	width := layoutMonitorArea(g.contentWidth, g.meterHeight).readoutWidth
+	g := m.monitorDashboardLayout()
+	width := m.monitorArea(g.contentWidth, g.meterHeight).readoutWidth
 	if len(widths) > 0 {
 		width = widths[0]
 	}
@@ -216,7 +217,7 @@ func (m *Model) openMonitorContext(id string) {
 }
 
 func (m *Model) scrollMonitorContext(delta int) {
-	g := m.dashboardLayout()
+	g := m.monitorDashboardLayout()
 	layout := m.layoutDetailControls(g.contentWidth, g.meterHeight)
 	rows, _, _ := monitorContextBodyLayout(g.meterHeight, layout.rows)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
@@ -253,7 +254,7 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 			// open and let the standard handler apply the action and flash.
 			return m, nil, false
 		case "enter":
-			g := m.dashboardLayout()
+			g := m.monitorDashboardLayout()
 			if m.monitorPromptRows(g.contentWidth, g.meterHeight) > 0 && m.monitorPromptOffer().Token != "" {
 				cmd := m.focusMonitorPrompt()
 				return m, cmd, true
@@ -267,9 +268,9 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		case "down":
 			m.scrollMonitorContext(1)
 		case "pgup":
-			m.scrollMonitorContext(-max(m.dashboardLayout().meterHeight-4, 1))
+			m.scrollMonitorContext(-max(m.monitorDashboardLayout().meterHeight-4, 1))
 		case "pgdown":
-			m.scrollMonitorContext(max(m.dashboardLayout().meterHeight-4, 1))
+			m.scrollMonitorContext(max(m.monitorDashboardLayout().meterHeight-4, 1))
 		case "q", "ctrl+c", "tab", "shift+tab":
 			m.monitorContextDetail = ""
 			m.monitorContextExpanded = ""
@@ -290,7 +291,10 @@ func (m Model) monitorContextAt(x, y int) string {
 	if m.meterView != viewMonitor || m.loading && len(m.snapshot.Meters()) == 0 {
 		return ""
 	}
-	g := m.dashboardLayout()
+	if hit := m.monitorAttentionAt(x, y); hit != "" {
+		return hit
+	}
+	g := m.monitorDashboardLayout()
 	x -= 2
 	y -= g.meterY
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
@@ -325,7 +329,7 @@ func (m Model) monitorContextAt(x, y int) string {
 		}
 		return ""
 	}
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	if hit := m.monitorNavigationHit(a.readoutWidth, "", false, x, y); hit != "" {
 		return hit
 	}
@@ -387,7 +391,16 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		case "close":
 			m.stepBackMonitorContext()
 		default:
-			if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
+			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
+				m.monitorAttentionPage, _ = strconv.Atoi(page)
+			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "attention:"); ok {
+				for _, s := range m.monitorAttentionSessions() {
+					if s.id == id {
+						m.setRowContext(id, contextFull)
+						break
+					}
+				}
+			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
 				m.openMonitorContext(id)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {
 				m.changeMonitorContext(id, -1)
@@ -398,7 +411,7 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		return m, nil, true
 	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
-		g := m.dashboardLayout()
+		g := m.monitorDashboardLayout()
 		if mouse.Y >= g.meterY && mouse.Y < g.meterY+g.meterHeight {
 			switch mouse.Button {
 			case tea.MouseWheelUp:

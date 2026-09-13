@@ -34,8 +34,16 @@ func (line detailLine) render(colors palette) string {
 func (m Model) contextDetailDocument(width int) []detailLine {
 	width = max(width, 1)
 	s, ok := m.contextDetailSession()
-	if !ok || s.preview.Text == "" {
+	if !ok {
 		return []detailLine{{i18n.Text("NO CONTEXT"), "metadata"}}
+	}
+	if s.preview.Text == "" {
+		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
+		var lines []detailLine
+		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
+			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "metadata"})
+		}
+		return append(lines, detailLine{i18n.Text("NO CONTEXT"), "metadata"})
 	}
 	c := s.preview
 	var lines []detailLine
@@ -58,7 +66,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		lines = append(lines, detailLine{title, "heading"})
 	}
 	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
-	g := m.dashboardLayout()
+	g := m.monitorDashboardLayout()
 	if (c.Kind == codex.SessionContextApproval || c.Kind == codex.SessionContextQuestion) && !m.monitorApprovalHasOutcome() && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		section(i18n.Text("REPLY IN CODEX"))
 		appendText(m.monitorApprovalBlockReason(c), "warning", "")
