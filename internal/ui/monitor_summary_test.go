@@ -298,6 +298,33 @@ func TestMonitorAttentionSwitchFromFocusedComposer(t *testing.T) {
 	t.Fatal("missing attention while editing")
 }
 
+func TestMonitorAttentionCurrentDetailPreservesState(t *testing.T) {
+	m, c := promptTestModel()
+	m.monitorSessionData[0].attention = codex.SessionAttentionInput
+	m.focusMonitorPrompt()
+	m.monitorPrompt.input.SetValue("keep this unsent draft")
+	m.monitorContextScroll = 7
+	m.monitorApprovalConfirm = "armed"
+	m.monitorApprovalNotice = "keep notice"
+	g := m.dashboardLayout()
+	summary, _, buttons := m.monitorDetailHeader(g.contentWidth, g.meterHeight)
+	for _, b := range buttons {
+		if b.action != "attention:"+m.monitorContextDetail {
+			continue
+		}
+		n, cmd := m.Update(tea.MouseClickMsg{X: 2 + b.rect.x, Y: g.meterY + summary + b.rect.y, Button: tea.MouseLeft})
+		next := n.(Model)
+		if cmd != nil || next.monitorContextDetail != m.monitorContextDetail ||
+			!next.monitorPrompt.input.Focused() || next.monitorPrompt.input.Value() != "keep this unsent draft" ||
+			next.monitorContextScroll != 7 || next.monitorApprovalConfirm != "armed" ||
+			next.monitorApprovalNotice != "keep notice" || c.answers != nil {
+			t.Fatal("same-session navigation changed detail state or sent text")
+		}
+		return
+	}
+	t.Fatal("missing current-session attention button")
+}
+
 func TestMonitorSummaryDetailScrollingAndEmptyAttentionContext(t *testing.T) {
 	m := attentionTestModel()
 	m.setRowContext("root-three", contextFull)

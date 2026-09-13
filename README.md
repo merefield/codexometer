@@ -1245,7 +1245,8 @@ links to visible sessions with observed approval or input requests, approvals
 first. Click a button to select that exact session and open full detail, including
 when another session's detail is already open. It only navigates: it never sends
 a decision or prompt. Switching clears the previous draft, armed confirmation
-and scroll position. CHECK* sessions do not appear as confirmed requests here.
+and scroll position. Clicking the session already open in full detail leaves its
+draft, confirmation and scroll position intact. CHECK* sessions do not appear as confirmed requests here.
 Labels include a list number (not a keyboard shortcut) and shortened directory; the full detail identifies
 the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.

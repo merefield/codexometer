@@ -394,6 +394,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "attention:"); ok {
+				if id == m.monitorContextDetail {
+					return m, nil, true
+				}
 				for _, s := range m.monitorAttentionSessions() {
 					if s.id == id {
 						m.setRowContext(id, contextFull)
