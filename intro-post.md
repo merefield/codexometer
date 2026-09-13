@@ -41,7 +41,8 @@ the session layout steady as requests arrive or clear. Completion pills follow
 approvals and input requests in the calmer theme-primary colour: your result is ready,
 but a reply is not necessarily required. Theme-coloured attention buttons
 take you straight to a waiting approval, input request or completed turn—even from another
-session's full detail. They share a reserved row with an overflow button;
+session's full detail. They share a reserved row, progressively shortening labels
+while retaining session IDs before resorting to an overflow button;
 on tall terminals, full detail retains the summary too. As space runs short,
 the summary disappears before the attention strip so text and action controls
 keep priority. These shortcuts navigate only; they never approve or send for you.

@@ -1256,8 +1256,12 @@ draft, confirmation and scroll position intact. CHECK* sessions do not appear as
 Labels put the state first, followed by the same short session ID used in the row
 border and its directory, for example **[TURN COMPLETE S79SD // projects]**.
 The ID stays stable when other pills arrive or change state; it is not a priority
-number or keyboard shortcut. Narrow layouts shorten the state/directory to preserve
-the short ID. Full detail identifies the target. A single navigation row is reserved even when there are no requests,
+number or keyboard shortcut. The strip chooses the least compressed format that
+fits all pills: full labels, omit `//`, omit directories, then shorten Turn Complete
+to **DONE** (translated). The short session ID is always retained. If the compact
+labels still do not fit, the strip uses overflow paging; unusually long translated
+states are shortened only as needed. Expanding the terminal restores fuller labels.
+Full detail identifies the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
 row to protect session content. Paused or failed observation

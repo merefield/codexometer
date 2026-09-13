@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func attentionTestModel() Model {
@@ -453,6 +454,41 @@ func TestMonitorAttentionLabelsUseStableSessionIDs(t *testing.T) {
 	after, _ := m.monitorAttentionButtons(240, 1)
 	if len(after) != 2 || before[0].label != after[1].label || !strings.HasSuffix(after[1].label, " S79SD // projects]") {
 		t.Fatal("adding another pill changed session identity")
+	}
+}
+
+func TestMonitorAttentionProgressiveCompression(t *testing.T) {
+	m := attentionTestModel()
+	m.monitorSessionData = []monitorSession{
+		{id: "session-AAA01", workingDirectory: "/work/projects", displayed: true, attention: codex.SessionAttentionComplete},
+		{id: "session-BBB02", workingDirectory: "/work/projects", displayed: true, attention: codex.SessionAttentionComplete},
+	}
+	full := monitorAttentionStatus(codex.SessionAttentionComplete)
+	for _, format := range []string{
+		"[" + full + " %s // projects]",
+		"[" + full + " %s projects]",
+		"[" + full + " %s]",
+		"[" + i18n.Text("DONE") + " %s]",
+	} {
+		first, second := fmt.Sprintf(format, "AAA01"), fmt.Sprintf(format, "BBB02")
+		width := lipgloss.Width(first) + 1 + lipgloss.Width(second)
+		m.monitorAttentionPage = 1 // A fitting list must not remain on a stale page.
+		buttons, rows := m.monitorAttentionButtons(width, 1)
+		if rows != 1 || len(buttons) != 2 || buttons[0].label != first || buttons[1].label != second {
+			t.Fatalf("width %d: wanted %s %s, got %+v", width, first, second, buttons)
+		}
+		for _, b := range buttons {
+			for x := b.rect.x; x < b.rect.x+b.rect.width; x++ {
+				if got := monitorNavigationButtonsHit(buttons, x, 0); got != b.action {
+					t.Fatal("compressed hit target drifted")
+				}
+			}
+		}
+	}
+	// Re-expanding restores all descriptive information, not a sticky compact mode.
+	buttons, _ := m.monitorAttentionButtons(240, 1)
+	if len(buttons) != 2 || !strings.Contains(buttons[0].label, " // projects]") {
+		t.Fatal("expanding did not restore full labels")
 	}
 }
 
