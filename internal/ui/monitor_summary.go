@@ -85,9 +85,9 @@ func (m Model) monitorAttentionSessions() []monitorSession {
 		return nil
 	}
 	var sessions []monitorSession
-	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput} {
+	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionComplete} {
 		for _, s := range m.monitorSessionData {
-			if m.monitorSessionVisible(s) && s.attention == attention {
+			if m.monitorSessionVisible(s) && s.attention == attention && !(attention == codex.SessionAttentionComplete && s.working) {
 				sessions = append(sessions, s)
 			}
 		}
@@ -144,10 +144,20 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 
 func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigationButton, colors palette) string {
 	lines := make([]string, rows)
+	completed := make(map[string]bool)
+	for _, s := range m.monitorAttentionSessions() {
+		if s.attention == codex.SessionAttentionComplete {
+			completed["attention:"+s.id] = true
+		}
+	}
 	for _, b := range buttons {
-		style := colors.label().Foreground(colors.warning).Bold(true)
+		color := colors.warning
+		if completed[b.action] {
+			color = colors.primary
+		}
+		style := colors.label().Foreground(color).Bold(!completed[b.action])
 		if m.monitorContextHover == b.action {
-			style = style.Foreground(colors.background).Background(colors.warning)
+			style = style.Foreground(colors.background).Background(color)
 		}
 		lines[b.rect.y] += strings.Repeat(" ", max(b.rect.x-lipgloss.Width(lines[b.rect.y]), 0)) + style.Render(b.label)
 	}

@@ -97,6 +97,43 @@ func TestMonitorSummaryCountColours(t *testing.T) {
 	}
 }
 
+func TestMonitorSessionStatusColours(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		colors := paletteFor(theme)
+		for _, attention := range []codex.SessionAttention{codex.SessionAttentionNone, codex.SessionAttentionComplete, codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionCheck} {
+			for _, selected := range []bool{false, true} {
+				m := contextTestModel()
+				m.theme = theme
+				s := m.monitorSessionData[0]
+				s.attention = attention
+				rowColors := colors
+				m.monitorSelectedID, m.monitorContextExpanded = "", ""
+				if selected {
+					m.monitorSelectedID = s.id
+					rowColors.primary = colors.accent
+				}
+				wantColor := colors.warning
+				if attention == codex.SessionAttentionNone {
+					wantColor = colors.success
+				} else if attention == codex.SessionAttentionComplete {
+					wantColor = colors.primary
+				}
+				for phase := 0; phase < 2; phase++ {
+					m.phase = phase
+					badge := m.renderMonitorSessionBadge(s, 100, rowColors)
+					plain := ansi.Strip(badge)
+					if plain == "" || badge != lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(wantColor).Render(plain) {
+						t.Fatalf("incorrect status colour: theme %d attention %d selected %v", theme, attention, selected)
+					}
+					if strings.Contains(plain, "●") != (attention != codex.SessionAttentionNone || phase == 0) {
+						t.Fatal("only working should blink")
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestMonitorAttentionReservedRow(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {180, 55}} {
 		m := attentionTestModel()
@@ -323,6 +360,81 @@ func TestMonitorAttentionCurrentDetailPreservesState(t *testing.T) {
 		return
 	}
 	t.Fatal("missing current-session attention button")
+}
+
+func TestMonitorCompletedAttentionPills(t *testing.T) {
+	m := attentionTestModel()
+	m.width, m.height = 240, 45
+	m.monitorSessionData[2].attention = codex.SessionAttentionComplete
+	m.monitorSessionData[2].working = false
+	sessions := m.monitorAttentionSessions()
+	if len(sessions) != 3 || sessions[0].attention != codex.SessionAttentionApproval || sessions[1].attention != codex.SessionAttentionInput || sessions[2].attention != codex.SessionAttentionComplete {
+		t.Fatal("expected approval, input, then completion")
+	}
+	for _, full := range []bool{false, true} {
+		if full {
+			m.setRowContext("root-one", contextFull)
+		}
+		g := m.dashboardLayout()
+		a := m.monitorArea(g.contentWidth, g.meterHeight)
+		buttons, rows, y := a.attention, a.attentionRows, g.meterY+a.topHeight
+		if full {
+			var summary int
+			summary, rows, buttons = m.monitorDetailHeader(g.contentWidth, g.meterHeight)
+			y = g.meterY + summary
+		}
+		found := false
+		for _, b := range buttons {
+			if b.action != "attention:root-three" {
+				continue
+			}
+			found = true
+			for theme := themeHacker; theme < themeCount; theme++ {
+				colors := paletteFor(theme)
+				for _, hover := range []bool{false, true} {
+					m.monitorContextHover = ""
+					style := colors.label().Foreground(colors.primary).Bold(false)
+					if hover {
+						m.monitorContextHover = b.action
+						style = style.Foreground(colors.background).Background(colors.primary)
+					}
+					if !strings.Contains(m.renderMonitorAttention(g.contentWidth, rows, buttons, colors), style.Render(b.label)) {
+						t.Fatal("completion pill lost theme-primary styling")
+					}
+				}
+			}
+			for dx := 0; dx < b.rect.width; dx++ {
+				n, cmd := m.Update(tea.MouseClickMsg{X: 2 + b.rect.x + dx, Y: y + b.rect.y, Button: tea.MouseLeft})
+				if cmd != nil || n.(Model).monitorContextDetail != "root-three" {
+					t.Fatal("completion pill did not navigate to exact session")
+				}
+			}
+		}
+		if !found {
+			t.Fatal("completion pill not visible")
+		}
+	}
+	for _, reason := range []string{"resumed", "dismissed", "cleared", "paused", "error"} {
+		n := m
+		n.monitorSessionData = append([]monitorSession(nil), m.monitorSessionData...)
+		switch reason {
+		case "resumed":
+			n.monitorSessionData[2].working = true
+		case "dismissed":
+			n.monitorDismissed = map[string]monitorSessionDismissal{"root-three": {}}
+		case "cleared":
+			n.monitorSessionData[2].attention = codex.SessionAttentionNone
+		case "paused":
+			n.monitorState = monitorPaused
+		case "error":
+			n.monitorError = "unavailable"
+		}
+		for _, s := range n.monitorAttentionSessions() {
+			if s.id == "root-three" {
+				t.Fatalf("completion retained after %s", reason)
+			}
+		}
+	}
 }
 
 func TestMonitorSummaryDetailScrollingAndEmptyAttentionContext(t *testing.T) {

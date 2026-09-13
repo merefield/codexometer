@@ -1240,9 +1240,15 @@ default is persisted across launches. While typing, arrows move the text cursor,
 Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
-An amber/theme-warning **attention strip** beneath the summary provides direct
-links to visible sessions with observed approval or input requests, approvals
-first. Click a button to select that exact session and open full detail, including
+An **attention strip** beneath the summary provides direct links to visible
+sessions, ordered **Approval → Input → Turn Complete**. Approval and input pills
+use the theme's warning colour; completed turns use a quieter, non-bold theme-primary
+colour to mean “your result is ready”, not “a reply is required”. Completion pills
+disappear when work resumes, the completion state clears or the session is dismissed.
+Working badges use success green with a blinking ball; Turn Complete badges use
+the theme's primary colour with a steady ball, matching the completion pills.
+Selection accents the row frame without changing these status colours.
+Click a button to select that exact session and open full detail, including
 when another session's detail is already open. It only navigates: it never sends
 a decision or prompt. Switching clears the previous draft, armed confirmation
 and scroll position. Clicking the session already open in full detail leaves its

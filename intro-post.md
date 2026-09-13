@@ -37,9 +37,11 @@ Click the **Codexometer title** to jump back to Quota’s Bars view. The **versi
 
 The terminal now has a compact summary strip for tokens, visible sessions and
 working/approval/input/inferred-check counts. A reserved navigation row keeps
-the session layout steady as requests arrive or clear. Theme-coloured attention buttons
-take you straight to a waiting approval or input request—even from another
-session's full detail. They wrap into a bounded strip with an overflow button;
+the session layout steady as requests arrive or clear. Completion pills follow
+approvals and input requests in the calmer theme-primary colour: your result is ready,
+but a reply is not necessarily required. Theme-coloured attention buttons
+take you straight to a waiting approval, input request or completed turn—even from another
+session's full detail. They share a reserved row with an overflow button;
 on tall terminals, full detail retains the summary too. As space runs short,
 the summary disappears before the attention strip so text and action controls
 keep priority. These shortcuts navigate only; they never approve or send for you.
