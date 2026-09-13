@@ -397,6 +397,11 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 		badgeColor := colors.primary
 		if monitorNeedsAttention(session.attention) {
 			badgeColor = colors.warning
+		} else if session.attention == codex.SessionAttentionNone {
+			badgeColor = colors.success
+		} else if session.id != "" && (session.id == m.monitorSelectedID || session.id == m.monitorContextExpanded) {
+			// Selection accents the frame, not the meaning of the status badge.
+			badgeColor = paletteFor(m.theme).primary
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
 		ball := "●"

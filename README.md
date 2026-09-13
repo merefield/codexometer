@@ -1240,15 +1240,28 @@ default is persisted across launches. While typing, arrows move the text cursor,
 Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
-An amber/theme-warning **attention strip** beneath the summary provides direct
-links to visible sessions with observed approval or input requests, approvals
-first. Click a button to select that exact session and open full detail, including
+An **attention strip** beneath the summary provides direct links to visible
+sessions, ordered **Approval → Input → Turn Complete**. Approval and input pills
+use the theme's warning colour; completed turns use a quieter, non-bold theme-primary
+colour to mean “your result is ready”, not “a reply is required”. Completion pills
+disappear when work resumes, the completion state clears or the session is dismissed.
+Working badges use success green with a blinking ball; Turn Complete badges use
+the theme's primary colour with a steady ball, matching the completion pills.
+Selection accents the row frame without changing these status colours.
+Click a button to select that exact session and open full detail, including
 when another session's detail is already open. It only navigates: it never sends
 a decision or prompt. Switching clears the previous draft, armed confirmation
 and scroll position. Clicking the session already open in full detail leaves its
 draft, confirmation and scroll position intact. CHECK* sessions do not appear as confirmed requests here.
-Labels include a list number (not a keyboard shortcut) and shortened directory; the full detail identifies
-the target. A single navigation row is reserved even when there are no requests,
+Labels put the state first, followed by the same short session ID used in the row
+border and its directory, for example **[TURN COMPLETE S79SD // projects]**.
+The ID stays stable when other pills arrive or change state; it is not a priority
+number or keyboard shortcut. The strip chooses the least compressed format that
+fits all pills: full labels, omit `//`, omit directories, then shorten Turn Complete
+to **DONE** (translated). The short session ID is always retained. If the compact
+labels still do not fit, the strip uses overflow paging; unusually long translated
+states are shortened only as needed. Expanding the terminal restores fuller labels.
+Full detail identifies the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
 row to protect session content. Paused or failed observation

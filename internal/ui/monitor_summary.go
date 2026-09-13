@@ -85,9 +85,9 @@ func (m Model) monitorAttentionSessions() []monitorSession {
 		return nil
 	}
 	var sessions []monitorSession
-	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput} {
+	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionComplete} {
 		for _, s := range m.monitorSessionData {
-			if m.monitorSessionVisible(s) && s.attention == attention {
+			if m.monitorSessionVisible(s) && s.attention == attention && !(attention == codex.SessionAttentionComplete && s.working) {
 				sessions = append(sessions, s)
 			}
 		}
@@ -102,34 +102,21 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	if len(sessions) == 0 || width < 24 || maxRows < 1 {
 		return nil, 0
 	}
+	// Choose the least compressed presentation that fits the entire list.
+	// A resize that makes everything fit also returns to the first page.
+	for compact := 0; compact < 4; compact++ {
+		buttons := layoutMonitorAttention(sessions, width, maxRows, compact, false)
+		if len(buttons) == len(sessions) {
+			return buttons, buttons[len(buttons)-1].rect.y + 1
+		}
+	}
 	start := m.monitorAttentionPage % len(sessions)
 	if start < 0 {
 		start = 0
 	}
 	reserve := lipgloss.Width(fmt.Sprintf("[+%d →]", len(sessions))) + 1
 	limit := max(width-reserve, 1)
-	x, y := 0, 0
-	var buttons []monitorNavigationButton
-	for i := start; i < len(sessions); i++ {
-		s := sessions[i]
-		prefix := fmt.Sprintf("[#%d %s // ", i+1, monitorAttentionStatus(s.attention))
-		name := filepath.Base(terminalLabel(s.workingDirectory))
-		if name == "." || name == "" {
-			name = shortSessionID(s.id)
-		}
-		budget := min(limit, max(width/3, 24))
-		label := ansi.Truncate(prefix+name, max(budget-1, 1), "…") + "]"
-		w := lipgloss.Width(label)
-		if x+w > limit {
-			x = 0
-			y++
-		}
-		if y >= maxRows {
-			break
-		}
-		buttons = append(buttons, monitorNavigationButton{label: label, action: "attention:" + s.id, enabled: true, rect: monitorRect{x: x, y: y, width: w, height: 1}})
-		x += w + 1
-	}
+	buttons := layoutMonitorAttention(sessions[start:], limit, maxRows, 3, true)
 	if len(buttons) == 0 {
 		return nil, 0
 	}
@@ -142,12 +129,60 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	return buttons, rows
 }
 
+func layoutMonitorAttention(sessions []monitorSession, width, rows, compact int, truncate bool) []monitorNavigationButton {
+	x, y := 0, 0
+	var buttons []monitorNavigationButton
+	for _, s := range sessions {
+		id := shortSessionID(s.id)
+		state := monitorAttentionStatus(s.attention)
+		if compact == 3 && s.attention == codex.SessionAttentionComplete {
+			state = i18n.Text("DONE")
+		}
+		if truncate {
+			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3, 1), "…")
+		}
+		caption := state + " " + id
+		name := filepath.Base(terminalLabel(s.workingDirectory))
+		if compact < 2 && name != "." && name != "" {
+			separator := " // "
+			if compact == 1 {
+				separator = " "
+			}
+			caption += separator + name
+		}
+		label := "[" + caption + "]"
+		w := lipgloss.Width(label)
+		if w > width {
+			break
+		}
+		if x+w > width {
+			x, y = 0, y+1
+		}
+		if y >= rows {
+			break
+		}
+		buttons = append(buttons, monitorNavigationButton{label: label, action: "attention:" + s.id, enabled: true, rect: monitorRect{x: x, y: y, width: w, height: 1}})
+		x += w + 1
+	}
+	return buttons
+}
+
 func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigationButton, colors palette) string {
 	lines := make([]string, rows)
+	completed := make(map[string]bool)
+	for _, s := range m.monitorAttentionSessions() {
+		if s.attention == codex.SessionAttentionComplete {
+			completed["attention:"+s.id] = true
+		}
+	}
 	for _, b := range buttons {
-		style := colors.label().Foreground(colors.warning).Bold(true)
+		color := colors.warning
+		if completed[b.action] {
+			color = colors.primary
+		}
+		style := colors.label().Foreground(color).Bold(!completed[b.action])
 		if m.monitorContextHover == b.action {
-			style = style.Foreground(colors.background).Background(colors.warning)
+			style = style.Foreground(colors.background).Background(color)
 		}
 		lines[b.rect.y] += strings.Repeat(" ", max(b.rect.x-lipgloss.Width(lines[b.rect.y]), 0)) + style.Render(b.label)
 	}
