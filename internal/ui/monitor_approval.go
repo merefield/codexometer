@@ -179,14 +179,14 @@ func (m Model) visibleMonitorApprovalButtons() []monitorApprovalButton {
 	if m.meterView != viewMonitor || m.contextTargetHidden() || m.monitorPrompt.input.Focused() {
 		return nil
 	}
-	g := m.dashboardLayout()
+	g := m.monitorDashboardLayout()
 	if m.monitorContextDetail != "" {
 		return m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
 	}
 	if m.monitorContextExpanded == "" || m.monitorSelectedID != "" && m.monitorSelectedID != m.monitorContextExpanded {
 		return nil
 	}
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	for i, s := range sessions {
 		if s.id == m.monitorContextExpanded {

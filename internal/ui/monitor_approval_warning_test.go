@@ -57,7 +57,7 @@ func TestMonitorApprovalWarningTransition(t *testing.T) {
 
 func warningRowLayout(m Model) (int, int, int) {
 	g := m.dashboardLayout()
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	_, heights, _ := m.monitorSessionPage(a.graphHeight)
 	mw, cw, _ := monitorSessionColumnWidths(a.width)
 	return cw, heights[0], mw + 3
@@ -81,7 +81,7 @@ func TestMonitorApprovalWarningResponsiveClicks(t *testing.T) {
 			t.Fatalf("warning missing/overflow at %d", width)
 		}
 		g := m.dashboardLayout()
-		a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+		a := m.monitorArea(g.contentWidth, g.meterHeight)
 		y := g.meterY + a.topHeight + a.gap - 1
 		for dx := 0; dx < warning.rect.width; dx++ {
 			x := x0 + warning.rect.x + dx

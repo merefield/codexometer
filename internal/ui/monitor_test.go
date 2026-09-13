@@ -659,7 +659,7 @@ func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 			{id: "c", displayed: true}, {id: "d", displayed: true},
 		},
 	}
-	wantLastPage := max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0)
+	wantLastPage := min(model.monitorPageSize(), max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0))
 	updated, command := model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if command != nil || model.monitorScroll != wantLastPage {
@@ -897,7 +897,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION TOTALS", "6,250 TOKENS", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}

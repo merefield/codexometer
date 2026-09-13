@@ -105,11 +105,11 @@ func (m Model) monitorPromptEditorHeight(width, height int) int {
 }
 
 func (m Model) monitorPromptSize() (int, int) {
-	g := m.dashboardLayout()
+	g := m.monitorDashboardLayout()
 	if m.monitorContextDetail != "" {
 		return g.contentWidth, g.meterHeight
 	}
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	for i, s := range sessions {
 		if s.id == m.monitorContextTarget() && m.rowContextMode(s.id) == contextWide {

@@ -32,13 +32,15 @@ type monitorView struct {
 }
 
 type monitorGeometry struct {
-	width        int
-	height       int
-	gap          int
-	topHeight    int
-	graphHeight  int
-	readoutWidth int
-	resetRect    monitorRect
+	attention     []monitorNavigationButton
+	attentionRows int
+	width         int
+	height        int
+	gap           int
+	topHeight     int
+	graphHeight   int
+	readoutWidth  int
+	resetRect     monitorRect
 }
 
 const monitorDismissLabel = "[×]"
@@ -55,6 +57,10 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 
 	resetWidth := min(max(width/5, 8), max(width-2, 1))
 	readoutWidth := max(width-resetWidth-gap, 1)
+	if height >= 12 {
+		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
+		graphHeight = max(height-topHeight-gap, 1)
+	}
 	return monitorGeometry{
 		width:        width,
 		height:       height,
@@ -68,9 +74,18 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
-		return monitorView{view: m.renderMonitorContextDetail(width, height, colors)}
+		summary, rows, buttons := m.monitorDetailHeader(width, height)
+		var parts []string
+		if summary > 0 {
+			parts = append(parts, m.renderMonitorSummary(width, summary, colors, false))
+		}
+		if rows > 0 {
+			parts = append(parts, m.renderMonitorAttention(width, rows, buttons, colors))
+		}
+		parts = append(parts, m.renderMonitorContextDetail(width, height-summary-rows, colors))
+		return monitorView{view: strings.Join(parts, "\n")}
 	}
-	layout := layoutMonitorArea(width, height)
+	layout := m.monitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
 	resetLabel := i18n.Text("RE(S)ET")
@@ -78,9 +93,14 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 		resetLabel = "(S)"
 	}
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.gap), resetButton)
+	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton)
 	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
-	view := lipgloss.JoinVertical(lipgloss.Left, top, strings.Repeat("\n", layout.gap-1)+graph)
+	parts := []string{top}
+	if layout.attentionRows > 0 {
+		parts = append(parts, m.renderMonitorAttention(width, layout.attentionRows, layout.attention, colors))
+	}
+	parts = append(parts, graph)
+	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
 	}
@@ -91,6 +111,10 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 }
 
 func (m Model) renderMonitorReadout(width, height int, colors palette) string {
+	return m.renderMonitorSummary(width, height, colors, true)
+}
+
+func (m Model) renderMonitorSummary(width, height int, colors palette, navigation bool) string {
 	state := i18n.Text("STARTING")
 	hint := i18n.Text("INITIALIZING LOCAL SESSION MONITOR")
 	switch m.monitorState {
@@ -126,32 +150,18 @@ func (m Model) renderMonitorReadout(width, height int, colors palette) string {
 		stateColor = colors.danger
 	}
 	innerWidth := max(width-4, 1)
-	lines := []string{
-		ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+
-			lipgloss.NewStyle().Bold(true).Foreground(colors.primary).Render("  //  "+formatTokens(total)+i18n.Text(" TOKENS")), innerWidth, ""),
-		colors.dimmed().Render(ansi.Truncate(hint, innerWidth, "")),
+	lines := m.monitorSummaryLines(innerWidth, max(height-3, 1), colors)
+	status := " // " + i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))
+	if m.monitorError != "" {
+		status = " // " + terminalLabel(hint)
 	}
-	if height >= 6 {
-		lines = append(lines, colors.label().Render(ansi.Truncate(i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate)), innerWidth, "")))
+	if len(lines) < height-2 {
+		lines = append(lines, ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+colors.dimmed().Render(status), innerWidth, ""))
 	}
-	if height >= 5 {
-		if quota := m.monitorQuotaReadout(); quota != "" {
-			lines = append(lines, colors.dimmed().Render(ansi.Truncate(quota, innerWidth, "")))
-		}
+	action := ""
+	if navigation {
+		action = m.renderMonitorNavigation(width, "", false, colors)
 	}
-	if height >= 8 && !m.monitorStartedAt.IsZero() {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(i18n.Format("START %s  //  NOW %s", formatTokens(m.monitorBaseline), formatTokens(m.monitorLatest)), innerWidth, "")))
-	}
-	if height >= 10 {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(i18n.Format("SAMPLES %d  //  NEXT %s", len(m.monitorSamples), m.monitorNextLabel()), innerWidth, "")))
-		last := "--:--"
-		if !m.monitorLastActivity.IsZero() {
-			last = compactDuration(time.Since(m.monitorLastActivity))
-		}
-		telemetry := i18n.Format("LOCAL SESSIONS %d  //  LAST %s AGO", m.monitorSessions, last)
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(telemetry, innerWidth, "")))
-	}
-	action := m.renderMonitorNavigation(width, "", false, colors)
 	return frameSizedWithTitleAction(width, max(height-2, 1), i18n.Text("SESSION TOTALS"), action, strings.Join(lines, "\n"), colors.primary, colors)
 }
 
@@ -687,8 +697,8 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	if m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
-	dashboard := m.dashboardLayout()
-	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+	dashboard := m.monitorDashboardLayout()
+	area := m.monitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	localX, localY := x-2, y-dashboard.meterY
 	if m.monitorResetEnabled() && area.resetRect.contains(localX, localY) {
 		return footerButtonMonitorReset
@@ -703,8 +713,8 @@ func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
 	if m.meterView != viewMonitor || (m.loading && len(m.snapshot.Meters()) == 0) {
 		return "", false
 	}
-	dashboard := m.dashboardLayout()
-	area := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
+	dashboard := m.monitorDashboardLayout()
+	area := m.monitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	metricsWidth, _, ok := monitorSessionColumnWidths(area.width)
 	if !ok {
 		return "", false

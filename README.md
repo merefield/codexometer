@@ -967,8 +967,16 @@ The other top-level views are:
   and respond through eligible live approval and reply controls for the selected
   session. It automatically establishes a zero baseline across locally active
   Codex sessions when Codexometer starts. The **SESSION TOTALS** readout follows newly appended
-  token telemetry and shows total observed tokens, elapsed time, and average
-  rate; a clickable Reset control sits beside it. Pause/Resume remains available
+  token telemetry in a compact summary strip: **TOKENS**, visible **SESSIONS**,
+  **WORKING**, **APPROVAL**, **INPUT**, and **CHECK*** counts. CHECK* means inferred
+  inactivity, not a confirmed request. Linked agents are already included in
+  parent sessions and are not counted again. Tokens retain the existing measurement
+  baseline (including previously dismissed sessions); the session/state counts
+  describe currently visible rows. Elapsed time and average rate
+  remain underneath when space permits; a clickable Reset control sits beside it.
+  Account-wide quota details live in Quota, not Sessions.
+  During paused/unavailable observation, live state counts show **—**, not zero.
+  Pause/Resume remains available
   through the `p` hotkey only, without a large Pause button taking space from
   the readout. This pauses measurement, not Codex sessions. Active sessions
   are checked once per second and the idle cadence relaxes to five seconds.
@@ -1223,7 +1231,7 @@ Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost b
 Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
 detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons,
 disabled at the first/last visible session. Dismissed sessions are skipped.
-These session buttons disappear in full detail, where Up/Down scroll the text.
+These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
 background half-click navigation still work. Hide/Show and Close retain priority.
 The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
@@ -1231,6 +1239,29 @@ graph-only, closes full detail and clears per-row overrides. Only that global
 default is persisted across launches. While typing, arrows move the text cursor,
 Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
+
+An amber/theme-warning **attention strip** beneath the summary provides direct
+links to visible sessions with observed approval or input requests, approvals
+first. Click a button to select that exact session and open full detail, including
+when another session's detail is already open. It only navigates: it never sends
+a decision or prompt. Switching clears the previous draft, armed confirmation
+and scroll position. Clicking the session already open in full detail leaves its
+draft, confirmation and scroll position intact. CHECK* sessions do not appear as confirmed requests here.
+Labels include a list number (not a keyboard shortcut) and shortened directory; the full detail identifies
+the target. A single navigation row is reserved even when there are no requests,
+so attention arriving or clearing does not shift the session list.
+**[+N →]** pages through additional sessions. Very short terminals reclaim this
+row to protect session content. Paused or failed observation
+suppresses these links until live readings return.
+
+On tall terminals, full detail retains the summary and attention strip. When
+space becomes limited, the summary disappears first, then the attention strip.
+The budget reserves the actual approval/composer control rows and useful text
+space; long drafts, wrapped controls and translated labels are taken into account.
+The overview keeps its compact summary and reserves one attention row to preserve
+session content. Existing footer, approval, dismiss and editor click targets use
+the same layout as rendering. Keyboard navigation and approval confirmations
+remain unchanged.
 The initial keyboard target is the explicitly selected session, otherwise the
 most recent approval-gated session with context, otherwise the first session
 with context. Once expanded, the target is pinned and kept on screen: newer

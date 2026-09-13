@@ -201,7 +201,7 @@ func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
 }
 
 func monitorDetailPoint(m Model, id string, delta int) (int, int) {
-	g := m.dashboardLayout()
+	g := m.monitorDashboardLayout()
 	if m.monitorContextDetail != "" {
 		x := 3
 		if delta > 0 {
@@ -209,7 +209,7 @@ func monitorDetailPoint(m Model, id string, delta int) (int, int) {
 		}
 		return x, g.meterY + 1
 	}
-	a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	mw, rw, _ := monitorSessionColumnWidths(a.width)
 	x := 2 + mw + 1
