@@ -57,8 +57,8 @@ without searching through terminal tabs when live interaction is available:
 ┌──────────────────────────────┬──────────────────────────┐
 │ Codex session                │ Codexometer              │
 │                              │                          │
-│ Editing, reviewing, coding   │ 5-hour window      62%  │
-│                              │ Weekly window      37%  │
+│ Editing, reviewing, coding   │ 5-hour window      62%   │
+│                              │ Weekly window      37%   │
 │ No need to interrupt work    │ Next reset     02:17:00  │
 └──────────────────────────────┴──────────────────────────┘
 ```
