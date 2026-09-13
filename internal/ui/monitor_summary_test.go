@@ -437,6 +437,25 @@ func TestMonitorCompletedAttentionPills(t *testing.T) {
 	}
 }
 
+func TestMonitorAttentionLabelsUseStableSessionIDs(t *testing.T) {
+	m := attentionTestModel()
+	m.monitorSessionData = m.monitorSessionData[:1]
+	m.monitorSessionData[0].id = "session-s79sd"
+	m.monitorSessionData[0].workingDirectory = "/work/projects"
+	for _, width := range []int{24, 40, 80, 240} {
+		buttons, _ := m.monitorAttentionButtons(width, 1)
+		if len(buttons) != 1 || !strings.Contains(buttons[0].label, "S79SD") || strings.Contains(buttons[0].label, "#") {
+			t.Fatalf("width %d lost stable identifier: %+v", width, buttons)
+		}
+	}
+	before, _ := m.monitorAttentionButtons(240, 1)
+	m.monitorSessionData = append([]monitorSession{{id: "another", displayed: true, attention: codex.SessionAttentionApproval}}, m.monitorSessionData...)
+	after, _ := m.monitorAttentionButtons(240, 1)
+	if len(after) != 2 || before[0].label != after[1].label || !strings.HasSuffix(after[1].label, " S79SD // projects]") {
+		t.Fatal("adding another pill changed session identity")
+	}
+}
+
 func TestMonitorSummaryDetailScrollingAndEmptyAttentionContext(t *testing.T) {
 	m := attentionTestModel()
 	m.setRowContext("root-three", contextFull)

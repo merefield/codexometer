@@ -112,13 +112,17 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	var buttons []monitorNavigationButton
 	for i := start; i < len(sessions); i++ {
 		s := sessions[i]
-		prefix := fmt.Sprintf("[#%d %s // ", i+1, monitorAttentionStatus(s.attention))
+		id := shortSessionID(s.id)
 		name := filepath.Base(terminalLabel(s.workingDirectory))
-		if name == "." || name == "" {
-			name = shortSessionID(s.id)
-		}
 		budget := min(limit, max(width/3, 24))
-		label := ansi.Truncate(prefix+name, max(budget-1, 1), "…") + "]"
+		// Preserve the shared short ID before spending remaining space on the
+		// directory. Long translated state labels shrink first on narrow screens.
+		state := ansi.Truncate(monitorAttentionStatus(s.attention), max(budget-lipgloss.Width(id)-4, 1), "…")
+		caption := state + " " + id
+		if name != "." && name != "" {
+			caption += " // " + name
+		}
+		label := "[" + ansi.Truncate(caption, max(budget-2, 1), "…") + "]"
 		w := lipgloss.Width(label)
 		if x+w > limit {
 			x = 0

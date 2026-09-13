@@ -1253,8 +1253,11 @@ when another session's detail is already open. It only navigates: it never sends
 a decision or prompt. Switching clears the previous draft, armed confirmation
 and scroll position. Clicking the session already open in full detail leaves its
 draft, confirmation and scroll position intact. CHECK* sessions do not appear as confirmed requests here.
-Labels include a list number (not a keyboard shortcut) and shortened directory; the full detail identifies
-the target. A single navigation row is reserved even when there are no requests,
+Labels put the state first, followed by the same short session ID used in the row
+border and its directory, for example **[TURN COMPLETE S79SD // projects]**.
+The ID stays stable when other pills arrive or change state; it is not a priority
+number or keyboard shortcut. Narrow layouts shorten the state/directory to preserve
+the short ID. Full detail identifies the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
 row to protect session content. Paused or failed observation
