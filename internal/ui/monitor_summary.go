@@ -62,8 +62,15 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 			} // inferred, never an authoritative input request
 			titles = append(titles, colors.dimmed().Render(ansi.Truncate(title, cell, "…")+strings.Repeat(" ", max(cell-lipgloss.Width(ansi.Truncate(title, cell, "…")), 0))))
 			style := colors.label().Bold(true)
-			if i == 3 || i == 4 {
-				style = style.Foreground(colors.warning)
+			if i >= 2 {
+				style = colors.dimmed().Bold(true)
+				if m.monitorState == monitorRunning && m.monitorError == "" && counts[i-1] > 0 {
+					if i == 2 {
+						style = style.Foreground(colors.success)
+					} else {
+						style = style.Foreground(colors.warning)
+					}
+				}
 			}
 			value := ansi.Truncate(values[i], cell, "")
 			numbers = append(numbers, style.Render(value+strings.Repeat(" ", max(cell-lipgloss.Width(value), 0))))
@@ -154,7 +161,10 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 // one useful row. The full detail budget additionally protects controls/text.
 func (m Model) monitorArea(width, height int) monitorGeometry {
 	a := layoutMonitorArea(width, height)
-	a.attention, a.attentionRows = m.monitorAttentionButtons(width, min(2, max(a.graphHeight-3, 0)))
+	// Reserve one stable navigation row, even when no session needs attention.
+	// Overflow is paged rather than shifting the session content downwards.
+	a.attentionRows = min(1, max(a.graphHeight-3, 0))
+	a.attention, _ = m.monitorAttentionButtons(width, a.attentionRows)
 	a.gap += a.attentionRows
 	a.graphHeight -= a.attentionRows
 	return a
@@ -167,7 +177,8 @@ func (m Model) monitorDetailHeader(width, height int) (summary, rows int, button
 	// Use the unabridged control allocation, including a growing composer. The
 	// optional chrome cannot evict controls or leave fewer than six text rows.
 	minimum := max(10, m.layoutDetailControls(width, height).rows+9)
-	buttons, rows = m.monitorAttentionButtons(width, min(2, max(height-minimum, 0)))
+	rows = min(1, max(height-minimum, 0))
+	buttons, _ = m.monitorAttentionButtons(width, rows)
 	needed := monitorSummaryHeight(width)
 	if height-rows-needed >= minimum {
 		summary = needed
@@ -177,12 +188,12 @@ func (m Model) monitorDetailHeader(width, height int) (summary, rows int, button
 
 func monitorSummaryHeight(width int) int {
 	if width < 48 {
-		return 10
+		return 9
 	}
 	if width < 82 {
-		return 8
+		return 7
 	}
-	return 6
+	return 5
 }
 
 func (m Model) monitorDashboardLayout() dashboardGeometry {

@@ -36,7 +36,8 @@ Click the **Codexometer title** to jump back to Quota’s Bars view. The **versi
 ## Sessions: your session command centre
 
 The terminal now has a compact summary strip for tokens, visible sessions and
-working/approval/input/inferred-check counts. Theme-coloured attention buttons
+working/approval/input/inferred-check counts. A reserved navigation row keeps
+the session layout steady as requests arrive or clear. Theme-coloured attention buttons
 take you straight to a waiting approval or input request—even from another
 session's full detail. They wrap into a bounded strip with an overflow button;
 on tall terminals, full detail retains the summary too. As space runs short,

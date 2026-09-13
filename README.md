@@ -972,8 +972,9 @@ The other top-level views are:
   inactivity, not a confirmed request. Linked agents are already included in
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
-  describe currently visible rows. Elapsed time, average rate and quota movement
+  describe currently visible rows. Elapsed time and average rate
   remain underneath when space permits; a clickable Reset control sits beside it.
+  Account-wide quota details live in Quota, not Sessions.
   During paused/unavailable observation, live state counts show **—**, not zero.
   Pause/Resume remains available
   through the `p` hotkey only, without a large Pause button taking space from
@@ -1246,15 +1247,17 @@ when another session's detail is already open. It only navigates: it never sends
 a decision or prompt. Switching clears the previous draft, armed confirmation
 and scroll position. CHECK* sessions do not appear as confirmed requests here.
 Labels include a list number (not a keyboard shortcut) and shortened directory; the full detail identifies
-the target. Buttons wrap to at most two rows; **[+N →]** pages through additional
-sessions without consuming the rest of the screen. Paused or failed observation
+the target. A single navigation row is reserved even when there are no requests,
+so attention arriving or clearing does not shift the session list.
+**[+N →]** pages through additional sessions. Very short terminals reclaim this
+row to protect session content. Paused or failed observation
 suppresses these links until live readings return.
 
 On tall terminals, full detail retains the summary and attention strip. When
 space becomes limited, the summary disappears first, then the attention strip.
 The budget reserves the actual approval/composer control rows and useful text
 space; long drafts, wrapped controls and translated labels are taken into account.
-The overview keeps its compact summary and limits attention rows to preserve
+The overview keeps its compact summary and reserves one attention row to preserve
 session content. Existing footer, approval, dismiss and editor click targets use
 the same layout as rendering. Keyboard navigation and approval confirmations
 remain unchanged.

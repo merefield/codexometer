@@ -29,7 +29,7 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 			t.Fatalf("missing inline composer at width %d", width)
 		}
 		g := m.dashboardLayout()
-		a := layoutMonitorArea(g.contentWidth, g.meterHeight)
+		a := m.monitorArea(g.contentWidth, g.meterHeight)
 		mw, _, _ := monitorSessionColumnWidths(a.width)
 		_, _, cy := monitorContextBodyLayout(h, rows)
 		y := g.meterY + a.topHeight + a.gap - 1 + cy + 1

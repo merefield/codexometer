@@ -60,6 +60,68 @@ func TestMonitorSummaryCountersAndObservationState(t *testing.T) {
 	}
 }
 
+func TestMonitorSummaryCountColours(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		colors := paletteFor(theme)
+		for _, state := range []string{"zero", "active", "paused", "error"} {
+			m := attentionTestModel()
+			m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: "check", displayed: true, attention: codex.SessionAttentionCheck})
+			switch state {
+			case "zero":
+				m.monitorSessionData = nil
+			case "paused":
+				m.monitorState = monitorPaused
+			case "error":
+				m.monitorError = "unavailable"
+			}
+			line := m.monitorSummaryLines(120, 2, colors)[1]
+			var cells []string
+			for i, value := range strings.Fields(ansi.Strip(line)) {
+				style := colors.label().Bold(true)
+				if i >= 2 {
+					style = colors.dimmed().Bold(true)
+					if state == "active" {
+						if i == 2 {
+							style = style.Foreground(colors.success)
+						} else {
+							style = style.Foreground(colors.warning)
+						}
+					}
+				}
+				cells = append(cells, style.Render(value+strings.Repeat(" ", 19-lipgloss.Width(value))))
+			}
+			if line != strings.Join(cells, " ") {
+				t.Fatalf("theme %d state %s: unexpected count colours", theme, state)
+			}
+		}
+	}
+}
+
+func TestMonitorAttentionReservedRow(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 40}, {180, 55}} {
+		m := attentionTestModel()
+		m.width, m.height = size[0], size[1]
+		g := m.dashboardLayout()
+		active := m.monitorArea(g.contentWidth, g.meterHeight)
+		m.setRowContext("root-one", contextFull)
+		summary, rows, _ := m.monitorDetailHeader(g.contentWidth, g.meterHeight)
+		for i := range m.monitorSessionData {
+			m.monitorSessionData[i].attention = codex.SessionAttentionNone
+		}
+		idle := m.monitorArea(g.contentWidth, g.meterHeight)
+		idleSummary, idleRows, buttons := m.monitorDetailHeader(g.contentWidth, g.meterHeight)
+		if active.attentionRows != 1 || idle.attentionRows != 1 || active.graphHeight != idle.graphHeight || active.topHeight != idle.topHeight {
+			t.Fatalf("session layout shifted at %v", size)
+		}
+		if summary != idleSummary || rows != idleRows || len(buttons) != 0 {
+			t.Fatalf("detail layout shifted at %v", size)
+		}
+		if strings.Contains(ansi.Strip(m.renderMonitorSummary(116, 12, paletteFor(themeHacker), false)), "ACCOUNT QUOTA") {
+			t.Fatal("account quota retained in session summary")
+		}
+	}
+}
+
 func TestMonitorAttentionRenderedHitSurfaces(t *testing.T) {
 	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 24}, {80, 30}, {120, 40}, {180, 55}} {
 		for _, full := range []bool{false, true} {

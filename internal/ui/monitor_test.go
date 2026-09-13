@@ -659,7 +659,7 @@ func TestMonitorSessionPagesRespondToKeyboardAndMouse(t *testing.T) {
 			{id: "c", displayed: true}, {id: "d", displayed: true},
 		},
 	}
-	wantLastPage := max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0)
+	wantLastPage := min(model.monitorPageSize(), max(model.visibleMonitorSessionCount()-model.monitorPageSize(), 0))
 	updated, command := model.Update(specialKey(tea.KeyPgDown))
 	model = updated.(Model)
 	if command != nil || model.monitorScroll != wantLastPage {

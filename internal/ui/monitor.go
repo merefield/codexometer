@@ -58,7 +58,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	resetWidth := min(max(width/5, 8), max(width-2, 1))
 	readoutWidth := max(width-resetWidth-gap, 1)
 	if height >= 12 {
-		topHeight = max(topHeight, min(monitorSummaryHeight(readoutWidth), height-7))
+		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
 	}
 	return monitorGeometry{
@@ -150,18 +150,13 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 		stateColor = colors.danger
 	}
 	innerWidth := max(width-4, 1)
-	lines := m.monitorSummaryLines(innerWidth, max(height-4, 1), colors)
+	lines := m.monitorSummaryLines(innerWidth, max(height-3, 1), colors)
 	status := " // " + i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))
 	if m.monitorError != "" {
 		status = " // " + terminalLabel(hint)
 	}
 	if len(lines) < height-2 {
 		lines = append(lines, ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+colors.dimmed().Render(status), innerWidth, ""))
-	}
-	if len(lines) < height-2 {
-		if quota := m.monitorQuotaReadout(); quota != "" {
-			lines = append(lines, colors.dimmed().Render(ansi.Truncate(quota, innerWidth, "")))
-		}
 	}
 	action := ""
 	if navigation {
