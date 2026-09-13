@@ -1997,6 +1997,14 @@ codexometer --codex ~/bin/codex
 
 Keep the terminal experience, or opt into a local Svelte browser dashboard:
 
+> **Before launching:** web mode is experimental and read-only by default, but
+> the paired browser can still see potentially sensitive session text, commands
+> and paths. Use an updated, dedicated browser profile without extensions, keep
+> the pairing link private, and never expose the server through a tunnel or public
+> port. Enabling `--web-control` additionally permits session prompts and approval
+> decisions. Read [Browser security and local access](#browser-security-and-local-access)
+> before enabling web mode; local-only access does not mean zero risk.
+
 ```sh
 codexometer --web
 
@@ -2213,7 +2221,13 @@ protection if forwarded elsewhere. These protections do not defend against
 malware running as your user, a compromised browser, or extensions with access
 to the page. Keep sensitive sessions out of screenshots and shared displays.
 
-**Good practice for opt-in write mode:**
+Read-only mode prevents browser control actions; it does **not** make session
+content non-sensitive. The paired browser receives session text, commands and
+paths, which may reveal private project information or secrets included in that
+text. The browser-profile, extension and access precautions below apply to
+read-only viewing as well as opt-in control.
+
+**Good practice for browser mode, including opt-in writes:**
 
 - Enable `--web-control` only when you need it; use ordinary `--web` for viewing.
   Restart without the control flag when finished rather than leaving it enabled.
