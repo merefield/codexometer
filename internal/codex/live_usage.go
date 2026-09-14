@@ -553,6 +553,19 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		if latestErr != nil {
 			return latestErr
 		}
+		// Rebuild settings without letting old model/tier values seed the
+		// backwards scan. Commit only after a successful read, so IO failures
+		// can be retried without advancing the cursor past the replacement.
+		restored := *cursor
+		restored.modelSettings = SessionModelSettings{}
+		restored.currentModel, restored.currentServiceTier, restored.nextServiceTier = "", "", ""
+		model, modelErr := latestRolloutModel(path, &restored)
+		if modelErr != nil {
+			return modelErr
+		}
+		cursor.modelSettings = restored.modelSettings
+		cursor.currentModel = model
+		cursor.currentServiceTier, cursor.nextServiceTier = restored.currentServiceTier, restored.nextServiceTier
 		cursor.offset = info.Size()
 		cursor.totalTokens = total
 		turnID, turnErr := latestRolloutTurnID(path, cursor)

@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,5 +56,38 @@ func TestSessionModelSettingsBelongToRoot(t *testing.T) {
 	sessions, _, _ = r.sessionSnapshots(now, nil, false, nil)
 	if len(sessions) != 1 || sessions[0].ModelSettings.Model != "" {
 		t.Fatal("guessed unknown root model from child")
+	}
+}
+
+func TestSessionModelSettingsReloadAfterTruncation(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now, "truncated-settings")
+	meta := sessionMetaLine("root", `"cli"`, "/work/root", nil) + "\n"
+	old := tierSettingsLine(now, `"fast"`) + "\n" + `{"type":"turn_context","payload":{"model":"gpt-6-astra","effort":"high"}}` + "\n"
+	// Make each replacement strictly shorter to exercise cursor reset.
+	writeRollout(t, path, meta+old+strings.Repeat(" \n", 200)+tokenCountLine(now, 100)+"\n")
+	r, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	replacement := tierSettingsLine(now, `null`) + "\n" + `{"type":"turn_context","payload":{"model":"gpt-5.6-sol","effort":"low"}}` + "\n"
+	writeRollout(t, path, meta+replacement+tokenCountLine(now, 10)+"\n")
+	snap, err := r.FetchTokenUsage(context.Background())
+	if err != nil || len(snap.Sessions) != 1 || snap.Sessions[0].ModelSettings != (SessionModelSettings{"gpt-5.6-sol", "low", "default"}) {
+		t.Fatalf("replacement retained old settings: %+v %v", snap.Sessions, err)
+	}
+	for _, cursor := range r.files {
+		if cursor.currentModel != "gpt-5.6-sol" || cursor.currentServiceTier != "default" || cursor.nextServiceTier != "default" {
+			t.Fatal("pricing cursor retained old settings")
+		}
+	}
+	writeRollout(t, path, meta+tokenCountLine(now, 1)+"\n")
+	snap, err = r.FetchTokenUsage(context.Background())
+	if err != nil || len(snap.Sessions) != 1 || snap.Sessions[0].ModelSettings != (SessionModelSettings{}) {
+		t.Fatalf("missing settings did not clear state: %+v %v", snap.Sessions, err)
 	}
 }
