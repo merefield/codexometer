@@ -49,6 +49,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_attention_surfaces", TestMonitorAttentionRenderedHitSurfaces)
 	t.Run("monitor_attention_padding", TestMonitorAttentionTallPadding)
 	t.Run("monitor_bottom_composer", TestMonitorDetailBottomRowsFocusComposer)
+	t.Run("monitor_model_metadata", TestMonitorSessionModelMetadataPriority)
 	t.Run("monitor_attention_overflow", TestMonitorAttentionOverflowAndSafeLabels)
 	t.Run("monitor_completion_pills", TestMonitorCompletedAttentionPills)
 	t.Run("monitor_pill_identifiers", TestMonitorAttentionLabelsUseStableSessionIDs)

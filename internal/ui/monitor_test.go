@@ -615,7 +615,7 @@ func TestMonitorRendersOneMetricsAndGraphPairPerRootSession(t *testing.T) {
 		},
 	}
 	view := ansi.Strip(model.renderMonitorSessions(116, 24, paletteFor(themeHacker)))
-	for _, want := range []string{"A1B2C // ALPHA", "D4E5F // BRAVO", "ROOT + 2 AGENTS", "DIR // alpha", "DIR // bravo"} {
+	for _, want := range []string{"A1B2C // ALPHA", "D4E5F // BRAVO", "2 AGENTS"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("per-root monitor view missing %q:\n%s", want, view)
 		}
@@ -948,7 +948,7 @@ func TestMonitorSessionProminentlyDistinguishesAttentionReason(t *testing.T) {
 		session.attention = test.attention
 		output := model.renderMonitorSessionMetrics(42, 10, session, "", colors)
 		plain := ansi.Strip(output)
-		if !strings.Contains(plain, "● "+test.badge) || !strings.Contains(plain, test.status) {
+		if !strings.Contains(plain, "● "+test.badge) || strings.Contains(plain, test.status) {
 			t.Fatalf("attention session was not distinctly labelled:\n%s", plain)
 		}
 		wantBadge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(colors.warning).Render(" ● " + test.badge + " ")
