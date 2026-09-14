@@ -1263,6 +1263,11 @@ labels still do not fit, the strip uses overflow paging; unusually long translat
 states are shortened only as needed. Expanding the terminal restores fuller labels.
 Full detail identifies the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.
+A blank row above and below the strip makes the pills stand out only when each
+visible session would still have at least 11 rows after padding. More sessions
+or a shorter terminal remove that padding. Full detail uses its own threshold:
+at least 33 detail-panel rows must remain after the summary, pill row and padding,
+while also protecting composer controls and useful text space.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
 row to protect session content. Paused or failed observation
 suppresses these links until live readings return.
@@ -1271,6 +1276,9 @@ On tall terminals, full detail retains the summary and attention strip. When
 space becomes limited, the summary disappears first, then the attention strip.
 The budget reserves the actual approval/composer control rows and useful text
 space; long drafts, wrapped controls and translated labels are taken into account.
+In full detail, clicking anywhere across the bottom three rows of the detail panel
+focuses an available composer without sending text. Footer controls outside the
+panel and approval controls keep their existing behaviour.
 The overview keeps its compact summary and reserves one attention row to preserve
 session content. Existing footer, approval, dismiss and editor click targets use
 the same layout as rendering. Keyboard navigation and approval confirmations

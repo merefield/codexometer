@@ -148,7 +148,11 @@ func TestMonitorAttentionReservedRow(t *testing.T) {
 		}
 		idle := m.monitorArea(g.contentWidth, g.meterHeight)
 		idleSummary, idleRows, buttons := m.monitorDetailHeader(g.contentWidth, g.meterHeight)
-		if active.attentionRows != 1 || idle.attentionRows != 1 || active.graphHeight != idle.graphHeight || active.topHeight != idle.topHeight {
+		wantRows := 1
+		if m.monitorAttentionHasRoom(g.contentWidth, g.meterHeight) {
+			wantRows = 3
+		}
+		if active.attentionRows != wantRows || idle.attentionRows != wantRows || active.graphHeight != idle.graphHeight || active.topHeight != idle.topHeight {
 			t.Fatalf("session layout shifted at %v", size)
 		}
 		if summary != idleSummary || rows != idleRows || len(buttons) != 0 {
@@ -156,6 +160,97 @@ func TestMonitorAttentionReservedRow(t *testing.T) {
 		}
 		if strings.Contains(ansi.Strip(m.renderMonitorSummary(116, 12, paletteFor(themeHacker), false)), "ACCOUNT QUOTA") {
 			t.Fatal("account quota retained in session summary")
+		}
+	}
+}
+
+func TestMonitorAttentionTallPadding(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, height := range []int{40, 65} {
+			m := attentionTestModel()
+			m.height = height
+			if full {
+				m.setRowContext("root-one", contextFull)
+			}
+			g := m.dashboardLayout()
+			a := m.monitorArea(g.contentWidth, g.meterHeight)
+			buttons, rows, y := a.attention, a.attentionRows, g.meterY+a.topHeight
+			if full {
+				var summary int
+				summary, rows, buttons = m.monitorDetailHeader(g.contentWidth, g.meterHeight)
+				y = g.meterY + summary
+			}
+			wantRows, wantY := 1, 0
+			if height == 65 {
+				wantRows, wantY = 3, 1
+			}
+			if rows != wantRows || len(buttons) == 0 || buttons[0].rect.y != wantY {
+				t.Fatal("incorrect tall-terminal padding")
+			}
+			lines := strings.Split(ansi.Strip(m.renderMonitorAttention(g.contentWidth, rows, buttons, paletteFor(m.theme))), "\n")
+			if height == 65 && (strings.TrimSpace(lines[0]) != "" || strings.TrimSpace(lines[2]) != "") {
+				t.Fatal("padding rows are not blank")
+			}
+			for _, b := range buttons {
+				if m.monitorContextAt(2+b.rect.x, y+b.rect.y) != b.action {
+					t.Fatal("padded click target drifted")
+				}
+			}
+		}
+	}
+}
+
+func TestMonitorAttentionPaddingTracksSessionCount(t *testing.T) {
+	m := attentionTestModel()
+	// At this width, 42 available rows leave exactly 11 per session after
+	// summary, navigation and padding; one fewer available row must not pad.
+	if m.monitorAttentionHasRoom(120, 41) || !m.monitorAttentionHasRoom(120, 42) {
+		t.Fatal("padding did not respect per-session height threshold")
+	}
+	for _, full := range []bool{false, true} {
+		n := m
+		if full {
+			n.setRowContext("root-one", contextFull)
+		}
+		rows := func() int {
+			if full {
+				_, rows, _ := n.monitorDetailHeader(120, 42)
+				return rows
+			}
+			return n.monitorArea(120, 42).attentionRows
+		}
+		if rows() != 3 {
+			t.Fatal("spacious rows did not get padding")
+		}
+		n.monitorSessionData = append(append([]monitorSession(nil), n.monitorSessionData...), monitorSession{id: "extra", displayed: true})
+		want := 1
+		if full {
+			want = 3 // Full detail uses its own panel height, not the list size.
+		}
+		if rows() != want {
+			t.Fatal("incorrect padding after adding a session")
+		}
+		n.monitorDismissed = map[string]monitorSessionDismissal{"extra": {}}
+		if rows() != 3 {
+			t.Fatal("dismissing a session did not restore padding")
+		}
+	}
+}
+
+func TestMonitorDetailPaddingThreshold(t *testing.T) {
+	m := attentionTestModel()
+	m.setRowContext("root-one", contextFull)
+	for _, height := range []int{40, 41} {
+		summary, rows, _ := m.monitorDetailHeader(120, height)
+		want := 1
+		if height == 41 {
+			want = 3
+			if height-summary-rows != 33 {
+				t.Fatal("expected exactly 33 remaining detail rows")
+			}
+		}
+		if rows != want {
+			t.Fatalf("height %d: got %d attention rows, want %d", height, rows, want)
 		}
 	}
 }
