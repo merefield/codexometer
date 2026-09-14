@@ -1128,6 +1128,12 @@ are removed; linked-agent counts, call activity, available latency/output statis
 rate and quota-share estimates remain lower priority. Entirely unavailable latency
 and output statistics are omitted rather than filling the card with `N/A`.
 
+**AVG TOK/MIN** is average observed tokens per minute since the measurement began
+(or the session joined), excluding paused time—not instantaneous generation speed.
+The total and all session averages update together every five seconds, unaffected
+by mouse movement or keyboard-driven redraws. Start/reset/pause/resume update them
+immediately; token counts and the rest of the interface retain their usual cadence.
+
 `CALLS` counts upstream model-response cycles observed after the current Sessions
 baseline, not complete user turns. A single Codex turn can make several calls while using
 tools or progressing through an agent loop. `LAST OUT` is the provider-reported

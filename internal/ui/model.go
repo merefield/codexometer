@@ -152,6 +152,8 @@ type Model struct {
 	monitorState            monitorState
 	monitorAutoStart        bool
 	monitorStartedAt        time.Time
+	monitorRateAt           time.Time
+	monitorAverageRate      int64
 	monitorStoppedAt        time.Time
 	monitorBaseline         int64
 	monitorLatest           int64
@@ -240,6 +242,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	averageRate      int64
 	modelSettings    codex.SessionModelSettings
 	preview          codex.SessionContext
 	id               string
@@ -940,6 +943,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case secondMsg:
+		if m.monitorState == monitorRunning {
+			m.refreshMonitorRates(time.Time(message), false)
+		}
 		if !m.monitorApprovalConfirmUntil.IsZero() && !time.Now().Before(m.monitorApprovalConfirmUntil) {
 			m.monitorApprovalConfirm = ""
 			m.monitorApprovalNumberReleased = false
@@ -2147,6 +2153,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 		if message.kind == monitorFetchPause {
 			m.monitorState = monitorPaused
 			m.monitorStoppedAt = message.at
+			m.refreshMonitorRates(message.at, true)
 		} else if message.kind == monitorFetchStart || message.kind == monitorFetchResume {
 			m.monitorState = monitorPaused
 		} else if message.kind == monitorFetchReset {
@@ -2201,6 +2208,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			m.monitorStoppedAt = message.at
 			m.monitorNextFetch = time.Time{}
 		}
+	}
+	if accepted && message.kind != monitorFetchSample && message.kind != monitorFetchBoundary {
+		m.refreshMonitorRates(message.at, true)
 	}
 	return m, nil, accepted
 }

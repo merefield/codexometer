@@ -135,12 +135,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 		state, hint = i18n.Text("NO TOKEN SIGNAL"), m.monitorError
 	}
 
-	total := m.monitorRecordedTokens()
 	elapsed := m.monitorElapsed(time.Now())
-	rate := int64(0)
-	if elapsed > 0 {
-		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
-	}
 
 	stateColor := colors.primary
 	if m.monitorState == monitorRunning {
@@ -151,7 +146,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	}
 	innerWidth := max(width-4, 1)
 	lines := m.monitorSummaryLines(innerWidth, max(height-3, 1), colors)
-	status := " // " + i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))
+	status := " // " + i18n.Format("ELAPSED %s  //  AVG TOK/MIN %s", formatElapsed(elapsed), formatTokens(m.monitorAverageRate))
 	if m.monitorError != "" {
 		status = " // " + terminalLabel(hint)
 	}
@@ -292,11 +287,6 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		title = "UNATTRIBUTED // INTERNAL"
 	}
 	total := max(session.latest-session.baseline, int64(0))
-	elapsed := m.monitorSessionElapsed(session, time.Now())
-	rate := int64(0)
-	if elapsed > 0 {
-		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
-	}
 	status := i18n.Text("IDLE")
 	if session.active {
 		status = i18n.Text("ACTIVE")
@@ -347,7 +337,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.latestOutputOK || session.peakOutputOK {
 		appendLine(formatMonitorOutput(session))
 	}
-	appendLine(i18n.Text("RATE ") + formatTokens(rate) + "/MIN")
+	appendLine(i18n.Text("AVG TOK/MIN ") + formatTokens(session.averageRate))
 	if pageLabel != "" && (badge == "" || len(lines) > 1) && (model == "" || len(lines) > priorityRows) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
