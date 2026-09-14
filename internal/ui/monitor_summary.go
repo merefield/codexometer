@@ -105,8 +105,9 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	// Choose the least compressed presentation that fits the entire list.
 	// A resize that makes everything fit also returns to the first page.
 	for compact := 0; compact < 4; compact++ {
-		buttons := layoutMonitorAttention(sessions, width, maxRows, compact, false)
+		buttons := m.layoutMonitorAttention(sessions, width, maxRows, compact, false)
 		if len(buttons) == len(sessions) {
+			m.markSelectedAttention(buttons)
 			return buttons, buttons[len(buttons)-1].rect.y + 1
 		}
 	}
@@ -116,7 +117,7 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	}
 	reserve := lipgloss.Width(fmt.Sprintf("[+%d →]", len(sessions))) + 1
 	limit := max(width-reserve, 1)
-	buttons := layoutMonitorAttention(sessions[start:], limit, maxRows, 3, true)
+	buttons := m.layoutMonitorAttention(sessions[start:], limit, maxRows, 3, true)
 	if len(buttons) == 0 {
 		return nil, 0
 	}
@@ -126,11 +127,29 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 		label := fmt.Sprintf("[+%d →]", len(sessions)-len(buttons))
 		buttons = append(buttons, monitorNavigationButton{label: label, action: "attention-next:" + strconv.Itoa(next), enabled: true, rect: monitorRect{x: width - lipgloss.Width(label), y: rows - 1, width: lipgloss.Width(label), height: 1}})
 	}
+	m.markSelectedAttention(buttons)
 	return buttons, rows
 }
 
-func layoutMonitorAttention(sessions []monitorSession, width, rows, compact int, truncate bool) []monitorNavigationButton {
+func (m Model) markSelectedAttention(buttons []monitorNavigationButton) {
+	selected := m.monitorContextDetail
+	if selected == "" {
+		return
+	}
+	for i := range buttons {
+		if buttons[i].action == "attention:"+selected {
+			label := buttons[i].label
+			buttons[i].label = ">" + label[1:len(label)-1] + "<"
+		}
+	}
+}
+
+func (m Model) layoutMonitorAttention(sessions []monitorSession, width, rows, compact int, truncate bool) []monitorNavigationButton {
 	x, y := 0, 0
+	markerWidth := 0
+	if m.monitorContextDetail != "" {
+		markerWidth = 2
+	}
 	var buttons []monitorNavigationButton
 	for _, s := range sessions {
 		id := shortSessionID(s.id)
@@ -139,7 +158,7 @@ func layoutMonitorAttention(sessions []monitorSession, width, rows, compact int,
 			state = i18n.Text("DONE")
 		}
 		if truncate {
-			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3, 1), "…")
+			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3-markerWidth, 1), "…")
 		}
 		caption := state + " " + id
 		name := filepath.Base(terminalLabel(s.workingDirectory))
@@ -151,6 +170,11 @@ func layoutMonitorAttention(sessions []monitorSession, width, rows, compact int,
 			caption += separator + name
 		}
 		label := "[" + caption + "]"
+		// In full detail reserve both cells on every pill, so changing the
+		// detail target cannot alter compression or shift its neighbours.
+		if markerWidth > 0 {
+			label = " " + label + " "
+		}
 		w := lipgloss.Width(label)
 		if w > width {
 			break

@@ -587,6 +587,62 @@ func TestMonitorAttentionProgressiveCompression(t *testing.T) {
 	}
 }
 
+func TestMonitorSelectedPillMarkersPreserveLayout(t *testing.T) {
+	for _, width := range []int{24, 40, 80, 240} {
+		m := attentionTestModel()
+		m.monitorSelectedID = ""
+		m.monitorContextDetail = "root-three" // No attention pill for this target.
+		base, baseRows := m.monitorAttentionButtons(width, 1)
+		for _, target := range []string{"root-one", "root-two", "root-three", "missing"} {
+			m.monitorContextDetail = target
+			buttons, rows := m.monitorAttentionButtons(width, 1)
+			if len(buttons) != len(base) || rows != baseRows {
+				t.Fatal("selection changed compression/page size")
+			}
+			for i, b := range buttons {
+				if b.rect != base[i].rect || b.action != base[i].action || lipgloss.Width(b.label) != b.rect.width {
+					t.Fatal("selection shifted click geometry")
+				}
+				want := base[i].label
+				if b.action == "attention:"+target {
+					want = ">" + want[1:len(want)-1] + "<"
+				}
+				if b.label != want {
+					t.Fatal("incorrect selected pill markers", b.label, want)
+				}
+				for x := b.rect.x; x < b.rect.x+b.rect.width; x++ {
+					if monitorNavigationButtonsHit(buttons, x, b.rect.y) != b.action {
+						t.Fatal("marker cells not clickable")
+					}
+				}
+			}
+		}
+	}
+	m := attentionTestModel()
+	m.monitorSelectedID = "root-one"
+	overview, _ := m.monitorAttentionButtons(240, 1)
+	for _, b := range overview {
+		if !strings.HasPrefix(b.label, "[") || !strings.HasSuffix(b.label, "]") {
+			t.Fatal("overview gained marker spacing")
+		}
+	}
+	m.setRowContext("root-two", contextFull)
+	m.monitorSelectedID = "root-one" // Detail target takes precedence if they differ.
+	buttons, rows := m.monitorAttentionButtons(240, 1)
+	for _, b := range buttons {
+		if strings.HasPrefix(b.label, ">") != (b.action == "attention:root-two") {
+			t.Fatal("wrong full-detail target marked")
+		}
+	}
+	m.monitorContextHover = "attention:root-two"
+	colors := paletteFor(m.theme)
+	for _, b := range buttons {
+		if b.action == m.monitorContextHover && !strings.Contains(m.renderMonitorAttention(240, rows, buttons, colors), colors.label().Foreground(colors.background).Background(colors.warning).Bold(true).Render(b.label)) {
+			t.Fatal("hover lost selected marker or inversion")
+		}
+	}
+}
+
 func TestMonitorSummaryDetailScrollingAndEmptyAttentionContext(t *testing.T) {
 	m := attentionTestModel()
 	m.setRowContext("root-three", contextFull)

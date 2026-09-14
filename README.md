@@ -1277,7 +1277,14 @@ draft, confirmation and scroll position intact. CHECK* sessions do not appear as
 Labels put the state first, followed by the same short session ID used in the row
 border and its directory, for example **[TURN COMPLETE S79SD // projects]**.
 The ID stays stable when other pills arrive or change state; it is not a priority
-number or keyboard shortcut. The strip chooses the least compressed format that
+number or keyboard shortcut. On the full-detail page only, the open session's pill
+is marked with **>…<**, for example **>[TURN COMPLETE S79SD // projects]<**.
+Marker space is reserved on every session pill in full detail so switching sessions
+does not shift neighbours or change compression. Hover retains its separate
+status-coloured inversion, and both marker cells are clickable. Sessions without
+a pill do not cause another session to be marked. Overview pills remain unchanged,
+without markers or reserved marker space.
+The strip chooses the least compressed format that
 fits all pills: full labels, omit `//`, omit directories, then shorten Turn Complete
 to **DONE** (translated). The short session ID is always retained. If the compact
 labels still do not fit, the strip uses overflow paging; unusually long translated
