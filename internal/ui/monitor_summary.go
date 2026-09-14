@@ -200,6 +200,12 @@ func (m Model) monitorArea(width, height int) monitorGeometry {
 	// Overflow is paged rather than shifting the session content downwards.
 	a.attentionRows = min(1, max(a.graphHeight-3, 0))
 	a.attention, _ = m.monitorAttentionButtons(width, a.attentionRows)
+	if a.attentionRows > 0 && m.monitorAttentionHasRoom(width, height) {
+		a.attentionRows += 2
+		for i := range a.attention {
+			a.attention[i].rect.y++
+		}
+	}
 	a.gap += a.attentionRows
 	a.graphHeight -= a.attentionRows
 	return a
@@ -218,7 +224,20 @@ func (m Model) monitorDetailHeader(width, height int) (summary, rows int, button
 	if height-rows-needed >= minimum {
 		summary = needed
 	}
+	if rows > 0 && height-summary-rows-2 >= max(minimum, 33) {
+		rows += 2
+		for i := range buttons {
+			buttons[i].rect.y++
+		}
+	}
 	return
+}
+
+// Reserve overview padding only if every visible session would still receive
+// at least eleven rows, including its borders.
+func (m Model) monitorAttentionHasRoom(width, height int) bool {
+	count := m.visibleMonitorSessionCount()
+	return count > 0 && (layoutMonitorArea(width, height).graphHeight-3)/count >= 11
 }
 
 func monitorSummaryHeight(width int) int {

@@ -152,6 +152,8 @@ type Model struct {
 	monitorState            monitorState
 	monitorAutoStart        bool
 	monitorStartedAt        time.Time
+	monitorRateAt           time.Time
+	monitorAverageRate      int64
 	monitorStoppedAt        time.Time
 	monitorBaseline         int64
 	monitorLatest           int64
@@ -240,6 +242,8 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	averageRate      int64
+	modelSettings    codex.SessionModelSettings
 	preview          codex.SessionContext
 	id               string
 	workingDirectory string
@@ -939,6 +943,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, command
 		}
 	case secondMsg:
+		if m.monitorState == monitorRunning {
+			m.refreshMonitorRates(time.Time(message), false)
+		}
 		if !m.monitorApprovalConfirmUntil.IsZero() && !time.Now().Before(m.monitorApprovalConfirmUntil) {
 			m.monitorApprovalConfirm = ""
 			m.monitorApprovalNumberReleased = false
@@ -2146,6 +2153,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 		if message.kind == monitorFetchPause {
 			m.monitorState = monitorPaused
 			m.monitorStoppedAt = message.at
+			m.refreshMonitorRates(message.at, true)
 		} else if message.kind == monitorFetchStart || message.kind == monitorFetchResume {
 			m.monitorState = monitorPaused
 		} else if message.kind == monitorFetchReset {
@@ -2200,6 +2208,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			m.monitorStoppedAt = message.at
 			m.monitorNextFetch = time.Time{}
 		}
+	}
+	if accepted && message.kind != monitorFetchSample && message.kind != monitorFetchBoundary {
+		m.refreshMonitorRates(message.at, true)
 	}
 	return m, nil, accepted
 }
@@ -2317,6 +2328,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
+		session.modelSettings = update.ModelSettings
 		session.callSequence = latestModelCallSequence(update.ModelCalls)
 		session.turnSequence = latestTurnTimingSequence(update.TurnTimings)
 		if update.WorkingDirectory != "" {
@@ -2335,7 +2347,8 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 	for _, update := range updates {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: update.ID, workingDirectory: update.WorkingDirectory,
-			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
+			modelSettings: update.ModelSettings,
+			baseline:      update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
 			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
@@ -2495,7 +2508,8 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 	for _, session := range usage.Sessions {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
-			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
+			modelSettings: session.ModelSettings,
+			baseline:      session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
 			active: session.Active, working: session.Working, attention: session.Attention,
@@ -2529,7 +2543,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			}
 			created := monitorSession{
 				id: update.ID, workingDirectory: update.WorkingDirectory,
-				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
+				modelSettings: update.ModelSettings,
+				latest:        update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
 				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
@@ -2552,6 +2567,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.working = update.Working
 		session.attention = update.Attention
 		session.preview = update.Context
+		session.modelSettings = update.ModelSettings
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {

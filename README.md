@@ -493,7 +493,8 @@ Codexometer deliberately does not:
 Sessions and the observed quota estimator additionally read locally persisted
 Codex rollout files under `$CODEX_HOME/sessions` (normally
 `~/.codex/sessions`). They decode `token_count` totals, each last response's
-input/cache/cache-write/output counts, requested model name, timestamps, and
+input/cache/cache-write/output counts, requested model name, reasoning effort,
+requested service tier, timestamps, and
 content-free turn timing,
 plus the minimum session metadata needed for grouping: thread ID, parent thread
 ID, source classification, working directory, and the inherited-history
@@ -1113,12 +1114,32 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
+Session rows prioritise the root session's latest observed model, reasoning effort
+and Fast setting directly below the token count, for example
+`gpt-6-astra medium fast`. These are observed selections from persisted turn contexts
+and settings events, not proof of the backend-resolved model or delivered speed.
+Changes appear once Codex records them; an unrecorded CLI selection cannot be seen.
+Child-agent settings never replace the root's selection. Missing fields are omitted;
+no `fast` suffix means Fast was not observed, not proof that it is off.
+
+The row no longer repeats the directory already shown in its border or the status
+already shown in its badge. Generic `ROOT` text and the extra file-activity age line
+are removed; linked-agent counts, call activity, available latency/output statistics,
+rate and quota-share estimates remain lower priority. Entirely unavailable latency
+and output statistics are omitted rather than filling the card with `N/A`.
+
+**AVG TOK/MIN** is average observed tokens per minute since the measurement began
+(or the session joined), excluding paused time—not instantaneous generation speed.
+The total and all session averages update together every five seconds, unaffected
+by mouse movement or keyboard-driven redraws. Start/reset/pause/resume update them
+immediately; token counts and the rest of the interface retain their usual cadence.
+
 `CALLS` counts upstream model-response cycles observed after the current Sessions
 baseline, not complete user turns. A single Codex turn can make several calls while using
 tools or progressing through an agent loop. `LAST OUT` is the provider-reported
 output-token count for the latest such call. `TTFT` comes from the completed
 turn's persisted time-to-first-token measurement; older Codex rollouts that do
-not contain it display `N/A`. Spawned descendants contribute these pulses to
+not contain it omit the statistic (partially available readings still use `N/A`). Spawned descendants contribute these pulses to
 the same root row as their token activity.
 
 The per-session quota figure in Sessions is an estimate, not API attribution.
@@ -1263,6 +1284,11 @@ labels still do not fit, the strip uses overflow paging; unusually long translat
 states are shortened only as needed. Expanding the terminal restores fuller labels.
 Full detail identifies the target. A single navigation row is reserved even when there are no requests,
 so attention arriving or clearing does not shift the session list.
+A blank row above and below the strip makes the pills stand out only when each
+visible session would still have at least 11 rows after padding. More sessions
+or a shorter terminal remove that padding. Full detail uses its own threshold:
+at least 33 detail-panel rows must remain after the summary, pill row and padding,
+while also protecting composer controls and useful text space.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
 row to protect session content. Paused or failed observation
 suppresses these links until live readings return.
@@ -1271,6 +1297,9 @@ On tall terminals, full detail retains the summary and attention strip. When
 space becomes limited, the summary disappears first, then the attention strip.
 The budget reserves the actual approval/composer control rows and useful text
 space; long drafts, wrapped controls and translated labels are taken into account.
+In full detail, clicking anywhere across the bottom three rows of the detail panel
+focuses an available composer without sending text. Footer controls outside the
+panel and approval controls keep their existing behaviour.
 The overview keeps its compact summary and reserves one attention row to preserve
 session content. Existing footer, approval, dismiss and editor click targets use
 the same layout as rendering. Keyboard navigation and approval confirmations

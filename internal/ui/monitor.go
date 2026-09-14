@@ -135,12 +135,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 		state, hint = i18n.Text("NO TOKEN SIGNAL"), m.monitorError
 	}
 
-	total := m.monitorRecordedTokens()
 	elapsed := m.monitorElapsed(time.Now())
-	rate := int64(0)
-	if elapsed > 0 {
-		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
-	}
 
 	stateColor := colors.primary
 	if m.monitorState == monitorRunning {
@@ -151,7 +146,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	}
 	innerWidth := max(width-4, 1)
 	lines := m.monitorSummaryLines(innerWidth, max(height-3, 1), colors)
-	status := " // " + i18n.Format("ELAPSED %s  //  RATE %s/MIN", formatElapsed(elapsed), formatTokens(rate))
+	status := " // " + i18n.Format("ELAPSED %s  //  AVG TOK/MIN %s", formatElapsed(elapsed), formatTokens(m.monitorAverageRate))
 	if m.monitorError != "" {
 		status = " // " + terminalLabel(hint)
 	}
@@ -292,11 +287,6 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		title = "UNATTRIBUTED // INTERNAL"
 	}
 	total := max(session.latest-session.baseline, int64(0))
-	elapsed := m.monitorSessionElapsed(session, time.Now())
-	rate := int64(0)
-	if elapsed > 0 {
-		rate = int64(math.Round(float64(total) / elapsed.Minutes()))
-	}
 	status := i18n.Text("IDLE")
 	if session.active {
 		status = i18n.Text("ACTIVE")
@@ -305,12 +295,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		status = monitorAttentionStatus(session.attention)
 	}
 	innerWidth := max(width-4, 1)
-	memberLabel := "ROOT"
+	memberLabel := ""
 	if session.agentCount > 0 {
-		memberLabel = fmt.Sprintf("ROOT + %d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
-		if lipgloss.Width(status+" // "+memberLabel) > innerWidth {
-			memberLabel = fmt.Sprintf("%d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
-		}
+		memberLabel = fmt.Sprintf("%d %s", session.agentCount, plural(session.agentCount, "AGENT", "AGENTS"))
 	}
 	if session.unattributed {
 		memberLabel = "UNLINKED ACTIVITY"
@@ -327,25 +314,31 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines = append(lines, colors.label().Render(ansi.Truncate(usageLine, innerWidth, "")))
 	}
 	appendLine := func(value string) {
-		if len(lines) < bodyRows {
+		if value != "" && len(lines) < bodyRows {
 			lines = append(lines, colors.dimmed().Render(ansi.Truncate(value, innerWidth, "")))
 		}
 	}
+	model := formatMonitorSessionModel(session)
+	if model != "" && len(lines) < bodyRows {
+		lines = append(lines, colors.label().Render(ansi.Truncate(model, innerWidth, "")))
+	}
+	priorityRows := len(lines)
 	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
 		appendLine(estimate)
 	}
-	appendLine(status + " // " + memberLabel)
+	if badge == "" {
+		appendLine(status)
+	}
+	appendLine(memberLabel)
 	appendLine(formatMonitorCallActivity(session, time.Now()))
-	appendLine(formatMonitorTTFT(session))
-	appendLine(formatMonitorOutput(session))
-	appendLine(i18n.Text("RATE ") + formatTokens(rate) + "/MIN")
-	if session.workingDirectory != "" {
-		appendLine("DIR // " + filepath.Base(terminalLabel(session.workingDirectory)))
+	if session.latestTTFTOK || session.peakTTFTOK {
+		appendLine(formatMonitorTTFT(session))
 	}
-	if !session.lastActivity.IsZero() {
-		appendLine(i18n.Text("LAST // ") + compactDuration(time.Since(session.lastActivity)) + " AGO")
+	if session.latestOutputOK || session.peakOutputOK {
+		appendLine(formatMonitorOutput(session))
 	}
-	if pageLabel != "" && (badge == "" || len(lines) > 1) {
+	appendLine(i18n.Text("AVG TOK/MIN ") + formatTokens(session.averageRate))
+	if pageLabel != "" && (badge == "" || len(lines) > 1) && (model == "" || len(lines) > priorityRows) {
 		lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 	}
 	borderColor := colors.primary
@@ -357,6 +350,25 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		action = m.renderMonitorSessionDismiss(session.id, colors)
 	}
 	return frameSizedWithTitleAction(width, max(height-2, 1), title, action, strings.Join(lines, "\n"), borderColor, colors)
+}
+
+func formatMonitorSessionModel(session monitorSession) string {
+	s := session.modelSettings
+	if strings.TrimSpace(s.Model) == "" {
+		return ""
+	}
+	parts := []string{terminalLabel(s.Model)}
+	if s.ReasoningEffort != "" {
+		parts = append(parts, terminalLabel(s.ReasoningEffort))
+	}
+	switch strings.ToLower(s.ServiceTier) {
+	case "fast", "priority":
+		parts = append(parts, "fast")
+	case "", "default", "standard":
+	default:
+		parts = append(parts, terminalLabel(s.ServiceTier))
+	}
+	return strings.Join(parts, " ")
 }
 
 func (m Model) renderMonitorSessionDismiss(id string, colors palette) string {

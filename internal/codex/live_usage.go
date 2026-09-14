@@ -49,6 +49,7 @@ type LiveUsageSnapshot struct {
 // LiveUsageSession is one independently started local Codex session. Token
 // usage from explicitly linked spawned descendants is folded into the root.
 type LiveUsageSession struct {
+	ModelSettings    SessionModelSettings
 	ID               string
 	WorkingDirectory string
 	StartedAt        time.Time
@@ -143,6 +144,7 @@ type rolloutCursor struct {
 	workingDirectory            string
 	startedAt                   time.Time
 	currentModel                string
+	modelSettings               SessionModelSettings
 	currentServiceTier          string
 	nextServiceTier             string
 	currentTurnID               string
@@ -551,6 +553,19 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		if latestErr != nil {
 			return latestErr
 		}
+		// Rebuild settings without letting old model/tier values seed the
+		// backwards scan. Commit only after a successful read, so IO failures
+		// can be retried without advancing the cursor past the replacement.
+		restored := *cursor
+		restored.modelSettings = SessionModelSettings{}
+		restored.currentModel, restored.currentServiceTier, restored.nextServiceTier = "", "", ""
+		model, modelErr := latestRolloutModel(path, &restored)
+		if modelErr != nil {
+			return modelErr
+		}
+		cursor.modelSettings = restored.modelSettings
+		cursor.currentModel = model
+		cursor.currentServiceTier, cursor.nextServiceTier = restored.currentServiceTier, restored.nextServiceTier
 		cursor.offset = info.Size()
 		cursor.totalTokens = total
 		turnID, turnErr := latestRolloutTurnID(path, cursor)
@@ -577,6 +592,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			if settings, ordinal, at, ok := rolloutSessionSettingsRecord(line, cursor.modelSettings); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				cursor.modelSettings = settings
+			}
 			if preview, ok := rolloutContextRecord(line, cursor); ok {
 				cursor.preview = preview
 			}
@@ -954,6 +973,14 @@ func latestRolloutModel(path string, cursor *rolloutCursor) (string, error) {
 			firstComplete = 0
 		}
 		for index := len(lines) - 1; index >= firstComplete; index-- {
+			if settings, ordinal, at, ok := rolloutSessionSettingsRecord(lines[index], SessionModelSettings{}); ok &&
+				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
+				if cursor.modelSettings.Model == "" {
+					cursor.modelSettings = settings
+				} else if cursor.modelSettings.ServiceTier == "" && settings.ServiceTier != "" {
+					cursor.modelSettings.ServiceTier = settings.ServiceTier
+				}
+			}
 			if tier, ordinal, at, ok := rolloutTierRecord(lines[index]); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				if cursor.nextServiceTier == "" {
@@ -1227,6 +1254,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	activeCount := 0
 	anyWorking := false
 	for _, session := range groups {
+		if root := byID[session.ID]; root != nil && !session.Unattributed {
+			session.ModelSettings = root.modelSettings
+		}
 		session.Working = groupWorking[session.ID]
 		if session.Attention == SessionAttentionComplete && groupWorking[session.ID] {
 			session.Attention = SessionAttentionNone

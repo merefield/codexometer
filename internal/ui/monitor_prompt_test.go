@@ -242,8 +242,8 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 				}
 			}
 		}
-		if m.monitorContextAt(4, g.meterY+y+rows-1) == "prompt" {
-			t.Fatal("hint line became editable hit target")
+		if m.monitorContextAt(4, g.meterY+y+rows-1) != "prompt" {
+			t.Fatal("bottom hint line should focus the composer")
 		}
 		if m.monitorPrompt.input.Value() != value {
 			t.Fatal("wrapping altered the submitted text")
@@ -251,6 +251,34 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 		m.monitorPrompt.input.SetValue("short")
 		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 3 {
 			t.Fatal("editor failed to shrink")
+		}
+	}
+}
+
+func TestMonitorDetailBottomRowsFocusComposer(t *testing.T) {
+	for _, height := range []int{24, 49, 50, 65} {
+		m, c := promptTestModel()
+		m.height = height
+		g := m.monitorDashboardLayout()
+		for y := g.meterY + g.meterHeight - 3; y < g.meterY+g.meterHeight; y++ {
+			for x := 2; x < 2+g.contentWidth; x++ {
+				if m.monitorContextAt(x, y) != "prompt" {
+					t.Fatalf("bottom click missed at %d,%d height %d", x, y, height)
+				}
+			}
+			n, _ := m.Update(tea.MouseClickMsg{X: 2, Y: y, Button: tea.MouseLeft})
+			if !n.(Model).monitorPrompt.input.Focused() || c.answers != nil {
+				t.Fatal("click should focus without sending")
+			}
+		}
+		for _, point := range [][2]int{{1, g.meterY + g.meterHeight - 1}, {2 + g.contentWidth, g.meterY + g.meterHeight - 1}, {2, g.meterY + g.meterHeight}} {
+			if m.monitorContextAt(point[0], point[1]) == "prompt" {
+				t.Fatal("composer intercepted outside-panel click")
+			}
+		}
+		c.offer.Token = ""
+		if m.monitorContextAt(2, g.meterY+g.meterHeight-1) == "prompt" {
+			t.Fatal("unavailable composer remained clickable")
 		}
 	}
 }
