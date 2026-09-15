@@ -20,9 +20,12 @@ func completedCopyModel() Model {
 }
 
 func TestMonitorCopySurfaces(t *testing.T) {
+	raw := "\x1b[31mReply\x1b[0m\x07\n" + strings.Repeat("reply line\n", 100) + "LAST OUTPUT LINE"
+	want := codex.SanitizeSessionContext(raw)
 	for _, mode := range []int{contextSplit, contextWide, contextFull} {
 		for _, width := range []int{80, 120, 180} {
 			m := completedCopyModel()
+			m.monitorSessionData[0].preview.Text = raw
 			m.width = width
 			m.setRowContext("root-one", mode)
 			if !strings.Contains(ansi.Strip(m.render()), benchmarkDetailCopyLabel) {
@@ -41,16 +44,25 @@ func TestMonitorCopySurfaces(t *testing.T) {
 			if cmd == nil {
 				t.Fatal("click did not copy")
 			}
-			if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-one")) {
+			if !monitorCopyCommandMatches(cmd, want) {
 				t.Fatal("clipboard command has wrong payload")
 			}
 			_, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-			if cmd == nil {
-				t.Fatal("shortcut did not copy")
+			if !monitorCopyCommandMatches(cmd, want) {
+				t.Fatal("shortcut did not copy the entire sanitized reply")
 			}
-			if !strings.HasSuffix(m.monitorCopyText("root-one"), "LAST OUTPUT LINE") {
-				t.Fatal("offscreen output omitted")
-			}
+		}
+	}
+}
+
+func TestMonitorCopyRequiresVisibleDetail(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		m := completedCopyModel()
+		m.setRowContext("root-one", contextGraph)
+		m.monitorContextHidden = hidden
+		_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+		if cmd != nil {
+			t.Fatal("graph-only/hidden detail unexpectedly copied a reply")
 		}
 	}
 }
@@ -61,8 +73,9 @@ func TestMonitorCopyUsesSelectedSession(t *testing.T) {
 	m.monitorSessionData[1].working = false
 	m.monitorSessionData[1].attention = codex.SessionAttentionComplete
 	m.setRowContext("root-two", contextWide)
+	want := codex.SanitizeSessionContext(m.monitorSessionData[1].preview.Text)
 	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-two")) {
+	if !monitorCopyCommandMatches(cmd, want) {
 		t.Fatal("shortcut copied a different session")
 	}
 	m.monitorSessionData[1].working = true
@@ -99,12 +112,13 @@ func TestMonitorCopyRecoveredIdleReply(t *testing.T) {
 		m := completedCopyModel()
 		m.monitorSessionData[0].attention = codex.SessionAttentionNone
 		m.setRowContext("root-one", mode)
+		want := codex.SanitizeSessionContext(m.monitorSessionData[0].preview.Text)
 		x, y := renderedTextStart(t, m, benchmarkDetailCopyLabel)
 		if got := m.monitorContextAt(x, y); got != "copy:root-one" {
 			t.Fatalf("recovered reply copy target = %q", got)
 		}
 		_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-		if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-one")) {
+		if !monitorCopyCommandMatches(cmd, want) {
 			t.Fatal("recovered reply could not be copied without a fresh completion")
 		}
 	}

@@ -1240,7 +1240,8 @@ same action on that session. The presentations are:
 When a session is **TURN COMPLETE**, or idle with a saved **LAST REPLY**, its reply box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
 Click it to copy that session's entire observed reply, including offscreen text,
-or press `C` for the selected session. This uses the same terminal clipboard
+or press `C` for the selected session while its detail is shown. Copy is not
+available in graph-only mode or while detail is hidden. This uses the same terminal clipboard
 support as Benchmark Copy. While the composer is focused, `C` types normally;
 press `Esc` to leave the editor before copying or scrolling the reply with keys.
 
