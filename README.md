@@ -1237,7 +1237,7 @@ same action on that session. The presentations are:
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
-When a session is **TURN COMPLETE**, its reply box offers **[ (C) COPY ]**
+When a session is **TURN COMPLETE**, or idle with a saved **LAST REPLY**, its reply box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
 Click it to copy that session's entire observed reply, including offscreen text,
 or press `C` for the selected session. This uses the same terminal clipboard

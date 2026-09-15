@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the terminal Sessions summary strip;
+	// Baseline intentionally updated for the compact [ (C)OPY ] label;
 	// all themes, views and three terminal sizes are covered.
-	const want = "26b2d9d90da45b2feef156095baacc1228090522c33342a177729d26a23ba16c"
+	const want = "49ac2efe33d6574b4f491d0c0165c72c98a2542670979a43f1bd659295936038"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

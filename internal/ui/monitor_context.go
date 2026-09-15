@@ -230,8 +230,8 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		if id == "" && m.rowContextMode(m.monitorSelectedID) > contextGraph {
 			id = m.monitorSelectedID
 		}
-		if cmd := m.copyMonitorReply(id); cmd != nil {
-			return m, cmd, true
+		if next, cmd := m.activateMonitorCopy(id); cmd != nil {
+			return next, cmd, true
 		}
 	}
 	if next, cmd, handled := m.updateMonitorApprovalKey(key); handled {
@@ -390,7 +390,8 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 	m.monitorContextHover = m.monitorContextAt(mouse.X, mouse.Y)
 	if click && mouse.Button == tea.MouseLeft && m.monitorContextHover != "" {
 		if id, ok := strings.CutPrefix(m.monitorContextHover, "copy:"); ok {
-			return m, m.copyMonitorReply(id), true
+			next, cmd := m.activateMonitorCopy(id)
+			return next, cmd, true
 		}
 		if strings.HasPrefix(m.monitorContextHover, "decision:") {
 			return m.monitorApprovalAction(m.monitorContextHover)

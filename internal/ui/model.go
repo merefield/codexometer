@@ -175,6 +175,8 @@ type Model struct {
 	monitorDismissed        map[string]monitorSessionDismissal
 	monitorDismissHover     string
 	monitorDismissFlash     string
+	monitorCopyFlash        string
+	monitorCopySequence     uint64
 	monitorDismissSeq       uint64
 	monitorScroll           int
 	monitorError            string
@@ -1009,6 +1011,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case footerButtonFlashExpiredMsg:
 		if message.sequence == m.flashSequence && message.button == m.flashedButton {
 			m.flashedButton = footerButtonNone
+		}
+	case monitorCopyFlashExpiredMsg:
+		if message.sequence == m.monitorCopySequence {
+			m.monitorCopyFlash = ""
 		}
 	case viewTabFlashExpiredMsg:
 		if message.sequence == m.viewSequence && message.view == m.flashedView {

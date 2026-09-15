@@ -41,7 +41,7 @@ func TestMonitorCopySurfaces(t *testing.T) {
 			if cmd == nil {
 				t.Fatal("click did not copy")
 			}
-			if !reflect.DeepEqual(cmd(), tea.SetClipboard(m.monitorCopyText("root-one"))()) {
+			if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-one")) {
 				t.Fatal("clipboard command has wrong payload")
 			}
 			_, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
@@ -62,7 +62,7 @@ func TestMonitorCopyUsesSelectedSession(t *testing.T) {
 	m.monitorSessionData[1].attention = codex.SessionAttentionComplete
 	m.setRowContext("root-two", contextWide)
 	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	if cmd == nil || !reflect.DeepEqual(cmd(), tea.SetClipboard(m.monitorCopyText("root-two"))()) {
+	if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-two")) {
 		t.Fatal("shortcut copied a different session")
 	}
 	m.monitorSessionData[1].working = true
@@ -91,6 +91,61 @@ func TestMonitorCopyEligibilityAndComposer(t *testing.T) {
 	m, _ = promptKey(m, 'c', "c")
 	if m.monitorPrompt.input.Value() != "c" {
 		t.Fatal("copy stole typed c")
+	}
+}
+
+func TestMonitorCopyRecoveredIdleReply(t *testing.T) {
+	for _, mode := range []int{contextSplit, contextWide, contextFull} {
+		m := completedCopyModel()
+		m.monitorSessionData[0].attention = codex.SessionAttentionNone
+		m.setRowContext("root-one", mode)
+		x, y := renderedTextStart(t, m, benchmarkDetailCopyLabel)
+		if got := m.monitorContextAt(x, y); got != "copy:root-one" {
+			t.Fatalf("recovered reply copy target = %q", got)
+		}
+		_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+		if !monitorCopyCommandMatches(cmd, m.monitorCopyText("root-one")) {
+			t.Fatal("recovered reply could not be copied without a fresh completion")
+		}
+	}
+}
+
+func monitorCopyCommandMatches(cmd tea.Cmd, text string) bool {
+	if cmd == nil {
+		return false
+	}
+	commands, ok := cmd().(tea.BatchMsg)
+	return ok && len(commands) == 2 && reflect.DeepEqual(commands[0](), tea.SetClipboard(text)())
+}
+
+func TestMonitorCopyHighlight(t *testing.T) {
+	m := completedCopyModel()
+	m.setRowContext("root-one", contextFull)
+	colors := paletteFor(m.theme)
+	idle := m.renderMonitorCopy(80, "root-one", colors)
+	if idle != colors.label().Foreground(colors.dim).Render(benchmarkDetailCopyLabel) {
+		t.Fatal("copy should be dim by default")
+	}
+	m.monitorContextHover = "copy:root-one"
+	hover := m.renderMonitorCopy(80, "root-one", colors)
+	if hover == idle {
+		t.Fatal("hover did not highlight copy")
+	}
+	m.monitorContextHover = ""
+	n, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	m = n.(Model)
+	if cmd == nil || m.renderMonitorCopy(80, "root-one", colors) != hover {
+		t.Fatal("copy did not flash")
+	}
+	n, _ = m.Update(monitorCopyFlashExpiredMsg{sequence: m.monitorCopySequence - 1})
+	m = n.(Model)
+	if m.monitorCopyFlash == "" {
+		t.Fatal("stale expiry cleared flash")
+	}
+	n, _ = m.Update(monitorCopyFlashExpiredMsg{sequence: m.monitorCopySequence})
+	m = n.(Model)
+	if m.renderMonitorCopy(80, "root-one", colors) != idle {
+		t.Fatal("copy flash did not expire")
 	}
 }
 

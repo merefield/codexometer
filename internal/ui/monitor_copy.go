@@ -3,13 +3,15 @@ package ui
 import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
+	"time"
 )
 
 // Copy the complete observed reply, not its wrapped/truncated presentation.
 func (m Model) monitorCopyText(id string) string {
 	for _, s := range m.monitorSessionData {
 		if s.id == id && m.monitorSessionVisible(s) && !s.working &&
-			s.attention == codex.SessionAttentionComplete && s.preview.Kind == codex.SessionContextReply {
+			(s.attention == codex.SessionAttentionComplete || s.attention == codex.SessionAttentionNone) &&
+			s.preview.Kind == codex.SessionContextReply {
 			return codex.SanitizeSessionContext(s.preview.Text)
 		}
 	}
@@ -20,7 +22,26 @@ func (m Model) renderMonitorCopy(width int, id string, colors palette) string {
 	if _, ok := contextActionRect(width, 0, benchmarkDetailCopyLabel); !ok || m.monitorCopyText(id) == "" {
 		return ""
 	}
-	return m.renderContextAction("copy:"+id, benchmarkDetailCopyLabel, colors)
+	style := colors.label().Foreground(colors.dim)
+	if m.monitorContextHover == "copy:"+id || m.monitorCopyFlash == id {
+		style = style.Foreground(colors.background).Background(colors.primary)
+	}
+	return style.Render(benchmarkDetailCopyLabel)
+}
+
+type monitorCopyFlashExpiredMsg struct{ sequence uint64 }
+
+func (m Model) activateMonitorCopy(id string) (Model, tea.Cmd) {
+	cmd := m.copyMonitorReply(id)
+	if cmd == nil {
+		return m, nil
+	}
+	m.monitorCopyFlash = id
+	m.monitorCopySequence++
+	sequence := m.monitorCopySequence
+	return m, tea.Batch(cmd, tea.Tick(footerButtonFlashDuration, func(time.Time) tea.Msg {
+		return monitorCopyFlashExpiredMsg{sequence: sequence}
+	}))
 }
 
 // Coordinates are relative to the dashboard content, before any row hit areas.

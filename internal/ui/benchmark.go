@@ -67,7 +67,7 @@ type benchmarkDetailTranscriptCache struct {
 }
 
 var (
-	benchmarkDetailCopyLabel  = i18n.Text("[ (C) COPY ]")
+	benchmarkDetailCopyLabel  = i18n.Text("[ (C)OPY ]")
 	benchmarkDetailCloseLabel = i18n.Text("[ (X) CLOSE ]")
 	benchmarkClearAllLabel    = i18n.Text("[ (L) CLEAR ALL ]")
 	benchmarkScopeCancelLabel = i18n.Text("[ (X) CANCEL ]")
