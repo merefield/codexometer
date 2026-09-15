@@ -85,6 +85,139 @@ const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
   },
 });
 
+test('read-only session copy captures working prose in every detail level without server writes', async ({
+  page,
+  pairingURL,
+}) => {
+  const text =
+    'Visible activity\n' + 'offscreen line\n'.repeat(100) + 'LAST LINE';
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    sessions: ['one', 'two'].map((id) => ({
+      id,
+      directory: id,
+      tokens: 1,
+      agents: 0,
+      status: 'WORKING',
+      contextKind: 'LAST ACTIVITY',
+      text: id === 'one' ? text : 'Other session',
+      command: '',
+      source: 'LOCAL',
+      activity: '',
+      samples: [],
+    })),
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+  };
+  await mockStream(page, snapshot);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { copied: string[] }).copied.push(text);
+        },
+      },
+      configurable: true,
+    });
+    (window as unknown as { copied: string[] }).copied = [];
+  });
+  const actions: string[] = [];
+  page.on('request', (req) => {
+    if (req.url().includes('/api/control/')) actions.push(req.url());
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  const row = page.getByRole('region', { name: 'Session one', exact: true });
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await expect(row.getByRole('status')).toHaveText('Copied.');
+  await row.getByRole('button', { name: 'More detail' }).click();
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await page.keyboard.press('c');
+  await row.getByRole('button', { name: 'More detail' }).click();
+  await page
+    .locator('.full-detail')
+    .getByRole('button', { name: 'Copy text' })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string[] }).copied),
+    )
+    .toEqual([text, text, text, text]);
+  expect(actions).toEqual([]);
+  await page.evaluate(() => {
+    location.hash = '/sessions/two';
+  });
+  await expect(page.locator('.full-detail pre').first()).toHaveText(
+    'Other session',
+  );
+  await page.keyboard.press('c');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as unknown as { copied: string[] }).copied.at(-1),
+      ),
+    )
+    .toBe('Other session');
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async () => {
+          throw new Error('Denied');
+        },
+      },
+    });
+  });
+  await page
+    .locator('.full-detail')
+    .getByRole('button', { name: 'Copy text' })
+    .click();
+  await expect(page.getByRole('status')).toContainText('Clipboard unavailable');
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      sessions: snapshot.sessions.map((s) => ({
+        ...s,
+        contextKind: 'APPROVAL REQUEST',
+        status: 'APPROVAL NEEDED',
+      })),
+    },
+  );
+  await expect(page.getByRole('button', { name: 'Copy text' })).toHaveCount(0);
+  expect(actions).toEqual([]);
+});
+
+test('web copy does not steal composer typing or native copy shortcuts', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async () => {
+          throw new Error('Must not copy');
+        },
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const editor = page.locator('textarea').first();
+  await editor.fill('');
+  await editor.press('c');
+  await expect(editor).toHaveValue('c');
+  await editor.press('Control+c');
+  await expect(page.locator('.session-copy [role="status"]')).toBeEmpty();
+});
+
 test.describe('opt-in real server with simulated Codex actions', () => {
   test.use({ controlMode: true });
   test('demo approval completes through pairing, prepare and commit', async ({

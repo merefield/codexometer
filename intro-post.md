@@ -58,7 +58,7 @@ Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph
 
 Prefer visible controls? Click **[←] [→]** at the top-right of each row's rightmost box to adjust detail, or **[↑] [↓]** in the Sessions header to select sessions. Unavailable directions are dimmed. The session-selection buttons stay out of full-screen detail, where Up/Down scroll the text; tiny boxes fall back to keyboard and background clicks.
 
-Take a finished reply with you: **[ (C)OPY ]** sits at the bottom-right of eligible split, wide and full-detail boxes when space permits, including saved **LAST REPLY** text recovered at startup. It is dim but clickable at rest, highlights on hover, and flashes when clicked or activated with `C`. The shortcut targets the selected session only while its detail is shown; approval confirmation and composer typing retain their own controls. Translated labels embed C where natural, otherwise showing it separately.
+Take useful text with you: **[ (C)OPY ]** sits at the bottom-right of split, wide and full-detail boxes containing **LAST REPLY** or **LAST ACTIVITY** text, when space permits. Copy works during a run as well as for replies recovered at startup, capturing the text at the moment you press it. Usable Copy buttons match their panel border colour in Sessions and Benchmark, highlight on hover, and flash when clicked or activated with `C`; an unavailable Benchmark matrix Copy button stays dim. The shortcut targets the selected session only while its detail is shown; approval confirmation and composer typing retain their own controls. Questions and approval commands stay separate. Translated labels embed C where natural, otherwise showing it separately.
 
 Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; press Escape first if the composer is focused to restore keyboard scrolling. Copy includes offscreen text from the entire sanitized, bounded reply available to Codexometer—not an unlimited conversation transcript—and uses the same terminal clipboard support as Benchmark Copy. Copied text follows your terminal and operating system's normal clipboard retention.
 
@@ -95,6 +95,10 @@ detail, with a compact totals strip for observed tokens, listed sessions and
 separate working/approval/input/inferred-check counts. Linked-agent tokens are
 already included, and stale observations are labelled. Select sessions with ↑/↓,
 adjust detail with ←/→, or use the clickable controls.
+Reply/activity text also has a Copy button in split, wide and full-page detail—even
+while working and in read-only mode. It writes only to the browser's clipboard,
+without enabling server actions or requesting clipboard-read access; browser denial
+shows a manual-copy suggestion. The same bounded-observation limits apply.
 Prominent attention links distinguish observed requests from inferred inactivity,
 and commands are separated from the explanation when available. Add
 `--web-control` to opt into supported session approvals, input questions and

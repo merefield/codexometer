@@ -352,6 +352,9 @@ func (m Model) benchmarkDetailResult() (codex.BenchmarkResult, bool) {
 
 func (m Model) renderBenchmarkDetailControl(label string, button footerButtonID, colors palette) string {
 	style := lipgloss.NewStyle().Foreground(colors.dim).Background(colors.background)
+	if button == footerButtonBenchmarkCopy {
+		style = style.Foreground(colors.primary)
+	}
 	if m.hoveredButton == button {
 		style = style.Bold(true).Foreground(colors.accent)
 	}

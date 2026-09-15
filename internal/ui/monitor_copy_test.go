@@ -79,18 +79,18 @@ func TestMonitorCopyUsesSelectedSession(t *testing.T) {
 		t.Fatal("shortcut copied a different session")
 	}
 	m.monitorSessionData[1].working = true
-	if m.copyMonitorReply("root-two") != nil {
-		t.Fatal("resumed session still offers copy")
+	if m.copyMonitorReply("root-two") == nil {
+		t.Fatal("resumed session should still offer its visible reply")
 	}
 }
 
 func TestMonitorCopyEligibilityAndComposer(t *testing.T) {
 	m := completedCopyModel()
 	m.setRowContext("root-one", contextFull)
-	for _, state := range []codex.SessionAttention{codex.SessionAttentionInput, codex.SessionAttentionApproval, codex.SessionAttentionCheck} {
-		m.monitorSessionData[0].attention = state
+	for _, kind := range []codex.SessionContextKind{codex.SessionContextNone, codex.SessionContextQuestion, codex.SessionContextApproval} {
+		m.monitorSessionData[0].preview.Kind = kind
 		if m.copyMonitorReply("root-one") != nil {
-			t.Fatal("non-complete state offered copy")
+			t.Fatal("non-prose context offered copy")
 		}
 	}
 	m, _ = promptTestModel()
@@ -104,6 +104,33 @@ func TestMonitorCopyEligibilityAndComposer(t *testing.T) {
 	m, _ = promptKey(m, 'c', "c")
 	if m.monitorPrompt.input.Value() != "c" {
 		t.Fatal("copy stole typed c")
+	}
+}
+
+func TestMonitorCopyDuringWork(t *testing.T) {
+	for _, kind := range []codex.SessionContextKind{codex.SessionContextActivity, codex.SessionContextReply} {
+		m := completedCopyModel()
+		m.monitorSessionData[0].working = true
+		m.monitorSessionData[0].attention = codex.SessionAttentionNone
+		m.monitorSessionData[0].preview.Kind = kind
+		m.setRowContext("root-one", contextFull)
+		want := codex.SanitizeSessionContext(m.monitorSessionData[0].preview.Text)
+		x, y := renderedTextStart(t, m, benchmarkDetailCopyLabel)
+		_, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if !monitorCopyCommandMatches(cmd, want) {
+			t.Fatal("working prose was not copied")
+		}
+		m.monitorSessionData[0].preview.Text = "New activity"
+		if !monitorCopyCommandMatches(cmd, want) {
+			t.Fatal("clipboard snapshot changed after activation")
+		}
+	}
+	m := approvalTestModel()
+	n, _ := m.Update(tea.KeyPressMsg{Code: '1', Text: "1"})
+	m = n.(Model)
+	n, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	if cmd == nil || !n.(Model).monitorApprovalBusy || n.(Model).monitorCopyFlash != "" {
+		t.Fatal("copy interfered with approval confirmation")
 	}
 }
 
@@ -137,8 +164,8 @@ func TestMonitorCopyHighlight(t *testing.T) {
 	m.setRowContext("root-one", contextFull)
 	colors := paletteFor(m.theme)
 	idle := m.renderMonitorCopy(80, "root-one", colors)
-	if idle != colors.label().Foreground(colors.dim).Render(benchmarkDetailCopyLabel) {
-		t.Fatal("copy should be dim by default")
+	if idle != colors.label().Foreground(colors.primary).Render(benchmarkDetailCopyLabel) {
+		t.Fatal("usable copy should match the panel border")
 	}
 	m.monitorContextHover = "copy:root-one"
 	hover := m.renderMonitorCopy(80, "root-one", colors)

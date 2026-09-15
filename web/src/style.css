@@ -438,6 +438,10 @@ button:disabled {
   max-height: 230px;
   overflow: auto;
 }
+.session-row .context {
+  display: flex;
+  flex-direction: column;
+}
 pre {
   font: inherit;
   font-size: 13px;
