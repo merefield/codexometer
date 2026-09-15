@@ -1241,17 +1241,20 @@ same action on that session. The presentations are:
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
-When a session is **TURN COMPLETE**, or idle with a saved **LAST REPLY**, its reply box offers **[ (C)OPY ]**
+Whenever visible **LAST REPLY** or **LAST ACTIVITY** text is available, its box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
-Click it to copy that session's entire observed reply, including offscreen text,
+Click it to copy a snapshot of that session's observed text, including offscreen text,
 or press `C` for the selected session while its detail is shown. Copy is not
 available in graph-only mode or while detail is hidden. This uses the same terminal clipboard
-support as Benchmark Copy. While the composer is focused, `C` types normally;
+support as Benchmark Copy. Copy also works during a run, not just after completion;
+questions and approval-command panels remain separate. Visible approval controls take
+priority over Copy for `C`. While the composer is focused, `C` types normally;
 press `Esc` to leave the editor before copying or scrolling the reply with keys.
-The Sessions Copy button is dim but clickable at rest, highlights in the theme colour
-on hover, and flashes briefly on click or `C`. Translations embed the shortcut where
+Usable Sessions and Benchmark Copy buttons match their panel border colour at rest,
+highlight on hover, and flash briefly on click or `C`. An unavailable Benchmark matrix
+Copy button remains dim. Translations embed the shortcut where
 the word starts with C; otherwise they retain a separate `(C)` before the label.
-Copy exports the complete sanitized reply available in the bounded session preview,
+Copy exports the complete sanitized text available in the bounded session preview,
 not an unlimited transcript: it cannot recover text omitted by observation limits.
 Clipboard contents then follow your terminal and operating system's retention behaviour.
 
@@ -2131,6 +2134,16 @@ available from the existing reader.
   session from the observation can reduce the sum. On stale data, token/session
   totals are labelled last-known and live state counts become unavailable (—).
 - Select a session by clicking its directory/name, or use **↑ / ↓**.
+- **[ (C)OPY ]** copies visible reply/activity text from split, wide or full-page
+  detail, including while Codex is working and in read-only mode. `C` targets the
+  selected visible detail; typing and native Ctrl/Cmd+C retain their normal behaviour.
+  This is a browser-local clipboard write, not a Codex/server action, and does not
+  require `--web-control` or clipboard-read permission. It copies a snapshot of the
+  bounded, sanitized text already displayed, including offscreen content, not an
+  unlimited transcript or separate approval commands. A stale observation can still
+  be copied but is not current state. If the browser denies clipboard access, a
+  message suggests selecting and copying the text manually. Clipboard history and
+  other apps with clipboard access are outside Codexometer's control.
 - Use **← / →** or the row's arrow buttons to move through **graph only → split
   detail and graph → wide detail → full-page detail**. Each row has its own layout.
 - **Escape** or **← ALL SESSIONS** returns from full-page detail to that session's

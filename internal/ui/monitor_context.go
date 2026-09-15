@@ -226,6 +226,9 @@ func (m *Model) scrollMonitorContext(delta int) {
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 	if key == "c" {
+		if len(m.visibleMonitorApprovalButtons()) > 0 {
+			return m.updateMonitorApprovalKey(key)
+		}
 		id := m.monitorContextDetail
 		if id == "" && m.rowContextMode(m.monitorSelectedID) > contextGraph {
 			id = m.monitorSelectedID

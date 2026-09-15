@@ -260,9 +260,14 @@ func TestMonitorDetailBottomRowsFocusComposer(t *testing.T) {
 		m, c := promptTestModel()
 		m.height = height
 		g := m.monitorDashboardLayout()
+		copyX, copyY := renderedTextStart(t, m, benchmarkDetailCopyLabel)
 		for y := g.meterY + g.meterHeight - 3; y < g.meterY+g.meterHeight; y++ {
 			for x := 2; x < 2+g.contentWidth; x++ {
-				if m.monitorContextAt(x, y) != "prompt" {
+				want := "prompt"
+				if y == copyY && x >= copyX && x < copyX+lipgloss.Width(benchmarkDetailCopyLabel) {
+					want = "copy:root-one"
+				}
+				if m.monitorContextAt(x, y) != want {
 					t.Fatalf("bottom click missed at %d,%d height %d", x, y, height)
 				}
 			}

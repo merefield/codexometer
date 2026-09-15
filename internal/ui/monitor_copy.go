@@ -1,17 +1,17 @@
 package ui
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
-	"time"
 )
 
 // Copy the complete observed reply, not its wrapped/truncated presentation.
 func (m Model) monitorCopyText(id string) string {
 	for _, s := range m.monitorSessionData {
-		if s.id == id && m.monitorSessionVisible(s) && !s.working &&
-			(s.attention == codex.SessionAttentionComplete || s.attention == codex.SessionAttentionNone) &&
-			s.preview.Kind == codex.SessionContextReply {
+		if s.id == id && m.monitorSessionVisible(s) &&
+			(s.preview.Kind == codex.SessionContextReply || s.preview.Kind == codex.SessionContextActivity) {
 			return codex.SanitizeSessionContext(s.preview.Text)
 		}
 	}
@@ -22,7 +22,7 @@ func (m Model) renderMonitorCopy(width int, id string, colors palette) string {
 	if _, ok := contextActionRect(width, 0, benchmarkDetailCopyLabel); !ok || m.monitorCopyText(id) == "" {
 		return ""
 	}
-	style := colors.label().Foreground(colors.dim)
+	style := colors.label().Foreground(colors.primary)
 	if m.monitorContextHover == "copy:"+id || m.monitorCopyFlash == id {
 		style = style.Foreground(colors.background).Background(colors.primary)
 	}

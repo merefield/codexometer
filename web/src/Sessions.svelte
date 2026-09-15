@@ -9,6 +9,7 @@
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
+  import SessionCopy from './SessionCopy.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   // Every entry route (links, arrows, deep links and browser Forward) leaves a
@@ -226,6 +227,7 @@
             />{/key}
         {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
       </div>
+      {#key selected.id}<SessionCopy session={selected} active />{/key}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a
@@ -313,6 +315,7 @@
               >{/if}
           </div>
           {@render context(session, false)}
+          <SessionCopy {session} active={selectedID === session.id} />
         </div>{/if}
       {#if level < 2}<div class="panel graph-panel">
           <h2>TOKEN ACTIVITY // 30 SECOND SAMPLES</h2>
