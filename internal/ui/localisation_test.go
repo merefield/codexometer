@@ -46,6 +46,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	}
 	t.Run("benchmark_click_surfaces", TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes)
 	t.Run("monitor_click_surfaces", TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes)
+	t.Run("monitor_copy_surfaces", TestMonitorCopySurfaces)
 	t.Run("monitor_attention_surfaces", TestMonitorAttentionRenderedHitSurfaces)
 	t.Run("monitor_attention_padding", TestMonitorAttentionTallPadding)
 	t.Run("monitor_bottom_composer", TestMonitorDetailBottomRowsFocusComposer)

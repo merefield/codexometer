@@ -1232,10 +1232,17 @@ same action on that session. The presentations are:
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
    The body keeps content-type headings and source details, but does not repeat
    the session status. The left telemetry box is hidden in this view.
-   Use Up/Down, Page Up/Down, or the mouse wheel to read long requests.
+   Use Up/Down, Page Up/Down, or the mouse wheel to read long requests and completed replies.
    `Left` or `Esc` returns to the Sessions overview with the same session showing
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
+
+When a session is **TURN COMPLETE**, its reply box offers **[ (C) COPY ]**
+in the bottom-right border (split, expanded and full detail, when space permits).
+Click it to copy that session's entire observed reply, including offscreen text,
+or press `C` for the selected session. This uses the same terminal clipboard
+support as Benchmark Copy. While the composer is focused, `C` types normally;
+press `Esc` to leave the editor before copying or scrolling the reply with keys.
 
 `Left` / `Right` move along **graph ↔ split ↔ expanded ↔ full detail** without
 wrapping. Each row retains its own presentation; adjusting one does not resize

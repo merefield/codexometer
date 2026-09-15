@@ -134,7 +134,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 	if gw == 0 {
 		action = m.renderMonitorNavigation(cw, s.id, false, colors)
 	}
-	panel := frameSizedWithTitleAction(cw, max(height-2, 1), contextTitle(s.preview), action, strings.Join(lines, "\n"), colors.primary, colors)
+	panel := frameSizedWithActions(cw, max(height-2, 1), contextTitle(s.preview), action, m.renderMonitorCopy(cw, s.id, colors), strings.Join(lines, "\n"), colors.primary, colors)
 	row := lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", panel)
 	if gw > 0 {
 		row = lipgloss.JoinHorizontal(lipgloss.Top, row, " ", m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), m.renderMonitorNavigation(gw, s.id, false, colors), colors))
@@ -178,7 +178,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 			title = badge
 		}
 	}
-	return frameSizedWithTitleAction(width, rows, title, action, body, colors.primary, colors)
+	return frameSizedWithActions(width, rows, title, action, m.renderMonitorCopy(width, m.monitorContextDetail, colors), body, colors.primary, colors)
 }
 
 // Reserve the footer before allocating the scroll viewport. Short terminals
@@ -225,6 +225,15 @@ func (m *Model) scrollMonitorContext(delta int) {
 }
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
+	if key == "c" {
+		id := m.monitorContextDetail
+		if id == "" && m.rowContextMode(m.monitorSelectedID) > contextGraph {
+			id = m.monitorSelectedID
+		}
+		if cmd := m.copyMonitorReply(id); cmd != nil {
+			return m, cmd, true
+		}
+	}
 	if next, cmd, handled := m.updateMonitorApprovalKey(key); handled {
 		return next, cmd, true
 	}
@@ -297,6 +306,9 @@ func (m Model) monitorContextAt(x, y int) string {
 	g := m.monitorDashboardLayout()
 	x -= 2
 	y -= g.meterY
+	if hit := m.monitorCopyAt(x, y); hit != "" {
+		return hit
+	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		if hit := m.monitorNavigationHit(g.contentWidth, m.monitorContextDetail, true, x, y); hit != "" {
 			return hit
@@ -377,6 +389,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 	_, click := msg.(tea.MouseClickMsg)
 	m.monitorContextHover = m.monitorContextAt(mouse.X, mouse.Y)
 	if click && mouse.Button == tea.MouseLeft && m.monitorContextHover != "" {
+		if id, ok := strings.CutPrefix(m.monitorContextHover, "copy:"); ok {
+			return m, m.copyMonitorReply(id), true
+		}
 		if strings.HasPrefix(m.monitorContextHover, "decision:") {
 			return m.monitorApprovalAction(m.monitorContextHover)
 		}
