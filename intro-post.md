@@ -50,11 +50,17 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 
+Below each session's token count, the latest observed model, reasoning level and Fast setting take priority—for example, **gpt-6-astra medium fast**. These are recorded selections, not proof of the delivered backend model or speed; unavailable fields are omitted. **AVG TOK/MIN** shows average observed usage since measurement began, excluding paused time, rather than instantaneous generation speed. Total and per-session rates refresh together every five seconds, not on mouse movement or keypresses.
+
 Give each session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the Sessions overview with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.
 
 Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts, as do your last main tab and Quota view; individual row layouts, selection and dismissals are temporary.
 
 Prefer visible controls? Click **[←] [→]** at the top-right of each row's rightmost box to adjust detail, or **[↑] [↓]** in the Sessions header to select sessions. Unavailable directions are dimmed. The session-selection buttons stay out of full-screen detail, where Up/Down scroll the text; tiny boxes fall back to keyboard and background clicks.
+
+Take a finished reply with you: **[ (C)OPY ]** sits at the bottom-right of eligible split, wide and full-detail boxes when space permits, including saved **LAST REPLY** text recovered at startup. It is dim but clickable at rest, highlights on hover, and flashes when clicked or activated with `C`. The shortcut targets the selected session only while its detail is shown; approval confirmation and composer typing retain their own controls. Translated labels embed C where natural, otherwise showing it separately.
+
+Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; press Escape first if the composer is focused to restore keyboard scrolling. Copy includes offscreen text from the entire sanitized, bounded reply available to Codexometer—not an unlimited conversation transcript—and uses the same terminal clipboard support as Benchmark Copy. Copied text follows your terminal and operating system's normal clipboard retention.
 
 If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
 
