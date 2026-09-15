@@ -190,7 +190,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		lines = append(lines, controls)
 	}
 	action := m.renderMonitorNavigationButtons(m.expandedContextNavigation(width, height, s), colors)
-	return frameSizedWithTitleAction(width, max(height-2, 1), contextTitle(s.preview), action, strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSizedWithActions(width, max(height-2, 1), contextTitle(s.preview), action, m.renderMonitorCopy(width, s.id, colors), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 // Keep an explicit route to the complete request when inline decisions cannot

@@ -560,11 +560,11 @@ codexometer --codex /path/to/codex
 | `Left` / `Right` | Page Usage history, or select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a session row or Benchmark row, or scroll open Benchmark detail |
+| `Up` / `Down` | Select a session row or Benchmark row, or scroll Sessions full detail / open Benchmark detail (outside a focused editor) |
 | `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions full detail, `Enter` focuses an available reply editor or submits its text |
-| `c` | Select Cumulative in Usage, copy the Benchmark result matrix as Markdown, or copy the complete open run detail |
+| `c` | Copy an eligible Sessions reply while its detail is shown, confirm an armed session approval, select Cumulative in Usage, or copy the Benchmark matrix/open run detail; types normally in a focused editor |
 | `l` | Clear accumulated Benchmark results while no suite is running |
-| `Page Up` / `Page Down` | Page Usage history, session rows, or Benchmark results |
+| `Page Up` / `Page Down` | Page Usage history, session rows, or Benchmark results; scroll Sessions full detail / Benchmark detail (outside a focused editor) |
 | `q` | Quit |
 | `Esc` | Step back one Sessions context level, cancel quota-reset confirmation/dismiss its notice, return from Benchmark detail or Scope; otherwise quit |
 | `Ctrl+C` | Quit |
@@ -989,20 +989,24 @@ The other top-level views are:
   or when runtime health cannot be established. Below,
   every independent root session has a metrics box and its own graph.
   Spawned-agent descendants with an explicit Codex parent link are recursively
-  aggregated into the root row and reported as `ROOT + n AGENTS`. Each row compactly shows
-  model calls and latest activity, latest/peak time to first token, and
+  aggregated into the root row, with a linked-agent count when nonzero and space permits.
+  Below tokens, each row prioritises the latest observed model, reasoning effort and Fast setting.
+  Lower-priority metrics include model calls and latest activity, latest/peak time to first token, and
   latest/peak output size. All graphs add one thin vertical block bar on the
-  same 30-second tick, after a fresh boundary read. The companion readout
-  records each account quota window at the current baseline and tracks its
-  observed change while monitoring. Every session row shows its exact share of
+  same 30-second tick, after a fresh boundary read. Account quota observations
+  are retained internally to estimate each session's share of quota movement;
+  the summary strip does not repeat the Quota tab's account readout.
+  Every session row shows its share of
   locally observed tokens and an explicitly labelled, local-only estimate of the first quota
   window's movement, apportioned by that share. A root discovered part-way
   through an interval gets an honestly labelled partial first bar and its rate
   uses that root's own observed lifetime. New bars enter on the right, older
   bars move left, and each Y axis automatically rescales to its visible samples.
-  An open root or linked child whose latest durable lifecycle event says its
-  turn completed receives an amber `INPUT NEEDED` badge and border until a new
-  turn starts or the CLI closes. When Codexometer finds the default shared
+  An open root with an observed completed turn and saved reply can receive a
+  theme-primary `TURN COMPLETE` badge: a result is ready, not necessarily a request
+  for input. A linked child completing does not imply that its root turn is complete,
+  and ongoing work in the group suppresses the completion badge.
+  Confirmed input and approval requests retain warning colours. When Codexometer finds the default shared
   Codex app-server socket, it reads the server's per-thread runtime status and
   uses the exact `waitingOnApproval` and `waitingOnUserInput` flags for
   `APPROVAL NEEDED` and `INPUT NEEDED`. If no shared server is available, an
@@ -1232,10 +1236,24 @@ same action on that session. The presentations are:
    **WORKING** ball), or falls back to **SESSION CONTEXT** when no badge applies.
    The body keeps content-type headings and source details, but does not repeat
    the session status. The left telemetry box is hidden in this view.
-   Use Up/Down, Page Up/Down, or the mouse wheel to read long requests.
+   Use Up/Down, Page Up/Down, or the mouse wheel to read long requests and completed replies.
    `Left` or `Esc` returns to the Sessions overview with the same session showing
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
+
+When a session is **TURN COMPLETE**, or idle with a saved **LAST REPLY**, its reply box offers **[ (C)OPY ]**
+in the bottom-right border (split, expanded and full detail, when space permits).
+Click it to copy that session's entire observed reply, including offscreen text,
+or press `C` for the selected session while its detail is shown. Copy is not
+available in graph-only mode or while detail is hidden. This uses the same terminal clipboard
+support as Benchmark Copy. While the composer is focused, `C` types normally;
+press `Esc` to leave the editor before copying or scrolling the reply with keys.
+The Sessions Copy button is dim but clickable at rest, highlights in the theme colour
+on hover, and flashes briefly on click or `C`. Translations embed the shortcut where
+the word starts with C; otherwise they retain a separate `(C)` before the label.
+Copy exports the complete sanitized reply available in the bounded session preview,
+not an unlimited transcript: it cannot recover text omitted by observation limits.
+Clipboard contents then follow your terminal and operating system's retention behaviour.
 
 `Left` / `Right` move along **graph ↔ split ↔ expanded ↔ full detail** without
 wrapping. Each row retains its own presentation; adjusting one does not resize
