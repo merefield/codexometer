@@ -34,7 +34,7 @@
     } catch {
       if (session.text === text)
         notice =
-          'Clipboard unavailable. Select the reply text and copy it manually.';
+          'Clipboard unavailable. Select the visible text and copy it manually.';
     } finally {
       busy = false;
     }

@@ -175,7 +175,9 @@ test('read-only session copy captures working prose in every detail level withou
     .locator('.full-detail')
     .getByRole('button', { name: 'Copy text' })
     .click();
-  await expect(page.getByRole('status')).toContainText('Clipboard unavailable');
+  await expect(page.getByRole('status')).toHaveText(
+    'Clipboard unavailable. Select the visible text and copy it manually.',
+  );
   await page.evaluate(
     (detail) =>
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
