@@ -2092,18 +2092,25 @@ The shared app-server's experimental `thread/settings/update` changes subsequent
 turns, not a turn already in progress. A queued acknowledgement alone is not
 reported as a verified change. Changed settings since review are skipped.
 
-Acceptance and decline are process-local: restarting Codexometer with the same
-options presents eligible gates again, separately for each session and threshold.
-Refreshes discover sessions but never reapply a profile or undo manual changes.
-At a quota-window/account change and on clean exit, Codexometer attempts to
-restore settings it changed, preserving fields subsequently changed manually.
-Shutdown drains in-flight updates and rejects later writes before restoration.
-Restoration errors are collected across sessions; unloaded sessions, daemon
-failures, crashes and forced termination may require manual restoration. Session
-updates are not an atomic transaction with concurrent Codex UI changes.
-The feature does not edit
-`config.toml` or change global Codex defaults and requires a Codex version that
-exposes the shared app-server control socket and `thread/settings/update`.
+Approved settings remain after Codexometer closes, crashes, or restarts, and
+when the quota window changes. Codexometer keeps no model/reasoning/speed
+history and never rolls settings back. Change them again in Codex when needed.
+Persistence across a Codex/app-server restart is controlled by Codex itself.
+
+On every launch and refresh, Codexometer reads current session settings and
+compares them with the eligible target profile. Sessions already at that target
+need no approval or update, even after restarting with the same switches. Speed
+names are resolved through the model catalogue before comparison; omitted speed
+accepts any current speed, while `standard` requires an unset explicit tier.
+Other sessions still require approval. Skips and attempted-change tracking are
+process-local; approval itself is never persisted. Refreshes do not reapply a
+profile or overwrite manual changes. Shutdown cancels/drains outstanding work
+without sending any restoration calls; an already queued change may still apply.
+
+This feature does not edit `config.toml` or change global Codex defaults. It
+requires a Codex version exposing the shared app-server control socket and
+experimental `thread/settings/update`. Updates are not atomic with concurrent
+settings changes in the Codex UI.
 
 ## Experimental browser interface
 

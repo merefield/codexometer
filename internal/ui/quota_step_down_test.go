@@ -12,10 +12,10 @@ import (
 )
 
 type quotaStepTestFetcher struct {
-	steps             []codex.QuotaStep
-	sessions          []codex.QuotaSession
-	targets           []codex.QuotaSession
-	updates, restores int
+	steps    []codex.QuotaStep
+	sessions []codex.QuotaSession
+	targets  []codex.QuotaSession
+	updates  int
 }
 
 func (f *quotaStepTestFetcher) Fetch(context.Context) (codex.Snapshot, error) {
@@ -28,17 +28,31 @@ func (f *quotaStepTestFetcher) QuotaStepPolicy() []codex.QuotaStep { return f.st
 func (f *quotaStepTestFetcher) QuotaSessions(context.Context) ([]codex.QuotaSession, error) {
 	return append([]codex.QuotaSession(nil), f.sessions...), nil
 }
-func (f *quotaStepTestFetcher) ApplyQuotaProfile(_ context.Context, targets []codex.QuotaSession, _ codex.QuotaStep) (int, error) {
+func (f *quotaStepTestFetcher) ApplyQuotaProfile(_ context.Context, targets []codex.QuotaSession, step codex.QuotaStep) (int, error) {
 	f.updates++
 	f.targets = targets
+	for i, session := range f.sessions {
+		for _, target := range targets {
+			if session.ID == target.ID {
+				f.sessions[i].Model = step.Model
+				f.sessions[i].Effort = step.Effort
+				if step.ServiceTier == "default" {
+					f.sessions[i].Tier = nil
+				} else if step.ServiceTier != "" {
+					tier := step.ServiceTier
+					f.sessions[i].Tier = &tier
+				}
+			}
+		}
+	}
 	return len(targets), nil
 }
-func (f *quotaStepTestFetcher) RestoreSessionSettings(context.Context) (int, error) {
-	f.restores++
-	return 1, nil
-}
-func (f *quotaStepTestFetcher) CloseQuotaProfiles(ctx context.Context) (int, error) {
-	return f.RestoreSessionSettings(ctx)
+func (f *quotaStepTestFetcher) CloseQuotaProfiles() {}
+func (f *quotaStepTestFetcher) ResolveQuotaStep(_ context.Context, step codex.QuotaStep) (codex.QuotaStep, error) {
+	if step.ServiceTier == "fast" {
+		step.ServiceTier = "priority"
+	}
+	return step, nil
 }
 func quotaStepSnapshot(used int, reset int64) codex.Snapshot {
 	s := codex.DemoSnapshot()
@@ -147,24 +161,24 @@ func TestQuotaApproveAllBindsReviewedInventory(t *testing.T) {
 		t.Fatal("approved list that cannot fit")
 	}
 }
-func TestQuotaWindowChangeRestoresAndIgnoresLateResults(t *testing.T) {
+func TestQuotaWindowChangeLeavesSettingsAndIgnoresLateResults(t *testing.T) {
 	m, f := quotaTestModel(t)
 	m, _ = quotaPress(m, false)
 	m, apply := quotaPress(m, false)
 	old := apply().(quotaStepResult)
 	m.snapshot = quotaStepSnapshot(85, time.Now().Add(2*time.Hour).Unix())
-	restore := m.evaluateQuotaStep(m.snapshot)
-	if restore == nil || !m.quotaStepBusy {
-		t.Fatal("window change did not restore")
+	scan := m.evaluateQuotaStep(m.snapshot)
+	if scan == nil || !m.quotaStepBusy {
+		t.Fatal("window change did not rescan")
 	}
 	next, _ := m.Update(old)
 	m = next.(Model)
 	if !m.quotaStepBusy {
 		t.Fatal("old result cleared busy state")
 	}
-	next, _ = m.Update(restore())
+	next, _ = m.Update(scan())
 	m = next.(Model)
-	if f.restores != 1 || m.quotaStepActive != nil || len(m.quota.handled) != 0 {
+	if f.updates != 1 || m.quotaStepActive != nil || len(m.quota.handled) != 0 {
 		t.Fatal("window state not reset")
 	}
 }
@@ -207,5 +221,46 @@ func TestQuotaControlsKeepResetVisibleAndClickable(t *testing.T) {
 				t.Fatalf("action click mismatch %s %s", got, a.key)
 			}
 		}
+	}
+}
+
+func TestQuotaRestartUsesCurrentSettingsWithoutApprovalHistory(t *testing.T) {
+	for _, speed := range []string{"", "default", "fast"} {
+		t.Run(speed, func(t *testing.T) {
+			m, f := quotaTestModel(t)
+			f.steps = f.steps[:1]
+			f.steps[0].ServiceTier = speed
+			priority := "priority"
+			for i := range f.sessions {
+				f.sessions[i].Model = "small"
+				f.sessions[i].Effort = "medium"
+				f.sessions[i].Tier = &priority
+				if speed == "default" {
+					f.sessions[i].Tier = nil
+				}
+			}
+			restarted := New(f, time.Minute)
+			restarted.loading = false
+			restarted.snapshot = m.snapshot
+			cmd := restarted.evaluateQuotaStep(restarted.snapshot)
+			next, _ := restarted.Update(cmd())
+			restarted = next.(Model)
+			if len(restarted.quotaCandidates()) != 0 || len(restarted.quota.handled) != 0 {
+				t.Fatal("already matching sessions should require no approval history")
+			}
+			restarted, cmd = quotaPress(restarted, true)
+			if cmd != nil || len(restarted.quota.confirm) != 0 || f.updates != 0 {
+				t.Fatal("matching sessions prompted or wrote settings")
+			}
+			// One different session needs approval; the matching session remains excluded.
+			f.sessions[1].Effort = "high"
+			cmd = restarted.evaluateQuotaStep(restarted.snapshot)
+			next, _ = restarted.Update(cmd())
+			restarted = next.(Model)
+			candidates := restarted.quotaCandidates()
+			if len(candidates) != 1 || candidates[0].ID != "two" {
+				t.Fatalf("candidates %#v", candidates)
+			}
+		})
 	}
 }

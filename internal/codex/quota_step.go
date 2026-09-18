@@ -22,8 +22,8 @@ type QuotaStepPolicyProvider interface{ QuotaStepPolicy() []QuotaStep }
 type SessionSettingsClient interface {
 	QuotaSessions(context.Context) ([]QuotaSession, error)
 	ApplyQuotaProfile(context.Context, []QuotaSession, QuotaStep) (int, error)
-	RestoreSessionSettings(context.Context) (int, error)
-	CloseQuotaProfiles(context.Context) (int, error)
+	ResolveQuotaStep(context.Context, QuotaStep) (QuotaStep, error)
+	CloseQuotaProfiles()
 }
 
 func (c Client) QuotaStepPolicy() []QuotaStep { return append([]QuotaStep(nil), c.QuotaSteps...) }
@@ -46,15 +46,30 @@ func (c Client) ApplyQuotaProfile(ctx context.Context, targets []QuotaSession, s
 	}
 	return 0, errors.New("shared session control unavailable")
 }
-func (c Client) RestoreSessionSettings(ctx context.Context) (int, error) {
+func (c Client) ResolveQuotaStep(ctx context.Context, step QuotaStep) (QuotaStep, error) {
 	if p := c.settingsClient(); p != nil {
-		return p.RestoreSessionSettings(ctx)
+		return p.ResolveQuotaStep(ctx, step)
 	}
-	return 0, nil
+	return step, errors.New("shared session control unavailable")
 }
-func (c Client) CloseQuotaProfiles(ctx context.Context) (int, error) {
+func (c Client) CloseQuotaProfiles() {
 	if p := c.settingsClient(); p != nil {
-		return p.CloseQuotaProfiles(ctx)
+		p.CloseQuotaProfiles()
 	}
-	return 0, nil
+}
+
+// MatchesQuotaStep compares current state, not approval history. Resolve an
+// advertised speed name to its ID first. Omitted speed imposes no constraint.
+func (s QuotaSession) MatchesQuotaStep(step QuotaStep) bool {
+	if s.Model != step.Model || s.Effort != step.Effort {
+		return false
+	}
+	switch step.ServiceTier {
+	case "":
+		return true
+	case "default":
+		return s.Tier == nil
+	default:
+		return s.Tier != nil && *s.Tier == step.ServiceTier
+	}
 }

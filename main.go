@@ -24,7 +24,6 @@ import (
 
 type demoFetcher struct {
 	quotaSteps       []codex.QuotaStep
-	settingsUpdates  int
 	approvalDecision string
 	mu               sync.Mutex
 	snapshot         codex.Snapshot
@@ -54,25 +53,12 @@ func (d *demoFetcher) ApplyQuotaProfile(ctx context.Context, targets []codex.Quo
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.settingsUpdates++
 	return len(targets), nil
 }
 
-func (d *demoFetcher) CloseQuotaProfiles(ctx context.Context) (int, error) {
-	return d.RestoreSessionSettings(ctx)
-}
-
-func (d *demoFetcher) RestoreSessionSettings(ctx context.Context) (int, error) {
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.settingsUpdates == 0 {
-		return 0, nil
-	}
-	d.settingsUpdates = 0
-	return 2, nil
+func (d *demoFetcher) CloseQuotaProfiles() {}
+func (d *demoFetcher) ResolveQuotaStep(ctx context.Context, step codex.QuotaStep) (codex.QuotaStep, error) {
+	return step, ctx.Err()
 }
 
 type quotaStepFlags []codex.QuotaStep
@@ -660,17 +646,8 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 	if final, ok := finalModel.(ui.Model); ok {
 		final.CancelQuotaWork()
 	}
-	if restorer, ok := fetcher.(interface {
-		CloseQuotaProfiles(context.Context) (int, error)
-	}); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if _, restoreErr := restorer.CloseQuotaProfiles(ctx); restoreErr != nil {
-			if runErr != nil {
-				return fmt.Errorf("%v; restore session settings: %w", runErr, restoreErr)
-			}
-			return fmt.Errorf("restore session settings: %w", restoreErr)
-		}
+	if controller, ok := fetcher.(interface{ CloseQuotaProfiles() }); ok {
+		controller.CloseQuotaProfiles()
 	}
 	return runErr
 }

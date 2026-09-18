@@ -124,44 +124,41 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 	t.Cleanup(func() { p.disconnect(nil); server.Close() })
 	return p, fixture
 }
-func TestQuotaSettingsCatalogueDriftAndRestoration(t *testing.T) {
+func TestQuotaSettingsPersistAfterCloseAndFreshController(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	ctx := context.Background()
 	sessions, err := p.QuotaSessions(ctx)
-	if err != nil || len(sessions) != 2 {
-		t.Fatalf("scan %v %v", sessions, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	n, err := p.ApplyQuotaProfile(ctx, sessions, QuotaStep{Model: "small", Effort: "medium", ServiceTier: "slow"})
+	step := QuotaStep{Model: "small", Effort: "medium", ServiceTier: "slow"}
+	n, err := p.ApplyQuotaProfile(ctx, sessions, step)
 	if err != nil || n != 2 {
 		t.Fatalf("apply %d %v", n, err)
 	}
-	f.mu.Lock()
-	if *f.sessions["one"].Tier != "priority" {
-		t.Error("slow did not resolve by catalogue name")
+	p.CloseQuotaProfiles()
+	fresh := &daemonStatusProvider{socketPath: p.socketPath}
+	t.Cleanup(func() { fresh.disconnect(nil) })
+	resolved, err := fresh.ResolveQuotaStep(ctx, step)
+	if err != nil || resolved.ServiceTier != "priority" {
+		t.Fatalf("resolve %#v %v", resolved, err)
 	}
-	s := f.sessions["one"]
-	s.Model = "manual"
-	s.Tier = nil
-	f.sessions["one"] = s
-	f.fail = "two"
-	f.mu.Unlock()
-	n, err = p.RestoreSessionSettings(ctx)
-	if n != 1 || err == nil {
-		t.Fatalf("partial restore %d %v", n, err)
+	current, err := fresh.QuotaSessions(ctx)
+	if err != nil || len(current) != 2 {
+		t.Fatalf("read %#v %v", current, err)
 	}
-	f.mu.Lock()
-	s = f.sessions["one"]
-	f.fail = ""
-	f.mu.Unlock()
-	if s.Model != "manual" || s.Effort != "high" || s.Tier != nil {
-		t.Fatalf("manual settings clobbered: %#v", s)
+	for _, session := range current {
+		if !session.MatchesQuotaStep(resolved) {
+			t.Fatalf("profile did not persist: %#v", session)
+		}
 	}
-	n, err = p.CloseQuotaProfiles(ctx)
-	if n != 1 || err != nil {
-		t.Fatalf("close %d %v", n, err)
-	}
-	if _, err = p.ApplyQuotaProfile(ctx, sessions, QuotaStep{Model: "small", Effort: "medium"}); err == nil {
+	if _, err := p.ApplyQuotaProfile(ctx, sessions, step); err == nil {
 		t.Fatal("write after close accepted")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.writes) != 2 {
+		t.Fatal("close issued settings writes")
 	}
 }
 func TestQuotaSettingsRejectUnsupportedAndChangedTargets(t *testing.T) {
@@ -205,7 +202,7 @@ func TestQuotaSettingsPreservesUnownedSpeedAndStandardClearsTier(t *testing.T) {
 	s.Tier = &tier
 	f.sessions["one"] = s
 	f.mu.Unlock()
-	if _, err := p.RestoreSessionSettings(ctx); err != nil {
+	if _, err := p.ApplyQuotaProfile(ctx, []QuotaSession{s}, QuotaStep{Model: "small", Effort: "medium"}); err != nil {
 		t.Fatal(err)
 	}
 	f.mu.Lock()
@@ -226,37 +223,9 @@ func TestQuotaSettingsPreservesUnownedSpeedAndStandardClearsTier(t *testing.T) {
 }
 func TestQuotaSettingsNoopCloseDoesNotConnect(t *testing.T) {
 	p := &daemonStatusProvider{socketPath: "/missing/no-socket"}
-	if n, err := p.CloseQuotaProfiles(context.Background()); n != 0 || err != nil {
-		t.Fatalf("noop close %d %v", n, err)
-	}
-}
-
-func TestQuotaRestorationOnlyTouchesOwnedUnmodifiedFields(t *testing.T) {
-	tier := "flex"
-	manualTier := "priority"
-	original := QuotaSession{ID: "one", Model: "large", Effort: "high"}
-	applied := QuotaSession{ID: "one", Model: "small", Effort: "medium", Tier: &tier}
-	owner := quotaOwnership{original: original, applied: applied, tierChanged: true}
-	restored, params := quotaRestoration(owner, applied)
-	if !sameQuotaSettings(restored, original) || len(params) != 4 {
-		t.Fatalf("full restore %#v %#v", restored, params)
-	}
-	current := applied
-	current.Model = "manual"
-	current.Tier = &manualTier
-	restored, params = quotaRestoration(owner, current)
-	if restored.Model != "manual" || restored.Effort != "high" || !tierEqual(restored.Tier, &manualTier) || len(params) != 2 {
-		t.Fatalf("manual restore %#v %#v", restored, params)
-	}
-	owner.tierChanged = false
-	restored, params = quotaRestoration(owner, applied)
-	if _, ok := params["serviceTier"]; ok || !tierEqual(restored.Tier, applied.Tier) {
-		t.Fatal("unowned speed overwritten")
-	}
-	owner.pending = true
-	_, params = quotaRestoration(owner, original)
-	if params["model"] != "large" || params["effort"] != "high" {
-		t.Fatal("uncertain write has no compensating restore")
+	p.CloseQuotaProfiles()
+	if !p.settingsClosed {
+		t.Fatal("controller not closed")
 	}
 }
 func TestQuotaSettingsCloseDrainsInflightWrite(t *testing.T) {
@@ -275,7 +244,7 @@ func TestQuotaSettingsCloseDrainsInflightWrite(t *testing.T) {
 		applied <- err
 	}()
 	<-started
-	go func() { _, err := p.CloseQuotaProfiles(ctx); closed <- err }()
+	go func() { p.CloseQuotaProfiles(); closed <- nil }()
 	select {
 	case <-closed:
 		t.Fatal("close raced the write")
@@ -290,8 +259,8 @@ func TestQuotaSettingsCloseDrainsInflightWrite(t *testing.T) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.sessions["one"].Model != "large" {
-		t.Fatal("inflight profile survived close")
+	if f.sessions["one"].Model != "small" {
+		t.Fatal("close reverted approved profile")
 	}
 }
 func TestQuotaSettingsQueuedAcknowledgementIsNotSuccess(t *testing.T) {
@@ -306,12 +275,10 @@ func TestQuotaSettingsQueuedAcknowledgementIsNotSuccess(t *testing.T) {
 	if n != 0 || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("unverified write %d %v", n, err)
 	}
-	if _, err := p.CloseQuotaProfiles(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	p.CloseQuotaProfiles()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.writes) != 2 || f.writes[1]["model"] != "large" {
-		t.Fatalf("missing queued compensation: %#v", f.writes)
+	if len(f.writes) != 1 {
+		t.Fatalf("unexpected rollback: %#v", f.writes)
 	}
 }

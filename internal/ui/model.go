@@ -517,7 +517,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.quotaStepBusy = false
 		// Any newly read inventory invalidates an armed confirmation.
 		m.clearQuotaConfirmation()
+		if m.quotaStepPending == nil || *m.quotaStepPending != message.step {
+			m.quota.sessions = nil
+			return m, m.evaluateQuotaStep(m.snapshot)
+		}
 		m.quota.sessions = message.sessions
+		m.quotaStepNotice = fmt.Sprintf("%d session(s) already at target; no approval needed.", message.matched)
 		if message.err != nil {
 			m.quotaStepNotice = "Some sessions unavailable: " + message.err.Error()
 		}
@@ -527,15 +532,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.quotaStepBusy = false
-		if message.restoring {
-			m.quota.restoring = false
-			m.quotaStepActive = nil
-			m.quotaStepNotice = "Prior profile restoration finished."
-			if message.err != nil {
-				m.quotaStepNotice = "Restoration incomplete; check Codex: " + message.err.Error()
-			}
-			return m, nil
-		}
 		if message.window != m.quotaStepWindow {
 			return m, nil
 		}

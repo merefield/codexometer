@@ -22,7 +22,6 @@ type quotaControl struct {
 	confirmStep   codex.QuotaStep
 	confirmWindow string
 	confirmAll    bool
-	restoring     bool
 }
 
 func (m Model) CancelQuotaWork() {
@@ -33,17 +32,18 @@ func (m Model) CancelQuotaWork() {
 
 type quotaScanResult struct {
 	revision uint64
+	step     codex.QuotaStep
+	matched  int
 	sessions []codex.QuotaSession
 	err      error
 }
 type quotaStepResult struct {
-	revision  uint64
-	step      codex.QuotaStep
-	window    string
-	targets   []codex.QuotaSession
-	updated   int
-	err       error
-	restoring bool
+	revision uint64
+	step     codex.QuotaStep
+	window   string
+	targets  []codex.QuotaSession
+	updated  int
+	err      error
 }
 
 func quotaStepThreshold(step *codex.QuotaStep) int {
@@ -112,21 +112,9 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 		m.quota.sessions = nil
 		m.quota.handled = nil
 		m.quotaStepPending = nil
-		m.quotaStepWindow = window
-		m.quotaStepBusy = true
-		m.quota.restoring = true
-		m.quotaStepNotice = "Quota window changed: restoring owned settings."
-		revision := m.quota.revision
-		return func() tea.Msg {
-			c, ok := m.fetcher.(codex.SessionSettingsClient)
-			if !ok {
-				return quotaStepResult{revision: revision, restoring: true}
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			n, err := c.RestoreSessionSettings(ctx)
-			return quotaStepResult{revision: revision, restoring: true, updated: n, err: err}
-		}
+		m.quotaStepBusy = false
+		m.quotaStepActive = nil
+		m.quotaStepNotice = "Quota window changed. Existing session settings are unchanged."
 	}
 	m.quotaStepWindow = window
 	var candidate *codex.QuotaStep
@@ -146,16 +134,30 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	m.quotaStepBusy = true
 	m.quota.revision++
 	revision := m.quota.revision
+	step := *candidate
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	m.quota.cancel = cancel
 	return func() tea.Msg {
 		defer cancel()
 		c, ok := m.fetcher.(codex.SessionSettingsClient)
 		if !ok {
-			return quotaScanResult{revision: revision, err: fmt.Errorf("shared session control unavailable")}
+			return quotaScanResult{revision: revision, step: step, err: fmt.Errorf("shared session control unavailable")}
+		}
+		resolved, err := c.ResolveQuotaStep(ctx, step)
+		if err != nil {
+			return quotaScanResult{revision: revision, step: step, err: err}
 		}
 		sessions, err := c.QuotaSessions(ctx)
-		return quotaScanResult{revision: revision, sessions: sessions, err: err}
+		var candidates []codex.QuotaSession
+		matched := 0
+		for _, session := range sessions {
+			if session.MatchesQuotaStep(resolved) {
+				matched++
+			} else {
+				candidates = append(candidates, session)
+			}
+		}
+		return quotaScanResult{revision: revision, step: step, sessions: candidates, matched: matched, err: err}
 	}
 }
 func (m Model) quotaCandidates() []codex.QuotaSession {
@@ -252,6 +254,7 @@ func (m Model) renderQuotaStepNotice(width int) string {
 	if body == "" {
 		body = m.quotaStepLabel()
 	}
+	body += "\nChanges remain after Codexometer closes."
 	candidates := m.quotaCandidates()
 	if len(candidates) > 0 {
 		s := candidates[m.quota.selected%len(candidates)]

@@ -41,7 +41,7 @@ func (p *daemonStatusProvider) readQuotaSession(ctx context.Context, id string) 
 		return s, err
 	}
 	if s.Model == "" || s.Effort == "" || len(response.ServiceTier) == 0 {
-		return s, errors.New("restorable model, effort or service tier unavailable")
+		return s, errors.New("current model, effort or service tier unavailable")
 	}
 	if err = json.Unmarshal(response.ServiceTier, &s.Tier); err != nil {
 		return s, err
@@ -195,16 +195,9 @@ func (p *daemonStatusProvider) ApplyQuotaProfile(ctx context.Context, targets []
 	if err != nil {
 		return 0, err
 	}
-	if p.originalSettings == nil {
-		p.originalSettings = map[string]quotaOwnership{}
-	}
 	var failures []error
 	updated := 0
 	for _, target := range targets {
-		if owner, ok := p.originalSettings[target.ID]; ok && owner.pending {
-			failures = append(failures, fmt.Errorf("%s: prior update uncertain; restore before another profile", target.ID))
-			continue
-		}
 		if err := ctx.Err(); err != nil {
 			failures = append(failures, err)
 			break
@@ -245,102 +238,31 @@ func (p *daemonStatusProvider) ApplyQuotaProfile(ctx context.Context, targets []
 			updated++
 			continue
 		}
-		owner, exists := p.originalSettings[target.ID]
-		if !exists {
-			owner.original = current
-		} else {
-			// Rebase fields changed manually since our last write.
-			if current.Model != owner.applied.Model {
-				owner.original.Model = current.Model
-			}
-			if current.Effort != owner.applied.Effort {
-				owner.original.Effort = current.Effort
-			}
-			if !tierEqual(current.Tier, owner.applied.Tier) {
-				owner.original.Tier = current.Tier
-				owner.tierChanged = false
-			}
-		}
-		owner.applied = desired
-		owner.tierChanged = owner.tierChanged || step.ServiceTier != ""
-		owner.pending = true
-		// Keep recovery information even when the write outcome is uncertain.
-		p.originalSettings[target.ID] = owner
 		if err := p.writeQuotaSettings(ctx, desired, params); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
 			continue
 		}
-		owner.pending = false
-		p.originalSettings[target.ID] = owner
 		updated++
 	}
 	return updated, errors.Join(failures...)
 }
 
-func (p *daemonStatusProvider) RestoreSessionSettings(ctx context.Context) (int, error) {
+// Resolve tier names before comparing live settings with the configured target.
+func (p *daemonStatusProvider) ResolveQuotaStep(ctx context.Context, step QuotaStep) (QuotaStep, error) {
 	p.settingsMu.Lock()
 	defer p.settingsMu.Unlock()
-	return p.restoreQuotaLocked(ctx)
-}
-func (p *daemonStatusProvider) CloseQuotaProfiles(ctx context.Context) (int, error) {
-	p.settingsMu.Lock()
-	defer p.settingsMu.Unlock()
-	// Waiting for the lock drains running writes; queued writes must reject.
-	p.settingsClosed = true
-	return p.restoreQuotaLocked(ctx)
-}
-func (p *daemonStatusProvider) restoreQuotaLocked(ctx context.Context) (int, error) {
-	if len(p.originalSettings) == 0 {
-		return 0, nil
+	if p.settingsClosed {
+		return step, errors.New("quota controller is closed")
 	}
 	if err := p.ensureConnected(ctx); err != nil {
-		return 0, err
+		return step, err
 	}
-	loaded, err := p.loadedThreads(ctx)
-	if err != nil {
-		return 0, err
-	}
-	restored := 0
-	var failures []error
-	for id, owner := range p.originalSettings {
-		if _, ok := loaded[id]; !ok {
-			failures = append(failures, fmt.Errorf("%s: unloaded; restore manually", id))
-			continue
-		}
-		current, err := p.readQuotaSession(ctx, id)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", id, err))
-			continue
-		}
-		desired, params := quotaRestoration(owner, current)
-		// Compensate an uncertain queued write even if the old settings still read
-		// back: the acknowledged restore is ordered after our original update.
-		if !sameQuotaSettings(current, desired) || owner.pending && len(params) > 1 {
-			if err := p.writeQuotaSettings(ctx, desired, params); err != nil {
-				failures = append(failures, fmt.Errorf("%s: %w", id, err))
-				continue
-			}
-		}
-		delete(p.originalSettings, id)
-		restored++
-	}
-	return restored, errors.Join(failures...)
+	return p.validateQuotaStep(ctx, step)
 }
 
-func quotaRestoration(owner quotaOwnership, current QuotaSession) (QuotaSession, map[string]any) {
-	desired := current
-	params := map[string]any{"threadId": current.ID}
-	if owner.original.Model != owner.applied.Model && (current.Model == owner.applied.Model || owner.pending && current.Model == owner.original.Model) {
-		desired.Model = owner.original.Model
-		params["model"] = desired.Model
-	}
-	if owner.original.Effort != owner.applied.Effort && (current.Effort == owner.applied.Effort || owner.pending && current.Effort == owner.original.Effort) {
-		desired.Effort = owner.original.Effort
-		params["effort"] = desired.Effort
-	}
-	if owner.tierChanged && (tierEqual(current.Tier, owner.applied.Tier) || owner.pending && tierEqual(current.Tier, owner.original.Tier)) {
-		desired.Tier = owner.original.Tier
-		params["serviceTier"] = desired.Tier
-	}
-	return desired, params
+// Drain in-flight work and reject later writes. Closing never changes settings.
+func (p *daemonStatusProvider) CloseQuotaProfiles() {
+	p.settingsMu.Lock()
+	defer p.settingsMu.Unlock()
+	p.settingsClosed = true
 }
