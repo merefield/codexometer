@@ -796,17 +796,21 @@ estimate can still vary with reasoning effort, model mix, caching, prompt
 shape, and backend quota weighting, so compare ranges and sample counts rather
 than treating the midpoint as a fixed entitlement.
 
-Samples remain process-local and are never written to the preferences file, so
-evidence cannot leak from one login into another on a later run. During a run,
-Codexometer requests the current account email from the same local app-server,
-immediately reduces it to an in-memory one-way fingerprint, and uses that only
-to separate account observations. The email and fingerprint are not persisted.
+Estimator samples remain process-local and are never written to the preferences
+or usage-history files, so learned price evidence cannot leak from one login
+into another on a later run. Codexometer requests the current account email from
+the same local app-server and immediately reduces it to a one-way fingerprint.
+The email is never persisted; the fingerprint is stored only in the separate
+numeric usage ledger so histories remain isolated across restarts. Cached data
+is not selected until the current invocation verifies that same fingerprint.
 If an older app-server cannot provide an account identity, the estimate fails
 closed as `ACCOUNT ATTRIBUTION UNKNOWN` rather than mixing indistinguishable
 accounts.
 
-The privacy trade-off is that quitting Codexometer discards every learned
-sample and quota anchor. On restart it can reconstruct cumulative priced usage
+The estimator trade-off is that quitting Codexometer discards every learned
+sample and its in-memory learning anchor. The separate ledger retains content-free
+quota observations for future history views, but does not silently treat them as
+complete price evidence. On restart it can reconstruct cumulative priced usage
 from local rollout telemetry, but the current quota percentage and cost become
 a new baseline: the display returns to `LEARNING` and needs another five clean
 percentage points of movement before producing an estimate. Medium confidence
@@ -945,21 +949,30 @@ As in Codex's chart, the available display range is 52 Sunday-based weeks ending
 in the current UTC week. Missing dates in a supplied history count as zero;
 invalid dates, negative values, future dates, and dates outside that range are
 ignored. Duplicate dates are summed. The compact summary shows the server's
-separately reported lifetime tokens, peak daily tokens, and current streak when
-available (`—` otherwise).
+separately reported lifetime tokens, peak daily tokens, current and longest
+streaks, and longest running turn when available (`—` otherwise).
 
 History refreshes when you enter Usage, on the normal refresh interval while
-Usage is selected, or with `r` / the Refresh button. These are server-side account
-statistics, **not live Sessions telemetry**: updates may lag ongoing work.
-Older CLI versions or unsupported accounts can return an unavailable/error state;
-missing history is never silently presented as zero. A failed refresh labels
-previously fetched data **STALE**, and a detected account change discards it.
+Usage is selected, or with `r` / the Refresh button. OpenAI's account-wide daily
+totals are authoritative and can fill days when Codexometer was not running.
+Codexometer also rescans retained local Codex rollouts for content-free token
+counts, including input, cached input, output and reasoning-token detail. Local
+counts are shown as attribution against the OpenAI total and are never added to
+it. A compact provenance line reports **OPENAI**, **RECOVERED**, or **PARTIAL**
+and the percentage of the OpenAI total attributable to retained local history.
+
+Older CLI versions or unsupported accounts can return an unavailable/error
+state; unavailable history is never silently presented as an empty account. A
+failed refresh uses the last verified persisted result and labels it **STALE**.
+Account fingerprints keep histories isolated, and a newly verified account is
+never shown another account's cached Usage data.
 
 The endpoint currently exposes daily **total tokens**, not historical per-model,
-input/output/cache splits, quota percentages, or dollar spend. Consequently this
-tab does not infer historical API-equivalent cost or combine these totals with
-the Sessions tab's local counters. History is held in memory only; restarting fetches it
-again from Codex. `--demo` includes sample history for previewing the charts.
+input/output/cache splits, quota percentages, or dollar spend. The finer token
+breakdown is therefore local recovery and can be partial; activity from another
+device, cloud task, or deleted rollout remains only in the OpenAI total. The tab
+does not infer historical API-equivalent cost. `--demo` includes sample history
+for previewing the charts.
 
 ### Other top-level views
 
@@ -1519,11 +1532,10 @@ any command; restart the demo to reset its approval.
 
 ### Saved presentation preferences
 
-Codexometer stores only the selected theme, main tab, Quota view, benchmark filter,
-benchmark ranking weight, and the Sessions context hide/show preference.
-No quota estimate or snapshot, raw session telemetry,
-benchmark result, message content, credential, session ID, email, account
-fingerprint, or account ID is written. The small JSON file uses the
+Codexometer's presentation preferences store only the selected theme, main tab,
+Quota view, benchmark filter, benchmark ranking weight, and the Sessions context
+hide/show preference. No benchmark result, message content, credential, session
+ID, email, or account ID is written to that file. The small JSON file uses the
 platform-standard user configuration directory:
 
 - Linux: `$XDG_CONFIG_HOME/codexometer/preferences.json`, normally
@@ -1536,6 +1548,32 @@ Codexometer falls back to its safe defaults. Restarting returns to your last mai
 tab and remembers your Quota view separately. First launch defaults to Quota →
 Bars; older preferences without a main tab reopen the saved Quota view.
 Restoring a tab does not resume a benchmark run or reopen an approval dialog.
+
+### Persistent usage history
+
+Usage history is stored separately as `usage-history.json` in the same
+platform-standard `codexometer` directory. This versioned ledger contains only:
+
+- OpenAI daily account token totals and optional account summary metrics;
+- locally recovered daily numeric token aggregates;
+- current quota percentage observations, reset boundaries and window lengths;
+- a one-way account fingerprint used to prevent histories from being mixed.
+
+It never stores prompts, replies, commands, source content, working-directory
+paths, session IDs, email addresses, credentials, or authentication tokens.
+History is retained for approximately 400 days. Writes use a private temporary
+file, an atomic replacement, and a cross-process lock so terminal and web
+Codexometer instances cannot partially overwrite one another. A damaged or
+unwritable ledger does not prevent current OpenAI data from being displayed;
+it only disables persistence until the file is repaired or removed.
+
+On startup Codexometer reconciles three layers: persisted history, retained
+local rollout token events, and the newest OpenAI daily buckets. Repeated scans
+replace the bounded local aggregate rather than incrementing it, so restarts and
+concurrent invocations do not double-count usage. If Codexometer was closed,
+OpenAI can backfill account totals and retained rollouts can restore local detail.
+If neither source contains a missed period, Codexometer does not invent a
+per-session, per-model, quota-percentage, or cost breakdown for it.
 
 ### Benchmark authentication and usage boundary
 

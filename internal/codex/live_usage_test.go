@@ -60,6 +60,27 @@ func TestLiveUsageReaderBaselinesAndConsumesAppendedTelemetry(t *testing.T) {
 	}
 }
 
+func TestRecoverDailyUsageRescansWithoutDoubleCounting(t *testing.T) {
+	home := t.TempDir()
+	now := time.Date(2026, time.September, 18, 12, 0, 0, 0, time.UTC)
+	path := testRolloutPath(t, home, now.Add(-24*time.Hour), "history")
+	writeRollout(t, path, sessionMetaLineAt("root", `"cli"`, "/private/path", nil, now.Add(-24*time.Hour))+"\n"+
+		richTokenCountLine(now.Add(-24*time.Hour), 100, 80, 40, 0, 20)+"\n"+
+		richTokenCountLine(now, 150, 40, 10, 0, 10)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := reader.RecoverDailyUsage(context.Background(), now.Add(-48*time.Hour))
+	if err != nil || len(first) != 2 || first[0].TotalTokens != 100 || first[0].CachedInputTokens != 40 || first[1].TotalTokens != 50 || first[1].InputTokens != 40 {
+		t.Fatalf("recovered days = %+v, %v", first, err)
+	}
+	second, err := reader.RecoverDailyUsage(context.Background(), now.Add(-48*time.Hour))
+	if err != nil || len(second) != 2 || second[1].TotalTokens != 50 {
+		t.Fatalf("cached recovery doubled usage: %+v, %v", second, err)
+	}
+}
+
 func TestAppendBoundedRetainsNewestValuesWithoutCopyingOnOverflow(t *testing.T) {
 	history := make([]int, 3, 4)
 	copy(history, []int{1, 2, 3})

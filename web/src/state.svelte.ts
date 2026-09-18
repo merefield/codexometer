@@ -34,9 +34,32 @@ export interface Usage {
   summary: {
     lifetimeTokens: number | null;
     peakDailyTokens: number | null;
+    longestRunningTurnSec: number | null;
     currentStreakDays: number | null;
+    longestStreakDays: number | null;
   };
-  dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
+  dailyUsageBuckets:
+    | {
+        startDate: string;
+        tokens: number;
+        localTokens?: number;
+        inputTokens?: number;
+        cachedInputTokens?: number;
+        outputTokens?: number;
+        reasoningTokens?: number;
+        provenance?: string;
+      }[]
+    | null;
+  coverage: {
+    status?: string;
+    openaiTokens?: number;
+    localTokens?: number;
+    attributedPercent?: number;
+    openaiDays?: number;
+    recoveredDays?: number;
+  };
+  persisted: boolean;
+  stale: boolean;
 }
 export interface Snapshot {
   profiles?: {

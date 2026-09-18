@@ -31,9 +31,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the compact [ (C)OPY ] label;
-	// all themes, views and three terminal sizes are covered.
-	const want = "49ac2efe33d6574b4f491d0c0165c72c98a2542670979a43f1bd659295936038"
+	// Baseline includes persistent Usage provenance and the two additional
+	// OpenAI account summary metrics; every theme, view and size is covered.
+	const want = "ec5498dccc07e2d2531d3ef645ccd819fcaea9f45b1f69aa206197f877178321"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

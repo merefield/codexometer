@@ -228,6 +228,13 @@ func optionalUsage(n *int64) string {
 	return usageNumber(*n)
 }
 
+func optionalUsageDuration(seconds *int64) string {
+	if seconds == nil || *seconds < 0 {
+		return "—"
+	}
+	return (time.Duration(*seconds) * time.Second).Round(time.Second).String()
+}
+
 func (m Model) renderHistory(width, height int, colors palette) string {
 	lines := []string{}
 	buttons := ""
@@ -245,9 +252,15 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	lines = append(lines, buttons)
 	data := m.history.data
 	lines = append(lines, colors.label().Render(i18n.Format("LIFETIME // %s TOKENS   PEAK DAY // %s   STREAK // %s DAYS", optionalUsage(data.Summary.LifetimeTokens), optionalUsage(data.Summary.PeakDailyTokens), optionalUsage(data.Summary.CurrentStreakDays))))
+	if height >= 8 {
+		lines = append(lines, colors.label().Render(i18n.Format("LONGEST TURN // %s   LONGEST STREAK // %s DAYS", optionalUsageDuration(data.Summary.LongestRunningTurnSec), optionalUsage(data.Summary.LongestStreakDays))))
+	}
 	status := i18n.Format("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
 	if !data.FetchedAt.IsZero() {
-		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05") + i18n.Text(" // R REFRESH")
+		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05") + " // " + usageCoverageLabel(data) + i18n.Text(" // R REFRESH")
+	}
+	if data.Stale {
+		status = i18n.Text("STALE") + " // " + usageCoverageLabel(data) + " // " + data.FetchedAt.Local().Format("02 JAN 15:04") + i18n.Text(" // R RETRY")
 	}
 	if m.history.loading {
 		status = i18n.Text("FETCHING ACCOUNT HISTORY…")
@@ -314,6 +327,21 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		lines[i] = ansi.Truncate(lines[i], width, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func usageCoverageLabel(data codex.AccountUsage) string {
+	status := strings.TrimSpace(data.Coverage.Status)
+	if status == "" {
+		status = "OPENAI"
+	}
+	parts := []string{status}
+	if data.Coverage.OpenAITokens > 0 && data.Coverage.LocalTokens > 0 {
+		parts = append(parts, i18n.Format("LOCAL %d%% ATTRIBUTED", data.Coverage.AttributedPct))
+	}
+	if data.Coverage.RecoveredDays > 0 {
+		parts = append(parts, i18n.Format("%d RECOVERED DAYS", data.Coverage.RecoveredDays))
+	}
+	return strings.Join(parts, " // ")
 }
 
 type historyCalendarLayout struct {

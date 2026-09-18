@@ -114,6 +114,11 @@ type LiveUsageReader struct {
 	statusProvider  sessionStatusProvider
 
 	mu                        sync.Mutex
+	recoveryMu                sync.Mutex
+	recoveryAt                time.Time
+	recoverySince             time.Time
+	recoveredDays             []RecoveredUsageDay
+	recoveryFiles             map[string]recoveredRollout
 	initialized               bool
 	startedAt                 time.Time
 	lastDiscovery             time.Time
@@ -131,6 +136,153 @@ type LiveUsageReader struct {
 	resolvedObservations      []resolvedModelObservation
 	pendingModelResolutions   []pendingModelResolution
 	daemonSubscribedThreads   map[string]struct{}
+}
+
+type recoveredRollout struct {
+	size     int64
+	modified time.Time
+	days     []RecoveredUsageDay
+}
+
+// RecoverDailyUsage performs a bounded, content-free rescan of retained
+// rollouts. It deliberately derives totals from token_count events only; no
+// prompts, replies, commands, or paths leave this reader. A short cache keeps
+// the web poller from repeatedly walking an unchanged year of history.
+func (r *LiveUsageReader) RecoverDailyUsage(ctx context.Context, since time.Time) ([]RecoveredUsageDay, error) {
+	r.recoveryMu.Lock()
+	defer r.recoveryMu.Unlock()
+	since = time.Date(since.UTC().Year(), since.UTC().Month(), since.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	if !r.recoveryAt.IsZero() && time.Since(r.recoveryAt) < 4*time.Minute && r.recoverySince.Equal(since) {
+		return append([]RecoveredUsageDay(nil), r.recoveredDays...), nil
+	}
+	if !r.recoverySince.Equal(since) || r.recoveryFiles == nil {
+		r.recoveryFiles = map[string]recoveredRollout{}
+	}
+	seen := map[string]bool{}
+	err := filepath.WalkDir(r.SessionsRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if err := contextErr(ctx); err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isRolloutFile(entry.Name()) {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		seen[path] = true
+		if cached, ok := r.recoveryFiles[path]; ok && cached.size == info.Size() && cached.modified.Equal(info.ModTime()) {
+			return nil
+		}
+		metadata, err := readRolloutMetadata(path)
+		if err != nil {
+			return nil // one damaged rollout must not hide all recoverable history
+		}
+		fileDays := map[string]RecoveredUsageDay{}
+		if err := recoverRolloutDaily(path, metadata, since, fileDays); err != nil {
+			return nil
+		}
+		dates := make([]string, 0, len(fileDays))
+		for date := range fileDays {
+			dates = append(dates, date)
+		}
+		sort.Strings(dates)
+		rollout := recoveredRollout{size: info.Size(), modified: info.ModTime(), days: make([]RecoveredUsageDay, 0, len(dates))}
+		for _, date := range dates {
+			rollout.days = append(rollout.days, fileDays[date])
+		}
+		r.recoveryFiles[path] = rollout
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("recover local Codex usage: %w", err)
+	}
+	for path := range r.recoveryFiles {
+		if !seen[path] {
+			delete(r.recoveryFiles, path)
+		}
+	}
+	days := map[string]RecoveredUsageDay{}
+	for _, rollout := range r.recoveryFiles {
+		for _, recovered := range rollout.days {
+			day := days[recovered.StartDate]
+			day.StartDate = recovered.StartDate
+			day.TotalTokens = saturatingAdd(day.TotalTokens, recovered.TotalTokens)
+			day.InputTokens = saturatingAdd(day.InputTokens, recovered.InputTokens)
+			day.CachedInputTokens = saturatingAdd(day.CachedInputTokens, recovered.CachedInputTokens)
+			day.OutputTokens = saturatingAdd(day.OutputTokens, recovered.OutputTokens)
+			day.ReasoningTokens = saturatingAdd(day.ReasoningTokens, recovered.ReasoningTokens)
+			days[recovered.StartDate] = day
+		}
+	}
+	dates := make([]string, 0, len(days))
+	for date := range days {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates)
+	result := make([]RecoveredUsageDay, 0, len(dates))
+	for _, date := range dates {
+		result = append(result, days[date])
+	}
+	r.recoveryAt, r.recoverySince = time.Now(), since
+	r.recoveredDays = append(r.recoveredDays[:0], result...)
+	return append([]RecoveredUsageDay(nil), result...), nil
+}
+
+func recoverRolloutDaily(path string, metadata rolloutMetadata, since time.Time, days map[string]RecoveredUsageDay) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	var previous int64
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) > 0 && line[len(line)-1] == '\n' {
+			record, ok := tokenUsageRecord(line)
+			if ok {
+				owned := tokenRecordIsOwned(record.ordinal, metadata.SubagentHistoryStartOrdinal, record.at, metadata.NonRoot, metadata.StartedAt)
+				if !owned {
+					previous = record.total
+				} else {
+					delta := record.total
+					if record.total >= previous {
+						delta = record.total - previous
+					}
+					previous = record.total
+					if delta > 0 && !record.at.IsZero() && !record.at.UTC().Before(since) {
+						date := record.at.UTC().Format("2006-01-02")
+						day := days[date]
+						day.StartDate = date
+						day.TotalTokens = saturatingAdd(day.TotalTokens, delta)
+						if record.usage.TotalTokens == delta {
+							day.InputTokens = saturatingAdd(day.InputTokens, record.usage.InputTokens)
+							day.CachedInputTokens = saturatingAdd(day.CachedInputTokens, record.usage.CachedInputTokens)
+							day.OutputTokens = saturatingAdd(day.OutputTokens, record.usage.OutputTokens)
+							day.ReasoningTokens = saturatingAdd(day.ReasoningTokens, record.usage.ReasoningOutputTokens)
+						}
+						days[date] = day
+					}
+				}
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return readErr
+		}
+	}
 }
 
 type rolloutCursor struct {

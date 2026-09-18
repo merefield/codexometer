@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -42,6 +43,25 @@ func TestFetchAccountUsage(t *testing.T) {
 	t.Setenv("CODEXOMETER_FAKE_USAGE_ERROR", "1")
 	if _, err := client.FetchAccountUsage(context.Background()); err == nil || !strings.Contains(err.Error(), "Method not found") {
 		t.Fatalf("unsupported API: %v", err)
+	}
+}
+
+func TestFetchAccountUsageFallsBackToVerifiedPersistedHistory(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &HistoryStore{Path: filepath.Join(t.TempDir(), "usage.json")}
+	client := Client{Binary: exe, History: store}
+	fresh, err := client.FetchAccountUsage(context.Background())
+	if err != nil || !fresh.Persisted || fresh.Stale {
+		t.Fatalf("fresh history = %+v, %v", fresh, err)
+	}
+	t.Setenv("CODEXOMETER_FAKE_USAGE_ERROR", "1")
+	cached, err := client.FetchAccountUsage(context.Background())
+	if err != nil || !cached.Persisted || !cached.Stale || cached.AccountFingerprint != fresh.AccountFingerprint || len(cached.DailyUsageBuckets) != 1 {
+		t.Fatalf("cached history = %+v, %v", cached, err)
 	}
 }
 

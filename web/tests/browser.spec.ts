@@ -951,10 +951,29 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
     sessionsError: false,
     usageError: false,
     usage: {
-      summary: {},
+      summary: {
+        longestRunningTurnSec: 45,
+        longestStreakDays: 9,
+      },
+      coverage: {
+        status: 'OPENAI',
+        openaiTokens: 370,
+        localTokens: 280,
+        attributedPercent: 76,
+      },
+      persisted: true,
+      stale: false,
       dailyUsageBuckets: [
         { startDate: '2026-09-10', tokens: 100 },
-        { startDate: '2026-09-10', tokens: 250 },
+        {
+          startDate: '2026-09-10',
+          tokens: 250,
+          localTokens: 260,
+          inputTokens: 240,
+          cachedInputTokens: 200,
+          outputTokens: 20,
+          provenance: 'OPENAI',
+        },
         { startDate: '2026-09-10', tokens: -50 },
         { startDate: '2026-09-11', tokens: 20 },
         { startDate: '2026-09-09', tokens: -500 },
@@ -972,17 +991,24 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'USAGE', exact: true }).click();
   await expect(
-    page.locator('.heat-cell[title="2026-09-10: 350 tokens"]'),
+    page.locator('.heat-cell[title^="2026-09-10: 350 tokens"]'),
   ).toHaveCount(1);
   await expect(
-    page.locator('.heat-cell[title="2026-09-09: 0 tokens"]'),
+    page.locator('.heat-cell[title^="2026-09-09: 0 tokens"]'),
   ).toHaveCount(1);
+  await expect(page.getByText('LONGEST TURN')).toBeVisible();
+  await expect(page.getByText(/LOCAL 76% ATTRIBUTED/)).toBeVisible();
   await page.getByText('Accessible data table').click();
   await expect(
     page.getByRole('row').filter({
       has: page.getByRole('cell', { name: '2026-09-10', exact: true }),
     }),
   ).toContainText('350');
+  await expect(
+    page.getByRole('row').filter({
+      has: page.getByRole('cell', { name: '2026-09-10', exact: true }),
+    }),
+  ).toContainText('260');
   await page.getByLabel('Usage view').selectOption('monthly');
   await expect(
     page.getByRole('row').filter({
