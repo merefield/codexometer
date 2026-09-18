@@ -524,11 +524,17 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		for _, id := range message.matched {
 			delete(m.quota.notices, id)
 			m.clearQuotaReviewChoice(id)
+			if message.step.Mode == "auto" {
+				if m.quota.handled == nil {
+					m.quota.handled = map[string]int{}
+				}
+				m.quota.handled[id] = message.step.Threshold
+			}
 		}
 		if message.err != nil {
 			m.quota.scanError = i18n.Format("Session check failed: %s", message.err.Error())
 		}
-		return m, nil
+		return m.applyNextAutoQuotaSession()
 	case quotaStepResult:
 		if message.revision != m.quota.revision {
 			return m, nil
@@ -563,7 +569,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.setQuotaSessionNotice(target.ID, notice)
 			}
 		}
-		if message.err != nil {
+		if message.err != nil || message.step.Mode == "auto" {
 			return m, m.evaluateQuotaStep(m.snapshot)
 		}
 		return m, nil

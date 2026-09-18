@@ -12,6 +12,8 @@ type QuotaStep struct {
 	Effort    string
 	// An advertised tier name or ID; empty preserves speed.
 	ServiceTier string
+	// Empty and "ask" require review; "auto" grants launch-time consent.
+	Mode string
 }
 
 // ErrQuotaProfileUnverified means the server acknowledged the write but its

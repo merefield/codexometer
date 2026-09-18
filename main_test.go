@@ -97,6 +97,34 @@ func TestQuotaStepFlags(t *testing.T) {
 	}
 }
 
+func TestQuotaStepModes(t *testing.T) {
+	for _, tc := range []struct{ value, mode, speed string }{
+		{"80:model:medium", "", ""},
+		{"80:model:medium:fast", "", "fast"},
+		{"80:model:medium::ask", "ask", ""},
+		{"80:model:medium::auto", "auto", ""},
+		{"80:model:medium:standard:auto", "auto", "default"},
+	} {
+		var flags quotaStepFlags
+		if err := flags.Set(tc.value); err != nil {
+			t.Fatal(err)
+		}
+		if flags[0].Mode != tc.mode || flags[0].ServiceTier != tc.speed {
+			t.Fatalf("wrong policy: %#v", flags)
+		}
+		var roundtrip quotaStepFlags
+		if err := roundtrip.Set(flags.String()); err != nil || roundtrip[0] != flags[0] {
+			t.Fatalf("round trip: %s %v", flags.String(), err)
+		}
+	}
+	for _, value := range []string{"80:model:medium::skip", "80:model:medium:fast:", "80:model:medium:auto", "80:model:medium::auto:ask"} {
+		var flags quotaStepFlags
+		if flags.Set(value) == nil {
+			t.Fatalf("accepted %s", value)
+		}
+	}
+}
+
 func TestRunAuthCheckSuccessAndFailure(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{

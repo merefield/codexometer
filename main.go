@@ -67,8 +67,11 @@ func (f *quotaStepFlags) String() string {
 	values := make([]string, 0, len(*f))
 	for _, step := range *f {
 		value := fmt.Sprintf("%d:%s:%s", step.Threshold, step.Model, step.Effort)
-		if step.ServiceTier != "" {
+		if step.ServiceTier != "" || step.Mode != "" {
 			value += ":" + quotaStepSpeedFlag(step.ServiceTier)
+		}
+		if step.Mode != "" {
+			value += ":" + step.Mode
 		}
 		values = append(values, value)
 	}
@@ -77,8 +80,8 @@ func (f *quotaStepFlags) String() string {
 
 func (f *quotaStepFlags) Set(value string) error {
 	parts := strings.Split(value, ":")
-	if len(parts) != 3 && len(parts) != 4 {
-		return fmt.Errorf("must be PERCENT:MODEL:EFFORT[:SPEED]")
+	if len(parts) < 3 || len(parts) > 5 {
+		return fmt.Errorf("must be PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]")
 	}
 	threshold, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 	if err != nil || threshold < 1 || threshold > 100 {
@@ -104,7 +107,7 @@ func (f *quotaStepFlags) Set(value string) error {
 		}
 	}
 	serviceTier := ""
-	if len(parts) == 4 {
+	if len(parts) >= 4 && !(len(parts) == 5 && strings.TrimSpace(parts[3]) == "") {
 		switch strings.ToLower(strings.TrimSpace(parts[3])) {
 		case "fast", "slow", "flex", "priority":
 			serviceTier = strings.ToLower(strings.TrimSpace(parts[3]))
@@ -114,7 +117,14 @@ func (f *quotaStepFlags) Set(value string) error {
 			return fmt.Errorf("speed must be fast, slow, flex, priority, or standard (and advertised by Codex)")
 		}
 	}
-	*f = append(*f, codex.QuotaStep{Threshold: threshold, Model: model, Effort: effort, ServiceTier: serviceTier})
+	mode := ""
+	if len(parts) == 5 {
+		mode = strings.ToLower(strings.TrimSpace(parts[4]))
+		if mode != "ask" && mode != "auto" {
+			return fmt.Errorf("mode must be ask or auto")
+		}
+	}
+	*f = append(*f, codex.QuotaStep{Threshold: threshold, Model: model, Effort: effort, ServiceTier: serviceTier, Mode: mode})
 	sort.Slice(*f, func(i, j int) bool { return (*f)[i].Threshold < (*f)[j].Threshold })
 	return nil
 }
@@ -386,7 +396,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		digBenchTimeout   = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
 		printVersion      bool
 	)
-	flags.Var(&quotaSteps, "quota-step-down", "offer PERCENT:MODEL:EFFORT[:SPEED] per session (repeatable; SPEED is advertised fast/slow/priority/flex, or standard)")
+	flags.Var(&quotaSteps, "quota-step-down", "set PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]] per session (repeatable; default ask; empty SPEED preserves speed)")
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
 	flags.BoolVar(&printVersion, "v", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {

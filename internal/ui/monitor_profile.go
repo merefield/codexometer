@@ -14,7 +14,7 @@ import (
 // Eligibility is independent of the detail being viewed: one session may have
 // a Codex request and a separate quota review at the same time.
 func (m Model) quotaSessionCandidate(s monitorSession) (codex.QuotaSession, bool) {
-	if m.quotaStepPending == nil {
+	if m.quotaStepPending == nil || m.quotaStepPending.Mode == "auto" {
 		return codex.QuotaSession{}, false
 	}
 	if threshold, handled := m.quota.handled[s.id]; handled && threshold >= m.quotaStepPending.Threshold {

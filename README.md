@@ -2045,7 +2045,7 @@ deterministic PASS/FAIL verifier.
 --web-control      opt into browser session approvals/prompts (requires --web)
 --web-port PORT    local browser port (default: 0/automatic; requires --web)
 --refresh DURATION refresh interval (default: 1m)
---quota-step-down PERCENT:MODEL:EFFORT[:SPEED] offer a confirmed session profile at a quota threshold (repeatable)
+--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]] set a session profile at a quota threshold (repeatable; default ask)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
 --reset-warning-hours HOURS expiry warning lead time (default: 72; 0 disables)
 -v, --version      print the version and exit
@@ -2071,7 +2071,7 @@ codexometer \
 
 ### Quota step-down profiles
 
-`--quota-step-down PERCENT:MODEL:EFFORT[:SPEED]` configures an opt-in profile
+`--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]` configures an opt-in profile
 for the longest ordinary Codex quota window (normally the weekly window). The
 flag is repeatable and thresholds must be unique. `SPEED` is optional and may
 be `fast`, `standard`, `slow`, `priority` or `flex`. Names such as `fast` and
@@ -2081,7 +2081,28 @@ are rejected before changing settings. `standard` clears an explicit tier;
 omitting speed leaves the session's current tier intact.
 Codexometer ships no enabled profile and does not infer which model is cheaper.
 
-At a reached threshold, eligible sessions in the terminal **Sessions** tab get a
+The optional final mode defaults to **`ask`**, preserving per-session approval
+for existing command lines. **`auto`** authorizes applying the profile at launch:
+when the threshold is reached, each eligible loaded session is updated for its
+subsequent turns without a quota approval pill. A running turn is not interrupted.
+For example, mix automatic and reviewed thresholds:
+
+```sh
+codexometer \
+  --quota-step-down 80:gpt-5.6-sol:medium:standard:auto \
+  --quota-step-down 95:gpt-5.6-luna:low::ask
+```
+
+An empty speed field (`::auto` or `::ask`) preserves the current speed. Automatic
+updates are attempted once per session at the active threshold, with fresh quota
+and session checks. New sessions follow the same policy. Already-matching
+sessions are considered handled; subsequent manual changes are left alone.
+Rejected or unverified updates remain visible in session detail and are not
+automatically retried. A later threshold can apply its own profile. Tracking is
+in memory and resets when Codexometer restarts or the quota window changes;
+restarting with `auto` grants fresh consent to apply the active policy.
+
+In `ask` mode, at a reached threshold, eligible sessions in the terminal **Sessions** tab get a
 **QUOTA THRESHOLD** attention pill. Click it to review that session's current and
 proposed model, reasoning and speed in its detail pane. Controls also appear in
 split/wide detail when the entire review fits; otherwise open full detail or
@@ -2112,8 +2133,8 @@ On every launch and refresh, Codexometer reads current session settings and
 compares them with the eligible target profile. Sessions already at that target
 need no approval or update, even after restarting with the same switches. Speed
 names are resolved through the model catalogue before comparison; omitted speed
-accepts any current speed, while `standard` requires an unset explicit tier.
-Other sessions still require approval. Skips and attempted-change tracking are
+accepts any current speed, while `standard` accepts an unset tier or explicit `default`.
+Other sessions require approval in `ask` mode. Skips and attempted-change tracking are
 process-local; approval itself is never persisted. Refreshes do not reapply a
 profile or overwrite manual changes. Shutdown cancels/drains outstanding work
 without sending any restoration calls; an already queued change may still apply.

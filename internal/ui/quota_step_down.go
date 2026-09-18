@@ -224,9 +224,20 @@ func (m Model) pressQuotaSession(id string, confirm bool) (Model, tea.Cmd) {
 		m.clearQuotaConfirmation()
 		return m, nil
 	}
-	m.quota.busySession = id
-	step := m.quota.confirmStep
-	window := m.quota.confirmWindow
+	return m.startQuotaUpdate(targets)
+}
+
+// Both reviewed and launch-authorized updates share the same backend checks.
+func (m Model) startQuotaUpdate(targets []codex.QuotaSession) (Model, tea.Cmd) {
+	m.quota.busySession = targets[0].ID
+	step := *m.quotaStepPending
+	window := m.quotaStepWindow
+	if step.Mode == "auto" {
+		if m.quota.handled == nil {
+			m.quota.handled = map[string]int{}
+		}
+		m.quota.handled[targets[0].ID] = step.Threshold
+	}
 	m.clearQuotaConfirmation()
 	m.quotaStepBusy = true
 	m.quota.revision++
@@ -242,6 +253,18 @@ func (m Model) pressQuotaSession(id string, confirm bool) (Model, tea.Cmd) {
 		n, err := c.ApplyQuotaProfile(ctx, targets, step)
 		return quotaStepResult{revision: revision, window: window, step: step, targets: targets, updated: n, err: err}
 	}
+}
+
+func (m Model) applyNextAutoQuotaSession() (Model, tea.Cmd) {
+	if m.quotaStepPending == nil || m.quotaStepPending.Mode != "auto" ||
+		m.quotaStepBusy || m.quota.scanError != "" || !m.quotaFresh() {
+		return m, nil
+	}
+	targets := m.quotaCandidates()
+	if len(targets) == 0 {
+		return m, nil
+	}
+	return m.startQuotaUpdate(targets[:1])
 }
 func (m *Model) declineQuotaSession(id string) {
 	if m.quotaStepBusy {
