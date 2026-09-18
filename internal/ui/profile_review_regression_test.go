@@ -68,6 +68,24 @@ func TestProfileNoticeWithoutContextWraps(t *testing.T) {
 	}
 }
 
+func TestProfileReviewRetainsWrappedOutcome(t *testing.T) {
+	m, _ := profileTestModel(t)
+	m.setQuotaSessionNotice("one", strings.Repeat("previous failure ", 10))
+	lines := m.profileDocument(m.monitorSessionData[0], 15)
+	var warnings string
+	for _, line := range lines {
+		if lipgloss.Width(line.text) > 15 {
+			t.Fatal("notice overflows review")
+		}
+		if line.kind == "warning" {
+			warnings += line.text
+		}
+	}
+	if !strings.Contains(warnings, "previous") || !strings.Contains(warnings, "failure") {
+		t.Fatal("previous outcome hidden")
+	}
+}
+
 func TestProfileChoiceClearsOnResolutionAndThresholdChange(t *testing.T) {
 	for _, event := range []string{"skip", "apply", "threshold", "window", "matched"} {
 		t.Run(event, func(t *testing.T) {

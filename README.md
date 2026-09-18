@@ -2132,7 +2132,9 @@ that session's profile change, just like the terminal. Native Codex requests
 remain accessible through their own pills or normal session detail. Follow-up
 composers stay hidden while a quota review is pending, preserving existing
 drafts; switching reviews cancels pending confirmation. Select **APPLY PROFILE**
-or **SKIP**, then review and confirm. Confirmations bind to the exact session,
+or **SKIP**, then review and confirm. Cross-session quota navigation is blocked
+while the current session has an unsent draft or a send in progress. Confirmations
+bind to the exact session,
 current settings, threshold and quota window and expire after 30 seconds.
 Read-only `--web` rejects quota-policy flags and exposes no write endpoints.
 An explicitly configured `auto` policy runs in the server even if no browser

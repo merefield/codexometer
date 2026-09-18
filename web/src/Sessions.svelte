@@ -14,7 +14,12 @@
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
-  function openProfile(id: string) {
+  let nativeProtected = $state(false);
+  function openProfile(event: MouseEvent, id: string) {
+    if (params.id && params.id !== id && nativeProtected) {
+      event.preventDefault();
+      return;
+    }
     select(id);
   }
   // Every entry route (links, arrows, deep links and browser Forward) leaves a
@@ -210,10 +215,13 @@
     {#each profiles.filter((p) => p.pending && sessions.some((s) => s.id === p.session)) as profile}
       <a
         class="button approval"
+        title={params.id && params.id !== profile.session && nativeProtected
+          ? 'Finish sending or clear your current draft before switching sessions.'
+          : 'Review this session’s quota threshold'}
         href={'#/sessions/' +
           encodeURIComponent(profile.session) +
           '?review=profile'}
-        onclick={() => openProfile(profile.session)}
+        onclick={(event) => openProfile(event, profile.session)}
         >QUOTA THRESHOLD // {sessions.find((s) => s.id === profile.session)
           ?.directory || profile.session}</a
       >
@@ -257,6 +265,9 @@
               session={selected.id}
               observedCommand={selected.command}
               suspended={profileFocused}
+              onProtectedChange={(value) => {
+                nativeProtected = value;
+              }}
             />{/key}
         {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
       </div>
@@ -374,7 +385,7 @@
                 href={'#/sessions/' +
                   encodeURIComponent(session.id) +
                   '?review=profile'}
-                onclick={() => openProfile(session.id)}
+                onclick={(event) => openProfile(event, session.id)}
                 >QUOTA THRESHOLD // REVIEW PROFILE ↗</a
               >{/if}
           {/each}

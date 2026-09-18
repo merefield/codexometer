@@ -96,6 +96,11 @@ func TestWebProfileOutcomesAndErrorPrivacy(t *testing.T) {
 			t.Fatal("outcome missing")
 		}
 		original := s.store.state.Profiles[0].Notice
+		f.hideSessions = true
+		s.control.refreshProfiles(context.Background())
+		if len(s.store.state.Profiles) != 1 || s.store.state.Profiles[0].Notice != original || s.store.state.Profiles[0].Pending {
+			t.Fatal("clean omission lost notice or enabled action")
+		}
 		f.readError = errors.New("unavailable")
 		f.hideSessions = true
 		s.control.refreshProfiles(context.Background())

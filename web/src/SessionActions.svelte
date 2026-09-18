@@ -6,11 +6,13 @@
     observedCommand = '',
     review = '',
     suspended = false,
+    onProtectedChange = (_protected: boolean) => {},
   }: {
     session: string;
     observedCommand?: string;
     review?: string;
     suspended?: boolean;
+    onProtectedChange?: (protectedState: boolean) => void;
   } = $props();
   interface Offer {
     profile?: { threshold: number; current: string; proposed: string };
@@ -41,6 +43,10 @@
   let success = $state(false);
   let offerError = $state(false);
   let sent = $state('');
+  $effect(() => {
+    onProtectedChange(busy || answers.some((answer) => answer.length > 0));
+    return () => onProtectedChange(false);
+  });
   let status = $derived(
     live.data?.sessions.find((row) => row.id === session)?.status,
   );

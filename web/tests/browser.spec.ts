@@ -450,27 +450,34 @@ test('session approval requires explicit review and confirmation of the target',
   );
 });
 
-test('definite rejection is distinct from an uncertain outcome', async ({
-  page,
-  pairingURL,
-}) => {
-  await mockActions(page);
-  await page.route('**/api/control/commit', (route) =>
-    route.fulfill({ status: 409, body: 'rejected' }),
-  );
-  await page.goto(pairingURL);
-  await page.evaluate(() => {
-    location.hash = '/sessions/parent';
+for (const status of [400, 401, 403, 404, 409, 502]) {
+  test(`HTTP ${status} is classified correctly after commit`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page);
+    await page.route('**/api/control/commit', (route) =>
+      route.fulfill({ status, body: 'rejected' }),
+    );
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+    const notice = page
+      .getByRole('region', { name: 'Session controls' })
+      .getByRole('status');
+    await expect(notice).toContainText(
+      status === 502
+        ? 'Outcome uncertain'
+        : 'Action rejected, expired or changed',
+    );
   });
-  await page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }).check();
-  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
-  await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
-  const notice = page
-    .getByRole('region', { name: 'Session controls' })
-    .getByRole('status');
-  await expect(notice).toContainText('Action rejected, expired or changed');
-  await expect(notice).not.toContainText('Outcome uncertain');
-});
+}
 
 test('approval navigation matches each terminal theme warning colour and stays clickable', async ({
   page,
@@ -652,6 +659,52 @@ test('quota review hides only follow-ups, cancels confirmation and preserves the
     native.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
   ).toBeVisible();
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
+test('quota pills cannot discard another session draft or in-flight send', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const state = {
+    ...snapshot,
+    profiles: [{ session: 'other', pending: true }],
+  };
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Keep my draft');
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    state,
+  );
+  const pill = page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link', { name: /QUOTA THRESHOLD/ });
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  await expect(text).toHaveValue('Keep my draft');
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await page.route('**/api/control/commit', async (route) => {
+    await pending;
+    await route.fulfill({ json: { message: 'Sent' } });
+  });
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await page.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  finish();
+  await expect(
+    page.getByRole('region', { name: 'Session controls' }),
+  ).toContainText('Text sent.');
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/other\?review=profile$/);
 });
 
 test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', async ({

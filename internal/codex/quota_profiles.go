@@ -146,7 +146,7 @@ func (p *QuotaProfiles) Apply(ctx context.Context, s Snapshot, steps []QuotaStep
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	current, currentWindow, ok := SelectQuotaProfile(s, steps)
-	if !ok || current != step || currentWindow != window || !quotaProfileFresh(s, refresh) {
+	if !ok || current != step || currentWindow != window {
 		return 0, errors.New("quota profile changed or is stale")
 	}
 	p.setWindow(window)
@@ -154,6 +154,11 @@ func (p *QuotaProfiles) Apply(ctx context.Context, s Snapshot, steps []QuotaStep
 		return 0, errors.New("session already handled for this threshold")
 	}
 	p.handled[target.ID] = step.Threshold
+	if !quotaProfileFresh(s, refresh) {
+		err := errors.New("quota profile changed or is stale")
+		p.outcomes[target.ID] = err
+		return 0, err
+	}
 	if skip {
 		return 0, nil
 	}

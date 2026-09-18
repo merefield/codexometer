@@ -81,6 +81,9 @@ func (m Model) profileDocument(s monitorSession, width int) []detailLine {
 	appendText(quotaStepProfile(*m.quotaStepPending), "body")
 	section(i18n.Text("PLEASE NOTE"))
 	appendText(i18n.Text("Changes remain after Codexometer closes."), "warning")
+	if notice := m.quota.notices[s.id]; notice != "" {
+		appendText(notice, "warning")
+	}
 	if m.quota.busySession == s.id {
 		appendText(i18n.Text("Checking / updating…"), "body")
 	} else if !m.quotaFresh() {

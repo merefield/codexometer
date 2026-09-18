@@ -120,7 +120,7 @@ export function connect(): () => void {
       cache: 'no-store',
     });
     if (!response.ok) {
-      if (response.status === 409)
+      if (response.status !== 502)
         throw new ControlRejected(
           'Action rejected, expired or changed. Refresh and check Codex; nothing was retried.',
         );

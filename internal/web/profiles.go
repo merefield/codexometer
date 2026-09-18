@@ -177,7 +177,7 @@ func (c *control) refreshProfiles(ctx context.Context) {
 		reviews = nil
 		err = errUnavailable
 	}
-	if err != nil && window == c.store.profileWindow {
+	if window == c.store.profileWindow {
 		for _, previous := range c.store.state.Profiles {
 			if previous.Notice == "" || slices.Contains(matched, previous.Session) {
 				continue
