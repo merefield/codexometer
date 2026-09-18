@@ -19,11 +19,11 @@ func sameQuotaSettings(a, b QuotaSession) bool {
 	return a.Model == b.Model && a.Effort == b.Effort && tierEqual(a.Tier, b.Tier)
 }
 
-func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <-chan struct{}, bool) {
+func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <-chan struct{}, uint64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	current, ok := p.threadSettings[id]
-	return current, p.settingsSignal, ok
+	return current, p.settingsSignal, p.settingsVersions[id], ok
 }
 
 // Only call for a thread positively observed as loaded. No settings overrides
@@ -145,18 +145,24 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 
 // The RPC acknowledgement means queued, not applied. Observe the actual
 // configured settings before calling an update successful.
-func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) error {
+func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	_, _, before, _ := p.observedQuotaSettings(expected.ID)
 	if err := p.request(ctx, "thread/settings/update", params, nil); err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(ErrQuotaProfileUnverified, err)
+		}
+	}()
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
-		observed, changed, ok := p.observedQuotaSettings(expected.ID)
-		if ok && sameQuotaSettings(observed, expected) {
+		observed, changed, version, ok := p.observedQuotaSettings(expected.ID)
+		if ok && version > before && sameQuotaSettings(observed, expected) {
 			return nil
 		}
 		loaded, err := p.loadedThreads(ctx)

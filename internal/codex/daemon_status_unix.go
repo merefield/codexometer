@@ -25,22 +25,24 @@ type daemonStatusProvider struct {
 	contexts   map[string]*daemonContextState
 	socketPath string
 
-	mu             sync.Mutex
-	connection     *websocket.Conn
-	nextRequestID  int64
-	pending        map[int64]chan daemonEnvelope
-	subscribed     map[string]struct{}
-	reroutedTurns  map[daemonTurnKey]string
-	observations   []resolvedModelObservation
-	nextSequence   uint64
-	lastStatusAt   time.Time
-	statusThreads  map[string]struct{}
-	statuses       map[string]sessionRuntimeStatus
-	threadSettings map[string]QuotaSession
-	settingsSignal chan struct{}
-	settingsMu     sync.Mutex
-	settingsClosed bool
-	writeMu        sync.Mutex
+	mu               sync.Mutex
+	connection       *websocket.Conn
+	nextRequestID    int64
+	pending          map[int64]chan daemonEnvelope
+	subscribed       map[string]struct{}
+	reroutedTurns    map[daemonTurnKey]string
+	observations     []resolvedModelObservation
+	nextSequence     uint64
+	lastStatusAt     time.Time
+	statusThreads    map[string]struct{}
+	statuses         map[string]sessionRuntimeStatus
+	threadSettings   map[string]QuotaSession
+	settingsVersions map[string]uint64
+	settingsVersion  uint64
+	settingsSignal   chan struct{}
+	settingsMu       sync.Mutex
+	settingsClosed   bool
+	writeMu          sync.Mutex
 }
 
 type daemonTurnKey struct {
@@ -240,6 +242,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)
 	p.threadSettings = make(map[string]QuotaSession)
+	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
 	go p.readLoop(connection)
@@ -420,6 +423,11 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 			ID: notification.ThreadID, Model: notification.ThreadSettings.Model,
 			Effort: notification.ThreadSettings.Effort, Tier: notification.ThreadSettings.ServiceTier,
 		}
+		if p.settingsVersions == nil {
+			p.settingsVersions = make(map[string]uint64)
+		}
+		p.settingsVersion++
+		p.settingsVersions[notification.ThreadID] = p.settingsVersion
 		if p.settingsSignal != nil {
 			close(p.settingsSignal)
 		}

@@ -46,7 +46,13 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
 			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "metadata"})
 		}
-		return append(lines, detailLine{i18n.Text("NO CONTEXT"), "metadata"}, detailLine{codex.SanitizeSessionContext(m.quota.notices[s.id]), "warning"})
+		lines = append(lines, detailLine{i18n.Text("NO CONTEXT"), "metadata"})
+		if notice := codex.SanitizeSessionContext(m.quota.notices[s.id]); notice != "" {
+			for _, line := range strings.Split(ansi.Hardwrap(notice, width, true), "\n") {
+				lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "warning"})
+			}
+		}
+		return lines
 	}
 	c := s.preview
 	var lines []detailLine

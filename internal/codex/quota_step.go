@@ -13,6 +13,11 @@ type QuotaStep struct {
 	// An advertised tier name or ID; empty preserves speed.
 	ServiceTier string
 }
+
+// ErrQuotaProfileUnverified means the server acknowledged the write but its
+// application could not be confirmed. It must not trigger an automatic retry.
+var ErrQuotaProfileUnverified = errors.New("profile update accepted but not verified")
+
 type QuotaSession struct {
 	ID     string
 	Model  string

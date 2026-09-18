@@ -523,6 +523,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.quota.scanError = ""
 		for _, id := range message.matched {
 			delete(m.quota.notices, id)
+			m.clearQuotaReviewChoice(id)
 		}
 		if message.err != nil {
 			m.quota.scanError = i18n.Format("Session check failed: %s", message.err.Error())
@@ -536,19 +537,29 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.window != m.quotaStepWindow {
 			return m, nil
 		}
+		if m.quotaStepPending == nil || *m.quotaStepPending != message.step {
+			m.quota.busySession = ""
+			m.quota.sessions = nil
+			m.clearQuotaReviewChoice("")
+			return m, m.evaluateQuotaStep(m.snapshot)
+		}
 		if m.quota.handled == nil {
 			m.quota.handled = map[string]int{}
 		}
 		// No automatic retry, including after partial or uncertain outcomes.
 		for _, s := range message.targets {
 			m.quota.handled[s.ID] = message.step.Threshold
+			m.clearQuotaReviewChoice(s.ID)
 		}
 		m.quota.busySession = ""
 		for _, target := range message.targets {
 			if message.err == nil {
 				delete(m.quota.notices, target.ID)
 			} else {
-				notice := i18n.Text("Profile update not yet verified. Codex accepted the request; Codexometer will check again without resending it.")
+				notice := i18n.Format("Session check failed: %s", codex.SanitizeSessionContext(message.err.Error()))
+				if errors.Is(message.err, codex.ErrQuotaProfileUnverified) {
+					notice = i18n.Text("Profile update not yet verified. Codex accepted the request; Codexometer will check again without resending it.")
+				}
 				m.setQuotaSessionNotice(target.ID, notice)
 			}
 		}

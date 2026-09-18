@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"time"
 
@@ -100,17 +101,29 @@ func (m *Model) clearQuotaConfirmation() {
 	m.quota.confirm = nil
 	m.quotaStepConfirmUntil = time.Time{}
 }
+
+func (m *Model) clearQuotaReviewChoice(id string) {
+	m.monitorContextRows = maps.Clone(m.monitorContextRows)
+	for key, row := range m.monitorContextRows {
+		if id == "" || key == id {
+			row.review = ""
+			m.monitorContextRows[key] = row
+		}
+	}
+}
 func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	if len(m.quotaSteps) == 0 {
 		return nil
 	}
 	meter, window, ok := quotaPolicyWindow(snapshot)
 	if !ok {
+		m.clearQuotaReviewChoice("")
 		m.clearQuotaConfirmation()
 		m.quotaStepPending = nil
 		return nil
 	}
 	if m.quotaStepWindow != "" && m.quotaStepWindow != window {
+		m.clearQuotaReviewChoice("")
 		if m.quota.cancel != nil {
 			m.quota.cancel()
 		}
@@ -134,6 +147,7 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	}
 	if !reflect.DeepEqual(candidate, m.quotaStepPending) {
 		m.clearQuotaConfirmation()
+		m.clearQuotaReviewChoice("")
 	}
 	m.quotaStepPending = candidate
 	if candidate == nil {
@@ -241,6 +255,7 @@ func (m *Model) declineQuotaSession(id string) {
 			m.quota.handled = map[string]int{}
 		}
 		m.quota.handled[id] = m.quotaStepPending.Threshold
+		m.clearQuotaReviewChoice(id)
 		m.clearQuotaConfirmation()
 		m.setQuotaSessionNotice(id, i18n.Text("Session skipped for this threshold."))
 		return

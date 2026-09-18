@@ -339,6 +339,25 @@ func TestQuotaSettingsQueuedAcknowledgementIsNotSuccess(t *testing.T) {
 	}
 }
 
+func TestQuotaSettingsOldNotificationCannotVerifyNewWrite(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	sessions, err := p.QuotaSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.handleNotification("thread/settings/updated", json.RawMessage(`{"threadId":"one","threadSettings":{"model":"small","effort":"medium","serviceTier":null}}`))
+	// Live readback has drifted from the previously observed target.
+	f.mu.Lock()
+	f.queued = true
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	n, err := p.ApplyQuotaProfile(ctx, sessions[:1], QuotaStep{Model: "small", Effort: "medium"})
+	if n != 0 || !errors.Is(err, ErrQuotaProfileUnverified) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stale observation verified write: %d %v", n, err)
+	}
+}
+
 func TestQuotaSettingsUpdatedNotificationVerifiesQueuedWrite(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	sessions, _ := p.QuotaSessions(context.Background())

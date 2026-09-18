@@ -125,6 +125,9 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 // Validate the action, not only the session ID; sibling pills must open
 // different documents and disarm each other's confirmation.
 func (m *Model) openMonitorAttention(action string) {
+	if strings.HasPrefix(action, "attention-profile:") && (m.monitorPrompt.input.Focused() || m.monitorPrompt.busy) {
+		return
+	}
 	for _, item := range m.monitorAttentionSessions() {
 		if item.action() != action {
 			continue
