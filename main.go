@@ -141,18 +141,26 @@ func quotaStepSpeedFlag(tier string) string {
 func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, error) {
 	now := time.Now()
 	history := codex.AccountUsage{AccountFingerprint: "demo-account", FetchedAt: now, DailyUsageBuckets: []codex.AccountUsageDay{}}
-	var total, peak int64
+	var total, localTotal, peak int64
 	for i := 363; i >= 0; i-- {
 		tokens := int64((i * 7919) % 80000)
 		if i%7 == 0 {
 			tokens = 0
 		}
 		total += tokens
+		local := tokens * 3 / 4
+		localTotal += local
 		peak = max(peak, tokens)
-		history.DailyUsageBuckets = append(history.DailyUsageBuckets, codex.AccountUsageDay{StartDate: now.UTC().AddDate(0, 0, -i).Format("2006-01-02"), Tokens: tokens})
+		history.DailyUsageBuckets = append(history.DailyUsageBuckets, codex.AccountUsageDay{StartDate: now.UTC().AddDate(0, 0, -i).Format("2006-01-02"), Tokens: tokens, LocalTokens: local, InputTokens: local * 9 / 10, CachedInputTokens: local * 6 / 10, OutputTokens: local / 10, Provenance: "OPENAI"})
 	}
 	history.Summary.LifetimeTokens = &total
 	history.Summary.PeakDailyTokens = &peak
+	longestTurn, currentStreak, longestStreak := int64(547), int64(8), int64(21)
+	history.Summary.LongestRunningTurnSec = &longestTurn
+	history.Summary.CurrentStreakDays = &currentStreak
+	history.Summary.LongestStreakDays = &longestStreak
+	history.Coverage = codex.AccountUsageCoverage{Status: "OPENAI", OpenAITokens: total, LocalTokens: localTotal, AttributedPct: 75, OpenAIDays: len(history.DailyUsageBuckets)}
+	history.Persisted = true
 	return history, nil
 }
 
@@ -494,6 +502,9 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if *webMode {
 		// Web mode deliberately gets no benchmark credentials or discovery calls.
 		client := codex.Client{Binary: *codexPath, QuotaSteps: quotaSteps}
+		if history, historyErr := codex.NewDefaultHistoryStore(); historyErr == nil {
+			client.History = history
+		}
 		if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 			client.LiveUsage = liveUsage
 		}
@@ -520,6 +531,9 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	digBenchGames = normalizeDigBenchGames(digBenchGames)
 	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames, QuotaSteps: quotaSteps}
+	if history, historyErr := codex.NewDefaultHistoryStore(); historyErr == nil {
+		client.History = history
+	}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
 	}

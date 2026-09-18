@@ -21,6 +21,9 @@ const requestTimeout = 15 * time.Second
 type Client struct {
 	Binary    string
 	LiveUsage *LiveUsageReader
+	// History persists content-free account totals and quota observations so
+	// both terminal and web presentations survive process restarts.
+	History *HistoryStore
 	// QuotaSteps is an opt-in launch-time policy for lowering the model profile
 	// of loaded sessions as quota consumption crosses configured thresholds.
 	QuotaSteps []QuotaStep
@@ -66,7 +69,12 @@ type rpcResponse struct {
 // Fetch starts a short-lived app-server, performs the initialization handshake,
 // reads the authenticated account limits, and shuts the server down again.
 func (c Client) Fetch(ctx context.Context) (Snapshot, error) {
-	return c.fetch(ctx, nil, nil)
+	snapshot, err := c.fetch(ctx, nil, nil)
+	if err == nil && c.History != nil {
+		// Persistence failure must not hide current authoritative quota data.
+		_ = c.History.RecordQuota(snapshot)
+	}
+	return snapshot, err
 }
 
 type resetAttempt struct {
