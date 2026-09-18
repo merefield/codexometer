@@ -558,6 +558,65 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
 });
 
+test('quota review hides only follow-ups, cancels confirmation and preserves the draft', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page, 'prompt');
+  const state = {
+    ...snapshot,
+    profiles: [] as { session: string; pending: boolean }[],
+  };
+  const publish = () =>
+    page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      state,
+    );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const native = page.locator('.detail-workspace');
+  const text = native.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Keep this draft');
+  await native.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    native.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toBeVisible();
+  state.profiles = [{ session: 'parent', pending: true }];
+  await publish();
+  await expect(
+    native.getByRole('region', { name: 'Session controls' }),
+  ).toHaveCount(0);
+  state.profiles = [];
+  await publish();
+  await expect(text).toHaveValue('Keep this draft');
+  await expect(
+    native.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toHaveCount(0);
+  // Reviews for another session must not hide this session's composer.
+  state.profiles = [{ session: 'other', pending: true }];
+  await publish();
+  await expect(text).toBeVisible();
+  state.profiles = [{ session: 'parent', pending: true }];
+  offer.id = 'question';
+  offer.questions = [
+    { text: 'Choose environment', secret: false, freeText: true, options: [] },
+  ];
+  await publish();
+  await expect(
+    native.getByRole('textbox', { name: 'Choose environment' }),
+  ).toBeVisible();
+  offer.id = 'approval';
+  offer.kind = 'approval';
+  offer.questions = [];
+  await expect(
+    native.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
 test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', async ({
   page,
   pairingURL,

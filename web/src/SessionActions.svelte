@@ -39,6 +39,14 @@
     live.data?.sessions.find((row) => row.id === session)?.status,
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
+  // Keep this component mounted so a temporarily hidden follow-up keeps its
+  // draft. Real Codex questions and approvals remain independently actionable.
+  let followUpBlocked = $derived(
+    review !== 'profile' &&
+      offer?.kind === 'prompt' &&
+      !offer.questions?.length &&
+      !!live.data?.profiles?.some((p) => p.session === session && p.pending),
+  );
   let actionableCommand = $derived(
     !stale &&
       !offerError &&
@@ -72,7 +80,7 @@
           ),
   );
   $effect(() => {
-    if (stale || now >= expires) confirmation = '';
+    if (stale || followUpBlocked || now >= expires) confirmation = '';
   });
   const controller = new AbortController();
   onMount(() => {
@@ -117,7 +125,7 @@
     };
   });
   async function prepare() {
-    if (!offer?.id || busy || stale || !valid) return;
+    if (!offer?.id || busy || stale || followUpBlocked || !valid) return;
     const id = offer.id;
     busy = true;
     notice = '';
@@ -139,7 +147,12 @@
         },
         controller.signal,
       );
-      if (offer?.id === id && !controller.signal.aborted && !stale) {
+      if (
+        offer?.id === id &&
+        !controller.signal.aborted &&
+        !stale &&
+        !followUpBlocked
+      ) {
         confirmation = result.confirmation;
         expires = Date.parse(result.expires);
       }
@@ -152,7 +165,7 @@
     }
   }
   async function commit() {
-    if (!offer?.id || busy || !confirming) return;
+    if (!offer?.id || busy || followUpBlocked || !confirming) return;
     const id = offer.id;
     const kind = offer.kind;
     const ticket = confirmation;
@@ -190,161 +203,165 @@
   }
 </script>
 
-<section class="session-actions" aria-label="Session controls">
-  <h3>
-    {review === 'profile'
-      ? 'QUOTA THRESHOLD'
-      : 'SESSION CONTROL // EXPERIMENTAL'}
-  </h3>
-  {#if offer?.profile && !stale && !offerError}
-    <p>
-      Your {offer.profile.threshold}% quota threshold has been reached. Review
-      the profile for subsequent turns.
-    </p>
-    <h3>CURRENT PROFILE</h3>
-    <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
-    <pre>{offer.profile.current}</pre>
-    <h3>PROPOSED PROFILE</h3>
-    <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
-    <pre>{offer.profile.proposed}</pre>
-    <p class="muted">Applied settings remain after Codexometer closes.</p>
-  {/if}
-  {#if notice}<p class:notice={!success} class:sent={success} role="status">
-      {notice}
-    </p>{/if}
-  {#if command}
-    <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
-    <pre class="command">{command}</pre>
-  {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
-    <p class="muted">
-      Command unavailable from this observation. Open Codex to inspect the
-      request.
-    </p>
-  {/if}
-  {#if stale || offerError}
-    <p class="muted">
-      Session controls temporarily unavailable. Check Codex for current state.
-    </p>
-  {:else if !offer}
-    <p class="muted">Checking session controls…</p>
-  {:else if !offer.id}
-    {#if status === 'WORKING' || (!success && !busy)}
+{#if !followUpBlocked}
+  <section class="session-actions" aria-label="Session controls">
+    <h3>
+      {review === 'profile'
+        ? 'QUOTA THRESHOLD'
+        : 'SESSION CONTROL // EXPERIMENTAL'}
+    </h3>
+    {#if offer?.profile && !stale && !offerError}
+      <p>
+        Your {offer.profile.threshold}% quota threshold has been reached. Review
+        the profile for subsequent turns.
+      </p>
+      <h3>CURRENT PROFILE</h3>
+      <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
+      <pre>{offer.profile.current}</pre>
+      <h3>PROPOSED PROFILE</h3>
+      <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
+      <pre>{offer.profile.proposed}</pre>
+      <p class="muted">Applied settings remain after Codexometer closes.</p>
+    {/if}
+    {#if notice}<p class:notice={!success} class:sent={success} role="status">
+        {notice}
+      </p>{/if}
+    {#if command}
+      <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
+      <pre class="command">{command}</pre>
+    {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
       <p class="muted">
-        {status === 'WORKING'
-          ? 'Codex is working — nothing to respond to.'
-          : ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '')
-            ? 'Respond in Codex for this request.'
-            : 'Nothing needs a response right now.'}
+        Command unavailable from this observation. Open Codex to inspect the
+        request.
       </p>
     {/if}
-    {#if ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '') && !success}
-      <details>
-        <summary>About browser controls</summary>
+    {#if stale || offerError}
+      <p class="muted">
+        Session controls temporarily unavailable. Check Codex for current state.
+      </p>
+    {:else if !offer}
+      <p class="muted">Checking session controls…</p>
+    {:else if !offer.id}
+      {#if status === 'WORKING' || (!success && !busy)}
         <p class="muted">
-          Controls require a supported live request from a connected shared
-          app-server session. Local observations alone cannot provide them.
+          {status === 'WORKING'
+            ? 'Codex is working — nothing to respond to.'
+            : ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '')
+              ? 'Respond in Codex for this request.'
+              : 'Nothing needs a response right now.'}
         </p>
-      </details>
-    {/if}
-  {:else if sent !== offer.id}
-    <p class="muted">
-      TARGET // {offer.thread} // {offer.directory || 'Directory unavailable'}
-    </p>
-    <fieldset disabled={busy || confirming || stale}>
-      <legend
-        >{offer.kind === 'approval' || offer.kind === 'profile'
-          ? 'Choose a decision'
-          : 'Reply to this session'}</legend
-      >
-      {#if offer.kind === 'approval' || offer.kind === 'profile'}
-        {#each offer.choices || [] as option, index}
-          <label class="decision"
-            ><input
-              type="radio"
-              name={'decision-' + session + '-' + review}
-              value={index}
-              bind:group={choice}
-            />
-            {option.label}
-            {#if option.detail}<code>{option.detail}</code>{/if}
-            {#if option.persistent}<span class="notice"
-                >Grants permission beyond this one command. Check the scope
-                carefully.</span
-              >{/if}
-          </label>
-        {/each}
-      {:else}
-        {#each questions as question, index}
-          <label class="answer"
-            >{question.text}
-            {#if question.secret}
-              <input
-                type="password"
-                autocomplete="off"
-                maxlength="4096"
-                bind:value={answers[index]}
-              />
-            {:else if !question.freeText}
-              <select bind:value={answers[index]}
-                ><option value="">Choose an answer…</option
-                >{#each question.options || [] as option}<option value={option}
-                    >{option}</option
-                  >{/each}</select
-              >
-            {:else}
-              <textarea
-                rows="3"
-                maxlength="4096"
-                autocomplete="off"
-                bind:value={answers[index]}></textarea>
-              {#if question.options?.length}<p class="muted">
-                  Suggested answers: {question.options.join(' · ')}
-                </p>{/if}
-            {/if}
-          </label>
-          {#if question.secret && !question.freeText}
-            <details>
-              <summary>View fixed choices</summary>
-              <p class="muted">
-                Type one of these choices exactly. Your answer stays masked.
-              </p>
-              <ul>
-                {#each question.options || [] as option}<li>{option}</li>{/each}
-              </ul>
-            </details>
-          {/if}
-        {/each}
       {/if}
-    </fieldset>
-    {#if confirming}
-      <p class="notice">
-        Check the target and {offer.kind === 'profile'
-          ? 'profile above'
-          : offer.kind === 'approval'
-            ? 'exact command and permission scope'
-            : 'message above'}. This will send to Codex; it may start work using
-        your quota. Confirmation expires in {Math.max(
-          0,
-          Math.ceil((expires - now) / 1000),
-        )}s.
+      {#if ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '') && !success}
+        <details>
+          <summary>About browser controls</summary>
+          <p class="muted">
+            Controls require a supported live request from a connected shared
+            app-server session. Local observations alone cannot provide them.
+          </p>
+        </details>
+      {/if}
+    {:else if sent !== offer.id}
+      <p class="muted">
+        TARGET // {offer.thread} // {offer.directory || 'Directory unavailable'}
       </p>
-      <button onclick={commit} disabled={busy || stale}
-        >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
-          ? offer.choices?.[choice!]?.label
-          : 'SEND'}</button
-      >
-      <button
-        onclick={() => {
-          confirmation = '';
-        }}>CANCEL</button
-      >
-    {:else}
-      <button onclick={prepare} disabled={busy || stale || !valid}
-        >{busy ? 'SENDING…' : 'REVIEW BEFORE SENDING'}</button
-      >
+      <fieldset disabled={busy || confirming || stale}>
+        <legend
+          >{offer.kind === 'approval' || offer.kind === 'profile'
+            ? 'Choose a decision'
+            : 'Reply to this session'}</legend
+        >
+        {#if offer.kind === 'approval' || offer.kind === 'profile'}
+          {#each offer.choices || [] as option, index}
+            <label class="decision"
+              ><input
+                type="radio"
+                name={'decision-' + session + '-' + review}
+                value={index}
+                bind:group={choice}
+              />
+              {option.label}
+              {#if option.detail}<code>{option.detail}</code>{/if}
+              {#if option.persistent}<span class="notice"
+                  >Grants permission beyond this one command. Check the scope
+                  carefully.</span
+                >{/if}
+            </label>
+          {/each}
+        {:else}
+          {#each questions as question, index}
+            <label class="answer"
+              >{question.text}
+              {#if question.secret}
+                <input
+                  type="password"
+                  autocomplete="off"
+                  maxlength="4096"
+                  bind:value={answers[index]}
+                />
+              {:else if !question.freeText}
+                <select bind:value={answers[index]}
+                  ><option value="">Choose an answer…</option
+                  >{#each question.options || [] as option}<option
+                      value={option}>{option}</option
+                    >{/each}</select
+                >
+              {:else}
+                <textarea
+                  rows="3"
+                  maxlength="4096"
+                  autocomplete="off"
+                  bind:value={answers[index]}></textarea>
+                {#if question.options?.length}<p class="muted">
+                    Suggested answers: {question.options.join(' · ')}
+                  </p>{/if}
+              {/if}
+            </label>
+            {#if question.secret && !question.freeText}
+              <details>
+                <summary>View fixed choices</summary>
+                <p class="muted">
+                  Type one of these choices exactly. Your answer stays masked.
+                </p>
+                <ul>
+                  {#each question.options || [] as option}<li>
+                      {option}
+                    </li>{/each}
+                </ul>
+              </details>
+            {/if}
+          {/each}
+        {/if}
+      </fieldset>
+      {#if confirming}
+        <p class="notice">
+          Check the target and {offer.kind === 'profile'
+            ? 'profile above'
+            : offer.kind === 'approval'
+              ? 'exact command and permission scope'
+              : 'message above'}. This will send to Codex; it may start work
+          using your quota. Confirmation expires in {Math.max(
+            0,
+            Math.ceil((expires - now) / 1000),
+          )}s.
+        </p>
+        <button onclick={commit} disabled={busy || stale}
+          >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
+            ? offer.choices?.[choice!]?.label
+            : 'SEND'}</button
+        >
+        <button
+          onclick={() => {
+            confirmation = '';
+          }}>CANCEL</button
+        >
+      {:else}
+        <button onclick={prepare} disabled={busy || stale || !valid}
+          >{busy ? 'SENDING…' : 'REVIEW BEFORE SENDING'}</button
+        >
+      {/if}
     {/if}
-  {/if}
-</section>
+  </section>
+{/if}
 
 <style>
   fieldset {
