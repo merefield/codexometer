@@ -2103,6 +2103,11 @@ automatically retried. A later threshold can apply its own profile. Tracking is
 in memory and resets when Codexometer restarts or the quota window changes;
 restarting with `auto` grants fresh consent to apply the active policy.
 
+An unreadable session does not block other successfully checked sessions. Failed
+or uncertain browser outcomes remain visible during transient read failures,
+without exposing raw upstream error details. A definite rejection is distinguished
+from a lost acknowledgement, whose outcome remains unknown; neither is retried.
+
 In `ask` mode, at a reached threshold, eligible sessions in the terminal **Sessions** tab get a
 **QUOTA THRESHOLD** attention pill. Click it to review that session's current and
 proposed model, reasoning and speed in its detail pane. Controls also appear in

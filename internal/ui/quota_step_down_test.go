@@ -12,10 +12,11 @@ import (
 )
 
 type quotaStepTestFetcher struct {
-	steps    []codex.QuotaStep
-	sessions []codex.QuotaSession
-	targets  []codex.QuotaSession
-	updates  int
+	readError error
+	steps     []codex.QuotaStep
+	sessions  []codex.QuotaSession
+	targets   []codex.QuotaSession
+	updates   int
 }
 
 func (f *quotaStepTestFetcher) Fetch(context.Context) (codex.Snapshot, error) {
@@ -26,7 +27,7 @@ func (f *quotaStepTestFetcher) ConsumeReset(context.Context, string, string) (st
 }
 func (f *quotaStepTestFetcher) QuotaStepPolicy() []codex.QuotaStep { return f.steps }
 func (f *quotaStepTestFetcher) QuotaSessions(context.Context) ([]codex.QuotaSession, error) {
-	return append([]codex.QuotaSession(nil), f.sessions...), nil
+	return append([]codex.QuotaSession(nil), f.sessions...), f.readError
 }
 func (f *quotaStepTestFetcher) ApplyQuotaProfile(_ context.Context, targets []codex.QuotaSession, step codex.QuotaStep) (int, error) {
 	f.updates++

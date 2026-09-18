@@ -77,6 +77,8 @@ export const date = (s: string | number | null | undefined) =>
 
 const storageKey = 'codexometer.web.session';
 
+export class ControlRejected extends Error {}
+
 let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
@@ -117,12 +119,15 @@ export function connect(): () => void {
       ]),
       cache: 'no-store',
     });
-    if (!response.ok)
+    if (!response.ok) {
+      if (response.status === 409)
+        throw new ControlRejected(
+          'Action rejected, expired or changed. Refresh and check Codex; nothing was retried.',
+        );
       throw new Error(
-        response.status === 502
-          ? 'Outcome uncertain. Check Codex before taking another action; nothing was retried.'
-          : 'Action unavailable, expired or changed. Refresh and check Codex.',
+        'Outcome uncertain. Check Codex before taking another action; nothing was retried.',
       );
+    }
     return response.json();
   };
   try {

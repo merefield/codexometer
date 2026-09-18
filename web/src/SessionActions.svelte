@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { live, controlRequest } from './state.svelte';
+  import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
@@ -177,9 +177,11 @@
           : kind === 'approval'
             ? 'Decision sent.'
             : 'Text sent.';
-    } catch {
+    } catch (error) {
       notice =
-        'Outcome uncertain. Check Codex before taking another action; nothing was retried.';
+        error instanceof ControlRejected
+          ? error.message
+          : 'Outcome uncertain. Check Codex before taking another action; nothing was retried.';
     } finally {
       busy = false;
       answers = [];

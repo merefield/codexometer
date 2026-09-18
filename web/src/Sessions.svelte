@@ -195,8 +195,9 @@
     stale.
   </p>{/if}
 {#if live.data?.profileError}<p class="notice">
-    Quota profile checks temporarily unavailable. No automatic update will be
-    attempted until quota and session settings can be checked.
+    Some quota profile checks are unavailable. Only sessions with freshly
+    verified quota and settings can be updated; previous outcome notices remain
+    visible.
   </p>{/if}
 {#if (attention.length || profiles.some((p) => p.pending)) && !stale}<nav
     class="attention-summary"

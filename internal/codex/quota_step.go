@@ -20,6 +20,10 @@ type QuotaStep struct {
 // application could not be confirmed. It must not trigger an automatic retry.
 var ErrQuotaProfileUnverified = errors.New("profile update accepted but not verified")
 
+// ErrQuotaProfileUncertain means a write may have reached the server but its
+// acknowledgement was lost. Neither acceptance nor rejection is known.
+var ErrQuotaProfileUncertain = errors.New("profile update outcome unknown")
+
 type QuotaSession struct {
 	ID     string
 	Model  string

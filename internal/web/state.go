@@ -116,18 +116,20 @@ type state struct {
 }
 
 type store struct {
-	quotaSnapshot codex.Snapshot
-	contexts      map[string]codex.SessionContext // Private: never published in state/SSE.
-	directories   map[string]string
-	mu            sync.Mutex
-	state         state
-	account       string
-	history       codex.AccountUsage
-	previous      map[string]int64
-	samples       map[string][]sample
-	nextSample    time.Time
-	data          []byte
-	changed       chan struct{}
+	profileWindow   string
+	profileRevision uint64
+	quotaSnapshot   codex.Snapshot
+	contexts        map[string]codex.SessionContext // Private: never published in state/SSE.
+	directories     map[string]string
+	mu              sync.Mutex
+	state           state
+	account         string
+	history         codex.AccountUsage
+	previous        map[string]int64
+	samples         map[string][]sample
+	nextSample      time.Time
+	data            []byte
+	changed         chan struct{}
 }
 
 func newStore() *store {

@@ -41,6 +41,16 @@ func TestAutoQuotaAppliesOnceAndDiscoversNewSessions(t *testing.T) {
 	}
 }
 
+func TestAutoQuotaPartialInventoryContinuesKnownSessions(t *testing.T) {
+	m, f := profileTestModel(t)
+	m.quotaSteps[0].Mode = "auto"
+	f.readError = errors.New("unreadable third session")
+	m = drainQuotaCommands(t, m, m.evaluateQuotaStep(m.snapshot))
+	if f.updates != 2 || m.quota.scanError == "" {
+		t.Fatal("partial inventory blocked known sessions or hid read error")
+	}
+}
+
 func TestAutoQuotaMatchingAndStaleInventory(t *testing.T) {
 	for _, stale := range []bool{false, true} {
 		m, f := profileTestModel(t)

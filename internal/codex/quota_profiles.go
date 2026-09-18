@@ -120,9 +120,6 @@ func (p *QuotaProfiles) Inventory(ctx context.Context, s Snapshot, steps []Quota
 	}
 	out.Resolved = resolved
 	sessions, err := p.client.QuotaSessions(ctx)
-	if err != nil {
-		return out, err
-	}
 	for _, session := range sessions {
 		if session.MatchesQuotaStep(resolved) {
 			out.Matched = append(out.Matched, session.ID)
@@ -140,7 +137,7 @@ func (p *QuotaProfiles) Inventory(ctx context.Context, s Snapshot, steps []Quota
 	for id, err := range p.outcomes {
 		out.Outcomes[id] = err
 	}
-	return out, nil
+	return out, err
 }
 
 // Apply binds to the observed quota window, active step and exact target. An

@@ -201,7 +201,6 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			return
 		}
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		if c.pending != nil && !time.Now().Before(c.pending.until) {
 			c.pending = nil
 		}
@@ -209,12 +208,14 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		if action == "commit" {
 			p := c.pending
 			if p == nil || p.id != body.Confirmation || p.request.Session != body.Session || p.request.Offer != body.Offer || p.request.Review != body.Review {
+				c.mu.Unlock()
 				http.Error(w, errUnavailable.Error(), 409)
 				return
 			}
 			c.pending = nil
 			body = p.request // Only the exact server-prepared payload can be sent.
 		}
+		c.mu.Unlock()
 		timeout := 3 * time.Second
 		if body.Review == "profile" {
 			timeout = 8 * time.Second
@@ -243,6 +244,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		}
 		if action == "prepare" {
 			p := &preparedAction{request: body, id: rand.Text(), until: time.Now().Add(30 * time.Second)}
+			c.mu.Lock()
 			c.pending = p
 			// Clear drafts, including secret answers, even if the browser disappears.
 			if c.expiry == nil {
@@ -256,6 +258,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			} else {
 				c.expiry.Reset(30 * time.Second)
 			}
+			c.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"confirmation": p.id, "expires": p.until})
 			return
 		}
@@ -267,6 +270,10 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			err = c.prompts.SendSessionPrompt(ctx, o.token, body.Answers)
 		}
 		if err != nil {
+			if o.Kind == "profile" && !errors.Is(err, codex.ErrQuotaProfileUnverified) && !errors.Is(err, codex.ErrQuotaProfileUncertain) {
+				http.Error(w, "Profile update rejected or unavailable. Refresh and check Codex; nothing was retried.", 409)
+				return
+			}
 			http.Error(w, "Outcome uncertain; check Codex before taking another action. Nothing was retried.", 502)
 			return
 		}

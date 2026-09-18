@@ -233,7 +233,7 @@ func (m Model) startQuotaUpdate(targets []codex.QuotaSession) (Model, tea.Cmd) {
 
 func (m Model) applyNextAutoQuotaSession() (Model, tea.Cmd) {
 	if m.quotaStepPending == nil || m.quotaStepPending.Mode != "auto" ||
-		m.quotaStepBusy || m.quota.scanError != "" || !m.quotaFresh() {
+		m.quotaStepBusy || !m.quotaFresh() {
 		return m, nil
 	}
 	targets := m.quotaCandidates()

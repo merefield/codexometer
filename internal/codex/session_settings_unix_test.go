@@ -358,6 +358,33 @@ func TestQuotaSettingsOldNotificationCannotVerifyNewWrite(t *testing.T) {
 	}
 }
 
+func TestQuotaSettingsLostAcknowledgementIsUncertain(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	sessions, err := p.QuotaSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	f.mu.Lock()
+	f.started = started
+	f.release = release
+	f.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.ApplyQuotaProfile(ctx, sessions[:1], QuotaStep{Model: "small", Effort: "medium"})
+		done <- err
+	}()
+	<-started
+	cancel()
+	err = <-done
+	close(release)
+	if !errors.Is(err, ErrQuotaProfileUncertain) || errors.Is(err, ErrQuotaProfileUnverified) {
+		t.Fatalf("lost acknowledgement misclassified: %v", err)
+	}
+}
+
 func TestQuotaSettingsUpdatedNotificationVerifiesQueuedWrite(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	sessions, _ := p.QuotaSessions(context.Background())

@@ -151,6 +151,10 @@ func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected 
 	}
 	_, _, before, _ := p.observedQuotaSettings(expected.ID)
 	if err := p.request(ctx, "thread/settings/update", params, nil); err != nil {
+		var rejection *daemonResponseError
+		if !errors.As(err, &rejection) {
+			return errors.Join(ErrQuotaProfileUncertain, err)
+		}
 		return err
 	}
 	defer func() {

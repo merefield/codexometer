@@ -51,11 +51,12 @@ type daemonTurnKey struct {
 }
 
 type daemonEnvelope struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-	Result json.RawMessage `json:"result"`
-	Error  json.RawMessage `json:"error"`
+	connectionClosed bool
+	ID               json.RawMessage `json:"id"`
+	Method           string          `json:"method"`
+	Params           json.RawMessage `json:"params"`
+	Result           json.RawMessage `json:"result"`
+	Error            json.RawMessage `json:"error"`
 }
 
 func newSessionStatusProvider(codexHome string) sessionStatusProvider {
@@ -329,6 +330,9 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	defer timer.Stop()
 	select {
 	case envelope := <-response:
+		if envelope.connectionClosed {
+			return errors.New("daemon connection closed")
+		}
 		if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
 			return &daemonResponseError{payload: string(envelope.Error)}
 		}
@@ -496,7 +500,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	for id, response := range p.pending {
 		delete(p.pending, id)
 		select {
-		case response <- daemonEnvelope{Error: json.RawMessage(`{"message":"daemon connection closed"}`)}:
+		case response <- daemonEnvelope{connectionClosed: true}:
 		default:
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/merefield/codexometer/internal/codex"
+	"slices"
 	"time"
 )
 
@@ -61,24 +62,24 @@ func profileNotice(err error) string {
 	if errors.Is(err, codex.ErrQuotaProfileUnverified) {
 		return "Profile update accepted; awaiting verification. Nothing was retried."
 	}
-	return "Profile update failed: " + codex.SanitizeSessionContext(err.Error())
+	if errors.Is(err, codex.ErrQuotaProfileUncertain) {
+		return "Profile update outcome unknown. Check Codex; nothing was retried."
+	}
+	return "Profile update rejected or unavailable. Check the session in Codex; nothing was retried."
 }
 
-func (c *control) profileInventory(ctx context.Context) ([]offeredAction, error) {
+func (c *control) profileInventory(ctx context.Context) ([]offeredAction, []string, error) {
 	if c.profiles == nil {
-		return nil, errUnavailable
+		return nil, nil, errUnavailable
 	}
 	p := c.profiles
 	inventory, err := p.engine.Inventory(ctx, c.profileSnapshot(), p.steps, p.refresh)
-	if err != nil {
-		return nil, err
-	}
 	step, window, ok := codex.SelectQuotaProfile(c.profileSnapshot(), p.steps)
 	if inventory.Step.Model == "" && !ok {
-		return nil, nil
+		return nil, nil, err
 	}
 	if !ok || step != inventory.Step || window != inventory.Window {
-		return nil, errUnavailable
+		return nil, nil, errUnavailable
 	}
 	var offers []offeredAction
 	for _, s := range inventory.Sessions {
@@ -102,33 +103,54 @@ func (c *control) profileInventory(ctx context.Context) ([]offeredAction, error)
 		}
 		offers = append(offers, o)
 	}
-	return offers, nil
+	return offers, inventory.Matched, err
 }
 
 func (c *control) profileOffer(ctx context.Context, id string) (offeredAction, error) {
-	offers, err := c.profileInventory(ctx)
-	if err != nil {
-		return offeredAction{}, err
-	}
+	offers, _, err := c.profileInventory(ctx)
 	for _, o := range offers {
 		if o.Session == id && o.Profile.Pending {
 			return o, nil
 		}
 	}
-	return offeredAction{actionOffer: actionOffer{Session: id}}, nil
+	return offeredAction{actionOffer: actionOffer{Session: id}}, err
 }
 
 func (c *control) commitProfile(ctx context.Context, o offeredAction, choice int) error {
 	p := c.profiles
 	_, err := p.engine.Apply(ctx, c.profileSnapshot(), p.steps, p.refresh, o.profileTarget, o.profileStep, o.profileWindow, choice == 1)
+	// Publish outcomes immediately: the next inventory read itself may fail.
+	c.store.mu.Lock()
+	_, window, _ := codex.QuotaPolicyWindow(c.store.quotaSnapshot)
+	if window == o.profileWindow {
+		reviews := []profileReview{}
+		for _, review := range c.store.state.Profiles {
+			if review.Session != o.Session {
+				reviews = append(reviews, review)
+			}
+		}
+		if err != nil {
+			review := *o.Profile
+			review.Pending = false
+			review.Notice = profileNotice(err)
+			reviews = append(reviews, review)
+		}
+		c.store.state.Profiles = reviews
+		c.store.profileWindow = window
+		c.store.profileRevision++
+		c.store.publish()
+	}
+	c.store.mu.Unlock()
 	return err
 }
 
 func (c *control) refreshProfiles(ctx context.Context) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	offers, err := c.profileInventory(ctx)
-	if err == nil {
+	c.store.mu.Lock()
+	_, startedWindow, _ := codex.QuotaPolicyWindow(c.store.quotaSnapshot)
+	revision := c.store.profileRevision
+	c.store.mu.Unlock()
+	offers, matched, err := c.profileInventory(ctx)
+	if len(offers) > 0 {
 		for i, o := range offers {
 			if o.profileStep.Mode == "auto" && o.ID != "" {
 				offers[i].Profile.Notice = profileNotice(c.commitProfile(ctx, o, 0))
@@ -143,6 +165,37 @@ func (c *control) refreshProfiles(ctx context.Context) {
 		}
 	}
 	c.store.mu.Lock()
+	if c.store.profileRevision != revision {
+		// A newer foreground/background outcome owns the presentation.
+		c.store.state.ProfileError = err != nil
+		c.store.publish()
+		c.store.mu.Unlock()
+		return
+	}
+	_, window, _ := codex.QuotaPolicyWindow(c.store.quotaSnapshot)
+	if window != startedWindow {
+		reviews = nil
+		err = errUnavailable
+	}
+	if err != nil && window == c.store.profileWindow {
+		for _, previous := range c.store.state.Profiles {
+			if previous.Notice == "" || slices.Contains(matched, previous.Session) {
+				continue
+			}
+			found := false
+			for _, current := range reviews {
+				if current.Session == previous.Session {
+					found = true
+					break
+				}
+			}
+			if !found {
+				previous.Pending = false
+				reviews = append(reviews, previous)
+			}
+		}
+	}
+	c.store.profileWindow = window
 	c.store.state.Profiles = reviews
 	c.store.state.ProfileError = err != nil
 	c.store.publish()

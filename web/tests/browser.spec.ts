@@ -413,6 +413,28 @@ test('session approval requires explicit review and confirmation of the target',
   );
 });
 
+test('definite rejection is distinct from an uncertain outcome', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page);
+  await page.route('**/api/control/commit', (route) =>
+    route.fulfill({ status: 409, body: 'rejected' }),
+  );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }).check();
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+  const notice = page
+    .getByRole('region', { name: 'Session controls' })
+    .getByRole('status');
+  await expect(notice).toContainText('Action rejected, expired or changed');
+  await expect(notice).not.toContainText('Outcome uncertain');
+});
+
 test('approval navigation matches each terminal theme warning colour and stays clickable', async ({
   page,
   pairingURL,
