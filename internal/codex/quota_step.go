@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 type QuotaStep struct {
@@ -11,7 +12,18 @@ type QuotaStep struct {
 	Effort    string
 	// An advertised tier name or ID; empty preserves speed.
 	ServiceTier string
+	// Empty and "ask" require review; "auto" grants launch-time consent.
+	Mode string
 }
+
+// ErrQuotaProfileUnverified means the server acknowledged the write but its
+// application could not be confirmed. It must not trigger an automatic retry.
+var ErrQuotaProfileUnverified = errors.New("profile update accepted but not verified")
+
+// ErrQuotaProfileUncertain means a write may have reached the server but its
+// acknowledgement was lost. Neither acceptance nor rejection is known.
+var ErrQuotaProfileUncertain = errors.New("profile update outcome unknown")
+
 type QuotaSession struct {
 	ID     string
 	Model  string
@@ -64,12 +76,25 @@ func (s QuotaSession) MatchesQuotaStep(step QuotaStep) bool {
 	if s.Model != step.Model || s.Effort != step.Effort {
 		return false
 	}
-	switch step.ServiceTier {
+	switch canonicalQuotaTier(step.ServiceTier) {
 	case "":
 		return true
 	case "default":
-		return s.Tier == nil
+		return canonicalQuotaSessionTier(s.Tier) == "default"
 	default:
-		return s.Tier != nil && *s.Tier == step.ServiceTier
+		return canonicalQuotaSessionTier(s.Tier) == canonicalQuotaTier(step.ServiceTier)
 	}
+}
+
+// App-server represents standard routing both as a missing service tier and as
+// the explicit "default" tier, depending on which response supplies it.
+func canonicalQuotaSessionTier(tier *string) string {
+	if tier == nil || canonicalQuotaTier(*tier) == "" {
+		return "default"
+	}
+	return canonicalQuotaTier(*tier)
+}
+
+func canonicalQuotaTier(tier string) string {
+	return strings.ToLower(strings.TrimSpace(tier))
 }

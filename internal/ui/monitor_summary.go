@@ -80,19 +80,71 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 	return lines
 }
 
-func (m Model) monitorAttentionSessions() []monitorSession {
+type monitorAttentionItem struct {
+	monitorSession
+	profile bool
+}
+
+func (item monitorAttentionItem) action() string {
+	if item.profile {
+		return "attention-profile:" + item.id
+	}
+	return "attention:" + item.id
+}
+
+func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 	if m.monitorState != monitorRunning || m.monitorError != "" {
 		return nil
 	}
-	var sessions []monitorSession
-	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionComplete} {
+	var items []monitorAttentionItem
+	for priority := 0; priority < 4; priority++ {
 		for _, s := range m.monitorSessionData {
-			if m.monitorSessionVisible(s) && s.attention == attention && !(attention == codex.SessionAttentionComplete && s.working) {
-				sessions = append(sessions, s)
+			if !m.monitorSessionVisible(s) {
+				continue
+			}
+			_, profile := m.quotaSessionCandidate(s)
+			include := false
+			switch priority {
+			case 0:
+				include = s.attention == codex.SessionAttentionApproval
+			case 1:
+				include = s.attention == codex.SessionAttentionInput
+			case 2:
+				include = profile
+			case 3:
+				include = s.attention == codex.SessionAttentionComplete && !s.working && !profile
+			}
+			if include {
+				items = append(items, monitorAttentionItem{monitorSession: s, profile: priority == 2})
 			}
 		}
 	}
-	return sessions
+	return items
+}
+
+// Validate the action, not only the session ID; sibling pills must open
+// different documents and disarm each other's confirmation.
+func (m *Model) openMonitorAttention(action string) {
+	if strings.HasPrefix(action, "attention-profile:") && (m.monitorPrompt.input.Focused() || m.monitorPrompt.busy) {
+		return
+	}
+	for _, item := range m.monitorAttentionSessions() {
+		if item.action() != action {
+			continue
+		}
+		review := "context"
+		if item.profile {
+			review = "profile"
+		}
+		if m.monitorContextDetail == item.id && m.selectedAttentionAction() == action {
+			return
+		}
+		m.setRowContext(item.id, contextFull)
+		row := m.monitorContextRows[item.id]
+		row.review = review
+		m.monitorContextRows[item.id] = row
+		return
+	}
 }
 
 // A bounded, paged flow layout shared by rendering and hit testing. IDs remain
@@ -131,20 +183,31 @@ func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationB
 	return buttons, rows
 }
 
+func (m Model) selectedAttentionAction() string {
+	id := m.monitorContextDetail
+	if id == "" {
+		return ""
+	}
+	if s, ok := m.contextDetailSession(); ok && m.hasSessionProfile(s) {
+		return "attention-profile:" + id
+	}
+	return "attention:" + id
+}
+
 func (m Model) markSelectedAttention(buttons []monitorNavigationButton) {
-	selected := m.monitorContextDetail
-	if selected == "" {
+	action := m.selectedAttentionAction()
+	if action == "" {
 		return
 	}
 	for i := range buttons {
-		if buttons[i].action == "attention:"+selected {
+		if buttons[i].action == action {
 			label := buttons[i].label
 			buttons[i].label = ">" + label[1:len(label)-1] + "<"
 		}
 	}
 }
 
-func (m Model) layoutMonitorAttention(sessions []monitorSession, width, rows, compact int, truncate bool) []monitorNavigationButton {
+func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, rows, compact int, truncate bool) []monitorNavigationButton {
 	x, y := 0, 0
 	markerWidth := 0
 	if m.monitorContextDetail != "" {
@@ -154,7 +217,10 @@ func (m Model) layoutMonitorAttention(sessions []monitorSession, width, rows, co
 	for _, s := range sessions {
 		id := shortSessionID(s.id)
 		state := monitorAttentionStatus(s.attention)
-		if compact == 3 && s.attention == codex.SessionAttentionComplete {
+		if s.profile {
+			state = i18n.Text("QUOTA THRESHOLD")
+		}
+		if compact == 3 && s.attention == codex.SessionAttentionComplete && !s.profile {
 			state = i18n.Text("DONE")
 		}
 		if truncate {
@@ -185,7 +251,7 @@ func (m Model) layoutMonitorAttention(sessions []monitorSession, width, rows, co
 		if y >= rows {
 			break
 		}
-		buttons = append(buttons, monitorNavigationButton{label: label, action: "attention:" + s.id, enabled: true, rect: monitorRect{x: x, y: y, width: w, height: 1}})
+		buttons = append(buttons, monitorNavigationButton{label: label, action: s.action(), enabled: true, rect: monitorRect{x: x, y: y, width: w, height: 1}})
 		x += w + 1
 	}
 	return buttons
@@ -195,8 +261,8 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 	lines := make([]string, rows)
 	completed := make(map[string]bool)
 	for _, s := range m.monitorAttentionSessions() {
-		if s.attention == codex.SessionAttentionComplete {
-			completed["attention:"+s.id] = true
+		if s.attention == codex.SessionAttentionComplete && !s.profile {
+			completed[s.action()] = true
 		}
 	}
 	for _, b := range buttons {

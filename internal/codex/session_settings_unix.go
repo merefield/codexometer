@@ -12,9 +12,18 @@ import (
 	"time"
 )
 
-func tierEqual(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+func tierEqual(a, b *string) bool {
+	return canonicalQuotaSessionTier(a) == canonicalQuotaSessionTier(b)
+}
 func sameQuotaSettings(a, b QuotaSession) bool {
 	return a.Model == b.Model && a.Effort == b.Effort && tierEqual(a.Tier, b.Tier)
+}
+
+func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <-chan struct{}, uint64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	current, ok := p.threadSettings[id]
+	return current, p.settingsSignal, p.settingsVersions[id], ok
 }
 
 // Only call for a thread positively observed as loaded. No settings overrides
@@ -136,16 +145,30 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 
 // The RPC acknowledgement means queued, not applied. Observe the actual
 // configured settings before calling an update successful.
-func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) error {
+func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	_, _, before, _ := p.observedQuotaSettings(expected.ID)
 	if err := p.request(ctx, "thread/settings/update", params, nil); err != nil {
+		var rejection *daemonResponseError
+		if !errors.As(err, &rejection) {
+			return errors.Join(ErrQuotaProfileUncertain, err)
+		}
 		return err
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(ErrQuotaProfileUnverified, err)
+		}
+	}()
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
+		observed, changed, version, ok := p.observedQuotaSettings(expected.ID)
+		if ok && version > before && sameQuotaSettings(observed, expected) {
+			return nil
+		}
 		loaded, err := p.loadedThreads(ctx)
 		if err != nil {
 			return err
@@ -165,6 +188,7 @@ func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected 
 			return ctx.Err()
 		case <-deadline.C:
 			return errors.New("settings queued but application not verified")
+		case <-changed:
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

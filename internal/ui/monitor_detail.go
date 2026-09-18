@@ -37,13 +37,22 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 	if !ok {
 		return []detailLine{{i18n.Text("NO CONTEXT"), "metadata"}}
 	}
+	if doc := m.profileDocument(s, width); doc != nil {
+		return doc
+	}
 	if s.preview.Text == "" {
 		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
 		var lines []detailLine
 		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
 			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "metadata"})
 		}
-		return append(lines, detailLine{i18n.Text("NO CONTEXT"), "metadata"})
+		lines = append(lines, detailLine{i18n.Text("NO CONTEXT"), "metadata"})
+		if notice := codex.SanitizeSessionContext(m.quota.notices[s.id]); notice != "" {
+			for _, line := range strings.Split(ansi.Hardwrap(notice, width, true), "\n") {
+				lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "warning"})
+			}
+		}
+		return lines
 	}
 	c := s.preview
 	var lines []detailLine
@@ -112,6 +121,9 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 	if c.ApprovalDecisions != "" {
 		section(i18n.Text("OFFERED DECISIONS"))
 		appendText(c.ApprovalDecisions, "metadata", "")
+	}
+	if notice := m.quota.notices[s.id]; notice != "" {
+		appendText(codex.SanitizeSessionContext(notice), "warning", "")
 	}
 	return lines
 }

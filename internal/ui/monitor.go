@@ -150,6 +150,10 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	if m.monitorError != "" {
 		status = " // " + terminalLabel(hint)
 	}
+	if m.monitorError == "" && m.quota.scanError != "" {
+		status = " // " + terminalLabel(m.quota.scanError)
+		stateColor = colors.warning
+	}
 	if len(lines) < height-2 {
 		lines = append(lines, ansi.Truncate(lipgloss.NewStyle().Bold(true).Foreground(stateColor).Render(state)+colors.dimmed().Render(status), innerWidth, ""))
 	}

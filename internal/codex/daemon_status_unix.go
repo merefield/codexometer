@@ -25,20 +25,24 @@ type daemonStatusProvider struct {
 	contexts   map[string]*daemonContextState
 	socketPath string
 
-	mu             sync.Mutex
-	connection     *websocket.Conn
-	nextRequestID  int64
-	pending        map[int64]chan daemonEnvelope
-	subscribed     map[string]struct{}
-	reroutedTurns  map[daemonTurnKey]string
-	observations   []resolvedModelObservation
-	nextSequence   uint64
-	lastStatusAt   time.Time
-	statusThreads  map[string]struct{}
-	statuses       map[string]sessionRuntimeStatus
-	settingsMu     sync.Mutex
-	settingsClosed bool
-	writeMu        sync.Mutex
+	mu               sync.Mutex
+	connection       *websocket.Conn
+	nextRequestID    int64
+	pending          map[int64]chan daemonEnvelope
+	subscribed       map[string]struct{}
+	reroutedTurns    map[daemonTurnKey]string
+	observations     []resolvedModelObservation
+	nextSequence     uint64
+	lastStatusAt     time.Time
+	statusThreads    map[string]struct{}
+	statuses         map[string]sessionRuntimeStatus
+	threadSettings   map[string]QuotaSession
+	settingsVersions map[string]uint64
+	settingsVersion  uint64
+	settingsSignal   chan struct{}
+	settingsMu       sync.Mutex
+	settingsClosed   bool
+	writeMu          sync.Mutex
 }
 
 type daemonTurnKey struct {
@@ -47,11 +51,12 @@ type daemonTurnKey struct {
 }
 
 type daemonEnvelope struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-	Result json.RawMessage `json:"result"`
-	Error  json.RawMessage `json:"error"`
+	connectionClosed bool
+	ID               json.RawMessage `json:"id"`
+	Method           string          `json:"method"`
+	Params           json.RawMessage `json:"params"`
+	Result           json.RawMessage `json:"result"`
+	Error            json.RawMessage `json:"error"`
 }
 
 func newSessionStatusProvider(codexHome string) sessionStatusProvider {
@@ -237,6 +242,9 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.pending = make(map[int64]chan daemonEnvelope)
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)
+	p.threadSettings = make(map[string]QuotaSession)
+	p.settingsVersions = make(map[string]uint64)
+	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
 	go p.readLoop(connection)
 
@@ -322,6 +330,9 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	defer timer.Stop()
 	select {
 	case envelope := <-response:
+		if envelope.connectionClosed {
+			return errors.New("daemon connection closed")
+		}
 		if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
 			return &daemonResponseError{payload: string(envelope.Error)}
 		}
@@ -395,6 +406,37 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 
 func (p *daemonStatusProvider) handleNotification(method string, params json.RawMessage) {
 	switch method {
+	case "thread/settings/updated":
+		var notification struct {
+			ThreadID       string `json:"threadId"`
+			ThreadSettings struct {
+				Model       string  `json:"model"`
+				Effort      string  `json:"effort"`
+				ServiceTier *string `json:"serviceTier"`
+			} `json:"threadSettings"`
+		}
+		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" ||
+			notification.ThreadSettings.Model == "" || notification.ThreadSettings.Effort == "" {
+			return
+		}
+		p.mu.Lock()
+		if p.threadSettings == nil {
+			p.threadSettings = make(map[string]QuotaSession)
+		}
+		p.threadSettings[notification.ThreadID] = QuotaSession{
+			ID: notification.ThreadID, Model: notification.ThreadSettings.Model,
+			Effort: notification.ThreadSettings.Effort, Tier: notification.ThreadSettings.ServiceTier,
+		}
+		if p.settingsVersions == nil {
+			p.settingsVersions = make(map[string]uint64)
+		}
+		p.settingsVersion++
+		p.settingsVersions[notification.ThreadID] = p.settingsVersion
+		if p.settingsSignal != nil {
+			close(p.settingsSignal)
+		}
+		p.settingsSignal = make(chan struct{})
+		p.mu.Unlock()
 	case "model/rerouted":
 		var notification struct {
 			ThreadID string `json:"threadId"`
@@ -458,7 +500,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	for id, response := range p.pending {
 		delete(p.pending, id)
 		select {
-		case response <- daemonEnvelope{Error: json.RawMessage(`{"message":"daemon connection closed"}`)}:
+		case response <- daemonEnvelope{connectionClosed: true}:
 		default:
 		}
 	}
@@ -468,6 +510,11 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil
 	p.statuses = nil
+	p.threadSettings = nil
+	if p.settingsSignal != nil {
+		close(p.settingsSignal)
+		p.settingsSignal = nil
+	}
 	p.mu.Unlock()
 	if current != nil {
 		_ = current.Close()

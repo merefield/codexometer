@@ -99,6 +99,11 @@ type detailControlLayout struct {
 
 // Scroll geometry needs only layout, not a styled rendering of the controls.
 func (m Model) layoutDetailControls(width, height int) detailControlLayout {
+	if s, ok := m.contextDetailSession(); ok {
+		if buttons := m.profileButtons(width, height, s); len(buttons) > 0 {
+			return detailControlLayout{kind: "profile", rows: buttons[len(buttons)-1].y + 1}
+		}
+	}
 	if rows := m.monitorApprovalControlRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "approval", rows: rows}
 	}
@@ -117,6 +122,9 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 
 func (layout detailControlLayout) render(m Model, width, height int, colors palette) string {
 	switch layout.kind {
+	case "profile":
+		s, _ := m.contextDetailSession()
+		return m.renderProfileControls(m.profileButtons(width, height, s), colors)
 	case "approval":
 		return m.renderMonitorApprovalControls(width, height, colors)
 	case "prompt":

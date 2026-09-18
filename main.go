@@ -44,7 +44,7 @@ func (d *demoFetcher) QuotaStepPolicy() []codex.QuotaStep {
 }
 
 func (d *demoFetcher) QuotaSessions(ctx context.Context) ([]codex.QuotaSession, error) {
-	return []codex.QuotaSession{{ID: "demo-alpha", Model: "gpt-5.6-sol", Effort: "high"}, {ID: "demo-bravo", Model: "gpt-5.6-sol", Effort: "high"}}, ctx.Err()
+	return []codex.QuotaSession{{ID: "019d-demo-a1b2c", Model: "gpt-5.6-sol", Effort: "high"}, {ID: "019d-demo-d4e5f", Model: "gpt-5.6-sol", Effort: "high"}}, ctx.Err()
 }
 
 func (d *demoFetcher) ApplyQuotaProfile(ctx context.Context, targets []codex.QuotaSession, step codex.QuotaStep) (int, error) {
@@ -67,8 +67,11 @@ func (f *quotaStepFlags) String() string {
 	values := make([]string, 0, len(*f))
 	for _, step := range *f {
 		value := fmt.Sprintf("%d:%s:%s", step.Threshold, step.Model, step.Effort)
-		if step.ServiceTier != "" {
+		if step.ServiceTier != "" || step.Mode != "" {
 			value += ":" + quotaStepSpeedFlag(step.ServiceTier)
+		}
+		if step.Mode != "" {
+			value += ":" + step.Mode
 		}
 		values = append(values, value)
 	}
@@ -77,8 +80,8 @@ func (f *quotaStepFlags) String() string {
 
 func (f *quotaStepFlags) Set(value string) error {
 	parts := strings.Split(value, ":")
-	if len(parts) != 3 && len(parts) != 4 {
-		return fmt.Errorf("must be PERCENT:MODEL:EFFORT[:SPEED]")
+	if len(parts) < 3 || len(parts) > 5 {
+		return fmt.Errorf("must be PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]")
 	}
 	threshold, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 	if err != nil || threshold < 1 || threshold > 100 {
@@ -104,7 +107,7 @@ func (f *quotaStepFlags) Set(value string) error {
 		}
 	}
 	serviceTier := ""
-	if len(parts) == 4 {
+	if len(parts) >= 4 && !(len(parts) == 5 && strings.TrimSpace(parts[3]) == "") {
 		switch strings.ToLower(strings.TrimSpace(parts[3])) {
 		case "fast", "slow", "flex", "priority":
 			serviceTier = strings.ToLower(strings.TrimSpace(parts[3]))
@@ -114,7 +117,14 @@ func (f *quotaStepFlags) Set(value string) error {
 			return fmt.Errorf("speed must be fast, slow, flex, priority, or standard (and advertised by Codex)")
 		}
 	}
-	*f = append(*f, codex.QuotaStep{Threshold: threshold, Model: model, Effort: effort, ServiceTier: serviceTier})
+	mode := ""
+	if len(parts) == 5 {
+		mode = strings.ToLower(strings.TrimSpace(parts[4]))
+		if mode != "ask" && mode != "auto" {
+			return fmt.Errorf("mode must be ask or auto")
+		}
+	}
+	*f = append(*f, codex.QuotaStep{Threshold: threshold, Model: model, Effort: effort, ServiceTier: serviceTier, Mode: mode})
 	sort.Slice(*f, func(i, j int) bool { return (*f)[i].Threshold < (*f)[j].Threshold })
 	return nil
 }
@@ -375,7 +385,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
 		webMode           = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
-		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals and prompts (requires --web)")
+		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals, prompts and configured quota profiles (requires --web)")
 		webPort           = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
 		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
 		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
@@ -386,7 +396,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		digBenchTimeout   = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
 		printVersion      bool
 	)
-	flags.Var(&quotaSteps, "quota-step-down", "offer PERCENT:MODEL:EFFORT[:SPEED] per session (repeatable; SPEED is advertised fast/slow/priority/flex, or standard)")
+	flags.Var(&quotaSteps, "quota-step-down", "set PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]] per session (repeatable; default ask; empty SPEED preserves speed)")
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
 	flags.BoolVar(&printVersion, "v", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
@@ -409,8 +419,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintln(stderr, "codexometer: --web cannot be combined with --inline, --check-auth or --digbench-game")
 		return 2
 	}
-	if *webMode && len(quotaSteps) > 0 {
-		fmt.Fprintln(stderr, "codexometer: --quota-step-down is currently available only in the terminal UI")
+	if *webMode && len(quotaSteps) > 0 && !*webControl {
+		fmt.Fprintln(stderr, "codexometer: --quota-step-down in web mode requires --web-control")
 		return 2
 	}
 	if *resetThreshold < 0 || *resetThreshold > 100 {

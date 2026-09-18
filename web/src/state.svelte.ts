@@ -39,6 +39,15 @@ export interface Usage {
   dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
 }
 export interface Snapshot {
+  profiles?: {
+    session: string;
+    threshold: number;
+    current: string;
+    proposed: string;
+    pending: boolean;
+    notice?: string;
+  }[];
+  profileError?: boolean;
   control?: boolean;
   version: string;
   meters: Meter[];
@@ -67,6 +76,8 @@ export const date = (s: string | number | null | undefined) =>
     : new Date(typeof s === 'number' ? s * 1000 : s).toLocaleString('en-GB');
 
 const storageKey = 'codexometer.web.session';
+
+export class ControlRejected extends Error {}
 
 let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
@@ -108,12 +119,15 @@ export function connect(): () => void {
       ]),
       cache: 'no-store',
     });
-    if (!response.ok)
+    if (!response.ok) {
+      if (response.status !== 502)
+        throw new ControlRejected(
+          'Action rejected, expired or changed. Refresh and check Codex; nothing was retried.',
+        );
       throw new Error(
-        response.status === 502
-          ? 'Outcome uncertain. Check Codex before taking another action; nothing was retried.'
-          : 'Action unavailable, expired or changed. Refresh and check Codex.',
+        'Outcome uncertain. Check Codex before taking another action; nothing was retried.',
       );
+    }
     return response.json();
   };
   try {

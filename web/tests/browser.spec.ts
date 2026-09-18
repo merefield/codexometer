@@ -34,16 +34,28 @@ async function mockStream(page: Page, snapshot: object) {
   }, snapshot);
 }
 
-const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
+const test = base.extend<{
+  pairingURL: string;
+  controlMode: boolean;
+  quotaMode: string;
+}>({
   controlMode: [false, { option: true }],
-  pairingURL: async ({ controlMode }, use) => {
+  quotaMode: ['', { option: true }],
+  pairingURL: async ({ controlMode, quotaMode }, use) => {
     const child = spawn(
       process.env.CODEXOMETER_TEST_BINARY ||
         resolve(
           '..',
           process.platform === 'win32' ? 'codexometer.exe' : 'codexometer',
         ),
-      ['--web', '--demo', ...(controlMode ? ['--web-control'] : [])],
+      [
+        '--web',
+        '--demo',
+        ...(controlMode ? ['--web-control'] : []),
+        ...(quotaMode
+          ? ['--quota-step-down', '1:gpt-5.6-luna:medium::' + quotaMode]
+          : []),
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let output = '';
@@ -83,6 +95,80 @@ const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
       }
     }
   },
+});
+
+test.describe('quota profile reviews', () => {
+  test.use({ controlMode: true, quotaMode: 'ask' });
+  test('profile and native approval coexist and confirm independently', async ({
+    page,
+    pairingURL,
+  }) => {
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const pill = page.getByRole('link', { name: /QUOTA THRESHOLD/ }).first();
+    await expect(pill).toBeVisible({ timeout: 15000 });
+    await pill.click();
+    const profile = page.locator('.profile-review').first();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await expect(profile).toContainText('PROPOSED PROFILE');
+    // Each pill opens only its own review; native approval stays reachable.
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeHidden();
+    await expect(page.locator('.detail-context')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Copy text' })).toHaveCount(
+      0,
+    );
+    await page
+      .getByRole('navigation', { name: 'Sessions needing attention' })
+      .getByRole('link', { name: /APPROVAL NEEDED/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeVisible();
+    await expect(profile.getByRole('radio')).toHaveCount(0);
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await expect(
+      page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+    ).toBeVisible();
+    await pill.click();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await page
+      .getByRole('navigation', { name: 'Sessions needing attention' })
+      .getByRole('link', { name: /APPROVAL NEEDED/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+    ).toHaveCount(0);
+    await pill.click();
+    // The review target survives reload/deep links.
+    await page.reload();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeHidden();
+    await profile
+      .getByRole('radio', { name: 'APPLY PROFILE', exact: true })
+      .check();
+    await profile
+      .getByRole('button', { name: 'REVIEW BEFORE SENDING' })
+      .click();
+    await expect(
+      profile.getByRole('button', { name: 'CONFIRM APPLY PROFILE' }),
+    ).toBeVisible();
+    await profile
+      .getByRole('button', { name: 'CONFIRM APPLY PROFILE' })
+      .click();
+    await expect(profile).toHaveCount(0, { timeout: 15000 });
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeVisible();
+  });
 });
 
 test('read-only session copy captures working prose in every detail level without server writes', async ({
@@ -364,6 +450,35 @@ test('session approval requires explicit review and confirmation of the target',
   );
 });
 
+for (const status of [400, 401, 403, 404, 409, 502]) {
+  test(`HTTP ${status} is classified correctly after commit`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page);
+    await page.route('**/api/control/commit', (route) =>
+      route.fulfill({ status, body: 'rejected' }),
+    );
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+    const notice = page
+      .getByRole('region', { name: 'Session controls' })
+      .getByRole('status');
+    await expect(notice).toContainText(
+      status === 502
+        ? 'Outcome uncertain'
+        : 'Action rejected, expired or changed',
+    );
+  });
+}
+
 test('approval navigation matches each terminal theme warning colour and stays clickable', async ({
   page,
   pairingURL,
@@ -485,6 +600,111 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   });
   await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
+test('quota review hides only follow-ups, cancels confirmation and preserves the draft', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page, 'prompt');
+  const state = {
+    ...snapshot,
+    profiles: [] as { session: string; pending: boolean }[],
+  };
+  const publish = () =>
+    page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      state,
+    );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const native = page.locator('.detail-workspace');
+  const text = native.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Keep this draft');
+  await native.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(
+    native.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toBeVisible();
+  state.profiles = [{ session: 'parent', pending: true }];
+  await publish();
+  await expect(
+    native.getByRole('region', { name: 'Session controls' }),
+  ).toHaveCount(0);
+  state.profiles = [];
+  await publish();
+  await expect(text).toHaveValue('Keep this draft');
+  await expect(
+    native.getByRole('button', { name: 'CONFIRM SEND' }),
+  ).toHaveCount(0);
+  // Reviews for another session must not hide this session's composer.
+  state.profiles = [{ session: 'other', pending: true }];
+  await publish();
+  await expect(text).toBeVisible();
+  state.profiles = [{ session: 'parent', pending: true }];
+  offer.id = 'question';
+  offer.questions = [
+    { text: 'Choose environment', secret: false, freeText: true, options: [] },
+  ];
+  await publish();
+  await expect(
+    native.getByRole('textbox', { name: 'Choose environment' }),
+  ).toBeVisible();
+  offer.id = 'approval';
+  offer.kind = 'approval';
+  offer.questions = [];
+  await expect(
+    native.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
+
+test('quota pills cannot discard another session draft or in-flight send', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const state = {
+    ...snapshot,
+    profiles: [{ session: 'other', pending: true }],
+  };
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Keep my draft');
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    state,
+  );
+  const pill = page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link', { name: /QUOTA THRESHOLD/ });
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  await expect(text).toHaveValue('Keep my draft');
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  await page.route('**/api/control/commit', async (route) => {
+    await pending;
+    await route.fulfill({ json: { message: 'Sent' } });
+  });
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await page.getByRole('button', { name: 'CONFIRM SEND' }).click();
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/parent$/);
+  finish();
+  await expect(
+    page.getByRole('region', { name: 'Session controls' }),
+  ).toContainText('Text sent.');
+  await pill.click();
+  await expect(page).toHaveURL(/sessions\/other\?review=profile$/);
 });
 
 test('follow-up drafts are scoped, keyboard-safe, confirmed and not persisted', async ({

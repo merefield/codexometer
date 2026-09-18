@@ -97,6 +97,14 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		graph := m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), m.renderMonitorNavigation(gw, s.id, false, colors), colors)
 		return lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", graph)
 	}
+	if _, pending := m.sessionProfile(s); pending {
+		panel := m.renderSessionProfile(cw, height, s, colors)
+		row := lipgloss.JoinHorizontal(lipgloss.Top, metrics, " ", panel)
+		if gw > 0 {
+			row = lipgloss.JoinHorizontal(lipgloss.Top, row, " ", m.renderMonitorGraphWithAction(gw, height, s.samples, i18n.Text("TOKEN BARS"), m.renderMonitorNavigation(gw, s.id, false, colors), colors))
+		}
+		return row
+	}
 	inner := max(cw-4, 1)
 	text := codex.SanitizeSessionContext(s.preview.Text)
 	if text == "" {
@@ -177,6 +185,9 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		if badge := m.renderMonitorSessionBadge(s, max(width-4, 1), colors); badge != "" {
 			title = badge
 		}
+		if m.hasSessionProfile(s) {
+			title = i18n.Text("QUOTA THRESHOLD")
+		}
 	}
 	return frameSizedWithActions(width, rows, title, action, m.renderMonitorCopy(width, m.monitorContextDetail, colors), body, colors.primary, colors)
 }
@@ -195,6 +206,7 @@ func monitorContextBodyLayout(height, controls int) (textRows, gap, controlY int
 }
 
 func (m *Model) toggleMonitorContext() {
+	m.clearQuotaConfirmation()
 	m.monitorPrompt = monitorPromptState{}
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalNotice = ""
@@ -209,7 +221,7 @@ func (m *Model) toggleMonitorContext() {
 
 func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
-		if s.id == id && (s.preview.Text != "" || s.preview.Kind == codex.SessionContextApproval || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
+		if s.id == id && (s.preview.Text != "" || s.preview.Kind == codex.SessionContextApproval || m.hasSessionProfile(s) || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
 			m.setRowContext(id, contextFull)
 			return
 		}
@@ -225,6 +237,9 @@ func (m *Model) scrollMonitorContext(delta int) {
 }
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
+	if next, cmd, handled := m.updateProfileKey(key); handled {
+		return next, cmd, true
+	}
 	if key == "c" {
 		if len(m.visibleMonitorApprovalButtons()) > 0 {
 			return m.updateMonitorApprovalKey(key)
@@ -326,6 +341,11 @@ func (m Model) monitorContextAt(x, y int) string {
 				return "prompt"
 			}
 		}
+		if s, ok := m.contextDetailSession(); ok {
+			if hit := profileButtonsAt(m.profileButtons(g.contentWidth, g.meterHeight, s), g.meterHeight, x, y); hit != "" {
+				return hit
+			}
+		}
 		buttons := m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
 		controlRows := 0
 		if len(buttons) > 0 {
@@ -367,6 +387,15 @@ func (m Model) monitorContextAt(x, y int) string {
 				boxWidth = gw
 			}
 		}
+		if m.rowContextMode(s.id) != contextGraph {
+			_, cw, _ := monitorSessionColumnWidths(a.width)
+			if m.rowContextMode(s.id) == contextSplit {
+				_, cw, _ = m.contextColumns(a.width, s)
+			}
+			if hit := profileButtonsAt(m.profileButtons(cw, heights[i], s), heights[i], x-mw-1, y-rowY); hit != "" {
+				return hit
+			}
+		}
 		navigation := m.monitorNavigationButtons(boxWidth, s.id, false)
 		if m.rowContextMode(s.id) == contextWide {
 			navigation = m.expandedContextNavigation(boxWidth, heights[i], s)
@@ -396,6 +425,10 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			next, cmd := m.activateMonitorCopy(id)
 			return next, cmd, true
 		}
+		if strings.HasPrefix(m.monitorContextHover, "profile-") {
+			id := strings.TrimPrefix(m.monitorContextHover, "profile-apply:")
+			return m.profileAction(m.monitorContextHover, m.profileArmed(id))
+		}
 		if strings.HasPrefix(m.monitorContextHover, "decision:") {
 			return m.monitorApprovalAction(m.monitorContextHover)
 		}
@@ -416,16 +449,8 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		default:
 			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
-			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "attention:"); ok {
-				if id == m.monitorContextDetail {
-					return m, nil, true
-				}
-				for _, s := range m.monitorAttentionSessions() {
-					if s.id == id {
-						m.setRowContext(id, contextFull)
-						break
-					}
-				}
+			} else if strings.HasPrefix(m.monitorContextHover, "attention:") || strings.HasPrefix(m.monitorContextHover, "attention-profile:") {
+				m.openMonitorAttention(m.monitorContextHover)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
 				m.openMonitorContext(id)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {

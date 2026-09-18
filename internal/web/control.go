@@ -22,6 +22,7 @@ import (
 // binds the browser's selection to the exact source request without disclosing
 // Codex tokens. One pending confirmation bounds memory (including secret input).
 type control struct {
+	profiles  *profileControl
 	mu        sync.Mutex
 	store     *store
 	approvals codex.SessionApprovalClient
@@ -45,6 +46,7 @@ type actionQuestion struct {
 }
 
 type actionOffer struct {
+	Profile   *profileReview   `json:"profile,omitempty"`
 	ID        string           `json:"id"`
 	Session   string           `json:"session"`
 	Thread    string           `json:"thread"`
@@ -56,6 +58,9 @@ type actionOffer struct {
 }
 
 type offeredAction struct {
+	profileTarget codex.QuotaSession
+	profileStep   codex.QuotaStep
+	profileWindow string
 	actionOffer
 	token     string
 	decisions []string
@@ -63,6 +68,7 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
+	Review       string   `json:"review,omitempty"`
 	Session      string   `json:"session"`
 	Offer        string   `json:"offer"`
 	Choice       *int     `json:"choice,omitempty"`
@@ -80,6 +86,7 @@ func newControl(source Source, store *store) *control {
 	c := &control{store: store, key: rand.Text()}
 	c.approvals, _ = source.(codex.SessionApprovalClient)
 	c.prompts, _ = source.(codex.SessionPromptClient)
+	c.profiles = newProfileControl(source)
 	return c
 }
 
@@ -152,6 +159,9 @@ func validAction(o offeredAction, r actionRequest) bool {
 	if o.ID == "" || o.ID != r.Offer {
 		return false
 	}
+	if o.Kind == "profile" {
+		return len(r.Answers) == 0 && r.Choice != nil && (*r.Choice == 0 || *r.Choice == 1)
+	}
 	if o.Kind == "approval" {
 		return len(r.Answers) == 0 && r.Choice != nil && *r.Choice >= 0 && *r.Choice < len(o.decisions)
 	}
@@ -186,26 +196,39 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		var body actionRequest
 		d := json.NewDecoder(r.Body)
 		d.DisallowUnknownFields()
-		if d.Decode(&body) != nil || d.Decode(new(any)) != io.EOF || body.Session == "" || len(body.Session) > 512 {
+		if d.Decode(&body) != nil || d.Decode(new(any)) != io.EOF || body.Session == "" || len(body.Session) > 512 || (body.Review != "" && body.Review != "profile") {
 			http.Error(w, "Invalid request", 400)
 			return
 		}
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		if c.pending != nil && !time.Now().Before(c.pending.until) {
 			c.pending = nil
 		}
 		// Consume before any IO, even on failure. Never retry ambiguous writes.
 		if action == "commit" {
 			p := c.pending
-			if p == nil || p.id != body.Confirmation || p.request.Session != body.Session || p.request.Offer != body.Offer {
+			if p == nil || p.id != body.Confirmation || p.request.Session != body.Session || p.request.Offer != body.Offer || p.request.Review != body.Review {
+				c.mu.Unlock()
 				http.Error(w, errUnavailable.Error(), 409)
 				return
 			}
 			c.pending = nil
 			body = p.request // Only the exact server-prepared payload can be sent.
 		}
-		o, err := c.offer(body.Session)
+		c.mu.Unlock()
+		timeout := 3 * time.Second
+		if body.Review == "profile" {
+			timeout = 8 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		var o offeredAction
+		var err error
+		if body.Review == "profile" {
+			o, err = c.profileOffer(ctx, body.Session)
+		} else {
+			o, err = c.offer(body.Session)
+		}
 		if err != nil {
 			http.Error(w, errUnavailable.Error(), 409)
 			return
@@ -221,6 +244,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		}
 		if action == "prepare" {
 			p := &preparedAction{request: body, id: rand.Text(), until: time.Now().Add(30 * time.Second)}
+			c.mu.Lock()
 			c.pending = p
 			// Clear drafts, including secret answers, even if the browser disappears.
 			if c.expiry == nil {
@@ -234,17 +258,22 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			} else {
 				c.expiry.Reset(30 * time.Second)
 			}
+			c.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"confirmation": p.id, "expires": p.until})
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		if o.Kind == "approval" {
+		if o.Kind == "profile" {
+			err = c.commitProfile(ctx, o, *body.Choice)
+		} else if o.Kind == "approval" {
 			err = c.approvals.RespondSessionApproval(ctx, o.token, o.decisions[*body.Choice])
 		} else {
 			err = c.prompts.SendSessionPrompt(ctx, o.token, body.Answers)
 		}
 		if err != nil {
+			if o.Kind == "profile" && !errors.Is(err, codex.ErrQuotaProfileUnverified) && !errors.Is(err, codex.ErrQuotaProfileUncertain) {
+				http.Error(w, "Profile update rejected or unavailable. Refresh and check Codex; nothing was retried.", 409)
+				return
+			}
 			http.Error(w, "Outcome uncertain; check Codex before taking another action. Nothing was retried.", 502)
 			return
 		}

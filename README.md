@@ -42,8 +42,9 @@ unchanged by default.
 
 An opt-in [experimental browser interface](#experimental-browser-interface)
 provides read-only Quota, Sessions and Usage views with `codexometer --web`.
-Add `--web-control` explicitly to enable supported session approvals and prompts
-from full-page session detail; other browser views remain read-only.
+Add `--web-control` explicitly to enable supported session approvals, prompts
+and configured quota-profile reviews from full-page session detail. Optional
+`auto` quota policies also require write mode; other browser views remain read-only.
 The terminal remains the default and the full-featured command centre.
 
 ## Why use it?
@@ -2045,7 +2046,7 @@ deterministic PASS/FAIL verifier.
 --web-control      opt into browser session approvals/prompts (requires --web)
 --web-port PORT    local browser port (default: 0/automatic; requires --web)
 --refresh DURATION refresh interval (default: 1m)
---quota-step-down PERCENT:MODEL:EFFORT[:SPEED] offer a confirmed session profile at a quota threshold (repeatable)
+--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]] set a session profile at a quota threshold (repeatable; default ask)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
 --reset-warning-hours HOURS expiry warning lead time (default: 72; 0 disables)
 -v, --version      print the version and exit
@@ -2071,7 +2072,7 @@ codexometer \
 
 ### Quota step-down profiles
 
-`--quota-step-down PERCENT:MODEL:EFFORT[:SPEED]` configures an opt-in profile
+`--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]` configures an opt-in profile
 for the longest ordinary Codex quota window (normally the weekly window). The
 flag is repeatable and thresholds must be unique. `SPEED` is optional and may
 be `fast`, `standard`, `slow`, `priority` or `flex`. Names such as `fast` and
@@ -2081,13 +2082,63 @@ are rejected before changing settings. `standard` clears an explicit tier;
 omitting speed leaves the session's current tier intact.
 Codexometer ships no enabled profile and does not infer which model is cheaper.
 
-The quota/reset action area adds separate profile controls without replacing
-the banked-reset button. Controls remain available when no reset credits exist.
-At a reached threshold, `G` reviews one loaded session and its current and
-proposed settings; repeating `G` within ten seconds approves that exact session.
-`N` selects the next session, `D` skips it at this gate, and `Esc` cancels review.
-`A` explicitly reviews/approves all listed sessions, only when the review fits
-the pane. Newly discovered sessions are never covered by an earlier approval.
+The optional final mode defaults to **`ask`**, preserving per-session approval
+for existing command lines. **`auto`** authorizes applying the profile at launch:
+when the threshold is reached, each eligible loaded session is updated for its
+subsequent turns without a quota approval pill. A running turn is not interrupted.
+For example, mix automatic and reviewed thresholds:
+
+```sh
+codexometer \
+  --quota-step-down 80:gpt-5.6-sol:medium:standard:auto \
+  --quota-step-down 95:gpt-5.6-luna:low::ask
+```
+
+An empty speed field (`::auto` or `::ask`) preserves the current speed. Automatic
+updates are attempted once per session at the active threshold, with fresh quota
+and session checks. New sessions follow the same policy. Already-matching
+sessions are considered handled; subsequent manual changes are left alone.
+Rejected or unverified updates remain visible in session detail and are not
+automatically retried. A later threshold can apply its own profile. Tracking is
+in memory and resets when Codexometer restarts or the quota window changes;
+restarting with `auto` grants fresh consent to apply the active policy.
+
+An unreadable session does not block other successfully checked sessions. Failed
+or uncertain browser outcomes remain visible during transient read failures,
+without exposing raw upstream error details. A definite rejection is distinguished
+from a lost acknowledgement, whose outcome remains unknown; neither is retried.
+
+In `ask` mode, at a reached threshold, eligible sessions in the terminal **Sessions** tab get a
+**QUOTA THRESHOLD** attention pill. Click it to review that session's current and
+proposed model, reasoning and speed in its detail pane. Controls also appear in
+split/wide detail when the entire review fits; otherwise open full detail or
+enlarge the terminal. The Quota page retains only its existing reset controls.
+
+Click **APPLY PROFILE** (or press `1` for the selected session), then click
+**CONFIRM PROFILE** or press `C` within ten seconds. Click **SKIP** or press `2`
+to skip that session at the current threshold; `Esc` cancels confirmation.
+Navigation, resizing and inventory refresh disarm confirmations. Each approval
+is for exactly one session—there is no bulk approval and newly discovered
+sessions need their own review. Each pill represents a distinct review: one
+session can have both a Codex approval/input pill and a **QUOTA THRESHOLD** pill.
+Codex requests appear first; clicking either pill opens that specific review
+with only its own controls. Switching reviews cancels pending confirmation.
+Completion pills are suppressed while a quota review remains outstanding and
+return once it is handled, if the session is still complete.
+The same profile policy controller serves the terminal and writable browser
+interfaces. For browser reviews, launch with `--web --web-control` plus the
+quota flags. **QUOTA THRESHOLD** pills open a focused review containing only
+that session's profile change, just like the terminal. Native Codex requests
+remain accessible through their own pills or normal session detail. Follow-up
+composers stay hidden while a quota review is pending, preserving existing
+drafts; switching reviews cancels pending confirmation. Select **APPLY PROFILE**
+or **SKIP**, then review and confirm. Cross-session quota navigation is blocked
+while the current session has an unsent draft or a send in progress. Confirmations
+bind to the exact session,
+current settings, threshold and quota window and expire after 30 seconds.
+Read-only `--web` rejects quota-policy flags and exposes no write endpoints.
+An explicitly configured `auto` policy runs in the server even if no browser
+page is open; it uses the same per-session attempt tracking as the terminal.
 The shared app-server's experimental `thread/settings/update` changes subsequent
 turns, not a turn already in progress. A queued acknowledgement alone is not
 reported as a verified change. Changed settings since review are skipped.
@@ -2101,8 +2152,8 @@ On every launch and refresh, Codexometer reads current session settings and
 compares them with the eligible target profile. Sessions already at that target
 need no approval or update, even after restarting with the same switches. Speed
 names are resolved through the model catalogue before comparison; omitted speed
-accepts any current speed, while `standard` requires an unset explicit tier.
-Other sessions still require approval. Skips and attempted-change tracking are
+accepts any current speed, while `standard` accepts an unset tier or explicit `default`.
+Other sessions require approval in `ask` mode. Skips and attempted-change tracking are
 process-local; approval itself is never persisted. Refreshes do not reapply a
 profile or overwrite manual changes. Shutdown cancels/drains outstanding work
 without sending any restoration calls; an already queued change may still apply.
@@ -2121,7 +2172,7 @@ Keep the terminal experience, or opt into a local Svelte browser dashboard:
 > and paths. Use an updated, dedicated browser profile without extensions, keep
 > the pairing link private, and never expose the server through a tunnel or public
 > port. Enabling `--web-control` additionally permits session prompts and approval
-> decisions. Read [Browser security and local access](#browser-security-and-local-access)
+> decisions and configured quota-profile changes. Read [Browser security and local access](#browser-security-and-local-access)
 > before enabling web mode; local-only access does not mean zero risk.
 
 ```sh
@@ -2265,6 +2316,9 @@ codexometer --web --web-control
 
 # Safely try the simulated approval; no command runs
 codexometer --web --web-control --demo
+
+# Optional: automatically change subsequent-turn profiles at a quota threshold
+codexometer --web --web-control --quota-step-down 80:gpt-5.6-sol:medium:standard:auto
 ```
 
 The header and launching terminal clearly identify **SESSION CONTROL** mode.
@@ -2308,7 +2362,8 @@ never saved in display preferences. Secret question answers use masked inputs.
 Go retains at most one prepared action per server for up to 30 seconds; a new
 preparation replaces the previous one. Raw Codex request tokens stay in Go;
 the browser receives opaque web offer/confirmation identifiers, not reusable
-Codex credentials. No actions run merely by opening a page or reconnecting.
+Codex credentials. No actions run merely by opening a page or reconnecting;
+explicit launch-time `auto` quota policies run independently of browser navigation.
 
 ### Browser security and local access
 
@@ -2413,8 +2468,10 @@ then runs browser tests against the production Go server, including its CSP.
 Frontend tests use simulated data only. Never point test traces or screenshots
 at real private sessions.
 
-The terminal UI and Codex reader implementation are unchanged by this initial
-web layer. Existing regression tests cover English presentation across themes
+Quota-profile selection, matching, attempt tracking and verified application
+live in a shared Go controller used by both presentations. Browser authentication
+and confirmations remain in the web adapter; terminal layout and interactions
+remain in the TUI. Existing regression tests cover English presentation across themes
 and sizes, localisation, responsive layouts, mouse hit regions, session
 navigation, approvals, reset confirmation and quota learning. Additional launch
 tests ensure `--web` cannot start the terminal or benchmark discovery and normal
