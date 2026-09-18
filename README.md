@@ -42,8 +42,9 @@ unchanged by default.
 
 An opt-in [experimental browser interface](#experimental-browser-interface)
 provides read-only Quota, Sessions and Usage views with `codexometer --web`.
-Add `--web-control` explicitly to enable supported session approvals and prompts
-from full-page session detail; other browser views remain read-only.
+Add `--web-control` explicitly to enable supported session approvals, prompts
+and configured quota-profile reviews from full-page session detail. Optional
+`auto` quota policies also require write mode; other browser views remain read-only.
 The terminal remains the default and the full-featured command centre.
 
 ## Why use it?
@@ -2119,7 +2120,15 @@ Codex requests appear first; clicking either pill opens that specific review
 with only its own controls. Switching reviews cancels pending confirmation.
 Completion pills are suppressed while a quota review remains outstanding and
 return once it is handled, if the session is still complete.
-These profile reviews are terminal-only; the browser interface is unchanged.
+The same profile policy controller serves the terminal and writable browser
+interfaces. For browser reviews, launch with `--web --web-control` plus the
+quota flags. **QUOTA THRESHOLD** pills open the corresponding session's full
+detail, alongside any native Codex approval or composer. Select **APPLY PROFILE**
+or **SKIP**, then review and confirm. Confirmations bind to the exact session,
+current settings, threshold and quota window and expire after 30 seconds.
+Read-only `--web` rejects quota-policy flags and exposes no write endpoints.
+An explicitly configured `auto` policy runs in the server even if no browser
+page is open; it uses the same per-session attempt tracking as the terminal.
 The shared app-server's experimental `thread/settings/update` changes subsequent
 turns, not a turn already in progress. A queued acknowledgement alone is not
 reported as a verified change. Changed settings since review are skipped.
@@ -2153,7 +2162,7 @@ Keep the terminal experience, or opt into a local Svelte browser dashboard:
 > and paths. Use an updated, dedicated browser profile without extensions, keep
 > the pairing link private, and never expose the server through a tunnel or public
 > port. Enabling `--web-control` additionally permits session prompts and approval
-> decisions. Read [Browser security and local access](#browser-security-and-local-access)
+> decisions and configured quota-profile changes. Read [Browser security and local access](#browser-security-and-local-access)
 > before enabling web mode; local-only access does not mean zero risk.
 
 ```sh
@@ -2297,6 +2306,9 @@ codexometer --web --web-control
 
 # Safely try the simulated approval; no command runs
 codexometer --web --web-control --demo
+
+# Optional: automatically change subsequent-turn profiles at a quota threshold
+codexometer --web --web-control --quota-step-down 80:gpt-5.6-sol:medium:standard:auto
 ```
 
 The header and launching terminal clearly identify **SESSION CONTROL** mode.
@@ -2340,7 +2352,8 @@ never saved in display preferences. Secret question answers use masked inputs.
 Go retains at most one prepared action per server for up to 30 seconds; a new
 preparation replaces the previous one. Raw Codex request tokens stay in Go;
 the browser receives opaque web offer/confirmation identifiers, not reusable
-Codex credentials. No actions run merely by opening a page or reconnecting.
+Codex credentials. No actions run merely by opening a page or reconnecting;
+explicit launch-time `auto` quota policies run independently of browser navigation.
 
 ### Browser security and local access
 
@@ -2445,8 +2458,10 @@ then runs browser tests against the production Go server, including its CSP.
 Frontend tests use simulated data only. Never point test traces or screenshots
 at real private sessions.
 
-The terminal UI and Codex reader implementation are unchanged by this initial
-web layer. Existing regression tests cover English presentation across themes
+Quota-profile selection, matching, attempt tracking and verified application
+live in a shared Go controller used by both presentations. Browser authentication
+and confirmations remain in the web adapter; terminal layout and interactions
+remain in the TUI. Existing regression tests cover English presentation across themes
 and sizes, localisation, responsive layouts, mouse hit regions, session
 navigation, approvals, reset confirmation and quota learning. Additional launch
 tests ensure `--web` cannot start the terminal or benchmark discovery and normal

@@ -13,6 +13,7 @@ import (
 )
 
 type quotaControl struct {
+	engine        *codex.QuotaProfiles
 	revision      uint64
 	cancel        context.CancelFunc
 	sessions      []codex.QuotaSession
@@ -56,28 +57,8 @@ func quotaStepProfile(step codex.QuotaStep) string {
 	}
 	return result
 }
-func windowMinutes(w codex.Window) int64 {
-	if w.WindowDurationMins == nil {
-		return 0
-	}
-	return *w.WindowDurationMins
-}
 func quotaPolicyWindow(s codex.Snapshot) (codex.Meter, string, bool) {
-	var selected codex.Meter
-	found := false
-	for _, m := range s.Meters() {
-		if m.Kind != codex.MeterQuotaWindow || m.LimitID != "codex" {
-			continue
-		}
-		if !found || windowMinutes(m.Window) > windowMinutes(selected.Window) {
-			selected = m
-			found = true
-		}
-	}
-	if !found || selected.Window.ResetsAt == nil || s.AccountFingerprint == "" {
-		return selected, "", false
-	}
-	return selected, fmt.Sprintf("%s:%d:%d", s.AccountFingerprint, windowMinutes(selected.Window), *selected.Window.ResetsAt), true
+	return codex.QuotaPolicyWindow(s)
 }
 func (m Model) quotaFresh() bool {
 	meter, window, ok := quotaPolicyWindow(m.snapshot)
@@ -85,11 +66,8 @@ func (m Model) quotaFresh() bool {
 		return false
 	}
 	var candidate *codex.QuotaStep
-	for _, step := range m.quotaSteps {
-		if step.Threshold <= meter.Window.UsedPercent {
-			copy := step
-			candidate = &copy
-		}
+	if step, _, selected := codex.SelectQuotaProfile(m.snapshot, m.quotaSteps); selected {
+		candidate = &step
 	}
 	if !reflect.DeepEqual(candidate, m.quotaStepPending) {
 		return false
@@ -115,7 +93,7 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	if len(m.quotaSteps) == 0 {
 		return nil
 	}
-	meter, window, ok := quotaPolicyWindow(snapshot)
+	_, window, ok := quotaPolicyWindow(snapshot)
 	if !ok {
 		m.clearQuotaReviewChoice("")
 		m.clearQuotaConfirmation()
@@ -139,11 +117,8 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	}
 	m.quotaStepWindow = window
 	var candidate *codex.QuotaStep
-	for _, step := range m.quotaSteps {
-		if step.Threshold <= meter.Window.UsedPercent {
-			copy := step
-			candidate = &copy
-		}
+	if step, _, selected := codex.SelectQuotaProfile(snapshot, m.quotaSteps); selected {
+		candidate = &step
 	}
 	if !reflect.DeepEqual(candidate, m.quotaStepPending) {
 		m.clearQuotaConfirmation()
@@ -162,27 +137,23 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 	step := *candidate
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	m.quota.cancel = cancel
+	if c, ok := m.fetcher.(codex.SessionSettingsClient); ok && m.quota.engine == nil {
+		m.quota.engine = codex.NewQuotaProfiles(c)
+	}
+	engine := m.quota.engine
 	return func() tea.Msg {
 		defer cancel()
-		c, ok := m.fetcher.(codex.SessionSettingsClient)
-		if !ok {
+		if engine == nil {
 			return quotaScanResult{revision: revision, step: step, err: fmt.Errorf("%s", i18n.Text("Session controls unavailable."))}
 		}
-		resolved, err := c.ResolveQuotaStep(ctx, step)
-		if err != nil {
-			return quotaScanResult{revision: revision, step: step, err: err}
-		}
-		sessions, err := c.QuotaSessions(ctx)
+		inventory, err := engine.Inventory(ctx, snapshot, m.quotaSteps, m.refreshEvery)
 		var candidates []codex.QuotaSession
-		var matched []string
-		for _, session := range sessions {
-			if session.MatchesQuotaStep(resolved) {
-				matched = append(matched, session.ID)
-			} else {
+		for _, session := range inventory.Sessions {
+			if threshold, handled := inventory.Handled[session.ID]; !handled || threshold < step.Threshold {
 				candidates = append(candidates, session)
 			}
 		}
-		return quotaScanResult{revision: revision, step: step, sessions: candidates, matched: matched, err: err}
+		return quotaScanResult{revision: revision, step: step, sessions: candidates, matched: inventory.Matched, err: err}
 	}
 }
 func (m Model) quotaCandidates() []codex.QuotaSession {
@@ -229,6 +200,7 @@ func (m Model) pressQuotaSession(id string, confirm bool) (Model, tea.Cmd) {
 
 // Both reviewed and launch-authorized updates share the same backend checks.
 func (m Model) startQuotaUpdate(targets []codex.QuotaSession) (Model, tea.Cmd) {
+	snapshot := codex.CaptureQuotaProfile(m.snapshot)
 	m.quota.busySession = targets[0].ID
 	step := *m.quotaStepPending
 	window := m.quotaStepWindow
@@ -250,7 +222,11 @@ func (m Model) startQuotaUpdate(targets []codex.QuotaSession) (Model, tea.Cmd) {
 		if !ok {
 			return quotaStepResult{revision: revision, window: window, step: step, targets: targets, err: fmt.Errorf("%s", i18n.Text("Session controls unavailable."))}
 		}
-		n, err := c.ApplyQuotaProfile(ctx, targets, step)
+		engine := m.quota.engine
+		if engine == nil {
+			engine = codex.NewQuotaProfiles(c)
+		}
+		n, err := engine.Apply(ctx, snapshot, m.quotaSteps, m.refreshEvery, targets[0], step, window, false)
 		return quotaStepResult{revision: revision, window: window, step: step, targets: targets, updated: n, err: err}
 	}
 }
@@ -278,6 +254,9 @@ func (m *Model) declineQuotaSession(id string) {
 			m.quota.handled = map[string]int{}
 		}
 		m.quota.handled[id] = m.quotaStepPending.Threshold
+		if m.quota.engine != nil {
+			m.quota.engine.Skip(id, m.quotaStepPending.Threshold, m.quotaStepWindow)
+		}
 		m.clearQuotaReviewChoice(id)
 		m.clearQuotaConfirmation()
 		m.setQuotaSessionNotice(id, i18n.Text("Session skipped for this threshold."))

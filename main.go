@@ -44,7 +44,7 @@ func (d *demoFetcher) QuotaStepPolicy() []codex.QuotaStep {
 }
 
 func (d *demoFetcher) QuotaSessions(ctx context.Context) ([]codex.QuotaSession, error) {
-	return []codex.QuotaSession{{ID: "demo-alpha", Model: "gpt-5.6-sol", Effort: "high"}, {ID: "demo-bravo", Model: "gpt-5.6-sol", Effort: "high"}}, ctx.Err()
+	return []codex.QuotaSession{{ID: "019d-demo-a1b2c", Model: "gpt-5.6-sol", Effort: "high"}, {ID: "019d-demo-d4e5f", Model: "gpt-5.6-sol", Effort: "high"}}, ctx.Err()
 }
 
 func (d *demoFetcher) ApplyQuotaProfile(ctx context.Context, targets []codex.QuotaSession, step codex.QuotaStep) (int, error) {
@@ -385,7 +385,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
 		webMode           = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
-		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals and prompts (requires --web)")
+		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals, prompts and configured quota profiles (requires --web)")
 		webPort           = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
 		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
 		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
@@ -419,8 +419,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintln(stderr, "codexometer: --web cannot be combined with --inline, --check-auth or --digbench-game")
 		return 2
 	}
-	if *webMode && len(quotaSteps) > 0 {
-		fmt.Fprintln(stderr, "codexometer: --quota-step-down is currently available only in the terminal UI")
+	if *webMode && len(quotaSteps) > 0 && !*webControl {
+		fmt.Fprintln(stderr, "codexometer: --quota-step-down in web mode requires --web-control")
 		return 2
 	}
 	if *resetThreshold < 0 || *resetThreshold > 100 {

@@ -98,6 +98,8 @@ type credit struct {
 }
 
 type state struct {
+	Profiles      []profileReview     `json:"profiles,omitempty"`
+	ProfileError  bool                `json:"profileError,omitempty"`
 	Control       bool                `json:"control"`
 	Version       string              `json:"version"`
 	Meters        []meter             `json:"meters"`
@@ -114,17 +116,18 @@ type state struct {
 }
 
 type store struct {
-	contexts    map[string]codex.SessionContext // Private: never published in state/SSE.
-	directories map[string]string
-	mu          sync.Mutex
-	state       state
-	account     string
-	history     codex.AccountUsage
-	previous    map[string]int64
-	samples     map[string][]sample
-	nextSample  time.Time
-	data        []byte
-	changed     chan struct{}
+	quotaSnapshot codex.Snapshot
+	contexts      map[string]codex.SessionContext // Private: never published in state/SSE.
+	directories   map[string]string
+	mu            sync.Mutex
+	state         state
+	account       string
+	history       codex.AccountUsage
+	previous      map[string]int64
+	samples       map[string][]sample
+	nextSample    time.Time
+	data          []byte
+	changed       chan struct{}
 }
 
 func newStore() *store {
@@ -152,6 +155,7 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 	gap := s.state.QuotaError
 	s.state.QuotaError = err != nil
 	if err == nil {
+		s.quotaSnapshot = codex.CaptureQuotaProfile(q)
 		previous := s.state.Meters
 		if s.account != q.AccountFingerprint {
 			previous = nil

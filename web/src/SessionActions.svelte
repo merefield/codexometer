@@ -4,8 +4,10 @@
   let {
     session,
     observedCommand = '',
-  }: { session: string; observedCommand?: string } = $props();
+    review = '',
+  }: { session: string; observedCommand?: string; review?: string } = $props();
   interface Offer {
+    profile?: { threshold: number; current: string; proposed: string };
     id: string;
     session: string;
     thread: string;
@@ -59,7 +61,7 @@
         ],
   );
   let valid = $derived(
-    offer?.kind === 'approval'
+    offer?.kind === 'approval' || offer?.kind === 'profile'
       ? choice !== null
       : answers.length === questions.length &&
           answers.every(
@@ -82,7 +84,7 @@
       try {
         const next = await controlRequest<Offer>(
           'offer',
-          { session },
+          { session, ...(review ? { review } : {}) },
           controller.signal,
         );
         if (controller.signal.aborted) return;
@@ -129,8 +131,9 @@
         'prepare',
         {
           session,
+          ...(review ? { review } : {}),
           offer: id,
-          ...(offer.kind === 'approval'
+          ...(offer.kind === 'approval' || offer.kind === 'profile'
             ? { choice }
             : { answers: [...answers] }),
         },
@@ -159,11 +162,21 @@
     try {
       await controlRequest(
         'commit',
-        { session, offer: id, confirmation: ticket },
+        {
+          session,
+          ...(review ? { review } : {}),
+          offer: id,
+          confirmation: ticket,
+        },
         controller.signal,
       );
       success = true;
-      notice = kind === 'approval' ? 'Decision sent.' : 'Text sent.';
+      notice =
+        kind === 'profile'
+          ? 'Profile decision completed.'
+          : kind === 'approval'
+            ? 'Decision sent.'
+            : 'Text sent.';
     } catch {
       notice =
         'Outcome uncertain. Check Codex before taking another action; nothing was retried.';
@@ -176,14 +189,31 @@
 </script>
 
 <section class="session-actions" aria-label="Session controls">
-  <h3>SESSION CONTROL // EXPERIMENTAL</h3>
+  <h3>
+    {review === 'profile'
+      ? 'QUOTA THRESHOLD'
+      : 'SESSION CONTROL // EXPERIMENTAL'}
+  </h3>
+  {#if offer?.profile && !stale && !offerError}
+    <p>
+      Your {offer.profile.threshold}% quota threshold has been reached. Review
+      the profile for subsequent turns.
+    </p>
+    <h3>CURRENT PROFILE</h3>
+    <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
+    <pre>{offer.profile.current}</pre>
+    <h3>PROPOSED PROFILE</h3>
+    <p class="muted">MODEL / REASONING LEVEL / SPEED</p>
+    <pre>{offer.profile.proposed}</pre>
+    <p class="muted">Applied settings remain after Codexometer closes.</p>
+  {/if}
   {#if notice}<p class:notice={!success} class:sent={success} role="status">
       {notice}
     </p>{/if}
   {#if command}
     <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
     <pre class="command">{command}</pre>
-  {:else if status === 'APPROVAL NEEDED' && !success}
+  {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
     <p class="muted">
       Command unavailable from this observation. Open Codex to inspect the
       request.
@@ -220,16 +250,16 @@
     </p>
     <fieldset disabled={busy || confirming || stale}>
       <legend
-        >{offer.kind === 'approval'
+        >{offer.kind === 'approval' || offer.kind === 'profile'
           ? 'Choose a decision'
           : 'Reply to this session'}</legend
       >
-      {#if offer.kind === 'approval'}
+      {#if offer.kind === 'approval' || offer.kind === 'profile'}
         {#each offer.choices || [] as option, index}
           <label class="decision"
             ><input
               type="radio"
-              name="decision"
+              name={'decision-' + session + '-' + review}
               value={index}
               bind:group={choice}
             />
@@ -286,16 +316,18 @@
     </fieldset>
     {#if confirming}
       <p class="notice">
-        Check the target and {offer.kind === 'approval'
-          ? 'exact command and permission scope'
-          : 'message above'}. This will send to Codex; it may start work using
+        Check the target and {offer.kind === 'profile'
+          ? 'profile above'
+          : offer.kind === 'approval'
+            ? 'exact command and permission scope'
+            : 'message above'}. This will send to Codex; it may start work using
         your quota. Confirmation expires in {Math.max(
           0,
           Math.ceil((expires - now) / 1000),
         )}s.
       </p>
       <button onclick={commit} disabled={busy || stale}
-        >CONFIRM {offer.kind === 'approval'
+        >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
           ? offer.choices?.[choice!]?.label
           : 'SEND'}</button
       >

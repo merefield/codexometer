@@ -52,10 +52,14 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		s.control = newControl(source, s.store)
 		s.store.state.Control = true
 		s.store.publish()
-		mode = "SESSION CONTROL ENABLED — this paired browser can send prompts and decisions"
+		mode = "SESSION CONTROL ENABLED — prompts, decisions and configured quota profiles enabled"
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if s.control != nil {
+		waitProfiles := s.control.collectProfiles(ctx, refresh)
+		defer func() { cancel(); waitProfiles() }()
+	}
 	wait := s.store.collect(ctx, source, refresh)
 	defer func() { cancel(); wait() }()
 	httpServer := newHTTPServer(ctx, s.handler())

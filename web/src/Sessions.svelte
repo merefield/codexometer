@@ -12,6 +12,18 @@
   import SessionCopy from './SessionCopy.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
+  let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
+  function openProfile(id: string) {
+    select(id);
+    // Routing completes after the click; keep the native composer mounted.
+    setTimeout(
+      () =>
+        document
+          .getElementById('quota-profile-' + id)
+          ?.scrollIntoView({ block: 'nearest' }),
+      100,
+    );
+  }
   // Every entry route (links, arrows, deep links and browser Forward) leaves a
   // wide row behind, so native browser Back agrees with Escape/All Sessions.
   $effect(() => {
@@ -182,7 +194,11 @@
     Session connection or refresh unavailable. Context and telemetry may be
     stale.
   </p>{/if}
-{#if attention.length && !stale}<nav
+{#if live.data?.profileError}<p class="notice">
+    Quota profile checks temporarily unavailable. No automatic update will be
+    attempted until quota and session settings can be checked.
+  </p>{/if}
+{#if (attention.length || profiles.some((p) => p.pending)) && !stale}<nav
     class="attention-summary"
     aria-label="Sessions needing attention"
   >
@@ -193,6 +209,15 @@
         onclick={() => select(session.id)}
         >{session.status} // {session.directory || session.id}</a
       >{/each}
+    {#each profiles.filter((p) => p.pending && sessions.some((s) => s.id === p.session)) as profile}
+      <a
+        class="button approval"
+        href={'#/sessions/' + encodeURIComponent(profile.session)}
+        onclick={() => openProfile(profile.session)}
+        >QUOTA THRESHOLD // {sessions.find((s) => s.id === profile.session)
+          ?.directory || profile.session}</a
+      >
+    {/each}
   </nav>{/if}
 {#if params.id}
   {#if selected}<section class="panel full-detail">
@@ -227,6 +252,17 @@
             />{/key}
         {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
       </div>
+      {#each profiles.filter((p) => p.session === selected.id) as profile (profile.session)}
+        <section id={'quota-profile-' + selected.id} class="profile-review">
+          {#if profile.notice}<p class="notice" role="status">
+              {profile.notice}
+            </p>{/if}
+          {#if profile.pending}<SessionActions
+              session={selected.id}
+              review="profile"
+            />{/if}
+        </section>
+      {/each}
       {#key selected.id}<SessionCopy session={selected} active />{/key}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
@@ -315,6 +351,15 @@
               >{/if}
           </div>
           {@render context(session, false)}
+          {#each profiles.filter((p) => p.session === session.id) as profile}
+            {#if profile.notice}<p class="notice">{profile.notice}</p>{/if}
+            {#if profile.pending}<a
+                class="attention-badge"
+                href={'#/sessions/' + encodeURIComponent(session.id)}
+                onclick={() => openProfile(session.id)}
+                >QUOTA THRESHOLD // REVIEW PROFILE ↗</a
+              >{/if}
+          {/each}
           <SessionCopy {session} active={selectedID === session.id} />
         </div>{/if}
       {#if level < 2}<div class="panel graph-panel">

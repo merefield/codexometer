@@ -39,6 +39,15 @@ export interface Usage {
   dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
 }
 export interface Snapshot {
+  profiles?: {
+    session: string;
+    threshold: number;
+    current: string;
+    proposed: string;
+    pending: boolean;
+    notice?: string;
+  }[];
+  profileError?: boolean;
   control?: boolean;
   version: string;
   meters: Meter[];

@@ -48,7 +48,7 @@ On tall terminals, full detail retains the summary too. As space runs short,
 the summary disappears before the attention strip so text and action controls
 keep priority. These shortcuts navigate only; they never approve or send for you.
 
-Optional quota step-down profiles also join the terminal session command centre:
+Optional quota step-down profiles also join the session command centre in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
 Apply and confirm individually, or skip. A session can have separate pills for
@@ -58,6 +58,9 @@ are handled. The default `ask` mode requires approval; opt into `auto` per
 threshold to apply the profile once per session for subsequent turns without
 prompting. Already-matching sessions are left alone and failed updates are not
 automatically retried. Applied settings are not rolled back when Codexometer closes.
+Browser profile reviews require `--web --web-control`; quota pills open the
+session's full detail beside its native Codex requests, with review and confirmation
+before applying. Read-only web mode cannot apply profiles.
 
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 

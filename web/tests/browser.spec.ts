@@ -34,16 +34,28 @@ async function mockStream(page: Page, snapshot: object) {
   }, snapshot);
 }
 
-const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
+const test = base.extend<{
+  pairingURL: string;
+  controlMode: boolean;
+  quotaMode: string;
+}>({
   controlMode: [false, { option: true }],
-  pairingURL: async ({ controlMode }, use) => {
+  quotaMode: ['', { option: true }],
+  pairingURL: async ({ controlMode, quotaMode }, use) => {
     const child = spawn(
       process.env.CODEXOMETER_TEST_BINARY ||
         resolve(
           '..',
           process.platform === 'win32' ? 'codexometer.exe' : 'codexometer',
         ),
-      ['--web', '--demo', ...(controlMode ? ['--web-control'] : [])],
+      [
+        '--web',
+        '--demo',
+        ...(controlMode ? ['--web-control'] : []),
+        ...(quotaMode
+          ? ['--quota-step-down', '1:gpt-5.6-luna:medium::' + quotaMode]
+          : []),
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let output = '';
@@ -83,6 +95,43 @@ const test = base.extend<{ pairingURL: string; controlMode: boolean }>({
       }
     }
   },
+});
+
+test.describe('quota profile reviews', () => {
+  test.use({ controlMode: true, quotaMode: 'ask' });
+  test('profile and native approval coexist and confirm independently', async ({
+    page,
+    pairingURL,
+  }) => {
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const pill = page.getByRole('link', { name: /QUOTA THRESHOLD/ }).first();
+    await expect(pill).toBeVisible({ timeout: 15000 });
+    await pill.click();
+    const profile = page.locator('.profile-review').first();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await expect(profile).toContainText('PROPOSED PROFILE');
+    // The separate native request is still present and retains its controls.
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeVisible();
+    await profile
+      .getByRole('radio', { name: 'APPLY PROFILE', exact: true })
+      .check();
+    await profile
+      .getByRole('button', { name: 'REVIEW BEFORE SENDING' })
+      .click();
+    await expect(
+      profile.getByRole('button', { name: 'CONFIRM APPLY PROFILE' }),
+    ).toBeVisible();
+    await profile
+      .getByRole('button', { name: 'CONFIRM APPLY PROFILE' })
+      .click();
+    await expect(profile).toHaveCount(0, { timeout: 15000 });
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeVisible();
+  });
 });
 
 test('read-only session copy captures working prose in every detail level without server writes', async ({

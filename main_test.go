@@ -125,6 +125,15 @@ func TestQuotaStepModes(t *testing.T) {
 	}
 }
 
+func TestReadOnlyWebRejectsQuotaProfiles(t *testing.T) {
+	for _, mode := range []string{"ask", "auto"} {
+		var out, err bytes.Buffer
+		if code := run([]string{"--web", "--quota-step-down", "80:model:medium::" + mode}, &out, &err, dependencies{}); code != 2 || !strings.Contains(err.String(), "requires --web-control") {
+			t.Fatalf("read-only accepted policy: %d %s", code, err.String())
+		}
+	}
+}
+
 func TestRunAuthCheckSuccessAndFailure(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
