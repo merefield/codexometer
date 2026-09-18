@@ -106,6 +106,7 @@ func (m Model) contextTargetHidden() bool {
 }
 
 func (m *Model) setRowContext(id string, mode int) {
+	m.clearQuotaConfirmation()
 	m.monitorContextRows = maps.Clone(m.monitorContextRows)
 	if m.monitorContextRows == nil {
 		m.monitorContextRows = make(map[string]rowContextState)
@@ -152,7 +153,13 @@ func (m Model) expandedApprovalButtons(width, height int, s monitorSession) []mo
 }
 
 func (m Model) renderExpandedContext(width, height int, s monitorSession, colors palette) string {
+	if m.hasSessionProfile(s) {
+		return m.renderSessionProfile(width, height, s, colors)
+	}
 	lines := expandedContextLines(width, s)
+	if notice := m.quota.notices[s.id]; notice != "" {
+		lines = append(lines, strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(notice), max(width-4, 1), true), "\n")...)
+	}
 	buttons := m.expandedApprovalButtons(width, height, s)
 	n := 0
 	controls := ""

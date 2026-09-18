@@ -75,10 +75,8 @@ type Model struct {
 	quotaSteps                          []codex.QuotaStep
 	quota                               quotaControl
 	quotaStepPending                    *codex.QuotaStep
-	quotaStepActive                     *codex.QuotaStep
 	quotaStepWindow                     string
 	quotaStepBusy                       bool
-	quotaStepNotice                     string
 	quotaStepConfirmUntil               time.Time
 	fetcher                             Fetcher
 	usageFetcher                        TokenUsageFetcher
@@ -522,9 +520,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.evaluateQuotaStep(m.snapshot)
 		}
 		m.quota.sessions = message.sessions
-		m.quotaStepNotice = i18n.Format("%d session(s) already at target; no approval needed.", message.matched)
+		m.quota.scanError = ""
 		if message.err != nil {
-			m.quotaStepNotice = i18n.Format("Session check failed: %s", message.err.Error())
+			m.quota.scanError = i18n.Format("Session check failed: %s", message.err.Error())
 		}
 		return m, nil
 	case quotaStepResult:
@@ -542,27 +540,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range message.targets {
 			m.quota.handled[s.ID] = message.step.Threshold
 		}
-		m.quota.sessions = nil // Re-read settings before another threshold can be approved.
-		m.quotaStepNotice = i18n.Format("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
-		if message.updated > 0 {
-			step := message.step
-			m.quotaStepActive = &step
-		}
+		m.quota.busySession = ""
+		notice := i18n.Format("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
 		if message.err != nil {
-			m.quotaStepNotice += " " + i18n.Format("Check Codex: %s", message.err.Error())
+			notice += " " + i18n.Format("Check Codex: %s", message.err.Error())
+		}
+		for _, target := range message.targets {
+			m.setQuotaSessionNotice(target.ID, notice)
 		}
 		return m, nil
 	case tea.KeyPressMsg:
-		if !message.IsRepeat {
-			if next, cmd, handled := m.quotaProfileKey(strings.ToLower(message.String())); handled {
-				return next, cmd
-			}
-		} else if m.meterView.isQuota() && len(m.quotaSteps) > 0 {
-			switch strings.ToLower(message.String()) {
-			case "g", "a", "d", "n":
-				return m, nil
-			}
-		}
 		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
 			return m, nil
 		}
@@ -806,12 +793,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
-		if clicked && mouse.Button == tea.MouseLeft {
-			if key := m.quotaActionAt(mouse.X, mouse.Y); key != "" {
-				next, cmd, _ := m.quotaProfileKey(key)
-				return next, cmd
-			}
-		}
 		m.history.hovered = 0
 		if m.meterView == viewUsage {
 			if action, ok := m.historyButtonAt(mouse.X, mouse.Y); ok {
@@ -1484,7 +1465,6 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	const footerHeight = 2
 	extraHeight := 0
 	extraHeight += m.resetNoticeHeight(contentWidth)
-	extraHeight += m.quotaStepNoticeHeight(contentWidth)
 	if m.err != nil && m.meterView != viewUsage {
 		extraHeight += framedErrorHeight
 	}
@@ -2686,6 +2666,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 }
 
 func (m *Model) dismissMonitorSession(id string) {
+	m.clearQuotaConfirmation()
 	if id == m.monitorContextTarget() {
 		m.monitorContextDetail = ""
 		m.monitorContextExpanded = ""
@@ -2863,6 +2844,7 @@ func (m *Model) scrollMonitorRows(rows int) {
 }
 
 func (m *Model) selectMonitorSession(direction int) {
+	m.clearQuotaConfirmation()
 	visible := make([]string, 0, len(m.monitorSessionData))
 	selected := -1
 	for _, session := range m.monitorSessionData {

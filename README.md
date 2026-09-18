@@ -2081,13 +2081,20 @@ are rejected before changing settings. `standard` clears an explicit tier;
 omitting speed leaves the session's current tier intact.
 Codexometer ships no enabled profile and does not infer which model is cheaper.
 
-The quota/reset action area adds separate profile controls without replacing
-the banked-reset button. Controls remain available when no reset credits exist.
-At a reached threshold, `G` reviews one loaded session and its current and
-proposed settings; repeating `G` within ten seconds approves that exact session.
-`N` selects the next session, `D` skips it at this gate, and `Esc` cancels review.
-`A` explicitly reviews/approves all listed sessions, only when the review fits
-the pane. Newly discovered sessions are never covered by an earlier approval.
+At a reached threshold, eligible sessions in the terminal **Sessions** tab get a
+**QUOTA THRESHOLD** attention pill. Click it to review that session's current and
+proposed model, reasoning and speed in its detail pane. Controls also appear in
+split/wide detail when the entire review fits; otherwise open full detail or
+enlarge the terminal. The Quota page retains only its existing reset controls.
+
+Click **APPLY PROFILE** (or press `1` for the selected session), then click
+**CONFIRM PROFILE** or press `C` within ten seconds. Click **SKIP** or press `2`
+to skip that session at the current threshold; `Esc` cancels confirmation.
+Navigation, resizing and inventory refresh disarm confirmations. Each approval
+is for exactly one session—there is no bulk approval and newly discovered
+sessions need their own review. Codex approval/input requests take priority;
+the quota suggestion becomes available once that request is no longer shown.
+These profile reviews are terminal-only; the browser interface is unchanged.
 The shared app-server's experimental `thread/settings/update` changes subsequent
 turns, not a turn already in progress. A queued acknowledgement alone is not
 reported as a verified change. Changed settings since review are skipped.

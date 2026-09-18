@@ -172,11 +172,7 @@ func resetExpiryRemaining(expiresAt int64, compact bool) string {
 
 // One geometry source for rendering, tab allocation and both click surfaces.
 func (m Model) resetControlsLayout(width int) resetControls {
-	c := m.baseResetControlsLayout(width)
-	if m.quotaStepLabel() != "" {
-		c.extraRows += len(m.quotaActionRows(width))
-	}
-	return c
+	return m.baseResetControlsLayout(width)
 }
 
 func (m Model) baseResetControlsLayout(width int) resetControls {
@@ -236,7 +232,7 @@ func (m Model) resetWarningAt(x, y int) bool {
 func (m Model) renderResetControls(width int, tabs string, colors palette) string {
 	c := m.baseResetControlsLayout(width)
 	if c.button == "" {
-		return m.appendQuotaActions(tabs, width)
+		return tabs
 	}
 	rows := []string{tabs}
 	for range c.extraRows {
@@ -250,7 +246,7 @@ func (m Model) renderResetControls(width int, tabs string, colors palette) strin
 		rows[c.warningY] += strings.Repeat(" ", max(c.warningX-lipgloss.Width(rows[c.warningY]), 0)) + style.Render(c.warning)
 	}
 	rows[c.buttonY] += strings.Repeat(" ", max(c.buttonX-lipgloss.Width(rows[c.buttonY]), 0)) + m.renderResetButton(c.button, colors)
-	return m.appendQuotaActions(strings.Join(rows, "\n"), width)
+	return strings.Join(rows, "\n")
 }
 
 func (m Model) resetOwnRow(width int) bool {

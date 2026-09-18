@@ -48,6 +48,13 @@ On tall terminals, full detail retains the summary too. As space runs short,
 the summary disappears before the attention strip so text and action controls
 keep priority. These shortcuts navigate only; they never approve or send for you.
 
+Optional quota step-down profiles also join the terminal session command centre:
+configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED]`, then follow a
+**QUOTA THRESHOLD** pill to review the proposed settings for that session.
+Apply and confirm individually, or skip; Codex's own approval/input requests
+take priority. Nothing changes automatically, and approved settings are not
+rolled back when Codexometer closes.
+
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 
 Below each session's token count, the latest observed model, reasoning level and Fast setting take priority—for example, **gpt-6-astra medium fast**. These are recorded selections, not proof of the delivered backend model or speed; unavailable fields are omitted. **AVG TOK/MIN** shows average observed usage since measurement began, excluding paused time, rather than instantaneous generation speed. Total and per-session rates refresh together every five seconds, not on mouse movement or keypresses.

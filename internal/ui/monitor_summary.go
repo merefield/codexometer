@@ -85,9 +85,20 @@ func (m Model) monitorAttentionSessions() []monitorSession {
 		return nil
 	}
 	var sessions []monitorSession
-	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionComplete} {
+	for _, priority := range []int{0, 1, 2, 3} {
 		for _, s := range m.monitorSessionData {
-			if m.monitorSessionVisible(s) && s.attention == attention && !(attention == codex.SessionAttentionComplete && s.working) {
+			p := -1
+			switch {
+			case s.attention == codex.SessionAttentionApproval:
+				p = 0
+			case s.attention == codex.SessionAttentionInput:
+				p = 1
+			case m.hasSessionProfile(s):
+				p = 2
+			case s.attention == codex.SessionAttentionComplete && !s.working:
+				p = 3
+			}
+			if m.monitorSessionVisible(s) && p == priority {
 				sessions = append(sessions, s)
 			}
 		}
@@ -154,7 +165,10 @@ func (m Model) layoutMonitorAttention(sessions []monitorSession, width, rows, co
 	for _, s := range sessions {
 		id := shortSessionID(s.id)
 		state := monitorAttentionStatus(s.attention)
-		if compact == 3 && s.attention == codex.SessionAttentionComplete {
+		if m.hasSessionProfile(s) {
+			state = i18n.Text("QUOTA THRESHOLD")
+		}
+		if compact == 3 && s.attention == codex.SessionAttentionComplete && !m.hasSessionProfile(s) {
 			state = i18n.Text("DONE")
 		}
 		if truncate {
@@ -195,7 +209,7 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 	lines := make([]string, rows)
 	completed := make(map[string]bool)
 	for _, s := range m.monitorAttentionSessions() {
-		if s.attention == codex.SessionAttentionComplete {
+		if s.attention == codex.SessionAttentionComplete && !m.hasSessionProfile(s) {
 			completed["attention:"+s.id] = true
 		}
 	}

@@ -41,6 +41,9 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 	if !ok {
 		return codex.SessionPromptOffer{}
 	}
+	if _, pending := m.sessionProfile(s); pending {
+		return codex.SessionPromptOffer{}
+	}
 	if s.preview.Kind == codex.SessionContextApproval {
 		return codex.SessionPromptOffer{}
 	}
@@ -65,6 +68,11 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 }
 
 func (m Model) monitorPromptRows(width, height int) int {
+	if s, ok := m.contextDetailSession(); ok {
+		if _, pending := m.sessionProfile(s); pending {
+			return 0
+		}
+	}
 	if width < 24 || height < 8 || m.monitorContextTarget() == "" || m.contextTargetHidden() {
 		return 0
 	}
