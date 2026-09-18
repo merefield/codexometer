@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"strings"
 	"testing"
 	"time"
@@ -262,5 +263,100 @@ func TestQuotaRestartUsesCurrentSettingsWithoutApprovalHistory(t *testing.T) {
 				t.Fatalf("candidates %#v", candidates)
 			}
 		})
+	}
+}
+
+func TestQuotaDisarmingClearsReviewNotice(t *testing.T) {
+	for _, action := range []string{"escape", "timeout", "navigation", "resize", "next"} {
+		t.Run(action, func(t *testing.T) {
+			m, _ := quotaTestModel(t)
+			m, _ = quotaPress(m, false)
+			if m.quotaStepNotice == "" {
+				t.Fatal("review notice missing")
+			}
+			switch action {
+			case "escape":
+				m, _, _ = m.quotaProfileKey("esc")
+			case "next":
+				m, _, _ = m.quotaProfileKey("n")
+			case "timeout":
+				m.quotaStepConfirmUntil = time.Now().Add(-time.Second)
+				next, _ := m.Update(secondMsg(time.Now()))
+				m = next.(Model)
+			case "navigation":
+				next, _ := m.pressViewTab(viewUsage)
+				m = next.(Model)
+			case "resize":
+				next, _ := m.Update(tea.WindowSizeMsg{Width: 90, Height: 50})
+				m = next.(Model)
+			}
+			if len(m.quota.confirm) != 0 || m.quotaStepNotice != "" {
+				t.Fatalf("stale confirmation: %#v, %q", m.quota.confirm, m.quotaStepNotice)
+			}
+		})
+	}
+	m, _ := quotaTestModel(t)
+	m.quotaStepNotice = "Result notice"
+	m.clearQuotaConfirmation()
+	if m.quotaStepNotice != "Result notice" {
+		t.Fatal("unrelated result notice was erased")
+	}
+}
+
+func TestQuotaOnlyArmedActionSaysConfirm(t *testing.T) {
+	m, _ := quotaTestModel(t)
+	for _, all := range []bool{false, true, false} {
+		var cmd tea.Cmd
+		m, cmd = quotaPress(m, all)
+		if cmd != nil {
+			t.Fatal("switching actions should only arm review")
+		}
+		actions := m.quotaActions(200)
+		wantOne, wantAll := "[G: CONFIRM ONE]", "[A: REVIEW ALL]"
+		if all {
+			wantOne, wantAll = "[G: REVIEW ONE]", "[A: CONFIRM ALL]"
+		}
+		if actions[0].label != wantOne || actions[1].label != wantAll {
+			t.Fatalf("misleading labels: %#v", actions)
+		}
+	}
+}
+
+func TestQuotaLocalisedControls(t *testing.T) {
+	m, _ := quotaTestModel(t)
+	for _, all := range []bool{false, true} {
+		m.width = 160
+		m.height = 100
+		m, _ = quotaPress(m, all)
+		for _, width := range []int{24, 60, 100, 160} {
+			m.width = width + 4
+			rows := m.quotaActionRows(width)
+			for _, row := range rows {
+				if lipgloss.Width(row) > width {
+					t.Fatalf("%s overflow at %d: %s", i18n.Code(), width, row)
+				}
+			}
+			g := m.dashboardLayout()
+			base := m.baseResetControlsLayout(g.contentWidth)
+			for _, a := range m.quotaActions(g.contentWidth) {
+				for col := 0; col < lipgloss.Width(a.label); col++ {
+					if got := m.quotaActionAt(2+a.x+col, g.tabsY+base.extraRows+1+a.y); got != a.key {
+						t.Fatalf("%s incorrect click cell for %s", i18n.Code(), a.label)
+					}
+				}
+			}
+			notice := m.renderQuotaStepNotice(width)
+			if strings.Contains(notice, "%!") {
+				t.Fatalf("invalid translated formatting: %s", notice)
+			}
+		}
+		labels := m.quotaActions(400)
+		wantOne, wantAll := i18n.Text("[G: CONFIRM ONE]"), i18n.Text("[A: REVIEW ALL]")
+		if all {
+			wantOne, wantAll = i18n.Text("[G: REVIEW ONE]"), i18n.Text("[A: CONFIRM ALL]")
+		}
+		if labels[0].label != wantOne || labels[1].label != wantAll {
+			t.Fatalf("untranslated or incorrect buttons: %#v", labels)
+		}
 	}
 }

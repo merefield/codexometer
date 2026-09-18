@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/gorilla/websocket"
 	"net"
@@ -23,6 +24,28 @@ type quotaDaemonFixture struct {
 	queued   bool
 	started  chan struct{}
 	release  chan struct{}
+}
+
+func TestQuotaEffortDefaultFallback(t *testing.T) {
+	for _, tc := range []struct {
+		payload, effort string
+		want            bool
+	}{
+		{`{"defaultReasoningEffort":"medium","supportedReasoningEfforts":[]}`, "medium", true},
+		{`{"defaultReasoningEffort":"medium"}`, "medium", true},
+		{`{"defaultReasoningEffort":"medium"}`, "high", false},
+		{`{}`, "medium", false},
+		{`{"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"high"}]}`, "medium", false},
+		{`{"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"high"}]}`, "high", true},
+	} {
+		var model benchmarkModel
+		if err := json.Unmarshal([]byte(tc.payload), &model); err != nil {
+			t.Fatal(err)
+		}
+		if got := quotaEffortSupported(model, tc.effort); got != tc.want {
+			t.Fatalf("payload %s effort %s: got %v want %v", tc.payload, tc.effort, got, tc.want)
+		}
+	}
 }
 
 func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {

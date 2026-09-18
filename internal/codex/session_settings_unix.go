@@ -91,9 +91,8 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 	for {
 		var response struct {
 			Data []struct {
-				Model                     string
-				SupportedReasoningEfforts []struct{ ReasoningEffort string }
-				ServiceTiers              []struct {
+				benchmarkModel
+				ServiceTiers []struct {
 					ID   string
 					Name string
 				}
@@ -111,12 +110,7 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 			if model.Model != step.Model {
 				continue
 			}
-			effortOK := false
-			for _, effort := range model.SupportedReasoningEfforts {
-				if effort.ReasoningEffort == step.Effort {
-					effortOK = true
-				}
-			}
+			effortOK := quotaEffortSupported(model.benchmarkModel, step.Effort)
 			if !effortOK {
 				return step, errors.New("model does not advertise requested reasoning effort")
 			}
@@ -265,4 +259,16 @@ func (p *daemonStatusProvider) CloseQuotaProfiles() {
 	p.settingsMu.Lock()
 	defer p.settingsMu.Unlock()
 	p.settingsClosed = true
+}
+
+func quotaEffortSupported(model benchmarkModel, effort string) bool {
+	if len(model.SupportedReasoningEfforts) == 0 {
+		return strings.TrimSpace(model.DefaultReasoningEffort) != "" && effort == strings.TrimSpace(model.DefaultReasoningEffort)
+	}
+	for _, option := range model.SupportedReasoningEfforts {
+		if effort == strings.TrimSpace(option.ReasoningEffort) {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"reflect"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ func quotaStepProfile(step codex.QuotaStep) string {
 	if step.ServiceTier != "" {
 		result += " / " + step.ServiceTier
 	} else {
-		result += " / speed unchanged"
+		result += " / " + i18n.Text("speed unchanged")
 	}
 	return result
 }
@@ -90,6 +91,9 @@ func (m Model) quotaFresh() bool {
 		*meter.Window.ResetsAt > time.Now().Unix() && !m.snapshot.FetchedAt.IsZero() && time.Since(m.snapshot.FetchedAt) >= 0 && time.Since(m.snapshot.FetchedAt) <= 2*m.refreshEvery
 }
 func (m *Model) clearQuotaConfirmation() {
+	if len(m.quota.confirm) > 0 {
+		m.quotaStepNotice = ""
+	}
 	m.quota.confirm = nil
 	m.quotaStepConfirmUntil = time.Time{}
 }
@@ -114,7 +118,7 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 		m.quotaStepPending = nil
 		m.quotaStepBusy = false
 		m.quotaStepActive = nil
-		m.quotaStepNotice = "Quota window changed. Existing session settings are unchanged."
+		m.quotaStepNotice = i18n.Text("Quota window changed. Session settings unchanged.")
 	}
 	m.quotaStepWindow = window
 	var candidate *codex.QuotaStep
@@ -141,7 +145,7 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 		defer cancel()
 		c, ok := m.fetcher.(codex.SessionSettingsClient)
 		if !ok {
-			return quotaScanResult{revision: revision, step: step, err: fmt.Errorf("shared session control unavailable")}
+			return quotaScanResult{revision: revision, step: step, err: fmt.Errorf("%s", i18n.Text("Session controls unavailable."))}
 		}
 		resolved, err := c.ResolveQuotaStep(ctx, step)
 		if err != nil {
@@ -190,10 +194,10 @@ func (m Model) pressQuotaChoice(all bool) (tea.Model, tea.Cmd) {
 		m.quota.confirmAll = all
 		m.quota.confirmWindow = m.quotaStepWindow
 		m.quotaStepConfirmUntil = time.Now().Add(10 * time.Second)
-		m.quotaStepNotice = fmt.Sprintf("Review %d session(s). Repeat the SAME approval action to confirm; Esc cancels. New sessions are not included.", len(targets))
+		m.quotaStepNotice = i18n.Format("Review %d session(s). Repeat the same action to confirm; Esc cancels.", len(targets))
 		if all && (len(targets) > 8 || len(m.renderQuotaStepNotice(max(m.width-4, 1))) > 3500 || m.quotaStepNoticeHeight(max(m.width-4, 1)) > m.height/2) {
 			m.clearQuotaConfirmation()
-			m.quotaStepNotice = "Too many sessions to review together in this pane. Use G to approve individually."
+			m.quotaStepNotice = i18n.Text("Review sessions individually with G; this pane cannot show all.")
 		}
 		return m, nil
 	}
@@ -209,7 +213,7 @@ func (m Model) pressQuotaChoice(all bool) (tea.Model, tea.Cmd) {
 		defer cancel()
 		c, ok := m.fetcher.(codex.SessionSettingsClient)
 		if !ok {
-			return quotaStepResult{revision: revision, err: fmt.Errorf("shared session control unavailable")}
+			return quotaStepResult{revision: revision, err: fmt.Errorf("%s", i18n.Text("Session controls unavailable."))}
 		}
 		n, err := c.ApplyQuotaProfile(ctx, targets, step)
 		return quotaStepResult{revision: revision, window: window, step: step, targets: targets, updated: n, err: err}
@@ -228,25 +232,22 @@ func (m *Model) declineQuotaStep() {
 	}
 	m.quota.handled[candidates[m.quota.selected%len(candidates)].ID] = m.quotaStepPending.Threshold
 	m.clearQuotaConfirmation()
-	m.quotaStepNotice = "Session skipped at this gate for this run."
+	m.quotaStepNotice = i18n.Text("Session skipped for this threshold.")
 }
 func (m Model) quotaStepLabel() string {
 	if !m.meterView.isQuota() || len(m.quotaSteps) == 0 {
 		return ""
 	}
 	if m.quotaStepBusy {
-		return "QUOTA PROFILE: checking / updating…"
+		return i18n.Text("Checking / updating…")
 	}
 	if len(m.quotaCandidates()) > 0 {
-		if len(m.quota.confirm) > 0 {
-			return "[G: CONFIRM ONE] [A: CONFIRM ALL] [N: NEXT] [D: SKIP]"
-		}
-		return "[G: REVIEW ONE] [A: REVIEW ALL] [N: NEXT] [D: SKIP]"
+		return i18n.Text("Review session settings.")
 	}
 	if m.quotaStepActive != nil {
-		return "QUOTA PROFILE: " + quotaStepProfile(*m.quotaStepActive) + " (approved sessions only)"
+		return i18n.Format("Approved profile: %s", quotaStepProfile(*m.quotaStepActive))
 	}
-	return "QUOTA PROFILE: waiting for threshold / new sessions"
+	return i18n.Text("Waiting for threshold / new sessions.")
 }
 func (m Model) renderQuotaStepNotice(width int) string {
 	c := paletteFor(m.theme)
@@ -254,26 +255,26 @@ func (m Model) renderQuotaStepNotice(width int) string {
 	if body == "" {
 		body = m.quotaStepLabel()
 	}
-	body += "\nChanges remain after Codexometer closes."
+	body += "\n" + i18n.Text("Changes remain after Codexometer closes.")
 	candidates := m.quotaCandidates()
 	if len(candidates) > 0 {
 		s := candidates[m.quota.selected%len(candidates)]
-		speed := "unset"
+		speed := i18n.Text("unset")
 		if s.Tier != nil {
 			speed = *s.Tier
 		}
-		body += fmt.Sprintf("\nGate %d%% — Session %d/%d: %s\n%s / %s / %s → %s", m.quotaStepPending.Threshold, m.quota.selected%len(candidates)+1, len(candidates), s.ID, s.Model, s.Effort, speed, quotaStepProfile(*m.quotaStepPending))
+		body += "\n" + i18n.Format("Gate %d%% — Session %d/%d: %s", m.quotaStepPending.Threshold, m.quota.selected%len(candidates)+1, len(candidates), s.ID) + "\n" + s.Model + " / " + s.Effort + " / " + speed + " → " + quotaStepProfile(*m.quotaStepPending)
 	}
 	if len(m.quota.confirm) > 1 {
 		for _, s := range m.quota.confirm {
-			speed := "unset"
+			speed := i18n.Text("unset")
 			if s.Tier != nil {
 				speed = *s.Tier
 			}
 			body += "\n" + s.ID + ": " + s.Model + " / " + s.Effort + " / " + speed
 		}
 	}
-	return frame(width, "QUOTA PROFILE", c.label().Render(ansi.Hardwrap(codex.SanitizeSessionContext(body), max(width-4, 1), true)), c.warning, c)
+	return frame(width, i18n.Text("QUOTA PROFILE"), c.label().Render(ansi.Hardwrap(codex.SanitizeSessionContext(body), max(width-4, 1), true)), c.warning, c)
 }
 func (m Model) quotaStepNoticeHeight(width int) int {
 	if !m.meterView.isQuota() || len(m.quotaSteps) == 0 {
@@ -316,22 +317,26 @@ func (m Model) quotaActions(width int) []quotaAction {
 	}
 	labels := []string{"[G: REVIEW ONE]", "[A: REVIEW ALL]", "[N: NEXT]", "[D: SKIP]"}
 	if len(m.quota.confirm) > 0 {
-		labels[0] = "[G: CONFIRM ONE]"
-		labels[1] = "[A: CONFIRM ALL]"
+		if m.quota.confirmAll {
+			labels[1] = "[A: CONFIRM ALL]"
+		} else {
+			labels[0] = "[G: CONFIRM ONE]"
+		}
 	}
 	keys := []string{"g", "a", "n", "d"}
 	x, y := 0, 0
 	var actions []quotaAction
 	for i, label := range labels {
-		if width < len(label) {
+		label = i18n.Text(label)
+		if width < lipgloss.Width(label) {
 			label = "[" + strings.ToUpper(keys[i]) + "]"
 		}
-		if x > 0 && x+len(label) > width {
+		if x > 0 && x+lipgloss.Width(label) > width {
 			x = 0
 			y++
 		}
 		actions = append(actions, quotaAction{keys[i], label, x, y})
-		x += len(label) + 1
+		x += lipgloss.Width(label) + 1
 	}
 	return actions
 }
@@ -342,7 +347,7 @@ func (m Model) quotaActionRows(width int) []string {
 	}
 	rows := make([]string, actions[len(actions)-1].y+1)
 	for _, a := range actions {
-		rows[a.y] += strings.Repeat(" ", max(a.x-len(rows[a.y]), 0)) + a.label
+		rows[a.y] += strings.Repeat(" ", max(a.x-lipgloss.Width(rows[a.y]), 0)) + a.label
 	}
 	return rows
 }
@@ -357,7 +362,7 @@ func (m Model) quotaActionAt(x, y int) string {
 	g := m.dashboardLayout()
 	base := m.baseResetControlsLayout(g.contentWidth)
 	for _, a := range m.quotaActions(g.contentWidth) {
-		if y == g.tabsY+base.extraRows+1+a.y && x >= 2+a.x && x < 2+a.x+len(a.label) {
+		if y == g.tabsY+base.extraRows+1+a.y && x >= 2+a.x && x < 2+a.x+lipgloss.Width(a.label) {
 			return a.key
 		}
 	}

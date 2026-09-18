@@ -522,9 +522,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.evaluateQuotaStep(m.snapshot)
 		}
 		m.quota.sessions = message.sessions
-		m.quotaStepNotice = fmt.Sprintf("%d session(s) already at target; no approval needed.", message.matched)
+		m.quotaStepNotice = i18n.Format("%d session(s) already at target; no approval needed.", message.matched)
 		if message.err != nil {
-			m.quotaStepNotice = "Some sessions unavailable: " + message.err.Error()
+			m.quotaStepNotice = i18n.Format("Session check failed: %s", message.err.Error())
 		}
 		return m, nil
 	case quotaStepResult:
@@ -543,13 +543,13 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.quota.handled[s.ID] = message.step.Threshold
 		}
 		m.quota.sessions = nil // Re-read settings before another threshold can be approved.
-		m.quotaStepNotice = fmt.Sprintf("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
+		m.quotaStepNotice = i18n.Format("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
 		if message.updated > 0 {
 			step := message.step
 			m.quotaStepActive = &step
 		}
 		if message.err != nil {
-			m.quotaStepNotice += " Check Codex: " + message.err.Error()
+			m.quotaStepNotice += " " + i18n.Format("Check Codex: %s", message.err.Error())
 		}
 		return m, nil
 	case tea.KeyPressMsg:
