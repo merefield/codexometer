@@ -36,6 +36,8 @@ type daemonStatusProvider struct {
 	lastStatusAt   time.Time
 	statusThreads  map[string]struct{}
 	statuses       map[string]sessionRuntimeStatus
+	threadSettings map[string]QuotaSession
+	settingsSignal chan struct{}
 	settingsMu     sync.Mutex
 	settingsClosed bool
 	writeMu        sync.Mutex
@@ -237,6 +239,8 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.pending = make(map[int64]chan daemonEnvelope)
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)
+	p.threadSettings = make(map[string]QuotaSession)
+	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
 	go p.readLoop(connection)
 
@@ -395,6 +399,32 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 
 func (p *daemonStatusProvider) handleNotification(method string, params json.RawMessage) {
 	switch method {
+	case "thread/settings/updated":
+		var notification struct {
+			ThreadID       string `json:"threadId"`
+			ThreadSettings struct {
+				Model       string  `json:"model"`
+				Effort      string  `json:"effort"`
+				ServiceTier *string `json:"serviceTier"`
+			} `json:"threadSettings"`
+		}
+		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" ||
+			notification.ThreadSettings.Model == "" || notification.ThreadSettings.Effort == "" {
+			return
+		}
+		p.mu.Lock()
+		if p.threadSettings == nil {
+			p.threadSettings = make(map[string]QuotaSession)
+		}
+		p.threadSettings[notification.ThreadID] = QuotaSession{
+			ID: notification.ThreadID, Model: notification.ThreadSettings.Model,
+			Effort: notification.ThreadSettings.Effort, Tier: notification.ThreadSettings.ServiceTier,
+		}
+		if p.settingsSignal != nil {
+			close(p.settingsSignal)
+		}
+		p.settingsSignal = make(chan struct{})
+		p.mu.Unlock()
 	case "model/rerouted":
 		var notification struct {
 			ThreadID string `json:"threadId"`
@@ -468,6 +498,11 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil
 	p.statuses = nil
+	p.threadSettings = nil
+	if p.settingsSignal != nil {
+		close(p.settingsSignal)
+		p.settingsSignal = nil
+	}
 	p.mu.Unlock()
 	if current != nil {
 		_ = current.Close()

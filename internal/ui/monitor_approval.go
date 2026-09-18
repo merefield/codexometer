@@ -26,7 +26,7 @@ func (m Model) approvalConfirmationActive(token, action string) bool {
 
 func (m Model) monitorApprovalHasOutcome() bool {
 	s, ok := m.contextDetailSession()
-	return ok && s.preview.Kind == codex.SessionContextApproval && s.preview.ApprovalToken != "" && s.preview.ApprovalToken == m.monitorApprovalNoticeToken && (m.monitorApprovalBusy || m.monitorApprovalNotice != "")
+	return ok && !m.hasSessionProfile(s) && s.preview.Kind == codex.SessionContextApproval && s.preview.ApprovalToken != "" && s.preview.ApprovalToken == m.monitorApprovalNoticeToken && (m.monitorApprovalBusy || m.monitorApprovalNotice != "")
 }
 
 func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
@@ -78,7 +78,7 @@ func (m Model) monitorApprovalToken() string {
 	}
 	s, ok := m.contextDetailSession()
 	p, supported := m.fetcher.(codex.SessionApprovalClient)
-	if !ok || !supported || s.preview.Kind != codex.SessionContextApproval || !p.SessionApprovalPending(s.preview.ApprovalToken) {
+	if !ok || !supported || m.hasSessionProfile(s) || s.preview.Kind != codex.SessionContextApproval || !p.SessionApprovalPending(s.preview.ApprovalToken) {
 		return ""
 	}
 	return s.preview.ApprovalToken

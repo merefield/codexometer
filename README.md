@@ -2092,8 +2092,12 @@ Click **APPLY PROFILE** (or press `1` for the selected session), then click
 to skip that session at the current threshold; `Esc` cancels confirmation.
 Navigation, resizing and inventory refresh disarm confirmations. Each approval
 is for exactly one session—there is no bulk approval and newly discovered
-sessions need their own review. Codex approval/input requests take priority;
-the quota suggestion becomes available once that request is no longer shown.
+sessions need their own review. Each pill represents a distinct review: one
+session can have both a Codex approval/input pill and a **QUOTA THRESHOLD** pill.
+Codex requests appear first; clicking either pill opens that specific review
+with only its own controls. Switching reviews cancels pending confirmation.
+Completion pills are suppressed while a quota review remains outstanding and
+return once it is handled, if the session is still complete.
 These profile reviews are terminal-only; the browser interface is unchanged.
 The shared app-server's experimental `thread/settings/update` changes subsequent
 turns, not a turn already in progress. A queued acknowledgement alone is not

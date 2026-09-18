@@ -12,9 +12,18 @@ import (
 	"time"
 )
 
-func tierEqual(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+func tierEqual(a, b *string) bool {
+	return canonicalQuotaSessionTier(a) == canonicalQuotaSessionTier(b)
+}
 func sameQuotaSettings(a, b QuotaSession) bool {
 	return a.Model == b.Model && a.Effort == b.Effort && tierEqual(a.Tier, b.Tier)
+}
+
+func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <-chan struct{}, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	current, ok := p.threadSettings[id]
+	return current, p.settingsSignal, ok
 }
 
 // Only call for a thread positively observed as loaded. No settings overrides
@@ -146,6 +155,10 @@ func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected 
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
+		observed, changed, ok := p.observedQuotaSettings(expected.ID)
+		if ok && sameQuotaSettings(observed, expected) {
+			return nil
+		}
 		loaded, err := p.loadedThreads(ctx)
 		if err != nil {
 			return err
@@ -165,6 +178,7 @@ func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected 
 			return ctx.Err()
 		case <-deadline.C:
 			return errors.New("settings queued but application not verified")
+		case <-changed:
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

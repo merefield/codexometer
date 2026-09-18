@@ -34,6 +34,7 @@ type quotaScanResult struct {
 	revision uint64
 	step     codex.QuotaStep
 	sessions []codex.QuotaSession
+	matched  []string
 	err      error
 }
 type quotaStepResult struct {
@@ -159,12 +160,15 @@ func (m *Model) evaluateQuotaStep(snapshot codex.Snapshot) tea.Cmd {
 		}
 		sessions, err := c.QuotaSessions(ctx)
 		var candidates []codex.QuotaSession
+		var matched []string
 		for _, session := range sessions {
-			if !session.MatchesQuotaStep(resolved) {
+			if session.MatchesQuotaStep(resolved) {
+				matched = append(matched, session.ID)
+			} else {
 				candidates = append(candidates, session)
 			}
 		}
-		return quotaScanResult{revision: revision, step: step, sessions: candidates, err: err}
+		return quotaScanResult{revision: revision, step: step, sessions: candidates, matched: matched, err: err}
 	}
 }
 func (m Model) quotaCandidates() []codex.QuotaSession {

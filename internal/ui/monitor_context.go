@@ -449,16 +449,8 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		default:
 			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
-			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "attention:"); ok {
-				if id == m.monitorContextDetail {
-					return m, nil, true
-				}
-				for _, s := range m.monitorAttentionSessions() {
-					if s.id == id {
-						m.setRowContext(id, contextFull)
-						break
-					}
-				}
+			} else if strings.HasPrefix(m.monitorContextHover, "attention:") || strings.HasPrefix(m.monitorContextHover, "attention-profile:") {
+				m.openMonitorAttention(m.monitorContextHover)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
 				m.openMonitorContext(id)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -45,13 +46,50 @@ func TestProfileReviewsAreIndividual(t *testing.T) {
 	if got := m.quotaCandidates(); len(got) != 1 || got[0].ID != "two" {
 		t.Fatalf("other session lost review: %#v", got)
 	}
-	if m.quota.notices["one"] == "" || m.quota.notices["two"] != "" {
-		t.Fatal("feedback leaked to another session")
+	if m.quota.notices["one"] != "" || m.quota.notices["two"] != "" {
+		t.Fatal("successful profile update left stale feedback")
 	}
 	m.setRowContext("two", contextFull)
 	m, cmd, _ = m.updateProfileKey("2")
 	if cmd != nil || len(m.quotaCandidates()) != 0 || f.updates != 1 {
 		t.Fatal("skip wrote settings")
+	}
+}
+
+func TestProfileReviewExplainsThresholdAndChoice(t *testing.T) {
+	m, _ := profileTestModel(t)
+	var text []string
+	for _, line := range m.profileDocument(m.monitorSessionData[0], 200) {
+		text = append(text, line.text)
+	}
+	want := i18n.Format("Your %d%% quota threshold has been reached. Approve the profile switch below for this session's next turns, or skip it.", 80)
+	if !strings.Contains(strings.Join(text, "\n"), want) {
+		t.Fatal("review must explain the configured threshold and the user's choice")
+	}
+	for _, profile := range []string{"large / high / " + i18n.Text("unset"), "small / medium / " + i18n.Text("speed unchanged")} {
+		if !strings.Contains(strings.Join(text, "\n"), i18n.Text("MODEL / REASONING LEVEL / SPEED")+"\n"+profile) {
+			t.Fatal("each profile must have a field heading and remain left aligned")
+		}
+	}
+	var headings []string
+	warnings := 0
+	for index, line := range m.profileDocument(m.monitorSessionData[0], 200) {
+		if line.kind == "heading" {
+			if index == 0 || text[index-1] != "" {
+				t.Fatal("section needs a blank line")
+			}
+			headings = append(headings, strings.TrimRight(line.text, " ─"))
+		}
+		if line.kind == "warning" {
+			warnings++
+			if line.text != i18n.Text("Changes remain after Codexometer closes.") {
+				t.Fatal("ordinary review text should not use warning colour")
+			}
+		}
+	}
+	wantHeadings := []string{i18n.Text("WHY THIS CHANGE"), i18n.Text("CURRENT PROFILE"), i18n.Text("PROPOSED PROFILE"), i18n.Text("PLEASE NOTE")}
+	if strings.Join(headings, "|") != strings.Join(wantHeadings, "|") || warnings != 1 {
+		t.Fatalf("incorrect sections or warning emphasis: %v, %d", headings, warnings)
 	}
 }
 
@@ -104,6 +142,27 @@ func TestProfileConfirmationCannotFollowSelection(t *testing.T) {
 	_, cmd, _ = m.updateProfileKey("c")
 	if cmd != nil {
 		t.Fatal("expired confirmation submitted")
+	}
+}
+
+func TestUnverifiedProfileNoticeClosesAfterAuthoritativeRescan(t *testing.T) {
+	m, f := profileTestModel(t)
+	target := m.quotaCandidates()[0]
+	f.sessions[0].Model = "small"
+	f.sessions[0].Effort = "medium"
+	message := quotaStepResult{
+		revision: m.quota.revision, step: *m.quotaStepPending, window: m.quotaStepWindow,
+		targets: []codex.QuotaSession{target}, err: errors.New("settings queued but application not verified"),
+	}
+	next, cmd := m.Update(message)
+	m = next.(Model)
+	if cmd == nil || m.quota.notices["one"] == "" {
+		t.Fatal("uncertain result was not scheduled for reconciliation")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if m.quota.notices["one"] != "" || f.updates != 0 {
+		t.Fatal("verified rescan retained notice or resent the write")
 	}
 }
 

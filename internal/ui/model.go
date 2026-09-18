@@ -521,6 +521,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.quota.sessions = message.sessions
 		m.quota.scanError = ""
+		for _, id := range message.matched {
+			delete(m.quota.notices, id)
+		}
 		if message.err != nil {
 			m.quota.scanError = i18n.Format("Session check failed: %s", message.err.Error())
 		}
@@ -541,12 +544,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.quota.handled[s.ID] = message.step.Threshold
 		}
 		m.quota.busySession = ""
-		notice := i18n.Format("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
-		if message.err != nil {
-			notice += " " + i18n.Format("Check Codex: %s", message.err.Error())
-		}
 		for _, target := range message.targets {
-			m.setQuotaSessionNotice(target.ID, notice)
+			if message.err == nil {
+				delete(m.quota.notices, target.ID)
+			} else {
+				notice := i18n.Text("Profile update not yet verified. Codex accepted the request; Codexometer will check again without resending it.")
+				m.setQuotaSessionNotice(target.ID, notice)
+			}
+		}
+		if message.err != nil {
+			return m, m.evaluateQuotaStep(m.snapshot)
 		}
 		return m, nil
 	case tea.KeyPressMsg:

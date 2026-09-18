@@ -51,8 +51,10 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 Optional quota step-down profiles also join the terminal session command centre:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
-Apply and confirm individually, or skip; Codex's own approval/input requests
-take priority. Nothing changes automatically, and approved settings are not
+Apply and confirm individually, or skip. A session can have separate pills for
+its Codex request and quota review; each opens the corresponding detail, with
+Codex requests ordered first. Completion pills wait until outstanding reviews
+are handled. Nothing changes automatically, and approved settings are not
 rolled back when Codexometer closes.
 
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.

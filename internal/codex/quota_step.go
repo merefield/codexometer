@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 type QuotaStep struct {
@@ -64,12 +65,25 @@ func (s QuotaSession) MatchesQuotaStep(step QuotaStep) bool {
 	if s.Model != step.Model || s.Effort != step.Effort {
 		return false
 	}
-	switch step.ServiceTier {
+	switch canonicalQuotaTier(step.ServiceTier) {
 	case "":
 		return true
 	case "default":
-		return s.Tier == nil
+		return canonicalQuotaSessionTier(s.Tier) == "default"
 	default:
-		return s.Tier != nil && *s.Tier == step.ServiceTier
+		return canonicalQuotaSessionTier(s.Tier) == canonicalQuotaTier(step.ServiceTier)
 	}
+}
+
+// App-server represents standard routing both as a missing service tier and as
+// the explicit "default" tier, depending on which response supplies it.
+func canonicalQuotaSessionTier(tier *string) string {
+	if tier == nil || canonicalQuotaTier(*tier) == "" {
+		return "default"
+	}
+	return canonicalQuotaTier(*tier)
+}
+
+func canonicalQuotaTier(tier string) string {
+	return strings.ToLower(strings.TrimSpace(tier))
 }

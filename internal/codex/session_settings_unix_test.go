@@ -22,6 +22,7 @@ type quotaDaemonFixture struct {
 	writes   []map[string]any
 	fail     string
 	queued   bool
+	notify   bool
 	started  chan struct{}
 	release  chan struct{}
 }
@@ -86,6 +87,7 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 			fixture.mu.Lock()
 			result := map[string]any{}
 			failure := false
+			var settingsNotification map[string]any
 			id, _ := req.Params["threadId"].(string)
 			switch req.Method {
 			case "initialize":
@@ -104,21 +106,29 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				result = map[string]any{"model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}}
 			case "thread/settings/update":
 				fixture.writes = append(fixture.writes, req.Params)
+				desired := fixture.sessions[id]
+				if v, ok := req.Params["model"].(string); ok {
+					desired.Model = v
+				}
+				if v, ok := req.Params["effort"].(string); ok {
+					desired.Effort = v
+				}
+				if v, ok := req.Params["serviceTier"]; ok {
+					desired.Tier = nil
+					if value, ok := v.(string); ok {
+						desired.Tier = &value
+					}
+				}
 				if !fixture.queued {
-					s := fixture.sessions[id]
-					if v, ok := req.Params["model"].(string); ok {
-						s.Model = v
+					fixture.sessions[id] = desired
+				}
+				if fixture.notify {
+					settingsNotification = map[string]any{
+						"method": "thread/settings/updated",
+						"params": map[string]any{"threadId": id, "threadSettings": map[string]any{
+							"model": desired.Model, "effort": desired.Effort, "serviceTier": desired.Tier,
+						}},
 					}
-					if v, ok := req.Params["effort"].(string); ok {
-						s.Effort = v
-					}
-					if v, ok := req.Params["serviceTier"]; ok {
-						s.Tier = nil
-						if value, ok := v.(string); ok {
-							s.Tier = &value
-						}
-					}
-					fixture.sessions[id] = s
 				}
 				if fixture.started != nil {
 					close(fixture.started)
@@ -138,6 +148,9 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				response["error"] = map[string]any{"code": -1, "message": "test failure"}
 			}
 			if conn.WriteJSON(response) != nil {
+				return
+			}
+			if settingsNotification != nil && conn.WriteJSON(settingsNotification) != nil {
 				return
 			}
 		}
@@ -244,6 +257,26 @@ func TestQuotaSettingsPreservesUnownedSpeedAndStandardClearsTier(t *testing.T) {
 		t.Fatal("standard must clear tier")
 	}
 }
+func TestQuotaSettingsTreatsExplicitAndImplicitDefaultTierAsEquivalent(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	explicitDefault := "default"
+	f.mu.Lock()
+	s := f.sessions["one"]
+	s.Tier = &explicitDefault
+	f.sessions["one"] = s
+	f.mu.Unlock()
+
+	sessions, err := p.QuotaSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sessions[0].MatchesQuotaStep(QuotaStep{Model: sessions[0].Model, Effort: sessions[0].Effort, ServiceTier: "default"}) {
+		t.Fatal("explicit default tier was offered as a redundant profile change")
+	}
+	if !sameQuotaSettings(sessions[0], QuotaSession{Model: sessions[0].Model, Effort: sessions[0].Effort}) {
+		t.Fatal("explicit and implicit default tiers compare unequal")
+	}
+}
 func TestQuotaSettingsNoopCloseDoesNotConnect(t *testing.T) {
 	p := &daemonStatusProvider{socketPath: "/missing/no-socket"}
 	p.CloseQuotaProfiles()
@@ -303,5 +336,23 @@ func TestQuotaSettingsQueuedAcknowledgementIsNotSuccess(t *testing.T) {
 	defer f.mu.Unlock()
 	if len(f.writes) != 1 {
 		t.Fatalf("unexpected rollback: %#v", f.writes)
+	}
+}
+
+func TestQuotaSettingsUpdatedNotificationVerifiesQueuedWrite(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	sessions, _ := p.QuotaSessions(context.Background())
+	f.mu.Lock()
+	f.queued = true // thread/resume deliberately remains stale
+	f.notify = true
+	f.mu.Unlock()
+	n, err := p.ApplyQuotaProfile(context.Background(), sessions[:1], QuotaStep{Model: "small", Effort: "medium"})
+	if err != nil || n != 1 {
+		t.Fatalf("authoritative notification was not accepted: %d %v", n, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sessions["one"].Model != "large" {
+		t.Fatal("fixture no longer proves resume readback stayed stale")
 	}
 }

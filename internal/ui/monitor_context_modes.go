@@ -75,7 +75,8 @@ func (m *Model) stepBackMonitorContext() {
 }
 
 type rowContextState struct {
-	mode int
+	mode   int
+	review string // empty: automatic; context or profile: explicitly selected pill
 }
 
 const (
@@ -111,7 +112,7 @@ func (m *Model) setRowContext(id string, mode int) {
 	if m.monitorContextRows == nil {
 		m.monitorContextRows = make(map[string]rowContextState)
 	}
-	m.monitorContextRows[id] = rowContextState{mode: min(max(mode, contextGraph), contextWide)}
+	m.monitorContextRows[id] = rowContextState{mode: min(max(mode, contextGraph), contextWide), review: m.monitorContextRows[id].review}
 	m.monitorSelectedID = id
 	m.monitorContextDetail, m.monitorContextExpanded = "", ""
 	if mode == contextFull {
@@ -204,7 +205,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 // be safely offered. The warning never grants approval; it only opens detail.
 func (m Model) expandedContextNavigation(width, height int, s monitorSession) []monitorNavigationButton {
 	buttons := m.monitorNavigationButtons(width, s.id, false)
-	if s.preview.Kind != codex.SessionContextApproval || len(m.expandedApprovalButtons(width, height, s)) > 0 ||
+	if m.hasSessionProfile(s) || s.preview.Kind != codex.SessionContextApproval || len(m.expandedApprovalButtons(width, height, s)) > 0 ||
 		(s.id == m.monitorContextTarget() && m.monitorApprovalHasOutcome()) {
 		return buttons
 	}

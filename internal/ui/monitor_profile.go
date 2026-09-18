@@ -11,16 +11,9 @@ import (
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
-// Profile suggestions are local reviews, not synthetic Codex approval tokens.
-// Real approvals/questions always retain their original detail and controls.
-func (m Model) sessionProfile(s monitorSession) (codex.QuotaSession, bool) {
-	if m.monitorPrompt.session == s.id && (m.monitorPrompt.input.Focused() || m.monitorPrompt.busy) {
-		return codex.QuotaSession{}, false
-	}
-	if s.attention == codex.SessionAttentionApproval || s.attention == codex.SessionAttentionInput ||
-		s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion {
-		return codex.QuotaSession{}, false
-	}
+// Eligibility is independent of the detail being viewed: one session may have
+// a Codex request and a separate quota review at the same time.
+func (m Model) quotaSessionCandidate(s monitorSession) (codex.QuotaSession, bool) {
 	if m.quotaStepPending == nil {
 		return codex.QuotaSession{}, false
 	}
@@ -35,6 +28,22 @@ func (m Model) sessionProfile(s monitorSession) (codex.QuotaSession, bool) {
 	return codex.QuotaSession{}, false
 }
 
+// Default to Codex requests, but respect an explicit click on a quota pill.
+func (m Model) sessionProfile(s monitorSession) (codex.QuotaSession, bool) {
+	if m.monitorPrompt.session == s.id && (m.monitorPrompt.input.Focused() || m.monitorPrompt.busy) {
+		return codex.QuotaSession{}, false
+	}
+	review := m.monitorContextRows[s.id].review
+	if review == "context" {
+		return codex.QuotaSession{}, false
+	}
+	if review != "profile" && (s.attention == codex.SessionAttentionApproval || s.attention == codex.SessionAttentionInput ||
+		s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion) {
+		return codex.QuotaSession{}, false
+	}
+	return m.quotaSessionCandidate(s)
+}
+
 func (m Model) hasSessionProfile(s monitorSession) bool { _, ok := m.sessionProfile(s); return ok }
 
 func (m Model) profileDocument(s monitorSession, width int) []detailLine {
@@ -46,18 +55,36 @@ func (m Model) profileDocument(s monitorSession, width int) []detailLine {
 	if current.Tier != nil {
 		speed = *current.Tier
 	}
-	text := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory) + "\n\n" +
-		i18n.Format("Quota threshold: %d%%", m.quotaStepPending.Threshold) + "\n" +
-		current.Model + " / " + current.Effort + " / " + speed + "\n→ " + quotaStepProfile(*m.quotaStepPending) + "\n\n" +
-		i18n.Text("Changes remain after Codexometer closes.")
-	if m.quota.busySession == s.id {
-		text += "\n" + i18n.Text("Checking / updating…")
-	} else if !m.quotaFresh() {
-		text += "\n" + i18n.Text("Refresh quota before approving.")
-	}
+	width = max(width, 1)
 	var lines []detailLine
-	for _, line := range strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(text), max(width, 1), true), "\n") {
-		lines = append(lines, detailLine{ansi.Truncate(line, max(width, 1), ""), "warning"})
+	appendText := func(text, kind string) {
+		for _, line := range strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(text), width, true), "\n") {
+			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), kind})
+		}
+	}
+	section := func(title string) {
+		lines = append(lines, detailLine{})
+		title = ansi.Truncate(title, width, "")
+		if rule := width - lipgloss.Width(title) - 1; rule > 0 {
+			title += " " + strings.Repeat("─", rule)
+		}
+		lines = append(lines, detailLine{title, "heading"})
+	}
+	appendText(terminalLabel(s.id)+" // "+terminalLabel(s.workingDirectory), "metadata")
+	section(i18n.Text("WHY THIS CHANGE"))
+	appendText(i18n.Format("Your %d%% quota threshold has been reached. Approve the profile switch below for this session's next turns, or skip it.", m.quotaStepPending.Threshold), "body")
+	section(i18n.Text("CURRENT PROFILE"))
+	appendText(i18n.Text("MODEL / REASONING LEVEL / SPEED"), "metadata")
+	appendText(current.Model+" / "+current.Effort+" / "+speed, "body")
+	section(i18n.Text("PROPOSED PROFILE"))
+	appendText(i18n.Text("MODEL / REASONING LEVEL / SPEED"), "metadata")
+	appendText(quotaStepProfile(*m.quotaStepPending), "body")
+	section(i18n.Text("PLEASE NOTE"))
+	appendText(i18n.Text("Changes remain after Codexometer closes."), "warning")
+	if m.quota.busySession == s.id {
+		appendText(i18n.Text("Checking / updating…"), "body")
+	} else if !m.quotaFresh() {
+		appendText(i18n.Text("Refresh quota before approving."), "warning")
 	}
 	return lines
 }
@@ -144,7 +171,7 @@ func (m Model) renderSessionProfile(width, height int, s monitorSession, colors 
 			navigation = ""
 		}
 	}
-	return frameSizedWithActions(width, max(height-2, 1), i18n.Text("QUOTA THRESHOLD"), navigation, "", strings.Join(body, "\n"), colors.warning, colors)
+	return frameSizedWithActions(width, max(height-2, 1), i18n.Text("QUOTA THRESHOLD"), navigation, "", strings.Join(body, "\n"), colors.primary, colors)
 }
 
 func profileButtonsAt(buttons []monitorApprovalButton, height, x, y int) string {

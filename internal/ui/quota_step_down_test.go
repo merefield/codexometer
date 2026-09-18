@@ -213,7 +213,10 @@ func TestQuotaRestartUsesCurrentSettingsWithoutApprovalHistory(t *testing.T) {
 				f.sessions[i].Effort = "medium"
 				f.sessions[i].Tier = &priority
 				if speed == "default" {
-					f.sessions[i].Tier = nil
+					// Reproduce app-server's reconnect representation: standard
+					// routing may be returned explicitly rather than as null.
+					standard := "default"
+					f.sessions[i].Tier = &standard
 				}
 			}
 			restarted := New(f, time.Minute)
