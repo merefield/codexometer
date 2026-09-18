@@ -172,6 +172,14 @@ func resetExpiryRemaining(expiresAt int64, compact bool) string {
 
 // One geometry source for rendering, tab allocation and both click surfaces.
 func (m Model) resetControlsLayout(width int) resetControls {
+	c := m.baseResetControlsLayout(width)
+	if m.quotaStepLabel() != "" {
+		c.extraRows += len(m.quotaActionRows(width))
+	}
+	return c
+}
+
+func (m Model) baseResetControlsLayout(width int) resetControls {
 	c := resetControls{tabsWidth: width, button: m.resetLabel()}
 	if c.button == "" {
 		return c
@@ -206,7 +214,7 @@ func (m Model) resetControlsLayout(width int) resetControls {
 }
 
 func (m Model) resetLayout(width int) (int, string) {
-	c := m.resetControlsLayout(width)
+	c := m.baseResetControlsLayout(width)
 	if c.extraRows > 0 {
 		return width, ""
 	}
@@ -226,9 +234,9 @@ func (m Model) resetWarningAt(x, y int) bool {
 }
 
 func (m Model) renderResetControls(width int, tabs string, colors palette) string {
-	c := m.resetControlsLayout(width)
+	c := m.baseResetControlsLayout(width)
 	if c.button == "" {
-		return tabs
+		return m.appendQuotaActions(tabs, width)
 	}
 	rows := []string{tabs}
 	for range c.extraRows {
@@ -242,17 +250,18 @@ func (m Model) renderResetControls(width int, tabs string, colors palette) strin
 		rows[c.warningY] += strings.Repeat(" ", max(c.warningX-lipgloss.Width(rows[c.warningY]), 0)) + style.Render(c.warning)
 	}
 	rows[c.buttonY] += strings.Repeat(" ", max(c.buttonX-lipgloss.Width(rows[c.buttonY]), 0)) + m.renderResetButton(c.button, colors)
-	return strings.Join(rows, "\n")
+	return m.appendQuotaActions(strings.Join(rows, "\n"), width)
 }
 
 func (m Model) resetOwnRow(width int) bool {
-	return m.resetControlsLayout(width).extraRows > 0
+	return m.baseResetControlsLayout(width).extraRows > 0
 }
 
 func (m Model) pressQuotaReset() (tea.Model, tea.Cmd) {
-	if m.resetBusy || m.resetLabel() == "" {
+	if m.resetBusy || m.quotaStepBusy || m.resetLabel() == "" {
 		return m, nil
 	}
+	m.clearQuotaConfirmation()
 	consumer, supported := m.fetcher.(resetConsumer)
 	if !supported {
 		m.resetConfirmUntil = time.Time{}

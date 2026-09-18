@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,8 @@ import (
 )
 
 type demoFetcher struct {
+	quotaSteps       []codex.QuotaStep
+	settingsUpdates  int
 	approvalDecision string
 	mu               sync.Mutex
 	snapshot         codex.Snapshot
@@ -34,6 +38,108 @@ type demoFetcher struct {
 	alphaTurns       []codex.LiveTurnTiming
 	bravoCalls       []codex.LiveModelCall
 	bravoTurns       []codex.LiveTurnTiming
+}
+
+func (d *demoFetcher) QuotaStepPolicy() []codex.QuotaStep {
+	return append([]codex.QuotaStep(nil), d.quotaSteps...)
+}
+
+func (d *demoFetcher) QuotaSessions(ctx context.Context) ([]codex.QuotaSession, error) {
+	return []codex.QuotaSession{{ID: "demo-alpha", Model: "gpt-5.6-sol", Effort: "high"}, {ID: "demo-bravo", Model: "gpt-5.6-sol", Effort: "high"}}, ctx.Err()
+}
+
+func (d *demoFetcher) ApplyQuotaProfile(ctx context.Context, targets []codex.QuotaSession, step codex.QuotaStep) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.settingsUpdates++
+	return len(targets), nil
+}
+
+func (d *demoFetcher) CloseQuotaProfiles(ctx context.Context) (int, error) {
+	return d.RestoreSessionSettings(ctx)
+}
+
+func (d *demoFetcher) RestoreSessionSettings(ctx context.Context) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.settingsUpdates == 0 {
+		return 0, nil
+	}
+	d.settingsUpdates = 0
+	return 2, nil
+}
+
+type quotaStepFlags []codex.QuotaStep
+
+func (f *quotaStepFlags) String() string {
+	values := make([]string, 0, len(*f))
+	for _, step := range *f {
+		value := fmt.Sprintf("%d:%s:%s", step.Threshold, step.Model, step.Effort)
+		if step.ServiceTier != "" {
+			value += ":" + quotaStepSpeedFlag(step.ServiceTier)
+		}
+		values = append(values, value)
+	}
+	return strings.Join(values, ",")
+}
+
+func (f *quotaStepFlags) Set(value string) error {
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 && len(parts) != 4 {
+		return fmt.Errorf("must be PERCENT:MODEL:EFFORT[:SPEED]")
+	}
+	threshold, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || threshold < 1 || threshold > 100 {
+		return fmt.Errorf("percentage must be between 1 and 100")
+	}
+	model, effort := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
+	if model == "" {
+		return fmt.Errorf("model is required")
+	}
+	validEffort := false
+	for _, candidate := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"} {
+		if effort == candidate {
+			validEffort = true
+			break
+		}
+	}
+	if !validEffort {
+		return fmt.Errorf("unsupported reasoning effort %q", effort)
+	}
+	for _, step := range *f {
+		if step.Threshold == threshold {
+			return fmt.Errorf("percentage %d is configured more than once", threshold)
+		}
+	}
+	serviceTier := ""
+	if len(parts) == 4 {
+		switch strings.ToLower(strings.TrimSpace(parts[3])) {
+		case "fast", "slow", "flex", "priority":
+			serviceTier = strings.ToLower(strings.TrimSpace(parts[3]))
+		case "standard", "default":
+			serviceTier = "default"
+		default:
+			return fmt.Errorf("speed must be fast, slow, flex, priority, or standard (and advertised by Codex)")
+		}
+	}
+	*f = append(*f, codex.QuotaStep{Threshold: threshold, Model: model, Effort: effort, ServiceTier: serviceTier})
+	sort.Slice(*f, func(i, j int) bool { return (*f)[i].Threshold < (*f)[j].Threshold })
+	return nil
+}
+
+func quotaStepSpeedFlag(tier string) string {
+	switch tier {
+	case "default":
+		return "standard"
+	default:
+		return tier
+	}
 }
 
 func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, error) {
@@ -276,6 +382,7 @@ func defaultDependencies() dependencies {
 func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	flags := flag.NewFlagSet("codexometer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	var quotaSteps quotaStepFlags
 	var (
 		codexPath         = flags.String("codex", "codex", "path to the Codex CLI")
 		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
@@ -293,6 +400,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		digBenchTimeout   = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
 		printVersion      bool
 	)
+	flags.Var(&quotaSteps, "quota-step-down", "offer PERCENT:MODEL:EFFORT[:SPEED] per session (repeatable; SPEED is advertised fast/slow/priority/flex, or standard)")
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
 	flags.BoolVar(&printVersion, "v", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
@@ -313,6 +421,10 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	if *webMode && (*inline || *checkAuth || strings.TrimSpace(*digBenchGame) != "") {
 		fmt.Fprintln(stderr, "codexometer: --web cannot be combined with --inline, --check-auth or --digbench-game")
+		return 2
+	}
+	if *webMode && len(quotaSteps) > 0 {
+		fmt.Fprintln(stderr, "codexometer: --quota-step-down is currently available only in the terminal UI")
 		return 2
 	}
 	if *resetThreshold < 0 || *resetThreshold > 100 {
@@ -385,13 +497,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 
 	if *webMode {
 		// Web mode deliberately gets no benchmark credentials or discovery calls.
-		client := codex.Client{Binary: *codexPath}
+		client := codex.Client{Binary: *codexPath, QuotaSteps: quotaSteps}
 		if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 			client.LiveUsage = liveUsage
 		}
 		var source web.Source = client
 		if *demo {
-			source = &demoFetcher{}
+			source = &demoFetcher{quotaSteps: quotaSteps}
 		}
 		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl); err != nil {
 			fmt.Fprintln(stderr, "codexometer:", err)
@@ -411,13 +523,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		}
 	}
 	digBenchGames = normalizeDigBenchGames(digBenchGames)
-	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames}
+	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames, QuotaSteps: quotaSteps}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
 	}
 	var fetcher ui.Fetcher = client
 	if *demo {
-		fetcher = &demoFetcher{}
+		fetcher = &demoFetcher{quotaSteps: quotaSteps}
 	}
 
 	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours); err != nil {
@@ -544,6 +656,21 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 	model.SetInline(inline)
 	model.SetResetThreshold(resetThreshold)
 	model.SetResetWarningHours(resetWarningHours)
-	_, err := tea.NewProgram(model).Run()
-	return err
+	finalModel, runErr := tea.NewProgram(model).Run()
+	if final, ok := finalModel.(ui.Model); ok {
+		final.CancelQuotaWork()
+	}
+	if restorer, ok := fetcher.(interface {
+		CloseQuotaProfiles(context.Context) (int, error)
+	}); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if _, restoreErr := restorer.CloseQuotaProfiles(ctx); restoreErr != nil {
+			if runErr != nil {
+				return fmt.Errorf("%v; restore session settings: %w", runErr, restoreErr)
+			}
+			return fmt.Errorf("restore session settings: %w", restoreErr)
+		}
+	}
+	return runErr
 }
