@@ -111,10 +111,47 @@ test.describe('quota profile reviews', () => {
     const profile = page.locator('.profile-review').first();
     await expect(profile).toContainText('CURRENT PROFILE');
     await expect(profile).toContainText('PROPOSED PROFILE');
-    // The separate native request is still present and retains its controls.
+    // Each pill opens only its own review; native approval stays reachable.
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeHidden();
+    await expect(page.locator('.detail-context')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Copy text' })).toHaveCount(
+      0,
+    );
+    await page
+      .getByRole('navigation', { name: 'Sessions needing attention' })
+      .getByRole('link', { name: /APPROVAL NEEDED/ })
+      .first()
+      .click();
     await expect(
       page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
     ).toBeVisible();
+    await expect(profile.getByRole('radio')).toHaveCount(0);
+    await page
+      .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+      .check();
+    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+    await expect(
+      page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+    ).toBeVisible();
+    await pill.click();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await page
+      .getByRole('navigation', { name: 'Sessions needing attention' })
+      .getByRole('link', { name: /APPROVAL NEEDED/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }),
+    ).toHaveCount(0);
+    await pill.click();
+    // The review target survives reload/deep links.
+    await page.reload();
+    await expect(profile).toContainText('CURRENT PROFILE');
+    await expect(
+      page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+    ).toBeHidden();
     await profile
       .getByRole('radio', { name: 'APPLY PROFILE', exact: true })
       .check();

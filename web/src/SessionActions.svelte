@@ -5,7 +5,13 @@
     session,
     observedCommand = '',
     review = '',
-  }: { session: string; observedCommand?: string; review?: string } = $props();
+    suspended = false,
+  }: {
+    session: string;
+    observedCommand?: string;
+    review?: string;
+    suspended?: boolean;
+  } = $props();
   interface Offer {
     profile?: { threshold: number; current: string; proposed: string };
     id: string;
@@ -80,7 +86,8 @@
           ),
   );
   $effect(() => {
-    if (stale || followUpBlocked || now >= expires) confirmation = '';
+    if (stale || suspended || followUpBlocked || now >= expires)
+      confirmation = '';
   });
   const controller = new AbortController();
   onMount(() => {
@@ -125,7 +132,8 @@
     };
   });
   async function prepare() {
-    if (!offer?.id || busy || stale || followUpBlocked || !valid) return;
+    if (!offer?.id || busy || stale || suspended || followUpBlocked || !valid)
+      return;
     const id = offer.id;
     busy = true;
     notice = '';
@@ -151,6 +159,7 @@
         offer?.id === id &&
         !controller.signal.aborted &&
         !stale &&
+        !suspended &&
         !followUpBlocked
       ) {
         confirmation = result.confirmation;
@@ -165,7 +174,8 @@
     }
   }
   async function commit() {
-    if (!offer?.id || busy || followUpBlocked || !confirming) return;
+    if (!offer?.id || busy || suspended || followUpBlocked || !confirming)
+      return;
     const id = offer.id;
     const kind = offer.kind;
     const ticket = confirmation;

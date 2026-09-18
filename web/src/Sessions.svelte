@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { router } from 'svelte-spa-router';
   import { live, date, number, type Session } from './state.svelte';
   import {
     preferences,
@@ -15,14 +16,6 @@
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
   function openProfile(id: string) {
     select(id);
-    // Routing completes after the click; keep the native composer mounted.
-    setTimeout(
-      () =>
-        document
-          .getElementById('quota-profile-' + id)
-          ?.scrollIntoView({ block: 'nearest' }),
-      100,
-    );
   }
   // Every entry route (links, arrows, deep links and browser Forward) leaves a
   // wide row behind, so native browser Back agrees with Escape/All Sessions.
@@ -35,6 +28,10 @@
       });
   });
   let selected = $derived(sessions.find((s) => s.id === params.id));
+  let profileFocused = $derived(
+    new URLSearchParams(router.querystring).get('review') === 'profile' &&
+      profiles.some((p) => p.session === params.id && p.pending),
+  );
   let selectedID = $derived(
     sessions.some((s) => s.id === preferences.selected)
       ? preferences.selected
@@ -213,7 +210,9 @@
     {#each profiles.filter((p) => p.pending && sessions.some((s) => s.id === p.session)) as profile}
       <a
         class="button approval"
-        href={'#/sessions/' + encodeURIComponent(profile.session)}
+        href={'#/sessions/' +
+          encodeURIComponent(profile.session) +
+          '?review=profile'}
         onclick={() => openProfile(profile.session)}
         >QUOTA THRESHOLD // {sessions.find((s) => s.id === profile.session)
           ?.directory || profile.session}</a
@@ -227,7 +226,11 @@
           <span
             class="lamp lit"
             class:working={selected.status === 'WORKING' && !stale}
-          ></span>{stale ? 'STALE' : selected.status} // {selected.directory}
+          ></span>{stale
+            ? 'STALE'
+            : profileFocused
+              ? 'QUOTA THRESHOLD'
+              : selected.status} // {selected.directory}
         </h2>
         <a
           class="button"
@@ -242,7 +245,10 @@
         {number(selected.tokens)} TOKENS // {selected.id} // CONTEXT SOURCE // {selected.source ||
           'LOCAL'}
       </p>
-      <div class="detail-workspace">
+      <div
+        class="detail-workspace"
+        style:display={profileFocused ? 'none' : undefined}
+      >
         <div class="detail-context">
           {@render context(selected, true, true)}
         </div>
@@ -250,6 +256,7 @@
           {#key selected.id}<SessionActions
               session={selected.id}
               observedCommand={selected.command}
+              suspended={profileFocused}
             />{/key}
         {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
       </div>
@@ -258,13 +265,21 @@
           {#if profile.notice}<p class="notice" role="status">
               {profile.notice}
             </p>{/if}
-          {#if profile.pending}<SessionActions
+          {#if profile.pending && profileFocused}<SessionActions
               session={selected.id}
               review="profile"
-            />{/if}
+            />{:else if profile.pending}<a
+              class="button approval"
+              href={'#/sessions/' +
+                encodeURIComponent(selected.id) +
+                '?review=profile'}>QUOTA THRESHOLD // REVIEW PROFILE ↗</a
+            >{/if}
         </section>
       {/each}
-      {#key selected.id}<SessionCopy session={selected} active />{/key}
+      {#if !profileFocused}{#key selected.id}<SessionCopy
+            session={selected}
+            active
+          />{/key}{/if}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a
@@ -356,7 +371,9 @@
             {#if profile.notice}<p class="notice">{profile.notice}</p>{/if}
             {#if profile.pending}<a
                 class="attention-badge"
-                href={'#/sessions/' + encodeURIComponent(session.id)}
+                href={'#/sessions/' +
+                  encodeURIComponent(session.id) +
+                  '?review=profile'}
                 onclick={() => openProfile(session.id)}
                 >QUOTA THRESHOLD // REVIEW PROFILE ↗</a
               >{/if}

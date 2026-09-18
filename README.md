@@ -2127,8 +2127,11 @@ Completion pills are suppressed while a quota review remains outstanding and
 return once it is handled, if the session is still complete.
 The same profile policy controller serves the terminal and writable browser
 interfaces. For browser reviews, launch with `--web --web-control` plus the
-quota flags. **QUOTA THRESHOLD** pills open the corresponding session's full
-detail, alongside any native Codex approval or composer. Select **APPLY PROFILE**
+quota flags. **QUOTA THRESHOLD** pills open a focused review containing only
+that session's profile change, just like the terminal. Native Codex requests
+remain accessible through their own pills or normal session detail. Follow-up
+composers stay hidden while a quota review is pending, preserving existing
+drafts; switching reviews cancels pending confirmation. Select **APPLY PROFILE**
 or **SKIP**, then review and confirm. Confirmations bind to the exact session,
 current settings, threshold and quota window and expire after 30 seconds.
 Read-only `--web` rejects quota-policy flags and exposes no write endpoints.
