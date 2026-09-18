@@ -2045,6 +2045,7 @@ deterministic PASS/FAIL verifier.
 --web-control      opt into browser session approvals/prompts (requires --web)
 --web-port PORT    local browser port (default: 0/automatic; requires --web)
 --refresh DURATION refresh interval (default: 1m)
+--quota-step-down PERCENT:MODEL:EFFORT[:SPEED] offer a confirmed session profile at a quota threshold (repeatable)
 --reset-threshold PERCENT show available resets at this consumption level (0-100; default: 80)
 --reset-warning-hours HOURS expiry warning lead time (default: 72; 0 disables)
 -v, --version      print the version and exit
@@ -2061,7 +2062,55 @@ codexometer --inline
 
 # Use a separately installed Codex build
 codexometer --codex ~/bin/codex
+
+# Ask before lowering model, reasoning and speed as weekly quota is consumed
+codexometer \
+  --quota-step-down 80:gpt-5.6-sol:medium:standard \
+  --quota-step-down 95:gpt-5.6-luna:medium:slow
 ```
+
+### Quota step-down profiles
+
+`--quota-step-down PERCENT:MODEL:EFFORT[:SPEED]` configures an opt-in profile
+for the longest ordinary Codex quota window (normally the weekly window). The
+flag is repeatable and thresholds must be unique. `SPEED` is optional and may
+be `fast`, `standard`, `slow`, `priority` or `flex`. Names such as `fast` and
+`slow` are resolved against the model's advertised service tiers; `slow` is
+**not** assumed to mean Flex. Unsupported models, reasoning levels and speeds
+are rejected before changing settings. `standard` clears an explicit tier;
+omitting speed leaves the session's current tier intact.
+Codexometer ships no enabled profile and does not infer which model is cheaper.
+
+The quota/reset action area adds separate profile controls without replacing
+the banked-reset button. Controls remain available when no reset credits exist.
+At a reached threshold, `G` reviews one loaded session and its current and
+proposed settings; repeating `G` within ten seconds approves that exact session.
+`N` selects the next session, `D` skips it at this gate, and `Esc` cancels review.
+`A` explicitly reviews/approves all listed sessions, only when the review fits
+the pane. Newly discovered sessions are never covered by an earlier approval.
+The shared app-server's experimental `thread/settings/update` changes subsequent
+turns, not a turn already in progress. A queued acknowledgement alone is not
+reported as a verified change. Changed settings since review are skipped.
+
+Approved settings remain after Codexometer closes, crashes, or restarts, and
+when the quota window changes. Codexometer keeps no model/reasoning/speed
+history and never rolls settings back. Change them again in Codex when needed.
+Persistence across a Codex/app-server restart is controlled by Codex itself.
+
+On every launch and refresh, Codexometer reads current session settings and
+compares them with the eligible target profile. Sessions already at that target
+need no approval or update, even after restarting with the same switches. Speed
+names are resolved through the model catalogue before comparison; omitted speed
+accepts any current speed, while `standard` requires an unset explicit tier.
+Other sessions still require approval. Skips and attempted-change tracking are
+process-local; approval itself is never persisted. Refreshes do not reapply a
+profile or overwrite manual changes. Shutdown cancels/drains outstanding work
+without sending any restoration calls; an already queued change may still apply.
+
+This feature does not edit `config.toml` or change global Codex defaults. It
+requires a Codex version exposing the shared app-server control socket and
+experimental `thread/settings/update`. Updates are not atomic with concurrent
+settings changes in the Codex UI.
 
 ## Experimental browser interface
 

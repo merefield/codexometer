@@ -70,6 +70,33 @@ func TestRunRejectsInvalidFlag(t *testing.T) {
 	}
 }
 
+func TestQuotaStepFlags(t *testing.T) {
+	var flags quotaStepFlags
+	for _, value := range []string{
+		"80:gpt-5.6-sol:medium:fast",
+		"95:gpt-5.6-luna:low:slow",
+	} {
+		if err := flags.Set(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(flags) != 2 || flags[0].Threshold != 80 || flags[0].ServiceTier != "fast" ||
+		flags[1].Threshold != 95 || flags[1].ServiceTier != "slow" {
+		t.Fatalf("parsed flags = %#v", flags)
+	}
+	if got := flags.String(); got != "80:gpt-5.6-sol:medium:fast,95:gpt-5.6-luna:low:slow" {
+		t.Fatalf("String() = %q", got)
+	}
+	for _, invalid := range []string{
+		"0:gpt-5.6-sol:medium", "80::medium", "80:gpt-5.6-sol:extreme",
+		"80:gpt-5.6-sol:medium:turbo", "80:gpt-5.6-terra:low",
+	} {
+		if err := flags.Set(invalid); err == nil {
+			t.Errorf("accepted invalid step %q", invalid)
+		}
+	}
+}
+
 func TestRunAuthCheckSuccessAndFailure(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{

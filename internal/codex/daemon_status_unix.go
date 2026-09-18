@@ -25,18 +25,20 @@ type daemonStatusProvider struct {
 	contexts   map[string]*daemonContextState
 	socketPath string
 
-	mu            sync.Mutex
-	connection    *websocket.Conn
-	nextRequestID int64
-	pending       map[int64]chan daemonEnvelope
-	subscribed    map[string]struct{}
-	reroutedTurns map[daemonTurnKey]string
-	observations  []resolvedModelObservation
-	nextSequence  uint64
-	lastStatusAt  time.Time
-	statusThreads map[string]struct{}
-	statuses      map[string]sessionRuntimeStatus
-	writeMu       sync.Mutex
+	mu             sync.Mutex
+	connection     *websocket.Conn
+	nextRequestID  int64
+	pending        map[int64]chan daemonEnvelope
+	subscribed     map[string]struct{}
+	reroutedTurns  map[daemonTurnKey]string
+	observations   []resolvedModelObservation
+	nextSequence   uint64
+	lastStatusAt   time.Time
+	statusThreads  map[string]struct{}
+	statuses       map[string]sessionRuntimeStatus
+	settingsMu     sync.Mutex
+	settingsClosed bool
+	writeMu        sync.Mutex
 }
 
 type daemonTurnKey struct {

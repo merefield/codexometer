@@ -21,6 +21,9 @@ const requestTimeout = 15 * time.Second
 type Client struct {
 	Binary    string
 	LiveUsage *LiveUsageReader
+	// QuotaSteps is an opt-in launch-time policy for lowering the model profile
+	// of loaded sessions as quota consumption crosses configured thresholds.
+	QuotaSteps []QuotaStep
 	// BenchmarkAPIKey is used only by isolated benchmark app-server sessions.
 	// Fetch and local monitoring continue to use the prevailing Codex login.
 	BenchmarkAPIKey string

@@ -72,6 +72,14 @@ type Model struct {
 	resetScroll                         int
 	resetConfirmUntil                   time.Time
 	resetRevision                       uint64
+	quotaSteps                          []codex.QuotaStep
+	quota                               quotaControl
+	quotaStepPending                    *codex.QuotaStep
+	quotaStepActive                     *codex.QuotaStep
+	quotaStepWindow                     string
+	quotaStepBusy                       bool
+	quotaStepNotice                     string
+	quotaStepConfirmUntil               time.Time
 	fetcher                             Fetcher
 	usageFetcher                        TokenUsageFetcher
 	refreshEvery                        time.Duration
@@ -419,6 +427,9 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		quotaAPIIssues:    make(map[string]string),
 		appVersion:        version.Current(),
 	}
+	if provider, ok := fetcher.(codex.QuotaStepPolicyProvider); ok {
+		model.quotaSteps = provider.QuotaStepPolicy()
+	}
 	if usageFetcher, ok := fetcher.(TokenUsageFetcher); ok {
 		model.usageFetcher = usageFetcher
 	}
@@ -499,7 +510,59 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = true
 		return m, m.fetch()
+	case quotaScanResult:
+		if message.revision != m.quota.revision {
+			return m, nil
+		}
+		m.quotaStepBusy = false
+		// Any newly read inventory invalidates an armed confirmation.
+		m.clearQuotaConfirmation()
+		if m.quotaStepPending == nil || *m.quotaStepPending != message.step {
+			m.quota.sessions = nil
+			return m, m.evaluateQuotaStep(m.snapshot)
+		}
+		m.quota.sessions = message.sessions
+		m.quotaStepNotice = i18n.Format("%d session(s) already at target; no approval needed.", message.matched)
+		if message.err != nil {
+			m.quotaStepNotice = i18n.Format("Session check failed: %s", message.err.Error())
+		}
+		return m, nil
+	case quotaStepResult:
+		if message.revision != m.quota.revision {
+			return m, nil
+		}
+		m.quotaStepBusy = false
+		if message.window != m.quotaStepWindow {
+			return m, nil
+		}
+		if m.quota.handled == nil {
+			m.quota.handled = map[string]int{}
+		}
+		// No automatic retry, including after partial or uncertain outcomes.
+		for _, s := range message.targets {
+			m.quota.handled[s.ID] = message.step.Threshold
+		}
+		m.quota.sessions = nil // Re-read settings before another threshold can be approved.
+		m.quotaStepNotice = i18n.Format("Verified %d of %d session updates. No automatic retries.", message.updated, len(message.targets))
+		if message.updated > 0 {
+			step := message.step
+			m.quotaStepActive = &step
+		}
+		if message.err != nil {
+			m.quotaStepNotice += " " + i18n.Format("Check Codex: %s", message.err.Error())
+		}
+		return m, nil
 	case tea.KeyPressMsg:
+		if !message.IsRepeat {
+			if next, cmd, handled := m.quotaProfileKey(strings.ToLower(message.String())); handled {
+				return next, cmd
+			}
+		} else if m.meterView.isQuota() && len(m.quotaSteps) > 0 {
+			switch strings.ToLower(message.String()) {
+			case "g", "a", "d", "n":
+				return m, nil
+			}
+		}
 		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
 			return m, nil
 		}
@@ -743,6 +806,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		mouse := message.Mouse()
 		_, clicked := message.(tea.MouseClickMsg)
+		if clicked && mouse.Button == tea.MouseLeft {
+			if key := m.quotaActionAt(mouse.X, mouse.Y); key != "" {
+				next, cmd, _ := m.quotaProfileKey(key)
+				return next, cmd
+			}
+		}
 		m.history.hovered = 0
 		if m.meterView == viewUsage {
 			if action, ok := m.historyButtonAt(mouse.X, mouse.Y); ok {
@@ -873,6 +942,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m.pressFooterButton(button)
 		}
 	case tea.WindowSizeMsg:
+		m.clearQuotaConfirmation()
 		m.width = message.Width
 		m.height = message.Height
 		m.prepareBenchmarkDetailTranscript()
@@ -900,6 +970,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		m.err = message.err
+		var quotaStepCommand tea.Cmd
 		if message.err == nil {
 			if m.snapshot.AccountFingerprint != message.snapshot.AccountFingerprint {
 				m.history.data = codex.AccountUsage{}
@@ -909,6 +980,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.snapshot = message.snapshot
 			m.lastRefresh = time.Now()
+			quotaStepCommand = m.evaluateQuotaStep(message.snapshot)
 			if message.benchmarkQuotaRevision != m.benchmarkQuotaAccounting.revision || m.benchmarkQuotaAccounting.active {
 				m.quotaAPITelemetryIssue = i18n.Text("OBSERVATION DEFERRED")
 			} else if message.usageErr == nil && m.usageFetcher != nil {
@@ -936,14 +1008,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					kind: monitorFetchStart, usage: message.usage, quota: message.snapshot, at: message.at,
 				})
 				m = started.(Model)
-				return m, nil
+				return m, quotaStepCommand
 			}
-			return m.beginMonitorFetch(monitorFetchStart)
+			next, command := m.beginMonitorFetch(monitorFetchStart)
+			return next, tea.Batch(command, quotaStepCommand)
 		}
 		if m.meterView == viewUsage && m.history.data.FetchedAt.IsZero() && m.history.err == nil {
 			command := m.requestHistory()
-			return m, command
+			return m, tea.Batch(command, quotaStepCommand)
 		}
+		return m, quotaStepCommand
 	case secondMsg:
 		if m.monitorState == monitorRunning {
 			m.refreshMonitorRates(time.Time(message), false)
@@ -955,6 +1029,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.resetConfirmUntil.IsZero() && time.Now().After(m.resetConfirmUntil) {
 			m.resetConfirmUntil = time.Time{}
 			m.resetNotice = ""
+		}
+		if !m.quotaStepConfirmUntil.IsZero() && time.Now().After(m.quotaStepConfirmUntil) {
+			m.clearQuotaConfirmation()
 		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
@@ -1132,6 +1209,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	m.clearQuotaConfirmation()
 	if view != m.meterView {
 		m.monitorApprovalConfirm = ""
 	}
@@ -1406,6 +1484,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	const footerHeight = 2
 	extraHeight := 0
 	extraHeight += m.resetNoticeHeight(contentWidth)
+	extraHeight += m.quotaStepNoticeHeight(contentWidth)
 	if m.err != nil && m.meterView != viewUsage {
 		extraHeight += framedErrorHeight
 	}
