@@ -73,6 +73,7 @@ type Model struct {
 	resetConfirmUntil                   time.Time
 	resetRevision                       uint64
 	quotaSteps                          []codex.QuotaStep
+	thresholdScroll                     int
 	quota                               quotaControl
 	quotaStepPending                    *codex.QuotaStep
 	quotaStepWindow                     string
@@ -603,6 +604,23 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if m.meterView == viewThresholds {
+			step := 0
+			switch strings.ToLower(message.String()) {
+			case "up":
+				step = -1
+			case "down":
+				step = 1
+			case "pgup":
+				step = -max(m.dashboardLayout().meterHeight-2, 1)
+			case "pgdown":
+				step = max(m.dashboardLayout().meterHeight-2, 1)
+			}
+			if step != 0 {
+				m.scrollThresholds(step)
+				return m, nil
+			}
+		}
 		if m.meterView == viewUsage {
 			if action, ok := historyKey(strings.ToLower(message.String())); ok {
 				m.activateHistory(action)
@@ -667,9 +685,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonView)
 			}
 		case "tab":
-			return m.pressMainTab(m.currentMainTab().next())
+			return m.pressMainTab(m.adjacentMainTab(1))
 		case "shift+tab":
-			return m.pressMainTab(m.currentMainTab().previous())
+			return m.pressMainTab(m.adjacentMainTab(-1))
 		case "r":
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
@@ -862,6 +880,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.viewHovered = false
+		if m.meterView == viewThresholds {
+			switch mouse.Button {
+			case tea.MouseWheelUp:
+				m.scrollThresholds(-3)
+				return m, nil
+			case tea.MouseWheelDown:
+				m.scrollThresholds(3)
+				return m, nil
+			}
+		}
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			if item, ok := m.benchmarkScopeItemAt(mouse.X, mouse.Y); ok {
 				m.hoveredButton = footerButtonNone
@@ -1300,7 +1328,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.persistPreferences()
 	case footerButtonView:
 		if m.meterView.isQuota() {
-			m.meterView = m.meterView.nextQuota()
+			m.meterView = m.meterView.nextQuota(len(m.quotaSteps) > 0)
 			m.quotaMeterView = m.meterView
 			m.persistPreferences()
 		}
@@ -1493,7 +1521,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		extraHeight += framedErrorHeight
 	}
 	meters := m.snapshot.Meters()
-	if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets {
+	if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
 		extraHeight += framedErrorHeight
 	}
 	if (m.meterView == viewBars || m.meterView == viewConsumptionPace || m.meterView == viewFuel) && len(meters) > 0 {
@@ -1513,7 +1541,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
-	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
+	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewThresholds || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
 		footerY += meterHeight
 	}
 	return dashboardGeometry{

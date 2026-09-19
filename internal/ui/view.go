@@ -52,15 +52,17 @@ func (m Model) render() string {
 			parts = append(parts, m.renderResetNotice(contentWidth))
 		}
 		meters := m.snapshot.Meters()
-		if m.meterView.isQuota() && m.meterView != viewResets {
+		if m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds {
 			meters = m.quotaMetersWithInsights(contentWidth)
 		}
-		if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets {
+		if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		if m.meterView == viewResets {
+		if m.meterView == viewThresholds {
+			parts = append(parts, m.renderThresholds(contentWidth, layout.meterHeight, colors))
+		} else if m.meterView == viewResets {
 			parts = append(parts, m.renderResets(contentWidth, layout.meterHeight, colors))
 		} else if m.meterView == viewUsage {
 			parts = append(parts, m.renderHistory(contentWidth, layout.meterHeight, colors))
@@ -181,7 +183,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 			status = joinRight(status, colors.dimmed().Render(hint), width)
 		}
 	}
-	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets) {
+	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds) {
 		status = renderPricingFooter(status, width, colors)
 	}
 	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota())

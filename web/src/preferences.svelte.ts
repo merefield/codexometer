@@ -1,4 +1,12 @@
-export const quotaViews = ['bars', 'pace', 'zone', 'pie', 'fuel', 'resets'];
+export const quotaViews = [
+  'bars',
+  'pace',
+  'zone',
+  'pie',
+  'fuel',
+  'resets',
+  'thresholds',
+];
 const key = 'codexometer.web.preferences.v1';
 interface Preferences {
   tab: 'quota' | 'sessions' | 'usage';

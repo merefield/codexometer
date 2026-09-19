@@ -51,6 +51,9 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 Optional quota step-down profiles also join the session command centre in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
+Configuring any steps also reveals **Quota → Thresholds**, after Resets, in the terminal
+and web dashboards, giving you a compact overview of every trigger and clearly
+marking the active and next model profile. It stays hidden on normal launches.
 Apply and confirm individually, or skip. A session can have separate pills for
 its Codex request and quota review; each opens the corresponding detail, with
 Codex requests ordered first. Completion pills wait until outstanding reviews

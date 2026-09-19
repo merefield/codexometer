@@ -34,6 +34,7 @@ const (
 	viewBenchmark
 	viewUsage
 	viewResets
+	viewThresholds
 	viewCount
 )
 
@@ -46,6 +47,9 @@ var quotaViewOrder = [...]meterViewID{
 }
 
 func (s meterViewID) isQuota() bool {
+	if s == viewThresholds {
+		return true
+	}
 	for _, view := range quotaViewOrder {
 		if s == view {
 			return true
@@ -54,7 +58,10 @@ func (s meterViewID) isQuota() bool {
 	return false
 }
 
-func (s meterViewID) nextQuota() meterViewID {
+func (s meterViewID) nextQuota(thresholds ...bool) meterViewID {
+	if s == viewResets && len(thresholds) > 0 && thresholds[0] {
+		return viewThresholds
+	}
 	for index, view := range quotaViewOrder {
 		if s == view {
 			return quotaViewOrder[(index+1)%len(quotaViewOrder)]
@@ -73,6 +80,7 @@ func (s meterViewID) name() string {
 		i18n.Text("BENCHMARK"),
 		i18n.Text("USAGE"),
 		i18n.Text("RESETS"),
+		i18n.Text("THRESHOLDS"),
 	}[s]
 }
 

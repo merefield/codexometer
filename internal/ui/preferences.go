@@ -81,7 +81,7 @@ func (m *Model) applyPreferences(preferences Preferences) {
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
 	}
-	if view, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok {
+	if view, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok && (view != viewThresholds || len(m.quotaSteps) > 0) {
 		m.meterView = view
 		m.quotaMeterView = view
 	}
@@ -92,6 +92,10 @@ func (m *Model) applyPreferences(preferences Preferences) {
 		m.meterView = viewUsage
 	case "benchmark":
 		m.meterView = viewBenchmark
+	case "thresholds":
+		if len(m.quotaSteps) > 0 {
+			m.meterView = viewThresholds
+		}
 	}
 	if filter, ok := benchmarkFilterPreferenceIDs[preferences.BenchmarkFilter]; ok {
 		m.benchmarkFilter = filter
@@ -135,7 +139,7 @@ func reverseThemePreferences(values map[themeID]string) map[string]themeID {
 }
 
 var quotaViewPreferenceNames = map[meterViewID]string{
-	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank", viewResets: "resets",
+	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank", viewResets: "resets", viewThresholds: "thresholds",
 }
 
 var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)
