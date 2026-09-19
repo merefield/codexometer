@@ -104,6 +104,17 @@ test.describe('quota profile reviews', () => {
     pairingURL,
   }) => {
     await page.goto(pairingURL);
+    const thresholds = page.getByRole('link', {
+      name: 'THRESHOLDS',
+      exact: true,
+    });
+    await expect(thresholds).toBeVisible();
+    await thresholds.click();
+    await expect(
+      page.getByRole('heading', { name: /THRESHOLDS/ }),
+    ).toBeVisible();
+    await expect(page.locator('.threshold-list')).toContainText('gpt-5.6-luna');
+    await expect(page.locator('.threshold-list')).toContainText('ASK');
     await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
     const pill = page.getByRole('link', { name: /QUOTA THRESHOLD/ }).first();
     await expect(pill).toBeVisible({ timeout: 15000 });
@@ -169,6 +180,16 @@ test.describe('quota profile reviews', () => {
       page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
     ).toBeVisible();
   });
+});
+
+test('Thresholds navigation stays hidden without a launch policy', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await expect(
+    page.getByRole('link', { name: 'THRESHOLDS', exact: true }),
+  ).toHaveCount(0);
 });
 
 test('read-only session copy captures working prose in every detail level without server writes', async ({

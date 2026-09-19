@@ -531,6 +531,57 @@ hr {
   gap: 16px;
   margin: 20px 0;
 }
+.thresholds-panel {
+  padding: clamp(14px, 2vw, 22px);
+}
+.thresholds-panel h1 {
+  margin-top: 0;
+}
+.threshold-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.threshold-list article {
+  display: grid;
+  grid-template-columns:
+    minmax(64px, 0.5fr) minmax(220px, 3fr) minmax(64px, 0.6fr)
+    minmax(120px, 1.2fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--edge);
+  padding: 10px 12px;
+}
+.threshold-list article.active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.threshold-list article.next {
+  border-color: var(--approval);
+  box-shadow: inset 3px 0 0 var(--approval);
+}
+.threshold-list p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.threshold-trigger {
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 800;
+}
+.threshold-mode,
+.threshold-state {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.threshold-list article.active .threshold-state {
+  color: var(--accent);
+}
+.threshold-list article.next .threshold-state {
+  color: var(--approval);
+}
 .heat-scroll {
   overflow-x: auto;
 }
@@ -590,6 +641,13 @@ footer select {
   }
   .connection {
     text-align: left;
+  }
+  .threshold-list article {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .threshold-mode,
+  .threshold-state {
+    grid-column: 2;
   }
 }
 @media (prefers-reduced-motion: reduce) {

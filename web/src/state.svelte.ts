@@ -38,6 +38,15 @@ export interface Usage {
   };
   dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
 }
+export interface Threshold {
+  threshold: number;
+  model: string;
+  effort: string;
+  speed: string;
+  mode: string;
+  state: string;
+  remaining?: number;
+}
 export interface Snapshot {
   profiles?: {
     session: string;
@@ -48,6 +57,7 @@ export interface Snapshot {
     notice?: string;
   }[];
   profileError?: boolean;
+  thresholds?: Threshold[];
   control?: boolean;
   version: string;
   meters: Meter[];

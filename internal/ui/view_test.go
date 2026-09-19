@@ -24,6 +24,9 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 				theme:       theme,
 				meterView:   view,
 			}
+			if view == viewThresholds {
+				model.quotaSteps = []codex.QuotaStep{{Threshold: 50, Model: "gpt-5.6-sol", Effort: "medium"}}
+			}
 			output := ansi.Strip(model.render())
 			if !strings.Contains(output, paletteFor(theme).name) {
 				t.Errorf("theme %d name missing from view", theme)
@@ -46,6 +49,10 @@ func TestViewRendersEveryThemeAndViewWithinStandardTerminal(t *testing.T) {
 			} else if view == viewUsage {
 				if !strings.Contains(output, "LIFETIME") {
 					t.Error("usage summary missing")
+				}
+			} else if view == viewThresholds {
+				if !strings.Contains(output, "MODEL STEP POLICY") || !strings.Contains(output, "gpt-5.6-sol") {
+					t.Error("threshold policy missing")
 				}
 			} else if !strings.Contains(output, "5 HOURS LOOP") || !strings.Contains(output, "1 WEEK LOOP") {
 				t.Errorf("quota windows missing for theme %d view %d", theme, view)

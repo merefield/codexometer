@@ -83,13 +83,17 @@ func TestPreferencesRememberMainTabSeparatelyFromQuotaView(t *testing.T) {
 	for tab, name := range mainTabPreferenceNames {
 		t.Run(name, func(t *testing.T) {
 			store := &memoryPreferenceStore{preferences: Preferences{QuotaView: "fuel-tank"}}
-			m := NewWithPreferences(nil, time.Minute, store)
+			var fetcher Fetcher
+			if tab == mainTabThresholds {
+				fetcher = &quotaStepTestFetcher{steps: []codex.QuotaStep{{Threshold: 80, Model: "small", Effort: "medium"}}}
+			}
+			m := NewWithPreferences(fetcher, time.Minute, store)
 			next, _ := m.pressMainTab(tab)
 			m = next.(Model)
 			if store.preferences.MainTab != name || store.preferences.QuotaView != "fuel-tank" {
 				t.Fatalf("saved preferences = %+v", store.preferences)
 			}
-			restarted := NewWithPreferences(nil, time.Minute, store)
+			restarted := NewWithPreferences(fetcher, time.Minute, store)
 			if restarted.currentMainTab() != tab || restarted.selectedQuotaView() != viewFuel {
 				t.Fatal("restart lost tab or quota view")
 			}
@@ -101,6 +105,10 @@ func TestPreferencesRememberMainTabSeparatelyFromQuotaView(t *testing.T) {
 				t.Fatal("return to quota lost remembered view")
 			}
 		})
+	}
+	m := NewWithPreferences(nil, time.Minute, &memoryPreferenceStore{preferences: Preferences{MainTab: "thresholds", QuotaView: "pie"}})
+	if m.meterView != viewPie {
+		t.Fatal("hidden Thresholds preference did not fall back to the saved quota view")
 	}
 	for _, tab := range []string{"", "unknown"} {
 		m := NewWithPreferences(nil, time.Minute, &memoryPreferenceStore{preferences: Preferences{MainTab: tab, QuotaView: "pie"}})

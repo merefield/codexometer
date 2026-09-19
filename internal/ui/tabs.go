@@ -17,16 +17,9 @@ const (
 	mainTabMonitor
 	mainTabUsage
 	mainTabBenchmark
+	mainTabThresholds
 	mainTabCount
 )
-
-func (t mainTabID) next() mainTabID {
-	return (t + 1) % mainTabCount
-}
-
-func (t mainTabID) previous() mainTabID {
-	return (t - 1 + mainTabCount) % mainTabCount
-}
 
 type mainTab struct {
 	tab   mainTabID
@@ -65,6 +58,10 @@ func responsiveTabLabels(width int, tiers [][]string) ([]string, string) {
 }
 
 func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
+	return mainTabLayoutFor(width, showMonitorLight, false)
+}
+
+func mainTabLayoutFor(width int, showMonitorLight, showThresholds bool) ([]mainTab, string) {
 	monitorFull := i18n.Text("╭ SESSIONS ╮")
 	monitorCompact := "╭SES╮"
 	monitorMinimal := "[S]"
@@ -75,21 +72,32 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 		monitorMinimal = "[S●]"
 		microMonitor = "●"
 	}
-	labels, separator := responsiveTabLabels(width, [][]string{
+	ids := []mainTabID{mainTabQuota, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+	tiers := [][]string{
 		{i18n.Text("╭ QUOTA ╮"), monitorFull, i18n.Text("╭ USAGE ╮"), i18n.Text("╭ BENCHMARK ╮")},
 		{"╭QTA╮", monitorCompact, "╭USE╮", "╭TEST╮"},
 		{"[Q]", monitorMinimal, "[U]", "[B]"},
 		{"Q", microMonitor, "U", "B"},
-	})
+	}
+	if showThresholds {
+		ids = []mainTabID{mainTabQuota, mainTabThresholds, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+		tiers = [][]string{
+			{i18n.Text("╭ QUOTA ╮"), "╭ " + i18n.Text("THRESHOLDS") + " ╮", monitorFull, i18n.Text("╭ USAGE ╮"), i18n.Text("╭ BENCHMARK ╮")},
+			{"╭QTA╮", "╭STEP╮", monitorCompact, "╭USE╮", "╭TEST╮"},
+			{"[Q]", "[T]", monitorMinimal, "[U]", "[B]"},
+			{"Q", "T", microMonitor, "U", "B"},
+		}
+	}
+	labels, separator := responsiveTabLabels(width, tiers)
 
-	tabs := make([]mainTab, 0, mainTabCount)
+	tabs := make([]mainTab, 0, len(ids))
 	x := 0
-	for tab, label := range labels {
+	for index, label := range labels {
 		tabWidth := lipgloss.Width(label)
 		if x+tabWidth > width {
 			break
 		}
-		tabs = append(tabs, mainTab{tab: mainTabID(tab), label: label, x: x, width: tabWidth})
+		tabs = append(tabs, mainTab{tab: ids[index], label: label, x: x, width: tabWidth})
 		x += tabWidth + len(separator)
 	}
 	return tabs, separator
@@ -124,6 +132,8 @@ func (m Model) currentMainTab() mainTabID {
 		return mainTabMonitor
 	case viewBenchmark:
 		return mainTabBenchmark
+	case viewThresholds:
+		return mainTabThresholds
 	default:
 		return mainTabQuota
 	}
@@ -152,6 +162,11 @@ func (m Model) pressMainTab(tab mainTabID) (tea.Model, tea.Cmd) {
 		return m.pressViewTab(viewUsage)
 	case mainTabBenchmark:
 		return m.pressViewTab(viewBenchmark)
+	case mainTabThresholds:
+		if len(m.quotaSteps) > 0 {
+			return m.pressViewTab(viewThresholds)
+		}
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -165,6 +180,8 @@ func mainTabForView(view meterViewID) mainTabID {
 		return mainTabMonitor
 	case viewBenchmark:
 		return mainTabBenchmark
+	case viewThresholds:
+		return mainTabThresholds
 	default:
 		return mainTabQuota
 	}
@@ -172,7 +189,7 @@ func mainTabForView(view meterViewID) mainTabID {
 
 func (m Model) renderMainTabs(width int, colors palette) string {
 	tabWidth, _ := m.resetLayout(width)
-	tabs, separator := mainTabLayout(tabWidth, true)
+	tabs, separator := mainTabLayoutFor(tabWidth, true, len(m.quotaSteps) > 0)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -269,13 +286,27 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 	}
 	localX := x - 2
 	tabWidth, _ := m.resetLayout(layout.contentWidth)
-	tabs, _ := mainTabLayout(tabWidth, true)
+	tabs, _ := mainTabLayoutFor(tabWidth, true, len(m.quotaSteps) > 0)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.tab, true
 		}
 	}
 	return mainTabQuota, false
+}
+
+func (m Model) adjacentMainTab(direction int) mainTabID {
+	tabs := []mainTabID{mainTabQuota, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+	if len(m.quotaSteps) > 0 {
+		tabs = []mainTabID{mainTabQuota, mainTabThresholds, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+	}
+	current := m.currentMainTab()
+	for index, tab := range tabs {
+		if tab == current {
+			return tabs[(index+direction+len(tabs))%len(tabs)]
+		}
+	}
+	return mainTabQuota
 }
 
 func (m Model) quotaViewTabAt(x, y int) (meterViewID, bool) {

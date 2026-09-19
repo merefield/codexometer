@@ -34,6 +34,7 @@ const (
 	viewBenchmark
 	viewUsage
 	viewResets
+	viewThresholds
 	viewCount
 )
 
@@ -73,6 +74,7 @@ func (s meterViewID) name() string {
 		i18n.Text("BENCHMARK"),
 		i18n.Text("USAGE"),
 		i18n.Text("RESETS"),
+		i18n.Text("THRESHOLDS"),
 	}[s]
 }
 

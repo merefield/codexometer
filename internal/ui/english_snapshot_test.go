@@ -17,6 +17,11 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	stripVersionLink := regexp.MustCompile(regexp.QuoteMeta(ansi.SetHyperlink(versionHighlightsURL(snapshotVersion))) + `(.*?)` + regexp.QuoteMeta(ansi.ResetHyperlink()))
 	for theme := themeHacker; theme < themeCount; theme++ {
 		for view := viewBars; view < viewCount; view++ {
+			// The opt-in Thresholds view has separate coverage. Preserve the
+			// existing snapshot for launches without a threshold policy.
+			if view == viewThresholds {
+				continue
+			}
 			for _, size := range []struct{ w, h int }{{40, 16}, {80, 24}, {120, 40}} {
 				snapshot := codex.DemoSnapshot()
 				snapshot.RateLimits.Primary.ResetsAt = nil

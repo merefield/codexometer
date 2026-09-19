@@ -5,6 +5,7 @@
   import Quota from './Quota.svelte';
   import Sessions from './Sessions.svelte';
   import Usage from './Usage.svelte';
+  import Thresholds from './Thresholds.svelte';
   import Missing from './Missing.svelte';
   import { preferences, savePreferences } from './preferences.svelte';
 
@@ -13,13 +14,24 @@
     '/quota/:view?': Quota,
     '/sessions/:id?': Sessions,
     '/usage': Usage,
+    '/thresholds': Thresholds,
     '*': Missing,
   };
-  const tabPaths = {
+  const baseTabPaths = {
     quota: /^(?:\/|\/quota(?:\/[^/]+)?\/?)$/,
     sessions: /^\/sessions(?:\/[^/]+)?\/?$/,
     usage: /^\/usage\/?$/,
   };
+  let tabPaths = $derived(
+    live.data?.thresholds?.length
+      ? {
+          quota: baseTabPaths.quota,
+          thresholds: /^\/thresholds\/?$/,
+          sessions: baseTabPaths.sessions,
+          usage: baseTabPaths.usage,
+        }
+      : baseTabPaths,
+  );
   let theme = $state('hacker');
   const themes = ['hacker', 'rust', 'blue-steel', 'ultraviolet', 'nightshade'];
   $effect(() => {
@@ -27,6 +39,13 @@
   });
   $effect(() => {
     if (!live.data) return;
+    if (
+      /^\/thresholds\/?$/.test(router.location) &&
+      !live.data.thresholds?.length
+    ) {
+      location.hash = '#/quota/' + preferences.view;
+      return;
+    }
     for (const [tab, pattern] of Object.entries(tabPaths)) {
       if (pattern.test(router.location))
         preferences.tab = tab as typeof preferences.tab;

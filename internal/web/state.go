@@ -97,8 +97,19 @@ type credit struct {
 	ExpiryKnown bool   `json:"expiryKnown"`
 }
 
+type quotaThreshold struct {
+	Threshold int    `json:"threshold"`
+	Model     string `json:"model"`
+	Effort    string `json:"effort"`
+	Speed     string `json:"speed"`
+	Mode      string `json:"mode"`
+	State     string `json:"state"`
+	Remaining int    `json:"remaining,omitempty"`
+}
+
 type state struct {
 	Profiles      []profileReview     `json:"profiles,omitempty"`
+	Thresholds    []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError  bool                `json:"profileError,omitempty"`
 	Control       bool                `json:"control"`
 	Version       string              `json:"version"`
@@ -125,6 +136,7 @@ type store struct {
 	state           state
 	account         string
 	history         codex.AccountUsage
+	thresholdPolicy []codex.QuotaStep
 	previous        map[string]int64
 	samples         map[string][]sample
 	nextSample      time.Time
@@ -136,6 +148,36 @@ func newStore() *store {
 	s := &store{state: state{Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
 	s.publish()
 	return s
+}
+
+func (s *store) configureThresholds(steps []codex.QuotaStep) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thresholdPolicy = append([]codex.QuotaStep(nil), steps...)
+	s.refreshThresholds(codex.Snapshot{})
+	s.publish()
+}
+
+// refreshThresholds projects the configured policy without exposing session
+// control internals. Call with the store lock held.
+func (s *store) refreshThresholds(snapshot codex.Snapshot) {
+	s.state.Thresholds = nil
+	statuses, _ := codex.QuotaStepStatuses(snapshot, s.thresholdPolicy)
+	for _, status := range statuses {
+		step := status.Step
+		speed, mode := step.ServiceTier, "ASK"
+		if speed == "" {
+			speed = "UNCHANGED"
+		}
+		if step.Mode == "auto" {
+			mode = "AUTO"
+		}
+		s.state.Thresholds = append(s.state.Thresholds, quotaThreshold{
+			Threshold: step.Threshold, Model: codex.SanitizeSessionContext(step.Model),
+			Effort: codex.SanitizeSessionContext(step.Effort), Speed: codex.SanitizeSessionContext(speed),
+			Mode: mode, State: string(status.Stage), Remaining: status.Remaining,
+		})
+	}
 }
 
 // Called with mu held (except initialization); published byte slices are immutable.
@@ -187,6 +229,7 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 		}
 		s.state.CreditCount = 0
 		s.state.Credits = []credit{}
+		s.refreshThresholds(q)
 		if q.RateLimitResetCredits != nil {
 			s.state.CreditCount = q.RateLimitResetCredits.AvailableCount
 			for _, c := range q.RateLimitResetCredits.Credits {

@@ -55,12 +55,14 @@ func (m Model) render() string {
 		if m.meterView.isQuota() && m.meterView != viewResets {
 			meters = m.quotaMetersWithInsights(contentWidth)
 		}
-		if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets {
+		if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
 			emptyView := renderError(contentWidth, fmt.Errorf("no quota windows returned"), colors)
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
-		if m.meterView == viewResets {
+		if m.meterView == viewThresholds {
+			parts = append(parts, m.renderThresholds(contentWidth, layout.meterHeight, colors))
+		} else if m.meterView == viewResets {
 			parts = append(parts, m.renderResets(contentWidth, layout.meterHeight, colors))
 		} else if m.meterView == viewUsage {
 			parts = append(parts, m.renderHistory(contentWidth, layout.meterHeight, colors))

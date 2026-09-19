@@ -92,6 +92,10 @@ func (m *Model) applyPreferences(preferences Preferences) {
 		m.meterView = viewUsage
 	case "benchmark":
 		m.meterView = viewBenchmark
+	case "thresholds":
+		if len(m.quotaSteps) > 0 {
+			m.meterView = viewThresholds
+		}
 	}
 	if filter, ok := benchmarkFilterPreferenceIDs[preferences.BenchmarkFilter]; ok {
 		m.benchmarkFilter = filter
@@ -116,7 +120,7 @@ func (m Model) persistPreferences() {
 }
 
 var mainTabPreferenceNames = map[mainTabID]string{
-	mainTabQuota: "quota", mainTabMonitor: "monitor", mainTabUsage: "usage", mainTabBenchmark: "benchmark",
+	mainTabQuota: "quota", mainTabMonitor: "monitor", mainTabUsage: "usage", mainTabBenchmark: "benchmark", mainTabThresholds: "thresholds",
 }
 
 var themePreferenceNames = map[themeID]string{

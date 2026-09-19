@@ -24,8 +24,8 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := mainTabLayout(test.width, true)
-			if len(tabs) != int(mainTabCount) {
-				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount)
+			if len(tabs) != int(mainTabCount)-1 {
+				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount-1)
 			}
 			var labels strings.Builder
 			for _, tab := range tabs {
@@ -38,6 +38,22 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 				t.Fatalf("width %d labels %q do not contain %q", test.width, labels.String(), test.want)
 			}
 		})
+	}
+}
+
+func TestThresholdTabOnlyAppearsWithConfiguredSteps(t *testing.T) {
+	without, _ := mainTabLayoutFor(100, true, false)
+	with, _ := mainTabLayoutFor(100, true, true)
+	if len(without) != 4 || len(with) != 5 || with[1].tab != mainTabThresholds || !strings.Contains(with[1].label, "THRESHOLDS") {
+		t.Fatalf("conditional tab layout: without=%#v with=%#v", without, with)
+	}
+	m := Model{meterView: viewBars}
+	if got := m.adjacentMainTab(1); got != mainTabMonitor {
+		t.Fatalf("next tab without policy = %d", got)
+	}
+	m.quotaSteps = []codex.QuotaStep{{Threshold: 80}}
+	if got := m.adjacentMainTab(1); got != mainTabThresholds {
+		t.Fatalf("next tab with policy = %d", got)
 	}
 }
 
