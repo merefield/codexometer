@@ -29,3 +29,18 @@ func TestThresholdPolicyProjectionIsSortedAndTracksQuota(t *testing.T) {
 		t.Fatalf("next threshold = %#v", got[1])
 	}
 }
+
+func TestThresholdSpeedDisplay(t *testing.T) {
+	for _, tc := range []struct{ tier, want string }{
+		{"default", "standard"}, {"", "UNCHANGED"}, {"fast", "fast"}, {"priority", "priority"},
+	} {
+		s := newStore()
+		s.configureThresholds([]codex.QuotaStep{{Threshold: 80, ServiceTier: tc.tier}})
+		if got := s.state.Thresholds[0].Speed; got != tc.want {
+			t.Errorf("tier %q: got %q, want %q", tc.tier, got, tc.want)
+		}
+		if s.thresholdPolicy[0].ServiceTier != tc.tier {
+			t.Fatal("presentation changed configured tier")
+		}
+	}
+}

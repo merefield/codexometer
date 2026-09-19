@@ -168,6 +168,8 @@ func (s *store) refreshThresholds(snapshot codex.Snapshot) {
 		speed, mode := step.ServiceTier, "ASK"
 		if speed == "" {
 			speed = "UNCHANGED"
+		} else if speed == "default" {
+			speed = "standard"
 		}
 		if step.Mode == "auto" {
 			mode = "AUTO"

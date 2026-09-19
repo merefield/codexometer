@@ -56,3 +56,18 @@ func TestThresholdsRenderCompactAndStayWithinBounds(t *testing.T) {
 		t.Fatalf("compact threshold view exceeded 36x8:\n%s", ansi.Strip(output))
 	}
 }
+
+func TestThresholdSpeedDisplay(t *testing.T) {
+	for _, tc := range []struct{ tier, want string }{
+		{"default", "standard"}, {"", "speed unchanged"}, {"fast", "fast"}, {"priority", "priority"},
+	} {
+		m := Model{quotaSteps: []codex.QuotaStep{{Threshold: 80, Model: "model", Effort: "low", ServiceTier: tc.tier}}}
+		output := ansi.Strip(m.renderThresholds(120, 16, paletteFor(themeHacker)))
+		if !strings.Contains(output, "model / low / "+tc.want) {
+			t.Errorf("tier %q: missing displayed speed %q in %s", tc.tier, tc.want, output)
+		}
+		if m.quotaSteps[0].ServiceTier != tc.tier {
+			t.Fatal("presentation changed configured tier")
+		}
+	}
+}

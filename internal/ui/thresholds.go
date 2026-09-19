@@ -31,6 +31,8 @@ func (m Model) thresholdDetailLines(width int, colors palette) []string {
 		speed := step.ServiceTier
 		if speed == "" {
 			speed = i18n.Text("speed unchanged")
+		} else if speed == "default" {
+			speed = "standard"
 		}
 		mode := i18n.Text("ASK")
 		if step.Mode == "auto" {
