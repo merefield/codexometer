@@ -2,10 +2,15 @@
   import { onMount } from 'svelte';
   import { live, date } from './state.svelte';
   import type { Meter } from './state.svelte';
+  import Thresholds from './Thresholds.svelte';
   import ConsumptionZone from './ConsumptionZone.svelte';
   import { preferences, quotaViews } from './preferences.svelte';
   let { params = {} }: { params?: { view?: string } } = $props();
-  const views = quotaViews;
+  let views = $derived(
+    quotaViews.filter(
+      (view) => view !== 'thresholds' || !!live.data?.thresholds?.length,
+    ),
+  );
   let now = $state(Date.now());
   let view = $derived(
     views.includes(params.view || '') ? params.view! : 'bars',
@@ -49,7 +54,9 @@
       Quota refresh failed. Values below are the last successful observation.
     </p>{/if}
   <p class="eyebrow">QUOTA // OBSERVED {date(live.data.quotaAt)}</p>
-  {#if view === 'resets'}
+  {#if view === 'thresholds'}
+    <Thresholds />
+  {:else if view === 'resets'}
     <section class="panel">
       <h1>RESET INVENTORY // {live.data.creditCount} AVAILABLE</h1>
       <p>Read-only preview. Use the terminal to redeem a reset.</p>

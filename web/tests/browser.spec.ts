@@ -109,6 +109,17 @@ test.describe('quota profile reviews', () => {
       exact: true,
     });
     await expect(thresholds).toBeVisible();
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Main navigation' })
+        .getByRole('link', { name: 'THRESHOLDS' }),
+    ).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Quota view' })
+        .getByRole('link')
+        .last(),
+    ).toHaveText('THRESHOLDS');
     await thresholds.click();
     await expect(
       page.getByRole('heading', { name: /THRESHOLDS/ }),

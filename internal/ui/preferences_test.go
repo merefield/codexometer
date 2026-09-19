@@ -84,9 +84,6 @@ func TestPreferencesRememberMainTabSeparatelyFromQuotaView(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := &memoryPreferenceStore{preferences: Preferences{QuotaView: "fuel-tank"}}
 			var fetcher Fetcher
-			if tab == mainTabThresholds {
-				fetcher = &quotaStepTestFetcher{steps: []codex.QuotaStep{{Threshold: 80, Model: "small", Effort: "medium"}}}
-			}
 			m := NewWithPreferences(fetcher, time.Minute, store)
 			next, _ := m.pressMainTab(tab)
 			m = next.(Model)
@@ -115,6 +112,18 @@ func TestPreferencesRememberMainTabSeparatelyFromQuotaView(t *testing.T) {
 		if m.meterView != viewPie {
 			t.Fatal("legacy/invalid tab did not fall back to saved quota view")
 		}
+	}
+}
+
+func TestThresholdQuotaPreferenceRequiresPolicy(t *testing.T) {
+	s := &memoryPreferenceStore{preferences: Preferences{MainTab: "quota", QuotaView: "thresholds"}}
+	m := NewWithPreferences(&quotaStepTestFetcher{steps: []codex.QuotaStep{{Threshold: 80}}}, time.Minute, s)
+	if m.meterView != viewThresholds || m.currentMainTab() != mainTabQuota {
+		t.Fatal("Thresholds quota view was not restored")
+	}
+	m = NewWithPreferences(nil, time.Minute, s)
+	if m.meterView != viewBars {
+		t.Fatal("unavailable Thresholds did not fall back to Bars")
 	}
 }
 

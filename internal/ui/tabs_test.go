@@ -24,8 +24,8 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := mainTabLayout(test.width, true)
-			if len(tabs) != int(mainTabCount)-1 {
-				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount-1)
+			if len(tabs) != int(mainTabCount) {
+				t.Fatalf("width %d displayed %d main tabs, want %d", test.width, len(tabs), mainTabCount)
 			}
 			var labels strings.Builder
 			for _, tab := range tabs {
@@ -42,18 +42,29 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 }
 
 func TestThresholdTabOnlyAppearsWithConfiguredSteps(t *testing.T) {
-	without, _ := mainTabLayoutFor(100, true, false)
-	with, _ := mainTabLayoutFor(100, true, true)
-	if len(without) != 4 || len(with) != 5 || with[1].tab != mainTabThresholds || !strings.Contains(with[1].label, "THRESHOLDS") {
-		t.Fatalf("conditional tab layout: without=%#v with=%#v", without, with)
+	without, _ := quotaViewTabLayout(160, false)
+	with, _ := quotaViewTabLayout(160, true)
+	if len(without) != 5 || len(with) != 6 || with[5].view != viewThresholds || with[4].view != viewResets {
+		t.Fatal("Thresholds must follow Resets only when configured")
 	}
-	m := Model{meterView: viewBars}
-	if got := m.adjacentMainTab(1); got != mainTabMonitor {
-		t.Fatalf("next tab without policy = %d", got)
+	m := Model{meterView: viewResets, quotaSteps: []codex.QuotaStep{{Threshold: 80}}}
+	updated, _ := m.Update(key('v'))
+	m = updated.(Model)
+	if m.meterView != viewThresholds || m.currentMainTab() != mainTabQuota {
+		t.Fatal("V did not enter Quota Thresholds")
 	}
-	m.quotaSteps = []codex.QuotaStep{{Threshold: 80}}
-	if got := m.adjacentMainTab(1); got != mainTabThresholds {
-		t.Fatalf("next tab with policy = %d", got)
+	updated, _ = m.Update(specialKey(tea.KeyTab))
+	m = updated.(Model)
+	if m.meterView != viewMonitor {
+		t.Fatal("Tab did not enter Sessions")
+	}
+	updated, _ = m.pressMainTab(mainTabQuota)
+	if updated.(Model).meterView != viewThresholds {
+		t.Fatal("Quota lost Thresholds selection")
+	}
+	updated, _ = updated.(Model).Update(key('v'))
+	if updated.(Model).meterView != viewBars {
+		t.Fatal("V did not wrap to Bars")
 	}
 }
 

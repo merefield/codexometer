@@ -17,7 +17,6 @@ const (
 	mainTabMonitor
 	mainTabUsage
 	mainTabBenchmark
-	mainTabThresholds
 	mainTabCount
 )
 
@@ -58,10 +57,6 @@ func responsiveTabLabels(width int, tiers [][]string) ([]string, string) {
 }
 
 func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
-	return mainTabLayoutFor(width, showMonitorLight, false)
-}
-
-func mainTabLayoutFor(width int, showMonitorLight, showThresholds bool) ([]mainTab, string) {
 	monitorFull := i18n.Text("╭ SESSIONS ╮")
 	monitorCompact := "╭SES╮"
 	monitorMinimal := "[S]"
@@ -79,15 +74,6 @@ func mainTabLayoutFor(width int, showMonitorLight, showThresholds bool) ([]mainT
 		{"[Q]", monitorMinimal, "[U]", "[B]"},
 		{"Q", microMonitor, "U", "B"},
 	}
-	if showThresholds {
-		ids = []mainTabID{mainTabQuota, mainTabThresholds, mainTabMonitor, mainTabUsage, mainTabBenchmark}
-		tiers = [][]string{
-			{i18n.Text("╭ QUOTA ╮"), "╭ " + i18n.Text("THRESHOLDS") + " ╮", monitorFull, i18n.Text("╭ USAGE ╮"), i18n.Text("╭ BENCHMARK ╮")},
-			{"╭QTA╮", "╭STEP╮", monitorCompact, "╭USE╮", "╭TEST╮"},
-			{"[Q]", "[T]", monitorMinimal, "[U]", "[B]"},
-			{"Q", "T", microMonitor, "U", "B"},
-		}
-	}
 	labels, separator := responsiveTabLabels(width, tiers)
 
 	tabs := make([]mainTab, 0, len(ids))
@@ -103,13 +89,22 @@ func mainTabLayoutFor(width int, showMonitorLight, showThresholds bool) ([]mainT
 	return tabs, separator
 }
 
-func quotaViewTabLayout(width int) ([]viewTab, string) {
-	labels, separator := responsiveTabLabels(width, [][]string{
+func quotaViewTabLayout(width int, thresholds ...bool) ([]viewTab, string) {
+	order := append([]meterViewID(nil), quotaViewOrder[:]...)
+	tiers := [][]string{
 		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮"), i18n.Text("╭ RESETS ╮")},
 		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮", "╭RST╮"},
 		{"[B]", "[C]", "[P]", "[F]", "[R]"},
 		{"B", "C", "P", "F", "R"},
-	})
+	}
+	if len(thresholds) > 0 && thresholds[0] {
+		order = append(order, viewThresholds)
+		labels := []string{"╭ " + i18n.Text("THRESHOLDS") + " ╮", "╭STEP╮", "[T]", "T"}
+		for i := range tiers {
+			tiers[i] = append(tiers[i], labels[i])
+		}
+	}
+	labels, separator := responsiveTabLabels(width, tiers)
 
 	tabs := make([]viewTab, 0, len(quotaViewOrder))
 	x := 0
@@ -118,7 +113,7 @@ func quotaViewTabLayout(width int) ([]viewTab, string) {
 		if x+tabWidth > width {
 			break
 		}
-		tabs = append(tabs, viewTab{view: quotaViewOrder[index], label: label, x: x, width: tabWidth})
+		tabs = append(tabs, viewTab{view: order[index], label: label, x: x, width: tabWidth})
 		x += tabWidth + len(separator)
 	}
 	return tabs, separator
@@ -132,8 +127,6 @@ func (m Model) currentMainTab() mainTabID {
 		return mainTabMonitor
 	case viewBenchmark:
 		return mainTabBenchmark
-	case viewThresholds:
-		return mainTabThresholds
 	default:
 		return mainTabQuota
 	}
@@ -162,11 +155,6 @@ func (m Model) pressMainTab(tab mainTabID) (tea.Model, tea.Cmd) {
 		return m.pressViewTab(viewUsage)
 	case mainTabBenchmark:
 		return m.pressViewTab(viewBenchmark)
-	case mainTabThresholds:
-		if len(m.quotaSteps) > 0 {
-			return m.pressViewTab(viewThresholds)
-		}
-		return m, nil
 	default:
 		return m, nil
 	}
@@ -180,8 +168,6 @@ func mainTabForView(view meterViewID) mainTabID {
 		return mainTabMonitor
 	case viewBenchmark:
 		return mainTabBenchmark
-	case viewThresholds:
-		return mainTabThresholds
 	default:
 		return mainTabQuota
 	}
@@ -189,7 +175,7 @@ func mainTabForView(view meterViewID) mainTabID {
 
 func (m Model) renderMainTabs(width int, colors palette) string {
 	tabWidth, _ := m.resetLayout(width)
-	tabs, separator := mainTabLayoutFor(tabWidth, true, len(m.quotaSteps) > 0)
+	tabs, separator := mainTabLayout(tabWidth, true)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -207,7 +193,7 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 }
 
 func (m Model) renderQuotaViewTabs(width int, colors palette) string {
-	tabs, separator := quotaViewTabLayout(width)
+	tabs, separator := quotaViewTabLayout(width, len(m.quotaSteps) > 0)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -286,7 +272,7 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 	}
 	localX := x - 2
 	tabWidth, _ := m.resetLayout(layout.contentWidth)
-	tabs, _ := mainTabLayoutFor(tabWidth, true, len(m.quotaSteps) > 0)
+	tabs, _ := mainTabLayout(tabWidth, true)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.tab, true
@@ -297,9 +283,6 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 
 func (m Model) adjacentMainTab(direction int) mainTabID {
 	tabs := []mainTabID{mainTabQuota, mainTabMonitor, mainTabUsage, mainTabBenchmark}
-	if len(m.quotaSteps) > 0 {
-		tabs = []mainTabID{mainTabQuota, mainTabThresholds, mainTabMonitor, mainTabUsage, mainTabBenchmark}
-	}
 	current := m.currentMainTab()
 	for index, tab := range tabs {
 		if tab == current {
@@ -318,7 +301,7 @@ func (m Model) quotaViewTabAt(x, y int) (meterViewID, bool) {
 		return viewBars, false
 	}
 	localX := x - 2
-	tabs, _ := quotaViewTabLayout(layout.contentWidth)
+	tabs, _ := quotaViewTabLayout(layout.contentWidth, len(m.quotaSteps) > 0)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.view, true

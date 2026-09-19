@@ -81,7 +81,7 @@ func (m *Model) applyPreferences(preferences Preferences) {
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
 	}
-	if view, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok {
+	if view, ok := quotaViewPreferenceIDs[preferences.QuotaView]; ok && (view != viewThresholds || len(m.quotaSteps) > 0) {
 		m.meterView = view
 		m.quotaMeterView = view
 	}
@@ -120,7 +120,7 @@ func (m Model) persistPreferences() {
 }
 
 var mainTabPreferenceNames = map[mainTabID]string{
-	mainTabQuota: "quota", mainTabMonitor: "monitor", mainTabUsage: "usage", mainTabBenchmark: "benchmark", mainTabThresholds: "thresholds",
+	mainTabQuota: "quota", mainTabMonitor: "monitor", mainTabUsage: "usage", mainTabBenchmark: "benchmark",
 }
 
 var themePreferenceNames = map[themeID]string{
@@ -139,7 +139,7 @@ func reverseThemePreferences(values map[themeID]string) map[string]themeID {
 }
 
 var quotaViewPreferenceNames = map[meterViewID]string{
-	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank", viewResets: "resets",
+	viewBars: "bars", viewPie: "pie", viewConsumptionPace: "consumption-pace", viewFuel: "fuel-tank", viewResets: "resets", viewThresholds: "thresholds",
 }
 
 var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)

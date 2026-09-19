@@ -1328,7 +1328,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.persistPreferences()
 	case footerButtonView:
 		if m.meterView.isQuota() {
-			m.meterView = m.meterView.nextQuota()
+			m.meterView = m.meterView.nextQuota(len(m.quotaSteps) > 0)
 			m.quotaMeterView = m.meterView
 			m.persistPreferences()
 		}

@@ -30,12 +30,11 @@ func TestThresholdNavigationHitboxesAndScroll(t *testing.T) {
 	for _, width := range []int{20, 40, 80, 120} {
 		m := Model{width: width, height: 16, snapshot: codex.DemoSnapshot(), quotaSteps: []codex.QuotaStep{{Threshold: 80, Model: "small", Effort: "low"}}}
 		g := m.dashboardLayout()
-		tabWidth, _ := m.resetLayout(g.contentWidth)
-		tabs, _ := mainTabLayoutFor(tabWidth, true, true)
+		tabs, _ := quotaViewTabLayout(g.contentWidth, true)
 		for _, tab := range tabs {
 			for x := tab.x; x < tab.x+tab.width; x++ {
-				if got, ok := m.mainTabAt(x+2, g.tabsY); !ok || got != tab.tab {
-					t.Fatalf("width %d: tab %d hitbox mismatch at %d", width, tab.tab, x)
+				if got, ok := m.quotaViewTabAt(x+2, g.quotaTabsY); !ok || got != tab.view {
+					t.Fatalf("width %d: tab %d hitbox mismatch at %d", width, tab.view, x)
 				}
 			}
 		}

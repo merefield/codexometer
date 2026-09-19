@@ -2082,12 +2082,12 @@ are rejected before changing settings. `standard` clears an explicit tier;
 omitting speed leaves the session's current tier intact.
 Codexometer ships no enabled profile and does not infer which model is cheaper.
 
-When one or more steps are configured, Codexometer adds a primary
-**Thresholds** tab in both the terminal and experimental web interface. It keeps
+When one or more steps are configured, Codexometer adds a **Thresholds** view
+after **Resets** within **Quota**, in both the terminal and experimental web interface. It keeps
 the complete policy visible in trigger order, including model, reasoning level,
 speed and `ask`/`auto` behavior, and marks the active and next steps against the
 longest Codex quota window. The tab is omitted entirely on ordinary launches;
-saved navigation also falls back to the last Quota view when no policy is
+saved Thresholds navigation falls back to Bars when no policy is
 configured. Approvals remain attached to their individual sessions in
 **Sessions** rather than being actioned from the policy overview.
 `ACTIVE` identifies the selected policy, not confirmation that every session has

@@ -52,7 +52,7 @@ func (m Model) render() string {
 			parts = append(parts, m.renderResetNotice(contentWidth))
 		}
 		meters := m.snapshot.Meters()
-		if m.meterView.isQuota() && m.meterView != viewResets {
+		if m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds {
 			meters = m.quotaMetersWithInsights(contentWidth)
 		}
 		if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
@@ -183,7 +183,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 			status = joinRight(status, colors.dimmed().Render(hint), width)
 		}
 	}
-	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets) {
+	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds) {
 		status = renderPricingFooter(status, width, colors)
 	}
 	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota())

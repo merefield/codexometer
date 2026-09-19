@@ -1,7 +1,15 @@
-export const quotaViews = ['bars', 'pace', 'zone', 'pie', 'fuel', 'resets'];
+export const quotaViews = [
+  'bars',
+  'pace',
+  'zone',
+  'pie',
+  'fuel',
+  'resets',
+  'thresholds',
+];
 const key = 'codexometer.web.preferences.v1';
 interface Preferences {
-  tab: 'quota' | 'sessions' | 'usage' | 'thresholds';
+  tab: 'quota' | 'sessions' | 'usage';
   view: string;
   selected: string;
   defaultDetail: number;
@@ -19,7 +27,7 @@ function read(): Preferences {
     const value = JSON.parse(localStorage.getItem(key) || 'null');
     if (!value || typeof value !== 'object') return defaults;
     return {
-      tab: ['quota', 'sessions', 'usage', 'thresholds'].includes(value.tab)
+      tab: ['quota', 'sessions', 'usage'].includes(value.tab)
         ? value.tab
         : 'quota',
       view: quotaViews.includes(value.view) ? value.view : 'bars',
