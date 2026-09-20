@@ -60,6 +60,26 @@ func TestNamedSessionPillAndBadgeNavigation(t *testing.T) {
 	}
 }
 
+func TestSessionPillLiteralDotNameAndDirectoryFallback(t *testing.T) {
+	for _, tc := range []struct{ name, directory, suffix string }{
+		{".", "/work/project", " // ."},
+		{".", "", " // ."},
+		{"", "", ""},
+		{"", ".", ""},
+		{"", "/work/project", " // project"},
+	} {
+		m := Model{monitorState: monitorRunning, monitorSessionData: []monitorSession{{
+			id: "session-ABCDE", name: tc.name, workingDirectory: tc.directory,
+			displayed: true, active: true, attention: codex.SessionAttentionComplete,
+		}}}
+		buttons, _ := m.monitorAttentionButtons(136, 1)
+		want := "[TURN COMPLETE ABCDE" + tc.suffix + "]"
+		if len(buttons) != 1 || buttons[0].label != want {
+			t.Fatalf("name=%q directory=%q: got %+v, want %q", tc.name, tc.directory, buttons, want)
+		}
+	}
+}
+
 func TestNamedSessionDirectoryDoesNotDisplaceStatus(t *testing.T) {
 	for _, active := range []bool{false, true} {
 		s := monitorSession{id: "root", name: "Named session", workingDirectory: "/work/dashboard", active: active}
