@@ -209,7 +209,7 @@ test('session names identify selectable telemetry and full detail', async ({
         directory: '/work/dashboard',
         tokens: 12,
         agents: 0,
-        status: 'TURN COMPLETE',
+        status: 'INPUT NEEDED',
         contextKind: 'LAST REPLY',
         text: 'Done',
         command: '',
@@ -226,13 +226,14 @@ test('session names identify selectable telemetry and full detail', async ({
     exact: true,
   });
   await expect(
-    row.getByRole('heading', { name: 'SESSION // Repair dashboard' }),
+    row.getByRole('heading', { name: '-ROOT // Repair dashboard' }),
   ).toBeVisible();
   await expect(row.locator('.telemetry')).toContainText('/work/dashboard');
-  await row
-    .getByRole('button', { name: 'SESSION // Repair dashboard' })
-    .click();
-  await row.getByRole('link', { name: 'FULL DETAIL →' }).click();
+  await row.getByRole('button', { name: '-ROOT // Repair dashboard' }).click();
+  await expect(
+    page.getByRole('navigation', { name: 'Sessions needing attention' }),
+  ).toContainText('INPUT NEEDED -ROOT // Repair dashboard');
+  await row.getByRole('link', { name: 'INPUT NEEDED', exact: true }).click();
   await expect(page.locator('.detail-heading')).toContainText(
     'Repair dashboard',
   );

@@ -417,6 +417,13 @@ a {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+.status-detail {
+  color: inherit;
+  text-decoration: none;
+}
+.status-detail:hover {
+  text-decoration: underline;
+}
 button:disabled {
   opacity: 0.4;
   cursor: default;

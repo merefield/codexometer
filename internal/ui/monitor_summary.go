@@ -228,6 +228,9 @@ func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, ro
 		}
 		caption := state + " " + id
 		name := filepath.Base(terminalLabel(s.workingDirectory))
+		if s.name != "" {
+			name = terminalLabel(s.name)
+		}
 		if compact < 2 && name != "." && name != "" {
 			separator := " // "
 			if compact == 1 {

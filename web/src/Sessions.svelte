@@ -210,7 +210,10 @@
         class:approval={session.status === 'APPROVAL NEEDED'}
         href={'#/sessions/' + encodeURIComponent(session.id)}
         onclick={() => select(session.id)}
-        >{session.status} // {session.directory || session.id}</a
+        >{session.status}
+        {Array.from(session.id).slice(-5).join('').toUpperCase()} // {session.name ||
+          session.directory ||
+          session.id}</a
       >{/each}
     {#each profiles.filter((p) => p.pending && sessions.some((s) => s.id === p.session)) as profile}
       <a
@@ -222,8 +225,13 @@
           encodeURIComponent(profile.session) +
           '?review=profile'}
         onclick={(event) => openProfile(event, profile.session)}
-        >QUOTA THRESHOLD // {sessions.find((s) => s.id === profile.session)
-          ?.directory || profile.session}</a
+        >QUOTA THRESHOLD {Array.from(profile.session)
+          .slice(-5)
+          .join('')
+          .toUpperCase()} // {sessions.find((s) => s.id === profile.session)
+          ?.name ||
+          sessions.find((s) => s.id === profile.session)?.directory ||
+          profile.session}</a
       >
     {/each}
   </nav>{/if}
@@ -326,15 +334,21 @@
               class="session-select"
               aria-pressed={selectedID === session.id}
               onclick={() => select(session.id)}
-              >SESSION // {session.name}</button
+              >{Array.from(session.id).slice(-5).join('').toUpperCase()} // {session.name}</button
             >
           </h2>
         {/if}
         <h2>
-          <span
-            class="lamp lit"
-            class:working={session.status === 'WORKING' && !stale}
-          ></span>{stale ? 'STALE' : session.status}
+          <a
+            class="status-detail"
+            href={'#/sessions/' + encodeURIComponent(session.id)}
+            onclick={() => select(session.id)}
+          >
+            <span
+              class="lamp lit"
+              class:working={session.status === 'WORKING' && !stale}
+            ></span>{stale ? 'STALE' : session.status}
+          </a>
         </h2>
         {#if !session.name}<button
             class="session-select"
