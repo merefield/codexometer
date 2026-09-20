@@ -238,7 +238,7 @@
             ? 'STALE'
             : profileFocused
               ? 'QUOTA THRESHOLD'
-              : selected.status} // {selected.directory}
+              : selected.status} // {selected.name || selected.directory}
         </h2>
         <a
           class="button"
@@ -249,6 +249,9 @@
           }}>← ALL SESSIONS</a
         >
       </div>
+      {#if selected.name && selected.directory}<p class="muted">
+          {selected.directory}
+        </p>{/if}
       <p class="muted detail-metadata">
         {number(selected.tokens)} TOKENS // {selected.id} // CONTEXT SOURCE // {selected.source ||
           'LOCAL'}
@@ -313,22 +316,36 @@
       class:selected={selectedID === session.id}
       class:wide={level === 2}
       class:split={level === 1}
-      aria-label={'Session ' + (session.directory || session.id)}
+      aria-label={'Session ' +
+        (session.name || session.directory || session.id)}
     >
       <div class="panel telemetry">
+        {#if session.name}
+          <h2>
+            <button
+              class="session-select"
+              aria-pressed={selectedID === session.id}
+              onclick={() => select(session.id)}
+              >SESSION // {session.name}</button
+            >
+          </h2>
+        {/if}
         <h2>
           <span
             class="lamp lit"
             class:working={session.status === 'WORKING' && !stale}
           ></span>{stale ? 'STALE' : session.status}
         </h2>
-        <button
-          class="session-select"
-          aria-pressed={selectedID === session.id}
-          onclick={() => select(session.id)}
-          >{session.directory || session.id}</button
-        >
+        {#if !session.name}<button
+            class="session-select"
+            aria-pressed={selectedID === session.id}
+            onclick={() => select(session.id)}
+            >{session.directory || session.id}</button
+          >{/if}
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
+        {#if session.name && session.directory}<p class="muted">
+            {session.directory}
+          </p>{/if}
         <p>{session.agents} LINKED AGENTS</p>
         <p class="muted">ACTIVE // {date(session.activity)}</p>
         <div class="detail-controls">

@@ -1123,7 +1123,9 @@ Named sessions show `SESSION // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when
 space permits. Names come from the local
 Codex session index and refresh after
-renames; unnamed sessions retain their ID/directory presentation.
+renames; unnamed sessions retain their ID/directory presentation. The web Sessions
+view uses the same names in selectable headings, with the directory inside the
+panel; full detail also identifies the named session.
 
 Session rows prioritise the root session's latest observed model, reasoning effort
 and Fast setting directly below the token count, for example

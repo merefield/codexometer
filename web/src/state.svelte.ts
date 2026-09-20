@@ -4,6 +4,7 @@ export interface Sample {
   tokens: number;
 }
 export interface Session {
+  name?: string;
   id: string;
   directory: string;
   tokens: number;

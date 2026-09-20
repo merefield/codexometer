@@ -193,6 +193,52 @@ test.describe('quota profile reviews', () => {
   });
 });
 
+test('session names identify selectable telemetry and full detail', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [
+      {
+        id: 'named-root',
+        name: 'Repair dashboard',
+        directory: '/work/dashboard',
+        tokens: 12,
+        agents: 0,
+        status: 'TURN COMPLETE',
+        contextKind: 'LAST REPLY',
+        text: 'Done',
+        command: '',
+        source: 'LOCAL',
+        activity: '',
+        samples: [],
+      },
+    ],
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const row = page.getByRole('region', {
+    name: 'Session Repair dashboard',
+    exact: true,
+  });
+  await expect(
+    row.getByRole('heading', { name: 'SESSION // Repair dashboard' }),
+  ).toBeVisible();
+  await expect(row.locator('.telemetry')).toContainText('/work/dashboard');
+  await row
+    .getByRole('button', { name: 'SESSION // Repair dashboard' })
+    .click();
+  await row.getByRole('link', { name: 'FULL DETAIL →' }).click();
+  await expect(page.locator('.detail-heading')).toContainText(
+    'Repair dashboard',
+  );
+  await expect(page.locator('.full-detail')).toContainText('/work/dashboard');
+});
+
 test('Thresholds navigation stays hidden without a launch policy', async ({
   page,
   pairingURL,
