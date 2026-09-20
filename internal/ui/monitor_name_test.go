@@ -29,3 +29,22 @@ func TestMonitorSessionNameDisplayAndRename(t *testing.T) {
 		t.Fatal("rename not propagated")
 	}
 }
+
+func TestNamedSessionDirectoryDoesNotDisplaceStatus(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		s := monitorSession{id: "root", name: "Named session", workingDirectory: "/work/dashboard", active: active}
+		want := "IDLE"
+		if active {
+			want = "ACTIVE"
+		}
+		m := Model{}
+		short := ansi.Strip(m.renderMonitorSessionMetrics(64, 4, s, "", paletteFor(themeHacker)))
+		if !strings.Contains(short, want) || !strings.Contains(short, "TOKENS") || strings.Contains(short, s.workingDirectory) {
+			t.Fatalf("short row must retain tokens and %s before directory:\n%s", want, short)
+		}
+		tall := ansi.Strip(m.renderMonitorSessionMetrics(64, 8, s, "", paletteFor(themeHacker)))
+		if !strings.Contains(tall, want) || !strings.Contains(tall, s.workingDirectory) {
+			t.Fatalf("tall row should show status and directory:\n%s", tall)
+		}
+	}
+}

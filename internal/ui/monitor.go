@@ -329,15 +329,15 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if model != "" && len(lines) < bodyRows {
 		lines = append(lines, colors.label().Render(ansi.Truncate(model, innerWidth, "")))
 	}
-	if session.name != "" {
-		appendLine(terminalLabel(session.workingDirectory))
-	}
 	priorityRows := len(lines)
 	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
 		appendLine(estimate)
 	}
 	if badge == "" {
 		appendLine(status)
+	}
+	if session.name != "" {
+		appendLine(terminalLabel(session.workingDirectory))
 	}
 	appendLine(memberLabel)
 	appendLine(formatMonitorCallActivity(session, time.Now()))
