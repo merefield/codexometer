@@ -251,6 +251,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	name             string
 	averageRate      int64
 	modelSettings    codex.SessionModelSettings
 	preview          codex.SessionContext
@@ -2446,6 +2447,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.modelSettings = update.ModelSettings
+		session.name = update.Name
 		session.callSequence = latestModelCallSequence(update.ModelCalls)
 		session.turnSequence = latestTurnTimingSequence(update.TurnTimings)
 		if update.WorkingDirectory != "" {
@@ -2464,8 +2466,8 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 	for _, update := range updates {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: update.ID, workingDirectory: update.WorkingDirectory,
-			modelSettings: update.ModelSettings,
-			baseline:      update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
+			name: update.Name, modelSettings: update.ModelSettings,
+			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
 			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
@@ -2625,8 +2627,8 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 	for _, session := range usage.Sessions {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
-			modelSettings: session.ModelSettings,
-			baseline:      session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
+			name: session.Name, modelSettings: session.ModelSettings,
+			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
 			active: session.Active, working: session.Working, attention: session.Attention,
@@ -2660,8 +2662,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			}
 			created := monitorSession{
 				id: update.ID, workingDirectory: update.WorkingDirectory,
-				modelSettings: update.ModelSettings,
-				latest:        update.TotalTokens, graphStart: 0, startedAt: startedAt,
+				name: update.Name, modelSettings: update.ModelSettings,
+				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
 				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
@@ -2685,6 +2687,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.modelSettings = update.ModelSettings
+		session.name = update.Name
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {

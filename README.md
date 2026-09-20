@@ -1119,6 +1119,12 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
+Named sessions show `SESSION // <name>` in the left telemetry panel's border
+title, with the directory path inside the box beneath model information when
+space permits. Names come from the local
+Codex session index and refresh after
+renames; unnamed sessions retain their ID/directory presentation.
+
 Session rows prioritise the root session's latest observed model, reasoning effort
 and Fast setting directly below the token count, for example
 `gpt-6-astra medium fast`. These are observed selections from persisted turn contexts

@@ -287,6 +287,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.workingDirectory != "" {
 		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
 	}
+	if session.name != "" {
+		title = i18n.Text("SESSION // ") + terminalLabel(session.name)
+	}
 	if session.unattributed {
 		title = "UNATTRIBUTED // INTERNAL"
 	}
@@ -325,6 +328,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	model := formatMonitorSessionModel(session)
 	if model != "" && len(lines) < bodyRows {
 		lines = append(lines, colors.label().Render(ansi.Truncate(model, innerWidth, "")))
+	}
+	if session.name != "" {
+		appendLine(terminalLabel(session.workingDirectory))
 	}
 	priorityRows := len(lines)
 	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
