@@ -51,6 +51,7 @@ type LiveUsageSnapshot struct {
 type LiveUsageSession struct {
 	ModelSettings    SessionModelSettings
 	ID               string
+	Name             string
 	WorkingDirectory string
 	StartedAt        time.Time
 	TotalTokens      int64
@@ -108,6 +109,8 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
+	sessionNames    map[string]string
+	nameIndexInfo   os.FileInfo
 	daemonContexts  map[string]SessionContext
 	SessionsRoot    string
 	WriterLocksRoot string
@@ -376,6 +379,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
 	sessions, activeSessions, sessionWorking := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
+	r.refreshSessionNames()
+	for i := range sessions {
+		sessions[i].Name = r.sessionNames[sessions[i].ID]
+	}
 	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
 		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
 	)

@@ -21,6 +21,7 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	Name        string    `json:"name,omitempty"`
 	ID          string    `json:"id"`
 	Directory   string    `json:"directory"`
 	Tokens      int64     `json:"tokens"`
@@ -306,7 +307,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				text = row.Context.CommandDetails.Justification
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
-				ID: row.ID, Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				Status: sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				Samples: s.samples[row.ID],

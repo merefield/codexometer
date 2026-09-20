@@ -287,6 +287,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.workingDirectory != "" {
 		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
 	}
+	if session.name != "" {
+		title = shortSessionID(session.id) + " // " + terminalLabel(session.name)
+	}
 	if session.unattributed {
 		title = "UNATTRIBUTED // INTERNAL"
 	}
@@ -332,6 +335,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	}
 	if badge == "" {
 		appendLine(status)
+	}
+	if session.name != "" {
+		appendLine(terminalLabel(session.workingDirectory))
 	}
 	appendLine(memberLabel)
 	appendLine(formatMonitorCallActivity(session, time.Now()))
@@ -420,6 +426,9 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 			badgeColor = paletteFor(m.theme).primary
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
+		if m.monitorContextHover == "badge:"+session.id {
+			badge = badge.Underline(true)
+		}
 		ball := "●"
 		if session.attention == codex.SessionAttentionNone && m.phase%2 == 1 {
 			ball = " " // Blink only WORKING, reserving its cell to avoid layout movement.

@@ -1119,6 +1119,17 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
+Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
+title, with the directory path inside the box beneath model information when
+space permits. Names come from the local
+Codex session index and refresh after
+renames; unnamed sessions retain their ID/directory presentation. The web Sessions
+view uses the same names in selectable headings, with the directory inside the
+panel; full detail also identifies the named session. Attention pills use the
+same short ID and session name (directory fallback when unnamed), shortening
+their labels as space tightens. Click a highlighted session status to open its
+full detail and any native approval/input request; this only navigates.
+
 Session rows prioritise the root session's latest observed model, reasoning effort
 and Fast setting directly below the token count, for example
 `gpt-6-astra medium fast`. These are observed selections from persisted turn contexts
