@@ -36,9 +36,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the compact [ (C)OPY ] label;
+	// Baseline intentionally updated for the 2026-09-22 pricing footer date;
 	// all themes, views and three terminal sizes are covered.
-	const want = "49ac2efe33d6574b4f491d0c0165c72c98a2542670979a43f1bd659295936038"
+	const want = "bd192a4ea3e95ba6d21e2a5d166585140c06fae9a0de9db2551d7f21aaef0673"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

@@ -8,9 +8,9 @@ import (
 )
 
 // FastAPIPricingRetrievedOn is separate from the standard-price review date.
-// Sources: https://developers.openai.com/api/docs/models/gpt-6-astra and
+// Sources: https://developers.openai.com/api/docs/pricing and
 // https://learn.chatgpt.com/docs/agent-configuration/speed (GPT-5.6 API rates).
-const FastAPIPricingRetrievedOn = "2026-09-10"
+const FastAPIPricingRetrievedOn = "2026-09-22"
 
 // requestedTierPremium prices a single response's requested tier. It does not
 // claim that the backend delivered/billed that tier. Empty means unavailable,
@@ -21,10 +21,10 @@ func requestedTierPremium(model, tier string, standard float64) (float64, bool) 
 		return 0, true
 	case "fast", "priority":
 		// Only apply verified model-specific rates, never subscription credit
-		// multipliers. Astra / GPT-5.6 Fast is 2x applicable rates, including long
+		// multipliers. GPT-6 / GPT-5.6 Fast is 2x applicable rates, including long
 		// context and both cache classes. Dated snapshots share base pricing.
 		switch pricedModelName(model) {
-		case "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
+		case "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
 			return standard, true
 		default:
 			return 0, false
