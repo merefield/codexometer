@@ -1205,6 +1205,7 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 
 func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
 	want := map[string]apiPrice{
+		"gpt-6.1-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6-sol":     {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6-luna":    {input: 0.10, cached: 0.01, cacheWrite: 0.125, cacheWriteKnown: true, output: 0.50, longInput: 0.20, longCached: 0.02, longCacheWrite: 0.25, longOutput: 0.75, longKnown: true},
 		"gpt-6-astra":   {input: 10.00, cached: 1.00, cacheWrite: 12.50, cacheWriteKnown: true, output: 50.00, longInput: 20.00, longCached: 2.00, longCacheWrite: 25.00, longOutput: 75.00, longKnown: true},
@@ -1238,6 +1239,7 @@ func TestGPT6SolLunaPricingBoundaries(t *testing.T) {
 		input, cached, write, output float64
 	}{
 		{"gpt-6-sol", 2, 0.2, 2.5, 10},
+		{"gpt-6.1-sol", 2, 0.1, 2.5, 10},
 		{"gpt-6-luna", 0.1, 0.01, 0.125, 0.5},
 	} {
 		for _, input := range []int64{272000, 272001} {
@@ -1247,7 +1249,7 @@ func TestGPT6SolLunaPricingBoundaries(t *testing.T) {
 				inFactor, outFactor = 2, 1.5
 			}
 			want := ((float64(input-3000)*tc.input+1000*tc.cached+2000*tc.write)*inFactor + 100*tc.output*outFactor) / 1e6
-			for _, model := range []string{tc.model, tc.model + "-2026-09-22"} {
+			for _, model := range []string{tc.model, tc.model + "-2026-09-30"} {
 				got, known, issue := EstimateStandardAPIEqCost(model, usage)
 				if !known || issue != "" || math.Abs(got-want) > 1e-12 {
 					t.Fatalf("%s input %d: %g, %v, %s; want %g", model, input, got, known, issue, want)
@@ -1263,7 +1265,7 @@ func TestGPT6SolLunaPricingBoundaries(t *testing.T) {
 			}
 		}
 	}
-	for _, model := range []string{"gpt-6-terra", "gpt-6-sol-preview", "gpt-6-luna-preview"} {
+	for _, model := range []string{"gpt-6-terra", "gpt-6-sol-preview", "gpt-6-luna-preview", "gpt-6.1-sol-preview", "gpt-6.1-astra", "gpt-6.1-luna"} {
 		if _, known := priceForModel(model); known {
 			t.Fatalf("unpublished model %s was priced", model)
 		}

@@ -17,6 +17,9 @@ func TestRequestedTierPremium(t *testing.T) {
 	}{
 		{"gpt-6-astra", "fast", 3, true},
 		{"gpt-6-sol", "fast", 3, true},
+		{"gpt-6.1-sol", "fast", 3, true},
+		{" GPT-6.1-SOL-2026-09-30 ", " PRIORITY ", 3, true},
+		{"gpt-6.1-sol-preview", "fast", 0, false},
 		{"gpt-6-luna", "priority", 3, true},
 		{" GPT-6-SOL-2026-09-22 ", " PRIORITY ", 3, true},
 		{"gpt-6-luna-preview", "fast", 0, false},
