@@ -223,12 +223,17 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			continue
 		}
 		c := state.latest
+		count := 0
 		for _, request := range state.requests {
 			if request.Kind == SessionContextApproval && statuses[id] != sessionRuntimeApproval || request.Kind == SessionContextQuestion && statuses[id] != sessionRuntimeInput {
 				continue
 			}
+			if request.Kind == SessionContextApproval {
+				count++
+			}
 			c = preferSessionContext(c, request)
 		}
+		c.PendingApprovals = count
 		if c.Text != "" {
 			out[id] = c
 		}

@@ -1232,7 +1232,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			preview = SessionContext{}
 		}
 		if !unattributed {
+			pending := group.Context.PendingApprovals + preview.PendingApprovals
 			group.Context = preferSessionContext(group.Context, preview)
+			group.Context.PendingApprovals = pending
 		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing

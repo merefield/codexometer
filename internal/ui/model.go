@@ -51,6 +51,9 @@ type Model struct {
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorAttentionPage                int
+	monitorApprovalOrder                []string
+	monitorApprovalOrderCandidate       string
+	monitorApprovalOrderSince           time.Time
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
 	monitorApprovalConfirmUntil         time.Time
@@ -1053,6 +1056,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, quotaStepCommand
 	case secondMsg:
+		m.settleMonitorApprovalOrder(time.Time(message))
 		if m.monitorState == monitorRunning {
 			m.refreshMonitorRates(time.Time(message), false)
 		}
@@ -2349,6 +2353,9 @@ func (m Model) monitorHasVisibleWaitingSession() bool {
 }
 
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {
+	m.monitorApprovalOrder = nil
+	m.monitorApprovalOrderCandidate = ""
+	m.monitorApprovalOrderSince = time.Time{}
 	m.monitorContextDetail = ""
 	m.monitorContextExpanded = ""
 	m.monitorContextScroll = 0

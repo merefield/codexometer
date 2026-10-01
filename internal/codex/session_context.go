@@ -25,9 +25,12 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	CommandDetails ApprovalCommandDetails
-	InputToken     string
-	InputQuestions string
+	// PendingApprovals counts live requests, not inferred waiting agents.
+	// On grouped session contexts it includes the root and its descendants.
+	PendingApprovals int
+	CommandDetails   ApprovalCommandDetails
+	InputToken       string
+	InputQuestions   string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.
 	ApprovalToken string
 	// ApprovalBlocked is a canonical diagnostic, with no request content.
@@ -93,7 +96,11 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 	}
 	pa, pb := priority(a), priority(b)
 	tie := b.At.Equal(a.At) && (b.ThreadID < a.ThreadID || b.ThreadID == a.ThreadID && b.Text < a.Text)
-	if a.Text == "" || pb > pa || pb == pa && (b.At.After(a.At) || tie) {
+	newer := b.At.After(a.At)
+	if a.Kind == SessionContextApproval && b.Kind == SessionContextApproval {
+		newer = b.At.Before(a.At)
+	}
+	if a.Text == "" || pb > pa || pb == pa && (newer || tie) {
 		return b
 	}
 	return a
