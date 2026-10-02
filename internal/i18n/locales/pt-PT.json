@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "COMENTÁRIO",
+  "RUNNING": "EM EXECUÇÃO",
+  "COMPLETED": "CONCLUÍDO",
+  "FAILED": "FALHOU",
+  "DECLINED": "RECUSADO",
+  "+%d RUNNING": "+%d EM EXECUÇÃO",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "LIMITES",

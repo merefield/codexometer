@@ -331,6 +331,27 @@ func TestDisplayProjectionAndAccountIsolation(t *testing.T) {
 	}
 }
 
+func TestWorkingContextProjection(t *testing.T) {
+	s := newStore()
+	row := codex.LiveUsageSession{ID: "root", Working: true, Context: codex.SessionContext{
+		Kind: codex.SessionContextActivity, Text: "Explanation", Activity: codex.SessionActivity{
+			Prose: "Explanation", Command: "go test", CommandStatus: "running", RunningCommands: 2,
+		},
+	}}
+	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
+	got := s.state.Sessions[0]
+	if got.Text != "Explanation" || got.WorkingCommand != "go test" || got.CommandStatus != "running" || got.RunningCommands != 2 || got.Command != "" {
+		t.Fatal(got)
+	}
+	for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextApproval, codex.SessionContextQuestion} {
+		row.Context.Kind = kind
+		s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
+		if s.state.Sessions[0].WorkingCommand != "" {
+			t.Fatal("activity leaked into higher-priority context")
+		}
+	}
+}
+
 func TestSynchronizedBoundedSamples(t *testing.T) {
 	s := newStore()
 	now := time.Now()

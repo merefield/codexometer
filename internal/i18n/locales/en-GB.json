@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "COMMENTARY",
+  "RUNNING": "RUNNING",
+  "COMPLETED": "COMPLETED",
+  "FAILED": "FAILED",
+  "DECLINED": "DECLINED",
+  "+%d RUNNING": "+%d RUNNING",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "THRESHOLDS",

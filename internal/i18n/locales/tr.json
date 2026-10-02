@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "AÇIKLAMA",
+  "RUNNING": "ÇALIŞIYOR",
+  "COMPLETED": "TAMAMLANDI",
+  "FAILED": "BAŞARISIZ",
+  "DECLINED": "REDDEDİLDİ",
+  "+%d RUNNING": "+%d ÇALIŞIYOR",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "EŞİKLER",

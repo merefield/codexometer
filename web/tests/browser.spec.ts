@@ -193,6 +193,72 @@ test.describe('quota profile reviews', () => {
   });
 });
 
+test('working detail preserves prose alongside command state', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'working-root',
+    name: 'Build check',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST ACTIVITY',
+    text: 'Checking the build <not markup>',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    workingCommand: 'go test ./...',
+    commandStatus: 'running',
+    runningCommands: 2,
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  const row = page.getByRole('region', {
+    name: 'Session Build check',
+    exact: true,
+  });
+  await expect(row).toContainText(session.text);
+  await expect(row).toContainText('COMMAND // RUNNING');
+  await expect(row).toContainText('+1 RUNNING');
+  await expect(row.locator('pre.command')).toHaveText('go test ./...');
+  await row.getByRole('button', { name: '-ROOT // Build check' }).click();
+  await expect(page.locator('pre.command')).toHaveText('go test ./...');
+  session.commandStatus = 'completed';
+  session.runningCommands = 0;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'COMMAND // COMPLETED', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(session.text, { exact: true })).toBeVisible();
+  session.status = 'TURN COMPLETE';
+  session.contextKind = 'LAST REPLY';
+  session.text = 'Build finished';
+  session.workingCommand = '';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.getByText('Build finished', { exact: true })).toBeVisible();
+  await expect(page.locator('pre.command')).toHaveCount(0);
+});
+
 test('session names identify selectable telemetry and full detail', async ({
   page,
   pairingURL,

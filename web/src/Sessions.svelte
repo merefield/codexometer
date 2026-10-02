@@ -154,7 +154,23 @@
       {explanation(session)}
     </p>{/if}
   {#if heading}<h3>{session.contextKind || 'LAST ACTIVITY'}</h3>{/if}
-  <pre>{session.text || 'No session context available.'}</pre>
+  {#if session.text || !session.workingCommand}
+    <pre>{session.text || 'No session context available.'}</pre>
+  {/if}
+  {#if session.workingCommand}
+    <hr />
+    <h3>
+      COMMAND // {stale
+        ? 'UNKNOWN'
+        : (session.commandStatus || 'unknown').toUpperCase()}
+      {#if !stale && (session.runningCommands || 0) > (session.commandStatus === 'running' ? 1 : 0)}
+        // +{(session.runningCommands || 0) -
+          (session.commandStatus === 'running' ? 1 : 0)} RUNNING
+      {/if}
+      {#if session.runningLimited}+{/if}
+    </h3>
+    <pre class="command">{session.workingCommand}</pre>
+  {/if}
   {#if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>

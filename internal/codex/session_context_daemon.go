@@ -10,6 +10,7 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
+	activity         sessionActivityState
 	approvalsLimited bool
 	promptToken      string
 	promptSpent      bool
@@ -42,12 +43,14 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		Questions            []contextQuestion `json:"questions"`
 		IsBlocking           *bool             `json:"isBlocking"`
 		Item                 struct {
-			ID      string `json:"id"`
-			CWD     string `json:"cwd"`
-			Type    string `json:"type"`
-			Text    string `json:"text"`
-			Phase   string `json:"phase"`
-			Command string `json:"command"`
+			ID       string `json:"id"`
+			CWD      string `json:"cwd"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Phase    string `json:"phase"`
+			Command  string `json:"command"`
+			Status   string `json:"status"`
+			ExitCode *int   `json:"exitCode"`
 		} `json:"item"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" {
@@ -62,6 +65,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		states[p.ThreadID] = state
 	}
 	c := SessionContext{At: now, ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.ItemID, Source: "LIVE"}
+	commandID := ""
+	if p.Item.ID != "" {
+		commandID = p.TurnID + "/" + p.Item.ID
+	}
 	switch method {
 	case "turn/started", "thread/closed":
 		delete(states, p.ThreadID)
@@ -72,6 +79,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		clear(state.requests)
 		state.approvalsLimited = false
 		clear(state.commands)
+		state.activity = sessionActivityState{}
+		state.latest.Activity = SessionActivity{}
 		return
 	case "serverRequest/resolved":
 		delete(state.requests, string(p.RequestID))
@@ -170,18 +179,39 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 		delete(state.commands, p.TurnID+"/"+p.Item.ID)
+		if p.Item.Type == "commandExecution" {
+			status := p.Item.Status
+			if p.Item.ExitCode != nil && *p.Item.ExitCode != 0 {
+				status = "failed"
+			}
+			state.activity.command(commandID, p.Item.Command, status, true)
+			if state.latest.Kind != SessionContextReply {
+				state.latest = state.activity.context(c)
+			}
+			return
+		}
 		if p.Item.Type != "agentMessage" {
 			return
 		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Text
 		if p.Item.Phase == "final_answer" {
 			c.Kind = SessionContextReply
+			state.activity = sessionActivityState{}
+		} else {
+			prose := SanitizeSessionContext(p.Item.Text)
+			if prose == "" {
+				return
+			}
+			state.activity.prose = prose
+			c = state.activity.context(c)
 		}
 	case "item/started":
 		if p.Item.Type != "commandExecution" {
 			return
 		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Command
+		state.activity.command(commandID, p.Item.Command, p.Item.Status, false)
+		c = state.activity.context(c)
 		if state.commands == nil {
 			state.commands = map[string]contextCommandItem{}
 		}

@@ -1218,6 +1218,18 @@ switch between graph-only, split, expanded, and full detail as described below.
 - **APPROVAL REQUEST** contains an observed approval reason/command when available.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
+  During a turn, the latest assistant prose and shell command are retained
+  separately in both terminal and web session detail: a command does not replace
+  the explanation, and new commentary does not hide the command. Commands show
+  their last observed running/completed/failed/declined status, or **UNKNOWN**
+  when that signal is unavailable. When commands overlap, the latest still-running
+  command is shown with a count of additional running commands. Short terminal
+  previews prioritise prose; larger views separate the command beneath it.
+  Approvals/questions take precedence, the final reply replaces activity, and a
+  new turn clears the previous turn's prose and command. This is bounded,
+  in-memory, per-thread context—not a full command history or command output.
+  Missed events (including before attaching) can leave observations incomplete;
+  local-log fallback only reports completion when it was recorded.
 
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the

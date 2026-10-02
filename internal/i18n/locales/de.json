@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "KOMMENTAR",
+  "RUNNING": "LÄUFT",
+  "COMPLETED": "ABGESCHLOSSEN",
+  "FAILED": "FEHLGESCHLAGEN",
+  "DECLINED": "ABGELEHNT",
+  "+%d RUNNING": "+%d LAUFEND",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "SCHWELLENWERTE",

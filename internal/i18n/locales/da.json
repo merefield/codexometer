@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "KOMMENTAR",
+  "RUNNING": "KØRER",
+  "COMPLETED": "FULDFØRT",
+  "FAILED": "FEJLET",
+  "DECLINED": "AFVIST",
+  "+%d RUNNING": "+%d KØRER",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "TÆRSKLER",

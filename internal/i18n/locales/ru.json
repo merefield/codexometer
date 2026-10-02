@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "КОММЕНТАРИЙ",
+  "RUNNING": "ВЫПОЛНЯЕТСЯ",
+  "COMPLETED": "ЗАВЕРШЕНО",
+  "FAILED": "ОШИБКА",
+  "DECLINED": "ОТКЛОНЕНО",
+  "+%d RUNNING": "+%d В РАБОТЕ",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "ПОРОГИ",

@@ -137,6 +137,7 @@ type LiveUsageReader struct {
 }
 
 type rolloutCursor struct {
+	activity                    sessionActivityState
 	preview                     SessionContext
 	offset                      int64
 	totalTokens                 int64

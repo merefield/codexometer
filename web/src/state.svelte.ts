@@ -13,6 +13,10 @@ export interface Session {
   contextKind: string;
   text: string;
   command: string;
+  workingCommand?: string;
+  commandStatus?: string;
+  runningCommands?: number;
+  runningLimited?: boolean;
   source: string;
   activity: string;
   samples: Sample[] | null;

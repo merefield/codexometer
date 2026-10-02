@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "说明",
+  "RUNNING": "运行中",
+  "COMPLETED": "已完成",
+  "FAILED": "失败",
+  "DECLINED": "已拒绝",
+  "+%d RUNNING": "另有%d项运行中",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "阈值",

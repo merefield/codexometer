@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "KOMMENTAAR",
+  "RUNNING": "TÖÖTAB",
+  "COMPLETED": "LÕPETATUD",
+  "FAILED": "EBAÕNNESTUS",
+  "DECLINED": "KEELDUTUD",
+  "+%d RUNNING": "+%d TÖÖTAB",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "LÄVENDID",

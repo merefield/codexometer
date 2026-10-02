@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "コメント",
+  "RUNNING": "実行中",
+  "COMPLETED": "完了",
+  "FAILED": "失敗",
+  "DECLINED": "拒否",
+  "+%d RUNNING": "他%d件実行中",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "しきい値",

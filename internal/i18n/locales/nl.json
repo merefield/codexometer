@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "TOELICHTING",
+  "RUNNING": "ACTIEF",
+  "COMPLETED": "VOLTOOID",
+  "FAILED": "MISLUKT",
+  "DECLINED": "AFGEWEZEN",
+  "+%d RUNNING": "+%d ACTIEF",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "DREMPELS",
