@@ -79,6 +79,9 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		clear(state.requests)
 		state.approvalsLimited = false
 		clear(state.commands)
+		if state.latest.Kind == SessionContextActivity && state.latest.Activity.Command != "" {
+			state.latest.Text = state.latest.Activity.Prose
+		}
 		state.activity = sessionActivityState{}
 		state.latest.Activity = SessionActivity{}
 		return
@@ -181,8 +184,12 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		delete(state.commands, p.TurnID+"/"+p.Item.ID)
 		if p.Item.Type == "commandExecution" {
 			status := p.Item.Status
-			if p.Item.ExitCode != nil && *p.Item.ExitCode != 0 {
-				status = "failed"
+			if p.Item.ExitCode != nil {
+				if *p.Item.ExitCode != 0 {
+					status = "failed"
+				} else if status != "failed" && status != "declined" {
+					status = "completed"
+				}
 			}
 			state.activity.command(commandID, p.Item.Command, status, true)
 			if state.latest.Kind != SessionContextReply {
@@ -210,7 +217,9 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			return
 		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Command
-		state.activity.command(commandID, p.Item.Command, p.Item.Status, false)
+		// The lifecycle event establishes this even on older payloads that
+		// omit status. Pending approvals still take presentation precedence.
+		state.activity.command(commandID, p.Item.Command, "inProgress", false)
 		c = state.activity.context(c)
 		if state.commands == nil {
 			state.commands = map[string]contextCommandItem{}

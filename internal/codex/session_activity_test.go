@@ -131,3 +131,45 @@ func TestLocalWorkingContextBootstrap(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestDaemonCommandStatusFallbacks(t *testing.T) {
+	for _, startStatus := range []string{"", "unknown", "inProgress"} {
+		for _, finish := range []struct{ fields, want string }{
+			{`"exitCode":0`, "completed"},
+			{`"exitCode":2`, "failed"},
+			{`"status":"declined","exitCode":0`, "declined"},
+			{`"status":"failed","exitCode":0`, "failed"},
+			{`"status":"completed"`, "completed"},
+			{`"status":"unknown"`, "unknown"},
+		} {
+			states := map[string]*daemonContextState{}
+			start := fmt.Sprintf(`{"threadId":"root","item":{"type":"commandExecution","id":"a","command":"pwd","status":%q}}`, startStatus)
+			daemonContextEvent(states, "item/started", nil, json.RawMessage(start), time.Now())
+			if a := states["root"].latest.Activity; a.CommandStatus != "running" || a.RunningCommands != 1 {
+				t.Fatal(a)
+			}
+			end := `{"threadId":"root","item":{"type":"commandExecution","id":"a",` + finish.fields + `}}`
+			daemonContextEvent(states, "item/completed", nil, json.RawMessage(end), time.Now())
+			if a := states["root"].latest.Activity; a.CommandStatus != finish.want || a.RunningCommands != 0 || a.Command != "pwd" {
+				t.Fatal(a, finish)
+			}
+		}
+	}
+}
+
+func TestDaemonTurnEndDropsCommandOnlyText(t *testing.T) {
+	for _, method := range []string{"turn/completed", "turn/interrupted"} {
+		for _, prose := range []string{"", "Checking"} {
+			states := map[string]*daemonContextState{}
+			emit := func(method, body string) { daemonContextEvent(states, method, nil, json.RawMessage(body), time.Now()) }
+			if prose != "" {
+				emit("item/completed", `{"threadId":"root","item":{"type":"agentMessage","phase":"commentary","text":"Checking"}}`)
+			}
+			emit("item/started", `{"threadId":"root","item":{"type":"commandExecution","id":"a","command":"pwd"}}`)
+			emit(method, `{"threadId":"root","turn":{"status":"completed"}}`)
+			if c := states["root"].latest; c.Text != prose || c.Activity != (SessionActivity{}) {
+				t.Fatal(c)
+			}
+		}
+	}
+}

@@ -222,6 +222,16 @@ test('working detail preserves prose alongside command state', async ({
     sessions: [session],
   };
   await mockStream(page, snapshot);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { copied: string }).copied = text;
+        },
+      },
+      configurable: true,
+    });
+  });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
@@ -233,8 +243,39 @@ test('working detail preserves prose alongside command state', async ({
   await expect(row).toContainText('COMMAND // RUNNING');
   await expect(row).toContainText('+1 RUNNING');
   await expect(row.locator('pre.command')).toHaveText('go test ./...');
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe(session.text);
+  session.text = '';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe('go test ./...');
   await row.getByRole('button', { name: '-ROOT // Build check' }).click();
   await expect(page.locator('pre.command')).toHaveText('go test ./...');
+  session.workingCommand = 'go vet ./...';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await page.keyboard.press('c');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe('go vet ./...');
+  session.text = 'Checking the build <not markup>';
   session.commandStatus = 'completed';
   session.runningCommands = 0;
   await page.evaluate(
