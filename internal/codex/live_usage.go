@@ -1222,7 +1222,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		if exact && preview.pending() {
 			preview = SessionContext{}
 		}
-		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending()) {
+		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited) {
 			preview = live
 		}
 		// A persisted request is not proof that it is still outstanding. Match
@@ -1232,7 +1232,11 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			preview = SessionContext{}
 		}
 		if !unattributed {
+			pending := group.Context.PendingApprovals + preview.PendingApprovals
+			limited := group.Context.PendingApprovalsLimited || preview.PendingApprovalsLimited
 			group.Context = preferSessionContext(group.Context, preview)
+			group.Context.PendingApprovals = pending
+			group.Context.PendingApprovalsLimited = limited
 		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing

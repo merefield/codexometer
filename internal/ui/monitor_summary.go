@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -119,7 +121,71 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 			}
 		}
 	}
+	m.orderMonitorApprovals(items)
 	return items
+}
+
+// Only the approval group is ranked; the other attention classes retain their
+// existing priority. Counts remain live while the committed order settles.
+func (m Model) orderMonitorApprovals(items []monitorAttentionItem) {
+	n := 0
+	for n < len(items) && !items[n].profile && items[n].attention == codex.SessionAttentionApproval {
+		n++
+	}
+	ranks := make(map[string]int, len(m.monitorApprovalOrder))
+	for i, id := range m.monitorApprovalOrder {
+		ranks[id] = i
+	}
+	sort.SliceStable(items[:n], func(i, j int) bool {
+		a, b := items[i], items[j]
+		if len(ranks) > 0 {
+			ai, aok := ranks[a.id]
+			bi, bok := ranks[b.id]
+			if aok != bok {
+				return aok
+			}
+			if aok {
+				return ai < bi
+			}
+			return false // new approvals append until the next settled order
+		}
+		if a.preview.PendingApprovals != b.preview.PendingApprovals {
+			return a.preview.PendingApprovals > b.preview.PendingApprovals
+		}
+		if !a.preview.At.Equal(b.preview.At) {
+			return a.preview.At.Before(b.preview.At)
+		}
+		return a.id < b.id
+	})
+}
+
+func (m *Model) settleMonitorApprovalOrder(now time.Time) {
+	desired := *m
+	desired.monitorApprovalOrder = nil
+	items := desired.monitorAttentionSessions()
+	var ids []string
+	for _, item := range items {
+		if !item.profile && item.attention == codex.SessionAttentionApproval {
+			ids = append(ids, item.id)
+		}
+	}
+	signature := strings.Join(ids, "\n")
+	if len(m.monitorApprovalOrder) == 0 {
+		m.monitorApprovalOrder = ids
+		m.monitorApprovalOrderCandidate = signature
+		m.monitorApprovalOrderSince = now
+		return
+	}
+	if signature != m.monitorApprovalOrderCandidate ||
+		strings.HasPrefix(m.monitorContextHover, "attention") ||
+		m.monitorApprovalBusy || m.monitorApprovalConfirm != "" {
+		m.monitorApprovalOrderCandidate = signature
+		m.monitorApprovalOrderSince = now
+		return
+	}
+	if now.Sub(m.monitorApprovalOrderSince) >= 5*time.Second {
+		m.monitorApprovalOrder = ids
+	}
 }
 
 // Validate the action, not only the session ID; sibling pills must open
@@ -217,6 +283,12 @@ func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, ro
 	for _, s := range sessions {
 		id := shortSessionID(s.id)
 		state := monitorAttentionStatus(s.attention)
+		if !s.profile && s.attention == codex.SessionAttentionApproval && s.preview.PendingApprovals > 1 {
+			state = i18n.Format("%s ×%d", state, s.preview.PendingApprovals)
+		}
+		if !s.profile && s.attention == codex.SessionAttentionApproval && s.preview.PendingApprovalsLimited {
+			state = i18n.Format("%s +", state)
+		}
 		if s.profile {
 			state = i18n.Text("QUOTA THRESHOLD")
 		}

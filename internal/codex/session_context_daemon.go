@@ -10,12 +10,13 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
-	promptToken string
-	promptSpent bool
-	completed   bool
-	latest      SessionContext
-	requests    map[string]SessionContext
-	commands    map[string]contextCommandItem
+	approvalsLimited bool
+	promptToken      string
+	promptSpent      bool
+	completed        bool
+	latest           SessionContext
+	requests         map[string]SessionContext
+	commands         map[string]contextCommandItem
 }
 
 type contextCommandItem struct{ Command, CWD string }
@@ -69,6 +70,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state.promptToken, state.promptSpent = "", false
 		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
+		state.approvalsLimited = false
 		clear(state.commands)
 		return
 	case "serverRequest/resolved":
@@ -207,8 +209,16 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if len(id) == 0 || string(id) == "null" {
 			return
 		}
-		if _, exists := state.requests[string(id)]; exists || len(state.requests) < 16 {
+		c.RequestID = string(id)
+		old, exists := state.requests[c.RequestID]
+		if exists {
+			// A replay refreshes the capability, not its queue position.
+			c.At = old.At
+		}
+		if exists || len(state.requests) < 16 {
 			state.requests[string(id)] = c
+		} else if c.Kind == SessionContextApproval {
+			state.approvalsLimited = true
 		}
 	} else {
 		state.latest = c
@@ -223,13 +233,19 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			continue
 		}
 		c := state.latest
+		count := 0
 		for _, request := range state.requests {
 			if request.Kind == SessionContextApproval && statuses[id] != sessionRuntimeApproval || request.Kind == SessionContextQuestion && statuses[id] != sessionRuntimeInput {
 				continue
 			}
+			if request.Kind == SessionContextApproval {
+				count++
+			}
 			c = preferSessionContext(c, request)
 		}
-		if c.Text != "" {
+		c.PendingApprovals = count
+		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
+		if c.Text != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}

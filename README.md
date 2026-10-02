@@ -221,6 +221,20 @@ English rendering baseline captured from v0.12.0.
   For a root with linked agents, fresh activity from any member suppresses that
   uncertain fallback; definite input or approval signals still propagate from
   the member that raised them.
+- Terminal approval pills show one parent-session entry, with `×N` only when
+  multiple live approval requests are pending across the parent and its linked
+  agents. The oldest pending approval is presented first. Approval pills prefer
+  larger backlogs, breaking ties by oldest request. Reordering settles for five
+  seconds and waits while a pill is hovered or an approval is being confirmed;
+  resolved entries disappear promptly. Counts describe observed live requests,
+  not an inferred number of waiting agents; local-only observation cannot
+  provide a complete pending count.
+  Each thread retains at most 16 request contexts. If that limit is exceeded,
+  a `+` after the approval label/count means the count is a lower bound and
+  additional approvals may require handling in Codex. The marker remains
+  conservative until the turn ends or the connection resets; it does not
+  claim the unretained requests have been resolved. Queue age is first-seen
+  time and does not change when an existing request is replayed.
 - An opt-in deterministic coding benchmark comparing a selectable scope of
   visible Codex models and supported reasoning efforts by correctness, elapsed
   time, token use, and estimated standard API-equivalent cost. The current trial appears immediately
