@@ -28,9 +28,13 @@ type SessionContext struct {
 	// PendingApprovals counts live requests, not inferred waiting agents.
 	// On grouped session contexts it includes the root and its descendants.
 	PendingApprovals int
-	CommandDetails   ApprovalCommandDetails
-	InputToken       string
-	InputQuestions   string
+	// PendingApprovalsLimited means the retained request cap was exceeded.
+	// The count is a lower bound until the turn ends or the connection resets.
+	PendingApprovalsLimited bool
+	RequestID               string
+	CommandDetails          ApprovalCommandDetails
+	InputToken              string
+	InputQuestions          string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.
 	ApprovalToken string
 	// ApprovalBlocked is a canonical diagnostic, with no request content.
@@ -99,6 +103,8 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 	newer := b.At.After(a.At)
 	if a.Kind == SessionContextApproval && b.Kind == SessionContextApproval {
 		newer = b.At.Before(a.At)
+		tie = b.At.Equal(a.At) && (b.ThreadID < a.ThreadID ||
+			b.ThreadID == a.ThreadID && b.RequestID < a.RequestID)
 	}
 	if a.Text == "" || pb > pa || pb == pa && (newer || tie) {
 		return b

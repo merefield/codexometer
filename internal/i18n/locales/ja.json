@@ -1,4 +1,6 @@
 {
+  "%s ×%d": "%s ×%d",
+  "%s +": "%s +",
   "THRESHOLDS": "しきい値",
   "MODEL STEP POLICY": "モデル切替ポリシー",
   "QUOTA WINDOW UNAVAILABLE": "クォータ期間を取得できません",

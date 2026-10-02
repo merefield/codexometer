@@ -1,4 +1,6 @@
 {
+  "%s ×%d": "%s ×%d",
+  "%s +": "%s +",
   "THRESHOLDS": "ПОРОГИ",
   "MODEL STEP POLICY": "ПОЛИТИКА СМЕНЫ МОДЕЛИ",
   "QUOTA WINDOW UNAVAILABLE": "ОКНО КВОТЫ НЕДОСТУПНО",

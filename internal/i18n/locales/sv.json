@@ -1,4 +1,6 @@
 {
+  "%s ×%d": "%s ×%d",
+  "%s +": "%s +",
   "THRESHOLDS": "TRÖSKLAR",
   "MODEL STEP POLICY": "POLICY FÖR MODELLSTEG",
   "QUOTA WINDOW UNAVAILABLE": "KVOTFÖNSTER INTE TILLGÄNGLIGT",

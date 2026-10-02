@@ -1,4 +1,6 @@
 {
+  "%s ×%d": "%s ×%d",
+  "%s +": "%s +",
   "THRESHOLDS": "阈值",
   "MODEL STEP POLICY": "模型切换策略",
   "QUOTA WINDOW UNAVAILABLE": "配额周期不可用",

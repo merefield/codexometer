@@ -1,4 +1,6 @@
 {
+  "%s ×%d": "%s ×%d",
+  "%s +": "%s +",
   "THRESHOLDS": "THRESHOLDS",
   "MODEL STEP POLICY": "MODEL STEP POLICY",
   "QUOTA WINDOW UNAVAILABLE": "QUOTA WINDOW UNAVAILABLE",

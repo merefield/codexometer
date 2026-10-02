@@ -284,7 +284,10 @@ func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, ro
 		id := shortSessionID(s.id)
 		state := monitorAttentionStatus(s.attention)
 		if !s.profile && s.attention == codex.SessionAttentionApproval && s.preview.PendingApprovals > 1 {
-			state += fmt.Sprintf(" ×%d", s.preview.PendingApprovals)
+			state = i18n.Format("%s ×%d", state, s.preview.PendingApprovals)
+		}
+		if !s.profile && s.attention == codex.SessionAttentionApproval && s.preview.PendingApprovalsLimited {
+			state = i18n.Format("%s +", state)
 		}
 		if s.profile {
 			state = i18n.Text("QUOTA THRESHOLD")

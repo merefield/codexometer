@@ -35,6 +35,22 @@ func TestApprovalBacklogLabelsAndGeometry(t *testing.T) {
 	}
 }
 
+func TestApprovalBacklogOverflowLabel(t *testing.T) {
+	m := backlogModel()
+	m.monitorSessionData = m.monitorSessionData[:1]
+	m.monitorSessionData[0].preview.PendingApprovalsLimited = true
+	for _, count := range []int{0, 1, 16} {
+		m.monitorSessionData[0].preview.PendingApprovals = count
+		buttons, _ := m.monitorAttentionButtons(180, 1)
+		if len(buttons) != 1 || !strings.Contains(buttons[0].label, " +") {
+			t.Fatalf("missing partial-count marker: %+v", buttons)
+		}
+		if count <= 1 && strings.Contains(buttons[0].label, "×") {
+			t.Fatal("single/unknown count gained multiplier")
+		}
+	}
+}
+
 func TestApprovalBacklogOrderSettlesAndFreezes(t *testing.T) {
 	m := backlogModel()
 	now := time.Unix(100, 0)
