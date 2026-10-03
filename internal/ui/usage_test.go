@@ -94,7 +94,7 @@ func TestHistoryRefreshAndControls(t *testing.T) {
 	for _, test := range []struct {
 		key  rune
 		mode int
-	}{{'w', 1}, {'c', 2}, {'d', 0}} {
+	}{{'v', 1}, {'v', 2}, {'v', 7}, {'v', 8}, {'v', 0}} {
 		u, _ := m.Update(key(test.key))
 		m = u.(Model)
 		if m.history.mode != test.mode {
@@ -136,17 +136,17 @@ func TestHistoryRenderAndHitboxes(t *testing.T) {
 			}
 			for _, button := range historyButtons(layout.contentWidth) {
 				for x := button.x; x < button.x+lipgloss.Width(button.label); x++ {
-					action, ok := m.historyButtonAt(x+2, layout.meterY)
+					action, ok := m.historyButtonAt(x+2, layout.meterY+button.row)
 					if !ok || action != button.action {
 						t.Fatalf("unclickable button %q at %d width %d", button.label, x, width)
 					}
 				}
-				updated, _ := m.Update(tea.MouseClickMsg{X: button.x + 2, Y: layout.meterY, Button: tea.MouseLeft})
+				updated, _ := m.Update(tea.MouseClickMsg{X: button.x + 2, Y: layout.meterY + button.row, Button: tea.MouseLeft})
 				if button.action < 3 && updated.(Model).history.mode != button.action {
 					t.Fatal("click didn't select period")
 				}
 			}
-			if _, ok := m.historyButtonAt(2, layout.meterY+1); ok {
+			if _, ok := m.historyButtonAt(2, layout.meterY+2); ok {
 				t.Fatal("summary is clickable")
 			}
 		}
@@ -242,7 +242,7 @@ func TestHistoryRangeSelection(t *testing.T) {
 			if button.action != 6 {
 				continue
 			}
-			updated, _ = m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: m.dashboardLayout().meterY, Button: tea.MouseLeft})
+			updated, _ = m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: m.dashboardLayout().meterY + button.row, Button: tea.MouseLeft})
 			m = updated.(Model)
 		}
 		if m.history.weeks() != 52 {

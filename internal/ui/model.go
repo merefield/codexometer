@@ -685,7 +685,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonBenchmarkDone)
 			}
 		case "v":
-			if m.meterView.isQuota() {
+			if m.meterView.isQuota() || m.meterView == viewUsage {
 				return m.pressFooterButton(footerButtonView)
 			}
 		case "tab":
@@ -1332,6 +1332,15 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.prepareBenchmarkDetailTranscript()
 		m.persistPreferences()
 	case footerButtonView:
+		if m.meterView == viewUsage {
+			order := []int{0, 1, 2, 7, 8}
+			for i, mode := range order {
+				if mode == m.history.mode {
+					m.activateHistory(order[(i+1)%len(order)])
+					break
+				}
+			}
+		}
 		if m.meterView.isQuota() {
 			m.meterView = m.meterView.nextQuota(len(m.quotaSteps) > 0)
 			m.quotaMeterView = m.meterView
@@ -1476,7 +1485,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota())
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+lipgloss.Width(button.label) {

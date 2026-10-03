@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,42 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
+
+func TestUsageReportValueColours(t *testing.T) {
+	for _, theme := range []themeID{themeHacker, themeRust, themeBlueSteel, themeUltraviolet, themeNightshade} {
+		p := paletteFor(theme)
+		for _, test := range []struct {
+			known   bool
+			percent float64
+			want    color.Color
+		}{
+			{false, 100, p.dim}, {true, 0, p.primary}, {true, 79.99, p.primary},
+			{true, 80, p.warning}, {true, 99.99, p.warning}, {true, 100, p.danger}, {true, 125, p.danger},
+		} {
+			got := usageReportValueStyle(p, test.known, test.percent).GetForeground()
+			if got != test.want {
+				t.Fatalf("theme %v known %v percent %v: wrong colour", theme, test.known, test.percent)
+			}
+		}
+	}
+}
+
+func TestUsageReportColumnsAndFillPatterns(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.history.mode = 7
+	m.history.data.Reports = &codex.UsageReports{Daily: &codex.DailyUsageReport{Units: "CREDITS", Days: []codex.UsageBreakdownDay{{Total: 10, Groups: map[string]map[string]float64{"surface": {"cli": 6, "work_web": 3, "unknown": 1}}}}}}
+	text := ansi.Strip(m.renderHistory(100, 24, paletteFor(themeHacker)))
+	if !strings.Contains(text, "CREDITS") || !strings.Contains(text, "▓") || !strings.Contains(text, "█") {
+		t.Fatal("missing units or alternate fill")
+	}
+	used := 5000.0
+	m.history.mode = 8
+	m.history.data.Reports.Plan = &codex.PlanUsageReport{Periods: []codex.PlanUsagePeriod{{UsedBasisPoints: &used, Breakdowns: []codex.PlanUsageBreakdown{{Dimension: "surface", Rows: []codex.PlanUsageValue{{Key: "cli", BasisPoints: 2500}}}}}}}
+	text = ansi.Strip(m.renderHistory(100, 24, paletteFor(themeHacker)))
+	if !strings.Contains(text, "QUOTA USED") || !strings.Contains(text, "25.00%") {
+		t.Fatal("quota column missing units")
+	}
+}
 
 func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {
@@ -20,12 +57,12 @@ func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T)
 			seen := map[int]bool{}
 			for _, button := range historyButtons(layout.contentWidth, mode) {
 				seen[button.action] = true
-				action, ok := m.historyButtonAt(2+button.x, layout.meterY)
+				action, ok := m.historyButtonAt(2+button.x, layout.meterY+button.row)
 				if !ok || action != button.action {
 					t.Fatalf("width %d mode %d: incorrect hitbox for action %d", width, mode, button.action)
 				}
 				if button.action < 3 || button.action == 7 || button.action == 8 {
-					next, _ := m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: layout.meterY, Button: tea.MouseLeft})
+					next, _ := m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: layout.meterY + button.row, Button: tea.MouseLeft})
 					if next.(Model).history.mode != button.action {
 						t.Fatalf("width %d mode %d: cannot navigate to view %d", width, mode, button.action)
 					}
@@ -40,6 +77,89 @@ func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T)
 	}
 }
 
+func TestUsageViewCycleAndReturn(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height = viewUsage, 120, 30
+	for _, mode := range []int{0, 1, 2, 7, 8} {
+		m.history.mode = mode
+		for _, shortcut := range "dwcbp" {
+			next, _ := m.Update(key(shortcut))
+			if next.(Model).history.mode != mode {
+				t.Fatalf("legacy shortcut %c changed Usage view", shortcut)
+			}
+		}
+	}
+	m.history.mode = 0
+	for _, want := range []int{1, 2, 7, 8, 0} {
+		next, _ := m.Update(key('v'))
+		m = next.(Model)
+		if m.history.mode != want {
+			t.Fatalf("V selected %d, want %d", m.history.mode, want)
+		}
+	}
+	next, _ := m.Update(footerMouseMessage(t, m, footerButtonView, true))
+	m = next.(Model)
+	if m.history.mode != 1 {
+		t.Fatal("View footer did not cycle Usage")
+	}
+	next, _ = m.Update(specialKey(tea.KeyTab))
+	m = next.(Model)
+	if m.currentMainTab() != mainTabBenchmark {
+		t.Fatal("Tab changed a subview")
+	}
+	next, _ = m.Update(modifiedKey(tea.KeyTab, tea.ModShift))
+	m = next.(Model)
+	if m.meterView != viewUsage || m.history.mode != 1 {
+		t.Fatal("Usage selection not retained")
+	}
+}
+
+func TestUsageRefreshOnlyInFooter(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height = viewUsage, 120, 30
+	for _, mode := range []int{0, 1, 2, 7, 8} {
+		m.history.mode = mode
+		for _, err := range []error{nil, errors.New("offline")} {
+			m.history.err = err
+			body := ansi.Strip(m.renderHistory(116, 20, paletteFor(themeHacker)))
+			if strings.Contains(body, "R REFRESH") || strings.Contains(body, "R RETRY") {
+				t.Fatal("duplicate refresh hint in Usage")
+			}
+		}
+	}
+	if _, ok := footerButtonByID(m, footerButtonRefresh); !ok {
+		t.Fatal("refresh footer missing")
+	}
+	next, cmd := m.Update(key('r'))
+	if cmd == nil || !next.(Model).history.loading {
+		t.Fatal("R no longer refreshes Usage")
+	}
+}
+
+func TestUsageGroupControlOnSeparateRow(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height, m.history.mode = viewUsage, 120, 30, 7
+	for group, name := range reportDimensions {
+		m.history.group = group
+		text := ansi.Strip(m.renderHistory(116, 20, paletteFor(themeHacker)))
+		if strings.Count(text, "GROUP") != 1 || !strings.Contains(text, "GROUP: "+strings.ToUpper(name)) {
+			t.Fatalf("missing or duplicated group control for %s", name)
+		}
+		for _, b := range historyButtons(116, 7, group) {
+			if b.action == 9 {
+				if b.row != 1 {
+					t.Fatal("Group rendered as a view tab")
+				}
+				for x := b.x; x < b.x+len(b.label); x++ {
+					if action, ok := m.historyButtonAt(x+2, m.dashboardLayout().meterY+1); !ok || action != 9 {
+						t.Fatal("Group hitbox mismatch")
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 	m := New(historyStub{}, time.Minute)
 	m.meterView = viewUsage
@@ -48,16 +168,9 @@ func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 		{Date: "2026-10-01", Total: 3, Groups: map[string]map[string]float64{"model": {"older-model": 3}}},
 		{Date: "2026-10-02", Total: 4, Groups: map[string]map[string]float64{"model": {"gpt-6.1-sol": 4}}},
 	}}, Plan: &codex.PlanUsageReport{Approximate: true, Periods: []codex.PlanUsagePeriod{{WindowMinutes: 10080, UsedBasisPoints: &used, StartsAt: "2026-09-28T00:00:00Z", EndsAt: "2026-10-05T00:00:00Z"}, {WindowMinutes: 300}}}}
-	for _, view := range []struct {
-		key  string
-		mode int
-	}{{"b", 7}, {"p", 8}} {
-		a, ok := historyKey(view.key)
-		if !ok {
-			t.Fatal("missing shortcut")
-		}
-		m.activateHistory(a)
-		if m.history.mode != view.mode {
+	for _, mode := range []int{7, 8} {
+		m.activateHistory(mode)
+		if m.history.mode != mode {
 			t.Fatal("mode not selected")
 		}
 		for _, size := range [][2]int{{20, 5}, {40, 16}, {80, 24}, {160, 60}} {
@@ -95,8 +208,8 @@ func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {
 		m.width, m.height = width, 24
 		layout := m.dashboardLayout()
-		for _, button := range historyButtons(layout.contentWidth, m.history.mode) {
-			a, ok := m.historyButtonAt(2+button.x, layout.meterY)
+		for _, button := range historyButtons(layout.contentWidth, m.history.mode, m.history.group) {
+			a, ok := m.historyButtonAt(2+button.x, layout.meterY+button.row)
 			if !ok || a != button.action {
 				t.Fatal("button hit surface mismatch")
 			}

@@ -57,16 +57,20 @@
   use UTC. Allowance history is approximate where indicated; reset causes are
   not provided.
 </p>
+<nav class="secondary" aria-label="Usage view">
+  {#each [['daily', 'Daily'], ['monthly', 'Monthly'], ['cumulative', 'Cumulative'], ['breakdown', 'Breakdown'], ['periods', 'Windows']] as [value, label]}
+    <button
+      class:active={mode === value}
+      aria-pressed={mode === value}
+      onclick={() => {
+        mode = value;
+        offset = 0;
+      }}>{label}</button
+    >
+  {/each}
+</nav>
 <div class="controls">
-  <label
-    >VIEW <select aria-label="Usage view" bind:value={mode}
-      ><option value="daily">Daily heatmap</option><option value="monthly"
-        >Monthly bars</option
-      ><option value="cumulative">Cumulative bars</option><option
-        value="breakdown">Daily breakdown</option
-      ><option value="periods">Allowance periods</option></select
-    ></label
-  >{#if mode !== 'breakdown' && mode !== 'periods'}<label
+  {#if mode !== 'breakdown' && mode !== 'periods'}<label
       >PERIOD <select
         aria-label="Usage period"
         bind:value={months}
