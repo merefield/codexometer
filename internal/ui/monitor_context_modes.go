@@ -182,6 +182,9 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		controls = colors.label().Render(dots)
 	}
 	textRows, gap, _ := monitorContextBodyLayout(height, n)
+	if hasWorkingCommand(s.preview) {
+		lines = workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
+	}
 	if len(lines) > textRows {
 		lines = lines[:textRows]
 		if textRows > 0 {

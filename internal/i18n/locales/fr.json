@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "COMMENTAIRE",
+  "RUNNING": "EN COURS",
+  "COMPLETED": "TERMINÉ",
+  "FAILED": "ÉCHEC",
+  "DECLINED": "REFUSÉ",
+  "+%d RUNNING": "+%d EN COURS",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "SEUILS",

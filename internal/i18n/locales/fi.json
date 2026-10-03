@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "KOMMENTTI",
+  "RUNNING": "KÄYNNISSÄ",
+  "COMPLETED": "VALMIS",
+  "FAILED": "EPÄONNISTUI",
+  "DECLINED": "HYLÄTTY",
+  "+%d RUNNING": "+%d KÄYNNISSÄ",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "KYNNYSARVOT",

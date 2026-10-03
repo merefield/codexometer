@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "KOMMENTAR",
+  "RUNNING": "KÖRS",
+  "COMPLETED": "KLART",
+  "FAILED": "MISSLYCKADES",
+  "DECLINED": "AVBÖJT",
+  "+%d RUNNING": "+%d KÖRS",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "TRÖSKLAR",

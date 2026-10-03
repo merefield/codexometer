@@ -1,4 +1,10 @@
 {
+  "COMMENTARY": "COMENTARIO",
+  "RUNNING": "EN CURSO",
+  "COMPLETED": "COMPLETADO",
+  "FAILED": "FALLIDO",
+  "DECLINED": "RECHAZADO",
+  "+%d RUNNING": "+%d EN CURSO",
   "%s ×%d": "%s ×%d",
   "%s +": "%s +",
   "THRESHOLDS": "UMBRALES",

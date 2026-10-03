@@ -21,18 +21,22 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
-	Name        string    `json:"name,omitempty"`
-	ID          string    `json:"id"`
-	Directory   string    `json:"directory"`
-	Tokens      int64     `json:"tokens"`
-	Agents      int       `json:"agents"`
-	Status      string    `json:"status"`
-	ContextKind string    `json:"contextKind"`
-	Text        string    `json:"text"`
-	Command     string    `json:"command"`
-	Source      string    `json:"source"`
-	Activity    time.Time `json:"activity"`
-	Samples     []sample  `json:"samples"`
+	Name            string    `json:"name,omitempty"`
+	ID              string    `json:"id"`
+	Directory       string    `json:"directory"`
+	Tokens          int64     `json:"tokens"`
+	Agents          int       `json:"agents"`
+	Status          string    `json:"status"`
+	ContextKind     string    `json:"contextKind"`
+	Text            string    `json:"text"`
+	Command         string    `json:"command"`
+	WorkingCommand  string    `json:"workingCommand,omitempty"`
+	CommandStatus   string    `json:"commandStatus,omitempty"`
+	RunningCommands int       `json:"runningCommands,omitempty"`
+	RunningLimited  bool      `json:"runningLimited,omitempty"`
+	Source          string    `json:"source"`
+	Activity        time.Time `json:"activity"`
+	Samples         []sample  `json:"samples"`
 }
 
 type sample struct {
@@ -303,6 +307,13 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				s.previous[row.ID] = row.TotalTokens
 			}
 			text := row.Context.Text
+			var activity codex.SessionActivity
+			if row.Context.Kind == codex.SessionContextActivity {
+				activity = row.Context.Activity
+				if activity.Command != "" {
+					text = activity.Prose
+				}
+			}
 			if row.Context.Kind == codex.SessionContextApproval && row.Context.CommandDetails.Command != "" && row.Context.CommandDetails.Justification != "" {
 				text = row.Context.CommandDetails.Justification
 			}
@@ -310,6 +321,8 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				Status: sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
+				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
+				RunningCommands: activity.RunningCommands, RunningLimited: activity.RunningLimited,
 				Samples: s.samples[row.ID],
 			})
 		}
