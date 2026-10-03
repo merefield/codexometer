@@ -1234,13 +1234,19 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
       has: page.getByRole('cell', { name: '2026-09-10', exact: true }),
     }),
   ).toContainText('350');
-  await page.getByLabel('Usage view').selectOption('monthly');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Monthly', exact: true })
+    .click();
   await expect(
     page.getByRole('row').filter({
       has: page.getByRole('cell', { name: '2026-09', exact: true }),
     }),
   ).toContainText('370');
-  await page.getByLabel('Usage view').selectOption('cumulative');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Cumulative', exact: true })
+    .click();
   await expect(
     page.getByRole('row').filter({
       has: page.getByRole('cell', { name: '2026-09-11', exact: true }),
@@ -1307,7 +1313,10 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
               breakdowns: [
                 {
                   dimension: 'model',
-                  rows: [{ key: 'gpt-6.1-sol', basis_points: 12500 }],
+                  rows: [
+                    { key: 'gpt-6.1-sol', basis_points: 12000 },
+                    { key: 'unknown', basis_points: 500 },
+                  ],
                 },
               ],
             },
@@ -1328,7 +1337,10 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'USAGE', exact: true }).click();
-  await page.getByLabel('Usage view').selectOption('breakdown');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Breakdown', exact: true })
+    .click();
   await expect(
     page.getByRole('heading', { name: '2026-10-02 // 4 RELATIVE USAGE' }),
   ).toBeVisible();
@@ -1337,19 +1349,33 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
     'gpt-6.1-sol',
   );
   await expect(page.locator('.report-row').first()).toContainText('2.5');
+  await expect(
+    page.locator('.report-row').nth(1).locator('.report-fill'),
+  ).toHaveCSS('opacity', '0.72');
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(page.locator('.report-row')).toContainText('older-model');
   await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
-  await page.getByLabel('Usage view').selectOption('periods');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Windows', exact: true })
+    .click();
   await expect(page.getByText('OPENAI // UTC')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: '10080 MIN // pro // USED 125%' }),
   ).toBeVisible();
   await expect(page.getByText(/Partial accounting/)).toBeVisible();
+  await expect(page.locator('.quota-full')).toHaveText('USED 125%');
+  await page.getByLabel('Usage grouping').selectOption('model');
+  await expect(page.locator('.report-row.unknown')).toContainText('unknown');
+  await expect(page.locator('.report-row.unknown .report-fill')).toHaveCSS(
+    'opacity',
+    '1',
+  );
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '300 MIN // pro // USED UNKNOWN' }),
   ).toBeVisible();
+  await expect(page.locator('.quota-full, .quota-near')).toHaveCount(0);
   await expect(
     page.getByText(
       'Selected breakdown unavailable; missing does not mean zero.',
@@ -1358,7 +1384,7 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(
-      page.getByRole('heading', { name: 'ALLOWANCE PERIODS', exact: true }),
+      page.getByRole('heading', { name: 'QUOTA WINDOWS', exact: true }),
     ).toBeVisible();
     expect(
       await page.evaluate(
@@ -2100,9 +2126,15 @@ test('usage heatmap, period selection, bars and accessible table', async ({
   await page.getByLabel('Usage period').selectOption('6');
   expect(await page.locator('.heat-cell').count()).toBeGreaterThan(175);
   expect(await page.locator('.heat-cell').count()).toBeLessThan(186);
-  await page.getByLabel('Usage view').selectOption('monthly');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Monthly', exact: true })
+    .click();
   await expect(page.locator('.chart')).toBeVisible();
-  await page.getByLabel('Usage view').selectOption('cumulative');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Cumulative', exact: true })
+    .click();
   await page.getByText('Accessible data table').click();
   await expect(page.getByRole('table')).toBeVisible();
   await page.getByRole('button', { name: '← EARLIER' }).click();

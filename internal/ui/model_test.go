@@ -479,7 +479,7 @@ func footerMouseMessage(t *testing.T, model Model, id footerButtonID, clicked bo
 }
 
 func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {
-	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name, model.meterView.isQuota())
+	buttons, _ := footerButtonLayoutWithTheme(model.contentWidth(), paletteFor(model.theme).name, model.meterView.isQuota() || model.meterView == viewUsage)
 	for _, button := range buttons {
 		if button.id == id {
 			return button, true

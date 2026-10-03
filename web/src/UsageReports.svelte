@@ -69,7 +69,7 @@
   <span class="muted">{count ? `${position + 1} / ${count}` : 'NO DATA'}</span>
 </div>
 <section class="panel">
-  <h2>{mode === 'breakdown' ? 'DAILY BREAKDOWN' : 'ALLOWANCE PERIODS'}</h2>
+  <h2>{mode === 'breakdown' ? 'DAILY BREAKDOWN' : 'QUOTA WINDOWS'}</h2>
   <p class="eyebrow">
     {mode === 'breakdown'
       ? reports?.dailyStatus || 'UNAVAILABLE'
@@ -91,10 +91,13 @@
     </p>
   {:else if mode === 'periods' && plan}
     <p class="muted">
-      {plan.coverage_complete
-        ? 'Reported range complete'
-        : 'Partial coverage'}{plan.approximate ? ' // APPROXIMATE' : ''} // Latest
-      fetch {date(plan.fetchedAt)}
+      <span class:quality-warning={!plan.coverage_complete}
+        >{plan.coverage_complete
+          ? 'Reported range complete'
+          : 'Partial coverage'}</span
+      >{#if plan.approximate}<span class="quality-warning">
+          // APPROXIMATE</span
+        >{/if} // Latest fetch {date(plan.fetchedAt)}
     </p>
     <p class="muted">
       Coverage starts {plan.coverage_start || 'unknown'} // Data as of {plan.data_as_of ||
@@ -103,12 +106,16 @@
     </p>
     {#if period}
       <h3>
-        {period.window_minutes} MIN // {period.plan_type} // USED {amount(
-          total,
-        )}{total == null ? '' : '%'}
+        {period.window_minutes} MIN // {period.plan_type} //
+        <span
+          class:muted={total == null}
+          class:quota-near={total != null && total >= 80 && total < 100}
+          class:quota-full={total != null && total >= 100}
+          >USED {amount(total)}{total == null ? '' : '%'}</span
+        >
       </h3>
-      <p>{period.starts_at} → {period.ends_at}</p>
-      {#if !period.accounting_complete}<p class="notice">
+      <p class="window-dates">{period.starts_at} → {period.ends_at}</p>
+      {#if !period.accounting_complete}<p class="quality-warning">
           Partial accounting: totals may still change.
         </p>{/if}
       <p class="muted">
@@ -124,8 +131,12 @@
   {/if}
   {#if rows.length}
     <div class="report-bars">
-      {#each rows as [name, value]}
-        <div class="report-row">
+      {#each rows as [name, value], index}
+        <div
+          class="report-row"
+          class:unknown={name.trim().toLowerCase() === 'unknown'}
+          class:alternate={index % 2 === 1}
+        >
           <span title={name}>{name}</span>
           <div class="report-track">
             <div
@@ -133,7 +144,7 @@
               style:width={`${Math.max(0, (100 * value) / peak)}%`}
             ></div>
           </div>
-          <span>{amount(value)} {unit}</span>
+          <span class="report-value">{amount(value)} {unit}</span>
         </div>
       {/each}
     </div>
@@ -147,6 +158,30 @@
 </section>
 
 <style>
+  h3,
+  .window-dates,
+  .report-value {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .quality-warning,
+  .quota-near {
+    color: var(--approval);
+  }
+  .quota-full {
+    color: #ff6680;
+  }
+  .alternate .report-fill {
+    opacity: 0.72;
+  }
+  .unknown,
+  .unknown .report-value {
+    color: var(--muted);
+  }
+  .unknown .report-fill {
+    background: var(--muted);
+    opacity: 1;
+  }
   .report-bars {
     display: grid;
     gap: 0.6rem;
