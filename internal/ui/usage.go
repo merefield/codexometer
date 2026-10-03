@@ -117,23 +117,32 @@ func historyPoints(data codex.AccountUsage, now time.Time, mode, weekCount int) 
 type historyButton struct {
 	action, x int
 	label     string
+	row       int
+}
+
+// Reuse the existing translated chart labels without their former hotkey markup.
+func historyTabLabel(key string) string {
+	label := strings.NewReplacer("[", "", "]", "", "(", "", ")", "").Replace(i18n.Text(key))
+	return "╭ " + strings.TrimSpace(label) + " ╮"
 }
 
 func historyButtons(width int, modes ...int) []historyButton {
 	report := len(modes) > 0 && modes[0] >= 7
-	variants := [][]string{
-		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), "[ (B)REAKDOWN ]", "[ (P)ERIODS ]", "[ (G)ROUP ]", "[6M]", "[12M]", "[←]", "[→]"},
-		{"[D]", "[W]", "[C]", "[B]", "[P]", "[G]", "[6M]", "[12M]", "[←]", "[→]"},
-		{"D", "W", "C", "B", "P", "G", "6", "12", "←", "→"},
+	group := "SURFACE"
+	if len(modes) > 1 {
+		group = strings.ToUpper(reportDimensions[modes[1]%len(reportDimensions)])
 	}
-	allActions := []int{0, 1, 2, 7, 8, 9, 5, 6, 3, 4}
+	variants := [][]string{
+		{"[ (G) GROUP: " + group + " ]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"[G:" + group + "]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"G", "6", "12", "←", "→"},
+	}
+	allActions := []int{9, 5, 6, 3, 4}
 	actions := []int{}
 	for variant, labels := range variants {
 		filtered := []string{}
 		for i, action := range allActions {
-			// View selectors (0–2, 7–8) stay visible in every mode so users
-			// can navigate between token charts and reports with the mouse.
-			// Only Group (9) and the token-range controls (5–6) are contextual.
+			// Group and range controls belong below the view tabs.
 			if action == 9 && !report || (action == 5 || action == 6) && report {
 				continue
 			}
@@ -145,13 +154,27 @@ func historyButtons(width int, modes ...int) []historyButton {
 		variants[variant] = filtered
 	}
 	labels, separator := responsiveTabLabels(width, variants)
+	tabLabels, tabSeparator := responsiveTabLabels(width, [][]string{
+		{historyTabLabel("[ (D)AILY ]"), historyTabLabel("[ (W)EEKLY ]"), historyTabLabel("[ (C)UMULATIVE ]"), "╭ BREAKDOWN ╮", "╭ PERIODS ╮"},
+		{"╭DAY╮", "╭WEEK╮", "╭SUM╮", "╭BRK╮", "╭PER╮"},
+		{"D", "W", "C", "B", "P"},
+	})
 	buttons := []historyButton{}
+	tabActions := []int{0, 1, 2, 7, 8}
+	tabX := 0
+	for i, label := range tabLabels {
+		if tabX+lipgloss.Width(label) > width {
+			break
+		}
+		buttons = append(buttons, historyButton{action: tabActions[i], x: tabX, label: label})
+		tabX += lipgloss.Width(label) + len(tabSeparator)
+	}
 	x := 0
 	for i, label := range labels {
 		if x+lipgloss.Width(label) > width {
 			break
 		}
-		buttons = append(buttons, historyButton{actions[i], x, label})
+		buttons = append(buttons, historyButton{action: actions[i], x: x, label: label, row: 1})
 		x += lipgloss.Width(label) + len(separator)
 	}
 	return buttons
@@ -270,10 +293,13 @@ func (m *Model) activateHistory(action int) {
 
 func (m Model) historyButtonAt(x, y int) (int, bool) {
 	layout := m.dashboardLayout()
-	if y != layout.meterY {
+	if y < layout.meterY || y > layout.meterY+1 || y >= layout.meterY+layout.meterHeight {
 		return 0, false
 	}
-	for _, button := range historyButtons(layout.contentWidth, m.history.mode) {
+	for _, button := range historyButtons(layout.contentWidth, m.history.mode, m.history.group) {
+		if y != layout.meterY+button.row {
+			continue
+		}
 		if x >= 2+button.x && x < 2+button.x+lipgloss.Width(button.label) {
 			return button.action, true
 		}
@@ -311,7 +337,13 @@ func optionalUsageDuration(seconds *int64) string {
 func (m Model) renderHistory(width, height int, colors palette) string {
 	lines := []string{}
 	buttons := ""
-	for _, button := range historyButtons(width, m.history.mode) {
+	row := 0
+	for _, button := range historyButtons(width, m.history.mode, m.history.group) {
+		if button.row != row {
+			lines = append(lines, buttons)
+			buttons = ""
+			row = button.row
+		}
 		buttons += strings.Repeat(" ", max(button.x-lipgloss.Width(buttons), 0))
 		label := colors.dimmed().Render(button.label)
 		if button.action == m.history.mode || (button.action == 5 && m.history.sixMonths) || (button.action == 6 && !m.history.sixMonths) {
@@ -319,6 +351,10 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		}
 		if m.history.hovered == button.action+1 {
 			label = colors.label().Reverse(true).Render(button.label)
+		}
+		if button.row == 0 {
+			style, _ := tabAppearance(button.action == m.history.mode, m.history.hovered == button.action+1, false, colors)
+			label = style.Render(button.label)
 		}
 		buttons += label
 	}

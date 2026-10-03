@@ -20,12 +20,12 @@ func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T)
 			seen := map[int]bool{}
 			for _, button := range historyButtons(layout.contentWidth, mode) {
 				seen[button.action] = true
-				action, ok := m.historyButtonAt(2+button.x, layout.meterY)
+				action, ok := m.historyButtonAt(2+button.x, layout.meterY+button.row)
 				if !ok || action != button.action {
 					t.Fatalf("width %d mode %d: incorrect hitbox for action %d", width, mode, button.action)
 				}
 				if button.action < 3 || button.action == 7 || button.action == 8 {
-					next, _ := m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: layout.meterY, Button: tea.MouseLeft})
+					next, _ := m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: layout.meterY + button.row, Button: tea.MouseLeft})
 					if next.(Model).history.mode != button.action {
 						t.Fatalf("width %d mode %d: cannot navigate to view %d", width, mode, button.action)
 					}
@@ -34,6 +34,57 @@ func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T)
 			for action, want := range map[int]bool{0: true, 1: true, 2: true, 7: true, 8: true, 9: mode >= 7, 5: mode < 7, 6: mode < 7, 3: true, 4: true} {
 				if seen[action] != want {
 					t.Fatalf("width %d mode %d: action %d visible=%v, want %v", width, mode, action, seen[action], want)
+				}
+			}
+		}
+	}
+}
+
+func TestUsageViewCycleAndReturn(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height = viewUsage, 120, 30
+	for _, want := range []int{1, 2, 7, 8, 0} {
+		next, _ := m.Update(key('v'))
+		m = next.(Model)
+		if m.history.mode != want {
+			t.Fatalf("V selected %d, want %d", m.history.mode, want)
+		}
+	}
+	next, _ := m.Update(footerMouseMessage(t, m, footerButtonView, true))
+	m = next.(Model)
+	if m.history.mode != 1 {
+		t.Fatal("View footer did not cycle Usage")
+	}
+	next, _ = m.Update(specialKey(tea.KeyTab))
+	m = next.(Model)
+	if m.currentMainTab() != mainTabBenchmark {
+		t.Fatal("Tab changed a subview")
+	}
+	next, _ = m.Update(modifiedKey(tea.KeyTab, tea.ModShift))
+	m = next.(Model)
+	if m.meterView != viewUsage || m.history.mode != 1 {
+		t.Fatal("Usage selection not retained")
+	}
+}
+
+func TestUsageGroupControlOnSeparateRow(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height, m.history.mode = viewUsage, 120, 30, 7
+	for group, name := range reportDimensions {
+		m.history.group = group
+		text := ansi.Strip(m.renderHistory(116, 20, paletteFor(themeHacker)))
+		if strings.Count(text, "GROUP") != 1 || !strings.Contains(text, "GROUP: "+strings.ToUpper(name)) {
+			t.Fatalf("missing or duplicated group control for %s", name)
+		}
+		for _, b := range historyButtons(116, 7, group) {
+			if b.action == 9 {
+				if b.row != 1 {
+					t.Fatal("Group rendered as a view tab")
+				}
+				for x := b.x; x < b.x+len(b.label); x++ {
+					if action, ok := m.historyButtonAt(x+2, m.dashboardLayout().meterY+1); !ok || action != 9 {
+						t.Fatal("Group hitbox mismatch")
+					}
 				}
 			}
 		}
@@ -95,8 +146,8 @@ func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {
 		m.width, m.height = width, 24
 		layout := m.dashboardLayout()
-		for _, button := range historyButtons(layout.contentWidth, m.history.mode) {
-			a, ok := m.historyButtonAt(2+button.x, layout.meterY)
+		for _, button := range historyButtons(layout.contentWidth, m.history.mode, m.history.group) {
+			a, ok := m.historyButtonAt(2+button.x, layout.meterY+button.row)
 			if !ok || a != button.action {
 				t.Fatal("button hit surface mismatch")
 			}

@@ -145,7 +145,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 					}
 				}
 			}
-			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota())
+			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
 			x := 2
 			for _, b := range buttons {
 				for col := 0; col < lipgloss.Width(b.label); col++ {
@@ -158,7 +158,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 			if view == viewUsage {
 				for _, b := range historyButtons(layout.contentWidth) {
 					for col := 0; col < lipgloss.Width(b.label); col++ {
-						if action, ok := m.historyButtonAt(2+b.x+col, layout.meterY); !ok || action != b.action {
+						if action, ok := m.historyButtonAt(2+b.x+col, layout.meterY+b.row); !ok || action != b.action {
 							t.Errorf("Usage %q hitbox off", b.label)
 						}
 					}

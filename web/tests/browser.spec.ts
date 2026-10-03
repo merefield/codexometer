@@ -1234,13 +1234,19 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
       has: page.getByRole('cell', { name: '2026-09-10', exact: true }),
     }),
   ).toContainText('350');
-  await page.getByLabel('Usage view').selectOption('monthly');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Monthly', exact: true })
+    .click();
   await expect(
     page.getByRole('row').filter({
       has: page.getByRole('cell', { name: '2026-09', exact: true }),
     }),
   ).toContainText('370');
-  await page.getByLabel('Usage view').selectOption('cumulative');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Cumulative', exact: true })
+    .click();
   await expect(
     page.getByRole('row').filter({
       has: page.getByRole('cell', { name: '2026-09-11', exact: true }),
@@ -1328,7 +1334,10 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'USAGE', exact: true }).click();
-  await page.getByLabel('Usage view').selectOption('breakdown');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Breakdown', exact: true })
+    .click();
   await expect(
     page.getByRole('heading', { name: '2026-10-02 // 4 RELATIVE USAGE' }),
   ).toBeVisible();
@@ -1340,7 +1349,10 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(page.locator('.report-row')).toContainText('older-model');
   await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
-  await page.getByLabel('Usage view').selectOption('periods');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Periods', exact: true })
+    .click();
   await expect(page.getByText('OPENAI // UTC')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: '10080 MIN // pro // USED 125%' }),
@@ -2100,9 +2112,15 @@ test('usage heatmap, period selection, bars and accessible table', async ({
   await page.getByLabel('Usage period').selectOption('6');
   expect(await page.locator('.heat-cell').count()).toBeGreaterThan(175);
   expect(await page.locator('.heat-cell').count()).toBeLessThan(186);
-  await page.getByLabel('Usage view').selectOption('monthly');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Monthly', exact: true })
+    .click();
   await expect(page.locator('.chart')).toBeVisible();
-  await page.getByLabel('Usage view').selectOption('cumulative');
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Cumulative', exact: true })
+    .click();
   await page.getByText('Accessible data table').click();
   await expect(page.getByRole('table')).toBeVisible();
   await page.getByRole('button', { name: '← EARLIER' }).click();

@@ -186,7 +186,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds) {
 		status = renderPricingFooter(status, width, colors)
 	}
-	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota())
+	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota() || m.meterView == viewUsage)
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		controls = append(controls, footerButtonAppearance(

@@ -570,7 +570,7 @@ codexometer --codex /path/to/codex
 | `Tab` | Select the next top-level tab: Quota, Sessions, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
-| `v` | Cycle the active Quota view |
+| `v` | Cycle views within Quota or Usage |
 | `s` | Reset the Sessions baseline, or open Benchmark Scope |
 | `p` | Pause or resume live monitoring (Sessions view only) |
 | `h` | Reset all Sessions rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
@@ -927,6 +927,13 @@ automatic quota-window reset date.
 `account/usage/read` through a short-lived local Codex app-server using your
 prevailing ChatGPT login. No model turn is started and no reset credit is used.
 It does not require the shared-daemon configuration used for live Sessions events.
+
+Usage views appear as clickable subtabs, like the views within Quota. Press `v`
+or click **View** in the terminal footer to cycle through them; `Tab` still
+switches primary tabs. Range, grouping and date navigation sit on a separate
+contextual control row. Breakdown/Periods have a single **Group** control showing
+the selected dimension. The browser uses matching view subtabs (retaining its
+Monthly rather than Weekly token chart).
 
 - **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.

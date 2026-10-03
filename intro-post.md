@@ -29,7 +29,7 @@ The interface has four main tabs:
 - **Usage** — explore OpenAI account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. New **Breakdown** and **Periods** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. History is fetched directly from OpenAI on each run, with no local usage ledger. Unavailable data and approximate periods are labelled rather than guessed.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
 
-Use `Tab` / `Shift+Tab` or the mouse to navigate. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; explicitly sent follow-ups and benchmark runs do consume model usage.
+Use `Tab` / `Shift+Tab` or the mouse to navigate primary tabs, and `v` to cycle the clickable view subtabs within Quota or Usage. Usage keeps its range/grouping controls separate from those views; web offers matching view subtabs. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; explicitly sent follow-ups and benchmark runs do consume model usage.
 
 Click the **Codexometer title** to jump back to Quota’s Bars view. The **version label** links to that version’s release highlights through your terminal’s hyperlink support—typically Ctrl-click.
 

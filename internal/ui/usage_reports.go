@@ -121,7 +121,7 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 		}
 		lines = append(lines, colors.label().Render(name+" "+strings.Repeat("█", fill))+strings.Repeat(" ", barWidth-fill)+fmt.Sprintf(" %9.2f", row.Value))
 	}
-	lines = append(lines, "G GROUP // ←/→ PERIOD // ↑/↓ SCROLL // R REFRESH")
+	lines = append(lines, "←/→ PERIOD // ↑/↓ SCROLL // R REFRESH")
 	if m.history.loading {
 		lines[len(lines)-1] = "FETCHING ACCOUNT HISTORY…"
 	}
