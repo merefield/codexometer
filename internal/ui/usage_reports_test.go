@@ -63,6 +63,16 @@ func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T)
 func TestUsageViewCycleAndReturn(t *testing.T) {
 	m := New(historyStub{}, time.Minute)
 	m.meterView, m.width, m.height = viewUsage, 120, 30
+	for _, mode := range []int{0, 1, 2, 7, 8} {
+		m.history.mode = mode
+		for _, shortcut := range "dwcbp" {
+			next, _ := m.Update(key(shortcut))
+			if next.(Model).history.mode != mode {
+				t.Fatalf("legacy shortcut %c changed Usage view", shortcut)
+			}
+		}
+	}
+	m.history.mode = 0
 	for _, want := range []int{1, 2, 7, 8, 0} {
 		next, _ := m.Update(key('v'))
 		m = next.(Model)
@@ -119,16 +129,9 @@ func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 		{Date: "2026-10-01", Total: 3, Groups: map[string]map[string]float64{"model": {"older-model": 3}}},
 		{Date: "2026-10-02", Total: 4, Groups: map[string]map[string]float64{"model": {"gpt-6.1-sol": 4}}},
 	}}, Plan: &codex.PlanUsageReport{Approximate: true, Periods: []codex.PlanUsagePeriod{{WindowMinutes: 10080, UsedBasisPoints: &used, StartsAt: "2026-09-28T00:00:00Z", EndsAt: "2026-10-05T00:00:00Z"}, {WindowMinutes: 300}}}}
-	for _, view := range []struct {
-		key  string
-		mode int
-	}{{"b", 7}, {"p", 8}} {
-		a, ok := historyKey(view.key)
-		if !ok {
-			t.Fatal("missing shortcut")
-		}
-		m.activateHistory(a)
-		if m.history.mode != view.mode {
+	for _, mode := range []int{7, 8} {
+		m.activateHistory(mode)
+		if m.history.mode != mode {
 			t.Fatal("mode not selected")
 		}
 		for _, size := range [][2]int{{20, 5}, {40, 16}, {80, 24}, {160, 60}} {

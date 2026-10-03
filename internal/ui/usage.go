@@ -155,7 +155,7 @@ func historyButtons(width int, modes ...int) []historyButton {
 	}
 	labels, separator := responsiveTabLabels(width, variants)
 	tabLabels, tabSeparator := responsiveTabLabels(width, [][]string{
-		{historyTabLabel("[ (D)AILY ]"), historyTabLabel("[ (W)EEKLY ]"), historyTabLabel("[ (C)UMULATIVE ]"), "╭ BREAKDOWN ╮", "╭ WINDOWS ╮"},
+		{historyTabLabel("[ (D)AILY ]"), historyTabLabel("[ (W)EEKLY ]"), historyTabLabel("[ (C)UMULATIVE ]"), i18n.Text("╭ BREAKDOWN ╮"), i18n.Text("╭ WINDOWS ╮")},
 		{"╭DAY╮", "╭WEEK╮", "╭SUM╮", "╭BRK╮", "╭WIN╮"},
 		{"D", "W", "C", "B", "P"},
 	})
@@ -182,22 +182,12 @@ func historyButtons(width int, modes ...int) []historyButton {
 
 func historyKey(key string) (int, bool) {
 	switch key {
-	case "b":
-		return 7, true
-	case "p":
-		return 8, true
 	case "g":
 		return 9, true
 	case "up":
 		return 10, true
 	case "down":
 		return 11, true
-	case "d":
-		return 0, true
-	case "w":
-		return 1, true
-	case "c":
-		return 2, true
 	case "left", "pgup":
 		return 3, true
 	case "right", "pgdown":

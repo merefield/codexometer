@@ -941,14 +941,14 @@ neutral, not an error. Partial/approximate accounting and stale data have warnin
 labels. Historical window totals use amber from 80% and red from 100%; category
 bars do not inherit these warnings, and historical totals are not live quota alerts.
 
-- **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
+- **Daily**: a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.
-- **Weekly** (`w`): tokens summed into Sunday–Saturday weeks; the current week is partial.
-- **Cumulative** (`c`): a running total of those weeks within the selected window,
+- **Weekly**: tokens summed into Sunday–Saturday weeks; the current week is partial.
+- **Cumulative**: a running total of those weeks within the selected window,
   not the account's lifetime total.
-- **Breakdown** (`b`): daily account usage split by surface, model, feature
+- **Breakdown**: daily account usage split by surface, model, feature
   (thread source), or task-start trigger when OpenAI supplies that attribution.
-- **Windows** (`p`): historical allowance windows with consumed percentage,
+- **Windows**: historical allowance windows with consumed percentage,
   coverage, approximation and accounting-completeness indicators, plus the
   available breakdowns for each window.
 

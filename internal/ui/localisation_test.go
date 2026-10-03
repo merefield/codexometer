@@ -65,6 +65,33 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_prompt_wrapping", TestMonitorPromptWrapsAndGrowsUpward)
 	t.Run("monitor_detail_sections", TestMonitorDetailStructuredSections)
 	t.Run("tab_click_surfaces", TestEveryRenderedTabCellIsClickableAcrossWidths)
+	t.Run("usage_tab_translations", func(t *testing.T) {
+		m := New(nil, time.Minute)
+		m.meterView, m.width, m.height = viewUsage, 304, 30
+		for _, b := range historyButtons(300) {
+			key := ""
+			if b.action == 7 {
+				key = "╭ BREAKDOWN ╮"
+			}
+			if b.action == 8 {
+				key = "╭ WINDOWS ╮"
+			}
+			if key == "" {
+				continue
+			}
+			if b.label != i18n.Text(key) {
+				t.Fatalf("untranslated tab %q", b.label)
+			}
+			if i18n.Code() != "en-GB" && b.label == key {
+				t.Fatalf("English fallback for %s", i18n.Code())
+			}
+			for x := 0; x < lipgloss.Width(b.label); x++ {
+				if action, ok := m.historyButtonAt(2+b.x+x, m.dashboardLayout().meterY); !ok || action != b.action {
+					t.Fatal("translated tab hitbox mismatch")
+				}
+			}
+		}
+	})
 	t.Run("reset_warning_surfaces", TestResetWarningClickSurfaces)
 	t.Run("reset_warning_language", TestResetWarningsUseLocale)
 	t.Run("quota_profile_controls", TestQuotaLocalisedControls)

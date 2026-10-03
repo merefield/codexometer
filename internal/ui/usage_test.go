@@ -94,7 +94,7 @@ func TestHistoryRefreshAndControls(t *testing.T) {
 	for _, test := range []struct {
 		key  rune
 		mode int
-	}{{'w', 1}, {'c', 2}, {'d', 0}} {
+	}{{'v', 1}, {'v', 2}, {'v', 7}, {'v', 8}, {'v', 0}} {
 		u, _ := m.Update(key(test.key))
 		m = u.(Model)
 		if m.history.mode != test.mode {
