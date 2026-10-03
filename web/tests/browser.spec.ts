@@ -1351,7 +1351,11 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   await expect(page.locator('.report-row').first()).toContainText('2.5');
   await expect(
     page.locator('.report-row').nth(1).locator('.report-fill'),
-  ).toHaveCSS('opacity', '0.72');
+  ).toHaveCSS('opacity', '1');
+  await expect(
+    page.locator('.report-row').nth(1).locator('.report-fill'),
+  ).toHaveCSS('background-image', /radial-gradient/);
+  await expect(page.locator('.report-head')).toHaveText('RELATIVE USAGE');
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(page.locator('.report-row')).toContainText('older-model');
   await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
@@ -1366,6 +1370,8 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   await expect(page.getByText(/Partial accounting/)).toBeVisible();
   await expect(page.locator('.quota-full')).toHaveText('USED 125%');
   await page.getByLabel('Usage grouping').selectOption('model');
+  await expect(page.locator('.report-head')).toHaveText('QUOTA USED');
+  await expect(page.locator('.report-value').first()).toHaveText('120%');
   await expect(page.locator('.report-row.unknown')).toContainText('unknown');
   await expect(page.locator('.report-row.unknown .report-fill')).toHaveCSS(
     'opacity',

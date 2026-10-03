@@ -31,6 +31,23 @@ func TestUsageReportValueColours(t *testing.T) {
 	}
 }
 
+func TestUsageReportColumnsAndFillPatterns(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.history.mode = 7
+	m.history.data.Reports = &codex.UsageReports{Daily: &codex.DailyUsageReport{Units: "CREDITS", Days: []codex.UsageBreakdownDay{{Total: 10, Groups: map[string]map[string]float64{"surface": {"cli": 6, "work_web": 3, "unknown": 1}}}}}}
+	text := ansi.Strip(m.renderHistory(100, 24, paletteFor(themeHacker)))
+	if !strings.Contains(text, "CREDITS") || !strings.Contains(text, "▓") || !strings.Contains(text, "█") {
+		t.Fatal("missing units or alternate fill")
+	}
+	used := 5000.0
+	m.history.mode = 8
+	m.history.data.Reports.Plan = &codex.PlanUsageReport{Periods: []codex.PlanUsagePeriod{{UsedBasisPoints: &used, Breakdowns: []codex.PlanUsageBreakdown{{Dimension: "surface", Rows: []codex.PlanUsageValue{{Key: "cli", BasisPoints: 2500}}}}}}}
+	text = ansi.Strip(m.renderHistory(100, 24, paletteFor(themeHacker)))
+	if !strings.Contains(text, "QUOTA USED") || !strings.Contains(text, "25.00%") {
+		t.Fatal("quota column missing units")
+	}
+}
+
 func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {
 		for _, mode := range []int{0, 1, 2, 7, 8} {

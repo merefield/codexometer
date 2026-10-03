@@ -935,11 +935,14 @@ contextual control row. Breakdown/Windows have a single **Group** control showin
 the selected dimension. The browser uses matching view subtabs (retaining its
 Monthly rather than Weekly token chart).
 
-Breakdown and Windows use theme-coloured bars with alternating intensity,
+Breakdown and Windows use theme-coloured bars with alternating solid/shaded fills,
 prominent dates/totals and dimmed supporting metadata. Unknown attribution is
 neutral, not an error. Partial/approximate accounting and stale data have warning
 labels. Historical window totals use amber from 80% and red from 100%; category
 bars do not inherit these warnings, and historical totals are not live quota alerts.
+The numeric column identifies relative usage or credits in Breakdown, and
+**QUOTA USED** in Windows, where each value includes a `%` suffix and represents
+percentage points of the whole historical allowance—not a share of usage so far.
 
 - **Daily**: a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.

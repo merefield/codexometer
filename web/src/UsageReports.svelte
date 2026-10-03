@@ -131,6 +131,11 @@
   {/if}
   {#if rows.length}
     <div class="report-bars">
+      <div class="report-head">
+        <span></span><span></span><span
+          >{mode === 'breakdown' ? unit : 'QUOTA USED'}</span
+        >
+      </div>
       {#each rows as [name, value], index}
         <div
           class="report-row"
@@ -144,7 +149,9 @@
               style:width={`${Math.max(0, (100 * value) / peak)}%`}
             ></div>
           </div>
-          <span class="report-value">{amount(value)} {unit}</span>
+          <span class="report-value"
+            >{amount(value)}{mode === 'periods' ? '%' : ''}</span
+          >
         </div>
       {/each}
     </div>
@@ -172,7 +179,10 @@
     color: #ff6680;
   }
   .alternate .report-fill {
-    opacity: 0.72;
+    background:
+      radial-gradient(circle, var(--panel) 0.7px, transparent 0.9px) 0 0 / 3px
+        3px,
+      var(--accent);
   }
   .unknown,
   .unknown .report-value {
@@ -184,13 +194,24 @@
   }
   .report-bars {
     display: grid;
+    grid-template-columns: minmax(5rem, 1fr) minmax(2rem, 3fr) auto;
     gap: 0.6rem;
   }
-  .report-row {
+  .report-row,
+  .report-head {
     display: grid;
-    grid-template-columns: minmax(5rem, 1fr) minmax(2rem, 3fr) auto;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
     gap: 0.6rem;
+  }
+  .report-head {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .report-head > span:last-child,
+  .report-value {
+    text-align: right;
   }
   .report-row > span:first-child {
     overflow-wrap: anywhere;

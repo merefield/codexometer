@@ -123,14 +123,29 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 			lines = append(lines, dim("Selected breakdown unavailable; missing does not mean zero."))
 		}
 	}
+	heading, suffix := "QUOTA USED", "%"
+	if m.history.mode == 7 {
+		heading, suffix = "RELATIVE USAGE", ""
+		if reports != nil && reports.Daily != nil {
+			heading = reports.Daily.Units
+		}
+	}
+	valueWidth := ansi.StringWidth(heading)
+	for _, row := range rows {
+		valueWidth = max(valueWidth, ansi.StringWidth(fmt.Sprintf("%.2f%s", row.Value, suffix)))
+	}
+	valueWidth = min(valueWidth, max(width/2, 1))
+	nameWidth := min(28, max(width/3, 5))
+	barWidth := max(width-nameWidth-valueWidth-2, 0)
+	if len(rows) > 0 && height-len(lines) >= 3 {
+		lines = append(lines, dim(strings.Repeat(" ", max(width-valueWidth, 0))+ansi.Truncate(heading, valueWidth, "")))
+	}
 	capacity := max(height-len(lines)-1, 0)
 	start := min(m.history.rowOffset, max(len(rows)-capacity, 0))
 	peak := total
 	for _, row := range rows {
 		peak = max(peak, row.Value)
 	}
-	nameWidth := min(28, max(width/3, 5))
-	barWidth := max(width-nameWidth-12, 0)
 	for index, row := range rows[start:min(start+capacity, len(rows))] {
 		name := ansi.Truncate(row.Name, nameWidth, "")
 		name += strings.Repeat(" ", max(nameWidth-ansi.StringWidth(name), 0))
@@ -141,13 +156,16 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 		barStyle := lipgloss.NewStyle().Foreground(colors.primary)
 		nameStyle := colors.label().Bold(false)
 		valueStyle := colors.header()
+		fillChar := "█"
 		if (start+index)%2 == 1 {
-			barStyle = barStyle.Faint(true)
+			fillChar = "▓"
 		}
 		if strings.EqualFold(strings.TrimSpace(row.Name), "unknown") {
 			barStyle, nameStyle, valueStyle = colors.dimmed(), colors.dimmed(), colors.dimmed()
+			fillChar = "█"
 		}
-		lines = append(lines, nameStyle.Render(name)+" "+barStyle.Render(strings.Repeat("█", fill))+strings.Repeat(" ", barWidth-fill)+valueStyle.Render(fmt.Sprintf(" %9.2f", row.Value)))
+		value := fmt.Sprintf("%.2f%s", row.Value, suffix)
+		lines = append(lines, nameStyle.Render(name)+" "+barStyle.Render(strings.Repeat(fillChar, fill))+strings.Repeat(" ", barWidth-fill)+" "+valueStyle.Render(fmt.Sprintf("%*s", valueWidth, value)))
 	}
 	lines = append(lines, dim("←/→ DATE/WINDOW // ↑/↓ SCROLL"))
 	if m.history.loading {
