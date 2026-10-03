@@ -508,7 +508,7 @@ Codexometer deliberately does not:
 Optional Usage breakdowns use an access token exported in memory by the local
 Codex app-server (`getAuthStatus`), solely for authenticated, read-only requests
 to OpenAI's fixed `https://chatgpt.com/backend-api/wham/usage/` endpoints. The
-token is never written to the history file, logged, or sent to the browser.
+token is never written to disk, logged, or sent to the browser.
 Redirects are refused, responses are bounded, and account/workspace identity is
 checked before and after fetching. Unsupported credential types (including
 non-exportable and FedRAMP credentials) fall back to the established token
@@ -819,21 +819,15 @@ estimate can still vary with reasoning effort, model mix, caching, prompt
 shape, and backend quota weighting, so compare ranges and sample counts rather
 than treating the midpoint as a fixed entitlement.
 
-Estimator samples remain process-local and are never written to the preferences
-or usage-history files, so learned price evidence cannot leak from one login
-into another on a later run. Codexometer requests the current account email from
-the same local app-server and immediately reduces it to a one-way fingerprint.
-The email is never persisted; the fingerprint is stored only in the separate
-numeric usage ledger so histories remain isolated across restarts. Cached data
-is not selected until the current invocation verifies that same fingerprint.
+Estimator samples remain process-local and are never written to disk. Codexometer
+requests the current account email from the same local app-server and immediately
+reduces it to a one-way fingerprint. Neither is persisted.
 If an older app-server cannot provide an account identity, the estimate fails
 closed as `ACCOUNT ATTRIBUTION UNKNOWN` rather than mixing indistinguishable
 accounts.
 
 The estimator trade-off is that quitting Codexometer discards every learned
-sample and its in-memory learning anchor. The separate ledger retains content-free
-quota observations for future history views, but does not silently treat them as
-complete price evidence. On restart it can reconstruct cumulative priced usage
+sample and its in-memory learning anchor. On restart it can reconstruct cumulative priced usage
 from local rollout telemetry, but the current quota percentage and cost become
 a new baseline: the display returns to `LEARNING` and needs another five clean
 percentage points of movement before producing an estimate. Medium confidence
@@ -962,9 +956,11 @@ The additional reports follow the backend contracts used by Codex CLI analytics:
 These are optional internal backend routes, not guaranteed public app-server
 methods. Availability depends on account/server rollout. A 404, auth failure,
 timeout or malformed report leaves the other report and token views usable.
-Freshness is per report; a verified cached report is labelled **STALE** when its
-endpoint fails. Old cached reports are not exposed without fresh workspace/user
-verification. Server corrections replace buckets rather than accumulating them.
+Each refresh replaces the reports with the latest official responses. An
+unavailable individual report is labelled unavailable, not recovered from disk.
+If the whole refresh fails, the current run can retain its last successful
+snapshot with a visible stale/error warning. Account/workspace identity is
+checked before and after fetching; no cross-run cache is consulted.
 
 Only dimensions supported across a refreshed daily range are displayed: if
 attribution is missing, surface totals remain available and unsupported groups
@@ -976,10 +972,10 @@ values do not draw positive bars). Approximation, coverage and boundary toleranc
 preserved. The period endpoint is **not a reset-event audit**: it cannot reliably
 distinguish a manually redeemed reset from a centrally scheduled reset.
 
-The ledger retains fetched aggregates for approximately 400 days. A restart
-therefore keeps observed detail, but it does not manufacture a year of detailed
-analytics: if you miss more than the backend's requested lookback, older gaps
-remain unless already saved. These views navigate actual reported buckets;
+Usage data is **not persisted locally**. Every run fetches history from OpenAI;
+there is no local ledger, retention policy or historical rollout reconstruction.
+The requested 30-day/seven-day ranges above are not claims about the backend's
+maximum supported lookback. These views navigate actual reported buckets;
 the 6/12-month switches below apply only to the three token charts.
 
 Choose **6 months** (`6`) or **12 months** (`1`) with the range buttons. These
@@ -1020,30 +1016,19 @@ streaks, and longest running turn when available (`—` otherwise).
 History refreshes when you enter Usage, on the normal refresh interval while
 Usage is selected, or with `r` / the Refresh button. OpenAI's account-wide daily
 totals are authoritative and can fill days when Codexometer was not running.
-Codexometer also rescans retained local Codex rollouts for content-free token
-counts, including input, cached input, output and reasoning-token detail. Local
-counts are shown as attribution against the OpenAI total and are never added to
-it. A compact provenance line reports **OPENAI**, **RECOVERED**, or **PARTIAL**
-and the percentage of the OpenAI total attributable to retained local history.
+Usage does not scan local rollouts or merge machine-local counts into the
+account's history. Sessions telemetry and API-EQ observation are unchanged.
 
 Older CLI versions or unsupported accounts can return an unavailable/error
-state; unavailable history is never silently presented as an empty account. A
-failed refresh uses the last verified persisted result and labels it **STALE**.
-Account fingerprints keep histories isolated, and a newly verified account is
-never shown another account's cached Usage data.
+state; unavailable history is never silently presented as an empty account.
+A failed refresh may leave the last successful **in-memory** snapshot visible
+with a stale/error warning; quitting discards it. On reopening, history must be
+fetched from OpenAI again.
 
-The original `account/usage/read` endpoint supplies daily **total tokens**.
-Input/output/cache token splits here are local recovery, not derived from the
-new relative-usage reports, and can be partial; activity from another
-device, cloud task, or deleted rollout remains only in the OpenAI total. The tab
-does not infer historical API-equivalent cost. `--demo` includes sample history
-for previewing the charts.
-
-Local rollouts do not reliably identify the billed account. Their comparison
-is best-effort machine-local evidence, not proof that a particular account paid
-for those tokens; a shared `CODEX_HOME`, account switching or API-key sessions
-can make it differ from the account total. Use the OpenAI reports for
-authoritative account attribution, not the local coverage percentage.
+The original `account/usage/read` endpoint supplies daily **total tokens**. The
+new relative-usage and allowance reports remain separate; the Usage tab does
+not infer historical token-type splits or API-equivalent cost. `--demo` includes
+sample history for previewing the charts.
 
 ### Other top-level views
 
@@ -1651,35 +1636,14 @@ tab and remembers your Quota view separately. First launch defaults to Quota →
 Bars; older preferences without a main tab reopen the saved Quota view.
 Restoring a tab does not resume a benchmark run or reopen an approval dialog.
 
-### Persistent usage history
+### Usage data lifetime
 
-Usage history is stored separately as `usage-history.json` in the same
-platform-standard `codexometer` directory. This versioned ledger contains only:
-
-- OpenAI daily account token totals and optional account summary metrics;
-- locally recovered daily numeric token aggregates;
-- current quota percentage observations, reset boundaries and window lengths;
-- fetched daily relative-usage/credit category aggregates and historical
-  allowance periods (including opaque **period**, not session, identifiers);
-- one-way account fingerprints, with an additional workspace/user hash for the
-  new analytics reports, used to prevent histories from being mixed.
-
-It never stores prompts, replies, commands, source content, working-directory
-paths, session IDs, email addresses, credentials, or authentication tokens.
-Schema 2 reads/migrates the earlier schema-1 ledger without deleting its history.
-History is retained for approximately 400 days. Writes use a private temporary
-file, an atomic replacement, and a cross-process lock so terminal and web
-Codexometer instances cannot partially overwrite one another. A damaged or
-unwritable ledger does not prevent current OpenAI data from being displayed;
-it only disables persistence until the file is repaired or removed.
-
-On startup Codexometer reconciles three layers: persisted history, retained
-local rollout token events, and the newest OpenAI daily buckets. Repeated scans
-replace the bounded local aggregate rather than incrementing it, so restarts and
-concurrent invocations do not double-count usage. If Codexometer was closed,
-OpenAI can backfill account totals and retained rollouts can restore local detail.
-If neither source contains a missed period, Codexometer does not invent a
-per-session, per-model, quota-percentage, or cost breakdown for it.
+Usage history and reports are held in memory only, in both terminal and web
+mode. Codexometer does not create, read or update `usage-history.json`, record
+quota observations on disk, or reconstruct account history from local rollouts.
+Any file left by an earlier development build is ignored and is not automatically
+deleted. Saved presentation preferences are unaffected. API-EQ learning also
+remains process-local and starts afresh after a restart.
 
 ### Benchmark authentication and usage boundary
 

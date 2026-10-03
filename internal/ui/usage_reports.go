@@ -14,21 +14,23 @@ var reportDimensions = []string{"surface", "model", "feature", "task start"}
 func (m Model) renderUsageReport(width, height int, colors palette, lines []string) string {
 	dimension := reportDimensions[m.history.group%len(reportDimensions)]
 	reports := m.history.data.Reports
+	if m.history.err != nil && reports != nil {
+		lines = append(lines, "STALE // refresh failed; last in-memory observation")
+	}
 	var rows []codex.UsageCategory
 	total := 0.0
-	unit := ""
 	knownEmpty := false
 	if reports == nil {
 		lines = append(lines, "Account breakdowns unavailable. Token history remains available.")
 	} else if m.history.mode == 7 {
 		lines = append(lines, "DAILY BREAKDOWN // "+reports.DailyStatus+" // UTC")
 		if r := reports.Daily; r != nil {
-			unit = r.Units
+			unit := r.Units
 			lines = append(lines, "LATEST FETCH // "+r.FetchedAt.UTC().Format("2006-01-02 15:04")+" UTC")
 			if r.DataAsOf != "" && height >= 18 {
 				lines = append(lines, "DATA AS OF // "+r.DataAsOf)
 			}
-			lines = append(lines, "LATEST RANGE // "+r.From+" → "+r.Through+" // retained days may have gaps")
+			lines = append(lines, "REPORTED RANGE // "+r.From+" → "+r.Through)
 			if len(r.Days) > 0 {
 				i := len(r.Days) - 1 - min(m.history.offset, len(r.Days)-1)
 				day := r.Days[i]
@@ -89,7 +91,6 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 					}
 				}
 				rows = codex.UsageCategories(groups, dimension)
-				unit = "%"
 				lines = append(lines, "BY "+strings.ToUpper(dimension)+" // historical allowance, not today's limit")
 			} else {
 				lines = append(lines, "No allowance periods reported.")

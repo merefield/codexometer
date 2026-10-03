@@ -1,14 +1,12 @@
 package codex
 
 // These optional reports mirror Codex's backend-client analytics and plan_history
-// contracts. They are NOT token totals and must never enter the token ledger.
+// contracts. They are NOT token totals. Reports live in memory only.
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 )
 
 type UsageReports struct {
-	Identity    string            `json:"-"`
 	Daily       *DailyUsageReport `json:"daily"`
 	Plan        *PlanUsageReport  `json:"plan"`
 	DailyStatus string            `json:"dailyStatus"`
@@ -140,11 +137,6 @@ func usageAuth(result json.RawMessage) (usageCredentials, bool) {
 	return c, c.account != "" && c.user != "" && c.email != "" && !claims.Auth.Fedramp
 }
 
-func (c usageCredentials) identity() string {
-	sum := sha256.Sum256([]byte(c.account + "\x00" + c.user))
-	return fmt.Sprintf("%x", sum[:])
-}
-
 var usageHTTP = &http.Client{
 	Timeout: 5 * time.Second,
 	// Never follow a credential-bearing request to another endpoint.
@@ -167,10 +159,10 @@ func readOptionalUsageReports(ctx context.Context, encoder *json.Encoder, decode
 		return nil
 	}
 	reports := fetchUsageReports(ctx, usageHTTP, "https://chatgpt.com/backend-api/wham", auth, time.Now().UTC())
-	// Recheck identity before publishing or persisting either report. Token
+	// Recheck identity before publishing either report. Token
 	// rotation is fine, workspace/user changes are not.
 	after, ok := get(7)
-	if !ok || after.identity() != auth.identity() || after.email != email {
+	if !ok || after.account != auth.account || after.user != auth.user || after.email != email {
 		return nil
 	}
 	return reports
@@ -202,7 +194,7 @@ func readUsageReport(ctx context.Context, client *http.Client, base, route strin
 }
 
 func fetchUsageReports(ctx context.Context, client *http.Client, base string, auth usageCredentials, now time.Time) *UsageReports {
-	result := &UsageReports{Identity: auth.identity()}
+	result := &UsageReports{}
 	from, through := now.UTC().AddDate(0, 0, -29).Format(time.DateOnly), now.UTC().Format(time.DateOnly)
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -237,6 +229,11 @@ func fetchUsageReports(ctx context.Context, client *http.Client, base string, au
 
 func validAmount(value float64) bool {
 	return value >= 0 && finiteAmount(value)
+}
+
+func validUsageDate(value string) bool {
+	_, err := time.Parse(time.DateOnly, value)
+	return err == nil
 }
 
 func finiteAmount(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }

@@ -46,28 +46,7 @@ export interface Usage {
     currentStreakDays: number | null;
     longestStreakDays: number | null;
   };
-  dailyUsageBuckets:
-    | {
-        startDate: string;
-        tokens: number;
-        localTokens?: number;
-        inputTokens?: number;
-        cachedInputTokens?: number;
-        outputTokens?: number;
-        reasoningTokens?: number;
-        provenance?: string;
-      }[]
-    | null;
-  coverage: {
-    status?: string;
-    openaiTokens?: number;
-    localTokens?: number;
-    attributedPercent?: number;
-    openaiDays?: number;
-    recoveredDays?: number;
-  };
-  persisted: boolean;
-  stale: boolean;
+  dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
 }
 export interface UsageReports {
   dailyStatus: string;

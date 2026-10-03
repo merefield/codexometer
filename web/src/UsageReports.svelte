@@ -78,7 +78,7 @@
   {#if mode === 'breakdown' && daily}
     <p class="muted">
       Latest fetch {date(daily.fetchedAt)} // queried {daily.from} → {daily.through}.
-      Retained older buckets may have gaps.
+      Reports are fetched from OpenAI and are not saved between runs.
     </p>
     {#if daily.dataAsOf}<p class="muted">Data as of {daily.dataAsOf}</p>{/if}
     <h3>

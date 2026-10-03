@@ -8,6 +8,48 @@ import (
 	"testing"
 )
 
+func TestAccountUsageIgnoresLegacyLedgerAndDoesNotPersist(t *testing.T) {
+	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	t.Setenv("APPDATA", config)
+	directory := filepath.Join(config, "codexometer")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "usage-history.json")
+	const legacy = `{"version":2,"accounts":{"obsolete":{"summary":{"lifetimeTokens":999999}}}}`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := Client{Binary: exe}
+	first, err := client.FetchAccountUsage(context.Background())
+	if err != nil || first.Summary.LifetimeTokens == nil || *first.Summary.LifetimeTokens != 123456 {
+		t.Fatalf("backend result not used: %v", err)
+	}
+	t.Setenv("CODEXOMETER_FAKE_USAGE_RESULT", `{"summary":{},"dailyUsageBuckets":[]}`)
+	next, err := client.FetchAccountUsage(context.Background())
+	if err != nil || len(next.DailyUsageBuckets) != 0 || next.Summary.LifetimeTokens != nil {
+		t.Fatal("retained old usage instead of replacing with official response")
+	}
+	t.Setenv("CODEXOMETER_FAKE_USAGE_ERROR", "1")
+	if _, err := client.FetchAccountUsage(context.Background()); err == nil {
+		t.Fatal("failure unexpectedly recovered from disk")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil || string(contents) != legacy {
+		t.Fatal("legacy ledger modified")
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("created additional usage cache/lock files")
+	}
+}
+
 func TestFetchAccountUsage(t *testing.T) {
 	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
 	exe, err := os.Executable()
@@ -43,25 +85,6 @@ func TestFetchAccountUsage(t *testing.T) {
 	t.Setenv("CODEXOMETER_FAKE_USAGE_ERROR", "1")
 	if _, err := client.FetchAccountUsage(context.Background()); err == nil || !strings.Contains(err.Error(), "Method not found") {
 		t.Fatalf("unsupported API: %v", err)
-	}
-}
-
-func TestFetchAccountUsageFallsBackToVerifiedPersistedHistory(t *testing.T) {
-	t.Setenv("CODEXOMETER_FAKE_APP_SERVER", "1")
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := &HistoryStore{Path: filepath.Join(t.TempDir(), "usage.json")}
-	client := Client{Binary: exe, History: store}
-	fresh, err := client.FetchAccountUsage(context.Background())
-	if err != nil || !fresh.Persisted || fresh.Stale {
-		t.Fatalf("fresh history = %+v, %v", fresh, err)
-	}
-	t.Setenv("CODEXOMETER_FAKE_USAGE_ERROR", "1")
-	cached, err := client.FetchAccountUsage(context.Background())
-	if err != nil || !cached.Persisted || !cached.Stale || cached.AccountFingerprint != fresh.AccountFingerprint || len(cached.DailyUsageBuckets) != 1 {
-		t.Fatalf("cached history = %+v, %v", cached, err)
 	}
 }
 

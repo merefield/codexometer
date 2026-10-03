@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,11 @@ func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 		}
 	}
 	m.activateHistory(8)
+	m.history.err = errors.New("offline")
+	if !strings.Contains(ansi.Strip(m.renderHistory(120, 24, paletteFor(themeHacker))), "STALE // refresh failed") {
+		t.Fatal("in-memory fallback missing stale warning")
+	}
+	m.history.err = nil
 	m.history.group = 1
 	m.history.data.Reports.Plan.Periods[0].Breakdowns = []codex.PlanUsageBreakdown{{Dimension: "model", Rows: []codex.PlanUsageValue{{Key: "credit correction", BasisPoints: -25}}}}
 	if rendered := ansi.Strip(m.renderHistory(120, 24, paletteFor(themeHacker))); !strings.Contains(rendered, "-0.25") {

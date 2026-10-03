@@ -36,7 +36,7 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline includes Usage provenance, summary metrics and report controls,
+	// Baseline includes Usage summary metrics and report controls,
 	// plus main's current pricing footer; every theme, view and size is covered.
 	const want = "d85348cf79cadfe21b3c284716862c698acc37686a37d4de4ff481eab68fb996"
 	if got != want {

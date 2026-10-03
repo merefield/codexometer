@@ -1,8 +1,8 @@
 <script lang="ts">
   import { live, date, number } from './state.svelte';
+  import UsageReports from './UsageReports.svelte';
   import Graph from './Graph.svelte';
   import { usageRange } from './calendar';
-  import UsageReports from './UsageReports.svelte';
   let mode = $state('daily');
   let months = $state(12);
   let offset = $state(0);
@@ -11,40 +11,21 @@
     if (!buckets) return [];
     const { start, end } = usageRange(new Date(), months, offset);
     const lookup = new Map<string, number>();
-    const detail = new Map<string, (typeof buckets)[number]>();
     for (const bucket of buckets) {
       if (!Number.isFinite(bucket.tokens) || bucket.tokens < 0) continue;
       lookup.set(
         bucket.startDate,
         (lookup.get(bucket.startDate) || 0) + bucket.tokens,
       );
-      detail.set(bucket.startDate, bucket);
     }
-    const result: {
-      date: string;
-      tokens: number;
-      localTokens: number;
-      provenance: string;
-      inputTokens: number;
-      cachedInputTokens: number;
-      outputTokens: number;
-    }[] = [];
+    const result: { date: string; tokens: number }[] = [];
     for (
       let day = start;
       day <= end;
       day = new Date(day.getTime() + 86400000)
     ) {
       const date = day.toISOString().slice(0, 10);
-      const source = detail.get(date);
-      result.push({
-        date,
-        tokens: lookup.get(date) || 0,
-        localTokens: source?.localTokens || 0,
-        provenance: source?.provenance || (source ? 'OPENAI' : 'NO ACTIVITY'),
-        inputTokens: source?.inputTokens || 0,
-        cachedInputTokens: source?.cachedInputTokens || 0,
-        outputTokens: source?.outputTokens || 0,
-      });
+      result.push({ date, tokens: lookup.get(date) || 0 });
     }
     return result;
   });
@@ -52,33 +33,20 @@
   let leading = $derived(
     days.length ? new Date(days[0].date + 'T00:00:00Z').getUTCDay() : 0,
   );
-  let coverage = $derived(live.data?.usage?.coverage);
   let bars = $derived.by(() => {
     if (mode === 'monthly') {
-      const grouped = new Map<
-        string,
-        { tokens: number; localTokens: number }
-      >();
-      for (const day of days) {
-        const date = day.date.slice(0, 7);
-        const current = grouped.get(date) || { tokens: 0, localTokens: 0 };
-        current.tokens += day.tokens;
-        current.localTokens += day.localTokens;
-        grouped.set(date, current);
-      }
-      return [...grouped].map(([date, values]) => ({
-        date,
-        ...values,
-        provenance: 'AGGREGATE',
-      }));
+      const grouped = new Map<string, number>();
+      for (const day of days)
+        grouped.set(
+          day.date.slice(0, 7),
+          (grouped.get(day.date.slice(0, 7)) || 0) + day.tokens,
+        );
+      return [...grouped].map(([date, tokens]) => ({ date, tokens }));
     }
     let total = 0;
-    let local = 0;
     return days.map((day) => ({
       date: day.date,
       tokens: (total += day.tokens),
-      localTokens: (local += day.localTokens),
-      provenance: 'AGGREGATE',
     }));
   });
 </script>
@@ -115,14 +83,11 @@
     History refresh failed. Any displayed history is the last successful
     observation.
   </p>{/if}
-{#if live.data?.usage?.stale}<p class="notice">
-    Showing the last persisted account history while the live OpenAI refresh is
-    unavailable.
-  </p>{/if}
+
 {#if live.data?.usage?.tokenStatus === 'UNAVAILABLE' && mode !== 'breakdown' && mode !== 'periods'}<p
     class="notice"
   >
-    Token refresh unavailable; retained totals may be stale.
+    Token history unavailable; other reports may still be available.
   </p>{/if}
 {#if mode === 'breakdown' || mode === 'periods'}
   {#key mode}<UsageReports reports={live.data?.usage?.reports} {mode} />{/key}
@@ -156,11 +121,7 @@
       </p>
     </section>
   </div>
-  <p class="eyebrow">
-    {coverage?.status || 'OPENAI'} // UTC{#if coverage?.openaiTokens && coverage?.localTokens}
-      // LOCAL {number(coverage.attributedPercent)}% ATTRIBUTED{/if}{#if coverage?.recoveredDays}
-      // {number(coverage.recoveredDays)} RECOVERED DAYS{/if}
-  </p>
+  <p class="eyebrow">OPENAI // UTC</p>
   <section class="panel">
     <h2>{days[0]?.date} — {days.at(-1)?.date}</h2>
     {#if mode === 'daily'}<div class="heat-scroll">
@@ -174,7 +135,7 @@
               class="heat-cell"
               class:zero={day.tokens === 0}
               style:opacity={day.tokens ? 0.25 + (0.75 * day.tokens) / peak : 1}
-              title={`${day.date}: ${number(day.tokens)} tokens // ${day.provenance} // local ${number(day.localTokens)} (input ${number(day.inputTokens)}, cached ${number(day.cachedInputTokens)}, output ${number(day.outputTokens)})`}
+              title={`${day.date}: ${number(day.tokens)} tokens`}
             ></div>{/each}
         </div>
       </div>
@@ -187,16 +148,9 @@
       <summary>Accessible data table</summary>
       <div class="table-scroll">
         <table>
-          <thead
-            ><tr
-              ><th>Date (UTC)</th><th>Tokens</th><th>Source</th><th>Local</th
-              ></tr
-            ></thead
-          ><tbody
+          <thead><tr><th>Date (UTC)</th><th>Tokens</th></tr></thead><tbody
             >{#each mode === 'daily' ? days : bars as row}<tr
-                ><td>{row.date}</td><td>{number(row.tokens)}</td><td
-                  >{row.provenance}</td
-                ><td>{number(row.localTokens)}</td></tr
+                ><td>{row.date}</td><td>{number(row.tokens)}</td></tr
               >{/each}</tbody
           >
         </table>

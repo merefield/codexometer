@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +85,7 @@ func TestFetchUsageReportsContractsAndIndependentFailures(t *testing.T) {
 				t.Fatal("lost approximation or >100%")
 			}
 			serialized, _ := json.Marshal(r)
-			if strings.Contains(string(serialized), "secret") || strings.Contains(string(serialized), r.Identity) {
+			if strings.Contains(string(serialized), "secret") || strings.Contains(string(serialized), "\"identity\"") {
 				t.Fatal("leaked credentials/identity")
 			}
 		})
@@ -125,13 +124,8 @@ func TestUsageAuth(t *testing.T) {
 	token := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".signature"
 	raw, _ := json.Marshal(map[string]string{"authMethod": "chatgpt", "authToken": token})
 	c, ok := usageAuth(raw)
-	if !ok || c.account != "account" || c.email != "user@example.com" {
+	if !ok || c.account != "account" || c.user != "user" || c.email != "user@example.com" {
 		t.Fatal("valid exported auth rejected")
-	}
-	other := c
-	other.account = "other"
-	if c.identity() == other.identity() {
-		t.Fatal("workspace identities collide")
 	}
 	for _, raw := range []string{`{}`, `{"authMethod":"apiKey","authToken":"secret"}`, `{"authMethod":"chatgpt","authToken":"a.b.c"}`} {
 		if _, ok := usageAuth([]byte(raw)); ok {
@@ -210,69 +204,8 @@ func TestPlanReportUnknownAndValidation(t *testing.T) {
 	}
 }
 
-func TestUsageReportsRemoveCorrectedPeriodsAndPruneStale(t *testing.T) {
-	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	stored := &storedUsageReports{Identity: "a", Daily: &DailyUsageReport{Days: []UsageBreakdownDay{{Date: "2020-01-01"}}}, Plan: &PlanUsageReport{Periods: []PlanUsagePeriod{
-		{ID: "older", StartsAt: "2026-08-01T00:00:00Z", EndsAt: "2026-08-08T00:00:00Z"},
-		{ID: "removed", StartsAt: "2026-10-01T00:00:00Z", EndsAt: "2026-10-08T00:00:00Z"},
-	}}}
-	incoming := &UsageReports{Identity: "a", DailyStatus: "UNAVAILABLE", PlanStatus: "OPENAI", Plan: &PlanUsageReport{CoverageStart: "2026-09-26T00:00:00Z", Periods: []PlanUsagePeriod{}}}
-	r := reconcileUsageReports(&stored, incoming, now)
-	if len(r.Plan.Periods) != 1 || r.Plan.Periods[0].ID != "older" || len(r.Daily.Days) != 0 || r.Daily.Days == nil {
-		t.Fatal("bad retention/correction")
-	}
-}
-
-func TestHistorySchemaOneMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "history.json")
-	if err := os.WriteFile(path, []byte(`{"version":1,"accounts":{"a":{"summary":{"lifetimeTokens":42},"days":{}}}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	h, err := (&HistoryStore{Path: path}).Reconcile(AccountUsage{AccountFingerprint: "a"}, nil)
-	if err != nil || h.Summary.LifetimeTokens == nil || *h.Summary.LifetimeTokens != 42 {
-		t.Fatalf("migration lost history %v", err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(raw), `"version": 2`) {
-		t.Fatal("schema not migrated")
-	}
-}
-
-func TestUsageReportsPersistenceIsolationAndCorrections(t *testing.T) {
-	now := time.Now().UTC()
-	date := now.Format(time.DateOnly)
-	store := &HistoryStore{Path: filepath.Join(t.TempDir(), "usage.json")}
-	r := AccountUsage{AccountFingerprint: "email-hash", FetchedAt: now, Reports: &UsageReports{Identity: "workspace-a", DailyStatus: "OPENAI", PlanStatus: "UNAVAILABLE", Daily: &DailyUsageReport{Units: "RELATIVE USAGE", From: date, Through: date, FetchedAt: now, Days: []UsageBreakdownDay{{Date: date, Total: 4}}}}}
-	first, err := store.Reconcile(r, nil)
-	if err != nil || first.Reports.Daily.Days[0].Total != 4 {
-		t.Fatal(err)
-	}
-	r.Reports.Daily.Days[0].Total = 3
-	second, err := store.Reconcile(r, nil)
-	if err != nil || second.Reports.Daily.Days[0].Total != 3 {
-		t.Fatal("updates must replace, not accumulate")
-	}
-	reopened := &HistoryStore{Path: store.Path}
-	r.Reports.Daily = nil
-	r.Reports.DailyStatus = "UNAVAILABLE"
-	stale, err := reopened.Reconcile(r, nil)
-	if err != nil || stale.Reports.Daily.Days[0].Total != 3 || !strings.HasPrefix(stale.Reports.DailyStatus, "STALE") {
-		t.Fatal("verified cache not reused")
-	}
-	r.Reports.Identity = "workspace-b"
-	other, err := reopened.Reconcile(r, nil)
-	if err != nil || other.Reports.Daily != nil {
-		t.Fatal("workspace data crossed identity boundary")
-	}
-	r.Reports = nil
-	missing, err := reopened.Reconcile(r, nil)
-	if err != nil || missing.Reports != nil {
-		t.Fatal("unverified analytics returned")
-	}
-}
-
 // Explicit opt-in diagnostic prints report status/counts only, never tokens or
-// response bodies. It is not run by CI and does not write the history ledger.
+// response bodies. It is not run by CI and does not write usage data to disk.
 func TestLiveUsageReports(t *testing.T) {
 	if os.Getenv("CODEXOMETER_TEST_LIVE_USAGE") != "1" {
 		t.Skip("opt-in local integration")
