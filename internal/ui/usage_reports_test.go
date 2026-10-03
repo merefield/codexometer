@@ -6,9 +6,39 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
+
+func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T) {
+	for _, width := range []int{40, 80, 160} {
+		for _, mode := range []int{0, 1, 2, 7, 8} {
+			m := New(historyStub{}, time.Minute)
+			m.meterView, m.width, m.height, m.history.mode = viewUsage, width, 24, mode
+			layout := m.dashboardLayout()
+			seen := map[int]bool{}
+			for _, button := range historyButtons(layout.contentWidth, mode) {
+				seen[button.action] = true
+				action, ok := m.historyButtonAt(2+button.x, layout.meterY)
+				if !ok || action != button.action {
+					t.Fatalf("width %d mode %d: incorrect hitbox for action %d", width, mode, button.action)
+				}
+				if button.action < 3 || button.action == 7 || button.action == 8 {
+					next, _ := m.Update(tea.MouseClickMsg{X: 2 + button.x, Y: layout.meterY, Button: tea.MouseLeft})
+					if next.(Model).history.mode != button.action {
+						t.Fatalf("width %d mode %d: cannot navigate to view %d", width, mode, button.action)
+					}
+				}
+			}
+			for action, want := range map[int]bool{0: true, 1: true, 2: true, 7: true, 8: true, 9: mode >= 7, 5: mode < 7, 6: mode < 7, 3: true, 4: true} {
+				if seen[action] != want {
+					t.Fatalf("width %d mode %d: action %d visible=%v, want %v", width, mode, action, seen[action], want)
+				}
+			}
+		}
+	}
+}
 
 func TestUsageReportsNavigationAndResponsiveRendering(t *testing.T) {
 	m := New(historyStub{}, time.Minute)

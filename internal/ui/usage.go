@@ -131,6 +131,9 @@ func historyButtons(width int, modes ...int) []historyButton {
 	for variant, labels := range variants {
 		filtered := []string{}
 		for i, action := range allActions {
+			// View selectors (0–2, 7–8) stay visible in every mode so users
+			// can navigate between token charts and reports with the mouse.
+			// Only Group (9) and the token-range controls (5–6) are contextual.
 			if action == 9 && !report || (action == 5 || action == 6) && report {
 				continue
 			}
