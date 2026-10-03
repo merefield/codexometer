@@ -147,6 +147,11 @@
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
+  {#if full && session.contextKind === 'APPROVAL REQUEST' && session.approvalContext}
+    <h3>CONTEXT</h3>
+    <pre>{session.approvalContext}</pre>
+    <hr />
+  {/if}
   {#if explanation(session) && (!full || stale || session.status === 'CHECK SESSION')}<p
       class="attention-note"
       class:inferred={session.status === 'CHECK SESSION'}
@@ -154,7 +159,23 @@
       {explanation(session)}
     </p>{/if}
   {#if heading}<h3>{session.contextKind || 'LAST ACTIVITY'}</h3>{/if}
-  <pre>{session.text || 'No session context available.'}</pre>
+  {#if session.text || !session.workingCommand}
+    <pre>{session.text || 'No session context available.'}</pre>
+  {/if}
+  {#if session.workingCommand}
+    <hr />
+    <h3>
+      COMMAND // {stale
+        ? 'UNKNOWN'
+        : (session.commandStatus || 'unknown').toUpperCase()}
+      {#if !stale && (session.runningCommands || 0) > (session.commandStatus === 'running' ? 1 : 0)}
+        // +{(session.runningCommands || 0) -
+          (session.commandStatus === 'running' ? 1 : 0)} RUNNING
+      {/if}
+      {#if session.runningLimited}+{/if}
+    </h3>
+    <pre class="command">{session.workingCommand}</pre>
+  {/if}
   {#if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>
@@ -210,7 +231,10 @@
         class:approval={session.status === 'APPROVAL NEEDED'}
         href={'#/sessions/' + encodeURIComponent(session.id)}
         onclick={() => select(session.id)}
-        >{session.status} // {session.directory || session.id}</a
+        >{session.status}
+        {Array.from(session.id).slice(-5).join('').toUpperCase()} // {session.name ||
+          session.directory ||
+          session.id}</a
       >{/each}
     {#each profiles.filter((p) => p.pending && sessions.some((s) => s.id === p.session)) as profile}
       <a
@@ -222,8 +246,13 @@
           encodeURIComponent(profile.session) +
           '?review=profile'}
         onclick={(event) => openProfile(event, profile.session)}
-        >QUOTA THRESHOLD // {sessions.find((s) => s.id === profile.session)
-          ?.directory || profile.session}</a
+        >QUOTA THRESHOLD {Array.from(profile.session)
+          .slice(-5)
+          .join('')
+          .toUpperCase()} // {sessions.find((s) => s.id === profile.session)
+          ?.name ||
+          sessions.find((s) => s.id === profile.session)?.directory ||
+          profile.session}</a
       >
     {/each}
   </nav>{/if}
@@ -238,7 +267,7 @@
             ? 'STALE'
             : profileFocused
               ? 'QUOTA THRESHOLD'
-              : selected.status} // {selected.directory}
+              : selected.status} // {selected.name || selected.directory}
         </h2>
         <a
           class="button"
@@ -249,6 +278,9 @@
           }}>← ALL SESSIONS</a
         >
       </div>
+      {#if selected.name && selected.directory}<p class="muted">
+          {selected.directory}
+        </p>{/if}
       <p class="muted detail-metadata">
         {number(selected.tokens)} TOKENS // {selected.id} // CONTEXT SOURCE // {selected.source ||
           'LOCAL'}
@@ -313,22 +345,42 @@
       class:selected={selectedID === session.id}
       class:wide={level === 2}
       class:split={level === 1}
-      aria-label={'Session ' + (session.directory || session.id)}
+      aria-label={'Session ' +
+        (session.name || session.directory || session.id)}
     >
       <div class="panel telemetry">
+        {#if session.name}
+          <h2>
+            <button
+              class="session-select"
+              aria-pressed={selectedID === session.id}
+              onclick={() => select(session.id)}
+              >{Array.from(session.id).slice(-5).join('').toUpperCase()} // {session.name}</button
+            >
+          </h2>
+        {/if}
         <h2>
-          <span
-            class="lamp lit"
-            class:working={session.status === 'WORKING' && !stale}
-          ></span>{stale ? 'STALE' : session.status}
+          <a
+            class="status-detail"
+            href={'#/sessions/' + encodeURIComponent(session.id)}
+            onclick={() => select(session.id)}
+          >
+            <span
+              class="lamp lit"
+              class:working={session.status === 'WORKING' && !stale}
+            ></span>{stale ? 'STALE' : session.status}
+          </a>
         </h2>
-        <button
-          class="session-select"
-          aria-pressed={selectedID === session.id}
-          onclick={() => select(session.id)}
-          >{session.directory || session.id}</button
-        >
+        {#if !session.name}<button
+            class="session-select"
+            aria-pressed={selectedID === session.id}
+            onclick={() => select(session.id)}
+            >{session.directory || session.id}</button
+          >{/if}
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
+        {#if session.name && session.directory}<p class="muted">
+            {session.directory}
+          </p>{/if}
         <p>{session.agents} LINKED AGENTS</p>
         <p class="muted">ACTIVE // {date(session.activity)}</p>
         <div class="detail-controls">

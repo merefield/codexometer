@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
 
 // Assets are checked in so go install and terminal-only builds need no Node.
@@ -47,6 +49,9 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	}
 	defer listener.Close()
 	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
+	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
+		s.store.configureThresholds(policy.QuotaStepPolicy())
+	}
 	mode := "READ ONLY"
 	if writable {
 		s.control = newControl(source, s.store)

@@ -21,17 +21,23 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
-	ID          string    `json:"id"`
-	Directory   string    `json:"directory"`
-	Tokens      int64     `json:"tokens"`
-	Agents      int       `json:"agents"`
-	Status      string    `json:"status"`
-	ContextKind string    `json:"contextKind"`
-	Text        string    `json:"text"`
-	Command     string    `json:"command"`
-	Source      string    `json:"source"`
-	Activity    time.Time `json:"activity"`
-	Samples     []sample  `json:"samples"`
+	Name            string    `json:"name,omitempty"`
+	ID              string    `json:"id"`
+	Directory       string    `json:"directory"`
+	Tokens          int64     `json:"tokens"`
+	Agents          int       `json:"agents"`
+	Status          string    `json:"status"`
+	ContextKind     string    `json:"contextKind"`
+	Text            string    `json:"text"`
+	Command         string    `json:"command"`
+	WorkingCommand  string    `json:"workingCommand,omitempty"`
+	ApprovalContext string    `json:"approvalContext,omitempty"`
+	CommandStatus   string    `json:"commandStatus,omitempty"`
+	RunningCommands int       `json:"runningCommands,omitempty"`
+	RunningLimited  bool      `json:"runningLimited,omitempty"`
+	Source          string    `json:"source"`
+	Activity        time.Time `json:"activity"`
+	Samples         []sample  `json:"samples"`
 }
 
 type sample struct {
@@ -97,8 +103,19 @@ type credit struct {
 	ExpiryKnown bool   `json:"expiryKnown"`
 }
 
+type quotaThreshold struct {
+	Threshold int    `json:"threshold"`
+	Model     string `json:"model"`
+	Effort    string `json:"effort"`
+	Speed     string `json:"speed"`
+	Mode      string `json:"mode"`
+	State     string `json:"state"`
+	Remaining int    `json:"remaining,omitempty"`
+}
+
 type state struct {
 	Profiles      []profileReview     `json:"profiles,omitempty"`
+	Thresholds    []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError  bool                `json:"profileError,omitempty"`
 	Control       bool                `json:"control"`
 	Version       string              `json:"version"`
@@ -125,6 +142,7 @@ type store struct {
 	state           state
 	account         string
 	history         codex.AccountUsage
+	thresholdPolicy []codex.QuotaStep
 	previous        map[string]int64
 	samples         map[string][]sample
 	nextSample      time.Time
@@ -136,6 +154,38 @@ func newStore() *store {
 	s := &store{state: state{Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
 	s.publish()
 	return s
+}
+
+func (s *store) configureThresholds(steps []codex.QuotaStep) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thresholdPolicy = append([]codex.QuotaStep(nil), steps...)
+	s.refreshThresholds(codex.Snapshot{})
+	s.publish()
+}
+
+// refreshThresholds projects the configured policy without exposing session
+// control internals. Call with the store lock held.
+func (s *store) refreshThresholds(snapshot codex.Snapshot) {
+	s.state.Thresholds = nil
+	statuses, _ := codex.QuotaStepStatuses(snapshot, s.thresholdPolicy)
+	for _, status := range statuses {
+		step := status.Step
+		speed, mode := step.ServiceTier, "ASK"
+		if speed == "" {
+			speed = "UNCHANGED"
+		} else if speed == "default" {
+			speed = "standard"
+		}
+		if step.Mode == "auto" {
+			mode = "AUTO"
+		}
+		s.state.Thresholds = append(s.state.Thresholds, quotaThreshold{
+			Threshold: step.Threshold, Model: codex.SanitizeSessionContext(step.Model),
+			Effort: codex.SanitizeSessionContext(step.Effort), Speed: codex.SanitizeSessionContext(speed),
+			Mode: mode, State: string(status.Stage), Remaining: status.Remaining,
+		})
+	}
 }
 
 // Called with mu held (except initialization); published byte slices are immutable.
@@ -187,6 +237,7 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 		}
 		s.state.CreditCount = 0
 		s.state.Credits = []credit{}
+		s.refreshThresholds(q)
 		if q.RateLimitResetCredits != nil {
 			s.state.CreditCount = q.RateLimitResetCredits.AvailableCount
 			for _, c := range q.RateLimitResetCredits.Credits {
@@ -257,13 +308,27 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				s.previous[row.ID] = row.TotalTokens
 			}
 			text := row.Context.Text
+			approvalContext := ""
+			if row.Context.Kind == codex.SessionContextApproval {
+				approvalContext = codex.SanitizeSessionContext(row.Context.ApprovalContext)
+			}
+			var activity codex.SessionActivity
+			if row.Context.Kind == codex.SessionContextActivity {
+				activity = row.Context.Activity
+				if activity.Command != "" {
+					text = activity.Prose
+				}
+			}
 			if row.Context.Kind == codex.SessionContextApproval && row.Context.CommandDetails.Command != "" && row.Context.CommandDetails.Justification != "" {
 				text = row.Context.CommandDetails.Justification
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
-				ID: row.ID, Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				Status: sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
+				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
+				ApprovalContext: approvalContext,
+				RunningCommands: activity.RunningCommands, RunningLimited: activity.RunningLimited,
 				Samples: s.samples[row.ID],
 			})
 		}

@@ -75,12 +75,27 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		lines = append(lines, detailLine{title, "heading"})
 	}
 	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
+	if c.Kind == codex.SessionContextApproval && c.ApprovalContext != "" {
+		section(i18n.Text("CONTEXT"))
+		appendText(codex.SanitizeSessionContext(c.ApprovalContext), "body", "")
+	}
 	g := m.monitorDashboardLayout()
 	if (c.Kind == codex.SessionContextApproval || c.Kind == codex.SessionContextQuestion) && !m.monitorApprovalHasOutcome() && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		section(i18n.Text("REPLY IN CODEX"))
 		appendText(m.monitorApprovalBlockReason(c), "warning", "")
 	}
-	if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
+	if hasWorkingCommand(c) {
+		if c.Activity.Prose != "" {
+			section(i18n.Text("COMMENTARY"))
+			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "body", "")
+		}
+		section(workingCommandTitle(c.Activity))
+		prefix := "│ "
+		if width < 3 {
+			prefix = ""
+		}
+		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
+	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails
 		if strings.TrimSpace(d.Justification) != "" {

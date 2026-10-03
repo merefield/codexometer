@@ -10,12 +10,14 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
-	promptToken string
-	promptSpent bool
-	completed   bool
-	latest      SessionContext
-	requests    map[string]SessionContext
-	commands    map[string]contextCommandItem
+	activity         sessionActivityState
+	approvalsLimited bool
+	promptToken      string
+	promptSpent      bool
+	completed        bool
+	latest           SessionContext
+	requests         map[string]SessionContext
+	commands         map[string]contextCommandItem
 }
 
 type contextCommandItem struct{ Command, CWD string }
@@ -41,12 +43,14 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		Questions            []contextQuestion `json:"questions"`
 		IsBlocking           *bool             `json:"isBlocking"`
 		Item                 struct {
-			ID      string `json:"id"`
-			CWD     string `json:"cwd"`
-			Type    string `json:"type"`
-			Text    string `json:"text"`
-			Phase   string `json:"phase"`
-			Command string `json:"command"`
+			ID       string `json:"id"`
+			CWD      string `json:"cwd"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Phase    string `json:"phase"`
+			Command  string `json:"command"`
+			Status   string `json:"status"`
+			ExitCode *int   `json:"exitCode"`
 		} `json:"item"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" {
@@ -61,6 +65,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		states[p.ThreadID] = state
 	}
 	c := SessionContext{At: now, ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.ItemID, Source: "LIVE"}
+	commandID := ""
+	if p.Item.ID != "" {
+		commandID = p.TurnID + "/" + p.Item.ID
+	}
 	switch method {
 	case "turn/started", "thread/closed":
 		delete(states, p.ThreadID)
@@ -69,7 +77,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state.promptToken, state.promptSpent = "", false
 		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
+		state.approvalsLimited = false
 		clear(state.commands)
+		if state.latest.Kind == SessionContextActivity && state.latest.Activity.Command != "" {
+			state.latest.Text = state.latest.Activity.Prose
+		}
+		state.activity = sessionActivityState{}
+		state.latest.Activity = SessionActivity{}
 		return
 	case "serverRequest/resolved":
 		delete(state.requests, string(p.RequestID))
@@ -168,18 +182,46 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 		delete(state.commands, p.TurnID+"/"+p.Item.ID)
+		if p.Item.Type == "commandExecution" {
+			status := p.Item.Status
+			if p.Item.ExitCode != nil {
+				if *p.Item.ExitCode != 0 {
+					status = "failed"
+				} else if status != "failed" && status != "declined" {
+					status = "completed"
+				}
+			}
+			state.activity.command(commandID, p.Item.Command, status, true)
+			if state.latest.Kind != SessionContextReply {
+				state.latest = state.activity.context(c)
+			}
+			return
+		}
 		if p.Item.Type != "agentMessage" {
 			return
 		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Text
 		if p.Item.Phase == "final_answer" {
 			c.Kind = SessionContextReply
+			state.activity = sessionActivityState{}
+		} else {
+			prose := SanitizeSessionContext(p.Item.Text)
+			if prose == "" {
+				return
+			}
+			state.activity.prose = prose
+			state.activity.proseTurnID = p.TurnID
+			c = state.activity.context(c)
 		}
 	case "item/started":
 		if p.Item.Type != "commandExecution" {
 			return
 		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Command
+		// The lifecycle event establishes this even on older payloads that
+		// omit status. Pending approvals still take presentation precedence.
+		state.activity.command(commandID, p.Item.Command, "inProgress", false)
+		c = state.activity.context(c)
 		if state.commands == nil {
 			state.commands = map[string]contextCommandItem{}
 		}
@@ -207,12 +249,39 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if len(id) == 0 || string(id) == "null" {
 			return
 		}
-		if _, exists := state.requests[string(id)]; exists || len(state.requests) < 16 {
+		c.RequestID = string(id)
+		old, exists := state.requests[c.RequestID]
+		if c.Kind == SessionContextApproval {
+			prose := ""
+			if p.TurnID != "" && p.TurnID == state.activity.proseTurnID {
+				prose = state.activity.prose
+			}
+			if exists && old.Kind == c.Kind && old.TurnID == c.TurnID && old.ItemID == c.ItemID {
+				// Replays refresh capabilities, not historical context.
+				prose = old.ApprovalContext
+			}
+			c.ApprovalContext = distinctApprovalContext(prose, p.Reason)
+		}
+		if exists {
+			// A replay refreshes the capability, not its queue position.
+			c.At = old.At
+		}
+		if exists || len(state.requests) < 16 {
 			state.requests[string(id)] = c
+		} else if c.Kind == SessionContextApproval {
+			state.approvalsLimited = true
 		}
 	} else {
 		state.latest = c
 	}
+}
+
+func distinctApprovalContext(prose, reason string) string {
+	prose = SanitizeSessionContext(prose)
+	if strings.EqualFold(strings.Join(strings.Fields(prose), " "), strings.Join(strings.Fields(SanitizeSessionContext(reason)), " ")) {
+		return ""
+	}
+	return prose
 }
 
 func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, statuses map[string]sessionRuntimeStatus) map[string]SessionContext {
@@ -223,13 +292,19 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			continue
 		}
 		c := state.latest
+		count := 0
 		for _, request := range state.requests {
 			if request.Kind == SessionContextApproval && statuses[id] != sessionRuntimeApproval || request.Kind == SessionContextQuestion && statuses[id] != sessionRuntimeInput {
 				continue
 			}
+			if request.Kind == SessionContextApproval {
+				count++
+			}
 			c = preferSessionContext(c, request)
 		}
-		if c.Text != "" {
+		c.PendingApprovals = count
+		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
+		if c.Text != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}

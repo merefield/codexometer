@@ -4,6 +4,7 @@ export interface Sample {
   tokens: number;
 }
 export interface Session {
+  name?: string;
   id: string;
   directory: string;
   tokens: number;
@@ -12,6 +13,11 @@ export interface Session {
   contextKind: string;
   text: string;
   command: string;
+  workingCommand?: string;
+  approvalContext?: string;
+  commandStatus?: string;
+  runningCommands?: number;
+  runningLimited?: boolean;
   source: string;
   activity: string;
   samples: Sample[] | null;
@@ -31,6 +37,8 @@ export interface Credit {
   expiryKnown: boolean;
 }
 export interface Usage {
+  reports?: UsageReports;
+  tokenStatus?: string;
   summary: {
     lifetimeTokens: number | null;
     peakDailyTokens: number | null;
@@ -61,6 +69,51 @@ export interface Usage {
   persisted: boolean;
   stale: boolean;
 }
+export interface UsageReports {
+  dailyStatus: string;
+  planStatus: string;
+  daily: {
+    units: string;
+    dataAsOf?: string;
+    from: string;
+    through: string;
+    fetchedAt: string;
+    days: {
+      date: string;
+      total: number;
+      groups: Record<string, Record<string, number>>;
+    }[];
+  } | null;
+  plan: {
+    fetchedAt: string;
+    data_as_of: string;
+    coverage_start: string;
+    coverage_complete: boolean;
+    approximate: boolean;
+    boundary_tolerance_seconds: number | null;
+    periods: {
+      id: string;
+      window_minutes: number;
+      plan_type: string;
+      starts_at: string;
+      ends_at: string;
+      accounting_complete: boolean;
+      used_basis_points: number | null;
+      breakdowns:
+        | { dimension: string; rows: { key: string; basis_points: number }[] }[]
+        | null;
+    }[];
+  } | null;
+}
+export interface Threshold {
+  threshold: number;
+  model: string;
+  effort: string;
+  speed: string;
+  mode: string;
+  state: string;
+  remaining?: number;
+}
 export interface Snapshot {
   profiles?: {
     session: string;
@@ -71,6 +124,7 @@ export interface Snapshot {
     notice?: string;
   }[];
   profileError?: boolean;
+  thresholds?: Threshold[];
   control?: boolean;
   version: string;
   meters: Meter[];

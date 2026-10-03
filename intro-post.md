@@ -26,7 +26,7 @@ The interface has four main tabs:
 
 - **Quota** — switch between Bars, Consumption Pace, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal or an early-exhaustion projection. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
 - **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The wider **SESSION TOTALS** readout keeps a clickable Reset beside it; Pause/Resume is keyboard-only with `p` and pauses measurement, not Codex. Page through sessions and dismiss finished rows with `[×]` without closing them: fresh activity brings them back.
-- **Usage** — explore persistent account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. OpenAI daily totals backfill missed days while retained local rollouts show how much can be attributed locally; gaps are not turned into invented costs or model breakdowns.
+- **Usage** — explore persistent account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. New **Breakdown** and **Periods** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. Saved aggregates survive restarts; gaps, unavailable data and approximate periods are labelled rather than guessed. Local rollout comparisons are best-effort, not proof of billed-account attribution.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
 
 Use `Tab` / `Shift+Tab` or the mouse to navigate. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; explicitly sent follow-ups and benchmark runs do consume model usage.
@@ -51,6 +51,9 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 Optional quota step-down profiles also join the session command centre in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
+Configuring any steps also reveals **Quota → Thresholds**, after Resets, in the terminal
+and web dashboards, giving you a compact overview of every trigger and clearly
+marking the active and next model profile. It stays hidden on normal launches.
 Apply and confirm individually, or skip. A session can have separate pills for
 its Codex request and quota review; each opens the corresponding detail, with
 Codex requests ordered first. Completion pills wait until outstanding reviews

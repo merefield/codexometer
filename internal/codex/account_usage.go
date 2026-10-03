@@ -9,6 +9,8 @@ import (
 // local session telemetry. Nil buckets mean unavailable; an empty list means
 // the server returned no activity. Summary fields are independently optional.
 type AccountUsage struct {
+	Reports            *UsageReports        `json:"reports,omitempty"`
+	TokenStatus        string               `json:"tokenStatus,omitempty"`
 	Summary            AccountUsageSummary  `json:"summary"`
 	DailyUsageBuckets  []AccountUsageDay    `json:"dailyUsageBuckets"`
 	Coverage           AccountUsageCoverage `json:"coverage"`
@@ -69,7 +71,7 @@ func (c Client) FetchAccountUsage(ctx context.Context) (AccountUsage, error) {
 	_, err := c.fetch(ctx, nil, &history)
 	if err != nil {
 		if c.History != nil {
-			if cached, cacheErr := c.History.Latest(); cacheErr == nil && cached.AccountFingerprint != "" {
+			if cached, cacheErr := c.History.Latest(); cacheErr == nil && history.AccountFingerprint != "" && cached.AccountFingerprint == history.AccountFingerprint {
 				cached.Stale = true
 				return cached, nil
 			}

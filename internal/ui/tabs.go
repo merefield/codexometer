@@ -20,14 +20,6 @@ const (
 	mainTabCount
 )
 
-func (t mainTabID) next() mainTabID {
-	return (t + 1) % mainTabCount
-}
-
-func (t mainTabID) previous() mainTabID {
-	return (t - 1 + mainTabCount) % mainTabCount
-}
-
 type mainTab struct {
 	tab   mainTabID
 	label string
@@ -75,33 +67,44 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 		monitorMinimal = "[S●]"
 		microMonitor = "●"
 	}
-	labels, separator := responsiveTabLabels(width, [][]string{
+	ids := []mainTabID{mainTabQuota, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+	tiers := [][]string{
 		{i18n.Text("╭ QUOTA ╮"), monitorFull, i18n.Text("╭ USAGE ╮"), i18n.Text("╭ BENCHMARK ╮")},
 		{"╭QTA╮", monitorCompact, "╭USE╮", "╭TEST╮"},
 		{"[Q]", monitorMinimal, "[U]", "[B]"},
 		{"Q", microMonitor, "U", "B"},
-	})
+	}
+	labels, separator := responsiveTabLabels(width, tiers)
 
-	tabs := make([]mainTab, 0, mainTabCount)
+	tabs := make([]mainTab, 0, len(ids))
 	x := 0
-	for tab, label := range labels {
+	for index, label := range labels {
 		tabWidth := lipgloss.Width(label)
 		if x+tabWidth > width {
 			break
 		}
-		tabs = append(tabs, mainTab{tab: mainTabID(tab), label: label, x: x, width: tabWidth})
+		tabs = append(tabs, mainTab{tab: ids[index], label: label, x: x, width: tabWidth})
 		x += tabWidth + len(separator)
 	}
 	return tabs, separator
 }
 
-func quotaViewTabLayout(width int) ([]viewTab, string) {
-	labels, separator := responsiveTabLabels(width, [][]string{
+func quotaViewTabLayout(width int, thresholds ...bool) ([]viewTab, string) {
+	order := append([]meterViewID(nil), quotaViewOrder[:]...)
+	tiers := [][]string{
 		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮"), i18n.Text("╭ RESETS ╮")},
 		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮", "╭RST╮"},
 		{"[B]", "[C]", "[P]", "[F]", "[R]"},
 		{"B", "C", "P", "F", "R"},
-	})
+	}
+	if len(thresholds) > 0 && thresholds[0] {
+		order = append(order, viewThresholds)
+		labels := []string{"╭ " + i18n.Text("THRESHOLDS") + " ╮", "╭STEP╮", "[T]", "T"}
+		for i := range tiers {
+			tiers[i] = append(tiers[i], labels[i])
+		}
+	}
+	labels, separator := responsiveTabLabels(width, tiers)
 
 	tabs := make([]viewTab, 0, len(quotaViewOrder))
 	x := 0
@@ -110,7 +113,7 @@ func quotaViewTabLayout(width int) ([]viewTab, string) {
 		if x+tabWidth > width {
 			break
 		}
-		tabs = append(tabs, viewTab{view: quotaViewOrder[index], label: label, x: x, width: tabWidth})
+		tabs = append(tabs, viewTab{view: order[index], label: label, x: x, width: tabWidth})
 		x += tabWidth + len(separator)
 	}
 	return tabs, separator
@@ -190,7 +193,7 @@ func (m Model) renderMainTabs(width int, colors palette) string {
 }
 
 func (m Model) renderQuotaViewTabs(width int, colors palette) string {
-	tabs, separator := quotaViewTabLayout(width)
+	tabs, separator := quotaViewTabLayout(width, len(m.quotaSteps) > 0)
 	parts := make([]string, 0, len(tabs))
 	used := 0
 	for _, tab := range tabs {
@@ -278,6 +281,17 @@ func (m Model) mainTabAt(x, y int) (mainTabID, bool) {
 	return mainTabQuota, false
 }
 
+func (m Model) adjacentMainTab(direction int) mainTabID {
+	tabs := []mainTabID{mainTabQuota, mainTabMonitor, mainTabUsage, mainTabBenchmark}
+	current := m.currentMainTab()
+	for index, tab := range tabs {
+		if tab == current {
+			return tabs[(index+direction+len(tabs))%len(tabs)]
+		}
+	}
+	return mainTabQuota
+}
+
 func (m Model) quotaViewTabAt(x, y int) (meterViewID, bool) {
 	if x < 0 || y < 0 || !m.meterView.isQuota() || (m.loading && len(m.snapshot.Meters()) == 0) {
 		return viewBars, false
@@ -287,7 +301,7 @@ func (m Model) quotaViewTabAt(x, y int) (meterViewID, bool) {
 		return viewBars, false
 	}
 	localX := x - 2
-	tabs, _ := quotaViewTabLayout(layout.contentWidth)
+	tabs, _ := quotaViewTabLayout(layout.contentWidth, len(m.quotaSteps) > 0)
 	for _, tab := range tabs {
 		if localX >= tab.x && localX < tab.x+tab.width {
 			return tab.view, true

@@ -2,9 +2,15 @@
   import type { Session } from './state.svelte';
   let { session, active = false }: { session: Session; active?: boolean } =
     $props();
+  let payload = $derived(
+    session.text ||
+      (session.contextKind === 'LAST ACTIVITY'
+        ? session.workingCommand || ''
+        : ''),
+  );
   let available = $derived(
     ['LAST REPLY', 'LAST ACTIVITY'].includes(session.contextKind) &&
-      !!session.text.trim(),
+      !!payload.trim(),
   );
   let busy = $state(false);
   let notice = $state('');
@@ -18,21 +24,21 @@
   });
   $effect(() => {
     // Feedback belongs to this observed reply, not a later response.
-    session.text;
+    payload;
     session.status;
     notice = '';
   });
   async function copy() {
     if (!available || busy) return;
-    const text = session.text;
+    const text = payload;
     busy = true;
     flashed = true;
     notice = '';
     try {
       await navigator.clipboard.writeText(text);
-      if (session.text === text) notice = 'Copied.';
+      if (payload === text) notice = 'Copied.';
     } catch {
-      if (session.text === text)
+      if (payload === text)
         notice =
           'Clipboard unavailable. Select the visible text and copy it manually.';
     } finally {

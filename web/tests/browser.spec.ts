@@ -104,6 +104,28 @@ test.describe('quota profile reviews', () => {
     pairingURL,
   }) => {
     await page.goto(pairingURL);
+    const thresholds = page.getByRole('link', {
+      name: 'THRESHOLDS',
+      exact: true,
+    });
+    await expect(thresholds).toBeVisible();
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Main navigation' })
+        .getByRole('link', { name: 'THRESHOLDS' }),
+    ).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Quota view' })
+        .getByRole('link')
+        .last(),
+    ).toHaveText('THRESHOLDS');
+    await thresholds.click();
+    await expect(
+      page.getByRole('heading', { name: /THRESHOLDS/ }),
+    ).toBeVisible();
+    await expect(page.locator('.threshold-list')).toContainText('gpt-5.6-luna');
+    await expect(page.locator('.threshold-list')).toContainText('ASK');
     await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
     const pill = page.getByRole('link', { name: /QUOTA THRESHOLD/ }).first();
     await expect(pill).toBeVisible({ timeout: 15000 });
@@ -169,6 +191,170 @@ test.describe('quota profile reviews', () => {
       page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
     ).toBeVisible();
   });
+});
+
+test('working detail preserves prose alongside command state', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'working-root',
+    name: 'Build check',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST ACTIVITY',
+    text: 'Checking the build <not markup>',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    workingCommand: 'go test ./...',
+    commandStatus: 'running',
+    runningCommands: 2,
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { copied: string }).copied = text;
+        },
+      },
+      configurable: true,
+    });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  const row = page.getByRole('region', {
+    name: 'Session Build check',
+    exact: true,
+  });
+  await expect(row).toContainText(session.text);
+  await expect(row).toContainText('COMMAND // RUNNING');
+  await expect(row).toContainText('+1 RUNNING');
+  await expect(row.locator('pre.command')).toHaveText('go test ./...');
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe(session.text);
+  session.text = '';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await row.getByRole('button', { name: 'Copy text' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe('go test ./...');
+  await row.getByRole('button', { name: '-ROOT // Build check' }).click();
+  await expect(page.locator('pre.command')).toHaveText('go test ./...');
+  session.workingCommand = 'go vet ./...';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await page.keyboard.press('c');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { copied: string }).copied),
+    )
+    .toBe('go vet ./...');
+  session.text = 'Checking the build <not markup>';
+  session.commandStatus = 'completed';
+  session.runningCommands = 0;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'COMMAND // COMPLETED', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(session.text, { exact: true })).toBeVisible();
+  session.status = 'TURN COMPLETE';
+  session.contextKind = 'LAST REPLY';
+  session.text = 'Build finished';
+  session.workingCommand = '';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.getByText('Build finished', { exact: true })).toBeVisible();
+  await expect(page.locator('pre.command')).toHaveCount(0);
+});
+
+test('session names identify selectable telemetry and full detail', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [
+      {
+        id: 'named-root',
+        name: 'Repair dashboard',
+        directory: '/work/dashboard',
+        tokens: 12,
+        agents: 0,
+        status: 'INPUT NEEDED',
+        contextKind: 'LAST REPLY',
+        text: 'Done',
+        command: '',
+        source: 'LOCAL',
+        activity: '',
+        samples: [],
+      },
+    ],
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const row = page.getByRole('region', {
+    name: 'Session Repair dashboard',
+    exact: true,
+  });
+  await expect(
+    row.getByRole('heading', { name: '-ROOT // Repair dashboard' }),
+  ).toBeVisible();
+  await expect(row.locator('.telemetry')).toContainText('/work/dashboard');
+  await row.getByRole('button', { name: '-ROOT // Repair dashboard' }).click();
+  await expect(
+    page.getByRole('navigation', { name: 'Sessions needing attention' }),
+  ).toContainText('INPUT NEEDED -ROOT // Repair dashboard');
+  await row.getByRole('link', { name: 'INPUT NEEDED', exact: true }).click();
+  await expect(page.locator('.detail-heading')).toContainText(
+    'Repair dashboard',
+  );
+  await expect(page.locator('.full-detail')).toContainText('/work/dashboard');
+});
+
+test('Thresholds navigation stays hidden without a launch policy', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await expect(
+    page.getByRole('link', { name: 'THRESHOLDS', exact: true }),
+  ).toHaveCount(0);
 });
 
 test('read-only session copy captures working prose in every detail level without server writes', async ({
@@ -394,6 +580,64 @@ async function mockActions(page: Page, kind = 'approval') {
     await route.fulfill({ json: result });
   });
   return { snapshot, offer, calls };
+}
+
+for (const control of [false, true]) {
+  test(`approval commentary is full-detail-only (control=${control})`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot } = await mockActions(page);
+    const detail = {
+      ...snapshot,
+      control,
+      sessions: snapshot.sessions.map((s) => ({
+        ...s,
+        contextKind: 'APPROVAL REQUEST',
+        text: 'Allow this check?',
+        approvalContext: 'I am checking <the build> before publishing.',
+      })),
+    };
+    await page.goto(pairingURL);
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+    await expect(
+      page.getByText(detail.sessions[0].approvalContext, { exact: true }),
+    ).toHaveCount(0);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const panel = page.locator('.detail-context');
+    await expect(
+      panel.getByRole('heading', { name: 'CONTEXT', exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText(detail.sessions[0].approvalContext, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText('Allow this check?', { exact: true }),
+    ).toBeVisible();
+    await expect(panel.locator('pre').first()).toHaveText(
+      detail.sessions[0].approvalContext,
+    );
+    detail.sessions[0].approvalContext = '';
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await expect(
+      panel.getByRole('heading', { name: 'CONTEXT', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      panel.getByText('Allow this check?', { exact: true }),
+    ).toBeVisible();
+  });
 }
 
 test('session approval requires explicit review and confirmation of the target', async ({
@@ -1021,6 +1265,129 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
       has: page.getByRole('cell', { name: '2026-09-11', exact: true }),
     }),
   ).toContainText('370');
+});
+
+test('usage breakdowns and allowance history preserve units, unknowns and read-only navigation', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    meters: [],
+    sessions: [],
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    usage: {
+      summary: {},
+      dailyUsageBuckets: null,
+      coverage: {},
+      persisted: true,
+      stale: false,
+      reports: {
+        dailyStatus: 'OPENAI',
+        planStatus: 'STALE // UNAVAILABLE',
+        daily: {
+          units: 'RELATIVE USAGE',
+          from: '2026-09-04',
+          through: '2026-10-03',
+          fetchedAt: '2026-10-03T12:00:00Z',
+          days: [
+            {
+              date: '2026-10-01',
+              total: 2,
+              groups: { model: { 'older-model': 2 } },
+            },
+            {
+              date: '2026-10-02',
+              total: 4,
+              groups: {
+                model: { 'gpt-6.1-sol': 2.5, 'gpt-6-luna': 1.5 },
+                surface: { cli: 4 },
+              },
+            },
+          ],
+        },
+        plan: {
+          fetchedAt: '2026-10-03T12:00:00Z',
+          data_as_of: '2026-10-03T11:00:00Z',
+          coverage_start: '2026-09-26T00:00:00Z',
+          coverage_complete: false,
+          approximate: true,
+          boundary_tolerance_seconds: 60,
+          periods: [
+            {
+              id: 'p1',
+              window_minutes: 10080,
+              plan_type: 'pro',
+              starts_at: '2026-09-28T00:00:00Z',
+              ends_at: '2026-10-05T00:00:00Z',
+              accounting_complete: false,
+              used_basis_points: 12500,
+              breakdowns: [
+                {
+                  dimension: 'model',
+                  rows: [{ key: 'gpt-6.1-sol', basis_points: 12500 }],
+                },
+              ],
+            },
+            {
+              id: 'p2',
+              window_minutes: 300,
+              plan_type: 'pro',
+              starts_at: '2026-09-27T00:00:00Z',
+              ends_at: '2026-09-27T05:00:00Z',
+              accounting_complete: false,
+              used_basis_points: null,
+              breakdowns: null,
+            },
+          ],
+        },
+      },
+    },
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'USAGE', exact: true }).click();
+  await page.getByLabel('Usage view').selectOption('breakdown');
+  await expect(
+    page.getByRole('heading', { name: '2026-10-02 // 4 RELATIVE USAGE' }),
+  ).toBeVisible();
+  await page.getByLabel('Usage grouping').selectOption('model');
+  await expect(page.locator('.report-row').first()).toContainText(
+    'gpt-6.1-sol',
+  );
+  await expect(page.locator('.report-row').first()).toContainText('2.5');
+  await page.getByRole('button', { name: '← OLDER', exact: true }).click();
+  await expect(page.locator('.report-row')).toContainText('older-model');
+  await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
+  await page.getByLabel('Usage view').selectOption('periods');
+  await expect(page.getByText('STALE // UNAVAILABLE // UTC')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '10080 MIN // pro // USED 125%' }),
+  ).toBeVisible();
+  await expect(page.getByText(/Partial accounting/)).toBeVisible();
+  await page.getByRole('button', { name: '← OLDER', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '300 MIN // pro // USED UNKNOWN' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Selected breakdown unavailable; missing does not mean zero.',
+    ),
+  ).toBeVisible();
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(
+      page.getByRole('heading', { name: 'ALLOWANCE PERIODS', exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
+  }
 });
 
 test('empty and all-zero graphs announce a zero peak without invalid heights', async ({

@@ -17,6 +17,11 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	stripVersionLink := regexp.MustCompile(regexp.QuoteMeta(ansi.SetHyperlink(versionHighlightsURL(snapshotVersion))) + `(.*?)` + regexp.QuoteMeta(ansi.ResetHyperlink()))
 	for theme := themeHacker; theme < themeCount; theme++ {
 		for view := viewBars; view < viewCount; view++ {
+			// The opt-in Thresholds view has separate coverage. Preserve the
+			// existing snapshot for launches without a threshold policy.
+			if view == viewThresholds {
+				continue
+			}
 			for _, size := range []struct{ w, h int }{{40, 16}, {80, 24}, {120, 40}} {
 				snapshot := codex.DemoSnapshot()
 				snapshot.RateLimits.Primary.ResetsAt = nil
@@ -31,9 +36,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline includes persistent Usage provenance and the two additional
-	// OpenAI account summary metrics; every theme, view and size is covered.
-	const want = "ec5498dccc07e2d2531d3ef645ccd819fcaea9f45b1f69aa206197f877178321"
+	// Baseline includes Usage provenance, summary metrics and report controls,
+	// plus main's current pricing footer; every theme, view and size is covered.
+	const want = "d85348cf79cadfe21b3c284716862c698acc37686a37d4de4ff481eab68fb996"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

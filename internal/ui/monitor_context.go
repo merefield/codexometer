@@ -126,7 +126,9 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		lines = lines[:textRows]
 		lines[textRows-1] = ansi.Truncate(lines[textRows-1], max(inner-1, 0), "") + "…"
 	}
-	if contentRows > textRows {
+	if hasWorkingCommand(s.preview) {
+		lines = workingContextLines(s.preview, inner, contentRows, true)
+	} else if contentRows > textRows {
 		lines = append(lines, terminalLabel(s.preview.Source)+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}
 	for i := range lines {
@@ -379,6 +381,10 @@ func (m Model) monitorContextAt(x, y int) string {
 	rowY := a.topHeight + a.gap - 1
 	mw, rightWidth, _ := monitorSessionColumnWidths(a.width)
 	for i, s := range sessions {
+		badge := m.renderMonitorSessionBadge(s, max(mw-4, 1), paletteFor(m.theme))
+		if badge != "" && y == rowY+1 && x >= 2 && x < 2+lipgloss.Width(badge) && x < mw-2 {
+			return "badge:" + s.id
+		}
 		boxX, boxWidth := mw+1, rightWidth
 		if m.rowContextMode(s.id) == contextSplit {
 			_, cw, gw := m.contextColumns(a.width, s)
@@ -451,6 +457,11 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
 			} else if strings.HasPrefix(m.monitorContextHover, "attention:") || strings.HasPrefix(m.monitorContextHover, "attention-profile:") {
 				m.openMonitorAttention(m.monitorContextHover)
+			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "badge:"); ok {
+				m.setRowContext(id, contextFull)
+				row := m.monitorContextRows[id]
+				row.review = "context"
+				m.monitorContextRows[id] = row
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "detail:"); ok {
 				m.openMonitorContext(id)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "less:"); ok {

@@ -51,6 +51,7 @@ type LiveUsageSnapshot struct {
 type LiveUsageSession struct {
 	ModelSettings    SessionModelSettings
 	ID               string
+	Name             string
 	WorkingDirectory string
 	StartedAt        time.Time
 	TotalTokens      int64
@@ -108,6 +109,8 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
+	sessionNames    map[string]string
+	nameIndexInfo   os.FileInfo
 	daemonContexts  map[string]SessionContext
 	SessionsRoot    string
 	WriterLocksRoot string
@@ -286,6 +289,7 @@ func recoverRolloutDaily(path string, metadata rolloutMetadata, since time.Time,
 }
 
 type rolloutCursor struct {
+	activity                    sessionActivityState
 	preview                     SessionContext
 	offset                      int64
 	totalTokens                 int64
@@ -528,6 +532,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
 	sessions, activeSessions, sessionWorking := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
+	r.refreshSessionNames()
+	for i := range sessions {
+		sessions[i].Name = r.sessionNames[sessions[i].ID]
+	}
 	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
 		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
 	)
@@ -1367,7 +1375,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		if exact && preview.pending() {
 			preview = SessionContext{}
 		}
-		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending()) {
+		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited) {
 			preview = live
 		}
 		// A persisted request is not proof that it is still outstanding. Match
@@ -1377,7 +1385,11 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			preview = SessionContext{}
 		}
 		if !unattributed {
+			pending := group.Context.PendingApprovals + preview.PendingApprovals
+			limited := group.Context.PendingApprovalsLimited || preview.PendingApprovalsLimited
 			group.Context = preferSessionContext(group.Context, preview)
+			group.Context.PendingApprovals = pending
+			group.Context.PendingApprovalsLimited = limited
 		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing

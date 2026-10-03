@@ -51,6 +51,9 @@ type Model struct {
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorAttentionPage                int
+	monitorApprovalOrder                []string
+	monitorApprovalOrderCandidate       string
+	monitorApprovalOrderSince           time.Time
 	monitorContextHover                 string
 	monitorApprovalConfirm              string
 	monitorApprovalConfirmUntil         time.Time
@@ -73,6 +76,7 @@ type Model struct {
 	resetConfirmUntil                   time.Time
 	resetRevision                       uint64
 	quotaSteps                          []codex.QuotaStep
+	thresholdScroll                     int
 	quota                               quotaControl
 	quotaStepPending                    *codex.QuotaStep
 	quotaStepWindow                     string
@@ -250,6 +254,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	name             string
 	averageRate      int64
 	modelSettings    codex.SessionModelSettings
 	preview          codex.SessionContext
@@ -603,6 +608,23 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if m.meterView == viewThresholds {
+			step := 0
+			switch strings.ToLower(message.String()) {
+			case "up":
+				step = -1
+			case "down":
+				step = 1
+			case "pgup":
+				step = -max(m.dashboardLayout().meterHeight-2, 1)
+			case "pgdown":
+				step = max(m.dashboardLayout().meterHeight-2, 1)
+			}
+			if step != 0 {
+				m.scrollThresholds(step)
+				return m, nil
+			}
+		}
 		if m.meterView == viewUsage {
 			if action, ok := historyKey(strings.ToLower(message.String())); ok {
 				m.activateHistory(action)
@@ -667,9 +689,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonView)
 			}
 		case "tab":
-			return m.pressMainTab(m.currentMainTab().next())
+			return m.pressMainTab(m.adjacentMainTab(1))
 		case "shift+tab":
-			return m.pressMainTab(m.currentMainTab().previous())
+			return m.pressMainTab(m.adjacentMainTab(-1))
 		case "r":
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
@@ -862,6 +884,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.viewHovered = false
+		if m.meterView == viewThresholds {
+			switch mouse.Button {
+			case tea.MouseWheelUp:
+				m.scrollThresholds(-3)
+				return m, nil
+			case tea.MouseWheelDown:
+				m.scrollThresholds(3)
+				return m, nil
+			}
+		}
 		if m.meterView == viewBenchmark && m.benchmarkScopeOpen {
 			if item, ok := m.benchmarkScopeItemAt(mouse.X, mouse.Y); ok {
 				m.hoveredButton = footerButtonNone
@@ -1024,6 +1056,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, quotaStepCommand
 	case secondMsg:
+		m.settleMonitorApprovalOrder(time.Time(message))
 		if m.monitorState == monitorRunning {
 			m.refreshMonitorRates(time.Time(message), false)
 		}
@@ -1300,7 +1333,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		m.persistPreferences()
 	case footerButtonView:
 		if m.meterView.isQuota() {
-			m.meterView = m.meterView.nextQuota()
+			m.meterView = m.meterView.nextQuota(len(m.quotaSteps) > 0)
 			m.quotaMeterView = m.meterView
 			m.persistPreferences()
 		}
@@ -1493,7 +1526,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		extraHeight += framedErrorHeight
 	}
 	meters := m.snapshot.Meters()
-	if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets {
+	if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
 		extraHeight += framedErrorHeight
 	}
 	if (m.meterView == viewBars || m.meterView == viewConsumptionPace || m.meterView == viewFuel) && len(meters) > 0 {
@@ -1513,7 +1546,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
 	footerY := meterY
-	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
+	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewThresholds || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
 		footerY += meterHeight
 	}
 	return dashboardGeometry{
@@ -2320,6 +2353,9 @@ func (m Model) monitorHasVisibleWaitingSession() bool {
 }
 
 func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {
+	m.monitorApprovalOrder = nil
+	m.monitorApprovalOrderCandidate = ""
+	m.monitorApprovalOrderSince = time.Time{}
 	m.monitorContextDetail = ""
 	m.monitorContextExpanded = ""
 	m.monitorContextScroll = 0
@@ -2418,6 +2454,7 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.modelSettings = update.ModelSettings
+		session.name = update.Name
 		session.callSequence = latestModelCallSequence(update.ModelCalls)
 		session.turnSequence = latestTurnTimingSequence(update.TurnTimings)
 		if update.WorkingDirectory != "" {
@@ -2436,8 +2473,8 @@ func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt 
 	for _, update := range updates {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: update.ID, workingDirectory: update.WorkingDirectory,
-			modelSettings: update.ModelSettings,
-			baseline:      update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
+			name: update.Name, modelSettings: update.ModelSettings,
+			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
 			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
 			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
 			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
@@ -2597,8 +2634,8 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 	for _, session := range usage.Sessions {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
-			modelSettings: session.ModelSettings,
-			baseline:      session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
+			name: session.Name, modelSettings: session.ModelSettings,
+			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
 			active: session.Active, working: session.Working, attention: session.Attention,
@@ -2632,8 +2669,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			}
 			created := monitorSession{
 				id: update.ID, workingDirectory: update.WorkingDirectory,
-				modelSettings: update.ModelSettings,
-				latest:        update.TotalTokens, graphStart: 0, startedAt: startedAt,
+				name: update.Name, modelSettings: update.ModelSettings,
+				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
 				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
@@ -2657,6 +2694,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.modelSettings = update.ModelSettings
+		session.name = update.Name
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {

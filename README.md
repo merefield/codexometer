@@ -221,6 +221,20 @@ English rendering baseline captured from v0.12.0.
   For a root with linked agents, fresh activity from any member suppresses that
   uncertain fallback; definite input or approval signals still propagate from
   the member that raised them.
+- Terminal approval pills show one parent-session entry, with `×N` only when
+  multiple live approval requests are pending across the parent and its linked
+  agents. The oldest pending approval is presented first. Approval pills prefer
+  larger backlogs, breaking ties by oldest request. Reordering settles for five
+  seconds and waits while a pill is hovered or an approval is being confirmed;
+  resolved entries disappear promptly. Counts describe observed live requests,
+  not an inferred number of waiting agents; local-only observation cannot
+  provide a complete pending count.
+  Each thread retains at most 16 request contexts. If that limit is exceeded,
+  a `+` after the approval label/count means the count is a lower bound and
+  additional approvals may require handling in Codex. The marker remains
+  conservative until the turn ends or the connection resets; it does not
+  claim the unretained requests have been resolved. Queue age is first-seen
+  time and does not change when an existing request is replayed.
 - An opt-in deterministic coding benchmark comparing a selectable scope of
   visible Codex models and supported reasoning efforts by correctness, elapsed
   time, token use, and estimated standard API-equivalent cost. The current trial appears immediately
@@ -491,6 +505,15 @@ Codexometer deliberately does not:
 - send Codex credentials to another service;
 - invoke a model merely to discover quota information.
 
+Optional Usage breakdowns use an access token exported in memory by the local
+Codex app-server (`getAuthStatus`), solely for authenticated, read-only requests
+to OpenAI's fixed `https://chatgpt.com/backend-api/wham/usage/` endpoints. The
+token is never written to the history file, logged, or sent to the browser.
+Redirects are refused, responses are bounded, and account/workspace identity is
+checked before and after fetching. Unsupported credential types (including
+non-exportable and FedRAMP credentials) fall back to the established token
+history. Codex still owns login and token refresh; no separate OAuth flow is added.
+
 Sessions and the observed quota estimator additionally read locally persisted
 Codex rollout files under `$CODEX_HOME/sessions` (normally
 `~/.codex/sessions`). They decode `token_count` totals, each last response's
@@ -697,7 +720,7 @@ or applies today's `/fast` setting retroactively.
   combination is unpriced and interrupts clean learning rather than silently
   applying an invented multiplier. Standard benchmark rankings are unchanged.
 
-Fast rates were verified on **10 September 2026**: **GPT-6 Astra and GPT-5.6
+Fast pricing was updated on **30 September 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
 (Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
 legacy `priority` alias. The premium is applied after the existing per-response
 long-context and cache-read/cache-write calculations; reasoning output is not
@@ -751,7 +774,7 @@ hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were retrieved on **2026-09-04**.
+and were last updated on **2026-09-30**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -904,7 +927,7 @@ earliest known expiry. With no comparable expiries, the backend selects the cred
 Reset-credit expiry is separate from the
 automatic quota-window reset date.
 
-### Usage: account token history
+### Usage: account history and breakdowns
 
 **Usage** is a read-only companion to Codex CLI's `/usage` command. It fetches
 `account/usage/read` through a short-lived local Codex app-server using your
@@ -916,6 +939,48 @@ It does not require the shared-daemon configuration used for live Sessions event
 - **Weekly** (`w`): tokens summed into Sunday–Saturday weeks; the current week is partial.
 - **Cumulative** (`c`): a running total of those weeks within the selected window,
   not the account's lifetime total.
+- **Breakdown** (`b`): daily account usage split by surface, model, feature
+  (thread source), or task-start trigger when OpenAI supplies that attribution.
+- **Periods** (`p`): historical allowance windows with consumed percentage,
+  coverage, approximation and accounting-completeness indicators, plus the
+  available breakdowns for each window.
+
+The new Breakdown and Periods views are available in **both terminal and web
+mode**, including read-only web mode. In the terminal, `g` cycles the grouping,
+`←`/`→` (or Page Up/Down) select an older/newer reported day or period, and
+`↑`/`↓` scroll a long category list. The controls are also clickable. In the
+browser choose the view/grouping and use the Older/Newer buttons. No model turn,
+approval, reset, or write-mode opt-in is needed.
+
+The additional reports follow the backend contracts used by Codex CLI analytics:
+
+| Read-only endpoint (under `/backend-api/wham`) | Requested range | Meaning |
+| --- | --- | --- |
+| `/usage/daily-token-usage-breakdown` | Latest 30 UTC days, `group_by=day` | Despite its name, the consumer report is **relative usage**, or explicitly reported **credits**, not a token count or quota percentage. |
+| `/usage/plan_limit_history?days=7` | Latest seven days | Historical allowance periods; basis points are divided by 100 to obtain percent of **that period's** limit, not today's limit. |
+
+These are optional internal backend routes, not guaranteed public app-server
+methods. Availability depends on account/server rollout. A 404, auth failure,
+timeout or malformed report leaves the other report and token views usable.
+Freshness is per report; a verified cached report is labelled **STALE** when its
+endpoint fails. Old cached reports are not exposed without fresh workspace/user
+verification. Server corrections replace buckets rather than accumulating them.
+
+Only dimensions supported across a refreshed daily range are displayed: if
+attribution is missing, surface totals remain available and unsupported groups
+say so. Alternate groupings describe the **same** usage and are never added
+together or combined with local tokens. Empty or unknown accounting does not
+become an invented zero; period percentages may exceed 100% and incomplete
+periods can change later. Signed corrections are retained numerically (negative
+values do not draw positive bars). Approximation, coverage and boundary tolerance are
+preserved. The period endpoint is **not a reset-event audit**: it cannot reliably
+distinguish a manually redeemed reset from a centrally scheduled reset.
+
+The ledger retains fetched aggregates for approximately 400 days. A restart
+therefore keeps observed detail, but it does not manufacture a year of detailed
+analytics: if you miss more than the backend's requested lookback, older gaps
+remain unless already saved. These views navigate actual reported buckets;
+the 6/12-month switches below apply only to the three token charts.
 
 Choose **6 months** (`6`) or **12 months** (`1`) with the range buttons. These
 represent 26 or 52 Sunday-based weeks including the current partial week,
@@ -967,12 +1032,18 @@ failed refresh uses the last verified persisted result and labels it **STALE**.
 Account fingerprints keep histories isolated, and a newly verified account is
 never shown another account's cached Usage data.
 
-The endpoint currently exposes daily **total tokens**, not historical per-model,
-input/output/cache splits, quota percentages, or dollar spend. The finer token
-breakdown is therefore local recovery and can be partial; activity from another
+The original `account/usage/read` endpoint supplies daily **total tokens**.
+Input/output/cache token splits here are local recovery, not derived from the
+new relative-usage reports, and can be partial; activity from another
 device, cloud task, or deleted rollout remains only in the OpenAI total. The tab
 does not infer historical API-equivalent cost. `--demo` includes sample history
 for previewing the charts.
+
+Local rollouts do not reliably identify the billed account. Their comparison
+is best-effort machine-local evidence, not proof that a particular account paid
+for those tokens; a shared `CODEX_HOME`, account switching or API-key sessions
+can make it differ from the account total. Use the OpenAI reports for
+authoritative account attribution, not the local coverage percentage.
 
 ### Other top-level views
 
@@ -1132,6 +1203,17 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
+Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
+title, with the directory path inside the box beneath model information when
+space permits. Names come from the local
+Codex session index and refresh after
+renames; unnamed sessions retain their ID/directory presentation. The web Sessions
+view uses the same names in selectable headings, with the directory inside the
+panel; full detail also identifies the named session. Attention pills use the
+same short ID and session name (directory fallback when unnamed), shortening
+their labels as space tightens. Click a highlighted session status to open its
+full detail and any native approval/input request; this only navigates.
+
 Session rows prioritise the root session's latest observed model, reasoning effort
 and Fast setting directly below the token count, for example
 `gpt-6-astra medium fast`. These are observed selections from persisted turn contexts
@@ -1204,8 +1286,28 @@ switch between graph-only, split, expanded, and full detail as described below.
   finished may miss its live completion event; the next completed turn qualifies.
 - **QUESTION** contains an observed blocking input request and any choices.
 - **APPROVAL REQUEST** contains an observed approval reason/command when available.
+  Full-page terminal and web detail can also show **CONTEXT** above the request:
+  the latest observed assistant commentary from that same thread and turn when
+  the approval arrived. It remains attached to that request while queued; a
+  sub-agent approval never borrows its parent's commentary. Missing context or
+  text matching the justification (ignoring case/whitespace) is omitted. This
+  requires matching live app-server turn identities; local-only observations
+  do not guess the association. Compact/expanded row previews stay unchanged.
+  Context is background information, not part of the action being authorised.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
+  During a turn, the latest assistant prose and shell command are retained
+  separately in both terminal and web session detail: a command does not replace
+  the explanation, and new commentary does not hide the command. Commands show
+  their last observed running/completed/failed/declined status, or **UNKNOWN**
+  when that signal is unavailable. When commands overlap, the latest still-running
+  command is shown with a count of additional running commands. Short terminal
+  previews prioritise prose; larger views separate the command beneath it.
+  Approvals/questions take precedence, the final reply replaces activity, and a
+  new turn clears the previous turn's prose and command. This is bounded,
+  in-memory, per-thread context—not a full command history or command output.
+  Missed events (including before attaching) can leave observations incomplete;
+  local-log fallback only reports completion when it was recorded.
 
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the
@@ -1557,10 +1659,14 @@ platform-standard `codexometer` directory. This versioned ledger contains only:
 - OpenAI daily account token totals and optional account summary metrics;
 - locally recovered daily numeric token aggregates;
 - current quota percentage observations, reset boundaries and window lengths;
-- a one-way account fingerprint used to prevent histories from being mixed.
+- fetched daily relative-usage/credit category aggregates and historical
+  allowance periods (including opaque **period**, not session, identifiers);
+- one-way account fingerprints, with an additional workspace/user hash for the
+  new analytics reports, used to prevent histories from being mixed.
 
 It never stores prompts, replies, commands, source content, working-directory
 paths, session IDs, email addresses, credentials, or authentication tokens.
+Schema 2 reads/migrates the earlier schema-1 ledger without deleting its history.
 History is retained for approximately 400 days. Writes use a private temporary
 file, an atomic replacement, and a cross-process lock so terminal and web
 Codexometer instances cannot partially overwrite one another. A damaged or
@@ -1988,12 +2094,25 @@ for an unknown model or a token class whose price was not published when the
 release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-for current values. The rates compiled into this version were retrieved from
-that page on **2026-09-04**; every pricing-bearing Quota or Benchmark footer
+for current values. The compiled table was last updated from
+that page on **2026-09-30**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
-The maintained price table covers GPT-6 Astra, GPT-5.6 Sol, GPT-5.6 Terra,
+The maintained price table covers GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Sol, GPT-5.6 Terra,
 GPT-5.6 Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex.
+
+The September additions use these standard USD rates per million tokens:
+
+| Model | Input | Cached input | Cache writes | Output |
+| --- | ---: | ---: | ---: | ---: |
+| [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | $2.00 | $0.20 | $2.50 | $10.00 |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | $0.10 | $0.01 | $0.125 | $0.50 |
+
+Above 272,000 input tokens per response, input and cache rates double and
+output rates multiply by 1.5 for the entire response. Requested Fast/priority
+pricing doubles the applicable rates in live estimates; benchmark API EQ
+continues to use standard pricing. Existing model prices are retained.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
@@ -2119,6 +2238,18 @@ be `fast`, `standard`, `slow`, `priority` or `flex`. Names such as `fast` and
 are rejected before changing settings. `standard` clears an explicit tier;
 omitting speed leaves the session's current tier intact.
 Codexometer ships no enabled profile and does not infer which model is cheaper.
+
+When one or more steps are configured, Codexometer adds a **Thresholds** view
+after **Resets** within **Quota**, in both the terminal and experimental web interface. It keeps
+the complete policy visible in trigger order, including model, reasoning level,
+speed and `ask`/`auto` behavior, and marks the active and next steps against the
+longest Codex quota window. The tab is omitted entirely on ordinary launches;
+saved Thresholds navigation falls back to Bars when no policy is
+configured. Approvals remain attached to their individual sessions in
+**Sessions** rather than being actioned from the policy overview.
+`ACTIVE` identifies the selected policy, not confirmation that every session has
+applied it; `PASSED` means a higher threshold now takes precedence. Scroll long
+policies with the mouse wheel, arrow keys or Page Up/Down in the terminal.
 
 The optional final mode defaults to **`ask`**, preserving per-session approval
 for existing command lines. **`auto`** authorizes applying the profile at launch:

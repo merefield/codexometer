@@ -4,9 +4,63 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 )
+
+type QuotaStepStage string
+
+const (
+	QuotaStepConfigured QuotaStepStage = "CONFIGURED"
+	QuotaStepPassed     QuotaStepStage = "PASSED"
+	QuotaStepActive     QuotaStepStage = "ACTIVE"
+	QuotaStepNext       QuotaStepStage = "NEXT"
+	QuotaStepArmed      QuotaStepStage = "ARMED"
+)
+
+type QuotaStepStatus struct {
+	Step      QuotaStep
+	Stage     QuotaStepStage
+	Remaining int
+}
+
+// QuotaStepStatuses returns a stable, trigger-ordered policy projection for
+// any presentation. The used percentage is nil until the policy window can be
+// identified authoritatively.
+func QuotaStepStatuses(s Snapshot, steps []QuotaStep) ([]QuotaStepStatus, *int) {
+	ordered := append([]QuotaStep(nil), steps...)
+	slices.SortStableFunc(ordered, func(a, b QuotaStep) int { return a.Threshold - b.Threshold })
+	used, active := -1, -1
+	if meter, _, ok := QuotaPolicyWindow(s); ok {
+		used = meter.Window.UsedPercent
+		for index, step := range ordered {
+			if step.Threshold <= used {
+				active = index
+			}
+		}
+	}
+	statuses := make([]QuotaStepStatus, 0, len(ordered))
+	for index, step := range ordered {
+		status := QuotaStepStatus{Step: step, Stage: QuotaStepArmed}
+		switch {
+		case used < 0:
+			status.Stage = QuotaStepConfigured
+		case index < active:
+			status.Stage = QuotaStepPassed
+		case index == active:
+			status.Stage = QuotaStepActive
+		case index == active+1:
+			status.Stage = QuotaStepNext
+			status.Remaining = max(step.Threshold-used, 0)
+		}
+		statuses = append(statuses, status)
+	}
+	if used < 0 {
+		return statuses, nil
+	}
+	return statuses, &used
+}
 
 // QuotaProfiles owns the policy lifecycle independently of either presentation.
 // Its lock also serializes inventory and writes from browser tabs or UI commands.

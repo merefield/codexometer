@@ -74,6 +74,30 @@ func TestQuotaProfileCaptureAndSelection(t *testing.T) {
 	}
 }
 
+func TestQuotaStepStatusesAreSortedAndClassified(t *testing.T) {
+	s := DemoSnapshot()
+	s.AccountFingerprint = "account"
+	s.RateLimits.Secondary.UsedPercent = 65
+	statuses, used := QuotaStepStatuses(s, []QuotaStep{{Threshold: 90}, {Threshold: 25}, {Threshold: 80}, {Threshold: 50}})
+	want := []QuotaStepStage{QuotaStepPassed, QuotaStepActive, QuotaStepNext, QuotaStepArmed}
+	if used == nil || *used != 65 || len(statuses) != len(want) {
+		t.Fatalf("status summary = %#v, used=%v", statuses, used)
+	}
+	for index, stage := range want {
+		if statuses[index].Stage != stage {
+			t.Fatalf("status %d = %#v, want %s", index, statuses[index], stage)
+		}
+	}
+	if statuses[2].Remaining != 15 {
+		t.Fatalf("next remaining = %d", statuses[2].Remaining)
+	}
+
+	configured, used := QuotaStepStatuses(Snapshot{}, []QuotaStep{{Threshold: 80}})
+	if used != nil || configured[0].Stage != QuotaStepConfigured {
+		t.Fatalf("unobserved status = %#v, used=%v", configured, used)
+	}
+}
+
 func TestQuotaProfilesStaleAttemptConsumed(t *testing.T) {
 	c := &policyTestClient{}
 	p := NewQuotaProfiles(c)

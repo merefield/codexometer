@@ -161,6 +161,7 @@ func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, er
 	history.Summary.LongestStreakDays = &longestStreak
 	history.Coverage = codex.AccountUsageCoverage{Status: "OPENAI", OpenAITokens: total, LocalTokens: localTotal, AttributedPct: 75, OpenAIDays: len(history.DailyUsageBuckets)}
 	history.Persisted = true
+	history.Reports = codex.DemoUsageReports(now)
 	return history, nil
 }
 

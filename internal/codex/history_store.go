@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	historySchemaVersion = 1
+	historySchemaVersion = 2
 	historyRetentionDays = 400
 	maxQuotaObservations = 12_000
 )
@@ -33,6 +33,7 @@ type historyFile struct {
 }
 
 type historyAccount struct {
+	Reports      *storedUsageReports       `json:"reports,omitempty"`
 	Summary      AccountUsageSummary       `json:"summary"`
 	FetchedAt    time.Time                 `json:"fetchedAt"`
 	BucketsKnown bool                      `json:"bucketsKnown,omitempty"`
@@ -78,6 +79,7 @@ func (s *HistoryStore) Reconcile(remote AccountUsage, recovered []RecoveredUsage
 			return err
 		}
 		account := file.account(remote.AccountFingerprint)
+		reports := reconcileUsageReports(&account.Reports, remote.Reports, time.Now())
 		mergeSummary(&account.Summary, remote.Summary)
 		if !remote.FetchedAt.IsZero() {
 			account.FetchedAt = remote.FetchedAt
@@ -118,6 +120,8 @@ func (s *HistoryStore) Reconcile(remote AccountUsage, recovered []RecoveredUsage
 			return err
 		}
 		result = renderAccountUsage(remote.AccountFingerprint, account, false)
+		result.Reports = reports
+		result.TokenStatus = remote.TokenStatus
 		s.activeAccount = remote.AccountFingerprint
 		return nil
 	})
@@ -235,6 +239,9 @@ func (s *HistoryStore) load() (*historyFile, error) {
 	var file historyFile
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, err
+	}
+	if file.Version == 1 {
+		file.Version = historySchemaVersion
 	}
 	if file.Version != historySchemaVersion {
 		return nil, fmt.Errorf("unsupported usage history schema %d", file.Version)

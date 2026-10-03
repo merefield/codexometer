@@ -25,9 +25,20 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	CommandDetails ApprovalCommandDetails
-	InputToken     string
-	InputQuestions string
+	Activity SessionActivity
+	// ApprovalContext is preceding same-thread/turn prose captured when the
+	// request arrived. Display-only: never part of the authorised action.
+	ApprovalContext string
+	// PendingApprovals counts live requests, not inferred waiting agents.
+	// On grouped session contexts it includes the root and its descendants.
+	PendingApprovals int
+	// PendingApprovalsLimited means the retained request cap was exceeded.
+	// The count is a lower bound until the turn ends or the connection resets.
+	PendingApprovalsLimited bool
+	RequestID               string
+	CommandDetails          ApprovalCommandDetails
+	InputToken              string
+	InputQuestions          string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.
 	ApprovalToken string
 	// ApprovalBlocked is a canonical diagnostic, with no request content.
@@ -93,7 +104,13 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 	}
 	pa, pb := priority(a), priority(b)
 	tie := b.At.Equal(a.At) && (b.ThreadID < a.ThreadID || b.ThreadID == a.ThreadID && b.Text < a.Text)
-	if a.Text == "" || pb > pa || pb == pa && (b.At.After(a.At) || tie) {
+	newer := b.At.After(a.At)
+	if a.Kind == SessionContextApproval && b.Kind == SessionContextApproval {
+		newer = b.At.Before(a.At)
+		tie = b.At.Equal(a.At) && (b.ThreadID < a.ThreadID ||
+			b.ThreadID == a.ThreadID && b.RequestID < a.RequestID)
+	}
+	if a.Text == "" || pb > pa || pb == pa && (newer || tie) {
 		return b
 	}
 	return a
@@ -150,6 +167,8 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 			Last       string            `json:"last_agent_message"`
 			Reason     string            `json:"reason"`
 			Command    json.RawMessage   `json:"command"`
+			CallID     string            `json:"call_id"`
+			ExitCode   *int              `json:"exit_code"`
 			Questions  []contextQuestion `json:"questions"`
 			IsBlocking *bool             `json:"isBlocking"`
 			Content    []struct {
@@ -179,8 +198,10 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 	} else if event.Type == "event_msg" {
 		switch p.Type {
 		case "task_started", "turn_started", "user_message":
+			cursor.activity = sessionActivityState{}
 			return SessionContext{}, true
 		case "task_complete", "turn_complete":
+			cursor.activity = sessionActivityState{}
 			c.Kind, c.Text = SessionContextReply, p.Last
 			if p.Last == "" && cursor.preview.Kind == SessionContextReply {
 				return cursor.preview, true
@@ -201,11 +222,37 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 			c.Kind, c.Text = SessionContextApproval, p.Reason
 		case "exec_command_begin":
 			c.Kind, c.Text = SessionContextActivity, contextCommand(p.Command)
+			cursor.activity.command(p.CallID, c.Text, "inProgress", false)
+			c = cursor.activity.context(c)
+		case "exec_command_end":
+			if cursor.preview.Kind == SessionContextReply {
+				return cursor.preview, true
+			}
+			status := "unknown"
+			if p.ExitCode != nil {
+				status = "completed"
+				if *p.ExitCode != 0 {
+					status = "failed"
+				}
+			}
+			cursor.activity.command(p.CallID, contextCommand(p.Command), status, true)
+			c = cursor.activity.context(c)
 		default:
 			return c, false
 		}
 	} else {
 		return c, false
+	}
+	if c.Kind == SessionContextActivity && p.Type != "exec_command_begin" && p.Type != "exec_command_end" {
+		prose := SanitizeSessionContext(c.Text)
+		if prose == "" {
+			return SessionContext{}, false
+		}
+		cursor.activity.prose = prose
+		c = cursor.activity.context(c)
+	}
+	if c.Kind == SessionContextReply {
+		cursor.activity = sessionActivityState{}
 	}
 	if c.Kind == SessionContextActivity && cursor.preview.pending() && p.Type != "exec_command_begin" {
 		return cursor.preview, true
@@ -240,11 +287,14 @@ func latestSessionContext(path string, cursor *rolloutCursor) SessionContext {
 	}
 	var latest SessionContext
 	copyCursor := *cursor
+	copyCursor.preview = SessionContext{}
+	copyCursor.activity = sessionActivityState{}
 	for _, line := range lines[:max(len(lines)-1, 0)] {
 		if c, ok := rolloutContextRecord(line, &copyCursor); ok {
 			latest = c
 			copyCursor.preview = c
 		}
 	}
+	cursor.activity = copyCursor.activity
 	return latest
 }
