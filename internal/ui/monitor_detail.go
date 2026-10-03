@@ -75,6 +75,10 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		lines = append(lines, detailLine{title, "heading"})
 	}
 	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
+	if c.Kind == codex.SessionContextApproval && c.ApprovalContext != "" {
+		section(i18n.Text("CONTEXT"))
+		appendText(codex.SanitizeSessionContext(c.ApprovalContext), "body", "")
+	}
 	g := m.monitorDashboardLayout()
 	if (c.Kind == codex.SessionContextApproval || c.Kind == codex.SessionContextQuestion) && !m.monitorApprovalHasOutcome() && !m.monitorApprovalControls(g.contentWidth, g.meterHeight) && m.monitorPromptRows(g.contentWidth, g.meterHeight) == 0 {
 		section(i18n.Text("REPLY IN CODEX"))

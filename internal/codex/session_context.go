@@ -26,6 +26,9 @@ const (
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
 	Activity SessionActivity
+	// ApprovalContext is preceding same-thread/turn prose captured when the
+	// request arrived. Display-only: never part of the authorised action.
+	ApprovalContext string
 	// PendingApprovals counts live requests, not inferred waiting agents.
 	// On grouped session contexts it includes the root and its descendants.
 	PendingApprovals int

@@ -17,11 +17,12 @@ type activityCommand struct {
 }
 
 type sessionActivityState struct {
-	prose    string
-	last     activityCommand
-	running  map[string]activityCommand
-	sequence uint64
-	limited  bool
+	prose       string
+	proseTurnID string
+	last        activityCommand
+	running     map[string]activityCommand
+	sequence    uint64
+	limited     bool
 }
 
 func (s *sessionActivityState) command(id, text, status string, finished bool) {
