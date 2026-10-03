@@ -37,12 +37,52 @@ export interface Credit {
   expiryKnown: boolean;
 }
 export interface Usage {
+  reports?: UsageReports;
+  tokenStatus?: string;
   summary: {
     lifetimeTokens: number | null;
     peakDailyTokens: number | null;
+    longestRunningTurnSec: number | null;
     currentStreakDays: number | null;
+    longestStreakDays: number | null;
   };
   dailyUsageBuckets: { startDate: string; tokens: number }[] | null;
+}
+export interface UsageReports {
+  dailyStatus: string;
+  planStatus: string;
+  daily: {
+    units: string;
+    dataAsOf?: string;
+    from: string;
+    through: string;
+    fetchedAt: string;
+    days: {
+      date: string;
+      total: number;
+      groups: Record<string, Record<string, number>>;
+    }[];
+  } | null;
+  plan: {
+    fetchedAt: string;
+    data_as_of: string;
+    coverage_start: string;
+    coverage_complete: boolean;
+    approximate: boolean;
+    boundary_tolerance_seconds: number | null;
+    periods: {
+      id: string;
+      window_minutes: number;
+      plan_type: string;
+      starts_at: string;
+      ends_at: string;
+      accounting_complete: boolean;
+      used_basis_points: number | null;
+      breakdowns:
+        | { dimension: string; rows: { key: string; basis_points: number }[] }[]
+        | null;
+    }[];
+  } | null;
 }
 export interface Threshold {
   threshold: number;

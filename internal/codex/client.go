@@ -145,6 +145,7 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 		return Snapshot{}, fmt.Errorf("acknowledge Codex app-server: %w", err)
 	}
 	accountFingerprint := ""
+	accountEmail := ""
 	if err := encoder.Encode(map[string]any{
 		"method": "account/read",
 		"id":     2,
@@ -154,6 +155,13 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 	}
 	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
 		accountFingerprint = fingerprintAccount(accountResult)
+		var identity struct {
+			Account struct {
+				Email string `json:"email"`
+			} `json:"account"`
+		}
+		_ = json.Unmarshal(accountResult, &identity)
+		accountEmail = strings.ToLower(strings.TrimSpace(identity.Account.Email))
 	} else if history != nil {
 		return Snapshot{}, withServerError("read Codex account identity for usage", accountErr, stderr.String())
 	}
@@ -165,11 +173,19 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 			return Snapshot{}, fmt.Errorf("request Codex usage: %w", err)
 		}
 		result, err := responseFor(decoder, 5)
-		if err != nil {
-			return Snapshot{}, withServerError("read Codex usage", err, stderr.String())
+		usageErr := err
+		if usageErr == nil {
+			usageErr = json.Unmarshal(result, history)
 		}
-		if err := json.Unmarshal(result, history); err != nil {
-			return Snapshot{}, fmt.Errorf("decode Codex usage: %w", err)
+		history.TokenStatus = "OPENAI"
+		if usageErr != nil {
+			history.TokenStatus = "UNAVAILABLE"
+		}
+		// Optional backend reports share Codex's exported, refreshed credentials.
+		// Unsupported auth/methods must not break the established token history.
+		history.Reports = readOptionalUsageReports(ctx, encoder, decoder, accountEmail)
+		if usageErr != nil && (history.Reports == nil || (history.Reports.Daily == nil && history.Reports.Plan == nil)) {
+			return Snapshot{}, withServerError("read Codex usage", usageErr, "")
 		}
 		history.AccountFingerprint = accountFingerprint
 		history.FetchedAt = time.Now()

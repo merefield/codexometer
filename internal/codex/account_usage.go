@@ -9,6 +9,8 @@ import (
 // local session telemetry. Nil buckets mean unavailable; an empty list means
 // the server returned no activity. Summary fields are independently optional.
 type AccountUsage struct {
+	Reports            *UsageReports       `json:"reports,omitempty"`
+	TokenStatus        string              `json:"tokenStatus,omitempty"`
 	Summary            AccountUsageSummary `json:"summary"`
 	DailyUsageBuckets  []AccountUsageDay   `json:"dailyUsageBuckets"`
 	AccountFingerprint string              `json:"-"`

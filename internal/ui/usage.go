@@ -28,6 +28,8 @@ type accountHistoryState struct {
 	sixMonths bool
 	offset    int // periods back from the newest page
 	hovered   int // action + 1; zero means none
+	group     int
+	rowOffset int
 }
 
 type accountHistoryMsg struct {
@@ -117,14 +119,32 @@ type historyButton struct {
 	label     string
 }
 
-func historyButtons(width int) []historyButton {
-	labels, separator := responsiveTabLabels(width, [][]string{
-		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), i18n.Text("[ (6) MONTHS ]"), i18n.Text("[ (1)2 MONTHS ]"), i18n.Text("[ ← OLDER ]"), i18n.Text("[ NEWER → ]")},
-		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), "[6M]", "[12M]", "[←]", "[→]"},
-		{"[D]", "[W]", "[C]", "[6M]", "[12M]", "[←]", "[→]"},
-		{"D", "W", "C", "6", "12", "←", "→"},
-	})
-	actions := []int{0, 1, 2, 5, 6, 3, 4}
+func historyButtons(width int, modes ...int) []historyButton {
+	report := len(modes) > 0 && modes[0] >= 7
+	variants := [][]string{
+		{i18n.Text("[ (D)AILY ]"), i18n.Text("[ (W)EEKLY ]"), i18n.Text("[ (C)UMULATIVE ]"), "[ (B)REAKDOWN ]", "[ (P)ERIODS ]", "[ (G)ROUP ]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"[D]", "[W]", "[C]", "[B]", "[P]", "[G]", "[6M]", "[12M]", "[←]", "[→]"},
+		{"D", "W", "C", "B", "P", "G", "6", "12", "←", "→"},
+	}
+	allActions := []int{0, 1, 2, 7, 8, 9, 5, 6, 3, 4}
+	actions := []int{}
+	for variant, labels := range variants {
+		filtered := []string{}
+		for i, action := range allActions {
+			// View selectors (0–2, 7–8) stay visible in every mode so users
+			// can navigate between token charts and reports with the mouse.
+			// Only Group (9) and the token-range controls (5–6) are contextual.
+			if action == 9 && !report || (action == 5 || action == 6) && report {
+				continue
+			}
+			filtered = append(filtered, labels[i])
+			if variant == 0 {
+				actions = append(actions, action)
+			}
+		}
+		variants[variant] = filtered
+	}
+	labels, separator := responsiveTabLabels(width, variants)
 	buttons := []historyButton{}
 	x := 0
 	for i, label := range labels {
@@ -139,6 +159,16 @@ func historyButtons(width int) []historyButton {
 
 func historyKey(key string) (int, bool) {
 	switch key {
+	case "b":
+		return 7, true
+	case "p":
+		return 8, true
+	case "g":
+		return 9, true
+	case "up":
+		return 10, true
+	case "down":
+		return 11, true
 	case "d":
 		return 0, true
 	case "w":
@@ -170,7 +200,50 @@ func historyBarGeometry(width, weeks int) historyCalendarLayout {
 }
 
 func (m *Model) activateHistory(action int) {
+	if action == 9 {
+		if m.history.mode < 7 {
+			return
+		}
+		m.history.group = (m.history.group + 1) % 4
+		m.history.rowOffset = 0
+		return
+	}
+	if action == 10 || action == 11 {
+		if action == 10 {
+			m.history.rowOffset = max(0, m.history.rowOffset-1)
+		} else {
+			m.history.rowOffset++
+		}
+		return
+	}
+	if action == 7 || action == 8 {
+		m.history.mode = action
+		m.history.offset = 0
+		m.history.rowOffset = 0
+		return
+	}
+	if m.history.mode >= 7 && (action == 3 || action == 4) {
+		count := 0
+		if r := m.history.data.Reports; r != nil {
+			if m.history.mode == 7 && r.Daily != nil {
+				count = len(r.Daily.Days)
+			}
+			if m.history.mode == 8 && r.Plan != nil {
+				count = len(r.Plan.Periods)
+			}
+		}
+		if action == 3 {
+			m.history.offset = min(m.history.offset+1, max(count-1, 0))
+		} else {
+			m.history.offset = max(m.history.offset-1, 0)
+		}
+		m.history.rowOffset = 0
+		return
+	}
 	if action == 5 || action == 6 {
+		if m.history.mode >= 7 {
+			return
+		}
 		m.history.sixMonths = action == 5
 		m.history.offset = 0
 		return
@@ -200,7 +273,7 @@ func (m Model) historyButtonAt(x, y int) (int, bool) {
 	if y != layout.meterY {
 		return 0, false
 	}
-	for _, button := range historyButtons(layout.contentWidth) {
+	for _, button := range historyButtons(layout.contentWidth, m.history.mode) {
 		if x >= 2+button.x && x < 2+button.x+lipgloss.Width(button.label) {
 			return button.action, true
 		}
@@ -228,10 +301,17 @@ func optionalUsage(n *int64) string {
 	return usageNumber(*n)
 }
 
+func optionalUsageDuration(seconds *int64) string {
+	if seconds == nil || *seconds < 0 {
+		return "—"
+	}
+	return (time.Duration(*seconds) * time.Second).Round(time.Second).String()
+}
+
 func (m Model) renderHistory(width, height int, colors palette) string {
 	lines := []string{}
 	buttons := ""
-	for _, button := range historyButtons(width) {
+	for _, button := range historyButtons(width, m.history.mode) {
 		buttons += strings.Repeat(" ", max(button.x-lipgloss.Width(buttons), 0))
 		label := colors.dimmed().Render(button.label)
 		if button.action == m.history.mode || (button.action == 5 && m.history.sixMonths) || (button.action == 6 && !m.history.sixMonths) {
@@ -243,8 +323,14 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		buttons += label
 	}
 	lines = append(lines, buttons)
+	if m.history.mode >= 7 {
+		return m.renderUsageReport(width, height, colors, lines)
+	}
 	data := m.history.data
 	lines = append(lines, colors.label().Render(i18n.Format("LIFETIME // %s TOKENS   PEAK DAY // %s   STREAK // %s DAYS", optionalUsage(data.Summary.LifetimeTokens), optionalUsage(data.Summary.PeakDailyTokens), optionalUsage(data.Summary.CurrentStreakDays))))
+	if height >= 8 {
+		lines = append(lines, colors.label().Render(i18n.Format("LONGEST TURN // %s   LONGEST STREAK // %s DAYS", optionalUsageDuration(data.Summary.LongestRunningTurnSec), optionalUsage(data.Summary.LongestStreakDays))))
+	}
 	status := i18n.Format("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
 	if !data.FetchedAt.IsZero() {
 		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05") + i18n.Text(" // R REFRESH")
@@ -259,6 +345,9 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 		status = i18n.Text("STALE // ") + m.history.err.Error() + i18n.Text(" // R RETRY")
 	}
 	lines = append(lines, colors.dimmed().Render(status))
+	if data.TokenStatus == "UNAVAILABLE" {
+		lines = append(lines, colors.dimmed().Render("Token history unavailable; other reports may still be available."))
+	}
 	if data.DailyUsageBuckets == nil {
 		lines = append(lines, colors.dimmed().Render(i18n.Text("Token activity history unavailable. Requires a supported Codex CLI and ChatGPT login.")))
 	} else if m.history.mode == 0 {

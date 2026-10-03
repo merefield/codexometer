@@ -1,5 +1,6 @@
 <script lang="ts">
   import { live, date, number } from './state.svelte';
+  import UsageReports from './UsageReports.svelte';
   import Graph from './Graph.svelte';
   import { usageRange } from './calendar';
   let mode = $state('daily');
@@ -53,33 +54,44 @@
 <h1>USAGE // ACCOUNT HISTORY</h1>
 <p class="muted">
   Account-wide history reported by Codex, not the local Sessions counter. Dates
-  use UTC. Historical resets are not provided by this data.
+  use UTC. Allowance history is approximate where indicated; reset causes are
+  not provided.
 </p>
 <div class="controls">
   <label
     >VIEW <select aria-label="Usage view" bind:value={mode}
       ><option value="daily">Daily heatmap</option><option value="monthly"
         >Monthly bars</option
-      ><option value="cumulative">Cumulative bars</option></select
+      ><option value="cumulative">Cumulative bars</option><option
+        value="breakdown">Daily breakdown</option
+      ><option value="periods">Allowance periods</option></select
     ></label
-  ><label
-    >PERIOD <select
-      aria-label="Usage period"
-      bind:value={months}
-      onchange={() => (offset = 0)}
-      ><option value={6}>6 months</option><option value={12}>12 months</option
-      ></select
-    ></label
-  ><button onclick={() => offset++}>← EARLIER</button><button
-    disabled={offset === 0}
-    onclick={() => offset--}>LATER →</button
-  >
+  >{#if mode !== 'breakdown' && mode !== 'periods'}<label
+      >PERIOD <select
+        aria-label="Usage period"
+        bind:value={months}
+        onchange={() => (offset = 0)}
+        ><option value={6}>6 months</option><option value={12}>12 months</option
+        ></select
+      ></label
+    ><button onclick={() => offset++}>← EARLIER</button><button
+      disabled={offset === 0}
+      onclick={() => offset--}>LATER →</button
+    >{/if}
 </div>
 {#if live.data?.usageError}<p class="notice">
     History refresh failed. Any displayed history is the last successful
     observation.
   </p>{/if}
-{#if live.data?.usage && live.data.usage.dailyUsageBuckets !== null}
+
+{#if live.data?.usage?.tokenStatus === 'UNAVAILABLE' && mode !== 'breakdown' && mode !== 'periods'}<p
+    class="notice"
+  >
+    Token history unavailable; other reports may still be available.
+  </p>{/if}
+{#if mode === 'breakdown' || mode === 'periods'}
+  {#key mode}<UsageReports reports={live.data?.usage?.reports} {mode} />{/key}
+{:else if live.data?.usage && live.data.usage.dailyUsageBuckets !== null}
   <div class="summary-grid">
     <section class="panel">
       <h2>LIFETIME TOKENS</h2>
@@ -95,7 +107,21 @@
         {number(live.data.usage.summary.currentStreakDays)} <small>DAYS</small>
       </p>
     </section>
+    <section class="panel">
+      <h2>LONGEST TURN</h2>
+      <p class="readout">
+        {number(live.data.usage.summary.longestRunningTurnSec)}
+        <small>SECONDS</small>
+      </p>
+    </section>
+    <section class="panel">
+      <h2>LONGEST STREAK</h2>
+      <p class="readout">
+        {number(live.data.usage.summary.longestStreakDays)} <small>DAYS</small>
+      </p>
+    </section>
   </div>
+  <p class="eyebrow">OPENAI // UTC</p>
   <section class="panel">
     <h2>{days[0]?.date} — {days.at(-1)?.date}</h2>
     {#if mode === 'daily'}<div class="heat-scroll">

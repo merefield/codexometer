@@ -505,6 +505,15 @@ Codexometer deliberately does not:
 - send Codex credentials to another service;
 - invoke a model merely to discover quota information.
 
+Optional Usage breakdowns use an access token exported in memory by the local
+Codex app-server (`getAuthStatus`), solely for authenticated, read-only requests
+to OpenAI's fixed `https://chatgpt.com/backend-api/wham/usage/` endpoints. The
+token is never written to disk, logged, or sent to the browser.
+Redirects are refused, responses are bounded, and account/workspace identity is
+checked before and after fetching. Unsupported credential types (including
+non-exportable and FedRAMP credentials) fall back to the established token
+history. Codex still owns login and token refresh; no separate OAuth flow is added.
+
 Sessions and the observed quota estimator additionally read locally persisted
 Codex rollout files under `$CODEX_HOME/sessions` (normally
 `~/.codex/sessions`). They decode `token_count` totals, each last response's
@@ -810,17 +819,15 @@ estimate can still vary with reasoning effort, model mix, caching, prompt
 shape, and backend quota weighting, so compare ranges and sample counts rather
 than treating the midpoint as a fixed entitlement.
 
-Samples remain process-local and are never written to the preferences file, so
-evidence cannot leak from one login into another on a later run. During a run,
-Codexometer requests the current account email from the same local app-server,
-immediately reduces it to an in-memory one-way fingerprint, and uses that only
-to separate account observations. The email and fingerprint are not persisted.
+Estimator samples remain process-local and are never written to disk. Codexometer
+requests the current account email from the same local app-server and immediately
+reduces it to a one-way fingerprint. Neither is persisted.
 If an older app-server cannot provide an account identity, the estimate fails
 closed as `ACCOUNT ATTRIBUTION UNKNOWN` rather than mixing indistinguishable
 accounts.
 
-The privacy trade-off is that quitting Codexometer discards every learned
-sample and quota anchor. On restart it can reconstruct cumulative priced usage
+The estimator trade-off is that quitting Codexometer discards every learned
+sample and its in-memory learning anchor. On restart it can reconstruct cumulative priced usage
 from local rollout telemetry, but the current quota percentage and cost become
 a new baseline: the display returns to `LEARNING` and needs another five clean
 percentage points of movement before producing an estimate. Medium confidence
@@ -914,7 +921,7 @@ earliest known expiry. With no comparable expiries, the backend selects the cred
 Reset-credit expiry is separate from the
 automatic quota-window reset date.
 
-### Usage: account token history
+### Usage: account history and breakdowns
 
 **Usage** is a read-only companion to Codex CLI's `/usage` command. It fetches
 `account/usage/read` through a short-lived local Codex app-server using your
@@ -926,6 +933,50 @@ It does not require the shared-daemon configuration used for live Sessions event
 - **Weekly** (`w`): tokens summed into Sunday–Saturday weeks; the current week is partial.
 - **Cumulative** (`c`): a running total of those weeks within the selected window,
   not the account's lifetime total.
+- **Breakdown** (`b`): daily account usage split by surface, model, feature
+  (thread source), or task-start trigger when OpenAI supplies that attribution.
+- **Periods** (`p`): historical allowance windows with consumed percentage,
+  coverage, approximation and accounting-completeness indicators, plus the
+  available breakdowns for each window.
+
+The new Breakdown and Periods views are available in **both terminal and web
+mode**, including read-only web mode. In the terminal, `g` cycles the grouping,
+`←`/`→` (or Page Up/Down) select an older/newer reported day or period, and
+`↑`/`↓` scroll a long category list. The controls are also clickable. In the
+browser choose the view/grouping and use the Older/Newer buttons. No model turn,
+approval, reset, or write-mode opt-in is needed.
+
+The additional reports follow the backend contracts used by Codex CLI analytics:
+
+| Read-only endpoint (under `/backend-api/wham`) | Requested range | Meaning |
+| --- | --- | --- |
+| `/usage/daily-token-usage-breakdown` | Latest 30 UTC days, `group_by=day` | Despite its name, the consumer report is **relative usage**, or explicitly reported **credits**, not a token count or quota percentage. |
+| `/usage/plan_limit_history?days=7` | Latest seven days | Historical allowance periods; basis points are divided by 100 to obtain percent of **that period's** limit, not today's limit. |
+
+These are optional internal backend routes, not guaranteed public app-server
+methods. Availability depends on account/server rollout. A 404, auth failure,
+timeout or malformed report leaves the other report and token views usable.
+Each refresh replaces the reports with the latest official responses. An
+unavailable individual report is labelled unavailable, not recovered from disk.
+If the whole refresh fails, the current run can retain its last successful
+snapshot with a visible stale/error warning. Account/workspace identity is
+checked before and after fetching; no cross-run cache is consulted.
+
+Only dimensions supported across a refreshed daily range are displayed: if
+attribution is missing, surface totals remain available and unsupported groups
+say so. Alternate groupings describe the **same** usage and are never added
+together or combined with local tokens. Empty or unknown accounting does not
+become an invented zero; period percentages may exceed 100% and incomplete
+periods can change later. Signed corrections are retained numerically (negative
+values do not draw positive bars). Approximation, coverage and boundary tolerance are
+preserved. The period endpoint is **not a reset-event audit**: it cannot reliably
+distinguish a manually redeemed reset from a centrally scheduled reset.
+
+Usage data is **not persisted locally**. Every run fetches history from OpenAI;
+there is no local ledger, retention policy or historical rollout reconstruction.
+The requested 30-day/seven-day ranges above are not claims about the backend's
+maximum supported lookback. These views navigate actual reported buckets;
+the 6/12-month switches below apply only to the three token charts.
 
 Choose **6 months** (`6`) or **12 months** (`1`) with the range buttons. These
 represent 26 or 52 Sunday-based weeks including the current partial week,
@@ -959,21 +1010,25 @@ As in Codex's chart, the available display range is 52 Sunday-based weeks ending
 in the current UTC week. Missing dates in a supplied history count as zero;
 invalid dates, negative values, future dates, and dates outside that range are
 ignored. Duplicate dates are summed. The compact summary shows the server's
-separately reported lifetime tokens, peak daily tokens, and current streak when
-available (`—` otherwise).
+separately reported lifetime tokens, peak daily tokens, current and longest
+streaks, and longest running turn when available (`—` otherwise).
 
 History refreshes when you enter Usage, on the normal refresh interval while
-Usage is selected, or with `r` / the Refresh button. These are server-side account
-statistics, **not live Sessions telemetry**: updates may lag ongoing work.
-Older CLI versions or unsupported accounts can return an unavailable/error state;
-missing history is never silently presented as zero. A failed refresh labels
-previously fetched data **STALE**, and a detected account change discards it.
+Usage is selected, or with `r` / the Refresh button. OpenAI's account-wide daily
+totals are authoritative and can fill days when Codexometer was not running.
+Usage does not scan local rollouts or merge machine-local counts into the
+account's history. Sessions telemetry and API-EQ observation are unchanged.
 
-The endpoint currently exposes daily **total tokens**, not historical per-model,
-input/output/cache splits, quota percentages, or dollar spend. Consequently this
-tab does not infer historical API-equivalent cost or combine these totals with
-the Sessions tab's local counters. History is held in memory only; restarting fetches it
-again from Codex. `--demo` includes sample history for previewing the charts.
+Older CLI versions or unsupported accounts can return an unavailable/error
+state; unavailable history is never silently presented as an empty account.
+A failed refresh may leave the last successful **in-memory** snapshot visible
+with a stale/error warning; quitting discards it. On reopening, history must be
+fetched from OpenAI again.
+
+The original `account/usage/read` endpoint supplies daily **total tokens**. The
+new relative-usage and allowance reports remain separate; the Usage tab does
+not infer historical token-type splits or API-equivalent cost. `--demo` includes
+sample history for previewing the charts.
 
 ### Other top-level views
 
@@ -1564,11 +1619,10 @@ any command; restart the demo to reset its approval.
 
 ### Saved presentation preferences
 
-Codexometer stores only the selected theme, main tab, Quota view, benchmark filter,
-benchmark ranking weight, and the Sessions context hide/show preference.
-No quota estimate or snapshot, raw session telemetry,
-benchmark result, message content, credential, session ID, email, account
-fingerprint, or account ID is written. The small JSON file uses the
+Codexometer's presentation preferences store only the selected theme, main tab,
+Quota view, benchmark filter, benchmark ranking weight, and the Sessions context
+hide/show preference. No benchmark result, message content, credential, session
+ID, email, or account ID is written to that file. The small JSON file uses the
 platform-standard user configuration directory:
 
 - Linux: `$XDG_CONFIG_HOME/codexometer/preferences.json`, normally
@@ -1581,6 +1635,15 @@ Codexometer falls back to its safe defaults. Restarting returns to your last mai
 tab and remembers your Quota view separately. First launch defaults to Quota →
 Bars; older preferences without a main tab reopen the saved Quota view.
 Restoring a tab does not resume a benchmark run or reopen an approval dialog.
+
+### Usage data lifetime
+
+Usage history and reports are held in memory only, in both terminal and web
+mode. Codexometer does not create, read or update `usage-history.json`, record
+quota observations on disk, or reconstruct account history from local rollouts.
+Any file left by an earlier development build is ignored and is not automatically
+deleted. Saved presentation preferences are unaffected. API-EQ learning also
+remains process-local and starts afresh after a restart.
 
 ### Benchmark authentication and usage boundary
 

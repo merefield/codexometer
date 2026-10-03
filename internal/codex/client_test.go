@@ -133,6 +133,12 @@ func runFakeAppServer() {
 			continue
 		}
 		switch request.Method {
+		case "getAuthStatus":
+			token := os.Getenv("CODEXOMETER_FAKE_USAGE_AUTH")
+			if *request.ID == 7 && os.Getenv("CODEXOMETER_FAKE_USAGE_AUTH_AFTER") != "" {
+				token = os.Getenv("CODEXOMETER_FAKE_USAGE_AUTH_AFTER")
+			}
+			_ = encoder.Encode(map[string]any{"id": *request.ID, "result": map[string]any{"authMethod": "chatgpt", "authToken": token}})
 		case "account/usage/read":
 			if os.Getenv("CODEXOMETER_FAKE_USAGE_ERROR") == "1" {
 				_ = encoder.Encode(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32601, "message": "Method not found"}})

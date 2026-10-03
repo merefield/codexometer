@@ -36,9 +36,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline intentionally updated for the 2026-09-30 pricing footer date;
-	// all themes, views and three terminal sizes are covered.
-	const want = "17a5302cdba4bb974177fdf3bb63b57a98daca260713871feff2724a93f016a0"
+	// Baseline includes Usage summary metrics and report controls,
+	// plus main's current pricing footer; every theme, view and size is covered.
+	const want = "d85348cf79cadfe21b3c284716862c698acc37686a37d4de4ff481eab68fb996"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

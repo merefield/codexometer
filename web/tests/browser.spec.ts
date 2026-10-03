@@ -1195,10 +1195,16 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
     sessionsError: false,
     usageError: false,
     usage: {
-      summary: {},
+      summary: {
+        longestRunningTurnSec: 45,
+        longestStreakDays: 9,
+      },
       dailyUsageBuckets: [
         { startDate: '2026-09-10', tokens: 100 },
-        { startDate: '2026-09-10', tokens: 250 },
+        {
+          startDate: '2026-09-10',
+          tokens: 250,
+        },
         { startDate: '2026-09-10', tokens: -50 },
         { startDate: '2026-09-11', tokens: 20 },
         { startDate: '2026-09-09', tokens: -500 },
@@ -1216,11 +1222,12 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'USAGE', exact: true }).click();
   await expect(
-    page.locator('.heat-cell[title="2026-09-10: 350 tokens"]'),
+    page.locator('.heat-cell[title^="2026-09-10: 350 tokens"]'),
   ).toHaveCount(1);
   await expect(
-    page.locator('.heat-cell[title="2026-09-09: 0 tokens"]'),
+    page.locator('.heat-cell[title^="2026-09-09: 0 tokens"]'),
   ).toHaveCount(1);
+  await expect(page.getByText('LONGEST TURN')).toBeVisible();
   await page.getByText('Accessible data table').click();
   await expect(
     page.getByRole('row').filter({
@@ -1239,6 +1246,126 @@ test('history aggregates duplicate dates and excludes negative buckets in every 
       has: page.getByRole('cell', { name: '2026-09-11', exact: true }),
     }),
   ).toContainText('370');
+});
+
+test('usage breakdowns and allowance history preserve units, unknowns and read-only navigation', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    meters: [],
+    sessions: [],
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    usage: {
+      summary: {},
+      dailyUsageBuckets: null,
+      reports: {
+        dailyStatus: 'OPENAI',
+        planStatus: 'OPENAI',
+        daily: {
+          units: 'RELATIVE USAGE',
+          from: '2026-09-04',
+          through: '2026-10-03',
+          fetchedAt: '2026-10-03T12:00:00Z',
+          days: [
+            {
+              date: '2026-10-01',
+              total: 2,
+              groups: { model: { 'older-model': 2 } },
+            },
+            {
+              date: '2026-10-02',
+              total: 4,
+              groups: {
+                model: { 'gpt-6.1-sol': 2.5, 'gpt-6-luna': 1.5 },
+                surface: { cli: 4 },
+              },
+            },
+          ],
+        },
+        plan: {
+          fetchedAt: '2026-10-03T12:00:00Z',
+          data_as_of: '2026-10-03T11:00:00Z',
+          coverage_start: '2026-09-26T00:00:00Z',
+          coverage_complete: false,
+          approximate: true,
+          boundary_tolerance_seconds: 60,
+          periods: [
+            {
+              id: 'p1',
+              window_minutes: 10080,
+              plan_type: 'pro',
+              starts_at: '2026-09-28T00:00:00Z',
+              ends_at: '2026-10-05T00:00:00Z',
+              accounting_complete: false,
+              used_basis_points: 12500,
+              breakdowns: [
+                {
+                  dimension: 'model',
+                  rows: [{ key: 'gpt-6.1-sol', basis_points: 12500 }],
+                },
+              ],
+            },
+            {
+              id: 'p2',
+              window_minutes: 300,
+              plan_type: 'pro',
+              starts_at: '2026-09-27T00:00:00Z',
+              ends_at: '2026-09-27T05:00:00Z',
+              accounting_complete: false,
+              used_basis_points: null,
+              breakdowns: null,
+            },
+          ],
+        },
+      },
+    },
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'USAGE', exact: true }).click();
+  await page.getByLabel('Usage view').selectOption('breakdown');
+  await expect(
+    page.getByRole('heading', { name: '2026-10-02 // 4 RELATIVE USAGE' }),
+  ).toBeVisible();
+  await page.getByLabel('Usage grouping').selectOption('model');
+  await expect(page.locator('.report-row').first()).toContainText(
+    'gpt-6.1-sol',
+  );
+  await expect(page.locator('.report-row').first()).toContainText('2.5');
+  await page.getByRole('button', { name: '← OLDER', exact: true }).click();
+  await expect(page.locator('.report-row')).toContainText('older-model');
+  await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
+  await page.getByLabel('Usage view').selectOption('periods');
+  await expect(page.getByText('OPENAI // UTC')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '10080 MIN // pro // USED 125%' }),
+  ).toBeVisible();
+  await expect(page.getByText(/Partial accounting/)).toBeVisible();
+  await page.getByRole('button', { name: '← OLDER', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '300 MIN // pro // USED UNKNOWN' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Selected breakdown unavailable; missing does not mean zero.',
+    ),
+  ).toBeVisible();
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(
+      page.getByRole('heading', { name: 'ALLOWANCE PERIODS', exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
+  }
 });
 
 test('empty and all-zero graphs announce a zero peak without invalid heights', async ({

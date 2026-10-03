@@ -153,6 +153,11 @@ func (d *demoFetcher) FetchAccountUsage(context.Context) (codex.AccountUsage, er
 	}
 	history.Summary.LifetimeTokens = &total
 	history.Summary.PeakDailyTokens = &peak
+	longestTurn, currentStreak, longestStreak := int64(547), int64(8), int64(21)
+	history.Summary.LongestRunningTurnSec = &longestTurn
+	history.Summary.CurrentStreakDays = &currentStreak
+	history.Summary.LongestStreakDays = &longestStreak
+	history.Reports = codex.DemoUsageReports(now)
 	return history, nil
 }
 
