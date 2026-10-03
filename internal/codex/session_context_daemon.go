@@ -210,6 +210,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 				return
 			}
 			state.activity.prose = prose
+			state.activity.proseTurnID = p.TurnID
 			c = state.activity.context(c)
 		}
 	case "item/started":
@@ -250,6 +251,17 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		}
 		c.RequestID = string(id)
 		old, exists := state.requests[c.RequestID]
+		if c.Kind == SessionContextApproval {
+			prose := ""
+			if p.TurnID != "" && p.TurnID == state.activity.proseTurnID {
+				prose = state.activity.prose
+			}
+			if exists && old.Kind == c.Kind && old.TurnID == c.TurnID && old.ItemID == c.ItemID {
+				// Replays refresh capabilities, not historical context.
+				prose = old.ApprovalContext
+			}
+			c.ApprovalContext = distinctApprovalContext(prose, p.Reason)
+		}
 		if exists {
 			// A replay refreshes the capability, not its queue position.
 			c.At = old.At
@@ -262,6 +274,14 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	} else {
 		state.latest = c
 	}
+}
+
+func distinctApprovalContext(prose, reason string) string {
+	prose = SanitizeSessionContext(prose)
+	if strings.EqualFold(strings.Join(strings.Fields(prose), " "), strings.Join(strings.Fields(SanitizeSessionContext(reason)), " ")) {
+		return ""
+	}
+	return prose
 }
 
 func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, statuses map[string]sessionRuntimeStatus) map[string]SessionContext {

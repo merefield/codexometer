@@ -31,6 +31,7 @@ type session struct {
 	Text            string    `json:"text"`
 	Command         string    `json:"command"`
 	WorkingCommand  string    `json:"workingCommand,omitempty"`
+	ApprovalContext string    `json:"approvalContext,omitempty"`
 	CommandStatus   string    `json:"commandStatus,omitempty"`
 	RunningCommands int       `json:"runningCommands,omitempty"`
 	RunningLimited  bool      `json:"runningLimited,omitempty"`
@@ -307,6 +308,10 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				s.previous[row.ID] = row.TotalTokens
 			}
 			text := row.Context.Text
+			approvalContext := ""
+			if row.Context.Kind == codex.SessionContextApproval {
+				approvalContext = codex.SanitizeSessionContext(row.Context.ApprovalContext)
+			}
 			var activity codex.SessionActivity
 			if row.Context.Kind == codex.SessionContextActivity {
 				activity = row.Context.Activity
@@ -322,6 +327,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				Status: sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
+				ApprovalContext: approvalContext,
 				RunningCommands: activity.RunningCommands, RunningLimited: activity.RunningLimited,
 				Samples: s.samples[row.ID],
 			})

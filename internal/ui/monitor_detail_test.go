@@ -62,3 +62,30 @@ func TestMonitorDetailStructuredSections(t *testing.T) {
 		}
 	}
 }
+
+func TestApprovalCommentaryFullDetailOnly(t *testing.T) {
+	m := approvalTestModel()
+	c := &m.monitorSessionData[0].preview
+	c.ApprovalContext = "The preceding explanation"
+	c.CommandDetails = codex.ApprovalCommandDetails{Justification: "Allow the check?", Command: "git status", Directory: "/work"}
+	before := *c
+	for _, width := range []int{1, 20, 80} {
+		for _, line := range m.contextDetailDocument(width) {
+			if lipgloss.Width(line.text) > width {
+				t.Fatal("context overflow", line)
+			}
+		}
+	}
+	text := strings.Join(m.contextDetailLines(100), "\n")
+	contextAt, reasonAt := strings.Index(text, c.ApprovalContext), strings.Index(text, c.CommandDetails.Justification)
+	if contextAt < 0 || reasonAt <= contextAt || !strings.Contains(text, "\n\n"+i18n.Text("CONTEXT")) {
+		t.Fatal(text)
+	}
+	if *c != before {
+		t.Fatal("rendering changed approval")
+	}
+	colors := paletteFor(m.theme)
+	if text := ansi.Strip(m.renderExpandedContext(100, 30, m.monitorSessionData[0], colors)); strings.Contains(text, c.ApprovalContext) {
+		t.Fatal("context leaked into row")
+	}
+}

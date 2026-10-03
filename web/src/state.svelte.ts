@@ -14,6 +14,7 @@ export interface Session {
   text: string;
   command: string;
   workingCommand?: string;
+  approvalContext?: string;
   commandStatus?: string;
   runningCommands?: number;
   runningLimited?: boolean;

@@ -147,6 +147,11 @@
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
+  {#if full && session.contextKind === 'APPROVAL REQUEST' && session.approvalContext}
+    <h3>CONTEXT</h3>
+    <pre>{session.approvalContext}</pre>
+    <hr />
+  {/if}
   {#if explanation(session) && (!full || stale || session.status === 'CHECK SESSION')}<p
       class="attention-note"
       class:inferred={session.status === 'CHECK SESSION'}

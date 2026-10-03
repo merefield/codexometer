@@ -1216,6 +1216,14 @@ switch between graph-only, split, expanded, and full detail as described below.
   finished may miss its live completion event; the next completed turn qualifies.
 - **QUESTION** contains an observed blocking input request and any choices.
 - **APPROVAL REQUEST** contains an observed approval reason/command when available.
+  Full-page terminal and web detail can also show **CONTEXT** above the request:
+  the latest observed assistant commentary from that same thread and turn when
+  the approval arrived. It remains attached to that request while queued; a
+  sub-agent approval never borrows its parent's commentary. Missing context or
+  text matching the justification (ignoring case/whitespace) is omitted. This
+  requires matching live app-server turn identities; local-only observations
+  do not guess the association. Compact/expanded row previews stay unchanged.
+  Context is background information, not part of the action being authorised.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
   is required. Ages describe the last observed event; paused readings can be stale.
   During a turn, the latest assistant prose and shell command are retained

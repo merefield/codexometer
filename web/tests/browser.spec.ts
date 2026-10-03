@@ -582,6 +582,64 @@ async function mockActions(page: Page, kind = 'approval') {
   return { snapshot, offer, calls };
 }
 
+for (const control of [false, true]) {
+  test(`approval commentary is full-detail-only (control=${control})`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot } = await mockActions(page);
+    const detail = {
+      ...snapshot,
+      control,
+      sessions: snapshot.sessions.map((s) => ({
+        ...s,
+        contextKind: 'APPROVAL REQUEST',
+        text: 'Allow this check?',
+        approvalContext: 'I am checking <the build> before publishing.',
+      })),
+    };
+    await page.goto(pairingURL);
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+    await expect(
+      page.getByText(detail.sessions[0].approvalContext, { exact: true }),
+    ).toHaveCount(0);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const panel = page.locator('.detail-context');
+    await expect(
+      panel.getByRole('heading', { name: 'CONTEXT', exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText(detail.sessions[0].approvalContext, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText('Allow this check?', { exact: true }),
+    ).toBeVisible();
+    await expect(panel.locator('pre').first()).toHaveText(
+      detail.sessions[0].approvalContext,
+    );
+    detail.sessions[0].approvalContext = '';
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await expect(
+      panel.getByRole('heading', { name: 'CONTEXT', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      panel.getByText('Allow this check?', { exact: true }),
+    ).toBeVisible();
+  });
+}
+
 test('session approval requires explicit review and confirmation of the target', async ({
   page,
   pairingURL,

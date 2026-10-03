@@ -347,15 +347,21 @@ func TestReadOnlyStoreDoesNotRetainControlCapabilities(t *testing.T) {
 
 func TestReplyIsNotHiddenByPreviousApprovalJustification(t *testing.T) {
 	s := newStore()
-	c := codex.SessionContext{Kind: codex.SessionContextApproval, Text: "Original request", CommandDetails: codex.ApprovalCommandDetails{Command: "git status", Justification: "Why this command"}}
+	c := codex.SessionContext{Kind: codex.SessionContextApproval, ApprovalContext: "Earlier commentary", Text: "Original request", CommandDetails: codex.ApprovalCommandDetails{Command: "git status", Justification: "Why this command"}}
 	row := codex.LiveUsageSession{ID: "session", Context: c}
 	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
 	if s.state.Sessions[0].Text != c.CommandDetails.Justification {
 		t.Fatal("approval justification not projected")
 	}
+	if s.state.Sessions[0].ApprovalContext != "Earlier commentary" {
+		t.Fatal("approval context missing")
+	}
 	row.Context.Kind, row.Context.Text = codex.SessionContextReply, "New reply"
 	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
 	if s.state.Sessions[0].Text != "New reply" {
 		t.Fatal("old approval hid new reply")
+	}
+	if s.state.Sessions[0].ApprovalContext != "" {
+		t.Fatal("approval context leaked into reply")
 	}
 }
