@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,25 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
+
+func TestUsageReportValueColours(t *testing.T) {
+	for _, theme := range []themeID{themeHacker, themeRust, themeBlueSteel, themeUltraviolet, themeNightshade} {
+		p := paletteFor(theme)
+		for _, test := range []struct {
+			known   bool
+			percent float64
+			want    color.Color
+		}{
+			{false, 100, p.dim}, {true, 0, p.primary}, {true, 79.99, p.primary},
+			{true, 80, p.warning}, {true, 99.99, p.warning}, {true, 100, p.danger}, {true, 125, p.danger},
+		} {
+			got := usageReportValueStyle(p, test.known, test.percent).GetForeground()
+			if got != test.want {
+				t.Fatalf("theme %v known %v percent %v: wrong colour", theme, test.known, test.percent)
+			}
+		}
+	}
+}
 
 func TestUsageControlsKeepViewNavigationAndHideInapplicableOptions(t *testing.T) {
 	for _, width := range []int{40, 80, 160} {

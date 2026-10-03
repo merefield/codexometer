@@ -1313,7 +1313,10 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
               breakdowns: [
                 {
                   dimension: 'model',
-                  rows: [{ key: 'gpt-6.1-sol', basis_points: 12500 }],
+                  rows: [
+                    { key: 'gpt-6.1-sol', basis_points: 12000 },
+                    { key: 'unknown', basis_points: 500 },
+                  ],
                 },
               ],
             },
@@ -1346,22 +1349,33 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
     'gpt-6.1-sol',
   );
   await expect(page.locator('.report-row').first()).toContainText('2.5');
+  await expect(
+    page.locator('.report-row').nth(1).locator('.report-fill'),
+  ).toHaveCSS('opacity', '0.72');
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(page.locator('.report-row')).toContainText('older-model');
   await page.getByRole('button', { name: 'NEWER →', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Usage view' })
-    .getByRole('button', { name: 'Periods', exact: true })
+    .getByRole('button', { name: 'Windows', exact: true })
     .click();
   await expect(page.getByText('OPENAI // UTC')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: '10080 MIN // pro // USED 125%' }),
   ).toBeVisible();
   await expect(page.getByText(/Partial accounting/)).toBeVisible();
+  await expect(page.locator('.quota-full')).toHaveText('USED 125%');
+  await page.getByLabel('Usage grouping').selectOption('model');
+  await expect(page.locator('.report-row.unknown')).toContainText('unknown');
+  await expect(page.locator('.report-row.unknown .report-fill')).toHaveCSS(
+    'opacity',
+    '1',
+  );
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: '300 MIN // pro // USED UNKNOWN' }),
   ).toBeVisible();
+  await expect(page.locator('.quota-full, .quota-near')).toHaveCount(0);
   await expect(
     page.getByText(
       'Selected breakdown unavailable; missing does not mean zero.',
@@ -1370,7 +1384,7 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(
-      page.getByRole('heading', { name: 'ALLOWANCE PERIODS', exact: true }),
+      page.getByRole('heading', { name: 'QUOTA WINDOWS', exact: true }),
     ).toBeVisible();
     expect(
       await page.evaluate(

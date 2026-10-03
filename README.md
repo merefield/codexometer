@@ -931,9 +931,15 @@ It does not require the shared-daemon configuration used for live Sessions event
 Usage views appear as clickable subtabs, like the views within Quota. Press `v`
 or click **View** in the terminal footer to cycle through them; `Tab` still
 switches primary tabs. Range, grouping and date navigation sit on a separate
-contextual control row. Breakdown/Periods have a single **Group** control showing
+contextual control row. Breakdown/Windows have a single **Group** control showing
 the selected dimension. The browser uses matching view subtabs (retaining its
 Monthly rather than Weekly token chart).
+
+Breakdown and Windows use theme-coloured bars with alternating intensity,
+prominent dates/totals and dimmed supporting metadata. Unknown attribution is
+neutral, not an error. Partial/approximate accounting and stale data have warning
+labels. Historical window totals use amber from 80% and red from 100%; category
+bars do not inherit these warnings, and historical totals are not live quota alerts.
 
 - **Daily** (`d`): a GitHub-style activity grid, with seven weekday rows and
   one column per week. More tokens mean brighter theme-coloured blocks.
@@ -942,11 +948,11 @@ Monthly rather than Weekly token chart).
   not the account's lifetime total.
 - **Breakdown** (`b`): daily account usage split by surface, model, feature
   (thread source), or task-start trigger when OpenAI supplies that attribution.
-- **Periods** (`p`): historical allowance windows with consumed percentage,
+- **Windows** (`p`): historical allowance windows with consumed percentage,
   coverage, approximation and accounting-completeness indicators, plus the
   available breakdowns for each window.
 
-The new Breakdown and Periods views are available in **both terminal and web
+The new Breakdown and Windows views are available in **both terminal and web
 mode**, including read-only web mode. In the terminal, `g` cycles the grouping,
 `←`/`→` (or Page Up/Down) select an older/newer reported day or period, and
 `↑`/`↓` scroll a long category list. The controls are also clickable. In the

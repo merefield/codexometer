@@ -58,7 +58,7 @@
   not provided.
 </p>
 <nav class="secondary" aria-label="Usage view">
-  {#each [['daily', 'Daily'], ['monthly', 'Monthly'], ['cumulative', 'Cumulative'], ['breakdown', 'Breakdown'], ['periods', 'Periods']] as [value, label]}
+  {#each [['daily', 'Daily'], ['monthly', 'Monthly'], ['cumulative', 'Cumulative'], ['breakdown', 'Breakdown'], ['periods', 'Windows']] as [value, label]}
     <button
       class:active={mode === value}
       aria-pressed={mode === value}

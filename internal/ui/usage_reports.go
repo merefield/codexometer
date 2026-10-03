@@ -5,62 +5,80 @@ import (
 	"math"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
 
 var reportDimensions = []string{"surface", "model", "feature", "task start"}
 
+func usageReportValueStyle(colors palette, known bool, percent float64) lipgloss.Style {
+	if !known {
+		return colors.dimmed()
+	}
+	style := colors.header()
+	if percent >= 100 {
+		return style.Foreground(colors.danger)
+	}
+	if percent >= 80 {
+		return style.Foreground(colors.warning)
+	}
+	return style
+}
+
 func (m Model) renderUsageReport(width, height int, colors palette, lines []string) string {
+	dim := colors.dimmed().Render
+	strong := colors.header().Render
+	warn := lipgloss.NewStyle().Foreground(colors.warning).Render
 	dimension := reportDimensions[m.history.group%len(reportDimensions)]
 	reports := m.history.data.Reports
 	if m.history.err != nil && reports != nil {
-		lines = append(lines, "STALE // refresh failed; last in-memory observation")
+		lines = append(lines, warn("STALE // refresh failed; last in-memory observation"))
 	}
 	var rows []codex.UsageCategory
 	total := 0.0
 	knownEmpty := false
 	if reports == nil {
-		lines = append(lines, "Account breakdowns unavailable. Token history remains available.")
+		lines = append(lines, dim("Account breakdowns unavailable. Token history remains available."))
 	} else if m.history.mode == 7 {
-		lines = append(lines, "DAILY BREAKDOWN // "+reports.DailyStatus+" // UTC")
+		lines = append(lines, strong("DAILY BREAKDOWN // "+reports.DailyStatus+" // UTC"))
 		if r := reports.Daily; r != nil {
 			unit := r.Units
-			lines = append(lines, "LATEST FETCH // "+r.FetchedAt.UTC().Format("2006-01-02 15:04")+" UTC")
+			lines = append(lines, dim("LATEST FETCH // "+r.FetchedAt.UTC().Format("2006-01-02 15:04")+" UTC"))
 			if r.DataAsOf != "" && height >= 18 {
-				lines = append(lines, "DATA AS OF // "+r.DataAsOf)
+				lines = append(lines, dim("DATA AS OF // "+r.DataAsOf))
 			}
-			lines = append(lines, "REPORTED RANGE // "+r.From+" → "+r.Through)
+			lines = append(lines, dim("REPORTED RANGE // "+r.From+" → "+r.Through))
 			if len(r.Days) > 0 {
 				i := len(r.Days) - 1 - min(m.history.offset, len(r.Days)-1)
 				day := r.Days[i]
 				total = day.Total
 				rows = codex.UsageCategories(day.Groups, dimension)
 				knownEmpty = day.Total == 0 && day.Groups[dimension] != nil
-				lines = append(lines, fmt.Sprintf("%s // %.2f %s // %s", day.Date, total, unit, strings.ToUpper(dimension)))
+				lines = append(lines, strong(fmt.Sprintf("%s // %.2f %s // %s", day.Date, total, unit, strings.ToUpper(dimension))))
 			} else {
-				lines = append(lines, "No daily buckets reported in the requested 30 days.")
+				lines = append(lines, dim("No daily buckets reported in the requested 30 days."))
 			}
-			lines = append(lines, "Relative usage/credits are not tokens or quota percentages.")
+			lines = append(lines, dim("Relative usage/credits are not tokens or quota percentages."))
 		}
 	} else {
-		lines = append(lines, "ALLOWANCE PERIODS // "+reports.PlanStatus+" // UTC")
+		lines = append(lines, strong("QUOTA WINDOWS // "+reports.PlanStatus+" // UTC"))
 		if r := reports.Plan; r != nil {
-			coverage := "PARTIAL COVERAGE"
+			coverage := warn("PARTIAL COVERAGE")
 			if r.CoverageComplete {
-				coverage = "REPORTED RANGE COMPLETE"
+				coverage = dim("REPORTED RANGE COMPLETE")
 			}
 			if r.Approximate {
-				coverage += " // APPROXIMATE"
+				coverage += dim(" // ") + warn("APPROXIMATE")
 			}
 			lines = append(lines, coverage)
 			if height >= 20 {
-				lines = append(lines, "COVERAGE START // "+r.CoverageStart, "DATA AS OF // "+r.DataAsOf)
+				lines = append(lines, dim("COVERAGE START // "+r.CoverageStart), dim("DATA AS OF // "+r.DataAsOf))
 				if r.BoundaryTolerance != nil {
-					lines = append(lines, fmt.Sprintf("BOUNDARY TOLERANCE // %d SECONDS", *r.BoundaryTolerance))
+					lines = append(lines, dim(fmt.Sprintf("BOUNDARY TOLERANCE // %d SECONDS", *r.BoundaryTolerance)))
 				}
 			}
-			lines = append(lines, "LATEST FETCH // "+r.FetchedAt.UTC().Format("2006-01-02 15:04")+" UTC")
+			lines = append(lines, dim("LATEST FETCH // "+r.FetchedAt.UTC().Format("2006-01-02 15:04")+" UTC"))
 			if len(r.Periods) > 0 {
 				p := r.Periods[min(m.history.offset, len(r.Periods)-1)]
 				used := "UNKNOWN"
@@ -68,9 +86,10 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 					total = *p.UsedBasisPoints / 100
 					used = fmt.Sprintf("%.2f%%", total)
 				}
-				lines = append(lines, fmt.Sprintf("%d MIN // %s // USED %s", p.WindowMinutes, p.PlanType, used), p.StartsAt+" → "+p.EndsAt)
+				usageStyle := usageReportValueStyle(colors, p.UsedBasisPoints != nil, total)
+				lines = append(lines, strong(fmt.Sprintf("%d MIN // %s // ", p.WindowMinutes, p.PlanType))+usageStyle.Render("USED "+used), strong(p.StartsAt+" → "+p.EndsAt))
 				if !p.AccountingComplete {
-					lines = append(lines, "PARTIAL ACCOUNTING // totals may still change")
+					lines = append(lines, warn("PARTIAL ACCOUNTING // totals may still change"))
 				}
 				wireDimension := dimension
 				if dimension == "feature" {
@@ -91,17 +110,17 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 					}
 				}
 				rows = codex.UsageCategories(groups, dimension)
-				lines = append(lines, "BY "+strings.ToUpper(dimension)+" // historical allowance, not today's limit")
+				lines = append(lines, dim("BY "+strings.ToUpper(dimension)+" // historical allowance, not today's limit"))
 			} else {
-				lines = append(lines, "No allowance periods reported.")
+				lines = append(lines, dim("No quota windows reported."))
 			}
 		}
 	}
 	if len(rows) == 0 {
 		if knownEmpty {
-			lines = append(lines, "No usage reported for this day.")
+			lines = append(lines, dim("No usage reported for this day."))
 		} else {
-			lines = append(lines, "Selected breakdown unavailable; missing does not mean zero.")
+			lines = append(lines, dim("Selected breakdown unavailable; missing does not mean zero."))
 		}
 	}
 	capacity := max(height-len(lines)-1, 0)
@@ -112,16 +131,25 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 	}
 	nameWidth := min(28, max(width/3, 5))
 	barWidth := max(width-nameWidth-12, 0)
-	for _, row := range rows[start:min(start+capacity, len(rows))] {
+	for index, row := range rows[start:min(start+capacity, len(rows))] {
 		name := ansi.Truncate(row.Name, nameWidth, "")
 		name += strings.Repeat(" ", max(nameWidth-ansi.StringWidth(name), 0))
 		fill := 0
 		if peak > 0 {
 			fill = max(0, min(barWidth, int(math.Round(row.Value/peak*float64(barWidth)))))
 		}
-		lines = append(lines, colors.label().Render(name+" "+strings.Repeat("█", fill))+strings.Repeat(" ", barWidth-fill)+fmt.Sprintf(" %9.2f", row.Value))
+		barStyle := lipgloss.NewStyle().Foreground(colors.primary)
+		nameStyle := colors.label().Bold(false)
+		valueStyle := colors.header()
+		if (start+index)%2 == 1 {
+			barStyle = barStyle.Faint(true)
+		}
+		if strings.EqualFold(strings.TrimSpace(row.Name), "unknown") {
+			barStyle, nameStyle, valueStyle = colors.dimmed(), colors.dimmed(), colors.dimmed()
+		}
+		lines = append(lines, nameStyle.Render(name)+" "+barStyle.Render(strings.Repeat("█", fill))+strings.Repeat(" ", barWidth-fill)+valueStyle.Render(fmt.Sprintf(" %9.2f", row.Value)))
 	}
-	lines = append(lines, "←/→ PERIOD // ↑/↓ SCROLL // R REFRESH")
+	lines = append(lines, dim("←/→ DATE/WINDOW // ↑/↓ SCROLL // R REFRESH"))
 	if m.history.loading {
 		lines[len(lines)-1] = "FETCHING ACCOUNT HISTORY…"
 	}
