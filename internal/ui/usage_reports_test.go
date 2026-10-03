@@ -97,6 +97,28 @@ func TestUsageViewCycleAndReturn(t *testing.T) {
 	}
 }
 
+func TestUsageRefreshOnlyInFooter(t *testing.T) {
+	m := New(historyStub{}, time.Minute)
+	m.meterView, m.width, m.height = viewUsage, 120, 30
+	for _, mode := range []int{0, 1, 2, 7, 8} {
+		m.history.mode = mode
+		for _, err := range []error{nil, errors.New("offline")} {
+			m.history.err = err
+			body := ansi.Strip(m.renderHistory(116, 20, paletteFor(themeHacker)))
+			if strings.Contains(body, "R REFRESH") || strings.Contains(body, "R RETRY") {
+				t.Fatal("duplicate refresh hint in Usage")
+			}
+		}
+	}
+	if _, ok := footerButtonByID(m, footerButtonRefresh); !ok {
+		t.Fatal("refresh footer missing")
+	}
+	next, cmd := m.Update(key('r'))
+	if cmd == nil || !next.(Model).history.loading {
+		t.Fatal("R no longer refreshes Usage")
+	}
+}
+
 func TestUsageGroupControlOnSeparateRow(t *testing.T) {
 	m := New(historyStub{}, time.Minute)
 	m.meterView, m.width, m.height, m.history.mode = viewUsage, 120, 30, 7

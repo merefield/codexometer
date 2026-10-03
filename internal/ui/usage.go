@@ -357,18 +357,18 @@ func (m Model) renderHistory(width, height int, colors palette) string {
 	if height >= 8 {
 		lines = append(lines, colors.label().Render(i18n.Format("LONGEST TURN // %s   LONGEST STREAK // %s DAYS", optionalUsageDuration(data.Summary.LongestRunningTurnSec), optionalUsage(data.Summary.LongestStreakDays))))
 	}
-	status := i18n.Format("ACCOUNT HISTORY // UTC // %d WEEKS // R REFRESH", m.history.weeks())
+	status := i18n.Format("ACCOUNT HISTORY // UTC // %d WEEKS", m.history.weeks())
 	if !data.FetchedAt.IsZero() {
-		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05") + i18n.Text(" // R REFRESH")
+		status = i18n.Text("ACCOUNT HISTORY // UTC // UPDATED ") + data.FetchedAt.Local().Format("15:04:05")
 	}
 	if m.history.loading {
 		status = i18n.Text("FETCHING ACCOUNT HISTORY…")
 	}
 	if m.history.err != nil {
-		status = i18n.Text("UNAVAILABLE // ") + m.history.err.Error() + i18n.Text(" // R RETRY")
+		status = i18n.Text("UNAVAILABLE // ") + m.history.err.Error()
 	}
 	if m.history.err != nil && !data.FetchedAt.IsZero() {
-		status = i18n.Text("STALE // ") + m.history.err.Error() + i18n.Text(" // R RETRY")
+		status = i18n.Text("STALE // ") + m.history.err.Error()
 	}
 	lines = append(lines, colors.dimmed().Render(status))
 	if data.TokenStatus == "UNAVAILABLE" {
