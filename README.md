@@ -282,7 +282,10 @@ To install a specific release, replace `vX.Y.Z` with its tag and add
 `CODEXOMETER_VERSION=vX.Y.Z` beside the bin-directory setting, or download the
 script and pass `--version vX.Y.Z`.
 
-On Windows, download and run the PowerShell installer:
+On Windows, download and run the PowerShell installer using either built-in
+Windows PowerShell 5.1 (`powershell`) or PowerShell 7 (`pwsh`). There is no need
+to upgrade PowerShell to install Codexometer. To check your shell version, run
+`$PSVersionTable`.
 
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"

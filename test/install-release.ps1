@@ -36,11 +36,62 @@ function Invoke-Installer {
     if (-not [string]::IsNullOrWhiteSpace($RequestedVersion)) {
         $arguments += @("-Version", $RequestedVersion)
     }
-    $output = & $hostExecutable @arguments 2>&1
+    # Windows PowerShell turns redirected native stderr into ErrorRecords.
+    # Expected failing child installers must reach the exit-code assertions.
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & $hostExecutable @arguments 2>&1
+        $status = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
     return @{
-        Status = $LASTEXITCODE
+        Status = $status
         Output = ($output | Out-String).Trim()
     }
+}
+
+# Load only the architecture helper and its error helper, without running the
+# installer. Exercise missing RuntimeInformation data even on modern .NET.
+$parseTokens = $null
+$parseErrors = $null
+$installerAst = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$parseTokens, [ref]$parseErrors)
+if ($parseErrors.Count -ne 0) {
+    throw "installer contains PowerShell syntax errors"
+}
+foreach ($name in @("Fail", "Resolve-ReleaseArchitecture")) {
+    $functionAst = $installerAst.Find({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
+    }, $true)
+    if ($null -eq $functionAst) { throw "missing installer function: $name" }
+    . ([scriptblock]::Create($functionAst.Extent.Text))
+}
+foreach ($case in @(
+    @{ OS = "X64"; Native = ""; Process = "AMD64"; Want = "amd64" },
+    @{ OS = "Arm64"; Native = ""; Process = "AMD64"; Want = "arm64" },
+    @{ OS = ""; Native = ""; Process = "AMD64"; Want = "amd64" },
+    @{ OS = ""; Native = ""; Process = "ARM64"; Want = "arm64" },
+    @{ OS = ""; Native = "AMD64"; Process = "x86"; Want = "amd64" },
+    @{ OS = ""; Native = "ARM64"; Process = "x86"; Want = "arm64" },
+    @{ OS = ""; Native = "ARM64"; Process = "AMD64"; Want = "arm64" }
+)) {
+    $actual = Resolve-ReleaseArchitecture $case.OS $case.Native $case.Process
+    if ($actual -ne $case.Want) { throw "architecture mapping failed: $actual, expected $($case.Want)" }
+}
+foreach ($case in @(
+    @{ OS = ""; Native = ""; Process = "" },
+    @{ OS = ""; Native = ""; Process = "x86" },
+    @{ OS = ""; Native = "IA64"; Process = "x86" },
+    @{ OS = "Unknown"; Native = ""; Process = "AMD64" }
+)) {
+    $rejected = $false
+    try { Resolve-ReleaseArchitecture $case.OS $case.Native $case.Process | Out-Null } catch {
+        if ($_.Exception.Message -notmatch 'unsupported or undetermined architecture') { throw }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw "unsupported architecture was accepted" }
 }
 
 try {
