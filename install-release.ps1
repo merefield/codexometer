@@ -33,6 +33,29 @@ function Fail {
     throw "codexometer installer: $Message"
 }
 
+function Resolve-ReleaseArchitecture {
+    param(
+        [string]$OSArchitecture,
+        [string]$NativeArchitecture,
+        [string]$ProcessArchitecture
+    )
+
+    # Prefer the OS, not the shell architecture. WOW64 exposes the native
+    # architecture separately when a 32-bit shell runs on 64-bit Windows.
+    $architecture = $OSArchitecture
+    if ([string]::IsNullOrWhiteSpace($architecture)) {
+        $architecture = $NativeArchitecture
+    }
+    if ([string]::IsNullOrWhiteSpace($architecture)) {
+        $architecture = $ProcessArchitecture
+    }
+    switch ($architecture) {
+        { $_ -in @("X64", "AMD64") } { return "amd64" }
+        "ARM64" { return "arm64" }
+        default { Fail "unsupported or undetermined architecture: $architecture" }
+    }
+}
+
 $Version = Get-Setting $Version "CODEXOMETER_VERSION" "latest"
 $Repository = Get-Setting $Repository "CODEXOMETER_REPOSITORY" "merefield/codexometer"
 $GitHubUrl = (Get-Setting $GitHubUrl "CODEXOMETER_GITHUB_URL" "https://github.com").TrimEnd("/")
@@ -63,12 +86,16 @@ if ($Version -ne "latest" -and $Version -cnotmatch $semanticTagPattern) {
     Fail "invalid semantic release tag: $Version"
 }
 
-$architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-switch ($architecture) {
-    "X64" { $releaseArch = "amd64" }
-    "Arm64" { $releaseArch = "arm64" }
-    default { Fail "unsupported architecture: $architecture" }
+$osArchitecture = ""
+try {
+    $osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+} catch {
+    # Some Windows PowerShell 5.1/.NET Framework environments do not expose
+    # this property (or its type). Use Windows' architecture variables instead.
 }
+$releaseArch = Resolve-ReleaseArchitecture $osArchitecture `
+    ([Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITEW6432")) `
+    ([Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE"))
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $headers = @{ "User-Agent" = "codexometer-release-installer" }
