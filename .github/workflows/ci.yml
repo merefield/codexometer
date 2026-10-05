@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version-file: go.mod
           cache: true
       - name: Install, type-check and build frontend
         working-directory: web
@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version-file: go.mod
           cache: true
 
       - name: Setup Bats

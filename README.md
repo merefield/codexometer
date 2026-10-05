@@ -251,6 +251,9 @@ actually returns.
 - The `codex` CLI installed and available on `PATH`.
 - A current ChatGPT login in Codex.
 - A modern terminal with ANSI color and Unicode support.
+- On macOS, version 13 (Ventura) or later for builds using Go 1.27.1.
+  The v0.19.0 release was built with Go 1.26.6; this newer minimum applies
+  to subsequent Go 1.27-based builds.
 
 Go is required only when installing from source. A compiled Codexometer binary
 does not require a Go runtime.
@@ -2807,6 +2810,48 @@ Currently, the main tab, Quota view and global Sessions hide/show preference are
 saved, but session selection, per-session detail levels and dismissals remain
 temporary.
 
+### Go 1.27 follow-ups
+
+The Go 1.27.1 toolchain upgrade does not implement the work below. These are
+potential follow-ups, prioritised for reliability and maintainability rather
+than changing the dashboard's behaviour. The underlying capabilities arrived
+in [Go 1.27](https://go.dev/doc/go1.27); 1.27.1 adds maintenance fixes.
+
+1. **Measure and optimise session JSON processing.** Benchmark representative
+   large rollout histories and live app-server event streams, including CPU,
+   allocations and time to populate Sessions. Establish the benefit of the new
+   implementation behind the existing `encoding/json` API before considering
+   targeted streaming or parsing changes. Preserve missing/null distinctions,
+   forward-compatible fields and accounting semantics; do not promise a speedup
+   without measurements.
+2. **Detect leaked background workers.** Use the stable `goroutineleak` profile
+   in development diagnostics and reconnect/cancellation soak tests, covering
+   daemon subscriptions, benchmark cancellation and web-client disconnects.
+   Keep diagnostics opt-in and private: do not expose a public profiling endpoint
+   or put session content/credentials in profiling labels. The detector cannot
+   identify every kind of leak and is not a substitute for lifecycle tests.
+3. **Make timing/network tests more deterministic.** Evaluate
+   `httptest.NewTestServer` with `testing/synctest` and its `Sleep` helper for
+   HTTP timeouts, refresh scheduling and cancellation. Replace applicable
+   wall-clock waits with controlled time; retain real socket, WebSocket and
+   platform integration tests where simulated networking is insufficient.
+4. **Harden browser control-request decoding selectively.** Evaluate explicit
+   `encoding/json/v2` decoding for write-mode requests to reject duplicate
+   object keys and invalid UTF-8. Add compatibility/security regressions before
+   changing defaults, and preserve body limits, unknown-field policy, single-
+   value validation and approval safeguards. Avoid a blanket JSON migration
+   across upstream Codex responses and local telemetry.
+5. **Simplify typed client plumbing where it removes duplication.** Evaluate
+   generic methods for repeated request/response decoding while preserving
+   cancellation, error handling and notification routing. Adopt only where
+   clearer than existing helpers; avoid a new abstraction layer merely to use
+   the language feature. Generic methods cannot implement interface methods.
+
+These follow-ups benefit the shared core and/or web backend; they must preserve
+terminal responsiveness and standalone distribution. Experimental SIMD and
+broad rewrites are not planned. A toolchain upgrade alone neither supplies new
+OpenAI telemetry nor improves quota-estimation accuracy.
+
 ## Development
 
 Format, test, and vet the project:
@@ -2825,7 +2870,7 @@ go test -cover ./...
 
 Codexometer uses:
 
-- Go 1.26.6+
+- Go 1.27.1+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation
