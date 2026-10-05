@@ -251,6 +251,9 @@ actually returns.
 - The `codex` CLI installed and available on `PATH`.
 - A current ChatGPT login in Codex.
 - A modern terminal with ANSI color and Unicode support.
+- On macOS, version 13 (Ventura) or later for builds using Go 1.27.1.
+  The v0.19.0 release was built with Go 1.26.6; this newer minimum applies
+  to subsequent Go 1.27-based builds.
 
 Go is required only when installing from source. A compiled Codexometer binary
 does not require a Go runtime.
@@ -2825,7 +2828,7 @@ go test -cover ./...
 
 Codexometer uses:
 
-- Go 1.26.6+
+- Go 1.27.1+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation

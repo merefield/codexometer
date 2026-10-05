@@ -240,7 +240,7 @@ Remove-Item $installer
 
 The execution-policy override applies only to that PowerShell process; inspect the downloaded script before running it if required by your security policy.
 
-Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.26.6 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
+Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. New Go 1.27-based macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.1 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
 
 Full installation, authentication, privacy, monitoring, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
 
