@@ -119,7 +119,7 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 			case 2:
 				include = profile
 			case 3:
-				include = s.attention == codex.SessionAttentionComplete && !s.working && !profile
+				include = s.attention == codex.SessionAttentionComplete && !s.working && !profile && !m.hasSchedule(s.id)
 			case 4:
 				include = m.hasSchedule(s.id)
 			}

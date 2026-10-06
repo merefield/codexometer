@@ -26,6 +26,12 @@
     }
     select(id);
   }
+  function sessionStatus(session: Session) {
+    return session.status === 'TURN COMPLETE' &&
+      triggers.some((t) => t.session === session.id)
+      ? 'TRIGGER SET'
+      : session.status;
+  }
   let nativeProtected = $state(false);
   function openProfile(event: MouseEvent, id: string) {
     if (params.id && params.id !== id && nativeProtected) {
@@ -290,7 +296,8 @@
             ? 'STALE'
             : profileFocused
               ? 'QUOTA THRESHOLD'
-              : selected.status} // {selected.name || selected.directory}
+              : sessionStatus(selected)} // {selected.name ||
+            selected.directory}
         </h2>
         <a
           class="button"
@@ -394,7 +401,7 @@
             <span
               class="lamp lit"
               class:working={session.status === 'WORKING' && !stale}
-            ></span>{stale ? 'STALE' : session.status}
+            ></span>{stale ? 'STALE' : sessionStatus(session)}
           </a>
         </h2>
         {#if !session.name}<button
@@ -404,12 +411,6 @@
             >{session.directory || session.id}</button
           >{/if}
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
-        {#if live.data?.triggers?.some((t) => t.session === session.id)}
-          <a
-            href={'#/sessions/' + encodeURIComponent(session.id)}
-            onclick={(event) => openTrigger(event, session.id)}>TRIGGER SET</a
-          >
-        {/if}
         {#if session.name && session.directory}<p class="muted">
             {session.directory}
           </p>{/if}

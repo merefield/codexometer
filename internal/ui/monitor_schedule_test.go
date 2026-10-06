@@ -326,6 +326,8 @@ func TestScheduleFormKeyboardVisitsOnlyVisibleFields(t *testing.T) {
 func TestSchedulePillLastAndBothClickTargets(t *testing.T) {
 	m, _ := scheduledTestModel(t)
 	m.monitorContextDetail = ""
+	m.monitorSessionData[0].working = false
+	m.monitorSessionData[0].attention = codex.SessionAttentionComplete
 	m.monitorSessionData[1].working = false
 	m.monitorSessionData[1].attention = codex.SessionAttentionComplete
 	items := m.monitorAttentionSessions()
@@ -353,6 +355,58 @@ func TestSchedulePillLastAndBothClickTargets(t *testing.T) {
 	}
 	if !foundPill || !foundRow {
 		t.Fatal("missing click surface", foundPill, foundRow)
+	}
+}
+
+func TestScheduleReplacesCompleteWithoutMaskingOtherStates(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	s := &m.monitorSessionData[0]
+	s.working = false
+	s.attention = codex.SessionAttentionComplete
+	badge := ansi.Strip(m.renderMonitorSessionBadge(*s, 80, paletteFor(m.theme)))
+	if !strings.Contains(badge, "TRIGGER SET") || strings.Contains(badge, "TURN COMPLETE") {
+		t.Fatal("completed badge was not replaced", badge)
+	}
+	row := ansi.Strip(m.renderMonitorSessionMetrics(80, 12, *s, "", paletteFor(m.theme)))
+	if strings.Count(row, "TRIGGER SET") != 1 || strings.Contains(row, "TURN COMPLETE") {
+		t.Fatal("duplicate or outdated row status", row)
+	}
+	detail := ansi.Strip(m.renderMonitorContextDetail(100, 30, paletteFor(m.theme)))
+	if !strings.Contains(detail, "The saved trigger prompt") || !strings.Contains(detail, "Not before") {
+		t.Fatal("trigger detail disappeared", detail)
+	}
+	count := 0
+	for _, item := range m.monitorAttentionSessions() {
+		if item.id == s.id {
+			count++
+			if !item.trigger {
+				t.Fatal("duplicate turn complete pill")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("got %d pills for scheduled complete session", count)
+	}
+	for _, attention := range []codex.SessionAttention{codex.SessionAttentionApproval, codex.SessionAttentionInput, codex.SessionAttentionCheck, codex.SessionAttentionNone} {
+		s.attention, s.working = attention, attention == codex.SessionAttentionNone
+		badge = ansi.Strip(m.renderMonitorSessionBadge(*s, 80, paletteFor(m.theme)))
+		if strings.Contains(badge, "TRIGGER SET") {
+			t.Fatal("trigger masked live state", attention)
+		}
+	}
+	s.attention, s.working = codex.SessionAttentionComplete, false
+	j := m.scheduleUI.queue.List(s.id)[0]
+	if err := m.scheduleUI.queue.Cancel(s.id, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	badge = ansi.Strip(m.renderMonitorSessionBadge(*s, 80, paletteFor(m.theme)))
+	if !strings.Contains(badge, "TURN COMPLETE") {
+		t.Fatal("completion badge not restored", badge)
+	}
+	for _, item := range m.monitorAttentionSessions() {
+		if item.id == s.id && item.trigger {
+			t.Fatal("trigger pill retained after deletion")
+		}
 	}
 }
 

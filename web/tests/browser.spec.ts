@@ -730,6 +730,17 @@ test('trigger pill and row link open detail; send now confirms the saved job', a
     { ...snapshot, triggers: [{ session: 'parent', status: 'pending' }] },
   );
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TRIGGER SET', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TURN COMPLETE', exact: true })
+      .and(page.locator('[href="#/sessions/parent"]')),
+  ).toHaveCount(0);
   await page
     .getByRole('navigation', { name: 'Sessions needing attention' })
     .getByRole('link', { name: /TRIGGER SET/ })
@@ -760,6 +771,23 @@ test('trigger pill and row link open detail; send now confirms the saved job', a
     page.getByRole('region', { name: 'Pending follow-up' }),
   ).toHaveCount(0);
   expect(sends).toBe(1);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    { ...snapshot, triggers: [] },
+  );
+  await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TURN COMPLETE', exact: true })
+      .and(page.locator('[href="#/sessions/parent"]')),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TRIGGER SET', exact: true }),
+  ).toHaveCount(0);
 });
 
 for (const control of [false, true]) {

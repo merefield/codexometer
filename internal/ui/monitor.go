@@ -312,13 +312,6 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	bodyRows := max(height-2, 1)
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
-	if m.hasSchedule(session.id) {
-		label := colors.label().Foreground(colors.primary)
-		if m.monitorContextHover == "attention-trigger:"+session.id {
-			label = label.Foreground(colors.background).Background(colors.primary)
-		}
-		usageLine = label.Render("TRIGGER SET") + " // " + usageLine
-	}
 	lines := make([]string, 0, bodyRows)
 	badge := m.renderMonitorSessionBadge(session, innerWidth, colors)
 	if badge != "" {
@@ -419,6 +412,9 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 	badgeLabel := ""
 	if session.attention != codex.SessionAttentionNone {
 		badgeLabel = monitorSessionAttentionLabel(session)
+		if m.sessionTriggerStatus(session) {
+			badgeLabel = "TRIGGER SET"
+		}
 	} else if m.sessionObservedWorking(session) {
 		badgeLabel = i18n.Text("WORKING")
 	}
@@ -433,7 +429,7 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 			badgeColor = paletteFor(m.theme).primary
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
-		if m.monitorContextHover == "badge:"+session.id {
+		if m.monitorContextHover == "badge:"+session.id || (m.sessionTriggerStatus(session) && m.monitorContextHover == "attention-trigger:"+session.id) {
 			badge = badge.Underline(true)
 		}
 		ball := "●"

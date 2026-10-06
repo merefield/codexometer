@@ -2480,7 +2480,11 @@ mode cannot create or access scheduled prompts. Both composers have a subtle
 theme-coloured background.
 
 - **One pending follow-up per session.** Saving another replaces it. A separate
-  **TRIGGER SET** signpost preserves the session's normal status and warnings.
+  **TRIGGER SET** replaces **TURN COMPLETE** in the session status and terminal
+  pill while a follow-up is queued; it is not repeated beside the token count.
+  Working and attention-needed statuses remain unchanged. Removing or sending
+  the trigger restores the underlying status. Full detail retains the saved prompt
+  and trigger information.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
   detail page with the saved prompt, timing and actions; web provides equivalent

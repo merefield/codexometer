@@ -28,6 +28,11 @@ type scheduleUI struct {
 }
 type scheduleDone struct{ err error }
 
+// A scheduled follow-up replaces the invitation to reply, not live work or warnings.
+func (m Model) sessionTriggerStatus(s monitorSession) bool {
+	return s.attention == codex.SessionAttentionComplete && !s.working && m.hasSchedule(s.id)
+}
+
 func (m Model) hasSchedule(id string) bool {
 	if m.scheduleUI.queue == nil {
 		return false
