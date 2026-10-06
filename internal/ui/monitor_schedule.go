@@ -133,6 +133,11 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if !m.scheduleUI.open {
 		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 			if id, ok := strings.CutPrefix(m.monitorContextAt(click.X, click.Y), "attention-trigger:"); ok {
+				delete(m.monitorDismissed, id)
+				if index := m.monitorSessionIndex(id); index >= 0 {
+					m.monitorSessionData[index].displayed = true
+				}
+				m.monitorSessions = m.visibleMonitorSessionCount()
 				m.setRowContext(id, contextFull)
 				cmd := m.openSchedule()
 				return m, cmd, true
@@ -198,13 +203,16 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 			}
 		case click.Y == 9 && p.mode != 0:
 			p.focus = 2
-		case click.Y == 18 && p.mode != 0:
-			if click.X < 22 || p.mode == 1 {
+			if p.mode == 1 && click.X >= 22 {
+				p.focus = 3
+			}
+		case click.Y == 18 && p.mode == 2:
+			if click.X < 22 {
 				p.focus = 3
 			} else {
 				p.focus = 4
 			}
-		case click.Y == 22 && click.X >= 2 && click.X < 33:
+		case click.Y == p.actionRow() && click.X >= 2 && click.X < 33:
 			if click.X < 21 {
 				p.focus = 5
 				isKey = true
@@ -398,8 +406,7 @@ func (m Model) renderScheduleForm() string {
 		lines[8] = c.dimmed().Render("↑ Trigger: ←/→ choose • Tab: next field")
 	}
 	if p.mode == 1 {
-		lines[9] = control(fmt.Sprintf("Hours: %d", p.hours), 2)
-		lines[18] = control(fmt.Sprintf("Minutes: %02d", p.minutes), 3)
+		lines[9] = control(fmt.Sprintf("%-20s", fmt.Sprintf("Hours: %d", p.hours)), 2) + control(fmt.Sprintf("Minutes: %02d", p.minutes), 3)
 	}
 	if p.mode == 2 {
 		lines[9] = control(p.date.Format("January 2006")+" // PgUp/PgDn", 2)
@@ -428,16 +435,21 @@ func (m Model) renderScheduleForm() string {
 	if p.mode == 2 {
 		summary = p.date.Format("Mon 02 Jan 2006 15:04 MST -07:00") + " • when idle"
 	}
-	lines[20] = summary + " // Follow session model / reasoning / speed"
+	row := p.actionRow()
+	lines[row-2] = summary + " // Follow session model / reasoning / speed"
 	lines[6] = "Tab / Shift+Tab: fields • Enter: next / activate"
-	lines[21] = "Arrows: adjust • digits: time • PgUp/Dn: month • Esc: back"
-	lines[22] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ BACK ]", 6)
-	lines[19] = p.notice
+	lines[row-1] = "Arrows: adjust • digits: time • PgUp/Dn: month • Esc: back"
+	lines[row] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ BACK ]", 6)
+	if row == 22 {
+		lines[19] = p.notice
+	} else {
+		lines[row+1] = p.notice
+	}
 	for i := 1; i < 23; i++ {
 		lines[i] = ansi.Truncate(lines[i], max(m.width-4, 1), "…")
 	}
-	// The title replaces row zero and the frame supplies the same two-cell
-	// body inset as before, preserving all control and calendar hit coordinates.
+	// Frame content starts at column two. Rendering and hit testing share
+	// actionRow so compact delay/quota forms do not reserve calendar space.
 	return frameSized(m.width, m.height-2, lines[0], strings.Join(lines[1:23], "\n"), c.primary, c)
 }
 
@@ -446,12 +458,19 @@ func (p scheduleUI) renderTriggerModes(c palette) string {
 	for i, s := range mode {
 		label := fmt.Sprintf("%-9s", "[ "+s+" ]")
 		style := c.label()
-		if p.mode == i {
+		if p.mode == i && p.focus == 1 {
 			style = style.Foreground(c.primary).Reverse(true)
 		}
 		mode[i] = style.Render(label)
 	}
 	return strings.Join(mode, " ")
+}
+
+func (p scheduleUI) actionRow() int {
+	if p.mode == 2 {
+		return 22
+	}
+	return 13
 }
 
 func (p *scheduleUI) moveFocus(delta int) {

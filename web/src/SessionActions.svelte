@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
@@ -64,7 +64,12 @@
   }
   let jobs = $state<Job[]>([]);
   let pending = $derived(jobs.find((j) => j.status !== 'sent'));
+  let composer: HTMLTextAreaElement | undefined = $state();
   function editJob(job: Job) {
+    if (editing) {
+      void tick().then(() => composer?.focus());
+      return;
+    }
     if (
       job.status !== 'pending' ||
       busy ||
@@ -74,6 +79,7 @@
     )
       return;
     editing = true;
+    void tick().then(() => composer?.focus());
     answers = [job.text];
     timing = job.trigger === 'quota' ? 'quota' : 'at';
     confirmation = '';
@@ -560,6 +566,7 @@
                 >
               {:else}
                 <textarea
+                  bind:this={composer}
                   rows="3"
                   maxlength="4096"
                   autocomplete="off"

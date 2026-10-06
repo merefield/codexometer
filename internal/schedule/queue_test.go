@@ -3,12 +3,47 @@ package schedule
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/merefield/codexometer/internal/codex"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestPreflightDeferralDoesNotBecomeUncertain(t *testing.T) {
+	q := New()
+	now := time.Now()
+	if err := q.Save(Job{Session: "root", Text: "later", Trigger: "quota"}, "a", now); err != nil {
+		t.Fatal(err)
+	}
+	id := q.List("")[0].ID
+	err := q.Dispatch(context.Background(), id, "a", true, now, func(context.Context, Job) error { return fmt.Errorf("quota changed: %w", ErrDeferred) })
+	if !errors.Is(err, ErrDeferred) || q.List("")[0].Status != "pending" {
+		t.Fatal("preflight failure blocked the job", err, q.List(""))
+	}
+	calls := 0
+	if err := q.Dispatch(context.Background(), id, "a", true, now, func(context.Context, Job) error { calls++; return nil }); err != nil || calls != 1 {
+		t.Fatal("job did not recover", err)
+	}
+}
+
+func TestCompletedJobsDoNotConsumeQueueCapacity(t *testing.T) {
+	q := New()
+	now := time.Now()
+	for i := range 300 {
+		if err := q.Save(Job{Session: fmt.Sprint(i), Text: "later", Trigger: "quota"}, "a", now); err != nil {
+			t.Fatal(i, err)
+		}
+		jobs := q.List("")
+		if len(jobs) != 1 {
+			t.Fatal("completed jobs retained", len(jobs))
+		}
+		if err := q.Dispatch(context.Background(), jobs[0].ID, "a", true, now, func(context.Context, Job) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestQueueGuardsAndSingleAttempt(t *testing.T) {
 	now := time.Now()

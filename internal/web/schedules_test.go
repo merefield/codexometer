@@ -118,3 +118,38 @@ func TestScheduleSendNowRejectsExhaustedQuota(t *testing.T) {
 		t.Fatal("quota bypassed", w.Code)
 	}
 }
+
+type preflightPromptSource struct {
+	*actionSource
+	beforeReturn func()
+}
+
+func (f *preflightPromptSource) SessionPrompt(thread string) codex.SessionPromptOffer {
+	o := f.actionSource.SessionPrompt(thread)
+	if f.beforeReturn != nil {
+		f.beforeReturn()
+	}
+	return o
+}
+
+func TestSchedulerDefersWhenQuotaChangesBeforeSend(t *testing.T) {
+	s, f, _ := controlServer(t)
+	s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}
+	f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "idle"}
+	s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 0}}}
+	if err := s.control.schedules.Save(schedule.Job{Session: "parent", Text: "later", Trigger: "quota"}, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	p := &preflightPromptSource{actionSource: f, beforeReturn: func() { s.store.scheduleQuota.RateLimits.Primary.UsedPercent = 100 }}
+	s.control.prompts = p
+	s.control.dispatchSchedules(context.Background())
+	if f.calls != 0 || s.control.schedules.List("parent")[0].Status != "pending" {
+		t.Fatal("preflight deferral dispatched or became uncertain")
+	}
+	p.beforeReturn = nil
+	s.store.scheduleQuota.RateLimits.Primary.UsedPercent = 0
+	s.control.dispatchSchedules(context.Background())
+	if f.calls != 1 {
+		t.Fatal("deferred request did not recover")
+	}
+}

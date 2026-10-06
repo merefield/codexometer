@@ -106,7 +106,7 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 			continue
 		}
 		for _, s := range m.monitorSessionData {
-			if !m.monitorSessionVisible(s) {
+			if !m.monitorSessionVisible(s) && priority != 4 {
 				continue
 			}
 			_, profile := m.quotaSessionCandidate(s)

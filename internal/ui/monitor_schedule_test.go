@@ -25,7 +25,7 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 			for i, name := range labels {
 				label := fmt.Sprintf("%-9s", "[ "+name+" ]")
 				style := colors.label()
-				if i == selected {
+				if i == selected && focus == 1 {
 					style = style.Foreground(colors.primary).Reverse(true)
 				}
 				expected = append(expected, style.Render(label))
@@ -260,9 +260,62 @@ func TestScheduleFrameFitsAndPreservesControlRows(t *testing.T) {
 			if !strings.HasPrefix(lines[0], "╭") || !strings.HasSuffix(lines[len(lines)-1], "╯") {
 				t.Fatal("missing frame")
 			}
-			if !strings.Contains(lines[7], "AFTER QUOTA REFRESH") || !strings.Contains(lines[19], "Test notice") || !strings.Contains(lines[22], "CONFIRM SCHEDULE") {
+			noticeRow := 19
+			if mode != 2 {
+				noticeRow = m.scheduleUI.actionRow() + 1
+			}
+			if !strings.Contains(lines[7], "AFTER QUOTA REFRESH") || !strings.Contains(lines[noticeRow], "Test notice") || !strings.Contains(lines[m.scheduleUI.actionRow()], "CONFIRM SCHEDULE") {
 				t.Fatal("control rows moved")
 			}
 		}
 	}
+}
+
+func TestDelayFieldsAndActionsStayTogether(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.openSchedule()
+	m.scheduleUI.mode = 1
+	lines := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")
+	if !strings.Contains(lines[9], "Hours:") || !strings.Contains(lines[9], "Minutes:") || !strings.Contains(lines[13], "CONFIRM SCHEDULE") {
+		t.Fatal("delay layout still reserves calendar space")
+	}
+	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 23, Y: 9, Button: tea.MouseLeft})
+	if m.scheduleUI.focus != 3 {
+		t.Fatal("minutes click misaligned")
+	}
+	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 3, Y: 9, Button: tea.MouseLeft})
+	if m.scheduleUI.focus != 2 {
+		t.Fatal("hours click misaligned")
+	}
+	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 26, Y: 13, Button: tea.MouseLeft})
+	if m.scheduleUI.open || !m.hasSchedule("root-one") {
+		t.Fatal("Back target misaligned or deleted trigger")
+	}
+}
+
+func TestDismissedSessionKeepsManageableTriggerPill(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.dismissMonitorSession("root-one")
+	found := false
+	for _, item := range m.monitorAttentionSessions() {
+		if item.id == "root-one" && item.trigger {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("dismissal hid pending trigger")
+	}
+	for y := 0; y < m.height; y++ {
+		for x := 0; x < m.width; x++ {
+			if m.monitorAttentionAt(x, y) != "attention-trigger:root-one" {
+				continue
+			}
+			n, _, handled := m.updateSchedule(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			if !handled || !n.scheduleUI.open || !n.monitorSessionVisible(n.monitorSessionData[0]) {
+				t.Fatal("trigger pill cannot reopen dismissed session")
+			}
+			return
+		}
+	}
+	t.Fatal("trigger pill not clickable")
 }

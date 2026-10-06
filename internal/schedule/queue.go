@@ -6,11 +6,17 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"github.com/merefield/codexometer/internal/codex"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
+
+// ErrDeferred is only for local preflight checks that guarantee no send was
+// attempted. Transport errors must never use it: their outcome is uncertain.
+var ErrDeferred = errors.New("trigger deferred before sending")
 
 type Job struct {
 	ID      string    `json:"id"`
@@ -53,6 +59,7 @@ func (q *Queue) Save(j Job, account string, now time.Time) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	index := -1
+	q.jobs = slices.DeleteFunc(q.jobs, func(v Job) bool { return v.Status == "sent" })
 	for i, v := range q.jobs {
 		if v.Session == j.Session {
 			if v.Status == "sending" || v.Status == "uncertain" {
@@ -136,7 +143,9 @@ func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady boo
 		}
 	}
 	q.jobs[index].Status = "sent"
-	if err != nil {
+	if errors.Is(err, ErrDeferred) {
+		q.jobs[index].Status = "pending"
+	} else if err != nil {
 		q.jobs[index].Status = "uncertain"
 	}
 	return err

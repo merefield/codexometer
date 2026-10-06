@@ -640,6 +640,14 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await expect(
     page.getByRole('textbox', { name: 'Follow-up message' }),
   ).toHaveValue('Continue after quota recovery');
+  const draft = page.getByRole('textbox', { name: 'Follow-up message' });
+  await draft.fill('Unsaved scheduling edit');
+  await draft.press('Control+s');
+  await expect(draft).toHaveValue('Unsaved scheduling edit');
+  await expect(draft).toBeFocused();
+  await expect(pending.locator('pre')).toHaveText(
+    'Continue after quota recovery',
+  );
   await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
   await expect(pending).toHaveCount(0);
 });

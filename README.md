@@ -2484,6 +2484,8 @@ theme-coloured background.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
   scheduler directly; web provides equivalent scheduler links.
+  Dismissing a terminal session row does not hide its pending-trigger pill or
+  cancel the request; clicking that pill restores the row and opens the scheduler.
 - Full detail replaces the ordinary composer with the **read-only saved prompt**
   and trigger summary. Timed triggers show **Not before**, the local date/time,
   timezone and countdown (or waiting reason when due). Actual sending can be late.
@@ -2516,6 +2518,9 @@ theme-coloured background.
   starts ordinary Codex work and can consume quota and run tools under that
   session's permissions. An uncertain send is retained for inspection and **never
   automatically retried**; check Codex before cancelling and scheduling again.
+  A local preflight deferral known to have sent nothing remains pending instead.
+  Completed entries are pruned when scheduling new work, so they do not consume
+  the pending-queue limit.
 
 ### Optional browser session control
 

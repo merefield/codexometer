@@ -144,7 +144,7 @@ func (c *control) dispatchSchedules(ctx context.Context) {
 		_ = c.schedules.Dispatch(call, j.ID, q.AccountFingerprint, true, time.Now(), func(ctx context.Context, j schedule.Job) error {
 			latest := c.scheduleSnapshot()
 			if latest.AccountFingerprint != q.AccountFingerprint || !schedule.QuotaReady(latest, time.Now()) || !schedule.Covers(j, latest) || c.scheduleBlocked(j.Session) {
-				return errUnavailable
+				return schedule.ErrDeferred
 			}
 			return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
 		})
