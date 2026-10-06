@@ -188,3 +188,26 @@ func TestSchedulePillLastAndBothClickTargets(t *testing.T) {
 		t.Fatal("missing click surface", foundPill, foundRow)
 	}
 }
+
+func TestScheduleHeadingNamesSessionBeforeID(t *testing.T) {
+	for _, tc := range []struct{ name, directory, want string }{
+		{"Fix dashboard", "/work/project", "Fix dashboard"},
+		{"", "/work/project", "project"},
+		{"", "", "Unnamed session"},
+	} {
+		m, _ := scheduledTestModel(t)
+		m.monitorSessionData[0].name = tc.name
+		m.monitorSessionData[0].workingDirectory = tc.directory
+		m.openSchedule()
+		heading := strings.Split(m.renderScheduleForm(), "\n")[0]
+		if !strings.Contains(heading, "SCHEDULE FOLLOW-UP // "+tc.want+" // "+shortSessionID("root-one")) {
+			t.Fatalf("wrong heading: %q", heading)
+		}
+		m.width = 48
+		m.monitorSessionData[0].name = strings.Repeat("Long name ", 20)
+		heading = strings.Split(m.renderScheduleForm(), "\n")[0]
+		if !strings.HasSuffix(heading, " // "+shortSessionID("root-one")) {
+			t.Fatalf("narrow heading lost ID: %q", heading)
+		}
+	}
+}

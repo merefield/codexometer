@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -361,7 +362,20 @@ func (m Model) renderScheduleForm() string {
 		return "Scheduling needs 48 columns × 24 rows. Resize or Esc to return."
 	}
 	lines := make([]string, 24)
-	lines[0] = "SCHEDULE FOLLOW-UP // " + terminalLabel(p.session)
+	name := "Unnamed session"
+	for _, session := range m.monitorSessionData {
+		if session.id != p.session {
+			continue
+		}
+		if label := strings.TrimSpace(terminalLabel(session.name)); label != "" {
+			name = label
+		} else if session.workingDirectory != "" {
+			name = filepath.Base(terminalLabel(session.workingDirectory))
+		}
+		break
+	}
+	prefix, suffix := "SCHEDULE FOLLOW-UP // ", " // "+shortSessionID(p.session)
+	lines[0] = prefix + ansi.Truncate(name, max(m.width-4-ansi.StringWidth(prefix+suffix), 1), "…") + suffix
 	lines[1] = "In memory only • closing Codexometer cancels this trigger"
 	p.input.configure(m.width-4, 11)
 	for i, s := range strings.Split(p.input.View(c), "\n") {
