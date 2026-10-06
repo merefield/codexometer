@@ -180,6 +180,9 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if click.Button != tea.MouseLeft {
 			return m, nil, true
 		}
+		if click.X < 2 || click.X >= m.width-2 || click.Y < 1 || click.Y >= m.height-1 {
+			return m, nil, true
+		}
 		switch {
 		case click.Y >= 3 && click.Y <= 5:
 			p.focus = 0
@@ -375,7 +378,7 @@ func (m Model) renderScheduleForm() string {
 		break
 	}
 	prefix, suffix := "SCHEDULE FOLLOW-UP // ", " // "+shortSessionID(p.session)
-	lines[0] = prefix + ansi.Truncate(name, max(m.width-4-ansi.StringWidth(prefix+suffix), 1), "…") + suffix
+	lines[0] = prefix + ansi.Truncate(name, max(m.width-6-ansi.StringWidth(prefix+suffix), 1), "…") + suffix
 	lines[1] = "In memory only • closing Codexometer cancels this trigger"
 	p.input.configure(m.width-4, 11)
 	for i, s := range strings.Split(p.input.View(c), "\n") {
@@ -389,17 +392,8 @@ func (m Model) renderScheduleForm() string {
 		}
 		return c.label().Render(label)
 	}
-	mode := []string{"AFTER QUOTA REFRESH", "IN…", "AT…"}
-	for i, s := range mode {
-		label := fmt.Sprintf("%-9s", "[ "+s+" ]")
-		style := c.label()
-		if p.mode == i {
-			style = style.Foreground(c.primary).Reverse(true)
-		}
-		mode[i] = style.Render(label)
-	}
 	// Selection belongs to one option, never the whole focused control group.
-	lines[7] = strings.Join(mode, " ")
+	lines[7] = p.renderTriggerModes(c)
 	if p.focus == 1 {
 		lines[8] = c.dimmed().Render("↑ Trigger: ←/→ choose • Tab: next field")
 	}
@@ -438,11 +432,26 @@ func (m Model) renderScheduleForm() string {
 	lines[6] = "Tab / Shift+Tab: fields • Enter: next / activate"
 	lines[21] = "Arrows: adjust • digits: time • PgUp/Dn: month • Esc: back"
 	lines[22] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ BACK ]", 6)
-	lines[23] = p.notice
-	for i, s := range lines {
-		lines[i] = "  " + ansi.Truncate(s, max(m.width-4, 1), "…")
+	lines[19] = p.notice
+	for i := 1; i < 23; i++ {
+		lines[i] = ansi.Truncate(lines[i], max(m.width-4, 1), "…")
 	}
-	return strings.Join(lines, "\n")
+	// The title replaces row zero and the frame supplies the same two-cell
+	// body inset as before, preserving all control and calendar hit coordinates.
+	return frameSized(m.width, m.height-2, lines[0], strings.Join(lines[1:23], "\n"), c.primary, c)
+}
+
+func (p scheduleUI) renderTriggerModes(c palette) string {
+	mode := []string{"AFTER QUOTA REFRESH", "IN…", "AT…"}
+	for i, s := range mode {
+		label := fmt.Sprintf("%-9s", "[ "+s+" ]")
+		style := c.label()
+		if p.mode == i {
+			style = style.Foreground(c.primary).Reverse(true)
+		}
+		mode[i] = style.Render(label)
+	}
+	return strings.Join(mode, " ")
 }
 
 func (p *scheduleUI) moveFocus(delta int) {

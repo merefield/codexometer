@@ -3,6 +3,7 @@ package ui
 import (
 	tea "charm.land/bubbletea/v2"
 	"fmt"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/schedule"
 	"strings"
@@ -19,7 +20,7 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 		m.scheduleUI.focus = focus
 		for _, selected := range []int{0, 1, 2, 1, 0} {
 			m.scheduleUI.mode = selected
-			row := strings.Split(m.renderScheduleForm(), "\n")[7]
+			row := m.scheduleUI.renderTriggerModes(colors)
 			var expected []string
 			for i, name := range labels {
 				label := fmt.Sprintf("%-9s", "[ "+name+" ]")
@@ -29,7 +30,7 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 				}
 				expected = append(expected, style.Render(label))
 			}
-			if row != "  "+strings.Join(expected, " ") {
+			if row != strings.Join(expected, " ") {
 				t.Fatalf("focus %d selected %d changed the group styling: %q", focus, selected, row)
 			}
 		}
@@ -226,15 +227,42 @@ func TestScheduleHeadingNamesSessionBeforeID(t *testing.T) {
 		m.monitorSessionData[0].name = tc.name
 		m.monitorSessionData[0].workingDirectory = tc.directory
 		m.openSchedule()
-		heading := strings.Split(m.renderScheduleForm(), "\n")[0]
+		heading := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")[0]
 		if !strings.Contains(heading, "SCHEDULE FOLLOW-UP // "+tc.want+" // "+shortSessionID("root-one")) {
 			t.Fatalf("wrong heading: %q", heading)
 		}
 		m.width = 48
 		m.monitorSessionData[0].name = strings.Repeat("Long name ", 20)
-		heading = strings.Split(m.renderScheduleForm(), "\n")[0]
-		if !strings.HasSuffix(heading, " // "+shortSessionID("root-one")) {
+		heading = strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")[0]
+		if !strings.Contains(heading, " // "+shortSessionID("root-one")) {
 			t.Fatalf("narrow heading lost ID: %q", heading)
+		}
+	}
+}
+
+func TestScheduleFrameFitsAndPreservesControlRows(t *testing.T) {
+	for _, size := range [][2]int{{48, 24}, {80, 30}, {120, 45}} {
+		m, _ := scheduledTestModel(t)
+		m.width, m.height = size[0], size[1]
+		m.openSchedule()
+		for mode := range 3 {
+			m.scheduleUI.mode = mode
+			m.scheduleUI.notice = "Test notice"
+			lines := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")
+			if len(lines) != m.height {
+				t.Fatalf("frame height %d, want %d", len(lines), m.height)
+			}
+			for _, line := range lines {
+				if ansi.StringWidth(line) != m.width {
+					t.Fatalf("frame width mismatch: %q", line)
+				}
+			}
+			if !strings.HasPrefix(lines[0], "╭") || !strings.HasSuffix(lines[len(lines)-1], "╯") {
+				t.Fatal("missing frame")
+			}
+			if !strings.Contains(lines[7], "AFTER QUOTA REFRESH") || !strings.Contains(lines[19], "Test notice") || !strings.Contains(lines[22], "CONFIRM SCHEDULE") {
+				t.Fatal("control rows moved")
+			}
 		}
 	}
 }
