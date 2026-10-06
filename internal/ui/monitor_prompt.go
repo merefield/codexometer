@@ -161,7 +161,8 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 		n = min(n, len(o.Questions)-1)
 		header = fmt.Sprintf("%s %d/%d // %s", i18n.Text("REPLY"), n+1, len(o.Questions), o.Questions[n].Text)
 	}
-	line := i18n.Text("[ Click here or press Enter to write ]")
+	line := colors.dimmed().Background(monitorComposerBackground(colors)).
+		Width(max(width-4, 1)).Render(ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(width-4, 1), ""))
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	if p.offer.Token == o.Token && p.input.Focused() && !p.busy {
 		input := p.input

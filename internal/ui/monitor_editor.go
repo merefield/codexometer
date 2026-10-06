@@ -130,9 +130,7 @@ func (e monitorEditor) View(colors palette) string {
 		return e.password.View()
 	}
 	s := e.area.Styles()
-	pr, pg, pb, _ := colors.primary.RGBA()
-	br, bg, bb, _ := colors.background.RGBA()
-	tint := color.RGBA{uint8((pr + br*9) / 10 >> 8), uint8((pg + bg*9) / 10 >> 8), uint8((pb + bb*9) / 10 >> 8), 255}
+	tint := monitorComposerBackground(colors)
 	s.Focused.Base = s.Focused.Base.Background(tint)
 	s.Blurred.Base = s.Blurred.Base.Background(tint)
 	s.Focused.Text = colors.label().Background(tint)
@@ -141,4 +139,10 @@ func (e monitorEditor) View(colors palette) string {
 	s.Cursor.Color = colors.primary
 	e.area.SetStyles(s)
 	return e.area.View()
+}
+
+func monitorComposerBackground(colors palette) color.RGBA {
+	pr, pg, pb, _ := colors.primary.RGBA()
+	br, bg, bb, _ := colors.background.RGBA()
+	return color.RGBA{uint8((pr + br*9) / 10 >> 8), uint8((pg + bg*9) / 10 >> 8), uint8((pb + bb*9) / 10 >> 8), 255}
 }

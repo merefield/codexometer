@@ -3,15 +3,50 @@ package ui
 import (
 	"context"
 	"errors"
+	"image"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
 )
+
+func TestMonitorPromptPlaceholderComposerBackground(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		for _, width := range []int{24, 80, 120} {
+			m, _ := promptTestModel()
+			colors := paletteFor(theme)
+			placeholder := m.renderMonitorPrompt(width, 30, colors)
+			cells := uv.NewScreenBuffer(width, 6)
+			uv.NewStyledString(placeholder).Draw(&cells, image.Rect(0, 0, width, 6))
+			editor := newMonitorEditor()
+			editor.configure(width, 30)
+			editor.SetValue("Typing")
+			editor.Focus()
+			active := uv.NewScreenBuffer(width, 3)
+			uv.NewStyledString(editor.View(colors)).Draw(&active, image.Rect(0, 0, width, 3))
+			want := active.CellAt(3, 0).Style.Bg
+			if want == nil {
+				t.Fatal("composer has no background")
+			}
+			for x := 0; x < width-4; x++ {
+				cell := cells.CellAt(x, 1)
+				if cell == nil || cell.Style.Bg == nil {
+					t.Fatalf("theme %d width %d: missing placeholder background at %d", theme, width, x)
+				}
+				wr, wg, wb, wa := want.RGBA()
+				r, g, b, a := cell.Style.Bg.RGBA()
+				if r != wr || g != wg || b != wb || a != wa {
+					t.Fatalf("theme %d width %d: placeholder and composer backgrounds differ at %d", theme, width, x)
+				}
+			}
+		}
+	}
+}
 
 type promptTestClient struct {
 	offer   codex.SessionPromptOffer
