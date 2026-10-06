@@ -32,27 +32,41 @@ func (m Model) triggerReady(j schedule.Job) bool {
 }
 
 func (m Model) triggerSummary(j schedule.Job) string {
+	return m.triggerSummaryAt(j, time.Now())
+}
+
+func (m Model) triggerSummaryAt(j schedule.Job, now time.Time) string {
 	text := "After quota recovery"
 	if j.Trigger == "at" {
 		text = "Not before " + j.At.Local().Format("02 Jan 2006 15:04 MST -07:00")
-		remaining := time.Until(j.At)
+		remaining := j.At.Sub(now)
 		if remaining > 0 {
-			text += " // in " + remaining.Round(time.Second).String()
-		} else {
-			text += " // due"
+			text += " // Due in " + remaining.Round(time.Second).String()
+			if j.Status == "pending" {
+				return text
+			}
+		} else if j.Status == "pending" {
+			text += " // Time reached"
 		}
 	}
 	switch {
 	case j.Status != "pending":
 		return text + " // " + j.Status
-	case m.err != nil || !schedule.Fresh(m.snapshot, time.Now()):
+	case m.err != nil || !schedule.Fresh(m.snapshot, now):
 		return text + " // waiting for fresh quota"
-	case !schedule.QuotaReady(m.snapshot, time.Now()):
+	case !j.MatchesAccount(m.snapshot.AccountFingerprint):
+		return text + " // waiting for the original account"
+	case !schedule.Covers(j, m.snapshot):
+		return text + " // waiting for observed quota windows"
+	case !schedule.QuotaReady(m.snapshot, now):
 		return text + " // waiting for quota"
 	case !m.triggerReady(j):
+		if i := m.monitorSessionIndex(j.Session); i >= 0 && m.monitorSessionData[i].working {
+			return text + " // waiting for session to finish"
+		}
 		return text + " // waiting for an eligible idle session"
 	}
-	return text + " // when idle"
+	return text + " // ready; awaiting dispatch"
 }
 
 type triggerButton struct {

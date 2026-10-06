@@ -78,13 +78,31 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 	w.Header().Set("Content-Type", "application/json")
 	type visibleJob struct {
 		schedule.Job
-		CanSend bool `json:"canSend"`
+		CanSend       bool   `json:"canSend"`
+		WaitingReason string `json:"waitingReason"`
 	}
 	jobs := []visibleJob{}
 	o, _ := c.offer(b.Session)
 	for _, j := range c.schedules.List(b.Session) {
 		_, ready := c.sendNowJob(b.Session, j.ID)
-		jobs = append(jobs, visibleJob{j, ready && o.Kind == "prompt" && o.Thread == b.Session && len(o.Questions) == 0 && o.ID != ""})
+		canSend := ready && o.Kind == "prompt" && o.Thread == b.Session && len(o.Questions) == 0 && o.ID != ""
+		reason := "waiting for an eligible idle session"
+		q, now := c.scheduleSnapshot(), time.Now()
+		switch {
+		case !schedule.Fresh(q, now):
+			reason = "waiting for fresh quota"
+		case !j.MatchesAccount(q.AccountFingerprint):
+			reason = "waiting for the original account"
+		case !schedule.Covers(j, q):
+			reason = "waiting for observed quota windows"
+		case !schedule.QuotaReady(q, now):
+			reason = "waiting for quota"
+		case c.scheduleBlocked(j.Session):
+			reason = "waiting for profile review or verification"
+		case canSend:
+			reason = "ready; awaiting dispatch"
+		}
+		jobs = append(jobs, visibleJob{j, canSend, reason})
 	}
 	_ = json.NewEncoder(w).Encode(jobs)
 }

@@ -645,6 +645,12 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await draft.press('Control+s');
   await expect(draft).toHaveValue('Unsaved scheduling edit');
   await expect(draft).toBeFocused();
+  await expect(
+    page.getByText('EDIT SCHEDULED FOLLOW-UP', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'REVIEW CHANGES', exact: true }),
+  ).toBeEnabled();
   await expect(pending.locator('pre')).toHaveText(
     'Continue after quota recovery',
   );
@@ -652,7 +658,47 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await expect(pending).toHaveCount(0);
 });
 
-test('trigger pill and row link open scheduler; send now confirms the saved job', async ({
+test('schedule form explains invalid input and previews exact timing', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const timing = page.getByRole('combobox', { name: 'Send', exact: true });
+  await timing.selectOption('delay');
+  const review = page.getByRole('button', { name: 'REVIEW BEFORE SENDING' });
+  await expect(review).toBeDisabled();
+  await expect(
+    page.getByText('Enter a message to schedule.', { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('textbox', { name: 'Follow-up message' })
+    .fill('Continue later');
+  await page.getByRole('spinbutton', { name: 'Delay (minutes)' }).fill('0');
+  await expect(review).toBeDisabled();
+  await expect(
+    page.getByText('Choose a future date/time or a delay greater than zero.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole('spinbutton', { name: 'Delay (minutes)' }).fill('30');
+  await expect(review).toBeEnabled();
+  await expect(page.getByText(/^Will send:/)).toContainText(
+    String(new Date().getFullYear()),
+  );
+  await timing.selectOption('at');
+  await expect(review).toBeDisabled();
+  await timing.selectOption('quota');
+  await expect(review).toBeEnabled();
+  await expect(page.getByText(/^Will send:/)).toContainText(
+    'when quota is available and this session is idle',
+  );
+});
+
+test('trigger pill and row link open detail; send now confirms the saved job', async ({
   page,
   pairingURL,
 }) => {
@@ -689,16 +735,19 @@ test('trigger pill and row link open scheduler; send now confirms the saved job'
     .getByRole('link', { name: /TRIGGER SET/ })
     .click();
   const text = page.getByRole('textbox', { name: 'Follow-up message' });
-  await expect(text).toHaveValue('Saved job text');
-  await page.getByRole('button', { name: 'BACK — KEEP TRIGGER' }).click();
   await expect(text).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toContainText('Saved job text');
   await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
   await page
     .locator('.telemetry')
     .getByRole('link', { name: 'TRIGGER SET', exact: true })
     .click();
-  await expect(text).toHaveValue('Saved job text');
-  await page.getByRole('button', { name: 'BACK — KEEP TRIGGER' }).click();
+  await expect(text).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toContainText('Saved job text');
   await page.getByRole('button', { name: 'SEND NOW', exact: true }).click();
   expect(sends).toBe(0);
   expect(

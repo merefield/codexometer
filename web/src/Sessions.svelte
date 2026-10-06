@@ -25,7 +25,6 @@
       return;
     }
     select(id);
-    window.dispatchEvent(new CustomEvent('edit-trigger', { detail: id }));
   }
   let nativeProtected = $state(false);
   function openProfile(event: MouseEvent, id: string) {
@@ -270,9 +269,7 @@
     {/each}
     {#each triggers as trigger}<a
         class="button"
-        href={'#/sessions/' +
-          encodeURIComponent(trigger.session) +
-          '?schedule=edit'}
+        href={'#/sessions/' + encodeURIComponent(trigger.session)}
         onclick={(event) => openTrigger(event, trigger.session)}
         >TRIGGER SET {Array.from(trigger.session)
           .slice(-5)
@@ -409,9 +406,7 @@
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
         {#if live.data?.triggers?.some((t) => t.session === session.id)}
           <a
-            href={'#/sessions/' +
-              encodeURIComponent(session.id) +
-              '?schedule=edit'}
+            href={'#/sessions/' + encodeURIComponent(session.id)}
             onclick={(event) => openTrigger(event, session.id)}>TRIGGER SET</a
           >
         {/if}

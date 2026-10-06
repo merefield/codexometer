@@ -3,13 +3,118 @@ package ui
 import (
 	tea "charm.land/bubbletea/v2"
 	"fmt"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/schedule"
+	"image"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestScheduleFormRefinements(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.openSchedule()
+	m.scheduleUI.mode, m.scheduleUI.focus = 1, 2
+	m.scheduleUI.hours, m.scheduleUI.minutes = 2, 15
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.FixedZone("BST", 3600))
+	if got := m.scheduleUI.targetTime(now); !got.Equal(now.Add(135 * time.Minute)) {
+		t.Fatal("delay summary target differs from dispatch target")
+	}
+	lines := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")
+	if !strings.Contains(lines[0], "EDIT SCHEDULED FOLLOW-UP") || !strings.Contains(lines[13], "SAVE CHANGES") || !strings.Contains(lines[11], "Will send:") || !strings.Contains(lines[6], "Digits/arrows") {
+		t.Fatal("missing edit title, summary, action or contextual hint")
+	}
+	cells := uv.NewScreenBuffer(m.width, m.height)
+	uv.NewStyledString(m.renderScheduleForm()).Draw(&cells, image.Rect(0, 0, m.width, m.height))
+	for x := 2 + len("Hours: 2"); x < 22; x++ {
+		cell := cells.CellAt(x, 9)
+		if cell == nil || cell.Style.Attrs&uv.AttrReverse != 0 {
+			t.Fatalf("hours highlight leaked into spacer at %d", x)
+		}
+	}
+	for _, tc := range []struct {
+		text                 string
+		mode, hours, minutes int
+		at                   time.Time
+		want                 string
+	}{
+		{"", 0, 0, 0, now, "Enter a message"},
+		{"Test", 1, 0, 0, now, "Choose a future"},
+		{"Test", 2, 0, 0, now.Add(-time.Minute), "Choose a future"},
+		{"Test", 2, 0, 0, now.AddDate(2, 0, 0), "within one year"},
+		{"Test", 0, 0, 0, now, ""},
+		{"Test", 1, 0, 1, now, ""},
+	} {
+		p := m.scheduleUI
+		p.input.SetValue(tc.text)
+		p.mode, p.hours, p.minutes, p.date = tc.mode, tc.hours, tc.minutes, tc.at
+		if got := p.validation(now); (tc.want == "" && got != "") || (tc.want != "" && !strings.Contains(got, tc.want)) {
+			t.Fatalf("validation = %q, want %q", got, tc.want)
+		}
+	}
+	m.scheduleUI.input.SetValue("")
+	m.scheduleUI.focus = 5
+	before := m.scheduleUI.queue.List("root-one")[0].ID
+	n, _, _ := m.updateSchedule(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !n.scheduleUI.open || n.scheduleUI.queue.List("root-one")[0].ID != before || !strings.Contains(n.renderScheduleForm(), "Enter a message") {
+		t.Fatal("invalid save changed the job or omitted its explanation")
+	}
+}
+
+func TestScheduleWaitingSummary(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	j := m.scheduleUI.queue.List("root-one")[0]
+	now := time.Now()
+	if got := m.triggerSummaryAt(j, now); !strings.Contains(got, "Due in") || strings.Contains(got, "waiting for") {
+		t.Fatal("future job described as overdue", got)
+	}
+	j.At = now.Add(-time.Minute)
+	m.snapshot.RateLimits.Primary.UsedPercent = 100
+	if got := m.triggerSummaryAt(j, now); !strings.Contains(got, "Time reached // waiting for quota") {
+		t.Fatal("missing quota wait", got)
+	}
+	m.snapshot.FetchedAt = now.Add(-10 * time.Minute)
+	if got := m.triggerSummaryAt(j, now); !strings.Contains(got, "waiting for fresh quota") {
+		t.Fatal("missing fresh quota wait", got)
+	}
+}
+
+func TestScheduleCalendarCellStyles(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.openSchedule()
+	m.scheduleUI.mode = 2
+	// Exercise both sides of the selection, week boundaries and blank cells.
+	for day := 1; day <= 31; day++ {
+		m.scheduleUI.date = time.Date(2026, time.October, day, 12, 0, 0, 0, time.UTC)
+		for focus := 0; focus <= 6; focus++ {
+			m.scheduleUI.focus = focus
+			cells := uv.NewScreenBuffer(m.width, m.height)
+			uv.NewStyledString(m.renderScheduleForm()).Draw(&cells, image.Rect(0, 0, m.width, m.height))
+			c := paletteFor(m.theme)
+			for row := 0; row < 6; row++ {
+				for col := 0; col < 7; col++ {
+					date := row*7 + col - int(time.Thursday) + 1
+					for offset := 0; offset < 4; offset++ {
+						want := uv.Style{Fg: c.primary, Bg: c.background}
+						if date == day && offset < 2 {
+							if focus == 2 {
+								want.Fg, want.Bg = c.background, c.primary
+							} else {
+								want.Underline = uv.UnderlineSingle
+							}
+						}
+						cell := cells.CellAt(2+col*4+offset, 11+row)
+						if cell == nil || !cell.Style.Equal(&want) {
+							t.Fatalf("day %d focus %d row %d col %d offset %d: unexpected cell style: %+v, want %+v", day, focus, row, col, offset, cell, want)
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
 func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 	m, _ := scheduledTestModel(t)
@@ -25,13 +130,47 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 			for i, name := range labels {
 				label := fmt.Sprintf("%-9s", "[ "+name+" ]")
 				style := colors.label()
-				if i == selected && focus == 1 {
-					style = style.Foreground(colors.primary).Reverse(true)
+				if i == selected {
+					style = style.Foreground(colors.primary).Underline(true)
+					if focus == 1 {
+						style = style.Underline(false).Foreground(colors.background).Background(colors.primary)
+					}
 				}
 				expected = append(expected, style.Render(label))
 			}
 			if row != strings.Join(expected, " ") {
 				t.Fatalf("focus %d selected %d changed the group styling: %q", focus, selected, row)
+			}
+		}
+	}
+}
+
+func TestScheduleTriggerSelectionSurvivesTab(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		for mode := 0; mode < 3; mode++ {
+			m, _ := scheduledTestModel(t)
+			m.theme = theme
+			m.openSchedule()
+			m.scheduleUI.mode, m.scheduleUI.focus = mode, 1
+			focused := m.scheduleUI.renderTriggerModes(paletteFor(theme))
+			m, _, _ = m.updateSchedule(tea.KeyPressMsg{Code: tea.KeyTab})
+			if m.scheduleUI.mode != mode || m.scheduleUI.focus == 1 {
+				t.Fatal("Tab changed selection or failed to move focus")
+			}
+			unfocused := m.scheduleUI.renderTriggerModes(paletteFor(theme))
+			if focused == unfocused || ansi.Strip(focused) != ansi.Strip(unfocused) {
+				t.Fatal("focus must change appearance without moving buttons")
+			}
+			cells := uv.NewScreenBuffer(m.width, m.height)
+			uv.NewStyledString(m.renderScheduleForm()).Draw(&cells, image.Rect(0, 0, m.width, m.height))
+			// Check actual rendered cells, not just the styling helper's output.
+			x := 2
+			for i, label := range []string{"[ AFTER QUOTA REFRESH ]", "[ IN… ]  ", "[ AT… ]  "} {
+				cell := cells.CellAt(x+2, 7)
+				if cell == nil || (cell.Style.Underline == uv.UnderlineSingle) != (i == mode) || cell.Style.Attrs&uv.AttrReverse != 0 {
+					t.Fatalf("theme %d mode %d button %d: selection lost after Tab", theme, mode, i)
+				}
+				x += ansi.StringWidth(label) + 1
 			}
 		}
 	}
@@ -202,8 +341,8 @@ func TestSchedulePillLastAndBothClickTargets(t *testing.T) {
 				continue
 			}
 			n, _, handled := m.updateSchedule(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-			if !handled || !n.scheduleUI.open || n.scheduleUI.session != "root-one" {
-				t.Fatal("trigger click did not open correct scheduler")
+			if !handled || n.scheduleUI.open || n.monitorContextDetail != "root-one" {
+				t.Fatal("trigger click did not open correct session detail")
 			}
 			if y < g.meterY+a.topHeight+a.gap {
 				foundPill = true
@@ -227,6 +366,7 @@ func TestScheduleHeadingNamesSessionBeforeID(t *testing.T) {
 		m.monitorSessionData[0].name = tc.name
 		m.monitorSessionData[0].workingDirectory = tc.directory
 		m.openSchedule()
+		m.scheduleUI.id = "" // Exercise the new-schedule title below.
 		heading := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")[0]
 		if !strings.Contains(heading, "SCHEDULE FOLLOW-UP // "+tc.want+" // "+shortSessionID("root-one")) {
 			t.Fatalf("wrong heading: %q", heading)
@@ -264,7 +404,7 @@ func TestScheduleFrameFitsAndPreservesControlRows(t *testing.T) {
 			if mode != 2 {
 				noticeRow = m.scheduleUI.actionRow() + 1
 			}
-			if !strings.Contains(lines[7], "AFTER QUOTA REFRESH") || !strings.Contains(lines[noticeRow], "Test notice") || !strings.Contains(lines[m.scheduleUI.actionRow()], "CONFIRM SCHEDULE") {
+			if !strings.Contains(lines[7], "AFTER QUOTA REFRESH") || !strings.Contains(lines[noticeRow], "Test notice") || !strings.Contains(lines[m.scheduleUI.actionRow()], "SAVE CHANGES") {
 				t.Fatal("control rows moved")
 			}
 		}
@@ -276,7 +416,7 @@ func TestDelayFieldsAndActionsStayTogether(t *testing.T) {
 	m.openSchedule()
 	m.scheduleUI.mode = 1
 	lines := strings.Split(ansi.Strip(m.renderScheduleForm()), "\n")
-	if !strings.Contains(lines[9], "Hours:") || !strings.Contains(lines[9], "Minutes:") || !strings.Contains(lines[13], "CONFIRM SCHEDULE") {
+	if !strings.Contains(lines[9], "Hours:") || !strings.Contains(lines[9], "Minutes:") || !strings.Contains(lines[13], "SAVE CHANGES") {
 		t.Fatal("delay layout still reserves calendar space")
 	}
 	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 23, Y: 9, Button: tea.MouseLeft})
@@ -290,6 +430,39 @@ func TestDelayFieldsAndActionsStayTogether(t *testing.T) {
 	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 26, Y: 13, Button: tea.MouseLeft})
 	if m.scheduleUI.open || !m.hasSchedule("root-one") {
 		t.Fatal("Back target misaligned or deleted trigger")
+	}
+}
+
+func TestScheduleQuitDoesNotStealComposerText(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.openSchedule()
+	m.scheduleUI.input.SetValue("")
+	m, cmd, handled := m.updateSchedule(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if !handled || m.scheduleUI.input.Value() != "q" {
+		t.Fatal("q did not type into composer")
+	}
+	if cmd != nil {
+		if _, quit := cmd().(tea.QuitMsg); quit {
+			t.Fatal("q quit from composer")
+		}
+	}
+	for focus := 1; focus <= 6; focus++ {
+		m.scheduleUI.focus = focus
+		_, cmd, handled = m.updateSchedule(tea.KeyPressMsg{Code: 'q', Text: "q"})
+		if !handled || cmd == nil {
+			t.Fatalf("q not handled at field %d", focus)
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatalf("q did not quit at field %d", focus)
+		}
+	}
+	m.scheduleUI.focus = 0
+	_, cmd, _ = m.updateSchedule(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("Ctrl+C did not quit from composer")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("Ctrl+C returned wrong command")
 	}
 }
 
@@ -311,7 +484,7 @@ func TestDismissedSessionKeepsManageableTriggerPill(t *testing.T) {
 				continue
 			}
 			n, _, handled := m.updateSchedule(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-			if !handled || !n.scheduleUI.open || !n.monitorSessionVisible(n.monitorSessionData[0]) {
+			if !handled || n.scheduleUI.open || n.monitorContextDetail != "root-one" || !n.monitorSessionVisible(n.monitorSessionData[0]) {
 				t.Fatal("trigger pill cannot reopen dismissed session")
 			}
 			return

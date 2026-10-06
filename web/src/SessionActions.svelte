@@ -61,6 +61,7 @@
     at: string;
     status: string;
     canSend?: boolean;
+    waitingReason?: string;
   }
   let jobs = $state<Job[]>([]);
   let pending = $derived(jobs.find((j) => j.status !== 'sent'));
@@ -186,6 +187,39 @@
                 questions[index].options?.includes(a)),
           ),
   );
+  let scheduling = $derived(
+    offer?.kind === 'prompt' && !offer.questions?.length && timing !== 'now',
+  );
+  let targetTime = $derived(
+    timing === 'delay' ? now + delay * 60000 : Date.parse(dateTime),
+  );
+  let scheduleError = $derived.by(() => {
+    if (!scheduling) return '';
+    if (!answers[0]?.trim()) return 'Enter a message to schedule.';
+    if (timing === 'quota') return '';
+    if (!Number.isFinite(targetTime) || targetTime <= now)
+      return 'Choose a future date/time or a delay greater than zero.';
+    const limit = new Date(now);
+    limit.setFullYear(limit.getFullYear() + 1);
+    return targetTime >= limit.getTime()
+      ? 'Choose a time within one year.'
+      : '';
+  });
+  function localTime(value: number | string) {
+    return new Date(value).toLocaleString([], { timeZoneName: 'short' });
+  }
+  function waitingText(job: Job) {
+    if (job.status !== 'pending') return job.status;
+    if (job.trigger === 'at' && Date.parse(job.at) > now)
+      return 'Due in ' + Math.ceil((Date.parse(job.at) - now) / 60000) + ' min';
+    const reason = stale
+      ? 'waiting for a fresh connection'
+      : job.waitingReason ||
+        (job.canSend
+          ? 'ready; awaiting dispatch'
+          : 'waiting for quota and an eligible idle session');
+    return (job.trigger === 'at' ? 'Time reached — ' : '') + reason;
+  }
   $effect(() => {
     if (stale || suspended || followUpBlocked || now >= expires)
       confirmation = '';
@@ -203,12 +237,7 @@
         editJob(pending);
       }
     };
-    const edit = (event: Event) => {
-      if ((event as CustomEvent).detail === session && !review && pending)
-        editJob(pending);
-    };
     window.addEventListener('keydown', key);
-    window.addEventListener('edit-trigger', edit);
     let timer: ReturnType<typeof setTimeout>;
     const clock = setInterval(() => {
       now = Date.now();
@@ -246,7 +275,6 @@
     void poll();
     return () => {
       window.removeEventListener('keydown', key);
-      window.removeEventListener('edit-trigger', edit);
       controller.abort();
       clearTimeout(timer);
       clearInterval(clock);
@@ -259,7 +287,7 @@
       stale ||
       suspended ||
       followUpBlocked ||
-      (job ? !job.canSend : !valid)
+      (job ? !job.canSend : !valid || !!scheduleError)
     )
       return;
     const id = offer.id;
@@ -291,7 +319,8 @@
       triggerDescription = schedule
         ? schedule.trigger === 'quota'
           ? 'After fresh quota becomes available, when the session is idle'
-          : new Date(schedule.at!).toLocaleString() + ' — when idle'
+          : localTime(schedule.at!) +
+            ' — not before this time; when quota and idle allow'
         : '';
       const result = await controlRequest<{
         confirmation: string;
@@ -388,9 +417,9 @@
       <p>
         {job.trigger === 'quota'
           ? 'After confirmed quota recovery, when idle'
-          : `Not before ${new Date(job.at).toLocaleString([], { timeZoneName: 'short' })} // ${Date.parse(job.at) > now ? 'in ' + Math.ceil((Date.parse(job.at) - now) / 60000) + ' min' : 'due — waiting for quota and an eligible idle session'}`}
-        // {job.status}
+          : `Not before ${localTime(job.at)}`}
       </p>
+      <p role="status">{waitingText(job)}</p>
       <pre class="saved-prompt">{job.text}</pre>
       {#if notice}<p role="status">{notice}</p>{/if}
       <p class="muted">
@@ -495,7 +524,9 @@
         <legend
           >{offer.kind === 'approval' || offer.kind === 'profile'
             ? 'Choose a decision'
-            : 'Reply to this session'}</legend
+            : editing
+              ? 'EDIT SCHEDULED FOLLOW-UP'
+              : 'Reply to this session'}</legend
         >
         {#if offer.kind === 'approval' || offer.kind === 'profile'}
           {#each offer.choices || [] as option, index}
@@ -540,7 +571,18 @@
                   bind:value={dateTime}
                 /></label
               >{/if}
-            {#if timing !== 'now'}<p class="muted">
+            {#if timing !== 'now'}
+              <p class="readout">
+                Will send: {timing === 'quota'
+                  ? 'when quota is available and this session is idle'
+                  : Number.isFinite(targetTime)
+                    ? localTime(targetTime)
+                    : 'choose a date and time'}
+              </p>
+              {#if timing !== 'quota'}<p class="muted">
+                  Not before this time; when quota and idle allow.
+                </p>{/if}
+              <p class="muted">
                 Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}.
                 One pending request per session; saving replaces it. Memory
                 only; Codexometer must stay running. Uses session model,
@@ -611,7 +653,9 @@
           >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
             ? offer.choices?.[choice!]?.label
             : scheduled
-              ? 'SCHEDULE'
+              ? editing
+                ? 'SAVE CHANGES'
+                : 'SCHEDULE'
               : 'SEND'}</button
         >
         <button
@@ -620,8 +664,15 @@
           }}>CANCEL</button
         >
       {:else}
-        <button onclick={() => prepare()} disabled={busy || stale || !valid}
-          >{busy ? 'SENDING…' : 'REVIEW BEFORE SENDING'}</button
+        {#if scheduleError}<p role="status">{scheduleError}</p>{/if}
+        <button
+          onclick={() => prepare()}
+          disabled={busy || stale || !valid || !!scheduleError}
+          >{busy
+            ? 'SENDING…'
+            : editing
+              ? 'REVIEW CHANGES'
+              : 'REVIEW BEFORE SENDING'}</button
         >
       {/if}
       {#if editing}<button

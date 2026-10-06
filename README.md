@@ -2483,12 +2483,19 @@ theme-coloured background.
   **TRIGGER SET** signpost preserves the session's normal status and warnings.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
-  scheduler directly; web provides equivalent scheduler links.
+  detail page with the saved prompt, timing and actions; web provides equivalent
+  detail links. Use **Ctrl+S** or **Edit** there to amend the schedule.
   Dismissing a terminal session row does not hide its pending-trigger pill or
-  cancel the request; clicking that pill restores the row and opens the scheduler.
+  cancel the request; clicking that pill restores the row and opens its detail page.
 - Full detail replaces the ordinary composer with the **read-only saved prompt**
   and trigger summary. Timed triggers show **Not before**, the local date/time,
   timezone and countdown (or waiting reason when due). Actual sending can be late.
+  The scheduling form previews the exact local date/time for both **IN** and
+  **AT**, including timezone; delay starts when saved. Invalid messages/times
+  show an explanation before saving. Existing triggers use **SAVE CHANGES**.
+  Terminal keyboard hints follow the focused field; the selected trigger stays
+  underlined when unfocused and filled when focused. Detail distinguishes
+  **Due in…** from **Time reached**, with the current quota/session waiting reason.
   **Ctrl+S** edits; **Ctrl+D** deletes and restores the composer. **Ctrl+N** requests
   **Send now**, followed by **Ctrl+Y** or a confirmation click; Escape cancels that
   confirmation. These actions also have clickable buttons. Send now remains

@@ -2,11 +2,39 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/schedule"
 	"testing"
 	"time"
 )
+
+func TestScheduleWaitingReasons(t *testing.T) {
+	s, f, token := controlServer(t)
+	s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}
+	f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "idle"}
+	s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 100}}}
+	if err := s.control.schedules.Save(schedule.Job{Session: "parent", Text: "Later", Trigger: "quota"}, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want string, ready bool) {
+		t.Helper()
+		w := actionCall(s, token, "schedules", actionRequest{Session: "parent"})
+		var jobs []struct {
+			WaitingReason string `json:"waitingReason"`
+			CanSend       bool   `json:"canSend"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &jobs) != nil || len(jobs) != 1 || jobs[0].WaitingReason != want || jobs[0].CanSend != ready {
+			t.Fatalf("unexpected readiness: %s", w.Body)
+		}
+	}
+	check("waiting for quota", false)
+	s.store.scheduleQuota.FetchedAt = time.Now().Add(-time.Hour)
+	check("waiting for fresh quota", false)
+	s.store.scheduleQuota.FetchedAt = time.Now()
+	s.store.scheduleQuota.RateLimits.Primary.UsedPercent = 0
+	check("ready; awaiting dispatch", true)
+}
 
 func TestSchedulePrepareCommitDispatchAndCancel(t *testing.T) {
 	s, f, token := controlServer(t)
