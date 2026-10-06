@@ -2,12 +2,39 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"fmt"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/schedule"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.openSchedule()
+	colors := paletteFor(m.theme)
+	labels := []string{"AFTER QUOTA REFRESH", "IN…", "AT…"}
+	for _, focus := range []int{0, 1, 2} {
+		m.scheduleUI.focus = focus
+		for _, selected := range []int{0, 1, 2, 1, 0} {
+			m.scheduleUI.mode = selected
+			row := strings.Split(m.renderScheduleForm(), "\n")[7]
+			var expected []string
+			for i, name := range labels {
+				label := fmt.Sprintf("%-9s", "[ "+name+" ]")
+				style := colors.label()
+				if i == selected {
+					style = style.Foreground(colors.primary).Reverse(true)
+				}
+				expected = append(expected, style.Render(label))
+			}
+			if row != "  "+strings.Join(expected, " ") {
+				t.Fatalf("focus %d selected %d changed the group styling: %q", focus, selected, row)
+			}
+		}
+	}
+}
 
 func TestScheduleFormSaveSignpostAndCancel(t *testing.T) {
 	m, c := promptTestModel()

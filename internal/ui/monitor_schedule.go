@@ -391,12 +391,18 @@ func (m Model) renderScheduleForm() string {
 	}
 	mode := []string{"AFTER QUOTA REFRESH", "IN…", "AT…"}
 	for i, s := range mode {
-		mode[i] = fmt.Sprintf("%-9s", "[ "+s+" ]")
+		label := fmt.Sprintf("%-9s", "[ "+s+" ]")
+		style := c.label()
 		if p.mode == i {
-			mode[i] = c.label().Foreground(c.primary).Bold(true).Render(mode[i])
+			style = style.Foreground(c.primary).Reverse(true)
 		}
+		mode[i] = style.Render(label)
 	}
-	lines[7] = control(strings.Join(mode, " "), 1)
+	// Selection belongs to one option, never the whole focused control group.
+	lines[7] = strings.Join(mode, " ")
+	if p.focus == 1 {
+		lines[8] = c.dimmed().Render("↑ Trigger: ←/→ choose • Tab: next field")
+	}
 	if p.mode == 1 {
 		lines[9] = control(fmt.Sprintf("Hours: %d", p.hours), 2)
 		lines[18] = control(fmt.Sprintf("Minutes: %02d", p.minutes), 3)
