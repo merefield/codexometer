@@ -107,6 +107,12 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 	if rows := m.monitorApprovalControlRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "approval", rows: rows}
 	}
+	if m.monitorContextDetail != "" && m.hasSchedule(m.monitorContextDetail) && len(m.monitorPromptOffer().Questions) == 0 {
+		if width < 24 || height < 8 {
+			return detailControlLayout{kind: "notice", rows: 1, notice: "TRIGGER SET // Ctrl+S"}
+		}
+		return detailControlLayout{kind: "schedule", rows: len(m.schedulePanelLines(width))}
+	}
 	if rows := m.monitorPromptRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "prompt", rows: rows}
 	}
@@ -122,6 +128,8 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 
 func (layout detailControlLayout) render(m Model, width, height int, colors palette) string {
 	switch layout.kind {
+	case "schedule":
+		return strings.Join(m.schedulePanelLines(width), "\n")
 	case "profile":
 		s, _ := m.contextDetailSession()
 		return m.renderProfileControls(m.profileButtons(width, height, s), colors)

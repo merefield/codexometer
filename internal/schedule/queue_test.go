@@ -63,9 +63,10 @@ func TestQueueReplaceQuotaCancelAndMemory(t *testing.T) {
 	if err := q.Save(j, "account", now); err != nil {
 		t.Fatal(err)
 	}
-	if len(q.List("")) != 1 || q.List("")[0].ID != id {
-		t.Fatal("replacement duplicated job")
+	if len(q.List("")) != 1 || q.List("")[0].ID == id {
+		t.Fatal("replacement must invalidate the old ID without duplicating the job")
 	}
+	id = q.List("")[0].ID
 	calls := 0
 	send := func(_ context.Context, j Job) error {
 		calls++
@@ -138,5 +139,32 @@ func TestMissingWindowIsNotRecovery(t *testing.T) {
 	s.RateLimits.Primary = nil
 	if Covers(j, s) {
 		t.Fatal("missing exhausted window treated as recovered")
+	}
+}
+
+func TestManualAndAutomaticDispatchShareClaim(t *testing.T) {
+	now := time.Now()
+	q := New()
+	j := Job{Session: "root", Text: "one", Trigger: "at", At: now.Add(time.Hour)}
+	if err := q.Save(j, "account", now); err != nil {
+		t.Fatal(err)
+	}
+	id := q.List("")[0].ID
+	var calls atomic.Int32
+	var wg sync.WaitGroup
+	send := func(context.Context, Job) error { calls.Add(1); return nil }
+	for range 20 {
+		wg.Go(func() { _ = q.DispatchNow(context.Background(), id, "account", now, send) })
+		wg.Go(func() { _ = q.Dispatch(context.Background(), id, "account", true, now.Add(time.Hour), send) })
+	}
+	wg.Wait()
+	if calls.Load() != 1 {
+		t.Fatal("duplicate sends", calls.Load())
+	}
+	if err := q.Save(j, "account", now); err != nil {
+		t.Fatal(err)
+	}
+	if q.DispatchNow(context.Background(), id, "account", now, send) == nil {
+		t.Fatal("old confirmation accepted")
 	}
 }

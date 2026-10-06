@@ -85,9 +85,13 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 type monitorAttentionItem struct {
 	monitorSession
 	profile bool
+	trigger bool
 }
 
 func (item monitorAttentionItem) action() string {
+	if item.trigger {
+		return "attention-trigger:" + item.id
+	}
 	if item.profile {
 		return "attention-profile:" + item.id
 	}
@@ -95,11 +99,12 @@ func (item monitorAttentionItem) action() string {
 }
 
 func (m Model) monitorAttentionSessions() []monitorAttentionItem {
-	if m.monitorState != monitorRunning || m.monitorError != "" {
-		return nil
-	}
+	fresh := m.monitorState == monitorRunning && m.monitorError == ""
 	var items []monitorAttentionItem
-	for priority := 0; priority < 4; priority++ {
+	for priority := 0; priority < 5; priority++ {
+		if priority < 4 && !fresh {
+			continue
+		}
 		for _, s := range m.monitorSessionData {
 			if !m.monitorSessionVisible(s) {
 				continue
@@ -115,9 +120,11 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 				include = profile
 			case 3:
 				include = s.attention == codex.SessionAttentionComplete && !s.working && !profile
+			case 4:
+				include = m.hasSchedule(s.id)
 			}
 			if include {
-				items = append(items, monitorAttentionItem{monitorSession: s, profile: priority == 2})
+				items = append(items, monitorAttentionItem{monitorSession: s, profile: priority == 2, trigger: priority == 4})
 			}
 		}
 	}
@@ -129,7 +136,7 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 // existing priority. Counts remain live while the committed order settles.
 func (m Model) orderMonitorApprovals(items []monitorAttentionItem) {
 	n := 0
-	for n < len(items) && !items[n].profile && items[n].attention == codex.SessionAttentionApproval {
+	for n < len(items) && !items[n].profile && !items[n].trigger && items[n].attention == codex.SessionAttentionApproval {
 		n++
 	}
 	ranks := make(map[string]int, len(m.monitorApprovalOrder))
@@ -165,7 +172,7 @@ func (m *Model) settleMonitorApprovalOrder(now time.Time) {
 	items := desired.monitorAttentionSessions()
 	var ids []string
 	for _, item := range items {
-		if !item.profile && item.attention == codex.SessionAttentionApproval {
+		if !item.profile && !item.trigger && item.attention == codex.SessionAttentionApproval {
 			ids = append(ids, item.id)
 		}
 	}
@@ -295,6 +302,9 @@ func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, ro
 		if compact == 3 && s.attention == codex.SessionAttentionComplete && !s.profile {
 			state = i18n.Text("DONE")
 		}
+		if s.trigger {
+			state = "TRIGGER SET"
+		}
 		if truncate {
 			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3-markerWidth, 1), "…")
 		}
@@ -339,7 +349,7 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 	lines := make([]string, rows)
 	completed := make(map[string]bool)
 	for _, s := range m.monitorAttentionSessions() {
-		if s.attention == codex.SessionAttentionComplete && !s.profile {
+		if s.trigger || s.attention == codex.SessionAttentionComplete && !s.profile {
 			completed[s.action()] = true
 		}
 	}

@@ -313,7 +313,11 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	if m.hasSchedule(session.id) {
-		usageLine = "TRIGGER SET // " + usageLine
+		label := colors.label().Foreground(colors.primary)
+		if m.monitorContextHover == "attention-trigger:"+session.id {
+			label = label.Foreground(colors.background).Background(colors.primary)
+		}
+		usageLine = label.Render("TRIGGER SET") + " // " + usageLine
 	}
 	lines := make([]string, 0, bodyRows)
 	badge := m.renderMonitorSessionBadge(session, innerWidth, colors)

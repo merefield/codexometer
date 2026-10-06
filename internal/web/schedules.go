@@ -64,7 +64,7 @@ func (c *control) publishSchedules() {
 	c.store.publish()
 }
 func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b actionRequest) {
-	if b.Schedule != nil || b.Offer != "" || b.Choice != nil || len(b.Answers) > 0 || b.Review != "" || b.Confirmation != "" {
+	if b.SendID != "" || b.Schedule != nil || b.Offer != "" || b.Choice != nil || len(b.Answers) > 0 || b.Review != "" || b.Confirmation != "" {
 		http.Error(w, "Invalid schedule request", 400)
 		return
 	}
@@ -76,7 +76,30 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 		c.publishSchedules()
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(c.schedules.List(b.Session))
+	type visibleJob struct {
+		schedule.Job
+		CanSend bool `json:"canSend"`
+	}
+	jobs := []visibleJob{}
+	o, _ := c.offer(b.Session)
+	for _, j := range c.schedules.List(b.Session) {
+		_, ready := c.sendNowJob(b.Session, j.ID)
+		jobs = append(jobs, visibleJob{j, ready && o.Kind == "prompt" && o.Thread == b.Session && len(o.Questions) == 0 && o.ID != ""})
+	}
+	_ = json.NewEncoder(w).Encode(jobs)
+}
+
+func (c *control) sendNowJob(session, id string) (schedule.Job, bool) {
+	q := c.scheduleSnapshot()
+	if !schedule.QuotaReady(q, time.Now()) || c.scheduleBlocked(session) {
+		return schedule.Job{}, false
+	}
+	for _, j := range c.schedules.List(session) {
+		if j.ID == id && j.Status == "pending" && j.MatchesAccount(q.AccountFingerprint) && schedule.Covers(j, q) {
+			return j, true
+		}
+	}
+	return schedule.Job{}, false
 }
 func (c *control) collectSchedules(ctx context.Context) func() {
 	done := make(chan struct{})

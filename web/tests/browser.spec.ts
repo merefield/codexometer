@@ -631,12 +631,78 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await page.getByRole('button', { name: 'CONFIRM SCHEDULE' }).click();
   const pending = page.getByRole('region', { name: 'Pending follow-up' });
   await expect(pending).toContainText('Continue after quota recovery');
-  await pending.getByRole('button', { name: 'EDIT', exact: true }).click();
+  await expect(
+    page.getByRole('textbox', { name: 'Follow-up message' }),
+  ).toHaveCount(0);
+  await pending
+    .getByRole('button', { name: 'EDIT · Ctrl+S', exact: true })
+    .click();
   await expect(
     page.getByRole('textbox', { name: 'Follow-up message' }),
   ).toHaveValue('Continue after quota recovery');
-  await pending.getByRole('button', { name: 'CANCEL TRIGGER' }).click();
+  await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
   await expect(pending).toHaveCount(0);
+});
+
+test('trigger pill and row link open scheduler; send now confirms the saved job', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page, 'prompt');
+  let jobs: object[] = [
+    {
+      id: 'job1',
+      session: 'parent',
+      text: 'Saved job text',
+      trigger: 'at',
+      at: new Date(Date.now() + 3600000).toISOString(),
+      status: 'pending',
+      canSend: true,
+    },
+  ];
+  let sends = 0;
+  await page.route('**/api/control/schedules', (route) =>
+    route.fulfill({ json: jobs }),
+  );
+  await page.route('**/api/control/commit', (route) => {
+    sends++;
+    jobs = [];
+    return route.fulfill({ json: { message: 'Sent' } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    { ...snapshot, triggers: [{ session: 'parent', status: 'pending' }] },
+  );
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link', { name: /TRIGGER SET/ })
+    .click();
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await expect(text).toHaveValue('Saved job text');
+  await page.getByRole('button', { name: 'BACK — KEEP TRIGGER' }).click();
+  await expect(text).toHaveCount(0);
+  await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
+  await page
+    .locator('.telemetry')
+    .getByRole('link', { name: 'TRIGGER SET', exact: true })
+    .click();
+  await expect(text).toHaveValue('Saved job text');
+  await page.getByRole('button', { name: 'BACK — KEEP TRIGGER' }).click();
+  await page.getByRole('button', { name: 'SEND NOW', exact: true }).click();
+  expect(sends).toBe(0);
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ sendId: 'job1', answers: ['Saved job text'] });
+  await page
+    .getByRole('button', { name: 'CONFIRM SEND NOW', exact: true })
+    .click();
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toHaveCount(0);
+  expect(sends).toBe(1);
 });
 
 for (const control of [false, true]) {

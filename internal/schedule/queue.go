@@ -29,7 +29,8 @@ type Queue struct {
 	jobs []Job
 }
 
-func New() *Queue { return &Queue{} }
+func New() *Queue                                { return &Queue{} }
+func (j Job) MatchesAccount(account string) bool { return account != "" && j.account == account }
 func (q *Queue) List(session string) []Job {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -58,11 +59,11 @@ func (q *Queue) Save(j Job, account string, now time.Time) error {
 				return errors.New("check the previous send in Codex before cancelling or replacing it")
 			}
 			index = i
-			j.ID = v.ID
 			break
 		}
 	}
 	j.Status = "pending"
+	j.ID = rand.Text() // An edit invalidates confirmations for the old payload.
 	j.Windows = append([]string(nil), j.Windows...)
 	j.account = account
 	j.At = j.At.UTC()
@@ -72,7 +73,6 @@ func (q *Queue) Save(j Job, account string, now time.Time) error {
 		if len(q.jobs) >= 128 {
 			return errors.New("schedule limit reached; remove old entries first")
 		}
-		j.ID = rand.Text()
 		q.jobs = append(q.jobs, j)
 	}
 	return nil
@@ -98,17 +98,29 @@ func (q *Queue) Cancel(session, id string) error {
 // readiness and pending reviews. Claim sending before network IO. This is
 // intentionally at-most-one attempt, not a claim of exactly-once delivery.
 func (q *Queue) Dispatch(ctx context.Context, id, account string, quotaReady bool, now time.Time, send func(context.Context, Job) error) error {
+	return q.dispatch(ctx, id, account, quotaReady, now, false, send)
+}
+
+// DispatchNow shares the automatic dispatch claim; only the time rule is bypassed.
+func (q *Queue) DispatchNow(ctx context.Context, id, account string, now time.Time, send func(context.Context, Job) error) error {
+	return q.dispatch(ctx, id, account, true, now, true, send)
+}
+
+func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady bool, now time.Time, immediate bool, send func(context.Context, Job) error) error {
 	q.mu.Lock()
 	index := -1
 	for i, j := range q.jobs {
 		if j.ID == id && j.Status == "pending" && account != "" && j.account == account &&
-			((j.Trigger == "at" && !now.Before(j.At)) || (j.Trigger == "quota" && quotaReady)) {
+			(immediate || (j.Trigger == "at" && !now.Before(j.At)) || (j.Trigger == "quota" && quotaReady)) {
 			index = i
 			break
 		}
 	}
 	if index < 0 {
 		q.mu.Unlock()
+		if immediate {
+			return errors.New("trigger changed or already dispatched; refresh")
+		}
 		return nil
 	}
 	j := q.jobs[index]

@@ -382,6 +382,13 @@ func (m Model) monitorContextAt(x, y int) string {
 	mw, rightWidth, _ := monitorSessionColumnWidths(a.width)
 	for i, s := range sessions {
 		badge := m.renderMonitorSessionBadge(s, max(mw-4, 1), paletteFor(m.theme))
+		usageY := rowY + 1
+		if badge != "" {
+			usageY++
+		}
+		if m.hasSchedule(s.id) && usageY < rowY+heights[i]-1 && y == usageY && x >= 2 && x < min(13, mw-2) {
+			return "attention-trigger:" + s.id
+		}
 		if badge != "" && y == rowY+1 && x >= 2 && x < 2+lipgloss.Width(badge) && x < mw-2 {
 			return "badge:" + s.id
 		}

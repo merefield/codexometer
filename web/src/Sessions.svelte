@@ -14,6 +14,19 @@
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
+  let triggers = $derived(
+    (live.data?.triggers || []).filter((t) =>
+      sessions.some((s) => s.id === t.session),
+    ),
+  );
+  function openTrigger(event: MouseEvent, id: string) {
+    if (params.id && params.id !== id && nativeProtected) {
+      event.preventDefault();
+      return;
+    }
+    select(id);
+    window.dispatchEvent(new CustomEvent('edit-trigger', { detail: id }));
+  }
   let nativeProtected = $state(false);
   function openProfile(event: MouseEvent, id: string) {
     if (params.id && params.id !== id && nativeProtected) {
@@ -222,7 +235,7 @@
     verified quota and settings can be updated; previous outcome notices remain
     visible.
   </p>{/if}
-{#if (attention.length || profiles.some((p) => p.pending)) && !stale}<nav
+{#if (attention.length || profiles.some((p) => p.pending) || triggers.length) && !stale}<nav
     class="attention-summary"
     aria-label="Sessions needing attention"
   >
@@ -255,6 +268,19 @@
           profile.session}</a
       >
     {/each}
+    {#each triggers as trigger}<a
+        class="button"
+        href={'#/sessions/' +
+          encodeURIComponent(trigger.session) +
+          '?schedule=edit'}
+        onclick={(event) => openTrigger(event, trigger.session)}
+        >TRIGGER SET {Array.from(trigger.session)
+          .slice(-5)
+          .join('')
+          .toUpperCase()} // {sessions.find((s) => s.id === trigger.session)
+          ?.name ||
+          sessions.find((s) => s.id === trigger.session)?.directory}</a
+      >{/each}
   </nav>{/if}
 {#if params.id}
   {#if selected}<section class="panel full-detail">
@@ -295,6 +321,9 @@
         {#if live.data?.control}
           {#key selected.id}<SessionActions
               session={selected.id}
+              openScheduler={new URLSearchParams(router.querystring).get(
+                'schedule',
+              ) === 'edit'}
               observedCommand={selected.command}
               suspended={profileFocused}
               onProtectedChange={(value) => {
@@ -379,8 +408,11 @@
           >{/if}
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
         {#if live.data?.triggers?.some((t) => t.session === session.id)}
-          <a href={'#/sessions/' + encodeURIComponent(session.id)}
-            >TRIGGER SET</a
+          <a
+            href={'#/sessions/' +
+              encodeURIComponent(session.id) +
+              '?schedule=edit'}
+            onclick={(event) => openTrigger(event, session.id)}>TRIGGER SET</a
           >
         {/if}
         {#if session.name && session.directory}<p class="muted">

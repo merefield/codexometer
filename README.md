@@ -2466,8 +2466,11 @@ In **Sessions → full detail**, use **Ctrl+S** (or click the composer's
 schedule heading) to schedule a follow-up for an idle shared app-server session.
 Normal Enter-to-send remains immediate. The structured form offers **after quota
 refresh**, a delay in hours/minutes, or a calendar date and local time. Use Tab to
-move between fields, arrows to adjust, Page Up/Down to change calendar month, and
-Enter on **Confirm schedule**. Escape returns without saving. The calendar shows
+move between visible fields (Shift+Tab goes back), arrows to adjust, digits to
+enter hours/minutes, and Page Up/Down to change calendar month. Calendar arrows
+move by day or week. Enter advances through fields and activates the selected
+**Confirm schedule** or **Back** button. Escape returns without saving and leaves
+an existing trigger intact. The calendar shows
 the local timezone and UTC offset; check the displayed time around daylight-saving
 changes. The experimental scheduling form currently uses English labels.
 
@@ -2478,8 +2481,22 @@ theme-coloured background.
 
 - **One pending follow-up per session.** Saving another replaces it. A separate
   **TRIGGER SET** signpost preserves the session's normal status and warnings.
-  Full detail shows the trigger; Ctrl+S opens the saved text/target/time for editing
-  or cancellation. Web detail provides **Edit** and **Cancel trigger** controls.
+  Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
+  Click the pill or the label in the session's left-hand box to open that session's
+  scheduler directly; web provides equivalent scheduler links.
+- Full detail replaces the ordinary composer with the **read-only saved prompt**
+  and trigger summary. Timed triggers show **Not before**, the local date/time,
+  timezone and countdown (or waiting reason when due). Actual sending can be late.
+  **Ctrl+S** edits; **Ctrl+D** deletes and restores the composer. **Ctrl+N** requests
+  **Send now**, followed by **Ctrl+Y** or a confirmation click; Escape cancels that
+  confirmation. These actions also have clickable buttons. Send now remains
+  disabled without fresh available quota and an eligible idle session. It shares
+  the automatic dispatch guard so the same trigger cannot send twice. Editing
+  invalidates older Send now confirmations. Approval/question controls retain
+  priority over the pending-trigger controls.
+- Writable web detail provides **Edit · Ctrl+S**, **Delete trigger** and separately
+  confirmed **Send now**. Standard Tab/Shift+Tab and native form keyboard controls
+  cover the entire web form. Back leaves the existing trigger unchanged.
 - **Memory only:** keep the Codexometer process running. Quitting, restarting or
   crashing cancels its queue; it is not a durable background scheduler. Separate
   Codexometer processes have separate queues. Closing a browser tab alone does

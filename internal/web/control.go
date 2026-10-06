@@ -70,6 +70,7 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
+	SendID       string        `json:"sendId,omitempty"`
 	Schedule     *scheduleRule `json:"schedule,omitempty"`
 	CancelID     string        `json:"cancelId,omitempty"`
 	Review       string        `json:"review,omitempty"`
@@ -160,6 +161,9 @@ func (c *control) offer(id string) (offeredAction, error) {
 }
 
 func validAction(o offeredAction, r actionRequest) bool {
+	if r.SendID != "" && (r.Schedule != nil || o.Kind != "prompt" || len(o.Questions) > 0) {
+		return false
+	}
 	if r.CancelID != "" {
 		return false
 	}
@@ -252,6 +256,22 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(o.actionOffer)
 			return
 		}
+		if body.SendID != "" {
+			j, ok := c.sendNowJob(body.Session, body.SendID)
+			if !ok {
+				http.Error(w, errUnavailable.Error(), 409)
+				return
+			}
+			body.Answers = []string{j.Text}
+		}
+		if o.Kind == "prompt" && len(o.Questions) == 0 && body.SendID == "" && body.Schedule == nil {
+			for _, j := range c.schedules.List(body.Session) {
+				if j.Status != "sent" {
+					http.Error(w, "Pending trigger: edit, delete or use Send now", 409)
+					return
+				}
+			}
+		}
 		if !validAction(o, body) {
 			http.Error(w, errUnavailable.Error(), 409)
 			return
@@ -276,7 +296,13 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]any{"confirmation": p.id, "expires": p.until})
 			return
 		}
-		if o.Kind == "profile" {
+		if body.SendID != "" {
+			q := c.scheduleSnapshot()
+			err = c.schedules.DispatchNow(ctx, body.SendID, q.AccountFingerprint, time.Now(), func(ctx context.Context, j schedule.Job) error {
+				return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
+			})
+			c.publishSchedules()
+		} else if o.Kind == "profile" {
 			err = c.commitProfile(ctx, o, *body.Choice)
 		} else if o.Kind == "approval" {
 			err = c.approvals.RespondSessionApproval(ctx, o.token, o.decisions[*body.Choice])

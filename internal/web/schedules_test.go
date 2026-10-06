@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/schedule"
 	"testing"
 	"time"
 )
@@ -66,5 +67,54 @@ func TestScheduleFreshnessAndAuthentication(t *testing.T) {
 	}
 	if w := actionCall(s, "", "schedules", actionRequest{Session: "parent"}); w.Code == 200 {
 		t.Fatal("unauthenticated schedule access")
+	}
+}
+
+func TestScheduleSendNowConfirmationAndReplacement(t *testing.T) {
+	s, f, token := controlServer(t)
+	s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}
+	f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "idle"}
+	s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 0}}}
+	job := schedule.Job{Session: "parent", Text: "exact saved text", Trigger: "at", At: time.Now().Add(time.Hour)}
+	if err := s.control.schedules.Save(job, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	o := getOffer(t, s, token)
+	id := s.control.schedules.List("parent")[0].ID
+	if w := actionCall(s, token, "prepare", actionRequest{Session: "parent", Offer: o.ID, Answers: []string{"bypass pending job"}}); w.Code != 409 {
+		t.Fatal("ordinary composer bypassed pending trigger")
+	}
+	r := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, SendID: id})
+	if f.calls != 0 {
+		t.Fatal("sent on preparation")
+	}
+	if err := s.control.schedules.Save(job, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if w := actionCall(s, token, "commit", r); w.Code != 409 {
+		t.Fatal("replaced trigger confirmation accepted", w.Code)
+	}
+	id = s.control.schedules.List("parent")[0].ID
+	r = prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, SendID: id})
+	if w := actionCall(s, token, "commit", r); w.Code != 200 {
+		t.Fatal(w.Body)
+	}
+	s.control.dispatchSchedules(context.Background())
+	if f.calls != 1 || f.answers[0] != "exact saved text" {
+		t.Fatal(f.calls, f.answers)
+	}
+}
+
+func TestScheduleSendNowRejectsExhaustedQuota(t *testing.T) {
+	s, f, token := controlServer(t)
+	s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}
+	f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "idle"}
+	s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 100}}}
+	if err := s.control.schedules.Save(schedule.Job{Session: "parent", Text: "later", Trigger: "quota"}, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	o := getOffer(t, s, token)
+	if w := actionCall(s, token, "prepare", actionRequest{Session: "parent", Offer: o.ID, SendID: s.control.schedules.List("parent")[0].ID}); w.Code != 409 {
+		t.Fatal("quota bypassed", w.Code)
 	}
 }

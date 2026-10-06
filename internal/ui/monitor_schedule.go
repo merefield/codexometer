@@ -20,8 +20,11 @@ type scheduleUI struct {
 	input                       monitorEditor
 	mode, focus, hours, minutes int
 	date                        time.Time
+	confirmID, confirmToken     string
+	confirmUntil                time.Time
+	numeric                     string
 }
-type scheduleDone struct{}
+type scheduleDone struct{ err error }
 
 func (m Model) hasSchedule(id string) bool {
 	if m.scheduleUI.queue == nil {
@@ -82,7 +85,7 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 		return nil
 	}
 	// Do not compete with a draft, manual confirmation or profile transition.
-	if m.scheduleUI.open || m.monitorPrompt.input.Focused() || m.monitorPrompt.busy || m.quota.busySession != "" {
+	if m.scheduleUI.open || (m.scheduleUI.confirmID != "" && time.Now().Before(m.scheduleUI.confirmUntil)) || m.monitorPrompt.input.Focused() || m.monitorPrompt.busy || m.quota.busySession != "" {
 		return nil
 	}
 	ready := map[string]bool{}
@@ -115,8 +118,11 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 }
 
 func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
-	if _, ok := msg.(scheduleDone); ok {
+	if done, ok := msg.(scheduleDone); ok {
 		m.scheduleUI.polling = false
+		if done.err != nil {
+			m.scheduleUI.notice = "Send outcome uncertain or trigger changed; check Codex. No retry."
+		}
 		return m, nil, true
 	}
 	key, isKey := msg.(tea.KeyPressMsg)
@@ -124,6 +130,16 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, tea.Quit, true
 	}
 	if !m.scheduleUI.open {
+		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
+			if id, ok := strings.CutPrefix(m.monitorContextAt(click.X, click.Y), "attention-trigger:"); ok {
+				m.setRowContext(id, contextFull)
+				cmd := m.openSchedule()
+				return m, cmd, true
+			}
+		}
+		if next, cmd, handled := m.schedulePanelKey(msg); handled {
+			return next, cmd, true
+		}
 		if isKey && key.String() == "ctrl+s" && m.monitorContextDetail != "" {
 			cmd := m.openSchedule()
 			return m, cmd, true
@@ -159,6 +175,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	if click, ok := msg.(tea.MouseClickMsg); ok {
+		p.numeric = ""
 		if click.Button != tea.MouseLeft {
 			return m, nil, true
 		}
@@ -175,15 +192,15 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 			} else {
 				p.mode = 2
 			}
-		case click.Y == 9:
+		case click.Y == 9 && p.mode != 0:
 			p.focus = 2
-		case click.Y == 18:
-			if click.X < 22 {
+		case click.Y == 18 && p.mode != 0:
+			if click.X < 22 || p.mode == 1 {
 				p.focus = 3
 			} else {
 				p.focus = 4
 			}
-		case click.Y == 22 && click.X >= 2 && click.X < 46:
+		case click.Y == 22 && click.X >= 2 && click.X < 33:
 			if click.X < 21 {
 				p.focus = 5
 				isKey = true
@@ -207,13 +224,37 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 	if isKey {
+		if p.focus >= 2 && p.focus <= 4 && !(p.mode == 2 && p.focus == 2) && p.mode != 0 && (len(key.String()) == 1 && key.String() >= "0" && key.String() <= "9" || key.String() == "backspace") {
+			if key.String() == "backspace" {
+				if len(p.numeric) > 0 {
+					p.numeric = p.numeric[:len(p.numeric)-1]
+				}
+			} else {
+				p.numeric += key.String()
+			}
+			n, _ := strconv.Atoi(p.numeric)
+			switch {
+			case p.mode == 1 && p.focus == 2:
+				p.hours = min(n, 8760)
+			case p.mode == 1 && p.focus == 3:
+				p.minutes = min(n, 59)
+			case p.mode == 2 && p.focus == 3:
+				p.date = time.Date(p.date.Year(), p.date.Month(), p.date.Day(), min(n, 23), p.date.Minute(), 0, 0, p.date.Location())
+			case p.mode == 2 && p.focus == 4:
+				p.date = time.Date(p.date.Year(), p.date.Month(), p.date.Day(), p.date.Hour(), min(n, 59), 0, 0, p.date.Location())
+			}
+			if len(p.numeric) > 4 {
+				p.numeric = ""
+			}
+			return m, nil, true
+		}
 		switch key.String() {
 		case "tab", "shift+tab":
 			d := 1
 			if key.String() == "shift+tab" {
-				d = 6
+				d = -1
 			}
-			p.focus = (p.focus + d) % 7
+			p.moveFocus(d)
 			p.input.Blur()
 			if p.focus == 0 {
 				return m, p.input.Focus(), true
@@ -247,16 +288,17 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 					m.monitorPrompt.input.Reset()
 				}
 			} else if p.focus == 6 {
-				if p.id != "" {
-					if err := p.queue.Cancel(p.session, p.id); err != nil {
-						p.notice = err.Error()
-						return m, nil, true
-					}
-				}
 				p.open = false
+			} else {
+				p.moveFocus(1)
+				p.input.Blur()
+				if p.focus == 0 {
+					return m, p.input.Focus(), true
+				}
 			}
 			return m, nil, true
 		case "left", "right", "up", "down", "pgup", "pgdown":
+			p.numeric = ""
 			if p.focus != 0 {
 				d := 1
 				if key.String() == "left" || key.String() == "down" || key.String() == "pgup" {
@@ -340,7 +382,7 @@ func (m Model) renderScheduleForm() string {
 			mode[i] = c.label().Foreground(c.primary).Bold(true).Render(mode[i])
 		}
 	}
-	lines[7] = strings.Join(mode, " ")
+	lines[7] = control(strings.Join(mode, " "), 1)
 	if p.mode == 1 {
 		lines[9] = control(fmt.Sprintf("Hours: %d", p.hours), 2)
 		lines[18] = control(fmt.Sprintf("Minutes: %02d", p.minutes), 3)
@@ -373,11 +415,30 @@ func (m Model) renderScheduleForm() string {
 		summary = p.date.Format("Mon 02 Jan 2006 15:04 MST -07:00") + " • when idle"
 	}
 	lines[20] = summary + " // Follow session model / reasoning / speed"
-	lines[21] = "Tab: next field • arrows: adjust • Enter: selected action • Esc: back"
-	lines[22] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ CANCEL / BACK ]", 6)
+	lines[6] = "Tab / Shift+Tab: fields • Enter: next / activate"
+	lines[21] = "Arrows: adjust • digits: time • PgUp/Dn: month • Esc: back"
+	lines[22] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ BACK ]", 6)
 	lines[23] = p.notice
 	for i, s := range lines {
 		lines[i] = "  " + ansi.Truncate(s, max(m.width-4, 1), "…")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (p *scheduleUI) moveFocus(delta int) {
+	fields := []int{0, 1, 5, 6}
+	if p.mode == 1 {
+		fields = []int{0, 1, 2, 3, 5, 6}
+	} else if p.mode == 2 {
+		fields = []int{0, 1, 2, 3, 4, 5, 6}
+	}
+	index := 0
+	for i, f := range fields {
+		if f == p.focus {
+			index = i
+			break
+		}
+	}
+	p.focus = fields[(index+delta+len(fields))%len(fields)]
+	p.numeric = ""
 }
