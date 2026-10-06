@@ -178,6 +178,7 @@ func TestScheduleTriggerSelectionSurvivesTab(t *testing.T) {
 
 func TestScheduleFormSaveSignpostAndCancel(t *testing.T) {
 	m, c := promptTestModel()
+	m.monitorSessionData[0].working = false
 	m.width = 100
 	m.height = 40
 	m.snapshot = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 100}}}
@@ -295,6 +296,60 @@ func TestSchedulePanelReadOnlyAndSendNow(t *testing.T) {
 	}
 }
 
+func TestScheduleButtonsHoverMatchesClickSurfaces(t *testing.T) {
+	for _, width := range []int{50, 120} {
+		for _, confirming := range []bool{false, true} {
+			m, _ := scheduledTestModel(t)
+			m.width = width
+			if confirming {
+				m.triggerAction("ctrl+n")
+			}
+			g := m.monitorDashboardLayout()
+			_, _, top := monitorContextBodyLayout(g.meterHeight, len(m.schedulePanelLines(g.contentWidth)))
+			for _, button := range m.triggerButtons(g.contentWidth) {
+				x, y := 4+button.x, g.meterY+top+button.y
+				for _, hitX := range []int{x, x + ansi.StringWidth(button.text) - 1} {
+					if hitX >= g.contentWidth {
+						continue
+					}
+					hit, ok := m.scheduleButtonAt(hitX, y)
+					if !ok || hit.key != button.key || !hit.enabled {
+						t.Fatalf("width %d: missing click surface for %s", width, button.key)
+					}
+					updated, _ := m.Update(tea.MouseMotionMsg{X: hitX, Y: y})
+					n := updated.(Model)
+					if n.monitorContextHover != "schedule:"+button.key {
+						t.Fatalf("missing hover for %s: %s", button.key, n.monitorContextHover)
+					}
+					c := paletteFor(m.theme)
+					want := c.label().Foreground(c.background).Background(c.primary).Render(button.text)
+					if !strings.Contains(strings.Join(n.schedulePanelLines(g.contentWidth), "\n"), want) {
+						t.Fatal("button not highlighted", button.key)
+					}
+					updated, _ = n.Update(tea.MouseMotionMsg{X: 0, Y: 0})
+					if updated.(Model).monitorContextHover == "schedule:"+button.key {
+						t.Fatal("hover stuck after leaving button")
+					}
+				}
+			}
+		}
+	}
+	m, _ := scheduledTestModel(t)
+	m.snapshot.RateLimits.Primary.UsedPercent = 100
+	g := m.monitorDashboardLayout()
+	_, _, top := monitorContextBodyLayout(g.meterHeight, len(m.schedulePanelLines(g.contentWidth)))
+	before := strings.Join(m.schedulePanelLines(g.contentWidth), "\n")
+	updated, _ := m.Update(tea.MouseMotionMsg{X: 4, Y: g.meterY + top})
+	n := updated.(Model)
+	if n.monitorContextHover != "schedule:disabled" || strings.Join(n.schedulePanelLines(g.contentWidth), "\n") != before {
+		t.Fatal("disabled Send now gained hover styling")
+	}
+	n, cmd, handled := n.schedulePanelKey(tea.MouseClickMsg{X: 4, Y: g.meterY + top, Button: tea.MouseLeft})
+	if !handled || cmd != nil || n.scheduleUI.confirmID != "" {
+		t.Fatal("disabled Send now was activated")
+	}
+}
+
 func TestScheduleFormKeyboardVisitsOnlyVisibleFields(t *testing.T) {
 	m, _ := scheduledTestModel(t)
 	m.openSchedule()
@@ -372,6 +427,9 @@ func TestScheduleReplacesCompleteWithoutMaskingOtherStates(t *testing.T) {
 		t.Fatal("duplicate or outdated row status", row)
 	}
 	detail := ansi.Strip(m.renderMonitorContextDetail(100, 30, paletteFor(m.theme)))
+	if strings.Count(detail, "TRIGGER SET") != 1 || !strings.Contains(strings.Split(detail, "\n")[0], "TRIGGER SET") {
+		t.Fatal("trigger state must appear only on detail border", detail)
+	}
 	if !strings.Contains(detail, "The saved trigger prompt") || !strings.Contains(detail, "Not before") {
 		t.Fatal("trigger detail disappeared", detail)
 	}
@@ -406,6 +464,23 @@ func TestScheduleReplacesCompleteWithoutMaskingOtherStates(t *testing.T) {
 	for _, item := range m.monitorAttentionSessions() {
 		if item.id == s.id && item.trigger {
 			t.Fatal("trigger pill retained after deletion")
+		}
+	}
+}
+
+func TestScheduledIdleDetailTitleHasNoDuplicateStatus(t *testing.T) {
+	m, _ := scheduledTestModel(t)
+	m.monitorSessionData[0].attention = codex.SessionAttentionNone
+	m.monitorSessionData[0].working = false
+	for phase := 0; phase < 2; phase++ {
+		m.phase = phase
+		out := ansi.Strip(m.renderMonitorContextDetail(100, 30, paletteFor(m.theme)))
+		lines := strings.Split(out, "\n")
+		if !strings.Contains(lines[0], "● TRIGGER SET") || strings.Count(out, "TRIGGER SET") != 1 || strings.Contains(out, "SESSION CONTEXT") {
+			t.Fatal("idle trigger state missing, blinking, or repeated", out)
+		}
+		if !strings.Contains(out, "FOLLOW-UP //") || !strings.Contains(out, "The saved trigger prompt") {
+			t.Fatal("trigger information lost", out)
 		}
 	}
 }

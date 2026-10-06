@@ -108,6 +108,8 @@ func (m Model) schedulePanelLines(width int) []string {
 		style := c.label().Foreground(c.primary)
 		if !b.enabled {
 			style = c.dimmed()
+		} else if m.monitorContextHover == "schedule:"+b.key {
+			style = style.Foreground(c.background).Background(c.primary)
 		}
 		if lines[b.y] != "" {
 			lines[b.y] += "  "
@@ -124,6 +126,24 @@ func (m Model) schedulePanelLines(width int) []string {
 		lines[i] = ansi.Truncate(lines[i], max(width-4, 1), "…")
 	}
 	return lines
+}
+
+// Use the same visible rectangles for hover and click, including wrapped rows.
+func (m Model) scheduleButtonAt(x, y int) (triggerButton, bool) {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || !m.hasSchedule(m.monitorContextDetail) {
+		return triggerButton{}, false
+	}
+	g := m.monitorDashboardLayout()
+	if m.layoutDetailControls(g.contentWidth, g.meterHeight).kind != "schedule" || x < 4 || x >= g.contentWidth {
+		return triggerButton{}, false
+	}
+	_, _, top := monitorContextBodyLayout(g.meterHeight, len(m.schedulePanelLines(g.contentWidth)))
+	for _, b := range m.triggerButtons(g.contentWidth) {
+		if y == g.meterY+top+b.y && x >= 4+b.x && x < 4+b.x+ansi.StringWidth(b.text) {
+			return b, true
+		}
+	}
+	return triggerButton{}, false
 }
 
 func (m *Model) triggerAction(key string) tea.Cmd {
@@ -188,15 +208,12 @@ func (m Model) schedulePanelKey(msg tea.Msg) (Model, tea.Cmd, bool) {
 		key = k.String()
 	}
 	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-		_, _, y := monitorContextBodyLayout(g.meterHeight, len(m.schedulePanelLines(g.contentWidth)))
-		for _, b := range m.triggerButtons(g.contentWidth) {
-			if click.Y == g.meterY+y+b.y && click.X >= 4+b.x && click.X < 4+b.x+ansi.StringWidth(b.text) {
-				if b.enabled {
-					key = b.key
-				}
-				cmd := m.triggerAction(key)
-				return m, cmd, true
+		if b, hit := m.scheduleButtonAt(click.X, click.Y); hit {
+			if b.enabled {
+				key = b.key
 			}
+			cmd := m.triggerAction(key)
+			return m, cmd, true
 		}
 	}
 	if strings.Contains("|ctrl+n|ctrl+d|ctrl+y|", "|"+key+"|") || (key == "esc" && m.scheduleUI.confirmID != "") {

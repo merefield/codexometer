@@ -42,7 +42,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			if j.Status == "sent" {
 				continue
 			}
-			text := "TRIGGER SET // " + m.triggerSummary(j)
+			text := i18n.Text("FOLLOW-UP") + " // " + m.triggerSummary(j)
 			for _, line := range strings.Split(ansi.Hardwrap(text, width, true), "\n") {
 				header = append(header, detailLine{ansi.Truncate(line, width, ""), "heading"})
 			}

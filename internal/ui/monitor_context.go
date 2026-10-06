@@ -182,10 +182,17 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	}
 	body := strings.Join(bodyLines, "\n")
 	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
-	title := i18n.Text("SESSION CONTEXT")
+	title := i18n.Text("UNKNOWN")
 	if s, ok := m.contextDetailSession(); ok {
+		title = i18n.Text("IDLE")
+		if s.active {
+			title = i18n.Text("ACTIVE")
+		}
 		if badge := m.renderMonitorSessionBadge(s, max(width-4, 1), colors); badge != "" {
 			title = badge
+		}
+		if m.monitorState != monitorRunning || m.monitorError != "" {
+			title = i18n.Text("STALE")
 		}
 		if m.hasSessionProfile(s) {
 			title = i18n.Text("QUOTA THRESHOLD")
@@ -322,6 +329,12 @@ func (m Model) monitorContextAt(x, y int) string {
 	}
 	if hit := m.monitorAttentionAt(x, y); hit != "" {
 		return hit
+	}
+	if b, hit := m.scheduleButtonAt(x, y); hit {
+		if b.enabled {
+			return "schedule:" + b.key
+		}
+		return "schedule:disabled"
 	}
 	g := m.monitorDashboardLayout()
 	x -= 2

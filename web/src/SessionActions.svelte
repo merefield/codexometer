@@ -411,7 +411,7 @@
       <h3>
         {job.status === 'uncertain'
           ? 'CHECK TRIGGER — outcome uncertain; not retried'
-          : 'TRIGGER SET'}
+          : 'SCHEDULED FOLLOW-UP'}
       </h3>
       <p>TARGET // {job.session}</p>
       <p>

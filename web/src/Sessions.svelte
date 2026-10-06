@@ -27,7 +27,7 @@
     select(id);
   }
   function sessionStatus(session: Session) {
-    return session.status === 'TURN COMPLETE' &&
+    return ['TURN COMPLETE', 'IDLE', 'ACTIVE'].includes(session.status) &&
       triggers.some((t) => t.session === session.id)
       ? 'TRIGGER SET'
       : session.status;

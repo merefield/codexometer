@@ -2485,6 +2485,8 @@ theme-coloured background.
   Working and attention-needed statuses remain unchanged. Removing or sending
   the trigger restores the underlying status. Full detail retains the saved prompt
   and trigger information.
+  The full-detail border shows the current state; the body uses content labels
+  such as **FOLLOW-UP** and **LAST REPLY** rather than repeating that state.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
   detail page with the saved prompt, timing and actions; web provides equivalent

@@ -410,11 +410,11 @@ func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
 
 func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colors palette) string {
 	badgeLabel := ""
-	if session.attention != codex.SessionAttentionNone {
+	trigger := m.sessionTriggerStatus(session)
+	if trigger {
+		badgeLabel = "TRIGGER SET"
+	} else if session.attention != codex.SessionAttentionNone {
 		badgeLabel = monitorSessionAttentionLabel(session)
-		if m.sessionTriggerStatus(session) {
-			badgeLabel = "TRIGGER SET"
-		}
 	} else if m.sessionObservedWorking(session) {
 		badgeLabel = i18n.Text("WORKING")
 	}
@@ -422,7 +422,7 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 		badgeColor := colors.primary
 		if monitorNeedsAttention(session.attention) {
 			badgeColor = colors.warning
-		} else if session.attention == codex.SessionAttentionNone {
+		} else if session.attention == codex.SessionAttentionNone && !trigger {
 			badgeColor = colors.success
 		} else if session.id != "" && (session.id == m.monitorSelectedID || session.id == m.monitorContextExpanded) {
 			// Selection accents the frame, not the meaning of the status badge.
@@ -433,7 +433,7 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 			badge = badge.Underline(true)
 		}
 		ball := "●"
-		if session.attention == codex.SessionAttentionNone && m.phase%2 == 1 {
+		if session.attention == codex.SessionAttentionNone && !trigger && m.phase%2 == 1 {
 			ball = " " // Blink only WORKING, reserving its cell to avoid layout movement.
 		}
 		return badge.Render(ansi.Truncate(" "+ball+" "+badgeLabel+" ", width, ""))

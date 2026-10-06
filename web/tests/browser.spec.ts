@@ -750,6 +750,12 @@ test('trigger pill and row link open detail; send now confirms the saved job', a
   await expect(
     page.getByRole('region', { name: 'Pending follow-up' }),
   ).toContainText('Saved job text');
+  await expect(page.locator('.full-detail .detail-heading')).toContainText(
+    'TRIGGER SET',
+  );
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).not.toContainText('TRIGGER SET');
   await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
   await page
     .locator('.telemetry')
