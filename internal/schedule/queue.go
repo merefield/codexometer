@@ -51,6 +51,16 @@ func (q *Queue) List(session string) []Job {
 }
 
 func (q *Queue) Save(j Job, account string, now time.Time) error {
+	return q.save(j, account, now, nil)
+}
+
+// SaveIfCurrent binds an edit to the exact pending job. An empty expected ID
+// creates only if there is no current job. Check and replacement share the lock.
+func (q *Queue) SaveIfCurrent(j Job, account string, now time.Time, expectedID string) error {
+	return q.save(j, account, now, &expectedID)
+}
+
+func (q *Queue) save(j Job, account string, now time.Time, expectedID *string) error {
 	j.Text = strings.TrimSpace(j.Text)
 	if account == "" || j.Session == "" || len(j.Session) > 512 || j.Text == "" || len([]rune(j.Text)) > 4096 || len(j.Zone) > 128 || codex.SanitizeSessionContext(j.Text) != j.Text || (j.Trigger == "quota" && !j.At.IsZero()) ||
 		(j.Trigger != "at" && j.Trigger != "quota") || (j.Trigger == "at" && (!j.At.After(now) || j.At.After(now.AddDate(1, 0, 0)))) {
@@ -67,6 +77,11 @@ func (q *Queue) Save(j Job, account string, now time.Time) error {
 			}
 			index = i
 			break
+		}
+	}
+	if expectedID != nil {
+		if index < 0 && *expectedID != "" || index >= 0 && (q.jobs[index].ID != *expectedID || !q.jobs[index].MatchesAccount(account)) {
+			return errors.New("trigger changed, removed or already sent; reopen it before editing")
 		}
 	}
 	j.Status = "pending"

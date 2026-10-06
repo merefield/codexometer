@@ -485,6 +485,30 @@ func TestScheduledIdleDetailTitleHasNoDuplicateStatus(t *testing.T) {
 	}
 }
 
+func TestScheduledPromptDoesNotPrecedeReviews(t *testing.T) {
+	for _, kind := range []codex.SessionContextKind{codex.SessionContextApproval, codex.SessionContextQuestion} {
+		m, _ := scheduledTestModel(t)
+		m.monitorSessionData[0].preview.Kind = kind
+		m.monitorSessionData[0].preview.Text = "Actual request requiring a response"
+		out := ansi.Strip(m.renderMonitorContextDetail(100, 30, paletteFor(m.theme)))
+		if strings.Contains(out, "The saved trigger prompt") || !strings.Contains(out, "Actual request requiring a response") {
+			t.Fatal("saved prompt crowded out request", out)
+		}
+		if !m.hasSchedule("root-one") {
+			t.Fatal("hiding saved prompt removed trigger")
+		}
+	}
+	m, _ := profileTestModel(t)
+	m.scheduleUI.queue = schedule.New()
+	if err := m.scheduleUI.queue.Save(schedule.Job{Session: "one", Text: "Unrelated scheduled prompt", Trigger: "quota"}, "a", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	out := ansi.Strip(m.renderMonitorContextDetail(120, 40, paletteFor(m.theme)))
+	if strings.Contains(out, "Unrelated scheduled prompt") || !strings.Contains(out, "CURRENT PROFILE") {
+		t.Fatal("saved prompt leaked into profile review", out)
+	}
+}
+
 func TestScheduleHeadingNamesSessionBeforeID(t *testing.T) {
 	for _, tc := range []struct{ name, directory, want string }{
 		{"Fix dashboard", "/work/project", "Fix dashboard"},

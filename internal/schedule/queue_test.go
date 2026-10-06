@@ -28,6 +28,71 @@ func TestPreflightDeferralDoesNotBecomeUncertain(t *testing.T) {
 	}
 }
 
+func TestEditsRequireCurrentPendingJob(t *testing.T) {
+	for _, change := range []string{"replace", "cancel", "send", "account"} {
+		t.Run(change, func(t *testing.T) {
+			q, now := New(), time.Now()
+			job := Job{Session: "one", Text: "original", Trigger: "quota"}
+			if err := q.SaveIfCurrent(job, "a", now, ""); err != nil {
+				t.Fatal(err)
+			}
+			id := q.List("one")[0].ID
+			account := "a"
+			switch change {
+			case "replace":
+				job.Text = "newer edit"
+				if err := q.SaveIfCurrent(job, "a", now, id); err != nil {
+					t.Fatal(err)
+				}
+			case "cancel":
+				if err := q.Cancel("one", id); err != nil {
+					t.Fatal(err)
+				}
+			case "send":
+				if err := q.Dispatch(context.Background(), id, "a", true, now, func(context.Context, Job) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+			case "account":
+				account = "b"
+			}
+			job.Text = "stale edit"
+			if err := q.SaveIfCurrent(job, account, now, id); err == nil {
+				t.Fatal("stale edit accepted")
+			}
+			for _, j := range q.List("one") {
+				if j.Text == "stale edit" {
+					t.Fatal("stale edit changed queue")
+				}
+			}
+		})
+	}
+}
+
+func TestConcurrentEditsHaveOneWinner(t *testing.T) {
+	q, now := New(), time.Now()
+	j := Job{Session: "one", Text: "original", Trigger: "quota"}
+	if err := q.SaveIfCurrent(j, "a", now, ""); err != nil {
+		t.Fatal(err)
+	}
+	id := q.List("one")[0].ID
+	if err := q.SaveIfCurrent(j, "a", now, ""); err == nil {
+		t.Fatal("create overwrote existing job")
+	}
+	var wg sync.WaitGroup
+	var wins atomic.Int32
+	for range 2 {
+		wg.Go(func() {
+			if q.SaveIfCurrent(j, "a", now, id) == nil {
+				wins.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if wins.Load() != 1 {
+		t.Fatalf("%d edits won", wins.Load())
+	}
+}
+
 func TestCompletedJobsDoNotConsumeQueueCapacity(t *testing.T) {
 	q := New()
 	now := time.Now()

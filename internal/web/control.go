@@ -70,6 +70,7 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
+	EditID       string        `json:"editId,omitempty"`
 	SendID       string        `json:"sendId,omitempty"`
 	Schedule     *scheduleRule `json:"schedule,omitempty"`
 	CancelID     string        `json:"cancelId,omitempty"`
@@ -161,6 +162,9 @@ func (c *control) offer(id string) (offeredAction, error) {
 }
 
 func validAction(o offeredAction, r actionRequest) bool {
+	if len(r.EditID) > 128 || (r.EditID != "" && r.Schedule == nil) {
+		return false
+	}
 	if r.SendID != "" && (r.Schedule != nil || o.Kind != "prompt" || len(o.Questions) > 0) {
 		return false
 	}
@@ -312,7 +316,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 				http.Error(w, errUnavailable.Error(), 409)
 				return
 			}
-			err = c.schedules.Save(schedule.Job{Session: body.Session, Text: body.Answers[0], Trigger: body.Schedule.Trigger, At: body.Schedule.At, Zone: body.Schedule.Zone, Windows: schedule.WindowKeys(q)}, q.AccountFingerprint, time.Now())
+			err = c.schedules.SaveIfCurrent(schedule.Job{Session: body.Session, Text: body.Answers[0], Trigger: body.Schedule.Trigger, At: body.Schedule.At, Zone: body.Schedule.Zone, Windows: schedule.WindowKeys(q)}, q.AccountFingerprint, time.Now(), body.EditID)
 			if err != nil {
 				http.Error(w, err.Error(), 409)
 				return

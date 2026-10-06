@@ -64,7 +64,7 @@ func (c *control) publishSchedules() {
 	c.store.publish()
 }
 func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b actionRequest) {
-	if b.SendID != "" || b.Schedule != nil || b.Offer != "" || b.Choice != nil || len(b.Answers) > 0 || b.Review != "" || b.Confirmation != "" {
+	if b.EditID != "" || b.SendID != "" || b.Schedule != nil || b.Offer != "" || b.Choice != nil || len(b.Answers) > 0 || b.Review != "" || b.Confirmation != "" {
 		http.Error(w, "Invalid schedule request", 400)
 		return
 	}

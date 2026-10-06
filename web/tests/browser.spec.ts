@@ -654,8 +654,69 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await expect(pending.locator('pre')).toHaveText(
     'Continue after quota recovery',
   );
+  await page
+    .getByRole('button', { name: 'REVIEW CHANGES', exact: true })
+    .click();
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ editId: 'job1', answers: ['Unsaved scheduling edit'] });
+  jobs = [
+    {
+      id: 'job2',
+      session: 'parent',
+      text: 'Newer trigger',
+      trigger: 'quota',
+      status: 'pending',
+    },
+  ];
+  await expect(
+    page.getByText(
+      'Trigger changed, removed or already sent. Go back and reopen it; your draft has not been saved.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'REVIEW CHANGES', exact: true }),
+  ).toBeDisabled();
+  await expect(draft).toHaveValue('Unsaved scheduling edit');
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM SAVE CHANGES' }),
+  ).toHaveCount(0);
   await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
   await expect(pending).toHaveCount(0);
+});
+
+test('native approval detail omits unrelated scheduled prompt', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'approval');
+  await page.route('**/api/control/schedules', (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 'job1',
+          session: 'parent',
+          text: 'Unrelated scheduled prompt',
+          trigger: 'quota',
+          status: 'pending',
+        },
+      ],
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await expect(
+    page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('Unrelated scheduled prompt', { exact: true }),
+  ).toHaveCount(0);
 });
 
 test('schedule form explains invalid input and previews exact timing', async ({

@@ -36,6 +36,57 @@ func TestScheduleWaitingReasons(t *testing.T) {
 	check("ready; awaiting dispatch", true)
 }
 
+func TestScheduleEditCommitRejectsChangedJob(t *testing.T) {
+	for _, change := range []string{"none", "replace", "cancel", "send", "unbound"} {
+		t.Run(change, func(t *testing.T) {
+			s, f, token := controlServer(t)
+			s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}
+			f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "idle"}
+			s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "a", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 0}}}
+			j := schedule.Job{Session: "parent", Text: "original", Trigger: "quota"}
+			if err := s.control.schedules.Save(j, "a", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			id := s.control.schedules.List("parent")[0].ID
+			editID := id
+			if change == "unbound" {
+				editID = ""
+			}
+			o := getOffer(t, s, token)
+			r := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, EditID: editID, Answers: []string{"edited"}, Schedule: &scheduleRule{Trigger: "quota"}})
+			switch change {
+			case "replace":
+				if err := s.control.schedules.Save(j, "a", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			case "cancel":
+				if err := s.control.schedules.Cancel("parent", id); err != nil {
+					t.Fatal(err)
+				}
+			case "send":
+				if err := s.control.schedules.Dispatch(context.Background(), id, "a", true, time.Now(), func(context.Context, schedule.Job) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 409
+			if change == "none" {
+				want = 200
+			}
+			if w := actionCall(s, token, "commit", r); w.Code != want {
+				t.Fatalf("commit = %d: %s", w.Code, w.Body)
+			}
+			if f.calls != 0 {
+				t.Fatal("editing sent a prompt")
+			}
+			for _, got := range s.control.schedules.List("parent") {
+				if change != "none" && got.Text == "edited" {
+					t.Fatal("stale edit saved")
+				}
+			}
+		})
+	}
+}
+
 func TestSchedulePrepareCommitDispatchAndCancel(t *testing.T) {
 	s, f, token := controlServer(t)
 	s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextReply}

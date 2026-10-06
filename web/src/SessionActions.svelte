@@ -46,6 +46,7 @@
   let offerError = $state(false);
   let sent = $state('');
   let editing = $state(false);
+  let editID = $state('');
   let openedScheduler = $state(false);
   let sendNowID = $state('');
   let timing = $state('now');
@@ -80,6 +81,7 @@
     )
       return;
     editing = true;
+    editID = job.id;
     void tick().then(() => composer?.focus());
     answers = [job.text];
     timing = job.trigger === 'quota' ? 'quota' : 'at';
@@ -112,6 +114,12 @@
         { session },
         controller.signal,
       );
+      if (
+        editing &&
+        !jobs.some((j) => j.id === editID && j.status === 'pending')
+      ) {
+        confirmation = '';
+      }
       if (
         sendNowID &&
         !jobs.some((j) => j.id === sendNowID && j.status === 'pending')
@@ -195,6 +203,8 @@
   );
   let scheduleError = $derived.by(() => {
     if (!scheduling) return '';
+    if (editing && !jobs.some((j) => j.id === editID && j.status === 'pending'))
+      return 'Trigger changed, removed or already sent. Go back and reopen it; your draft has not been saved.';
     if (!answers[0]?.trim()) return 'Enter a message to schedule.';
     if (timing === 'quota') return '';
     if (!Number.isFinite(targetTime) || targetTime <= now)
@@ -333,6 +343,7 @@
           offer: id,
           ...(job ? { sendId: job.id } : {}),
           ...(schedule ? { schedule } : {}),
+          ...(schedule && editing ? { editId: editID } : {}),
           ...(offer.kind === 'approval' || offer.kind === 'profile'
             ? { choice }
             : { answers: job ? [job.text] : [...answers] }),
@@ -405,7 +416,7 @@
   }
 </script>
 
-{#if !review}
+{#if !review && offer?.kind !== 'approval' && !offer?.questions?.length && !['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '')}
   {#each jobs.filter((j) => j.status !== 'sent') as job (job.id)}
     <section class="session-actions" aria-label="Pending follow-up">
       <h3>
@@ -587,6 +598,10 @@
                 One pending request per session; saving replaces it. Memory
                 only; Codexometer must stay running. Uses session model,
                 reasoning and speed.
+              </p>{/if}
+            {#if editing}<p class="muted">
+                The existing trigger remains active until saved or deleted. If
+                it changes or sends while you edit, saving is blocked.
               </p>{/if}
           {/if}
           {#each questions as question, index}

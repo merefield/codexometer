@@ -13,13 +13,31 @@ import (
 func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.RawMessage) {
 	var event struct {
 		ThreadID string `json:"threadId"`
-		Status   struct {
+		TurnID   string `json:"turnId"`
+		Turn     struct {
+			ID string `json:"id"`
+		} `json:"turn"`
+		Status struct {
 			Type        string   `json:"type"`
 			ActiveFlags []string `json:"activeFlags"`
 		} `json:"status"`
 	}
 	if json.Unmarshal(raw, &event) != nil || event.ThreadID == "" {
 		return
+	}
+	if method == "turn/started" {
+		if p.contexts == nil {
+			p.contexts = map[string]*daemonContextState{}
+		}
+		p.contexts[event.ThreadID] = &daemonContextState{activeTurn: event.Turn.ID, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
+	}
+	if s := p.contexts[event.ThreadID]; s != nil {
+		if event.TurnID != "" && s.activeTurn == "" && p.statuses[event.ThreadID] == sessionRuntimeWorking {
+			s.activeTurn = event.TurnID
+		}
+		if method == "turn/completed" || method == "turn/interrupted" {
+			s.activeTurn, s.turnToken = "", ""
+		}
 	}
 	status := sessionRuntimeUnknown
 	switch method {

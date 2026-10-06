@@ -1487,6 +1487,28 @@ it again. Enter still submits rather than inserting a newline. This is a text
 editor, not the Codex slash-command UI. Secret answers retain a single-line
 masked password field.
 
+In terminal **full detail**, or the **selected wide detail row** when its context
+and composer fit, a live **WORKING** turn also offers a composer once
+its turn ID has been observed. Only the selected row accepts input; switching
+sessions never transfers a draft to the new session. The animated progress dots sit directly above
+the input. While the editor is focused, **Enter steers the current turn**,
+**Tab queues the message for the next turn**, and **Esc requests interruption**
+without discarding the draft. **Ctrl+C** leaves the editor without interrupting;
+Esc outside the editor keeps its normal back-navigation behaviour. Once idle,
+Enter sends a normal follow-up. A working-to-idle transition preserves the
+draft but never submits it automatically; a key arriving during that transition
+is consumed so it cannot accidentally change meaning. Approval and question
+controls retain priority over the ordinary composer.
+
+Queuing uses Codex's experimental `thread/queue/add` API, not Codexometer's timed
+scheduler. Codex owns queued-message storage and dispatch, so queued messages
+may survive closing Codexometer. Manage queued messages in Codex; this first
+composer integration acknowledges submissions but does not provide a queue
+list/editor. If the daemon lacks this API, the action reports an error and
+retains the draft—there is no silent local scheduling fallback or automatic
+retry. These active-turn controls are currently terminal-only; browser controls
+continue to offer idle follow-ups and explicit approvals/questions.
+
 For a question with multiple parts, `Enter` records each answer locally; only
 after the last answer is the complete response sent. Use `↑`/`↓` to select offered
 choices. Custom text is accepted only if the question permits it, and secret
@@ -1501,14 +1523,15 @@ which can be a linked agent. The editor shows the target thread or question.
 Drafts are memory-only, bounded to 4,096 characters per answer, and discarded
 when leaving detail, hiding context, or when the request/connection changes.
 Submitted text is sent to Codex and can become part of its normal session history.
-No text is sent automatically; pressing Enter while focused is the send action.
+Drafts are never submitted automatically. Explicitly queued messages are
+dispatched by Codex when eligible.
 
 Capabilities are one-use and connection-bound. Follow-ups recheck the live idle
 state immediately before `turn/start`, and pending answers use their original
 JSON-RPC request and question IDs. The protocol has no atomic “start only if this
 completed turn is still current” condition, so avoid submitting in Codex and
 Codexometer simultaneously. Failed or ambiguous sends are never automatically
-retried: check Codex first. Local-only, disconnected, busy and very small views
+retried: check Codex first. Local-only, disconnected and very small views
 do not offer an editor; use Codex itself in those cases. Codexometer does not
 detect the CLI's visual keyboard-focus state or type into its terminal.
 
@@ -2479,8 +2502,8 @@ browser's date/time picker and a separate review/confirmation step. Read-only we
 mode cannot create or access scheduled prompts. Both composers have a subtle
 theme-coloured background.
 
-- **One pending follow-up per session.** Saving another replaces it. A separate
-  **TRIGGER SET** replaces **TURN COMPLETE** in the session status and terminal
+- **One pending follow-up per session.** Saving an edit replaces it. The
+  **TRIGGER SET** label replaces **TURN COMPLETE** in the session status and terminal
   pill while a follow-up is queued; it is not repeated beside the token count.
   Working and attention-needed statuses remain unchanged. Removing or sending
   the trigger restores the underlying status. Full detail retains the saved prompt
@@ -2512,6 +2535,11 @@ theme-coloured background.
 - Writable web detail provides **Edit · Ctrl+S**, **Delete trigger** and separately
   confirmed **Send now**. Standard Tab/Shift+Tab and native form keyboard controls
   cover the entire web form. Back leaves the existing trigger unchanged.
+  Browser editing does not pause the saved trigger. If it is changed, deleted or
+  sent while you edit, the old edit cannot overwrite or recreate it: go back and
+  reopen the current trigger. Edits are checked against the exact saved job.
+  Active approval/question and quota-profile review panes omit unrelated saved
+  follow-up text, without deleting the queued trigger.
 - **Memory only:** keep the Codexometer process running. Quitting, restarting or
   crashing cancels its queue; it is not a durable background scheduler. Separate
   Codexometer processes have separate queues. Closing a browser tab alone does

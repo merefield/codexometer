@@ -34,6 +34,9 @@ func (line detailLine) render(colors palette) string {
 func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	width = max(width, 1)
 	defer func() {
+		if s, ok := m.contextDetailSession(); ok && (m.hasSessionProfile(s) || s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion || s.attention == codex.SessionAttentionApproval || s.attention == codex.SessionAttentionInput) {
+			return // A live review owns the detail document; never prepend another prompt.
+		}
 		if !m.hasSchedule(m.monitorContextDetail) {
 			return
 		}

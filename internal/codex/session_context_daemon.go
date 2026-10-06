@@ -10,6 +10,8 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
+	activeTurn       string
+	turnToken        string
 	activity         sessionActivityState
 	approvalsLimited bool
 	promptToken      string

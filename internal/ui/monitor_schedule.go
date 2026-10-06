@@ -51,7 +51,7 @@ func (m *Model) openSchedule() tea.Cmd {
 	}
 	id := m.monitorContextDetail
 	o := m.monitorPromptOffer()
-	if !m.hasSchedule(id) && (o.Token == "" || o.ThreadID != id || len(o.Questions) > 0) {
+	if !m.hasSchedule(id) && (o.Token == "" || o.TurnID != "" || o.ThreadID != id || len(o.Questions) > 0) {
 		return nil
 	}
 	q := m.scheduleUI.queue
@@ -291,7 +291,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 					return m, nil, true
 				}
 				o := m.monitorPromptOffer()
-				if o.Token == "" || o.ThreadID != p.session || len(o.Questions) > 0 || m.err != nil || !schedule.Fresh(m.snapshot, time.Now()) {
+				if o.Token == "" || o.TurnID != "" || o.ThreadID != p.session || len(o.Questions) > 0 || m.err != nil || !schedule.Fresh(m.snapshot, time.Now()) {
 					p.notice = "Session unavailable or changed; review in Codex."
 					return m, nil, true
 				}
@@ -304,7 +304,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 					j.Trigger = "at"
 					j.At = p.date
 				}
-				if err := p.queue.Save(j, m.snapshot.AccountFingerprint, time.Now()); err != nil {
+				if err := p.queue.SaveIfCurrent(j, m.snapshot.AccountFingerprint, time.Now(), p.id); err != nil {
 					p.notice = err.Error()
 				} else {
 					p.open = false
