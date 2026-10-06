@@ -43,6 +43,44 @@
   let success = $state(false);
   let offerError = $state(false);
   let sent = $state('');
+  let timing = $state('now');
+  let delay = $state(60);
+  let dateTime = $state('');
+  let scheduled = $state(false);
+  let triggerDescription = $state('');
+  interface Job {
+    id: string;
+    session: string;
+    text: string;
+    trigger: string;
+    at: string;
+    status: string;
+  }
+  let jobs = $state<Job[]>([]);
+  async function loadJobs() {
+    if (review) return;
+    try {
+      jobs = await controlRequest<Job[]>(
+        'schedules',
+        { session },
+        controller.signal,
+      );
+    } catch {
+      /* Keep last known pending job visible on disconnect. */
+    }
+  }
+  async function cancelJob(id: string) {
+    try {
+      jobs = await controlRequest<Job[]>(
+        'schedules',
+        { session, cancelId: id },
+        controller.signal,
+      );
+    } catch (error) {
+      notice =
+        error instanceof Error ? error.message : 'Unable to cancel trigger.';
+    }
+  }
   $effect(() => {
     onProtectedChange(busy || answers.some((answer) => answer.length > 0));
     return () => onProtectedChange(false);
@@ -102,6 +140,7 @@
       now = Date.now();
     }, 1000);
     async function poll() {
+      await loadJobs();
       try {
         const next = await controlRequest<Offer>(
           'offer',
@@ -146,6 +185,27 @@
     success = false;
     confirmation = '';
     try {
+      const schedule =
+        offer.kind === 'prompt' && !offer.questions?.length && timing !== 'now'
+          ? {
+              trigger: timing === 'quota' ? 'quota' : 'at',
+              zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              ...(timing === 'quota'
+                ? {}
+                : {
+                    at: (timing === 'delay'
+                      ? new Date(Date.now() + delay * 60000)
+                      : new Date(dateTime)
+                    ).toISOString(),
+                  }),
+            }
+          : undefined;
+      scheduled = !!schedule;
+      triggerDescription = schedule
+        ? schedule.trigger === 'quota'
+          ? 'After fresh quota becomes available, when the session is idle'
+          : new Date(schedule.at!).toLocaleString() + ' — when idle'
+        : '';
       const result = await controlRequest<{
         confirmation: string;
         expires: string;
@@ -155,6 +215,7 @@
           session,
           ...(review ? { review } : {}),
           offer: id,
+          ...(schedule ? { schedule } : {}),
           ...(offer.kind === 'approval' || offer.kind === 'profile'
             ? { choice }
             : { answers: [...answers] }),
@@ -200,8 +261,13 @@
         controller.signal,
       );
       success = true;
-      notice =
-        kind === 'profile'
+      if (scheduled) {
+        sent = '';
+        await loadJobs();
+      }
+      notice = scheduled
+        ? 'Trigger set. Closing Codexometer cancels it.'
+        : kind === 'profile'
           ? 'Profile decision completed.'
           : kind === 'approval'
             ? 'Decision sent.'
@@ -218,6 +284,50 @@
     }
   }
 </script>
+
+{#if !review}
+  {#each jobs.filter((j) => j.status !== 'sent') as job (job.id)}
+    <section class="session-actions" aria-label="Pending follow-up">
+      <h3>
+        {job.status === 'uncertain'
+          ? 'CHECK TRIGGER — outcome uncertain; not retried'
+          : 'TRIGGER SET'}
+      </h3>
+      <p>TARGET // {job.session}</p>
+      <p>
+        {job.trigger === 'quota'
+          ? 'After confirmed quota recovery, when idle'
+          : `${new Date(job.at).toLocaleString()} — when idle`} // {job.status}
+      </p>
+      <pre>{job.text}</pre>
+      <p class="muted">
+        In memory only. Follows session model, reasoning and speed. Closing
+        Codexometer cancels pending work.
+      </p>
+      <button
+        disabled={busy ||
+          !offer?.id ||
+          offer.kind !== 'prompt' ||
+          !!offer.questions?.length ||
+          job.status !== 'pending'}
+        onclick={() => {
+          answers = [job.text];
+          timing = job.trigger === 'quota' ? 'quota' : 'at';
+          const d = new Date(job.at);
+          if (job.trigger !== 'quota')
+            dateTime = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+              .toISOString()
+              .slice(0, 16);
+          confirmation = '';
+        }}>EDIT</button
+      >
+      <button
+        disabled={busy || job.status === 'sending'}
+        onclick={() => cancelJob(job.id)}>CANCEL TRIGGER</button
+      >
+    </section>
+  {/each}
+{/if}
 
 {#if !followUpBlocked}
   <section class="session-actions" aria-label="Session controls">
@@ -304,6 +414,38 @@
             </label>
           {/each}
         {:else}
+          {#if !offer.questions?.length}
+            <label class="answer"
+              >Send
+              <select bind:value={timing}>
+                <option value="now">Now</option><option value="quota"
+                  >After quota refresh</option
+                ><option value="delay">After a delay</option><option value="at"
+                  >At a date and time</option
+                >
+              </select>
+            </label>
+            {#if timing === 'delay'}<label class="answer"
+                >Delay (minutes)<input
+                  type="number"
+                  min="1"
+                  max="525600"
+                  bind:value={delay}
+                /></label
+              >{/if}
+            {#if timing === 'at'}<label class="answer"
+                >Local date and time<input
+                  type="datetime-local"
+                  bind:value={dateTime}
+                /></label
+              >{/if}
+            {#if timing !== 'now'}<p class="muted">
+                Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}.
+                One pending request per session; saving replaces it. Memory
+                only; Codexometer must stay running. Uses session model,
+                reasoning and speed.
+              </p>{/if}
+          {/if}
           {#each questions as question, index}
             <label class="answer"
               >{question.text}
@@ -349,13 +491,16 @@
         {/if}
       </fieldset>
       {#if confirming}
+        {#if scheduled}<p>TRIGGER // {triggerDescription}</p>{/if}
         <p class="notice">
           Check the target and {offer.kind === 'profile'
             ? 'profile above'
             : offer.kind === 'approval'
               ? 'exact command and permission scope'
-              : 'message above'}. This will send to Codex; it may start work
-          using your quota. Confirmation expires in {Math.max(
+              : 'message above'}. {scheduled
+            ? 'This schedules a follow-up that will send automatically when eligible'
+            : 'This will send to Codex'}; it may start work using your quota.
+          Confirmation expires in {Math.max(
             0,
             Math.ceil((expires - now) / 1000),
           )}s.
@@ -363,7 +508,9 @@
         <button onclick={commit} disabled={busy || stale}
           >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
             ? offer.choices?.[choice!]?.label
-            : 'SEND'}</button
+            : scheduled
+              ? 'SCHEDULE'
+              : 'SEND'}</button
         >
         <button
           onclick={() => {
@@ -411,6 +558,7 @@
   }
   textarea {
     resize: vertical;
+    background: color-mix(in srgb, currentColor 8%, var(--bg));
   }
   button {
     margin: 0.3rem 0.5rem 0.3rem 0;

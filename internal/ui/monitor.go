@@ -312,6 +312,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	bodyRows := max(height-2, 1)
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
+	if m.hasSchedule(session.id) {
+		usageLine = "TRIGGER SET // " + usageLine
+	}
 	lines := make([]string, 0, bodyRows)
 	badge := m.renderMonitorSessionBadge(session, innerWidth, colors)
 	if badge != "" {

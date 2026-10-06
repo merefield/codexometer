@@ -378,6 +378,11 @@
             >{session.directory || session.id}</button
           >{/if}
         <p class="readout">{number(session.tokens)} <small>TOKENS</small></p>
+        {#if live.data?.triggers?.some((t) => t.session === session.id)}
+          <a href={'#/sessions/' + encodeURIComponent(session.id)}
+            >TRIGGER SET</a
+          >
+        {/if}
         {#if session.name && session.directory}<p class="muted">
             {session.directory}
           </p>{/if}

@@ -31,8 +31,29 @@ func (line detailLine) render(colors palette) string {
 
 // A single document owns both display and scroll geometry. Formatting never
 // changes the stored request, capability or text sent back to Codex.
-func (m Model) contextDetailDocument(width int) []detailLine {
+func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	width = max(width, 1)
+	defer func() {
+		if !m.hasSchedule(m.monitorContextDetail) {
+			return
+		}
+		var header []detailLine
+		for _, j := range m.scheduleUI.queue.List(m.monitorContextDetail) {
+			if j.Status == "sent" {
+				continue
+			}
+			text := "TRIGGER SET // Ctrl+S: view / edit / cancel // " + j.Status
+			if j.Trigger == "at" {
+				text += " // " + j.At.Local().Format("02 Jan 15:04 MST")
+			} else {
+				text += " // after quota recovery"
+			}
+			for _, line := range strings.Split(ansi.Hardwrap(text, width, true), "\n") {
+				header = append(header, detailLine{ansi.Truncate(line, width, ""), "heading"})
+			}
+		}
+		document = append(append(header, detailLine{}), document...)
+	}()
 	s, ok := m.contextDetailSession()
 	if !ok {
 		return []detailLine{{i18n.Text("NO CONTEXT"), "metadata"}}

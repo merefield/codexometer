@@ -2460,6 +2460,46 @@ full snapshots on reconnect. Refresh errors and disconnections are labelled;
 cached observations are not proof that a session is still working. Account
 history is hidden unless its account matches the current successful quota read.
 
+### Scheduled session follow-ups (experimental)
+
+In **Sessions → full detail**, use **Ctrl+S** (or click the composer's
+schedule heading) to schedule a follow-up for an idle shared app-server session.
+Normal Enter-to-send remains immediate. The structured form offers **after quota
+refresh**, a delay in hours/minutes, or a calendar date and local time. Use Tab to
+move between fields, arrows to adjust, Page Up/Down to change calendar month, and
+Enter on **Confirm schedule**. Escape returns without saving. The calendar shows
+the local timezone and UTC offset; check the displayed time around daylight-saving
+changes. The experimental scheduling form currently uses English labels.
+
+Writable web mode offers the same triggers in the full-detail composer, with the
+browser's date/time picker and a separate review/confirmation step. Read-only web
+mode cannot create or access scheduled prompts. Both composers have a subtle
+theme-coloured background.
+
+- **One pending follow-up per session.** Saving another replaces it. A separate
+  **TRIGGER SET** signpost preserves the session's normal status and warnings.
+  Full detail shows the trigger; Ctrl+S opens the saved text/target/time for editing
+  or cancellation. Web detail provides **Edit** and **Cancel trigger** controls.
+- **Memory only:** keep the Codexometer process running. Quitting, restarting or
+  crashing cancels its queue; it is not a durable background scheduler. Separate
+  Codexometer processes have separate queues. Closing a browser tab alone does
+  not stop the web server or its pending requests.
+- Sending requires a fresh quota snapshot, the same account and an authoritative
+  idle follow-up capability from the connected shared app-server. Approval,
+  question and quota-threshold reviews are not bypassed. Closed/unavailable
+  sessions wait until eligible or until you cancel them. A due request can send
+  late after the session becomes idle or the computer resumes.
+- **After quota refresh** checks actual quota recovery; reaching a predicted reset
+  time alone is insufficient. All reported quota windows must have capacity, with
+  no reported spend-control/limit block. This can conservatively wait for a bucket
+  unrelated to the selected model. No reset credit is redeemed automatically.
+  Choosing this trigger when quota is already available sends when next eligible.
+- Requests follow the session's model, reasoning and speed settings at dispatch;
+  no temporary overrides or natural-language time parsing are provided. Sending
+  starts ordinary Codex work and can consume quota and run tools under that
+  session's permissions. An uncertain send is retained for inspection and **never
+  automatically retried**; check Codex before cancelling and scheduling again.
+
 ### Optional browser session control
 
 ```sh

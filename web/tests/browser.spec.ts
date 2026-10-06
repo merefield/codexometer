@@ -567,6 +567,10 @@ async function mockActions(page: Page, kind = 'approval') {
   await page.route('**/api/control/*', async (route) => {
     const action = route.request().url().split('/').pop()!;
     const body = route.request().postDataJSON();
+    if (action === 'schedules') {
+      await route.fulfill({ json: [] });
+      return;
+    }
     calls.push({ action, body });
     const result =
       action === 'offer'
@@ -581,6 +585,59 @@ async function mockActions(page: Page, kind = 'approval') {
   });
   return { snapshot, offer, calls };
 }
+
+test('scheduled follow-up is reviewed, visible and cancellable without sending immediately', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  let jobs: object[] = [];
+  await page.route('**/api/control/schedules', async (route) => {
+    if (route.request().postDataJSON().cancelId) jobs = [];
+    await route.fulfill({ json: jobs });
+  });
+  await page.route('**/api/control/commit', async (route) => {
+    jobs = [
+      {
+        id: 'job1',
+        session: 'parent',
+        text: 'Continue after quota recovery',
+        trigger: 'quota',
+        status: 'pending',
+      },
+    ];
+    await route.fulfill({ json: { message: 'scheduled' } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page
+    .getByRole('textbox', { name: 'Follow-up message' })
+    .fill('Continue after quota recovery');
+  await page
+    .getByRole('combobox', { name: 'Send', exact: true })
+    .selectOption('quota');
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  expect(calls.find((c) => c.action === 'prepare')?.body).toMatchObject({
+    schedule: { trigger: 'quota' },
+    answers: ['Continue after quota recovery'],
+  });
+  await expect(
+    page.getByText(
+      'TRIGGER // After fresh quota becomes available, when the session is idle',
+    ),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'CONFIRM SCHEDULE' }).click();
+  const pending = page.getByRole('region', { name: 'Pending follow-up' });
+  await expect(pending).toContainText('Continue after quota recovery');
+  await pending.getByRole('button', { name: 'EDIT', exact: true }).click();
+  await expect(
+    page.getByRole('textbox', { name: 'Follow-up message' }),
+  ).toHaveValue('Continue after quota recovery');
+  await pending.getByRole('button', { name: 'CANCEL TRIGGER' }).click();
+  await expect(pending).toHaveCount(0);
+});
 
 for (const control of [false, true]) {
   test(`approval commentary is full-detail-only (control=${control})`, async ({

@@ -24,6 +24,9 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) render() string {
+	if m.scheduleUI.open {
+		return m.renderScheduleForm()
+	}
 	colors := paletteFor(m.theme)
 	layout := m.dashboardLayout()
 	contentWidth := layout.contentWidth

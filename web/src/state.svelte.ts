@@ -94,6 +94,7 @@ export interface Threshold {
   remaining?: number;
 }
 export interface Snapshot {
+  triggers?: { session: string; status: string }[];
   profiles?: {
     session: string;
     threshold: number;
@@ -139,7 +140,7 @@ let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
 export async function controlRequest<T>(
-  action: 'offer' | 'prepare' | 'commit',
+  action: 'offer' | 'prepare' | 'commit' | 'schedules',
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {

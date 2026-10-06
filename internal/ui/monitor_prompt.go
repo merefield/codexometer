@@ -147,6 +147,12 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	p := m.monitorPrompt
 	o := m.monitorPromptOffer()
 	header := i18n.Text("FOLLOW-UP") + " // " + terminalLabel(o.ThreadID)
+	if m.monitorContextDetail != "" && len(o.Questions) == 0 {
+		header += " // [ Ctrl+S: SCHEDULE ]"
+		if m.hasSchedule(m.monitorContextDetail) {
+			header = "TRIGGER SET // [ Ctrl+S: VIEW / EDIT / CANCEL ]"
+		}
+	}
 	if len(o.Questions) > 0 {
 		n := 0
 		if p.offer.Token == o.Token {

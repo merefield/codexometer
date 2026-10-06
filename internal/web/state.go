@@ -114,6 +114,7 @@ type quotaThreshold struct {
 }
 
 type state struct {
+	Triggers      []triggerSummary    `json:"triggers,omitempty"`
 	Profiles      []profileReview     `json:"profiles,omitempty"`
 	Thresholds    []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError  bool                `json:"profileError,omitempty"`
@@ -136,6 +137,7 @@ type store struct {
 	profileWindow   string
 	profileRevision uint64
 	quotaSnapshot   codex.Snapshot
+	scheduleQuota   codex.Snapshot
 	contexts        map[string]codex.SessionContext // Private: never published in state/SSE.
 	directories     map[string]string
 	mu              sync.Mutex
@@ -207,6 +209,7 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 	gap := s.state.QuotaError
 	s.state.QuotaError = err != nil
 	if err == nil {
+		s.scheduleQuota = q
 		s.quotaSnapshot = codex.CaptureQuotaProfile(q)
 		previous := s.state.Meters
 		if s.account != q.AccountFingerprint {

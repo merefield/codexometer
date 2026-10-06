@@ -1,0 +1,383 @@
+package ui
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/schedule"
+)
+
+type scheduleUI struct {
+	queue                       *schedule.Queue
+	open, polling               bool
+	session, id, notice         string
+	input                       monitorEditor
+	mode, focus, hours, minutes int
+	date                        time.Time
+}
+type scheduleDone struct{}
+
+func (m Model) hasSchedule(id string) bool {
+	if m.scheduleUI.queue == nil {
+		return false
+	}
+	for _, j := range m.scheduleUI.queue.List(id) {
+		if j.Status != "sent" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) openSchedule() tea.Cmd {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" {
+		return nil
+	}
+	id := m.monitorContextDetail
+	o := m.monitorPromptOffer()
+	if !m.hasSchedule(id) && (o.Token == "" || o.ThreadID != id || len(o.Questions) > 0) {
+		return nil
+	}
+	q := m.scheduleUI.queue
+	if q == nil {
+		q = schedule.New()
+	}
+	p := scheduleUI{queue: q, polling: m.scheduleUI.polling, open: true, session: id, input: newMonitorEditor(), hours: 1, date: time.Now().Add(time.Hour).Truncate(time.Minute)}
+	if m.monitorPrompt.session == id {
+		p.input.SetValue(m.monitorPrompt.input.Value())
+	}
+	for _, j := range q.List(id) {
+		if j.Status == "sent" {
+			continue
+		}
+		p.id = j.ID
+		p.input.SetValue(j.Text)
+		p.notice = "Status: " + j.Status
+		if j.Trigger == "quota" {
+			p.mode = 0
+		} else {
+			p.mode = 2
+			p.date = j.At.Local()
+		}
+		break
+	}
+	if p.id == "" && schedule.QuotaReady(m.snapshot, time.Now()) {
+		p.mode = 1
+	}
+	m.scheduleUI = p
+	m.monitorPrompt.input.Blur()
+	return m.scheduleUI.input.Focus()
+}
+
+func (m *Model) dispatchSchedules() tea.Cmd {
+	q := m.scheduleUI.queue
+	client, ok := m.fetcher.(codex.SessionPromptClient)
+	if q == nil || !ok || m.scheduleUI.polling || m.err != nil || m.monitorError != "" || !schedule.QuotaReady(m.snapshot, time.Now()) {
+		return nil
+	}
+	// Do not compete with a draft, manual confirmation or profile transition.
+	if m.scheduleUI.open || m.monitorPrompt.input.Focused() || m.monitorPrompt.busy || m.quota.busySession != "" {
+		return nil
+	}
+	ready := map[string]bool{}
+	for _, s := range m.monitorSessionData {
+		_, pending := m.quotaSessionCandidate(s)
+		if !pending && s.preview.Kind != codex.SessionContextApproval && s.preview.Kind != codex.SessionContextQuestion {
+			ready[s.id] = true
+		}
+	}
+	account := m.snapshot.AccountFingerprint
+	snapshot := m.snapshot
+	m.scheduleUI.polling = true
+	return func() tea.Msg {
+		for _, j := range q.List("") {
+			if !ready[j.Session] || j.Status != "pending" || !schedule.Covers(j, snapshot) || !schedule.Fresh(snapshot, time.Now()) {
+				continue
+			}
+			o := client.SessionPrompt(j.Session)
+			if o.Token == "" || o.ThreadID != j.Session || len(o.Questions) > 0 {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			_ = q.Dispatch(ctx, j.ID, account, true, time.Now(), func(ctx context.Context, j schedule.Job) error {
+				return client.SendSessionPrompt(ctx, o.Token, []string{j.Text})
+			})
+			cancel()
+		}
+		return scheduleDone{}
+	}
+}
+
+func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
+	if _, ok := msg.(scheduleDone); ok {
+		m.scheduleUI.polling = false
+		return m, nil, true
+	}
+	key, isKey := msg.(tea.KeyPressMsg)
+	if m.scheduleUI.open && isKey && key.String() == "ctrl+c" {
+		return m, tea.Quit, true
+	}
+	if !m.scheduleUI.open {
+		if isKey && key.String() == "ctrl+s" && m.monitorContextDetail != "" {
+			cmd := m.openSchedule()
+			return m, cmd, true
+		}
+		// The full-detail composer heading is a dedicated schedule click surface.
+		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft && m.monitorContextDetail != "" {
+			g := m.monitorDashboardLayout()
+			rows := m.monitorPromptRows(g.contentWidth, g.meterHeight)
+			_, _, y := monitorContextBodyLayout(g.meterHeight, rows)
+			if rows > 0 && click.Y == g.meterY+y && click.X >= 4 && click.X < g.contentWidth {
+				cmd := m.openSchedule()
+				return m, cmd, true
+			}
+		}
+		return m, nil, false
+	}
+	p := &m.scheduleUI
+	p.input.configure(max(m.width-4, 20), 11)
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = size.Width
+		m.height = size.Height
+		return m, nil, true
+	}
+	if isKey && (key.String() == "esc" || key.String() == "ctrl+s") {
+		p.open = false
+		p.input.Blur()
+		return m, nil, true
+	}
+	if m.width < 48 || m.height < 24 {
+		if _, mouse := msg.(tea.MouseMsg); isKey || mouse {
+			return m, nil, true
+		}
+		return m, nil, false
+	}
+	if click, ok := msg.(tea.MouseClickMsg); ok {
+		if click.Button != tea.MouseLeft {
+			return m, nil, true
+		}
+		switch {
+		case click.Y >= 3 && click.Y <= 5:
+			p.focus = 0
+			return m, p.input.Focus(), true
+		case click.Y == 7 && click.X >= 2 && click.X < 44:
+			p.focus = 1
+			if click.X < 25 {
+				p.mode = 0
+			} else if click.X < 35 {
+				p.mode = 1
+			} else {
+				p.mode = 2
+			}
+		case click.Y == 9:
+			p.focus = 2
+		case click.Y == 18:
+			if click.X < 22 {
+				p.focus = 3
+			} else {
+				p.focus = 4
+			}
+		case click.Y == 22 && click.X >= 2 && click.X < 46:
+			if click.X < 21 {
+				p.focus = 5
+				isKey = true
+				key = tea.KeyPressMsg{Code: tea.KeyEnter}
+			} else if click.X >= 25 {
+				p.focus = 6
+				isKey = true
+				key = tea.KeyPressMsg{Code: tea.KeyEnter}
+			}
+		case p.mode == 2 && click.Y >= 11 && click.Y <= 16 && click.X >= 2 && click.X < 30:
+			first := time.Date(p.date.Year(), p.date.Month(), 1, 0, 0, 0, 0, p.date.Location())
+			d := (click.Y-11)*7 + (click.X-2)/4 - int(first.Weekday()) + 1
+			if d >= 1 && d <= time.Date(p.date.Year(), p.date.Month()+1, 0, 0, 0, 0, 0, p.date.Location()).Day() {
+				p.date = time.Date(p.date.Year(), p.date.Month(), d, p.date.Hour(), p.date.Minute(), 0, 0, p.date.Location())
+				p.focus = 2
+			}
+		}
+		p.input.Blur()
+		if !isKey {
+			return m, nil, true
+		}
+	}
+	if isKey {
+		switch key.String() {
+		case "tab", "shift+tab":
+			d := 1
+			if key.String() == "shift+tab" {
+				d = 6
+			}
+			p.focus = (p.focus + d) % 7
+			p.input.Blur()
+			if p.focus == 0 {
+				return m, p.input.Focus(), true
+			}
+			return m, nil, true
+		case "enter":
+			if p.focus == 5 {
+				o := m.monitorPromptOffer()
+				if o.Token == "" || o.ThreadID != p.session || len(o.Questions) > 0 || m.err != nil || !schedule.Fresh(m.snapshot, time.Now()) {
+					p.notice = "Session unavailable or changed; review in Codex."
+					return m, nil, true
+				}
+				j := schedule.Job{Session: p.session, Text: p.input.Value(), Trigger: "quota", Zone: time.Now().Location().String(), Windows: schedule.WindowKeys(m.snapshot)}
+				if p.mode == 1 {
+					j.Trigger = "at"
+					j.At = time.Now().Add(time.Duration(p.hours)*time.Hour + time.Duration(p.minutes)*time.Minute)
+				}
+				if p.mode == 2 {
+					j.Trigger = "at"
+					j.At = p.date
+				}
+				if codex.SanitizeSessionContext(j.Text) != strings.TrimSpace(j.Text) {
+					p.notice = "Remove terminal control characters."
+					return m, nil, true
+				}
+				if err := p.queue.Save(j, m.snapshot.AccountFingerprint, time.Now()); err != nil {
+					p.notice = err.Error()
+				} else {
+					p.open = false
+					p.input.Reset()
+					m.monitorPrompt.input.Reset()
+				}
+			} else if p.focus == 6 {
+				if p.id != "" {
+					if err := p.queue.Cancel(p.session, p.id); err != nil {
+						p.notice = err.Error()
+						return m, nil, true
+					}
+				}
+				p.open = false
+			}
+			return m, nil, true
+		case "left", "right", "up", "down", "pgup", "pgdown":
+			if p.focus != 0 {
+				d := 1
+				if key.String() == "left" || key.String() == "down" || key.String() == "pgup" {
+					d = -1
+				}
+				switch p.focus {
+				case 1:
+					p.mode = (p.mode + d + 3) % 3
+				case 2:
+					if p.mode == 1 {
+						p.hours = max(0, min(8760, p.hours+d))
+					} else if p.mode == 2 {
+						if key.String() == "pgup" || key.String() == "pgdown" {
+							p.date = time.Date(p.date.Year(), p.date.Month()+time.Month(d), 1, p.date.Hour(), p.date.Minute(), 0, 0, p.date.Location())
+						} else {
+							if key.String() == "up" {
+								d = -7
+							}
+							if key.String() == "down" {
+								d = 7
+							}
+							p.date = p.date.AddDate(0, 0, d)
+						}
+					}
+				case 3:
+					if p.mode == 1 {
+						p.minutes = (p.minutes + d + 60) % 60
+					} else {
+						p.date = p.date.Add(time.Duration(d) * time.Hour)
+					}
+				case 4:
+					if p.mode == 2 {
+						p.date = p.date.Add(time.Duration(d) * time.Minute)
+					}
+				}
+				return m, nil, true
+			}
+		}
+	}
+	if p.focus == 0 {
+		var cmd tea.Cmd
+		p.input, cmd = p.input.Update(msg)
+		if isKey {
+			return m, cmd, true
+		}
+		if _, ok := msg.(tea.PasteMsg); ok {
+			return m, cmd, true
+		}
+	}
+	if isKey {
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m Model) renderScheduleForm() string {
+	p := m.scheduleUI
+	c := paletteFor(m.theme)
+	if m.width < 48 || m.height < 24 {
+		return "Scheduling needs 48 columns × 24 rows. Resize or Esc to return."
+	}
+	lines := make([]string, 24)
+	lines[0] = "SCHEDULE FOLLOW-UP // " + terminalLabel(p.session)
+	lines[1] = "In memory only • closing Codexometer cancels this trigger"
+	p.input.configure(m.width-4, 11)
+	for i, s := range strings.Split(p.input.View(c), "\n") {
+		if i < 3 {
+			lines[3+i] = s
+		}
+	}
+	control := func(label string, focus int) string {
+		if p.focus == focus {
+			return c.label().Foreground(c.primary).Reverse(true).Render(label)
+		}
+		return c.label().Render(label)
+	}
+	mode := []string{"AFTER QUOTA REFRESH", "IN…", "AT…"}
+	for i, s := range mode {
+		mode[i] = fmt.Sprintf("%-9s", "[ "+s+" ]")
+		if p.mode == i {
+			mode[i] = c.label().Foreground(c.primary).Bold(true).Render(mode[i])
+		}
+	}
+	lines[7] = strings.Join(mode, " ")
+	if p.mode == 1 {
+		lines[9] = control(fmt.Sprintf("Hours: %d", p.hours), 2)
+		lines[18] = control(fmt.Sprintf("Minutes: %02d", p.minutes), 3)
+	}
+	if p.mode == 2 {
+		lines[9] = control(p.date.Format("January 2006")+" // PgUp/PgDn", 2)
+		lines[10] = "Su  Mo  Tu  We  Th  Fr  Sa"
+		first := time.Date(p.date.Year(), p.date.Month(), 1, 0, 0, 0, 0, p.date.Location())
+		end := first.AddDate(0, 1, -1).Day()
+		for row := 0; row < 6; row++ {
+			for col := 0; col < 7; col++ {
+				d := row*7 + col - int(first.Weekday()) + 1
+				s := "    "
+				if d >= 1 && d <= end {
+					s = fmt.Sprintf("%2d  ", d)
+					if d == p.date.Day() {
+						s = c.label().Foreground(c.primary).Reverse(true).Render(fmt.Sprintf("%2d", d)) + "  "
+					}
+				}
+				lines[11+row] += s
+			}
+		}
+		lines[18] = control("Hour: "+p.date.Format("15"), 3) + "            " + control("Minute: "+p.date.Format("04"), 4)
+	}
+	summary := "When fresh quota is available and this session is idle"
+	if p.mode == 1 {
+		summary = "In " + strconv.Itoa(p.hours) + "h " + strconv.Itoa(p.minutes) + "m, when idle"
+	}
+	if p.mode == 2 {
+		summary = p.date.Format("Mon 02 Jan 2006 15:04 MST -07:00") + " • when idle"
+	}
+	lines[20] = summary + " // Follow session model / reasoning / speed"
+	lines[21] = "Tab: next field • arrows: adjust • Enter: selected action • Esc: back"
+	lines[22] = control("[ CONFIRM SCHEDULE ]", 5) + "    " + control("[ CANCEL / BACK ]", 6)
+	lines[23] = p.notice
+	for i, s := range lines {
+		lines[i] = "  " + ansi.Truncate(s, max(m.width-4, 1), "…")
+	}
+	return strings.Join(lines, "\n")
+}

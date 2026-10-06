@@ -44,6 +44,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	scheduleUI                          scheduleUI
 	monitorPrompt                       monitorPromptState
 	monitorContextHidden                bool
 	monitorContextDetail                string
@@ -459,6 +460,11 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateSchedule(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	if next, cmd, handled := m.updateMonitorPrompt(message); handled {
 		return next, cmd
 	} else {
@@ -1073,6 +1079,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
+		commands = append(commands, m.dispatchSchedules())
 		if m.monitorState == monitorRunning {
 			now := time.Time(message)
 			if !m.monitorNextSample.IsZero() && !now.Before(m.monitorNextSample) {
