@@ -27,6 +27,9 @@ func (m Model) render() string {
 	if m.scheduleUI.open {
 		return m.renderScheduleForm()
 	}
+	if m.monitorQueue.open {
+		return m.renderQueueEditor()
+	}
 	colors := paletteFor(m.theme)
 	layout := m.dashboardLayout()
 	contentWidth := layout.contentWidth

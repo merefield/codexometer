@@ -78,9 +78,6 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 }
 
 func (m Model) monitorPromptRows(width, height int) int {
-	if m.hasSchedule(m.monitorContextTarget()) && len(m.monitorPromptOffer().Questions) == 0 {
-		return 0
-	}
 	if s, ok := m.contextDetailSession(); ok {
 		if _, pending := m.sessionProfile(s); pending {
 			return 0

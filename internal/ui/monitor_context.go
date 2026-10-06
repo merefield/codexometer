@@ -330,6 +330,9 @@ func (m Model) monitorContextAt(x, y int) string {
 	if hit := m.monitorAttentionAt(x, y); hit != "" {
 		return hit
 	}
+	if hit := m.monitorQueueAt(x, y); hit != "" {
+		return hit
+	}
 	if b, hit := m.scheduleButtonAt(x, y); hit {
 		if b.enabled {
 			return "schedule:" + b.key

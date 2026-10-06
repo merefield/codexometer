@@ -33,28 +33,6 @@ func (line detailLine) render(colors palette) string {
 // changes the stored request, capability or text sent back to Codex.
 func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	width = max(width, 1)
-	defer func() {
-		if s, ok := m.contextDetailSession(); ok && (m.hasSessionProfile(s) || s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion || s.attention == codex.SessionAttentionApproval || s.attention == codex.SessionAttentionInput) {
-			return // A live review owns the detail document; never prepend another prompt.
-		}
-		if !m.hasSchedule(m.monitorContextDetail) {
-			return
-		}
-		var header []detailLine
-		for _, j := range m.scheduleUI.queue.List(m.monitorContextDetail) {
-			if j.Status == "sent" {
-				continue
-			}
-			text := i18n.Text("FOLLOW-UP") + " // " + m.triggerSummary(j)
-			for _, line := range strings.Split(ansi.Hardwrap(text, width, true), "\n") {
-				header = append(header, detailLine{ansi.Truncate(line, width, ""), "heading"})
-			}
-			for _, line := range strings.Split(ansi.Hardwrap(j.Text, width, true), "\n") {
-				header = append(header, detailLine{ansi.Truncate(line, width, ""), "body"})
-			}
-		}
-		document = append(append(header, detailLine{}), document...)
-	}()
 	s, ok := m.contextDetailSession()
 	if !ok {
 		return []detailLine{{i18n.Text("NO CONTEXT"), "metadata"}}

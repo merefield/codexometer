@@ -1502,9 +1502,30 @@ controls retain priority over the ordinary composer.
 
 Queuing uses Codex's experimental `thread/queue/add` API, not Codexometer's timed
 scheduler. Codex owns queued-message storage and dispatch, so queued messages
-may survive closing Codexometer. Manage queued messages in Codex; this first
-composer integration acknowledges submissions but does not provide a queue
-list/editor. If the daemon lacks this API, the action reports an error and
+may survive closing Codexometer. A **FOLLOW-UPS** panel above the composer combines
+native messages (**NEXT TURN**, then **THEN**) and local scheduled triggers
+(**AT …** or **AFTER QUOTA REFRESH**). Scheduled entries aren't numbered as queue
+positions: their eligibility, rather than their position in this list, determines
+when they run. The panel remains visible during work and ordinary approvals,
+above the approval controls when those replace the composer. Quota-threshold
+reviews remain isolated. Empty panels disappear; wide session rows show one
+preview at a time, while full detail shows more entries as space permits.
+
+Use the mouse wheel over the panel, or **Alt+Q** then **↑/↓**, **Page Up/Down**,
+to browse. **Enter/E** edits, **X/Delete** requests deletion, and **Esc/Tab** leaves
+queue keyboard focus. Each entry also has clickable **EDIT** and **×** buttons;
+native deletion requires confirmation. Scheduled **NOW** retains its separate
+confirmation. Editing a native message does not pause Codex's queue. Its original
+ID and contents are rechecked; an already-started/deleted message is never recreated.
+The API has no compare-and-swap edit condition, so avoid editing the same message
+simultaneously in multiple clients. Messages with attachments or unsupported
+content can be deleted but must be edited in Codex to avoid losing their content.
+The native list refreshes every two seconds while selected, with queue-change
+notifications invalidating the refresh delay. Failed refreshes mark existing
+previews unavailable and disable their actions. Local triggers still work without
+native queue support and remain memory-only: quitting cancels them.
+
+If the daemon lacks the native API, the action reports an error and
 retains the draft—there is no silent local scheduling fallback or automatic
 retry. These active-turn controls are currently terminal-only; browser controls
 continue to offer idle follow-ups and explicit approvals/questions.
@@ -2516,16 +2537,16 @@ theme-coloured background.
   detail links. Use **Ctrl+S** or **Edit** there to amend the schedule.
   Dismissing a terminal session row does not hide its pending-trigger pill or
   cancel the request; clicking that pill restores the row and opens its detail page.
-- Full detail replaces the ordinary composer with the **read-only saved prompt**
-  and trigger summary. Timed triggers show **Not before**, the local date/time,
-  timezone and countdown (or waiting reason when due). Actual sending can be late.
+- Terminal detail shows the saved prompt as a scheduled entry in **FOLLOW-UPS**,
+  above the ordinary composer, with the local date/time and timezone or quota
+  recovery condition. **EDIT** opens the existing scheduling form. Actual sending
+  can be late: the target session must be idle and quota must be available.
   The scheduling form previews the exact local date/time for both **IN** and
   **AT**, including timezone; delay starts when saved. Invalid messages/times
   show an explanation before saving. Existing triggers use **SAVE CHANGES**.
   Terminal keyboard hints follow the focused field; the selected trigger stays
-  underlined when unfocused and filled when focused. Detail distinguishes
-  **Due in…** from **Time reached**, with the current quota/session waiting reason.
-  **Ctrl+S** edits; **Ctrl+D** deletes and restores the composer. **Ctrl+N** requests
+  underlined when unfocused and filled when focused.
+  **Ctrl+S** edits; **Ctrl+D** deletes the trigger. **Ctrl+N** requests
   **Send now**, followed by **Ctrl+Y** or a confirmation click; Escape cancels that
   confirmation. These actions also have clickable buttons. Send now remains
   disabled without fresh available quota and an eligible idle session. It shares

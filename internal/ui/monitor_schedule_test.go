@@ -273,13 +273,13 @@ func scheduledTestModel(t *testing.T) (Model, *promptTestClient) {
 	return m, c
 }
 
-func TestSchedulePanelReadOnlyAndSendNow(t *testing.T) {
+func TestScheduleFollowupsPanelAndSendNow(t *testing.T) {
 	m, c := scheduledTestModel(t)
-	if m.monitorPromptRows(100, 30) != 0 {
-		t.Fatal("composer remains visible")
+	if m.monitorPromptRows(100, 30) == 0 {
+		t.Fatal("unified panel hid composer")
 	}
 	out := m.renderMonitorContextDetail(100, 30, paletteFor(m.theme))
-	if !strings.Contains(out, "The saved trigger prompt") || !strings.Contains(out, "Not before") {
+	if !strings.Contains(out, "The saved trigger prompt") || !strings.Contains(out, "AT ") {
 		t.Fatal("missing pending prompt/time")
 	}
 	m.triggerAction("ctrl+n")
@@ -298,7 +298,7 @@ func TestSchedulePanelReadOnlyAndSendNow(t *testing.T) {
 
 func TestScheduleButtonsHoverMatchesClickSurfaces(t *testing.T) {
 	for _, width := range []int{50, 120} {
-		for _, confirming := range []bool{false, true} {
+		for _, confirming := range []bool{true} {
 			m, _ := scheduledTestModel(t)
 			m.width = width
 			if confirming {
@@ -335,6 +335,7 @@ func TestScheduleButtonsHoverMatchesClickSurfaces(t *testing.T) {
 		}
 	}
 	m, _ := scheduledTestModel(t)
+	m.triggerAction("ctrl+n")
 	m.snapshot.RateLimits.Primary.UsedPercent = 100
 	g := m.monitorDashboardLayout()
 	_, _, top := monitorContextBodyLayout(g.meterHeight, len(m.schedulePanelLines(g.contentWidth)))
@@ -345,7 +346,7 @@ func TestScheduleButtonsHoverMatchesClickSurfaces(t *testing.T) {
 		t.Fatal("disabled Send now gained hover styling")
 	}
 	n, cmd, handled := n.schedulePanelKey(tea.MouseClickMsg{X: 4, Y: g.meterY + top, Button: tea.MouseLeft})
-	if !handled || cmd != nil || n.scheduleUI.confirmID != "" {
+	if !handled || cmd != nil || n.scheduleUI.confirmID != m.scheduleUI.confirmID {
 		t.Fatal("disabled Send now was activated")
 	}
 }
@@ -430,7 +431,7 @@ func TestScheduleReplacesCompleteWithoutMaskingOtherStates(t *testing.T) {
 	if strings.Count(detail, "TRIGGER SET") != 1 || !strings.Contains(strings.Split(detail, "\n")[0], "TRIGGER SET") {
 		t.Fatal("trigger state must appear only on detail border", detail)
 	}
-	if !strings.Contains(detail, "The saved trigger prompt") || !strings.Contains(detail, "Not before") {
+	if !strings.Contains(detail, "The saved trigger prompt") || !strings.Contains(detail, "AT ") {
 		t.Fatal("trigger detail disappeared", detail)
 	}
 	count := 0
@@ -491,7 +492,7 @@ func TestScheduledPromptDoesNotPrecedeReviews(t *testing.T) {
 		m.monitorSessionData[0].preview.Kind = kind
 		m.monitorSessionData[0].preview.Text = "Actual request requiring a response"
 		out := ansi.Strip(m.renderMonitorContextDetail(100, 30, paletteFor(m.theme)))
-		if strings.Contains(out, "The saved trigger prompt") || !strings.Contains(out, "Actual request requiring a response") {
+		if !strings.Contains(out, "Actual request requiring a response") || strings.Index(out, "The saved trigger prompt") < strings.Index(out, "Actual request requiring a response") {
 			t.Fatal("saved prompt crowded out request", out)
 		}
 		if !m.hasSchedule("root-one") {

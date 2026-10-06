@@ -92,13 +92,21 @@ func (m Model) sessionObservedWorking(s monitorSession) bool {
 }
 
 type detailControlLayout struct {
-	kind   string
-	rows   int
-	notice string
+	kind      string
+	rows      int
+	notice    string
+	queueRows int
 }
 
 // Scroll geometry needs only layout, not a styled rendering of the controls.
 func (m Model) layoutDetailControls(width, height int) detailControlLayout {
+	layout := m.layoutDetailControlsBase(width, height)
+	layout.queueRows = m.monitorQueueRows(width, height, layout.rows)
+	layout.rows += layout.queueRows
+	return layout
+}
+
+func (m Model) layoutDetailControlsBase(width, height int) detailControlLayout {
 	if s, ok := m.contextDetailSession(); ok {
 		if buttons := m.profileButtons(width, height, s); len(buttons) > 0 {
 			return detailControlLayout{kind: "profile", rows: buttons[len(buttons)-1].y + 1}
@@ -107,7 +115,7 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 	if rows := m.monitorApprovalControlRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "approval", rows: rows}
 	}
-	if m.monitorContextDetail != "" && m.hasSchedule(m.monitorContextDetail) && len(m.monitorPromptOffer().Questions) == 0 {
+	if m.monitorContextDetail != "" && m.hasSchedule(m.monitorContextDetail) && len(m.monitorPromptOffer().Questions) == 0 && (m.scheduleUI.confirmID != "" || m.scheduleUI.notice != "") {
 		if width < 24 || height < 8 {
 			return detailControlLayout{kind: "notice", rows: 1, notice: "Ctrl+S: EDIT"}
 		}
@@ -127,6 +135,18 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 }
 
 func (layout detailControlLayout) render(m Model, width, height int, colors palette) string {
+	body := layout.renderBase(m, width, height, colors)
+	if layout.queueRows > 0 {
+		queue := m.renderMonitorQueue(width, layout.queueRows, colors)
+		if body != "" {
+			return queue + "\n" + body
+		}
+		return queue
+	}
+	return body
+}
+
+func (layout detailControlLayout) renderBase(m Model, width, height int, colors palette) string {
 	switch layout.kind {
 	case "schedule":
 		return strings.Join(m.schedulePanelLines(width), "\n")

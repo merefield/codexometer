@@ -12,10 +12,10 @@ import (
 )
 
 func (m Model) pendingTrigger() (schedule.Job, bool) {
-	if m.monitorContextDetail == "" || m.scheduleUI.queue == nil {
+	if m.monitorContextTarget() == "" || m.scheduleUI.queue == nil {
 		return schedule.Job{}, false
 	}
-	for _, j := range m.scheduleUI.queue.List(m.monitorContextDetail) {
+	for _, j := range m.scheduleUI.queue.List(m.monitorContextTarget()) {
 		if j.Status != "sent" {
 			return j, true
 		}
@@ -28,7 +28,7 @@ func (m Model) triggerReady(j schedule.Job) bool {
 		return false
 	}
 	o := m.monitorPromptOffer()
-	return j.Status == "pending" && m.err == nil && m.monitorError == "" && m.quota.busySession == "" && schedule.QuotaReady(m.snapshot, time.Now()) && schedule.Covers(j, m.snapshot) && o.Token != "" && o.ThreadID == j.Session && len(o.Questions) == 0
+	return j.Status == "pending" && m.err == nil && m.monitorError == "" && m.quota.busySession == "" && schedule.QuotaReady(m.snapshot, time.Now()) && schedule.Covers(j, m.snapshot) && o.Token != "" && o.TurnID == "" && o.ThreadID == j.Session && len(o.Questions) == 0
 }
 
 func (m Model) triggerSummary(j schedule.Job) string {
@@ -199,8 +199,7 @@ func (m Model) schedulePanelKey(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if m.monitorContextDetail == "" || !m.hasSchedule(m.monitorContextDetail) {
 		return m, nil, false
 	}
-	g := m.monitorDashboardLayout()
-	if m.layoutDetailControls(g.contentWidth, g.meterHeight).kind != "schedule" {
+	if s, ok := m.contextDetailSession(); !ok || m.hasSessionProfile(s) || s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion {
 		return m, nil, false
 	}
 	key := ""
