@@ -10,8 +10,8 @@ import (
 // The textarea owns wrapping and cursor scrolling. Password questions keep
 // the dedicated masked widget: textarea does not provide password echo.
 type monitorEditor struct {
-	area          textarea.Model
-	password      textinput.Model
+	area          *textarea.Model
+	password      *textinput.Model
 	secret        bool
 	ready         bool
 	width, height int
@@ -32,7 +32,22 @@ func newMonitorEditor() monitorEditor {
 	p := textinput.New()
 	p.CharLimit = 4096
 	p.EchoMode = textinput.EchoPassword
-	return monitorEditor{area: a, password: p, ready: true}
+	return monitorEditor{area: &a, password: &p, ready: true}
+}
+
+// Keep inactive editors cheap to carry through Bubble Tea's value models.
+// Detach the widget before mutation, preserving the previous value-copy
+// semantics without copying both large widgets on every layout query.
+func (e *monitorEditor) editArea() *textarea.Model {
+	a := *e.area
+	e.area = &a
+	return e.area
+}
+
+func (e *monitorEditor) editPassword() *textinput.Model {
+	p := *e.password
+	e.password = &p
+	return e.password
 }
 
 func (e *monitorEditor) configure(width, height int) {
@@ -43,6 +58,8 @@ func (e *monitorEditor) configure(width, height int) {
 		return
 	}
 	e.width, e.height = width, height
+	e.editArea()
+	e.editPassword()
 	e.area.MaxHeight = max(height-8, 1)
 	e.area.SetWidth(max(width-4, 1))
 	e.password.SetWidth(max(width-6, 1))
@@ -70,17 +87,17 @@ func (e monitorEditor) Value() string {
 }
 func (e *monitorEditor) SetValue(s string) {
 	if e.secret {
-		e.password.SetValue(s)
+		e.editPassword().SetValue(s)
 	} else {
-		e.area.SetValue(s)
+		e.editArea().SetValue(s)
 	}
 }
 func (e *monitorEditor) Reset() {
 	if !e.ready {
 		return
 	}
-	e.area.Reset()
-	e.password.Reset()
+	e.editArea().Reset()
+	e.editPassword().Reset()
 }
 func (e monitorEditor) Focused() bool {
 	if !e.ready {
@@ -93,22 +110,22 @@ func (e monitorEditor) Focused() bool {
 }
 func (e *monitorEditor) Focus() tea.Cmd {
 	if e.secret {
-		return e.password.Focus()
+		return e.editPassword().Focus()
 	}
-	return e.area.Focus()
+	return e.editArea().Focus()
 }
 func (e *monitorEditor) Blur() {
 	if !e.ready {
 		return
 	}
-	e.area.Blur()
-	e.password.Blur()
+	e.editArea().Blur()
+	e.editPassword().Blur()
 }
 func (e *monitorEditor) CursorEnd() {
 	if e.secret {
-		e.password.CursorEnd()
+		e.editPassword().CursorEnd()
 	} else {
-		e.area.CursorEnd()
+		e.editArea().CursorEnd()
 	}
 }
 func (e monitorEditor) Height() int {
@@ -120,9 +137,11 @@ func (e monitorEditor) Height() int {
 func (e monitorEditor) Update(msg tea.Msg) (monitorEditor, tea.Cmd) {
 	var cmd tea.Cmd
 	if e.secret {
-		e.password, cmd = e.password.Update(msg)
+		p, command := e.password.Update(msg)
+		e.password, cmd = &p, command
 	} else {
-		e.area, cmd = e.area.Update(msg)
+		a, command := e.area.Update(msg)
+		e.area, cmd = &a, command
 	}
 	return e, cmd
 }
@@ -131,6 +150,8 @@ func (e *monitorEditor) style(colors palette) {
 		return
 	}
 	e.styleName = colors.name
+	e.editArea()
+	e.editPassword()
 	s := e.password.Styles()
 	s.Focused.Text = colors.label()
 	s.Focused.Prompt = colors.label().Foreground(colors.primary)

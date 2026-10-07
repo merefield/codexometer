@@ -11,6 +11,41 @@ import (
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
+func TestMonitorModelFootprint(t *testing.T) {
+	t.Logf("model=%d bytes editor=%d bytes", reflect.TypeOf(Model{}).Size(), reflect.TypeOf(monitorEditor{}).Size())
+	if reflect.TypeOf(monitorEditor{}).Size() > 128 {
+		t.Fatal("editor embeds heavy widget state in the application value model")
+	}
+}
+
+func TestMonitorEditorCopiesDetachOnMutation(t *testing.T) {
+	for _, secret := range []bool{false, true} {
+		original := newMonitorEditor()
+		original.setSecret(secret)
+		original.SetValue("original draft")
+		original.configure(80, 30)
+		original.style(paletteFor(themeHacker))
+		for name, mutate := range map[string]func(*monitorEditor){
+			"text":   func(e *monitorEditor) { e.SetValue("replacement") },
+			"reset":  func(e *monitorEditor) { e.Reset() },
+			"focus":  func(e *monitorEditor) { e.Focus() },
+			"resize": func(e *monitorEditor) { e.configure(40, 20) },
+			"theme":  func(e *monitorEditor) { e.style(paletteFor(themeRust)) },
+		} {
+			t.Run(name+map[bool]string{true: "_secret", false: "_text"}[secret], func(t *testing.T) {
+				copy := original
+				width, height := original.area.Width(), original.area.Height()
+				mutate(&copy)
+				// Bubbles itself shallow-copies internal viewport/cache pointers.
+				// Preserve its value semantics, without sharing additional state.
+				if original.Value() != "original draft" || original.Focused() || original.area.Width() != width || original.area.Height() != height || original.styleName != "HACKER" {
+					t.Fatal("mutating an editor copy altered original widget state")
+				}
+			})
+		}
+	}
+}
+
 func TestMonitorGeometryPassMatchesUncached(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		m, _ := promptTestModel()

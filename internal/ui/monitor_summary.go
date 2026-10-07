@@ -100,33 +100,35 @@ func (item monitorAttentionItem) action() string {
 
 func (m *Model) monitorAttentionSessions() []monitorAttentionItem {
 	fresh := m.monitorState == monitorRunning && m.monitorError == ""
-	var items []monitorAttentionItem
-	for priority := 0; priority < 5; priority++ {
-		if priority < 4 && !fresh {
+	var groups [5][]monitorAttentionItem
+	for _, s := range m.monitorSessionData {
+		scheduled := m.hasSchedule(s.id)
+		if scheduled {
+			groups[4] = append(groups[4], monitorAttentionItem{monitorSession: s, trigger: true})
+		}
+		if !fresh || !m.monitorSessionVisible(s) {
 			continue
 		}
-		for _, s := range m.monitorSessionData {
-			if !m.monitorSessionVisible(s) && priority != 4 {
-				continue
-			}
-			_, profile := m.quotaSessionCandidate(s)
-			include := false
-			switch priority {
-			case 0:
-				include = s.attention == codex.SessionAttentionApproval
-			case 1:
-				include = s.attention == codex.SessionAttentionInput
-			case 2:
-				include = profile
-			case 3:
-				include = s.attention == codex.SessionAttentionComplete && !s.working && !profile && !m.hasSchedule(s.id)
-			case 4:
-				include = m.hasSchedule(s.id)
-			}
-			if include {
-				items = append(items, monitorAttentionItem{monitorSession: s, profile: priority == 2, trigger: priority == 4})
+		_, profile := m.quotaSessionCandidate(s)
+		item := monitorAttentionItem{monitorSession: s}
+		switch s.attention {
+		case codex.SessionAttentionApproval:
+			groups[0] = append(groups[0], item)
+		case codex.SessionAttentionInput:
+			groups[1] = append(groups[1], item)
+		case codex.SessionAttentionComplete:
+			if !s.working && !profile && !scheduled {
+				groups[3] = append(groups[3], item)
 			}
 		}
+		if profile {
+			item.profile = true
+			groups[2] = append(groups[2], item)
+		}
+	}
+	var items []monitorAttentionItem
+	for _, group := range groups {
+		items = append(items, group...)
 	}
 	m.orderMonitorApprovals(items)
 	return items
