@@ -305,7 +305,7 @@ func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, r
 			state = i18n.Text("DONE")
 		}
 		if s.trigger {
-			state = "TRIGGER SET"
+			state = i18n.Text("TRIGGER SET")
 		}
 		if truncate {
 			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3-markerWidth, 1), "…")

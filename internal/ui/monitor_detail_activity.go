@@ -117,7 +117,7 @@ func (m Model) layoutDetailControlsBase(width, height int) detailControlLayout {
 	}
 	if m.monitorContextDetail != "" && m.hasSchedule(m.monitorContextDetail) && len(m.monitorPromptOffer().Questions) == 0 && (m.scheduleUI.confirmID != "" || m.scheduleUI.notice != "") {
 		if width < 24 || height < 8 {
-			return detailControlLayout{kind: "notice", rows: 1, notice: "Ctrl+S: EDIT"}
+			return detailControlLayout{kind: "notice", rows: 1, notice: i18n.Text("Ctrl+S: EDIT")}
 		}
 		return detailControlLayout{kind: "schedule", rows: len(m.schedulePanelLines(width))}
 	}

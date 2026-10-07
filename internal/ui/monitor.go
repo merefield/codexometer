@@ -412,7 +412,7 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 	badgeLabel := ""
 	trigger := m.sessionTriggerStatus(session)
 	if trigger {
-		badgeLabel = "TRIGGER SET"
+		badgeLabel = i18n.Text("TRIGGER SET")
 	} else if session.attention != codex.SessionAttentionNone {
 		badgeLabel = monitorSessionAttentionLabel(session)
 	} else if m.sessionObservedWorking(session) {
