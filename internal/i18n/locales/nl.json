@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Lokale observatie kan geen live goedkeuring geven.",
   "Network approval is not supported here.": "Netwerkgoedkeuring wordt hier niet ondersteund.",
   "Additional permissions require approval in Codex.": "Extra rechten vereisen goedkeuring in Codex.",
-  "File-change approval is not supported here.": "Goedkeuring van bestandswijzigingen wordt hier niet ondersteund.",
+  "Complete file changes unavailable. Review in Codex.": "Volledige bestandswijzigingen niet beschikbaar. Bekijk ze in Codex.",
   "Unsupported command format.": "Niet-ondersteund opdrachtformaat.",
   "Command details are missing.": "Opdrachtgegevens ontbreken.",
   "Working directory is missing.": "Werkmap ontbreekt.",

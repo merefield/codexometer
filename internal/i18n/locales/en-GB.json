@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Local observation cannot answer live approvals.",
   "Network approval is not supported here.": "Network approval is not supported here.",
   "Additional permissions require approval in Codex.": "Additional permissions require approval in Codex.",
-  "File-change approval is not supported here.": "File-change approval is not supported here.",
+  "Complete file changes unavailable. Review in Codex.": "Complete file changes unavailable. Review in Codex.",
   "Unsupported command format.": "Unsupported command format.",
   "Command details are missing.": "Command details are missing.",
   "Working directory is missing.": "Working directory is missing.",

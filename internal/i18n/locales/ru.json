@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Локальное наблюдение не позволяет отвечать на запросы разрешений.",
   "Network approval is not supported here.": "Разрешения сети здесь не поддерживаются.",
   "Additional permissions require approval in Codex.": "Дополнительные разрешения нужно подтвердить в Codex.",
-  "File-change approval is not supported here.": "Подтверждение изменений файлов здесь не поддерживается.",
+  "Complete file changes unavailable. Review in Codex.": "Полные изменения файлов недоступны. Проверьте их в Codex.",
   "Unsupported command format.": "Неподдерживаемый формат команды.",
   "Command details are missing.": "Нет сведений о команде.",
   "Working directory is missing.": "Не указан рабочий каталог.",

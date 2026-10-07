@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Yerel izleme canlı onayları yanıtlayamaz.",
   "Network approval is not supported here.": "Ağ onayı burada desteklenmiyor.",
   "Additional permissions require approval in Codex.": "Ek izinler Codex'te onaylanmalıdır.",
-  "File-change approval is not supported here.": "Dosya değişikliği onayı burada desteklenmiyor.",
+  "Complete file changes unavailable. Review in Codex.": "Dosya değişikliklerinin tamamı mevcut değil. Codex'te inceleyin.",
   "Unsupported command format.": "Desteklenmeyen komut biçimi.",
   "Command details are missing.": "Komut ayrıntıları eksik.",
   "Working directory is missing.": "Çalışma dizini eksik.",

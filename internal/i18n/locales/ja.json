@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "ローカル監視ではライブ承認に応答できません。",
   "Network approval is not supported here.": "ネットワーク承認には対応していません。",
   "Additional permissions require approval in Codex.": "追加の権限は Codex で承認してください。",
-  "File-change approval is not supported here.": "ファイル変更の承認には対応していません。",
+  "Complete file changes unavailable. Review in Codex.": "ファイル変更の全内容を取得できません。Codexで確認してください。",
   "Unsupported command format.": "未対応のコマンド形式です。",
   "Command details are missing.": "コマンドの詳細がありません。",
   "Working directory is missing.": "作業ディレクトリがありません。",

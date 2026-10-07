@@ -81,6 +81,12 @@ Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; p
 
 If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
 
+File-change approvals now have a proper diff review too: file paths, old/new line
+numbers, green additions and red removals, in both terminal and web detail. With a
+shared app-server, approve once (with confirmation), decline, or reject and stop
+the turn. Read-only web mode can show the changes without enabling decisions.
+Missing or unsafe patches and broader directory grants stay in Codex—no blind approvals.
+
 For **Approve Once**, press its number, release it, then press it again to confirm on terminals with detected **Kitty keyboard-protocol key-release support**. `C` remains an alternative; session-wide and persistent grants still require `C` or clicking confirmation. Confirmations expire after five seconds. Windows Terminal 1.24 inside Ubuntu/WSL and Apple's built-in Terminal.app use the `1` → `C` fallback. [Windows Terminal Preview 1.25](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0) introduced the protocol, and the separate [kitty app](https://sw.kovidgoyal.net/kitty/) supports it on macOS. Follow the shortcut shown on the button—this terminal capability is optional, not a requirement for using Codexometer or approving commands.
 
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.

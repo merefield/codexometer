@@ -48,15 +48,16 @@ type actionQuestion struct {
 }
 
 type actionOffer struct {
-	Profile   *profileReview   `json:"profile,omitempty"`
-	ID        string           `json:"id"`
-	Session   string           `json:"session"`
-	Thread    string           `json:"thread"`
-	Directory string           `json:"directory"`
-	Kind      string           `json:"kind"`
-	Command   string           `json:"command"`
-	Choices   []actionChoice   `json:"choices"`
-	Questions []actionQuestion `json:"questions"`
+	FileChanges []codex.FileDiffLine `json:"fileChanges,omitempty"`
+	Profile     *profileReview       `json:"profile,omitempty"`
+	ID          string               `json:"id"`
+	Session     string               `json:"session"`
+	Thread      string               `json:"thread"`
+	Directory   string               `json:"directory"`
+	Kind        string               `json:"kind"`
+	Command     string               `json:"command"`
+	Choices     []actionChoice       `json:"choices"`
+	Questions   []actionQuestion     `json:"questions"`
 }
 
 type offeredAction struct {
@@ -110,11 +111,12 @@ func (c *control) offer(id string) (offeredAction, error) {
 	}
 	o := offeredAction{actionOffer: actionOffer{Session: id, Thread: id, Directory: directory}}
 	if ctx.Kind == codex.SessionContextApproval {
-		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "" || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
+		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || (ctx.FileChanges == "" && (ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "")) || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
 			return o, nil
 		}
 		o.Kind, o.token = "approval", ctx.ApprovalToken
 		o.Command, o.Directory, o.Thread = ctx.CommandDetails.Command, ctx.CommandDetails.Directory, ctx.ThreadID
+		o.FileChanges = codex.FileDiffLines(ctx.FileChanges)
 		for _, option := range ctx.ApprovalOptions {
 			label := map[string]string{"accept": "APPROVE ONCE", "acceptForSession": "ALLOW FOR SESSION", "acceptWithExecpolicyAmendment": "ALWAYS ALLOW PREFIX", "decline": "DECLINE", "cancel": "REJECT & STOP TURN"}[option.Kind]
 			if label == "" {

@@ -25,6 +25,10 @@ func (line detailLine) render(colors palette) string {
 		style = style.Foreground(colors.warning)
 	case "command":
 		style = style.Foreground(colors.primary)
+	case "addition":
+		style = style.Foreground(colors.success)
+	case "removal":
+		style = style.Foreground(colors.danger)
 	}
 	return style.Render(line.text)
 }
@@ -103,6 +107,11 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
+	} else if c.Kind == codex.SessionContextApproval && c.FileChanges != "" {
+		section(contextTitle(c))
+		appendText(codex.SanitizeSessionContext(c.Text), "body", "")
+		lines = append(lines, detailLine{})
+		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails
@@ -147,6 +156,15 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	}
 	if notice := m.quota.notices[s.id]; notice != "" {
 		appendText(codex.SanitizeSessionContext(notice), "warning", "")
+	}
+	return lines
+}
+
+func fileApprovalDocument(changes string, width int) (lines []detailLine) {
+	for _, line := range codex.FileDiffLines(changes) {
+		for _, text := range strings.Split(ansi.Hardwrap(line.NumberedText(), max(width, 1), true), "\n") {
+			lines = append(lines, detailLine{ansi.Truncate(text, max(width, 1), ""), line.Kind})
+		}
 	}
 	return lines
 }

@@ -25,6 +25,7 @@ type daemonContextState struct {
 	latest                                          SessionContext
 	requests                                        map[string]SessionContext
 	commands                                        map[string]contextCommandItem
+	patches                                         map[string]string
 }
 
 type contextCommandItem struct{ Command, CWD string }
@@ -45,6 +46,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		Decisions            []json.RawMessage `json:"availableDecisions"`
 		ThreadID             string            `json:"threadId"`
 		GrantRoot            string            `json:"grantRoot"`
+		Changes              json.RawMessage   `json:"changes"`
 		RequestID            json.RawMessage   `json:"requestId"`
 		Reason               string            `json:"reason"`
 		Command              json.RawMessage   `json:"command"`
@@ -56,14 +58,15 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			ID       string `json:"id"`
-			CWD      string `json:"cwd"`
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Phase    string `json:"phase"`
-			Command  string `json:"command"`
-			Status   string `json:"status"`
-			ExitCode *int   `json:"exitCode"`
+			ID       string          `json:"id"`
+			CWD      string          `json:"cwd"`
+			Type     string          `json:"type"`
+			Text     string          `json:"text"`
+			Phase    string          `json:"phase"`
+			Command  string          `json:"command"`
+			Status   string          `json:"status"`
+			ExitCode *int            `json:"exitCode"`
+			Changes  json.RawMessage `json:"changes"`
 		} `json:"item"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" {
@@ -105,6 +108,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		clear(state.requests)
 		state.approvalsLimited = false
 		clear(state.commands)
+		clear(state.patches)
 		if state.latest.Kind == SessionContextActivity && state.latest.Activity.Command != "" {
 			state.latest.Text = state.latest.Activity.Prose
 		}
@@ -170,7 +174,6 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeSessionContext(p.Reason), Command: command, Directory: p.CWD}
 		}
 	case "item/fileChange/requestApproval":
-		c.ApprovalBlocked = "file-change"
 		c.Kind, c.Text = SessionContextApproval, p.Reason
 		if c.Text == "" {
 			c.Text = "File changes requested"
@@ -178,6 +181,11 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if p.GrantRoot != "" {
 			c.Text += "\nRoot: " + p.GrantRoot
 		}
+		c.FileChanges = state.patches[p.TurnID+"/"+p.ItemID]
+		configureFileApproval(&c, p.GrantRoot, state)
+	case "item/fileChange/patchUpdated":
+		state.capturePatch(p.TurnID, p.ItemID, p.Changes)
+		return
 	case "item/permissions/requestApproval":
 		c.ApprovalBlocked = "permissions"
 		c.Kind, c.Text = SessionContextApproval, p.Reason
@@ -215,6 +223,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 		delete(state.commands, p.TurnID+"/"+p.Item.ID)
+		delete(state.patches, p.TurnID+"/"+p.Item.ID)
 		if p.Item.Type == "commandExecution" {
 			status := p.Item.Status
 			if p.Item.ExitCode != nil {
@@ -253,6 +262,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c = state.activity.context(c)
 		}
 	case "item/started":
+		if p.Item.Type == "fileChange" {
+			state.capturePatch(p.TurnID, p.Item.ID, p.Item.Changes)
+			return
+		}
 		if p.Item.Type == "userMessage" {
 			return
 		}

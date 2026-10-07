@@ -40,6 +40,7 @@ type SessionContext struct {
 	PendingApprovalsLimited bool
 	RequestID               string
 	CommandDetails          ApprovalCommandDetails
+	FileChanges             string // validated, bounded JSON; immutable comparable snapshot
 	InputToken              string
 	InputQuestions          string
 	// ApprovalToken is an opaque, connection-local capability, never persisted.

@@ -135,6 +135,13 @@ func (m *Model) setRowContext(id string, mode int) {
 }
 
 func expandedContextLines(width int, s monitorSession) []string {
+	if s.preview.FileChanges != "" {
+		lines := strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1), true), "\n")
+		for _, line := range fileApprovalDocument(s.preview.FileChanges, max(width-4, 1)) {
+			lines = append(lines, line.text)
+		}
+		return lines
+	}
 	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
@@ -228,6 +235,18 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	}
 	for i := range lines {
 		lines[i] = colors.label().Render(lines[i])
+	}
+	if s.preview.FileChanges != "" {
+		offset := len(strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1), true), "\n"))
+		document := fileApprovalDocument(s.preview.FileChanges, max(width-4, 1))
+		for i, line := range document {
+			if i+offset < len(lines) {
+				if i+offset == len(lines)-1 && len(document)+offset > len(lines) {
+					line.text = ansi.Truncate(line.text, max(width-5, 0), "") + "…"
+				}
+				lines[i+offset] = line.render(colors)
+			}
+		}
 	}
 	if n > 0 {
 		for len(lines) < textRows+gap {

@@ -4,6 +4,7 @@ export interface Sample {
   tokens: number;
 }
 export interface Session {
+  fileChanges?: FileDiffLine[];
   name?: string;
   id: string;
   directory: string;
@@ -24,6 +25,12 @@ export interface Session {
   source: string;
   activity: string;
   samples: Sample[] | null;
+}
+export interface FileDiffLine {
+  text: string;
+  kind: string;
+  old?: number;
+  new?: number;
 }
 export interface Meter {
   name: string;

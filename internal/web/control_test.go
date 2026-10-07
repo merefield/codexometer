@@ -138,6 +138,30 @@ func TestControlApprovalBindingAndExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestControlFileApprovalBindsDiff(t *testing.T) {
+	s, f, token := controlServer(t)
+	c := s.store.contexts["parent"]
+	c.CommandDetails = codex.ApprovalCommandDetails{}
+	c.FileChanges = `[{"path":"/project/a","kind":{"type":"add"},"diff":"hello\n"}]`
+	s.store.contexts["parent"] = c
+	o := getOffer(t, s, token)
+	if o.Command != "" || len(o.FileChanges) != 2 || o.FileChanges[1].New != 1 {
+		t.Fatal("file details not offered", o)
+	}
+	index := 0
+	r := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, Choice: &index})
+	c.FileChanges = strings.Replace(c.FileChanges, "hello", "changed", 1)
+	s.store.contexts["parent"] = c
+	if w := actionCall(s, token, "commit", r); w.Code != 409 || f.calls != 0 {
+		t.Fatal("changed patch accepted", w.Code)
+	}
+	o = getOffer(t, s, token)
+	r = prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, Choice: &index})
+	if w := actionCall(s, token, "commit", r); w.Code != 200 || f.calls != 1 || f.decision != "accept" {
+		t.Fatal("file approval not sent", w.Code)
+	}
+}
+
 func TestControlStaleConfirmation(t *testing.T) {
 	for _, kind := range []string{"expired", "stale", "error", "removed", "changed-command", "changed-choice", "source-consumed", "connection-change"} {
 		t.Run(kind, func(t *testing.T) {

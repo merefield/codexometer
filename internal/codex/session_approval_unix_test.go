@@ -39,6 +39,24 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 	defer conn.Close()
 	states, c := approvalFixture(t, nil)
 	p := &daemonStatusProvider{connection: conn, contexts: states}
+	for _, decision := range []string{"accept", "decline", "cancel"} {
+		p.contexts, c = fileApprovalFixture(t, testFilePatch, nil)
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			if string(msg["id"]) != `"req"` || string(msg["result"]) != `{"decision":"`+decision+`"}` {
+				t.Fatal("wrong file approval wire", msg)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing file approval")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("file capability reused")
+		}
+	}
+	p.contexts, c = approvalFixture(t, nil)
 	if !p.SessionApprovalPending(c.ApprovalToken) {
 		t.Fatal("missing pending")
 	}
