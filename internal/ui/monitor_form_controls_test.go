@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -12,6 +15,13 @@ import (
 // Also run in every locale subprocess: real rendered cells must match the
 // interaction document, regardless of label length or double-width glyphs.
 func TestScheduleRenderedControlSurfaces(t *testing.T) {
+	// The dashboard countdowns and delay preview use time.Now(). Keep the clock
+	// fixed across renders so a clock tick cannot resemble a hover-induced text
+	// change. Retain the whole-screen text comparison, not just the button.
+	synctest.Test(t, testScheduleRenderedControlSurfaces)
+}
+
+func testScheduleRenderedControlSurfaces(t *testing.T) {
 	for _, width := range []int{48, 80, 140} {
 		for mode := 0; mode < 3; mode++ {
 			m, _ := promptTestModel()
@@ -55,7 +65,8 @@ func TestScheduleRenderedControlSurfaces(t *testing.T) {
 				before := m.render()
 				next, _ := m.Update(tea.MouseMotionMsg{X: 4 + c.x, Y: row})
 				n := next.(Model)
-				if n.scheduleUI.hover != c.key || before == n.render() || ansi.Strip(before) != ansi.Strip(n.render()) {
+				after := n.render()
+				if n.scheduleUI.hover != c.key || before == after || ansi.Strip(before) != ansi.Strip(after) {
 					t.Fatal("hover missing or changed layout", width, mode, c.key)
 				}
 				if c.focus != 5 && c.focus != 6 {
@@ -70,6 +81,29 @@ func TestScheduleRenderedControlSurfaces(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestScheduleDelayPreviewClockChangesOnlyPreview(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, _ := promptTestModel()
+		m.openSchedule()
+		m.scheduleUI.mode = 1
+		m.scheduleUI.input.SetValue("A follow-up")
+		before, beforeControls := m.scheduleFormDocument()
+		previewRow := m.scheduleUI.actionRow() - 2
+		if !strings.Contains(ansi.Strip(before[previewRow]), scheduleDate(m.scheduleUI.targetTime(time.Now()))) {
+			t.Fatal("delay preview does not show the current target time")
+		}
+		time.Sleep(time.Minute) // Preview has minute precision; no real sleep.
+		after, afterControls := m.scheduleFormDocument()
+		if before[previewRow] == after[previewRow] || !strings.Contains(ansi.Strip(after[previewRow]), scheduleDate(m.scheduleUI.targetTime(time.Now()))) {
+			t.Fatal("delay preview did not advance with the clock")
+		}
+		before[previewRow] = after[previewRow]
+		if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeControls, afterControls) {
+			t.Fatal("clock update changed form content or control geometry beyond the preview")
+		}
+	})
 }
 
 func clickFormTab(t *testing.T, m Model, tab mainTabID) Model {
