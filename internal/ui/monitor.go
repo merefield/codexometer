@@ -625,6 +625,18 @@ func shortSessionID(id string) string {
 	return strings.ToUpper(string(runes[len(runes)-5:]))
 }
 
+func monitorSessionIdentity(s monitorSession) string {
+	identity := shortSessionID(s.id)
+	name := terminalLabel(s.name)
+	if name == "" && s.workingDirectory != "" {
+		name = filepath.Base(terminalLabel(s.workingDirectory))
+	}
+	if name != "" {
+		identity += " // " + name
+	}
+	return identity
+}
+
 func plural(count int, singular, plural string) string {
 	if count == 1 {
 		return singular

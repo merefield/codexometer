@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -24,6 +25,43 @@ type monitorPromptState struct {
 	noticeUntil time.Time
 }
 
+// Retain only unsent ordinary text, never secret/question answers or in-flight
+// submissions. Stored drafts have no reusable server capability or focus.
+func (m *Model) stashMonitorDraft() {
+	p := m.monitorPrompt
+	if p.session == "" || p.busy || len(p.offer.Questions) != 0 || p.input.secret {
+		return
+	}
+	m.monitorDrafts = maps.Clone(m.monitorDrafts)
+	if text := p.input.Value(); text != "" {
+		if m.monitorDrafts == nil {
+			m.monitorDrafts = make(map[string]string)
+		}
+		m.monitorDrafts[p.session] = text
+	} else {
+		delete(m.monitorDrafts, p.session)
+	}
+}
+
+func (m *Model) restoreMonitorDraft() {
+	if m.monitorPrompt.session != "" || m.meterView != viewMonitor || m.contextTargetHidden() {
+		return
+	}
+	id := m.monitorContextTarget()
+	text := m.monitorDrafts[id]
+	if text == "" {
+		return
+	}
+	o := m.monitorPromptOffer()
+	if o.Token == "" || len(o.Questions) != 0 {
+		return
+	}
+	m.monitorPrompt = monitorPromptState{session: id, offer: o, input: newMonitorEditor(), choice: -1}
+	m.monitorPrompt.input.SetValue(text)
+	m.monitorDrafts = maps.Clone(m.monitorDrafts)
+	delete(m.monitorDrafts, id)
+}
+
 type monitorPromptResult struct {
 	session, token string
 	err            error
@@ -31,6 +69,7 @@ type monitorPromptResult struct {
 
 type monitorTurnResult struct {
 	session, token, action string
+	text                   string
 	err                    error
 }
 
@@ -96,7 +135,7 @@ func (m Model) monitorPromptRows(width, height int) int {
 	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextTarget() && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
 		p := m.monitorPrompt
 		rows := 3
-		if p.input.Focused() && !p.busy {
+		if (p.input.Focused() || p.input.Value() != "") && !p.busy {
 			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
 			rows = p.input.Height() + 2
 		}
@@ -140,6 +179,7 @@ func (m Model) monitorPromptSize() (int, int) {
 }
 
 func (m *Model) focusMonitorPrompt() tea.Cmd {
+	m.restoreMonitorDraft()
 	o := m.monitorPromptOffer()
 	w, h := m.monitorPromptSize()
 	if o.Token == "" || m.monitorPrompt.busy || m.monitorPromptRows(w, h) == 0 {
@@ -150,6 +190,11 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 			m.monitorPrompt.offer = o
 		} else {
 			m.monitorPrompt = monitorPromptState{session: m.monitorContextTarget(), offer: o, input: newMonitorEditor(), choice: -1}
+			if len(o.Questions) == 0 {
+				m.monitorPrompt.input.SetValue(m.monitorDrafts[m.monitorPrompt.session])
+				m.monitorDrafts = maps.Clone(m.monitorDrafts)
+				delete(m.monitorDrafts, m.monitorPrompt.session)
+			}
 		}
 	}
 	m.monitorPrompt.input.setSecret(len(o.Questions) > 0 && o.Questions[m.monitorPrompt.question].Secret)
@@ -161,17 +206,19 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	p := m.monitorPrompt
 	o := m.monitorPromptOffer()
-	header := i18n.Text("FOLLOW-UP") + " // " + terminalLabel(o.ThreadID)
-	if m.monitorContextDetail != "" && len(o.Questions) == 0 && o.TurnID == "" {
-		header += " // [ Ctrl+S: SCHEDULE ]"
+	identity := shortSessionID(o.ThreadID)
+	if s, ok := m.contextDetailSession(); ok {
+		identity = monitorSessionIdentity(s)
 	}
+	header := i18n.Text("FOLLOW-UP") + " // " + identity
+	scheduling := m.monitorContextDetail != "" && o.Token != "" && len(o.Questions) == 0 && o.TurnID == ""
 	if len(o.Questions) > 0 {
 		n := 0
 		if p.offer.Token == o.Token {
 			n = p.question
 		}
 		n = min(n, len(o.Questions)-1)
-		header = fmt.Sprintf("%s %d/%d // %s", i18n.Text("REPLY"), n+1, len(o.Questions), o.Questions[n].Text)
+		header = fmt.Sprintf("%s %d/%d // %s // %s", i18n.Text("REPLY"), n+1, len(o.Questions), identity, o.Questions[n].Text)
 	}
 	line := colors.dimmed().Background(monitorComposerBackground(colors)).
 		Width(max(width-4, 1)).Render(ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(width-4, 1), ""))
@@ -183,10 +230,10 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 				header += " " + dots
 			}
 		}
-		header += " // " + i18n.Text("FOLLOW-UP")
+		header += " // " + i18n.Text("FOLLOW-UP") + " // " + identity
 		hint = "Enter: steer • Tab: queue next turn • Esc: interrupt"
 	}
-	if p.offer.Token == o.Token && p.input.Focused() && !p.busy {
+	if p.offer.Token == o.Token && (p.input.Focused() || p.input.Value() != "") && !p.busy {
 		input := p.input
 		input.configure(width, m.monitorPromptEditorHeight(width, height))
 		line = input.View(colors)
@@ -205,7 +252,11 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	for i := range inputLines {
 		inputLines[i] = ansi.Truncate(inputLines[i], max(width-4, 1), "")
 	}
-	return colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…")) + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	heading := colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…"))
+	if scheduling {
+		heading = m.renderScheduleToggleHeader(width, identity, false, colors)
+	}
+	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
 }
 
 func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
@@ -224,6 +275,8 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 				m.recordDetailSent(p.notice)
 				if result.action == "queue" {
 					p.notice = "Queued in Codex for the next turn."
+					cmd := m.recordQueuedSubmission(result.session, result.text)
+					return m, cmd, true
 				}
 			}
 		}
@@ -248,7 +301,10 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	if !p.input.ready && p.session == "" {
-		return m, nil, false
+		m.restoreMonitorDraft()
+		if !p.input.ready {
+			return m, nil, false
+		}
 	}
 	wasFocused := p.input.Focused()
 	layout := m
@@ -261,7 +317,9 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 		p.input.Blur()
 	}
 	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextTarget() != p.session || m.contextTargetHidden() || m.monitorContextDetail == "" && m.monitorSelectedID != p.session) {
+		m.stashMonitorDraft()
 		*p = monitorPromptState{}
+		m.restoreMonitorDraft()
 	} else if p.offer.Token != "" && !p.busy && m.monitorPromptOffer().Token != p.offer.Token {
 		next := m.monitorPromptOffer()
 		if len(p.offer.Questions) == 0 && len(next.Questions) == 0 && (p.offer.TurnID != "" || next.TurnID != "") {
@@ -276,6 +334,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 				return m, nil, true
 			}
 		} else {
+			m.stashMonitorDraft()
 			*p = monitorPromptState{session: p.session, notice: i18n.Text("Prompt changed; review the session before replying.")}
 		}
 	}
@@ -357,7 +416,7 @@ func (m Model) submitMonitorTurn(action string) (Model, tea.Cmd, bool) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		return monitorTurnResult{session: session, token: o.Token, action: action, err: c.SendSessionTurn(ctx, o, action, text)}
+		return monitorTurnResult{session: session, token: o.Token, action: action, text: text, err: c.SendSessionTurn(ctx, o, action, text)}
 	}, true
 }
 

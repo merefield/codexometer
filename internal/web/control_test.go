@@ -365,3 +365,19 @@ func TestReplyIsNotHiddenByPreviousApprovalJustification(t *testing.T) {
 		t.Fatal("approval context leaked into reply")
 	}
 }
+
+func TestLiveTaskAndStreamProjection(t *testing.T) {
+	s := newStore()
+	row := codex.LiveUsageSession{ID: "session", Context: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Partial", CurrentTask: "Build\u001b[31m it\u001b[0m", LatestGuidance: "Use Go", Streaming: true}}
+	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
+	got := s.state.Sessions[0]
+	if got.CurrentTask != "Build it" || got.LatestGuidance != "Use Go" || !got.Streaming || got.Text != "Partial" {
+		t.Fatal(got)
+	}
+	row.Context = codex.SessionContext{Kind: codex.SessionContextReply, Text: "Finished"}
+	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
+	got = s.state.Sessions[0]
+	if got.CurrentTask != "" || got.LatestGuidance != "" || got.Streaming || got.Text != "Finished" {
+		t.Fatal(got)
+	}
+}

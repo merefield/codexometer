@@ -177,7 +177,12 @@ func (e monitorEditor) View(colors palette) string {
 }
 
 func monitorComposerBackground(colors palette) color.RGBA {
+	return monitorTintBackground(colors, 10)
+}
+
+func monitorTintBackground(colors palette, percent uint32) color.RGBA {
+	percent = min(percent, 100)
 	pr, pg, pb, _ := colors.primary.RGBA()
 	br, bg, bb, _ := colors.background.RGBA()
-	return color.RGBA{uint8((pr + br*9) / 10 >> 8), uint8((pg + bg*9) / 10 >> 8), uint8((pb + bb*9) / 10 >> 8), 255}
+	return color.RGBA{uint8((pr*percent + br*(100-percent)) / 100 >> 8), uint8((pg*percent + bg*(100-percent)) / 100 >> 8), uint8((pb*percent + bb*(100-percent)) / 100 >> 8), 255}
 }

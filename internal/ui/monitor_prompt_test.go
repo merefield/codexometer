@@ -187,8 +187,8 @@ func TestMonitorPromptStaleFocusPasteAndEsc(t *testing.T) {
 	}
 	m.focusMonitorPrompt()
 	m.stepBackMonitorContext()
-	if m.monitorPrompt.input.Value() != "" || m.monitorPrompt.input.Focused() {
-		t.Fatal("draft leaked to another mode")
+	if m.monitorPrompt.input.Value() != "Hello\nWORLD" || m.monitorPrompt.input.Focused() || m.monitorPrompt.offer.Token != c.offer.Token {
+		t.Fatal("ordinary draft was not retained with a fresh capability and released focus")
 	}
 }
 

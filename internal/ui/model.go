@@ -49,6 +49,7 @@ type Model struct {
 	scheduleUI                          scheduleUI
 	monitorQueue                        monitorQueueState
 	monitorPrompt                       monitorPromptState
+	monitorDrafts                       map[string]string
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
@@ -1273,6 +1274,7 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	}
 	if view != viewMonitor {
 		m.monitorDetailSent = detailSentState{}
+		m.stashMonitorDraft()
 		m.monitorPrompt = monitorPromptState{}
 		m.monitorContextDetail = ""
 		m.monitorContextExpanded = ""
@@ -2684,6 +2686,22 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 }
 
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	follow := false
+	if m.monitorContextDetail != "" {
+		if s, ok := m.contextDetailSession(); ok {
+			for _, update := range usage.Sessions {
+				if update.ID == s.id && update.Context.ThreadID == s.preview.ThreadID && update.Context.TurnID == s.preview.TurnID && (s.preview.Streaming || update.Context.Streaming) {
+					follow = m.monitorContextScroll >= m.monitorContextScrollLimit()
+					break
+				}
+			}
+		}
+	}
+	defer func() {
+		if follow {
+			m.monitorContextScroll = m.monitorContextScrollLimit()
+		}
+	}()
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
 		m.monitorSessionData[index].working = false
@@ -2965,6 +2983,7 @@ func (m *Model) selectMonitorSession(direction int) {
 		m.monitorContextExpanded = ""
 		m.monitorApprovalConfirm = ""
 		m.monitorApprovalNotice = ""
+		m.stashMonitorDraft()
 		m.monitorPrompt = monitorPromptState{}
 	}
 	pageSize := max(m.monitorPageSize(), 1)

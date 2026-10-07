@@ -2,7 +2,6 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"fmt"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -12,6 +11,27 @@ import (
 	"testing"
 	"time"
 )
+
+// Test the canonical form document separately from its scrolling placement.
+func (m Model) renderScheduleForm() string {
+	if m.width < 48 || m.height < 24 {
+		return "Scheduling needs 48 columns × 24 rows. Resize or Esc to return."
+	}
+	lines := m.scheduleFormLines()
+	c := paletteFor(m.theme)
+	return frameSized(m.width, m.height-2, lines[0], strings.Join(lines[1:23], "\n"), c.primary, c)
+}
+
+func scheduleFormClick(m Model, x, row int) tea.MouseClickMsg {
+	g := m.monitorDashboardLayout()
+	l := m.schedulePaneLayout(g.contentWidth, g.meterHeight)
+	for i, canonical := range l.indices {
+		if canonical == row {
+			return tea.MouseClickMsg{X: x + 2, Y: g.meterY + 1 + i - l.scroll, Button: tea.MouseLeft}
+		}
+	}
+	return tea.MouseClickMsg{X: x + 2, Y: g.meterY + l.composerY + 1, Button: tea.MouseLeft}
+}
 
 func TestScheduleFormRefinements(t *testing.T) {
 	m, _ := scheduledTestModel(t)
@@ -125,10 +145,9 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 		m.scheduleUI.focus = focus
 		for _, selected := range []int{0, 1, 2, 1, 0} {
 			m.scheduleUI.mode = selected
-			row := m.scheduleUI.renderTriggerModes(colors)
-			var expected []string
+			row := m.scheduleFormLines()[7]
 			for i, name := range labels {
-				label := fmt.Sprintf("%-9s", "[ "+name+" ]")
+				label := "[ " + name + " ]"
 				style := colors.label()
 				if i == selected {
 					style = style.Foreground(colors.primary).Underline(true)
@@ -136,10 +155,9 @@ func TestScheduleTriggerSelectionDoesNotHighlightWholeGroup(t *testing.T) {
 						style = style.Underline(false).Foreground(colors.background).Background(colors.primary)
 					}
 				}
-				expected = append(expected, style.Render(label))
-			}
-			if row != strings.Join(expected, " ") {
-				t.Fatalf("focus %d selected %d changed the group styling: %q", focus, selected, row)
+				if !strings.Contains(row, style.Render(label)) {
+					t.Fatalf("focus %d selected %d changed button %d styling", focus, selected, i)
+				}
 			}
 		}
 	}
@@ -152,12 +170,12 @@ func TestScheduleTriggerSelectionSurvivesTab(t *testing.T) {
 			m.theme = theme
 			m.openSchedule()
 			m.scheduleUI.mode, m.scheduleUI.focus = mode, 1
-			focused := m.scheduleUI.renderTriggerModes(paletteFor(theme))
+			focused := m.scheduleFormLines()[7]
 			m, _, _ = m.updateSchedule(tea.KeyPressMsg{Code: tea.KeyTab})
 			if m.scheduleUI.mode != mode || m.scheduleUI.focus == 1 {
 				t.Fatal("Tab changed selection or failed to move focus")
 			}
-			unfocused := m.scheduleUI.renderTriggerModes(paletteFor(theme))
+			unfocused := m.scheduleFormLines()[7]
 			if focused == unfocused || ansi.Strip(focused) != ansi.Strip(unfocused) {
 				t.Fatal("focus must change appearance without moving buttons")
 			}
@@ -242,7 +260,7 @@ func TestScheduleMouseSurfacesAndCalendar(t *testing.T) {
 	m.height = 40
 	m.openSchedule()
 	for _, tc := range []struct{ x, mode int }{{3, 0}, {26, 1}, {36, 2}} {
-		m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: tc.x, Y: 7, Button: tea.MouseLeft})
+		m, _, _ = m.updateSchedule(scheduleFormClick(m, tc.x, 7))
 		if m.scheduleUI.mode != tc.mode {
 			t.Fatal("wrong trigger click", tc)
 		}
@@ -573,15 +591,15 @@ func TestDelayFieldsAndActionsStayTogether(t *testing.T) {
 	if !strings.Contains(lines[9], "Hours:") || !strings.Contains(lines[9], "Minutes:") || !strings.Contains(lines[13], "SAVE CHANGES") {
 		t.Fatal("delay layout still reserves calendar space")
 	}
-	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 23, Y: 9, Button: tea.MouseLeft})
+	m, _, _ = m.updateSchedule(scheduleFormClick(m, 23, 9))
 	if m.scheduleUI.focus != 3 {
 		t.Fatal("minutes click misaligned")
 	}
-	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 3, Y: 9, Button: tea.MouseLeft})
+	m, _, _ = m.updateSchedule(scheduleFormClick(m, 3, 9))
 	if m.scheduleUI.focus != 2 {
 		t.Fatal("hours click misaligned")
 	}
-	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 26, Y: 13, Button: tea.MouseLeft})
+	m, _, _ = m.updateSchedule(scheduleFormClick(m, 26, 13))
 	if m.scheduleUI.open || !m.hasSchedule("root-one") {
 		t.Fatal("Back target misaligned or deleted trigger")
 	}

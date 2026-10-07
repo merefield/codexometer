@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -10,17 +10,22 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/schedule"
 )
 
 type followupEntry struct {
 	label, text              string
+	receipt                  string
 	native                   *codex.SessionQueuedMessage
 	trigger                  *schedule.Job
 	editable, removable, now bool
 }
 
 func (entry followupEntry) key() string {
+	if entry.receipt != "" {
+		return entry.receipt
+	}
 	if entry.native != nil {
 		return "native:" + entry.native.ID
 	}
@@ -30,22 +35,22 @@ func (entry followupEntry) key() string {
 func (m Model) followupEntries() []followupEntry {
 	var entries []followupEntry
 	if m.monitorQueue.session == m.monitorContextTarget() {
-		for i, item := range m.monitorQueue.items {
-			label := "NEXT TURN"
-			if i > 0 {
-				label = "THEN"
-			}
-			entries = append(entries, followupEntry{label: label, text: item.Text, native: &item, editable: item.Editable && !m.monitorQueue.stale, removable: !m.monitorQueue.stale})
+		for _, item := range m.monitorQueue.items {
+			entries = append(entries, followupEntry{label: i18n.Text("QUEUED"), text: item.Text, native: &item, editable: item.Editable && !m.monitorQueue.stale, removable: !m.monitorQueue.stale})
+		}
+		for i, text := range m.monitorQueue.submitted {
+			entries = append(entries, followupEntry{label: i18n.Text("ACCEPTED // CHECKING QUEUE"), text: text, receipt: "receipt:" + strconv.Itoa(i)})
 		}
 	}
 	if j, ok := m.pendingTrigger(); ok {
-		label := "AFTER QUOTA REFRESH"
+		label := i18n.Text("AFTER QUOTA REFRESH")
 		if j.Trigger == "at" {
-			label = "AT " + j.At.Local().Format("02 Jan 15:04 MST")
+			label = i18n.Text("AT ") + scheduleDate(j.At.Local())
 		}
 		if j.Status != "pending" {
-			label += " // " + strings.ToUpper(j.Status)
+			label += " // " + strings.ToUpper(i18n.Text(j.Status))
 		}
+		label = i18n.Text("SCHEDULED · ") + label
 		entries = append(entries, followupEntry{label: label, text: j.Text, trigger: &j, editable: j.Status == "pending", removable: j.Status != "sending", now: m.triggerReady(j)})
 	}
 	return entries
@@ -54,9 +59,9 @@ func (m Model) followupEntries() []followupEntry {
 func followupButtons(entry followupEntry, width int) []triggerButton {
 	var buttons []triggerButton
 	if entry.trigger != nil {
-		buttons = append(buttons, triggerButton{text: "[NOW]", key: "now", enabled: entry.now})
+		buttons = append(buttons, triggerButton{text: i18n.Text("[NOW]"), key: "now", enabled: entry.now})
 	}
-	buttons = append(buttons, triggerButton{text: "[EDIT]", key: "edit", enabled: entry.editable}, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
+	buttons = append(buttons, triggerButton{text: i18n.Text("[EDIT]"), key: "edit", enabled: entry.editable}, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
 	total := len(buttons) - 1
 	for _, b := range buttons {
 		total += ansi.StringWidth(b.text)
@@ -74,6 +79,7 @@ type monitorQueueState struct {
 	focusSession                                  string
 	session                                       string
 	items                                         []codex.SessionQueuedMessage
+	submitted                                     []string // acknowledged sends, not yet reconciled with a fresh list
 	loading, busy, open, deleting, focused, stale bool
 	request                                       uint64
 	revision                                      uint64
@@ -82,7 +88,12 @@ type monitorQueueState struct {
 	item                                          codex.SessionQueuedMessage
 	input                                         monitorEditor
 	notice                                        string
+	composerRows                                  int
+	editorFocus                                   int
+	drafts                                        map[string]queueEditDraft
 }
+
+type queueEditDraft struct{ original, text string }
 type monitorQueueResult struct {
 	session           string
 	request, revision uint64
@@ -90,6 +101,25 @@ type monitorQueueResult struct {
 	err               error
 }
 type monitorQueueChanged struct{ err error }
+
+func (m *Model) recordQueuedSubmission(session, text string) tea.Cmd {
+	q := &m.monitorQueue
+	if q.session != session {
+		q.items, q.submitted = nil, nil
+		q.offset, q.focused = 0, false
+	}
+	q.session = session
+	q.submitted = append(q.submitted, codex.SanitizeSessionContext(text))
+	// A list started before this acknowledgement cannot resolve this receipt.
+	q.request++
+	q.loading = false
+	q.next = time.Time{}
+	return m.pollMonitorQueue()
+}
+
+func (m Model) queueUnavailable() bool {
+	return m.monitorQueue.session == m.monitorContextTarget() && m.monitorQueue.stale
+}
 
 func (m *Model) pollMonitorQueue() tea.Cmd {
 	q := &m.monitorQueue
@@ -107,6 +137,8 @@ func (m *Model) pollMonitorQueue() tea.Cmd {
 	}
 	if q.session != id {
 		q.items = nil
+		q.submitted = nil
+		q.stale = false
 		q.offset = 0
 		q.focused = false
 	}
@@ -127,7 +159,7 @@ func (m *Model) pollMonitorQueue() tea.Cmd {
 func (m Model) monitorQueueRows(width, height, controlRows int) int {
 	id := m.monitorContextTarget()
 	entries := m.followupEntries()
-	if m.meterView != viewMonitor || m.contextTargetHidden() || len(entries) == 0 || width < 34 {
+	if m.meterView != viewMonitor || m.contextTargetHidden() || len(entries) == 0 && !m.queueUnavailable() || width < 34 {
 		return 0
 	}
 	if s, ok := m.contextDetailSession(); !ok || m.hasSessionProfile(s) {
@@ -141,7 +173,9 @@ func (m Model) monitorQueueRows(width, height, controlRows int) int {
 	if m.monitorContextDetail == "" {
 		s, _ := m.contextDetailSession()
 		textRows, _, _ := monitorContextBodyLayout(height, controlRows)
-		available = min(available, textRows-len(expandedContextLines(width, s)))
+		// Even long commentary leaves a compact queue/status line. Never
+		// take space from approval buttons or the composer.
+		available = min(available, max(1, textRows-len(expandedContextLines(width, s))))
 		limit = 2
 	}
 	if available < 1 {
@@ -157,43 +191,56 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	q := m.monitorQueue
 	entries := m.followupEntries()
 	start := min(q.offset, max(len(entries)-(rows-1), 0))
-	header := fmt.Sprintf("FOLLOW-UPS // %d", len(entries))
-	if q.stale && len(q.items) > 0 && q.session == m.monitorContextTarget() {
-		header += " // UNAVAILABLE"
+	header := i18n.Format("FOLLOW-UPS // %d", len(entries))
+	if m.queueUnavailable() {
+		header = i18n.Text("FOLLOW-UPS // UNAVAILABLE")
 	}
 	if q.focused {
-		header += " // ↑↓ · Enter: edit · X: delete · Esc"
+		header += i18n.Text(" // ↑↓ · Enter: edit · X: delete · Esc")
 	} else {
 		header += " // Alt+Q"
 	}
 	if rows == 1 {
-		header += " // open follow-ups"
+		header += i18n.Text(" // open follow-ups")
 	} else if len(entries) > rows-1 {
-		header += fmt.Sprintf(" // %d–%d // scroll", start+1, min(start+rows-1, len(entries)))
+		header += i18n.Format(" // %d–%d // scroll", start+1, min(start+rows-1, len(entries)))
 	}
-	lines := []string{colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…"))}
+	inner := max(width-4, 1)
+	tint := monitorTintBackground(colors, 6)
+	header = ansi.Truncate("─ "+header, inner, "…")
+	if spare := inner - ansi.StringWidth(header); spare > 1 {
+		header += " " + strings.Repeat("─", spare-1)
+	}
+	lines := []string{colors.label().Bold(true).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
 	for i := start; i < min(start+rows-1, len(entries)); i++ {
 		entry := entries[i]
 		buttons := followupButtons(entry, width)
-		text := entry.label + " // " + strings.Join(strings.Fields(entry.text), " ")
+		selected := q.focused && i == q.offset
+		marker := "  "
+		background := tint
+		if selected {
+			marker = "› "
+			background = monitorTintBackground(colors, 18)
+		}
+		text := marker + entry.label + " // " + strings.Join(strings.Fields(entry.text), " ")
 		space := max(buttons[0].x-1, 1)
 		text = ansi.Truncate(text, space, "…")
 		text += strings.Repeat(" ", max(space-ansi.StringWidth(text), 0))
-		prefix := colors.label()
-		if q.focused && i == q.offset {
-			prefix = prefix.Underline(true)
+		prefix := colors.label().Background(background)
+		if selected {
+			prefix = prefix.Foreground(colors.primary).Bold(true)
 		}
 		line := prefix.Render(text)
 		for _, b := range buttons {
-			style := colors.label()
+			style := colors.label().Background(background)
 			if !b.enabled {
-				style = colors.dimmed()
+				style = colors.dimmed().Background(background)
 			} else if m.monitorContextHover == "queue:"+b.key+":"+strconv.Itoa(i) {
 				style = style.Foreground(colors.background).Background(colors.primary)
 			}
-			line += " " + style.Render(b.text)
+			line += colors.label().Background(background).Render(" ") + style.Render(b.text)
 		}
-		lines = append(lines, line)
+		lines = append(lines, colors.label().Background(background).Width(inner).Render(line))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -225,7 +272,7 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 }
 
 func (m Model) monitorQueueAt(x, y int) string {
-	if m.meterView != viewMonitor || m.contextTargetHidden() || len(m.followupEntries()) == 0 {
+	if m.meterView != viewMonitor || m.contextTargetHidden() || len(m.followupEntries()) == 0 && !m.queueUnavailable() {
 		return ""
 	}
 	g := m.monitorDashboardLayout()
@@ -261,10 +308,26 @@ func (m *Model) openQueueItem(index int, remove bool) tea.Cmd {
 	q.open = true
 	q.deleting = remove
 	q.focused = false
+	q.editorFocus = 0
+	if remove {
+		q.editorFocus = 1
+	}
 	q.notice = ""
 	q.input = newMonitorEditor()
 	q.input.SetValue(item.Text)
+	key := q.session + "\x00" + item.ID
+	if draft, ok := q.drafts[key]; ok && draft.original == item.Text && !remove {
+		q.input.SetValue(draft.text)
+	}
+	q.drafts = maps.Clone(q.drafts)
+	delete(q.drafts, key)
+	m.setRowContext(q.session, contextFull)
+	g := m.monitorDashboardLayout()
+	q.composerRows = max(3, m.monitorPromptRows(g.contentWidth, g.meterHeight))
 	m.monitorPrompt.input.Blur()
+	if remove {
+		return nil
+	}
 	return q.input.Focus()
 }
 
@@ -275,6 +338,9 @@ func (m *Model) followupAction(index int, action string) tea.Cmd {
 		return nil
 	}
 	entry := entries[index]
+	if entry.receipt != "" {
+		return nil
+	}
 	if entry.trigger != nil {
 		switch action {
 		case "edit":
@@ -316,6 +382,7 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 				q.next = time.Now().Add(10 * time.Second)
 			} else {
 				q.items = v.items
+				q.submitted = nil
 			}
 			after := m.followupEntries()
 			q.offset = min(q.offset, max(len(after)-1, 0))
@@ -334,7 +401,7 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 	case monitorQueueChanged:
 		q.busy = false
 		if v.err != nil {
-			q.notice = "Change unconfirmed or message already started. Check Codex; no automatic retry."
+			q.notice = i18n.Text("Decision unconfirmed; check Codex. Do not retry here.")
 		} else {
 			q.open = false
 			q.input.Blur()
@@ -355,19 +422,74 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 	}
 	if q.open {
-		q.input.configure(max(m.width-4, 24), max(m.height-10, 8))
+		g := m.monitorDashboardLayout()
+		q.input.configure(g.contentWidth, max(q.composerRows, 3)+6)
+		if mouse, ok := msg.(tea.MouseMsg); ok {
+			point := mouse.Mouse()
+			if m.editorNavigationAt(point.X, point.Y) && !q.busy {
+				if _, click := msg.(tea.MouseClickMsg); click && point.Button == tea.MouseLeft {
+					if !q.deleting {
+						q.drafts = maps.Clone(q.drafts)
+						if q.drafts == nil {
+							q.drafts = map[string]queueEditDraft{}
+						}
+						q.drafts[q.session+"\x00"+q.item.ID] = queueEditDraft{original: q.item.Text, text: q.input.Value()}
+					}
+					q.open = false
+					q.input.Blur()
+				}
+				return m, nil, false
+			}
+			m.hoveredButton = m.footerButtonAt(point.X, point.Y)
+			if _, click := msg.(tea.MouseClickMsg); click && point.Button == tea.MouseLeft && m.hoveredButton != footerButtonNone {
+				next, cmd := m.pressFooterButton(m.hoveredButton)
+				return next.(Model), cmd, true
+			}
+		}
 		if key, ok := msg.(tea.KeyPressMsg); ok {
+			if key.String() == "ctrl+c" || key.String() == "q" && q.editorFocus != 0 {
+				return m, tea.Quit, true
+			}
 			if q.busy {
 				return m, nil, true
 			}
 			switch key.String() {
-			case "esc", "ctrl+c":
+			case "esc":
 				q.open = false
 				q.input.Blur()
 				q.next = time.Time{}
 				return m, nil, true
 			case "enter":
+				if q.editorFocus == 2 {
+					q.open = false
+					q.input.Blur()
+					q.next = time.Time{}
+					return m, nil, true
+				}
 				return m.changeQueueItem()
+			case "tab", "shift+tab":
+				delta := 1
+				if key.String() == "shift+tab" {
+					delta = -1
+				}
+				q.editorFocus = (q.editorFocus + delta + 3) % 3
+				if q.deleting && q.editorFocus == 0 {
+					q.editorFocus = (q.editorFocus + delta + 3) % 3
+				}
+				q.input.Blur()
+				if q.editorFocus == 0 {
+					return m, q.input.Focus(), true
+				}
+				return m, nil, true
+			case "t", "r":
+				if q.editorFocus != 0 {
+					button := footerButtonTheme
+					if key.String() == "r" {
+						button = footerButtonRefresh
+					}
+					next, cmd := m.pressFooterButton(button)
+					return next.(Model), cmd, true
+				}
 			}
 		}
 		if mouse, ok := msg.(tea.MouseMsg); ok {
@@ -384,12 +506,18 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 				if q.hover == "cancel" {
 					q.open = false
+					q.input.Blur()
 					q.next = time.Time{}
+				}
+				_, _, editorY := monitorContextBodyLayout(g.meterHeight, min(max(q.composerRows, 3), max(g.meterHeight-5, 1)))
+				if q.hover == "" && !q.busy && !q.deleting && point.X >= 4 && point.X < g.contentWidth && point.Y >= g.meterY+editorY && point.Y < g.meterY+g.meterHeight-3 {
+					q.editorFocus = 0
+					return m, q.input.Focus(), true
 				}
 			}
 			return m, nil, true
 		}
-		if !q.deleting && !q.busy {
+		if !q.deleting && !q.busy && q.editorFocus == 0 {
 			var cmd tea.Cmd
 			q.input, cmd = q.input.Update(msg)
 			if cmd != nil {
@@ -411,6 +539,9 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		if key.String() == "alt+q" && len(m.followupEntries()) > 0 {
+			if m.monitorContextDetail == "" {
+				m.setRowContext(m.monitorContextTarget(), contextFull)
+			}
 			q.focused = true
 			q.focusSession = m.monitorContextTarget()
 			m.monitorPrompt.input.Blur()
@@ -457,6 +588,9 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 					cmd := m.followupAction(i, parts[1])
 					return m, cmd, true
 				}
+				if m.monitorContextDetail == "" {
+					m.setRowContext(m.monitorContextTarget(), contextFull)
+				}
 				q.focused = true
 				q.focusSession = m.monitorContextTarget()
 				m.monitorPrompt.input.Blur()
@@ -476,8 +610,9 @@ func (m Model) changeQueueItem() (Model, tea.Cmd, bool) {
 	if !ok || q.busy || !q.deleting && text == "" {
 		return m, nil, true
 	}
-	if m.width < 40 || m.height < 14 {
-		q.notice = "Enlarge the terminal before confirming."
+	g := m.monitorDashboardLayout()
+	if g.contentWidth < 40 || g.meterHeight < 7 {
+		q.notice = i18n.Text("Enlarge the terminal before confirming.")
 		return m, nil, true
 	}
 	q.busy = true
@@ -492,52 +627,76 @@ func (m Model) changeQueueItem() (Model, tea.Cmd, bool) {
 func (m Model) renderQueueEditor() string {
 	q := m.monitorQueue
 	colors := paletteFor(m.theme)
-	if m.width < 40 || m.height < 14 {
-		return "Enlarge the terminal to edit the queue. Esc: cancel."
+	g := m.monitorDashboardLayout()
+	w, h := g.contentWidth, g.meterHeight
+	rows := min(max(q.composerRows, 3), max(h-5, 1))
+	_, _, editorY := monitorContextBodyLayout(h, rows)
+	q.input.configure(w, rows+6)
+	title := i18n.Text("EDIT QUEUED MESSAGE")
+	if q.deleting {
+		title = i18n.Text("DELETE QUEUED MESSAGE")
 	}
-	w, h := max(m.width-4, 24), max(m.height-2, 10)
-	q.input.configure(w, max(h-8, 8))
-	title := "EDIT QUEUED MESSAGE // " + terminalLabel(q.session)
+	identity := shortSessionID(q.session)
+	if s, ok := m.contextDetailSession(); ok {
+		identity = monitorSessionIdentity(s)
+	}
+	lines := make([]string, max(h-2, 1))
+	lines[0] = colors.header().Render(title + " // " + identity)
+	if len(lines) > 1 {
+		lines[1] = i18n.Text("Codex may start this message while you review it. Esc: cancel.")
+	}
 	body := q.input.View(colors)
 	if q.deleting {
-		title = "DELETE QUEUED MESSAGE // " + terminalLabel(q.session)
 		body = ansi.Hardwrap(q.item.Text, max(w-4, 1), true)
 	}
-	lines := []string{"Codex may start this message while you review it. Esc: cancel.", ""}
-	lines = append(lines, strings.Split(body, "\n")...)
-	for len(lines) < h-5 {
-		lines = append(lines, "")
+	for i, line := range strings.Split(body, "\n") {
+		y := editorY - 1 + i
+		if y >= len(lines)-2 {
+			break
+		}
+		if y >= 0 {
+			lines[y] = line
+		}
 	}
-	lines = lines[:h-5]
+	if len(lines) > 1 {
+		lines[len(lines)-2] = q.notice
+	}
 	buttons := ""
 	for _, b := range m.queueEditorButtons() {
-		buttons += strings.Repeat(" ", max(b.x-2-ansi.StringWidth(buttons), 0))
+		buttons += strings.Repeat(" ", max(b.x-4-ansi.StringWidth(buttons), 0))
 		style := colors.label()
 		if !b.enabled {
 			style = colors.dimmed()
-		} else if q.hover == b.key {
+		} else if q.hover == b.key || q.editorFocus == 1 && b.key == "save" || q.editorFocus == 2 && b.key == "cancel" {
 			style = style.Foreground(colors.background).Background(colors.primary)
 		}
 		buttons += style.Render(b.text)
 	}
-	lines = append(lines, q.notice, buttons)
+	lines[len(lines)-1] = buttons
 	for i := range lines {
 		lines[i] = ansi.Truncate(lines[i], max(w-4, 1), "…")
 	}
-	return "\n " + frameSized(w, h-2, title, strings.Join(lines, "\n"), colors.primary, colors)
+	return frameSized(w, max(h-2, 1), m.monitorDetailTitle(w, colors), strings.Join(lines, "\n"), colors.primary, colors)
 }
 
 func (m Model) queueEditorButtons() []triggerButton {
-	if m.width < 40 || m.height < 14 {
+	g := m.monitorDashboardLayout()
+	if g.contentWidth < 40 || g.meterHeight < 7 {
 		return nil
 	}
 	q := m.monitorQueue
-	label := "[ SAVE CHANGES ]"
+	label := i18n.Text("[ SAVE CHANGES ]")
 	if q.deleting {
-		label = "[ CONFIRM DELETE ]"
+		label = i18n.Text("[ CONFIRM DELETE ]")
 	}
 	if q.busy {
-		label = "[ WAIT… ]"
+		label = i18n.Text("[ WAIT… ]")
 	}
-	return []triggerButton{{text: label, key: "save", x: 2, y: m.height - 4, enabled: !q.busy && (q.deleting || strings.TrimSpace(q.input.Value()) != "")}, {text: "[ CANCEL ]", key: "cancel", x: 24, y: m.height - 4, enabled: !q.busy}}
+	cancel := i18n.Text("[ CANCEL ]")
+	label = ansi.Truncate(label, max(g.contentWidth-6-ansi.StringWidth(cancel), 1), "…")
+	y := g.meterY + g.meterHeight - 2
+	return []triggerButton{
+		{text: label, key: "save", x: 4, y: y, enabled: !q.busy && (q.deleting || strings.TrimSpace(q.input.Value()) != "")},
+		{text: cancel, key: "cancel", x: 4 + ansi.StringWidth(label) + 2, y: y, enabled: !q.busy},
+	}
 }

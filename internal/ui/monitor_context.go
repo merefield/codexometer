@@ -18,10 +18,19 @@ func monitorSessionAttentionLabel(s monitorSession) string {
 
 func contextTitle(c codex.SessionContext) string {
 	if c.Text == "" {
+		if c.CurrentTask != "" {
+			return i18n.Text("CURRENT TASK")
+		}
+		if c.LatestGuidance != "" {
+			return i18n.Text("LATEST GUIDANCE")
+		}
 		return i18n.Text("NO CONTEXT")
 	}
 	switch c.Kind {
 	case codex.SessionContextReply:
+		if c.Streaming {
+			return i18n.Text("REPLY") + " // " + i18n.Text("STREAMING")
+		}
 		return i18n.Text("LAST REPLY")
 	case codex.SessionContextQuestion:
 		return i18n.Text("QUESTION")
@@ -30,6 +39,13 @@ func contextTitle(c codex.SessionContext) string {
 	default:
 		return i18n.Text("LAST ACTIVITY")
 	}
+}
+
+func contextTaskTitle(c codex.SessionContext) string {
+	if c.Kind == codex.SessionContextReply && !c.Streaming {
+		return i18n.Text("TASK")
+	}
+	return i18n.Text("CURRENT TASK")
 }
 
 func (m Model) monitorPrivacyLabel(widths ...int) string {
@@ -108,6 +124,12 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 	inner := max(cw-4, 1)
 	text := codex.SanitizeSessionContext(s.preview.Text)
 	if text == "" {
+		text = codex.SanitizeSessionContext(s.preview.CurrentTask)
+	}
+	if text == "" {
+		text = codex.SanitizeSessionContext(s.preview.LatestGuidance)
+	}
+	if text == "" {
 		text = i18n.Text("NO CONTEXT")
 	}
 	lines := strings.Split(ansi.Hardwrap(text, inner, true), "\n")
@@ -162,6 +184,12 @@ func (m Model) contextDetailSession() (monitorSession, bool) {
 }
 
 func (m Model) renderMonitorContextDetail(width, height int, colors palette) string {
+	if m.monitorQueue.open {
+		return m.renderQueueEditor()
+	}
+	if m.scheduleUI.open {
+		return m.renderScheduleDetail(width, height, colors)
+	}
 	document := m.contextDetailDocument(max(width-4, 1))
 	lines := make([]string, len(document))
 	for i, line := range document {
@@ -182,6 +210,11 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	}
 	body := strings.Join(bodyLines, "\n")
 	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
+	title := m.monitorDetailTitle(width, colors)
+	return frameSizedWithActions(width, rows, title, action, m.renderMonitorCopy(width, m.monitorContextDetail, colors), body, colors.primary, colors)
+}
+
+func (m Model) monitorDetailTitle(width int, colors palette) string {
 	title := i18n.Text("UNKNOWN")
 	if s, ok := m.contextDetailSession(); ok {
 		title = i18n.Text("IDLE")
@@ -197,8 +230,9 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		if m.hasSessionProfile(s) {
 			title = i18n.Text("QUOTA THRESHOLD")
 		}
+		title += " // " + monitorSessionIdentity(s)
 	}
-	return frameSizedWithActions(width, rows, title, action, m.renderMonitorCopy(width, m.monitorContextDetail, colors), body, colors.primary, colors)
+	return title
 }
 
 // Reserve the footer before allocating the scroll viewport. Short terminals
@@ -216,6 +250,7 @@ func monitorContextBodyLayout(height, controls int) (textRows, gap, controlY int
 
 func (m *Model) toggleMonitorContext() {
 	m.clearQuotaConfirmation()
+	m.stashMonitorDraft()
 	m.monitorPrompt = monitorPromptState{}
 	m.monitorApprovalConfirm = ""
 	m.monitorApprovalNotice = ""
@@ -230,7 +265,7 @@ func (m *Model) toggleMonitorContext() {
 
 func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
-		if s.id == id && (s.preview.Text != "" || s.preview.Kind == codex.SessionContextApproval || m.hasSessionProfile(s) || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
+		if s.id == id && (s.preview.Text != "" || s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" || s.preview.Kind == codex.SessionContextApproval || m.hasSessionProfile(s) || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
 			m.setRowContext(id, contextFull)
 			return
 		}
@@ -238,11 +273,15 @@ func (m *Model) openMonitorContext(id string) {
 }
 
 func (m *Model) scrollMonitorContext(delta int) {
+	m.monitorContextScroll = min(max(m.monitorContextScroll+delta, 0), m.monitorContextScrollLimit())
+}
+
+func (m Model) monitorContextScrollLimit() int {
 	g := m.monitorDashboardLayout()
 	layout := m.layoutDetailControls(g.contentWidth, g.meterHeight)
 	rows, _, _ := monitorContextBodyLayout(g.meterHeight, layout.rows)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
-	m.monitorContextScroll = min(max(m.monitorContextScroll+delta, 0), limit)
+	return limit
 }
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {

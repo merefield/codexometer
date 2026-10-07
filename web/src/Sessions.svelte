@@ -160,11 +160,28 @@
       return 'OBSERVED TURN COMPLETION — informational, not an approval request.';
     return '';
   }
+  function contextTitle(session: Session) {
+    return session.streaming && session.contextKind === 'LAST REPLY'
+      ? 'REPLY // STREAMING'
+      : session.contextKind || 'LAST ACTIVITY';
+  }
 </script>
 
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
+  {#if session.currentTask}
+    <h3>
+      {session.contextKind === 'LAST REPLY' && !session.streaming
+        ? 'TASK'
+        : 'CURRENT TASK'}
+    </h3>
+    <pre>{session.currentTask}</pre>
+  {/if}
+  {#if session.latestGuidance}
+    <h3>LATEST GUIDANCE</h3>
+    <pre>{session.latestGuidance}</pre>
+  {/if}
   {#if full && session.contextKind === 'APPROVAL REQUEST' && session.approvalContext}
     <h3>CONTEXT</h3>
     <pre>{session.approvalContext}</pre>
@@ -176,7 +193,9 @@
     >
       {explanation(session)}
     </p>{/if}
-  {#if heading}<h3>{session.contextKind || 'LAST ACTIVITY'}</h3>{/if}
+  {#if heading}<h3>
+      {contextTitle(session)}
+    </h3>{/if}
   {#if session.text || !session.workingCommand}
     <pre>{session.text || 'No session context available.'}</pre>
   {/if}
@@ -453,7 +472,7 @@
       </div>
       {#if level > 0}<div class="panel context">
           <div class="spread">
-            <h2>{session.contextKind || 'LAST ACTIVITY'}</h2>
+            <h2>{contextTitle(session)}</h2>
             {#if !stale && session.status === 'APPROVAL NEEDED'}<a
                 class="attention-badge"
                 href={'#/sessions/' + encodeURIComponent(session.id)}

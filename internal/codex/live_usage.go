@@ -1223,8 +1223,15 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		if exact && preview.pending() {
 			preview = SessionContext{}
 		}
-		if live, ok := r.daemonContexts[cursor.threadID]; ok && (live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited) {
-			preview = live
+		if live, ok := r.daemonContexts[cursor.threadID]; ok {
+			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
+				preview = live
+			} else if preview.Kind == SessionContextReply && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
+				// The local task_complete record can be newer than the live
+				// final message. Keep its reply, but retain observed prompt
+				// context only for the same positively identified turn.
+				preview.CurrentTask, preview.LatestGuidance = live.CurrentTask, live.LatestGuidance
+			}
 		}
 		// A persisted request is not proof that it is still outstanding. Match
 		// it to current attention before displaying it as actionable context.

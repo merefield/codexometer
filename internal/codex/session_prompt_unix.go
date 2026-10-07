@@ -29,7 +29,7 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
 		}
-		p.contexts[event.ThreadID] = &daemonContextState{activeTurn: event.Turn.ID, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
+		p.contexts[event.ThreadID] = &daemonContextState{activeTurn: event.Turn.ID, turnObserved: true, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
 	}
 	if s := p.contexts[event.ThreadID]; s != nil {
 		if event.TurnID != "" && s.activeTurn == "" && p.statuses[event.ThreadID] == sessionRuntimeWorking {

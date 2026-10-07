@@ -10,16 +10,21 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
-	activeTurn       string
-	turnToken        string
-	activity         sessionActivityState
-	approvalsLimited bool
-	promptToken      string
-	promptSpent      bool
-	completed        bool
-	latest           SessionContext
-	requests         map[string]SessionContext
-	commands         map[string]contextCommandItem
+	turnObserved                                    bool
+	userItems                                       map[string]bool
+	task, guidance                                  string
+	ended                                           bool
+	streamItem, streamTurn, streamText, streamPhase string
+	activeTurn                                      string
+	turnToken                                       string
+	activity                                        sessionActivityState
+	approvalsLimited                                bool
+	promptToken                                     string
+	promptSpent                                     bool
+	completed                                       bool
+	latest                                          SessionContext
+	requests                                        map[string]SessionContext
+	commands                                        map[string]contextCommandItem
 }
 
 type contextCommandItem struct{ Command, CWD string }
@@ -27,10 +32,12 @@ type contextCommandItem struct{ Command, CWD string }
 func daemonContextEvent(states map[string]*daemonContextState, method string, id, raw json.RawMessage, now time.Time) {
 	var p struct {
 		Turn struct {
+			ID     string `json:"id"`
 			Status string `json:"status"`
 		} `json:"turn"`
 		TurnID               string            `json:"turnId"`
 		ItemID               string            `json:"itemId"`
+		Delta                string            `json:"delta"`
 		CWD                  string            `json:"cwd"`
 		Network              json.RawMessage   `json:"networkApprovalContext"`
 		Permissions          json.RawMessage   `json:"additionalPermissions"`
@@ -45,6 +52,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		Questions            []contextQuestion `json:"questions"`
 		IsBlocking           *bool             `json:"isBlocking"`
 		Item                 struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
 			ID       string `json:"id"`
 			CWD      string `json:"cwd"`
 			Type     string `json:"type"`
@@ -66,16 +77,29 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state = &daemonContextState{requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
 		states[p.ThreadID] = state
 	}
+	if (method == "item/started" || method == "item/completed" || method == "item/agentMessage/delta") &&
+		(state.ended || state.activeTurn != "" && p.TurnID != state.activeTurn) {
+		return
+	}
 	c := SessionContext{At: now, ThreadID: p.ThreadID, TurnID: p.TurnID, ItemID: p.ItemID, Source: "LIVE"}
 	commandID := ""
 	if p.Item.ID != "" {
 		commandID = p.TurnID + "/" + p.Item.ID
 	}
 	switch method {
-	case "turn/started", "thread/closed":
+	case "turn/started":
+		states[p.ThreadID] = &daemonContextState{activeTurn: p.Turn.ID, turnObserved: true, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
+		return
+	case "thread/closed":
 		delete(states, p.ThreadID)
 		return
 	case "turn/completed", "turn/interrupted":
+		// Keep the observed task alongside its reply until the next turn.
+		state.ended = true
+		state.userItems = nil
+		state.turnObserved = false
+		state.streamItem, state.streamText = "", ""
+		state.latest.Streaming = false
 		state.promptToken, state.promptSpent = "", false
 		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
@@ -178,6 +202,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 	case "item/completed":
+		if p.Item.Type == "userMessage" {
+			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && state.latest.Text == "" {
+				c.Kind = SessionContextActivity
+				state.latest = c
+			}
+			return
+		}
 		for key, request := range state.requests {
 			if p.Item.ID != "" && request.ItemID == p.Item.ID && request.TurnID == p.TurnID {
 				delete(state.requests, key)
@@ -202,6 +233,12 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if p.Item.Type != "agentMessage" {
 			return
 		}
+		if state.activeTurn != "" && p.TurnID != state.activeTurn {
+			return
+		}
+		if state.streamItem == p.Item.ID {
+			state.streamItem, state.streamText = "", ""
+		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Text
 		if p.Item.Phase == "final_answer" {
 			c.Kind = SessionContextReply
@@ -216,6 +253,17 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c = state.activity.context(c)
 		}
 	case "item/started":
+		if p.Item.Type == "userMessage" {
+			return
+		}
+		if p.Item.Type == "agentMessage" {
+			if state.activeTurn != "" && p.TurnID != state.activeTurn {
+				return
+			}
+			state.streamItem, state.streamTurn, state.streamPhase = p.Item.ID, p.TurnID, p.Item.Phase
+			state.streamText = boundedStreamText(p.Item.Text)
+			return
+		}
 		if p.Item.Type != "commandExecution" {
 			return
 		}
@@ -238,6 +286,19 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 				return s
 			}
 			state.commands[p.TurnID+"/"+p.Item.ID] = contextCommandItem{bounded(p.Item.Command), bounded(p.Item.CWD)}
+		}
+	case "item/agentMessage/delta":
+		if p.ItemID == "" || p.ItemID != state.streamItem || p.TurnID != state.streamTurn {
+			return
+		}
+		state.streamText = boundedStreamText(state.streamText + p.Delta)
+		c.ItemID, c.Streaming = p.ItemID, true
+		c.Kind, c.Text = SessionContextActivity, SanitizeSessionContext(state.streamText)
+		if state.streamPhase == "final_answer" {
+			c.Kind = SessionContextReply
+		} else {
+			state.activity.prose, state.activity.proseTurnID = c.Text, p.TurnID
+			c = state.activity.context(c)
 		}
 	default:
 		return
@@ -305,10 +366,51 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			c = preferSessionContext(c, request)
 		}
 		c.PendingApprovals = count
+		c.CurrentTask, c.LatestGuidance = state.task, state.guidance
 		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
-		if c.Text != "" || c.PendingApprovalsLimited {
+		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}
 	return out
+}
+
+// Retain raw whitespace across deltas, sanitizing the assembled display only.
+// The byte cap also bounds malicious escape-only streams before sanitization.
+func boundedStreamText(text string) string {
+	const limit = sessionContextLimit * 8
+	if len(text) > limit {
+		return text[:limit]
+	}
+	return text
+}
+
+func userMessageText(content []struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}) string {
+	var parts []string
+	for _, item := range content {
+		if item.Type == "text" {
+			parts = append(parts, item.Text)
+		}
+	}
+	return SanitizeSessionContext(strings.Join(parts, "\n"))
+}
+
+func (s *daemonContextState) observeUserMessage(id, turn, text string) bool {
+	if id == "" || s.userItems[id] || s.completed || s.activeTurn != "" && turn != s.activeTurn || len(s.userItems) >= 64 {
+		return false
+	}
+	if s.userItems == nil {
+		s.userItems = map[string]bool{}
+	}
+	first := len(s.userItems) == 0
+	s.userItems[id] = true
+	if first && s.turnObserved {
+		s.task = text
+	} else {
+		s.guidance = text
+	}
+	return true
 }

@@ -154,7 +154,7 @@ func TestDaemonContextRequestLifecycle(t *testing.T) {
 		t.Fatal(c)
 	}
 	emit("turn/started", "", `{"threadId":"root"}`)
-	if len(states) != 0 {
+	if len(daemonContextSnapshot(states, []string{"root"}, nil)) != 0 || states["root"].latest != (SessionContext{}) || len(states["root"].requests) != 0 {
 		t.Fatal("stale context after next turn")
 	}
 	emit("item/tool/requestUserInput", "3", `{"threadId":"root","isBlocking":false,"questions":[{"question":"Optional feedback?"}]}`)

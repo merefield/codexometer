@@ -46,6 +46,134 @@ func queueTestModel(inline bool) (Model, *queueTestClient) {
 	return m, client
 }
 
+func TestQueuedSendShowsReceiptAndReconcilesImmediately(t *testing.T) {
+	m, c := queueTestModel(false)
+	m.monitorQueue.items = nil
+	m.monitorQueue.loading = true // an older empty read is still in flight
+	oldRequest := m.monitorQueue.request
+	m.monitorPrompt.input.SetValue("Next task")
+	m, send, _ := m.submitMonitorTurn("queue")
+	m, refresh, _ := m.updateMonitorPrompt(send())
+	if refresh == nil || !strings.Contains(ansi.Strip(m.render()), "ACCEPTED // CHECKING QUEUE") || !strings.Contains(ansi.Strip(m.render()), "Next task") {
+		t.Fatal("successful queue submission not immediately visible/refreshed")
+	}
+	entries := m.followupEntries()
+	if len(entries) != 1 || entries[0].editable || entries[0].removable || m.followupAction(0, "delete") != nil {
+		t.Fatal("receipt allowed mutation")
+	}
+	m, _, _ = m.updateMonitorQueue(monitorQueueResult{session: m.monitorQueue.session, request: oldRequest})
+	if len(m.monitorQueue.submitted) != 1 {
+		t.Fatal("pre-send read erased receipt")
+	}
+	c.items = nil // already dispatched by the time the post-send list arrives
+	m, _, _ = m.updateMonitorQueue(refresh())
+	if len(m.followupEntries()) != 0 {
+		t.Fatal("dispatched message left a phantom queue entry")
+	}
+}
+
+func TestEmptyQueueFailureAndCrowdedRowRemainVisible(t *testing.T) {
+	m, _ := queueTestModel(true)
+	m.monitorSessionData[0].preview.Text = strings.Repeat("Long context\n", 100)
+	if !strings.Contains(ansi.Strip(m.render()), "FOLLOW-UPS // 2") {
+		t.Fatal("long context hid queue")
+	}
+	m.monitorQueue.items = nil
+	m, _, _ = m.updateMonitorQueue(monitorQueueResult{session: m.monitorQueue.session, request: m.monitorQueue.request, err: errors.New("offline")})
+	if !strings.Contains(ansi.Strip(m.render()), "FOLLOW-UPS // UNAVAILABLE") {
+		t.Fatal("initial queue failure looked empty")
+	}
+}
+
+func TestComposerDraftSurvivesDetailNavigation(t *testing.T) {
+	for _, working := range []bool{false, true} {
+		m, _ := promptTestModel()
+		if working {
+			m, _ = turnTestModel()
+		} else {
+			m.focusMonitorPrompt()
+		}
+		const draft = "Keep this unsent draft"
+		m.monitorPrompt.input.SetValue(draft)
+		for _, mode := range []int{contextWide, contextFull, contextWide, contextFull} {
+			m.setRowContext("root-one", mode)
+			if m.monitorPrompt.input.Value() != draft || m.monitorPrompt.input.Focused() {
+				t.Fatal("navigation lost draft or retained typing focus")
+			}
+			if !strings.Contains(ansi.Strip(m.renderMonitorPrompt(100, 30, paletteFor(m.theme))), draft) {
+				t.Fatal("unfocused draft replaced by placeholder")
+			}
+			m.focusMonitorPrompt()
+			if m.monitorPrompt.input.Value() != draft {
+				t.Fatal("refocusing lost draft")
+			}
+		}
+		m.setRowContext("another-session", contextFull)
+		if m.monitorPrompt.input.Value() != "" {
+			t.Fatal("draft transferred to another session")
+		}
+	}
+}
+
+func TestComposerDraftsAreSessionScopedAndMemoryOnly(t *testing.T) {
+	m, c := promptTestModel()
+	other := m.monitorSessionData[0]
+	other.id = "root-two"
+	m.monitorSessionData = append(m.monitorSessionData, other)
+	m.focusMonitorPrompt()
+	m.monitorPrompt.input.SetValue("First session draft")
+	m.setRowContext("root-two", contextFull)
+	c.offer.ThreadID, c.offer.Token = "root-two", "second-capability"
+	m.focusMonitorPrompt()
+	if m.monitorPrompt.input.Value() != "" {
+		t.Fatal("draft leaked to second session")
+	}
+	m.monitorPrompt.input.SetValue("Second session draft")
+	c.offer.ThreadID, c.offer.Token = "root-one", "fresh-first-capability"
+	m.setRowContext("root-one", contextFull)
+	if m.monitorPrompt.input.Value() != "First session draft" || m.monitorPrompt.input.Focused() || m.monitorPrompt.offer.Token != c.offer.Token {
+		t.Fatal("first draft not restored with fresh capability and no focus")
+	}
+	c.offer.ThreadID, c.offer.Token = "root-two", "fresh-second-capability"
+	m.setRowContext("root-two", contextFull)
+	if m.monitorPrompt.input.Value() != "Second session draft" {
+		t.Fatal("second draft not restored")
+	}
+	m.monitorPrompt.input.Reset() // clear/send must not resurrect previous content
+	c.offer.ThreadID, c.offer.Token = "root-one", "first-again"
+	m.setRowContext("root-one", contextFull)
+	c.offer.ThreadID, c.offer.Token = "root-two", "second-again"
+	m.setRowContext("root-two", contextFull)
+	m.focusMonitorPrompt()
+	if m.monitorPrompt.input.Value() != "" {
+		t.Fatal("cleared draft resurrected")
+	}
+	fresh, _ := promptTestModel()
+	if len(fresh.monitorDrafts) != 0 {
+		t.Fatal("draft survived new application model")
+	}
+}
+
+func TestComposerDoesNotStoreInFlightOrQuestionDrafts(t *testing.T) {
+	for _, kind := range []string{"busy", "question", "secret"} {
+		m, _ := promptTestModel()
+		m.focusMonitorPrompt()
+		m.monitorPrompt.input.SetValue("Do not retain this")
+		switch kind {
+		case "busy":
+			m.monitorPrompt.busy = true
+		case "question":
+			m.monitorPrompt.offer.Questions = []codex.PromptQuestion{{}}
+		case "secret":
+			m.monitorPrompt.input.secret = true
+		}
+		m.setRowContext("another", contextFull)
+		if len(m.monitorDrafts) != 0 {
+			t.Fatalf("retained %s draft", kind)
+		}
+	}
+}
+
 func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 	for _, inline := range []bool{false, true} {
 		m, _ := queueTestModel(inline)
@@ -173,7 +301,7 @@ func TestUnifiedFollowupsPreserveBackendAndScheduledControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries := m.followupEntries()
-	if len(entries) != 3 || entries[0].label != "NEXT TURN" || entries[1].label != "THEN" || entries[2].label != "AFTER QUOTA REFRESH" {
+	if len(entries) != 3 || entries[0].label != "QUEUED" || entries[1].label != "QUEUED" || entries[2].label != "SCHEDULED · AFTER QUOTA REFRESH" {
 		t.Fatal(entries)
 	}
 	view := ansi.Strip(m.renderMonitorQueue(120, 4, paletteFor(m.theme)))
@@ -239,7 +367,7 @@ func TestQueueEditorButtonsAndKeyboardFocus(t *testing.T) {
 	for _, remove := range []bool{false, true} {
 		m, c := queueTestModel(false)
 		m.openQueueItem(0, remove)
-		lines := strings.Split(ansi.Strip(m.renderQueueEditor()), "\n")
+		lines := strings.Split(ansi.Strip(m.render()), "\n")
 		for _, b := range m.queueEditorButtons() {
 			if b.y >= len(lines) || !strings.Contains(lines[b.y], b.text) {
 				t.Fatal("button not on clickable row", b.y, b.text, lines)

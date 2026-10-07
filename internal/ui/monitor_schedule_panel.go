@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/schedule"
 )
 
@@ -36,37 +37,37 @@ func (m Model) triggerSummary(j schedule.Job) string {
 }
 
 func (m Model) triggerSummaryAt(j schedule.Job, now time.Time) string {
-	text := "After quota recovery"
+	text := i18n.Text("After quota recovery")
 	if j.Trigger == "at" {
-		text = "Not before " + j.At.Local().Format("02 Jan 2006 15:04 MST -07:00")
+		text = i18n.Text("Not before ") + scheduleDate(j.At.Local())
 		remaining := j.At.Sub(now)
 		if remaining > 0 {
-			text += " // Due in " + remaining.Round(time.Second).String()
+			text += i18n.Text(" // Due in ") + remaining.Round(time.Second).String()
 			if j.Status == "pending" {
 				return text
 			}
 		} else if j.Status == "pending" {
-			text += " // Time reached"
+			text += i18n.Text(" // Time reached")
 		}
 	}
 	switch {
 	case j.Status != "pending":
-		return text + " // " + j.Status
+		return text + " // " + i18n.Text(j.Status)
 	case m.err != nil || !schedule.Fresh(m.snapshot, now):
-		return text + " // waiting for fresh quota"
+		return text + i18n.Text(" // waiting for fresh quota")
 	case !j.MatchesAccount(m.snapshot.AccountFingerprint):
-		return text + " // waiting for the original account"
+		return text + i18n.Text(" // waiting for the original account")
 	case !schedule.Covers(j, m.snapshot):
-		return text + " // waiting for observed quota windows"
+		return text + i18n.Text(" // waiting for observed quota windows")
 	case !schedule.QuotaReady(m.snapshot, now):
-		return text + " // waiting for quota"
+		return text + i18n.Text(" // waiting for quota")
 	case !m.triggerReady(j):
 		if i := m.monitorSessionIndex(j.Session); i >= 0 && m.monitorSessionData[i].working {
-			return text + " // waiting for session to finish"
+			return text + i18n.Text(" // waiting for session to finish")
 		}
-		return text + " // waiting for an eligible idle session"
+		return text + i18n.Text(" // waiting for an eligible idle session")
 	}
-	return text + " // ready; awaiting dispatch"
+	return text + i18n.Text(" // ready; awaiting dispatch")
 }
 
 type triggerButton struct {
@@ -80,9 +81,9 @@ func (m Model) triggerButtons(width int) []triggerButton {
 	if !ok {
 		return nil
 	}
-	buttons := []triggerButton{{text: "[ Ctrl+N: SEND NOW ]", key: "ctrl+n", enabled: m.triggerReady(j)}, {text: "[ Ctrl+S: EDIT ]", key: "ctrl+s", enabled: j.Status == "pending"}, {text: "[ Ctrl+D: DELETE ]", key: "ctrl+d", enabled: j.Status != "sending"}}
+	buttons := []triggerButton{{text: i18n.Text("[ Ctrl+N: SEND NOW ]"), key: "ctrl+n", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Ctrl+S: EDIT ]"), key: "ctrl+s", enabled: j.Status == "pending"}, {text: i18n.Text("[ Ctrl+D: DELETE ]"), key: "ctrl+d", enabled: j.Status != "sending"}}
 	if m.scheduleUI.confirmID == j.ID && time.Now().Before(m.scheduleUI.confirmUntil) {
-		buttons = []triggerButton{{text: "[ Ctrl+Y: CONFIRM SEND ]", key: "ctrl+y", enabled: m.triggerReady(j)}, {text: "[ Esc: CANCEL ]", key: "esc", enabled: true}}
+		buttons = []triggerButton{{text: i18n.Text("[ Ctrl+Y: CONFIRM SEND ]"), key: "ctrl+y", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Esc: CANCEL ]"), key: "esc", enabled: true}}
 	}
 	x, y := 0, 0
 	for i := range buttons {
@@ -117,7 +118,7 @@ func (m Model) schedulePanelLines(width int) []string {
 		lines[b.y] += style.Render(b.text)
 	}
 	if m.scheduleUI.confirmID != "" && time.Now().Before(m.scheduleUI.confirmUntil) {
-		lines = append(lines, "Send this saved prompt now? This starts Codex work.")
+		lines = append(lines, i18n.Text("Send this saved prompt now? This starts Codex work."))
 	}
 	if m.scheduleUI.notice != "" {
 		lines = append(lines, m.scheduleUI.notice)

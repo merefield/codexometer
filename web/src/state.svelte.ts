@@ -15,6 +15,9 @@ export interface Session {
   command: string;
   workingCommand?: string;
   approvalContext?: string;
+  currentTask?: string;
+  latestGuidance?: string;
+  streaming?: boolean;
   commandStatus?: string;
   runningCommands?: number;
   runningLimited?: boolean;

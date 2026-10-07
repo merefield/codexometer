@@ -193,6 +193,72 @@ test.describe('quota profile reviews', () => {
   });
 });
 
+test('live detail separates the task and guidance from streamed replies', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'stream-root',
+    name: 'Stream test',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST REPLY',
+    text: 'Partial reply',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    currentTask: 'Build the <widget>',
+    latestGuidance: 'Use Go',
+    streaming: true,
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Build the <widget>', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'LATEST GUIDANCE', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'REPLY // STREAMING', exact: true }),
+  ).toBeVisible();
+  session.text = 'Authoritative finished reply';
+  session.streaming = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'LAST REPLY', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(session.text, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'TASK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(session.currentTask, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
+  ).toHaveCount(0);
+});
+
 test('working detail preserves prose alongside command state', async ({
   page,
   pairingURL,
