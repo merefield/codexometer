@@ -9,6 +9,34 @@ import (
 
 const testFilePatch = `[{"path":"/work/a.go","kind":{"type":"update","move_path":null},"diff":"@@ -3,2 +3,2 @@\n-old\n+new\n context\n"}]`
 
+func TestFileApprovalRenameWireShape(t *testing.T) {
+	// Matches PatchChangeKind in `codex app-server generate-json-schema`
+	// from codex-cli 0.160.1: the nested variant field is move_path.
+	patch := strings.Replace(testFilePatch, `"move_path":null`, `"move_path":"/work/renamed.go"`, 1)
+	states, c := fileApprovalFixture(t, patch, nil)
+	if c.ApprovalToken == "" || c.ApprovalBlocked != "" {
+		t.Fatalf("valid rename rejected: %+v", c)
+	}
+	lines := FileDiffLines(c.FileChanges)
+	if len(lines) < 2 || lines[0].Text != "UPDATE // /work/a.go" || lines[1].Text != "→ /work/renamed.go" {
+		t.Fatalf("rename source/destination missing: %+v", lines)
+	}
+	changed := strings.Replace(patch, "/work/renamed.go", "/work/another.go", 1)
+	states["root"].capturePatch("turn", "patch", json.RawMessage(changed))
+	if got := states["root"].requests[`"req"`]; got.ApprovalToken != "" || got.FileChanges == c.FileChanges {
+		t.Fatal("destination change retained old approval", got)
+	}
+	for _, invalid := range []string{
+		strings.Replace(patch, "move_path", "movePath", 1),
+		strings.Replace(patch, "/work/renamed.go", `/work/\u202Erenamed.go`, 1),
+	} {
+		_, blocked := fileApprovalFixture(t, invalid, nil)
+		if blocked.ApprovalToken != "" || blocked.FileChanges != "" {
+			t.Fatal("unknown or unsafe rename accepted", blocked)
+		}
+	}
+}
+
 func fileApprovalFixture(t *testing.T, patch string, overrides map[string]any) (map[string]*daemonContextState, SessionContext) {
 	t.Helper()
 	states := map[string]*daemonContextState{}

@@ -19,7 +19,10 @@ const fileApprovalLimit = 64 * 1024
 type FileChange struct {
 	Path string `json:"path"`
 	Kind struct {
-		Type     string `json:"type"`
+		Type string `json:"type"`
+		// PatchChangeKind's Update variant uses snake_case on the wire,
+		// unlike outer request fields. Verified against Codex 0.160.1's
+		// generated JSON schema; do not infer movePath from threadId.
 		MovePath string `json:"move_path"`
 	} `json:"kind"`
 	Diff string `json:"diff"`
