@@ -13,14 +13,15 @@ import (
 )
 
 type monitorPromptState struct {
-	session  string
-	offer    codex.SessionPromptOffer
-	input    monitorEditor
-	answers  [3]string
-	question int
-	choice   int
-	busy     bool
-	notice   string
+	session     string
+	offer       codex.SessionPromptOffer
+	input       monitorEditor
+	answers     [3]string
+	question    int
+	choice      int
+	busy        bool
+	notice      string
+	noticeUntil time.Time
 }
 
 type monitorPromptResult struct {
@@ -176,7 +177,13 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 		Width(max(width-4, 1)).Render(ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(width-4, 1), ""))
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	if o.TurnID != "" {
-		header = i18n.Text("WORKING") + " " + monitorDotWave(m.phase) + " // " + i18n.Text("FOLLOW-UP")
+		header = i18n.Text("WORKING")
+		if s, ok := m.contextDetailSession(); ok {
+			if dots := m.sessionActivityDots(s); dots != "" {
+				header += " " + dots
+			}
+		}
+		header += " // " + i18n.Text("FOLLOW-UP")
 		hint = "Enter: steer • Tab: queue next turn • Esc: interrupt"
 	}
 	if p.offer.Token == o.Token && p.input.Focused() && !p.busy {
@@ -190,8 +197,8 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	if p.notice != "" {
 		if !sentNotice(p.notice) {
 			hint = p.notice
-		} else if feedback := m.detailFeedback(); feedback != "" {
-			hint = feedback
+		} else if time.Now().Before(p.noticeUntil) || m.monitorDetailSent.session == m.monitorContextTarget() && time.Now().Before(m.monitorDetailSent.visibleUntil) {
+			hint = p.notice
 		}
 	}
 	inputLines := strings.Split(line, "\n")
@@ -213,6 +220,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			} else {
 				p.input.Reset()
 				p.notice = i18n.Text("Text sent ...")
+				p.noticeUntil = time.Now().Add(3 * time.Second)
 				m.recordDetailSent(p.notice)
 				if result.action == "queue" {
 					p.notice = "Queued in Codex for the next turn."
@@ -228,6 +236,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.input.Blur()
 			p.answers = [3]string{}
 			p.notice = i18n.Text("Text sent ...")
+			p.noticeUntil = time.Now().Add(3 * time.Second)
 			if result.err == nil {
 				m.recordDetailSent(p.notice)
 			}
@@ -237,6 +246,9 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.offer = codex.SessionPromptOffer{}
 		}
 		return m, nil, true
+	}
+	if !p.input.ready && p.session == "" {
+		return m, nil, false
 	}
 	wasFocused := p.input.Focused()
 	layout := m

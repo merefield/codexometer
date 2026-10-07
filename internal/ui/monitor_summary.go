@@ -98,7 +98,7 @@ func (item monitorAttentionItem) action() string {
 	return "attention:" + item.id
 }
 
-func (m Model) monitorAttentionSessions() []monitorAttentionItem {
+func (m *Model) monitorAttentionSessions() []monitorAttentionItem {
 	fresh := m.monitorState == monitorRunning && m.monitorError == ""
 	var items []monitorAttentionItem
 	for priority := 0; priority < 5; priority++ {
@@ -134,7 +134,7 @@ func (m Model) monitorAttentionSessions() []monitorAttentionItem {
 
 // Only the approval group is ranked; the other attention classes retain their
 // existing priority. Counts remain live while the committed order settles.
-func (m Model) orderMonitorApprovals(items []monitorAttentionItem) {
+func (m *Model) orderMonitorApprovals(items []monitorAttentionItem) {
 	n := 0
 	for n < len(items) && !items[n].profile && !items[n].trigger && items[n].attention == codex.SessionAttentionApproval {
 		n++
@@ -222,7 +222,7 @@ func (m *Model) openMonitorAttention(action string) {
 
 // A bounded, paged flow layout shared by rendering and hit testing. IDs remain
 // untouched for navigation; directory names are sanitized before shortening.
-func (m Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationButton, int) {
+func (m *Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigationButton, int) {
 	sessions := m.monitorAttentionSessions()
 	if len(sessions) == 0 || width < 24 || maxRows < 1 {
 		return nil, 0
@@ -267,7 +267,7 @@ func (m Model) selectedAttentionAction() string {
 	return "attention:" + id
 }
 
-func (m Model) markSelectedAttention(buttons []monitorNavigationButton) {
+func (m *Model) markSelectedAttention(buttons []monitorNavigationButton) {
 	action := m.selectedAttentionAction()
 	if action == "" {
 		return
@@ -280,7 +280,7 @@ func (m Model) markSelectedAttention(buttons []monitorNavigationButton) {
 	}
 }
 
-func (m Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, rows, compact int, truncate bool) []monitorNavigationButton {
+func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, rows, compact int, truncate bool) []monitorNavigationButton {
 	x, y := 0, 0
 	markerWidth := 0
 	if m.monitorContextDetail != "" {
@@ -372,7 +372,18 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 
 // Overview attention fits between the summary and session rows; retain at least
 // one useful row. The full detail budget additionally protects controls/text.
+type monitorGeometryCache struct {
+	areas     map[[2]int]monitorGeometry
+	dashboard *dashboardGeometry
+}
+
 func (m Model) monitorArea(width, height int) monitorGeometry {
+	key := [2]int{width, height}
+	if m.geometry != nil {
+		if a, ok := m.geometry.areas[key]; ok {
+			return a
+		}
+	}
 	a := layoutMonitorArea(width, height)
 	// Reserve one stable navigation row, even when no session needs attention.
 	// Overflow is paged rather than shifting the session content downwards.
@@ -386,6 +397,12 @@ func (m Model) monitorArea(width, height int) monitorGeometry {
 	}
 	a.gap += a.attentionRows
 	a.graphHeight -= a.attentionRows
+	if m.geometry != nil {
+		if m.geometry.areas == nil {
+			m.geometry.areas = make(map[[2]int]monitorGeometry)
+		}
+		m.geometry.areas[key] = a
+	}
 	return a
 }
 
@@ -429,10 +446,16 @@ func monitorSummaryHeight(width int) int {
 }
 
 func (m Model) monitorDashboardLayout() dashboardGeometry {
+	if m.geometry != nil && m.geometry.dashboard != nil {
+		return *m.geometry.dashboard
+	}
 	g := m.dashboardLayout()
 	summary, rows, _ := m.monitorDetailHeader(g.contentWidth, g.meterHeight)
 	g.meterY += summary + rows
 	g.meterHeight -= summary + rows
+	if m.geometry != nil {
+		m.geometry.dashboard = &g
+	}
 	return g
 }
 

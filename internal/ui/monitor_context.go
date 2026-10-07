@@ -324,6 +324,7 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 }
 
 func (m Model) monitorContextAt(x, y int) string {
+	m.geometry = &monitorGeometryCache{}
 	if m.meterView != viewMonitor || m.loading && len(m.snapshot.Meters()) == 0 {
 		return ""
 	}

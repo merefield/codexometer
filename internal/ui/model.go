@@ -44,6 +44,8 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	// Only populated on a local copy during a read-only render/hit-test pass.
+	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
 	monitorQueue                        monitorQueueState
 	monitorPrompt                       monitorPromptState
@@ -461,6 +463,10 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	colors := paletteFor(m.theme)
+	m.monitorPrompt.input.style(colors)
+	m.monitorQueue.input.style(colors)
+	m.scheduleUI.input.style(colors)
 	if next, cmd, handled := m.updateMonitorQueue(message); handled {
 		return next, cmd
 	} else {

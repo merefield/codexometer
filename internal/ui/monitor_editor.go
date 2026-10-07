@@ -10,10 +10,12 @@ import (
 // The textarea owns wrapping and cursor scrolling. Password questions keep
 // the dedicated masked widget: textarea does not provide password echo.
 type monitorEditor struct {
-	area     textarea.Model
-	password textinput.Model
-	secret   bool
-	ready    bool
+	area          textarea.Model
+	password      textinput.Model
+	secret        bool
+	ready         bool
+	width, height int
+	styleName     string
 }
 
 func newMonitorEditor() monitorEditor {
@@ -37,6 +39,10 @@ func (e *monitorEditor) configure(width, height int) {
 	if !e.ready {
 		return
 	}
+	if e.width == width && e.height == height {
+		return
+	}
+	e.width, e.height = width, height
 	e.area.MaxHeight = max(height-8, 1)
 	e.area.SetWidth(max(width-4, 1))
 	e.password.SetWidth(max(width-6, 1))
@@ -120,24 +126,32 @@ func (e monitorEditor) Update(msg tea.Msg) (monitorEditor, tea.Cmd) {
 	}
 	return e, cmd
 }
+func (e *monitorEditor) style(colors palette) {
+	if !e.ready || e.styleName == colors.name {
+		return
+	}
+	e.styleName = colors.name
+	s := e.password.Styles()
+	s.Focused.Text = colors.label()
+	s.Focused.Prompt = colors.label().Foreground(colors.primary)
+	s.Cursor.Color = colors.primary
+	e.password.SetStyles(s)
+	areaStyles := e.area.Styles()
+	tint := monitorComposerBackground(colors)
+	areaStyles.Focused.Base = areaStyles.Focused.Base.Background(tint)
+	areaStyles.Blurred.Base = areaStyles.Blurred.Base.Background(tint)
+	areaStyles.Focused.Text = colors.label().Background(tint)
+	areaStyles.Focused.Prompt = colors.label().Foreground(colors.primary)
+	areaStyles.Focused.CursorLine = colors.label().Background(tint)
+	areaStyles.Cursor.Color = colors.primary
+	e.area.SetStyles(areaStyles)
+}
+
 func (e monitorEditor) View(colors palette) string {
+	e.style(colors)
 	if e.secret {
-		s := e.password.Styles()
-		s.Focused.Text = colors.label()
-		s.Focused.Prompt = colors.label().Foreground(colors.primary)
-		s.Cursor.Color = colors.primary
-		e.password.SetStyles(s)
 		return e.password.View()
 	}
-	s := e.area.Styles()
-	tint := monitorComposerBackground(colors)
-	s.Focused.Base = s.Focused.Base.Background(tint)
-	s.Blurred.Base = s.Blurred.Base.Background(tint)
-	s.Focused.Text = colors.label().Background(tint)
-	s.Focused.Prompt = colors.label().Foreground(colors.primary)
-	s.Focused.CursorLine = colors.label().Background(tint)
-	s.Cursor.Color = colors.primary
-	e.area.SetStyles(s)
 	return e.area.View()
 }
 

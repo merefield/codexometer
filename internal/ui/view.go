@@ -24,6 +24,7 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) render() string {
+	m.geometry = &monitorGeometryCache{}
 	if m.scheduleUI.open {
 		return m.renderScheduleForm()
 	}

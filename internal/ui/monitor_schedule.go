@@ -132,6 +132,13 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
+	if !m.scheduleUI.open {
+		switch msg.(type) {
+		case tea.KeyPressMsg, tea.MouseClickMsg:
+		default:
+			return m, nil, false
+		}
+	}
 	key, isKey := msg.(tea.KeyPressMsg)
 	if m.scheduleUI.open && isKey && (key.String() == "ctrl+c" || key.String() == "q" && m.scheduleUI.focus != 0) {
 		return m, tea.Quit, true

@@ -225,6 +225,9 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 }
 
 func (m Model) monitorQueueAt(x, y int) string {
+	if m.meterView != viewMonitor || m.contextTargetHidden() || len(m.followupEntries()) == 0 {
+		return ""
+	}
 	g := m.monitorDashboardLayout()
 	x -= 2
 	y -= g.meterY
@@ -343,6 +346,13 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if m.scheduleUI.open {
 		q.focused = false
 		return m, nil, false
+	}
+	if !q.open && !q.focused {
+		switch msg.(type) {
+		case tea.MouseMsg, tea.KeyPressMsg:
+		default:
+			return m, nil, false
+		}
 	}
 	if q.open {
 		q.input.configure(max(m.width-4, 24), max(m.height-10, 8))
