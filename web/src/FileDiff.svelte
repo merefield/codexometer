@@ -1,9 +1,20 @@
 <script lang="ts">
   import type { FileDiffLine } from './state.svelte';
   let { lines }: { lines: FileDiffLine[] } = $props();
+  let added = $derived(lines.filter((line) => line.kind === 'addition').length);
+  let removed = $derived(
+    lines.filter((line) => line.kind === 'removal').length,
+  );
 </script>
 
 <div class="file-diff" aria-label="Proposed file changes">
+  <div
+    class="diff-summary"
+    aria-label={`${added} lines added, ${removed} lines removed`}
+  >
+    <span class="added">+{added}</span> /
+    <span class="removed">−{removed}</span>
+  </div>
   {#each lines as line}
     <div
       class:added={line.kind === 'addition'}

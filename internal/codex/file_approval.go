@@ -124,6 +124,19 @@ type FileDiffLine struct {
 	New  int    `json:"new,omitempty"`
 }
 
+// Count logical changed lines, not wrapped display rows or patch headers.
+func FileDiffTotals(lines []FileDiffLine) (added, removed int) {
+	for _, line := range lines {
+		switch line.Kind {
+		case "addition":
+			added++
+		case "removal":
+			removed++
+		}
+	}
+	return
+}
+
 var diffHunk = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
 // FileDiffLines is shared by both front ends. Add/delete diffs are whole-file

@@ -29,6 +29,12 @@ func TestFileApprovalDetailAndInlineFit(t *testing.T) {
 		}
 	}
 	text := strings.Join(m.contextDetailLines(100), "\n")
+	if !strings.Contains(text, "+1 / −1") {
+		t.Fatal("missing overall line totals", text)
+	}
+	if !strings.Contains(strings.Join(expandedContextLines(80, m.monitorSessionData[0]), "\n"), "+1 / −1") {
+		t.Fatal("inline totals missing")
+	}
 	if !strings.Contains(text, "/work/a.go") || !strings.Contains(text, "    4       │ -before") || !strings.Contains(text, "          4 │ +after") {
 		t.Fatal(text)
 	}

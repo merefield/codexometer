@@ -669,16 +669,17 @@ test('file approval renders numbered red/green diff and requires confirmation', 
   });
   const controls = page.getByRole('region', { name: 'Session controls' });
   await expect(controls.locator('.file-diff')).toContainText('/project/a.ts');
-  await expect(controls.locator('.removed')).toContainText('3');
-  await expect(controls.locator('.removed')).toContainText(
+  await expect(controls.locator('.diff-summary')).toHaveText('+1 / −1');
+  await expect(controls.locator('.diff-line.removed')).toContainText('3');
+  await expect(controls.locator('.diff-line.removed')).toContainText(
     '<script>alert(1)</script>',
   );
-  await expect(controls.locator('.added')).toContainText('3');
-  await expect(controls.locator('.added')).toHaveCSS(
+  await expect(controls.locator('.diff-line.added')).toContainText('3');
+  await expect(controls.locator('.diff-line.added')).toHaveCSS(
     'color',
     'rgb(103, 211, 145)',
   );
-  await expect(controls.locator('.removed')).toHaveCSS(
+  await expect(controls.locator('.diff-line.removed')).toHaveCSS(
     'color',
     'rgb(255, 107, 131)',
   );
@@ -699,6 +700,9 @@ test('file approval renders numbered red/green diff and requires confirmation', 
     snapshot,
   );
   await expect(page.locator('.detail-context .file-diff')).toBeVisible();
+  await expect(page.locator('.detail-context .diff-summary')).toHaveText(
+    '+1 / −1',
+  );
   await expect(
     page.getByRole('region', { name: 'Session controls' }),
   ).toHaveCount(0);

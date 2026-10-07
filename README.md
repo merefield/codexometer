@@ -1597,7 +1597,9 @@ or incomplete requests retain their original bounded text.
 
 **File-change approvals (shared app-server only):** proposed additions, deletions
 and updates are shown as scrollable patches, with file paths, rename destinations,
-old/new line numbers and green additions/red removals. Full detail retains the
+old/new line numbers and green additions/red removals. An overall `+N / −N`
+summary counts added and removed source lines across all proposed files (not
+wrapped display rows or patch headers). Full detail retains the
 preceding commentary and justification. The terminal and writable web interface
 offer **APPROVE ONCE** (with confirmation), **DECLINE**, and **REJECT & STOP TURN**.
 Read-only web mode can display the patch but cannot answer it. Inline terminal

@@ -88,3 +88,20 @@ func TestFileDiffNumbering(t *testing.T) {
 		}
 	}
 }
+
+func TestFileDiffTotals(t *testing.T) {
+	patch := `[
+	{"path":"updated","kind":{"type":"update"},"diff":"--- a/updated\n+++ b/updated\n@@ -3,2 +3,2 @@\n-old\n+new\n context\n@@ -10 +10 @@\n-last\n+replacement\n\\ No newline at end of file\n"},
+	{"path":"added","kind":{"type":"add"},"diff":"first\n\n+literal\n"},
+	{"path":"deleted","kind":{"type":"delete"},"diff":"first\nsecond"},
+	{"path":"empty","kind":{"type":"add"},"diff":""},
+	{"path":"renamed","kind":{"type":"update","move_path":"destination"},"diff":""}
+	]`
+	added, removed := FileDiffTotals(FileDiffLines(patch))
+	if added != 5 || removed != 4 {
+		t.Fatalf("got +%d / -%d; want +5 / -4", added, removed)
+	}
+	if a, r := FileDiffTotals(nil); a != 0 || r != 0 {
+		t.Fatal("empty diff has changes")
+	}
+}
