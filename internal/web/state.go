@@ -21,26 +21,27 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
-	CurrentTask     string    `json:"currentTask,omitempty"`
-	LatestGuidance  string    `json:"latestGuidance,omitempty"`
-	Streaming       bool      `json:"streaming,omitempty"`
-	Name            string    `json:"name,omitempty"`
-	ID              string    `json:"id"`
-	Directory       string    `json:"directory"`
-	Tokens          int64     `json:"tokens"`
-	Agents          int       `json:"agents"`
-	Status          string    `json:"status"`
-	ContextKind     string    `json:"contextKind"`
-	Text            string    `json:"text"`
-	Command         string    `json:"command"`
-	WorkingCommand  string    `json:"workingCommand,omitempty"`
-	ApprovalContext string    `json:"approvalContext,omitempty"`
-	CommandStatus   string    `json:"commandStatus,omitempty"`
-	RunningCommands int       `json:"runningCommands,omitempty"`
-	RunningLimited  bool      `json:"runningLimited,omitempty"`
-	Source          string    `json:"source"`
-	Activity        time.Time `json:"activity"`
-	Samples         []sample  `json:"samples"`
+	FileChanges     []codex.FileDiffLine `json:"fileChanges,omitempty"`
+	CurrentTask     string               `json:"currentTask,omitempty"`
+	LatestGuidance  string               `json:"latestGuidance,omitempty"`
+	Streaming       bool                 `json:"streaming,omitempty"`
+	Name            string               `json:"name,omitempty"`
+	ID              string               `json:"id"`
+	Directory       string               `json:"directory"`
+	Tokens          int64                `json:"tokens"`
+	Agents          int                  `json:"agents"`
+	Status          string               `json:"status"`
+	ContextKind     string               `json:"contextKind"`
+	Text            string               `json:"text"`
+	Command         string               `json:"command"`
+	WorkingCommand  string               `json:"workingCommand,omitempty"`
+	ApprovalContext string               `json:"approvalContext,omitempty"`
+	CommandStatus   string               `json:"commandStatus,omitempty"`
+	RunningCommands int                  `json:"runningCommands,omitempty"`
+	RunningLimited  bool                 `json:"runningLimited,omitempty"`
+	Source          string               `json:"source"`
+	Activity        time.Time            `json:"activity"`
+	Samples         []sample             `json:"samples"`
 }
 
 type sample struct {
@@ -334,6 +335,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
 				ApprovalContext: approvalContext,
+				FileChanges:     codex.FileDiffLines(row.Context.FileChanges),
 				CurrentTask:     codex.SanitizeSessionContext(row.Context.CurrentTask), LatestGuidance: codex.SanitizeSessionContext(row.Context.LatestGuidance), Streaming: row.Context.Streaming,
 				RunningCommands: activity.RunningCommands, RunningLimited: activity.RunningLimited,
 				Samples: s.samples[row.ID],

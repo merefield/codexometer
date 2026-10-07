@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "本地观察无法响应实时批准请求。",
   "Network approval is not supported here.": "此处不支持网络批准。",
   "Additional permissions require approval in Codex.": "额外权限需要在 Codex 中批准。",
-  "File-change approval is not supported here.": "此处不支持文件更改批准。",
+  "Complete file changes unavailable. Review in Codex.": "无法获取完整的文件更改。请在 Codex 中查看。",
   "Unsupported command format.": "不支持的命令格式。",
   "Command details are missing.": "缺少命令详情。",
   "Working directory is missing.": "缺少工作目录。",

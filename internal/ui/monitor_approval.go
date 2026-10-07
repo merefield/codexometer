@@ -47,7 +47,7 @@ func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
 	case "permissions":
 		return i18n.Text("Additional permissions require approval in Codex.")
 	case "file-change":
-		return i18n.Text("File-change approval is not supported here.")
+		return i18n.Text("Complete file changes unavailable. Review in Codex.")
 	case "command-format":
 		return i18n.Text("Unsupported command format.")
 	case "missing-command":

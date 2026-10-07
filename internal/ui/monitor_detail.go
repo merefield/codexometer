@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -25,6 +26,14 @@ func (line detailLine) render(colors palette) string {
 		style = style.Foreground(colors.warning)
 	case "command":
 		style = style.Foreground(colors.primary)
+	case "addition":
+		style = style.Foreground(colors.success)
+	case "removal":
+		style = style.Foreground(colors.danger)
+	case "diff-summary":
+		if parts := strings.SplitN(line.text, " / ", 2); len(parts) == 2 {
+			return style.Foreground(colors.success).Render(parts[0]) + style.Render(" / ") + style.Foreground(colors.danger).Render(parts[1])
+		}
 	}
 	return style.Render(line.text)
 }
@@ -103,6 +112,11 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
+	} else if c.Kind == codex.SessionContextApproval && c.FileChanges != "" {
+		section(contextTitle(c))
+		appendText(codex.SanitizeSessionContext(c.Text), "body", "")
+		lines = append(lines, detailLine{})
+		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails
@@ -147,6 +161,20 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	}
 	if notice := m.quota.notices[s.id]; notice != "" {
 		appendText(codex.SanitizeSessionContext(notice), "warning", "")
+	}
+	return lines
+}
+
+func fileApprovalDocument(changes string, width int) (lines []detailLine) {
+	diff := codex.FileDiffLines(changes)
+	added, removed := codex.FileDiffTotals(diff)
+	for _, text := range strings.Split(ansi.Hardwrap(fmt.Sprintf("+%d / −%d", added, removed), max(width, 1), true), "\n") {
+		lines = append(lines, detailLine{ansi.Truncate(text, max(width, 1), ""), "diff-summary"})
+	}
+	for _, line := range diff {
+		for _, text := range strings.Split(ansi.Hardwrap(line.NumberedText(), max(width, 1), true), "\n") {
+			lines = append(lines, detailLine{ansi.Truncate(text, max(width, 1), ""), line.Kind})
+		}
 	}
 	return lines
 }

@@ -1595,6 +1595,24 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**File-change approvals (shared app-server only):** proposed additions, deletions
+and updates are shown as scrollable patches, with file paths, rename destinations,
+old/new line numbers and green additions/red removals. An overall `+N / −N`
+summary counts added and removed source lines across all proposed files (not
+wrapped display rows or patch headers). Full detail retains the
+preceding commentary and justification. The terminal and writable web interface
+offer **APPROVE ONCE** (with confirmation), **DECLINE**, and **REJECT & STOP TURN**.
+Read-only web mode can display the patch but cannot answer it. Inline terminal
+buttons appear only when the entire proposed patch fits; otherwise open full detail.
+
+The patch must come from the matching live thread, turn and item; Codexometer
+never reconstructs approval details from files on disk. Patches are memory-only,
+bounded to 64 KiB of JSON and 64 files per item. Missing, oversized, unsafe or
+changed patches fail closed: review them in Codex (a fresh matching approval
+request can restore controls). Directory-root grants remain in Codex because
+their app-server semantics are unstable. File approvals do not offer session-wide
+or persistent permission grants.
+
 When the approval event omits the command or
 directory, Codexometer associates it with the preceding command item from the
 same thread, turn and item. A complete ordinary command request offers clickable
@@ -1692,14 +1710,14 @@ acknowledgement animations remain confined to full detail.
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or
 `CHECK SESSION` alone never enables these controls. Requests with missing,
-truncated or sanitised-away details, network approvals, file changes, permission
+truncated or sanitised-away details, network approvals, incomplete file changes, permission
 grants and other unsupported requests remain **REPLY IN CODEX**. The complete
 eligible request is available in the scrollable detail, not just the compact
 two-line preview. Unsupported requests may have only a bounded excerpt.
 
 When controls are unavailable, the detail page explains why beside
 **REPLY IN CODEX**: for example, missing command/directory or request identity,
-additional permissions, network/file-change approval, no supported decisions,
+additional permissions, network approval, unavailable complete file changes, no supported decisions,
 truncated or sanitised text, local-only observation, or a resolved/disconnected
 request. Eligible requests on small terminals instead explain that the terminal
 must be enlarged. These diagnostics do not relax any approval safeguards.

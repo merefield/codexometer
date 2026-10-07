@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Paikallinen seuranta ei voi vastata reaaliaikaisiin hyväksyntöihin.",
   "Network approval is not supported here.": "Verkkokäytön hyväksyntää ei tueta tässä.",
   "Additional permissions require approval in Codex.": "Lisäoikeudet on hyväksyttävä Codexissa.",
-  "File-change approval is not supported here.": "Tiedostomuutosten hyväksyntää ei tueta tässä.",
+  "Complete file changes unavailable. Review in Codex.": "Täydellisiä tiedostomuutoksia ei ole saatavilla. Tarkista Codexissa.",
   "Unsupported command format.": "Komentomuotoa ei tueta.",
   "Command details are missing.": "Komennon tiedot puuttuvat.",
   "Working directory is missing.": "Työhakemisto puuttuu.",

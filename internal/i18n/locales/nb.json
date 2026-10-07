@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Lokal avlesning kan ikke besvare sanntidsgodkjenninger.",
   "Network approval is not supported here.": "Nettverksgodkjenning støttes ikke her.",
   "Additional permissions require approval in Codex.": "Ekstra tillatelser må godkjennes i Codex.",
-  "File-change approval is not supported here.": "Godkjenning av filendringer støttes ikke her.",
+  "Complete file changes unavailable. Review in Codex.": "Fullstendige filendringer er utilgjengelige. Se gjennom i Codex.",
   "Unsupported command format.": "Kommandoformatet støttes ikke.",
   "Command details are missing.": "Kommandoopplysninger mangler.",
   "Working directory is missing.": "Arbeidsmappe mangler.",

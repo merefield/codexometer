@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "A observação local não permite responder a aprovações em direto.",
   "Network approval is not supported here.": "A aprovação de rede não é suportada aqui.",
   "Additional permissions require approval in Codex.": "Permissões adicionais exigem aprovação no Codex.",
-  "File-change approval is not supported here.": "A aprovação de alterações em ficheiros não é suportada aqui.",
+  "Complete file changes unavailable. Review in Codex.": "As alterações completas dos ficheiros não estão disponíveis. Reveja no Codex.",
   "Unsupported command format.": "Formato de comando não suportado.",
   "Command details are missing.": "Faltam os detalhes do comando.",
   "Working directory is missing.": "Falta o diretório de trabalho.",

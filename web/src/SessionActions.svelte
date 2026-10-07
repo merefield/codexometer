@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import FileDiff from './FileDiff.svelte';
+  import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
+    observedFileChanges = [],
     review = '',
     suspended = false,
     openScheduler = false,
@@ -11,12 +14,14 @@
   }: {
     session: string;
     observedCommand?: string;
+    observedFileChanges?: FileDiffLine[];
     review?: string;
     suspended?: boolean;
     openScheduler?: boolean;
     onProtectedChange?: (protectedState: boolean) => void;
   } = $props();
   interface Offer {
+    fileChanges?: FileDiffLine[];
     profile?: { threshold: number; current: string; proposed: string };
     id: string;
     session: string;
@@ -493,7 +498,11 @@
     {#if notice}<p class:notice={!success} class:sent={success} role="status">
         {notice}
       </p>{/if}
-    {#if command}
+    {#if offer?.fileChanges?.length && !stale && !offerError}
+      <FileDiff lines={offer.fileChanges} />
+    {:else if observedFileChanges.length}
+      <FileDiff lines={observedFileChanges} />
+    {:else if command}
       <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
       <pre class="command">{command}</pre>
     {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
@@ -551,7 +560,7 @@
               {option.label}
               {#if option.detail}<code>{option.detail}</code>{/if}
               {#if option.persistent}<span class="notice"
-                  >Grants permission beyond this one command. Check the scope
+                  >Grants permission beyond this one action. Check the scope
                   carefully.</span
                 >{/if}
             </label>
@@ -655,7 +664,9 @@
           Check the target and {offer.kind === 'profile'
             ? 'profile above'
             : offer.kind === 'approval'
-              ? 'exact command and permission scope'
+              ? offer.fileChanges?.length
+                ? 'proposed file changes above'
+                : 'exact command and permission scope'
               : 'message above'}. {scheduled
             ? 'This schedules a follow-up that will send automatically when eligible'
             : 'This will send to Codex'}; it may start work using your quota.

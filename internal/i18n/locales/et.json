@@ -89,7 +89,7 @@
   "Local observation cannot answer live approvals.": "Kohalik vaatlus ei saa reaalajas kinnitusi anda.",
   "Network approval is not supported here.": "Võrguloa kinnitamist siin ei toetata.",
   "Additional permissions require approval in Codex.": "Lisaload tuleb kinnitada Codexis.",
-  "File-change approval is not supported here.": "Failimuudatuste kinnitamist siin ei toetata.",
+  "Complete file changes unavailable. Review in Codex.": "Täielikud failimuudatused pole saadaval. Vaata üle Codexis.",
   "Unsupported command format.": "Toetamata käsuvorming.",
   "Command details are missing.": "Käsu üksikasjad puuduvad.",
   "Working directory is missing.": "Töökataloog puudub.",

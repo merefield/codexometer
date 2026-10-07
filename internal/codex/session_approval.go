@@ -6,8 +6,8 @@ import (
 )
 
 // SessionApprovalClient is deliberately separate from telemetry. Only live,
-// fully displayed, ordinary command requests expose a one-use capability.
-// Responses must select a supported choice advertised by that exact request.
+// fully displayed ordinary command or file-change requests expose a one-use
+// capability. Responses must select a supported choice for that exact request.
 type SessionApprovalClient interface {
 	SessionApprovalPending(string) bool
 	RespondSessionApproval(context.Context, string, string) error

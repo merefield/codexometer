@@ -652,6 +652,62 @@ async function mockActions(page: Page, kind = 'approval') {
   return { snapshot, offer, calls };
 }
 
+test('file approval renders numbered red/green diff and requires confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer, calls, snapshot } = await mockActions(page);
+  const fileChanges = [
+    { text: 'UPDATE // /project/a.ts', kind: 'heading' },
+    { text: '-old <script>alert(1)</script>', kind: 'removal', old: 3 },
+    { text: '+new', kind: 'addition', new: 3 },
+  ];
+  Object.assign(offer, { command: '', fileChanges });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await expect(controls.locator('.file-diff')).toContainText('/project/a.ts');
+  await expect(controls.locator('.diff-summary')).toHaveText('+1 / −1');
+  await expect(controls.locator('.diff-line.removed')).toContainText('3');
+  await expect(controls.locator('.diff-line.removed')).toContainText(
+    '<script>alert(1)</script>',
+  );
+  await expect(controls.locator('.diff-line.added')).toContainText('3');
+  await expect(controls.locator('.diff-line.added')).toHaveCSS(
+    'color',
+    'rgb(103, 211, 145)',
+  );
+  await expect(controls.locator('.diff-line.removed')).toHaveCSS(
+    'color',
+    'rgb(255, 107, 131)',
+  );
+  await controls
+    .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+    .check();
+  await controls.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  await expect(controls).toContainText('proposed file changes above');
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+  await controls.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(1);
+  // The same patch remains readable without enabling browser writes.
+  snapshot.control = false;
+  Object.assign(snapshot.sessions[0], { fileChanges });
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.detail-context .file-diff')).toBeVisible();
+  await expect(page.locator('.detail-context .diff-summary')).toHaveText(
+    '+1 / −1',
+  );
+  await expect(
+    page.getByRole('region', { name: 'Session controls' }),
+  ).toHaveCount(0);
+});
+
 test('scheduled follow-up is reviewed, visible and cancellable without sending immediately', async ({
   page,
   pairingURL,

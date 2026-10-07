@@ -11,6 +11,7 @@
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
   import SessionCopy from './SessionCopy.svelte';
+  import FileDiff from './FileDiff.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
@@ -213,7 +214,9 @@
     </h3>
     <pre class="command">{session.workingCommand}</pre>
   {/if}
-  {#if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
+  {#if (!full || !live.data?.control) && session.fileChanges?.length}
+    <FileDiff lines={session.fileChanges} />
+  {:else if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>
       {stale || session.status !== 'APPROVAL NEEDED'
@@ -348,6 +351,7 @@
                 'schedule',
               ) === 'edit'}
               observedCommand={selected.command}
+              observedFileChanges={selected.fileChanges || []}
               suspended={profileFocused}
               onProtectedChange={(value) => {
                 nativeProtected = value;
