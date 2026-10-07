@@ -24,6 +24,7 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) render() string {
+	m.geometry = &monitorGeometryCache{}
 	colors := paletteFor(m.theme)
 	layout := m.dashboardLayout()
 	contentWidth := layout.contentWidth

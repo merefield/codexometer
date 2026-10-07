@@ -87,6 +87,8 @@ Subtle animated dots in inline and full-screen detail indicate observed work, di
 
 On a shared-server session ready for input, the selected full-width detail row also offers a follow-up composer when there is room for the complete context. Click or press Enter to write, Enter to send, and Escape to leave the editor. Smaller panels and structured questions keep full-screen detail as the fallback.
 
+**Schedule the next move:** experimental full-detail scheduling (Ctrl+S, also in writable web mode) offers a delay, a calendar date/time, or confirmed quota recovery. A clickable **TRIGGER SET** pill and session label open the scheduler. While queued, the saved prompt and timing replace the ordinary composer: edit with Ctrl+S, delete with Ctrl+D, or request Send now with Ctrl+N and explicitly confirm with Ctrl+Y. The form is fully keyboard navigable; buttons work too. Requests follow session settings and wait for an eligible idle session with quota available. Keep Codexometer running: the queue is memory-only, closing the process cancels it, and uncertain sends are never automatically retried. It does not redeem reset credits.
+
 ## Quota estimates, resets, and session attention
 
 API-equivalent figures are workload-dependent estimates, not your subscription’s cash value or a statement of OpenAI’s private quota formula. They need clean observed quota movement to learn, show uncertainty, and restart learning when Codexometer is relaunched. Pricing uses published input, cached-input, and output rates where the model and usage are known; missing data is not treated as free.

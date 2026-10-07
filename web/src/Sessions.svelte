@@ -14,6 +14,24 @@
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
+  let triggers = $derived(
+    (live.data?.triggers || []).filter((t) =>
+      sessions.some((s) => s.id === t.session),
+    ),
+  );
+  function openTrigger(event: MouseEvent, id: string) {
+    if (params.id && params.id !== id && nativeProtected) {
+      event.preventDefault();
+      return;
+    }
+    select(id);
+  }
+  function sessionStatus(session: Session) {
+    return ['TURN COMPLETE', 'IDLE', 'ACTIVE'].includes(session.status) &&
+      triggers.some((t) => t.session === session.id)
+      ? 'TRIGGER SET'
+      : session.status;
+  }
   let nativeProtected = $state(false);
   function openProfile(event: MouseEvent, id: string) {
     if (params.id && params.id !== id && nativeProtected) {
@@ -142,11 +160,28 @@
       return 'OBSERVED TURN COMPLETION — informational, not an approval request.';
     return '';
   }
+  function contextTitle(session: Session) {
+    return session.streaming && session.contextKind === 'LAST REPLY'
+      ? 'REPLY // STREAMING'
+      : session.contextKind || 'LAST ACTIVITY';
+  }
 </script>
 
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
+  {#if session.currentTask}
+    <h3>
+      {session.contextKind === 'LAST REPLY' && !session.streaming
+        ? 'TASK'
+        : 'CURRENT TASK'}
+    </h3>
+    <pre>{session.currentTask}</pre>
+  {/if}
+  {#if session.latestGuidance}
+    <h3>LATEST GUIDANCE</h3>
+    <pre>{session.latestGuidance}</pre>
+  {/if}
   {#if full && session.contextKind === 'APPROVAL REQUEST' && session.approvalContext}
     <h3>CONTEXT</h3>
     <pre>{session.approvalContext}</pre>
@@ -158,7 +193,9 @@
     >
       {explanation(session)}
     </p>{/if}
-  {#if heading}<h3>{session.contextKind || 'LAST ACTIVITY'}</h3>{/if}
+  {#if heading}<h3>
+      {contextTitle(session)}
+    </h3>{/if}
   {#if session.text || !session.workingCommand}
     <pre>{session.text || 'No session context available.'}</pre>
   {/if}
@@ -222,7 +259,7 @@
     verified quota and settings can be updated; previous outcome notices remain
     visible.
   </p>{/if}
-{#if (attention.length || profiles.some((p) => p.pending)) && !stale}<nav
+{#if (attention.length || profiles.some((p) => p.pending) || triggers.length) && !stale}<nav
     class="attention-summary"
     aria-label="Sessions needing attention"
   >
@@ -255,6 +292,17 @@
           profile.session}</a
       >
     {/each}
+    {#each triggers as trigger}<a
+        class="button"
+        href={'#/sessions/' + encodeURIComponent(trigger.session)}
+        onclick={(event) => openTrigger(event, trigger.session)}
+        >TRIGGER SET {Array.from(trigger.session)
+          .slice(-5)
+          .join('')
+          .toUpperCase()} // {sessions.find((s) => s.id === trigger.session)
+          ?.name ||
+          sessions.find((s) => s.id === trigger.session)?.directory}</a
+      >{/each}
   </nav>{/if}
 {#if params.id}
   {#if selected}<section class="panel full-detail">
@@ -267,7 +315,8 @@
             ? 'STALE'
             : profileFocused
               ? 'QUOTA THRESHOLD'
-              : selected.status} // {selected.name || selected.directory}
+              : sessionStatus(selected)} // {selected.name ||
+            selected.directory}
         </h2>
         <a
           class="button"
@@ -295,6 +344,9 @@
         {#if live.data?.control}
           {#key selected.id}<SessionActions
               session={selected.id}
+              openScheduler={new URLSearchParams(router.querystring).get(
+                'schedule',
+              ) === 'edit'}
               observedCommand={selected.command}
               suspended={profileFocused}
               onProtectedChange={(value) => {
@@ -368,7 +420,7 @@
             <span
               class="lamp lit"
               class:working={session.status === 'WORKING' && !stale}
-            ></span>{stale ? 'STALE' : session.status}
+            ></span>{stale ? 'STALE' : sessionStatus(session)}
           </a>
         </h2>
         {#if !session.name}<button
@@ -420,7 +472,7 @@
       </div>
       {#if level > 0}<div class="panel context">
           <div class="spread">
-            <h2>{session.contextKind || 'LAST ACTIVITY'}</h2>
+            <h2>{contextTitle(session)}</h2>
             {#if !stale && session.status === 'APPROVAL NEEDED'}<a
                 class="attention-badge"
                 href={'#/sessions/' + encodeURIComponent(session.id)}

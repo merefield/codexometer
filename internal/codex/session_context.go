@@ -25,7 +25,10 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	Activity SessionActivity
+	CurrentTask    string
+	LatestGuidance string
+	Streaming      bool
+	Activity       SessionActivity
 	// ApprovalContext is preceding same-thread/turn prose captured when the
 	// request arrived. Display-only: never part of the authorised action.
 	ApprovalContext string
@@ -90,7 +93,7 @@ func (c SessionContext) pending() bool {
 }
 
 func preferSessionContext(a, b SessionContext) SessionContext {
-	if b.Text == "" {
+	if b.Text == "" && b.CurrentTask == "" && b.LatestGuidance == "" {
 		return a
 	}
 	priority := func(c SessionContext) int {
@@ -110,7 +113,7 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 		tie = b.At.Equal(a.At) && (b.ThreadID < a.ThreadID ||
 			b.ThreadID == a.ThreadID && b.RequestID < a.RequestID)
 	}
-	if a.Text == "" || pb > pa || pb == pa && (newer || tie) {
+	if a.Text == "" && a.CurrentTask == "" && a.LatestGuidance == "" || pb > pa || pb == pa && (newer || tie) {
 		return b
 	}
 	return a

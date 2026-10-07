@@ -28,7 +28,7 @@ func (m Model) initialMonitorContextTarget() string {
 		if s.id == m.monitorSelectedID {
 			return s.id
 		}
-		if s.preview.Text == "" {
+		if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 			continue
 		}
 		if first == "" {
@@ -121,17 +121,35 @@ func (m *Model) setRowContext(id string, mode int) {
 	if mode == contextWide {
 		m.monitorContextExpanded = id
 	}
-	m.monitorPrompt = monitorPromptState{}
+	if m.monitorPrompt.session != id {
+		m.stashMonitorDraft()
+		m.monitorPrompt = monitorPromptState{}
+	} else {
+		// Changing presentation is not changing the prompt's owner. Keep the
+		// draft/capability, but release keyboard focus for navigation.
+		m.monitorPrompt.input.Blur()
+	}
 	m.monitorApprovalConfirm, m.monitorApprovalNotice = "", ""
 	m.monitorContextScroll = 0
+	m.restoreMonitorDraft()
 }
 
 func expandedContextLines(width int, s monitorSession) []string {
-	if s.preview.Text == "" {
+	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
 	header := terminalLabel(s.preview.ThreadID) + " // " + terminalLabel(s.preview.Source)
 	text := header + "\n" + codex.SanitizeSessionContext(s.preview.Text)
+	if s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" {
+		text = header
+		if s.preview.CurrentTask != "" {
+			text += "\n" + ansi.Truncate(contextTaskTitle(s.preview)+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.CurrentTask)), " "), max(width-4, 1), "…")
+		}
+		if s.preview.LatestGuidance != "" {
+			text += "\n" + ansi.Truncate(i18n.Text("LATEST GUIDANCE")+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.LatestGuidance)), " "), max(width-4, 1), "…")
+		}
+		text += "\n\n" + codex.SanitizeSessionContext(s.preview.Text)
+	}
 	return strings.Split(ansi.Hardwrap(text, max(width-4, 1), true), "\n")
 }
 
@@ -181,7 +199,24 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		n = 1
 		controls = colors.label().Render(dots)
 	}
+	if s.id == m.monitorContextTarget() {
+		if queueRows := m.monitorQueueRows(width, height, n); queueRows > 0 {
+			queue := m.renderMonitorQueue(width, queueRows, colors)
+			if controls != "" {
+				controls = queue + "\n" + controls
+			} else {
+				controls = queue
+			}
+			n += queueRows
+		}
+	}
 	textRows, gap, _ := monitorContextBodyLayout(height, n)
+	if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && len(lines) > textRows {
+		// Keep the reply readable in short rows. Full detail retains the task.
+		withoutTask := s
+		withoutTask.preview.CurrentTask, withoutTask.preview.LatestGuidance = "", ""
+		lines = expandedContextLines(width, withoutTask)
+	}
 	if hasWorkingCommand(s.preview) {
 		lines = workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
 	}
@@ -202,6 +237,25 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	}
 	action := m.renderMonitorNavigationButtons(m.expandedContextNavigation(width, height, s), colors)
 	return frameSizedWithActions(width, max(height-2, 1), contextTitle(s.preview), action, m.renderMonitorCopy(width, s.id, colors), strings.Join(lines, "\n"), colors.primary, colors)
+}
+
+// Keep the queue's geometry aligned with the controls already rendered in a row.
+func (m Model) expandedControlRows(width, height int, s monitorSession) int {
+	if buttons := m.expandedApprovalButtons(width, height, s); len(buttons) > 0 {
+		return buttons[len(buttons)-1].y + 1
+	}
+	if s.id == m.monitorContextTarget() {
+		if m.monitorApprovalHasOutcome() {
+			return 1
+		}
+		if rows := m.monitorPromptRows(width, height); rows > 0 {
+			return rows
+		}
+	}
+	if m.sessionActivityDots(s) != "" && height >= 5 && width >= 7 {
+		return 1
+	}
+	return 0
 }
 
 // Keep an explicit route to the complete request when inline decisions cannot

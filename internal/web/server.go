@@ -62,6 +62,8 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if s.control != nil {
+		waitSchedules := s.control.collectSchedules(ctx)
+		defer func() { cancel(); waitSchedules() }()
 		waitProfiles := s.control.collectProfiles(ctx, refresh)
 		defer func() { cancel(); waitProfiles() }()
 	}
@@ -101,7 +103,7 @@ func (s *server) handler() http.Handler {
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
 	if s.control != nil {
-		for _, action := range []string{"offer", "prepare", "commit"} {
+		for _, action := range []string{"offer", "prepare", "commit", "schedules"} {
 			mux.Handle("POST /api/control/"+action, s.authorize(http.HandlerFunc(s.control.handle(action, "http://"+s.host))))
 		}
 	}

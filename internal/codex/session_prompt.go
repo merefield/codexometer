@@ -12,6 +12,32 @@ type SessionPromptOffer struct {
 	Token     string
 	ThreadID  string
 	Questions []PromptQuestion
+	TurnID    string // Nonempty only for a separately requested active-turn offer.
+}
+
+// Active-turn controls are deliberately separate from idle follow-ups: neither
+// scheduled jobs nor browser prompt controls may accidentally steer a turn.
+type SessionTurnClient interface {
+	SessionTurn(string) SessionPromptOffer
+	SendSessionTurn(context.Context, SessionPromptOffer, string, string) error
+}
+
+func (c Client) SessionTurn(thread string) SessionPromptOffer {
+	if c.LiveUsage != nil {
+		if p, ok := c.LiveUsage.statusProvider.(SessionTurnClient); ok {
+			return p.SessionTurn(thread)
+		}
+	}
+	return SessionPromptOffer{}
+}
+
+func (c Client) SendSessionTurn(ctx context.Context, offer SessionPromptOffer, action, text string) error {
+	if c.LiveUsage != nil {
+		if p, ok := c.LiveUsage.statusProvider.(SessionTurnClient); ok {
+			return p.SendSessionTurn(ctx, offer, action, text)
+		}
+	}
+	return errors.New("live turn controls unavailable; use Codex")
 }
 
 type PromptQuestion struct {

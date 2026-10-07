@@ -22,8 +22,10 @@ const (
 )
 
 type daemonStatusProvider struct {
-	contexts   map[string]*daemonContextState
-	socketPath string
+	queueRevision     uint64
+	queueCapabilities map[string]queueCapability
+	contexts          map[string]*daemonContextState
+	socketPath        string
 
 	mu               sync.Mutex
 	connection       *websocket.Conn
@@ -394,6 +396,9 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 			continue
 		}
 		p.mu.Lock()
+		if envelope.Method == "thread/queue/changed" {
+			p.queueRevision++
+		}
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
 		}

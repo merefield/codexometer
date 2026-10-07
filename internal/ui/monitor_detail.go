@@ -31,7 +31,7 @@ func (line detailLine) render(colors palette) string {
 
 // A single document owns both display and scroll geometry. Formatting never
 // changes the stored request, capability or text sent back to Codex.
-func (m Model) contextDetailDocument(width int) []detailLine {
+func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	width = max(width, 1)
 	s, ok := m.contextDetailSession()
 	if !ok {
@@ -40,7 +40,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 	if doc := m.profileDocument(s, width); doc != nil {
 		return doc
 	}
-	if s.preview.Text == "" {
+	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
 		var lines []detailLine
 		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
@@ -75,6 +75,14 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		lines = append(lines, detailLine{title, "heading"})
 	}
 	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
+	if c.CurrentTask != "" {
+		section(contextTaskTitle(c))
+		appendText(codex.SanitizeSessionContext(c.CurrentTask), "body", "")
+	}
+	if c.LatestGuidance != "" {
+		section(i18n.Text("LATEST GUIDANCE"))
+		appendText(codex.SanitizeSessionContext(c.LatestGuidance), "body", "")
+	}
 	if c.Kind == codex.SessionContextApproval && c.ApprovalContext != "" {
 		section(i18n.Text("CONTEXT"))
 		appendText(codex.SanitizeSessionContext(c.ApprovalContext), "body", "")
@@ -116,7 +124,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 				appendText(codex.SanitizeSessionContext(option.Detail), "warning", "")
 			}
 		}
-	} else {
+	} else if c.Text != "" {
 		section(contextTitle(c))
 		text := codex.SanitizeSessionContext(c.Text)
 		// Legacy/unstructured requests remain verbatim. This cosmetic spacer

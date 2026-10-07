@@ -31,6 +31,29 @@ func TestMonitorSessionNameDisplayAndRename(t *testing.T) {
 	}
 }
 
+func TestFullDetailAndComposerIdentifySession(t *testing.T) {
+	for _, working := range []bool{false, true} {
+		m, _ := promptTestModel()
+		if working {
+			m, _ = turnTestModel()
+		}
+		m.monitorSessionData[0].name = "Fix the dashboard"
+		identity := shortSessionID(m.monitorSessionData[0].id) + " // Fix the dashboard"
+		for _, name := range []string{"Fix the dashboard", ""} {
+			m.monitorSessionData[0].name = name
+			if name == "" {
+				m.monitorSessionData[0].workingDirectory = "/work/dashboard"
+				identity = shortSessionID(m.monitorSessionData[0].id) + " // dashboard"
+			}
+			frame := strings.Split(ansi.Strip(m.renderMonitorContextDetail(160, 40, paletteFor(m.theme))), "\n")[0]
+			composer := strings.Split(ansi.Strip(m.renderMonitorPrompt(160, 40, paletteFor(m.theme))), "\n")[0]
+			if !strings.Contains(frame, identity) || !strings.Contains(composer, identity) {
+				t.Fatalf("missing session identity: frame=%q composer=%q", frame, composer)
+			}
+		}
+	}
+}
+
 func TestNamedSessionPillAndBadgeNavigation(t *testing.T) {
 	for _, attention := range []codex.SessionAttention{codex.SessionAttentionComplete, codex.SessionAttentionApproval, codex.SessionAttentionInput} {
 		m := Model{meterView: viewMonitor, width: 140, height: 40, snapshot: codex.DemoSnapshot(), monitorState: monitorRunning}

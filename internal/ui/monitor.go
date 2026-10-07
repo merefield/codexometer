@@ -410,7 +410,10 @@ func monitorSessionDismissRect(metricsWidth, rowY int) (monitorRect, bool) {
 
 func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colors palette) string {
 	badgeLabel := ""
-	if session.attention != codex.SessionAttentionNone {
+	trigger := m.sessionTriggerStatus(session)
+	if trigger {
+		badgeLabel = i18n.Text("TRIGGER SET")
+	} else if session.attention != codex.SessionAttentionNone {
 		badgeLabel = monitorSessionAttentionLabel(session)
 	} else if m.sessionObservedWorking(session) {
 		badgeLabel = i18n.Text("WORKING")
@@ -419,18 +422,18 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 		badgeColor := colors.primary
 		if monitorNeedsAttention(session.attention) {
 			badgeColor = colors.warning
-		} else if session.attention == codex.SessionAttentionNone {
+		} else if session.attention == codex.SessionAttentionNone && !trigger {
 			badgeColor = colors.success
 		} else if session.id != "" && (session.id == m.monitorSelectedID || session.id == m.monitorContextExpanded) {
 			// Selection accents the frame, not the meaning of the status badge.
 			badgeColor = paletteFor(m.theme).primary
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
-		if m.monitorContextHover == "badge:"+session.id {
+		if m.monitorContextHover == "badge:"+session.id || (m.sessionTriggerStatus(session) && m.monitorContextHover == "attention-trigger:"+session.id) {
 			badge = badge.Underline(true)
 		}
 		ball := "●"
-		if session.attention == codex.SessionAttentionNone && m.phase%2 == 1 {
+		if session.attention == codex.SessionAttentionNone && !trigger && m.phase%2 == 1 {
 			ball = " " // Blink only WORKING, reserving its cell to avoid layout movement.
 		}
 		return badge.Render(ansi.Truncate(" "+ball+" "+badgeLabel+" ", width, ""))
@@ -620,6 +623,18 @@ func shortSessionID(id string) string {
 		return strings.ToUpper(id)
 	}
 	return strings.ToUpper(string(runes[len(runes)-5:]))
+}
+
+func monitorSessionIdentity(s monitorSession) string {
+	identity := shortSessionID(s.id)
+	name := terminalLabel(s.name)
+	if name == "" && s.workingDirectory != "" {
+		name = filepath.Base(terminalLabel(s.workingDirectory))
+	}
+	if name != "" {
+		identity += " // " + name
+	}
+	return identity
 }
 
 func plural(count int, singular, plural string) string {

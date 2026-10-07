@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/schedule"
 )
 
 // Control capabilities never enter the shared snapshot. A keyed offer digest
 // binds the browser's selection to the exact source request without disclosing
 // Codex tokens. One pending confirmation bounds memory (including secret input).
 type control struct {
+	schedules *schedule.Queue
 	profiles  *profileControl
 	mu        sync.Mutex
 	store     *store
@@ -68,12 +70,16 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
-	Review       string   `json:"review,omitempty"`
-	Session      string   `json:"session"`
-	Offer        string   `json:"offer"`
-	Choice       *int     `json:"choice,omitempty"`
-	Answers      []string `json:"answers,omitempty"`
-	Confirmation string   `json:"confirmation,omitempty"`
+	EditID       string        `json:"editId,omitempty"`
+	SendID       string        `json:"sendId,omitempty"`
+	Schedule     *scheduleRule `json:"schedule,omitempty"`
+	CancelID     string        `json:"cancelId,omitempty"`
+	Review       string        `json:"review,omitempty"`
+	Session      string        `json:"session"`
+	Offer        string        `json:"offer"`
+	Choice       *int          `json:"choice,omitempty"`
+	Answers      []string      `json:"answers,omitempty"`
+	Confirmation string        `json:"confirmation,omitempty"`
 }
 
 type preparedAction struct {
@@ -83,7 +89,7 @@ type preparedAction struct {
 }
 
 func newControl(source Source, store *store) *control {
-	c := &control{store: store, key: rand.Text()}
+	c := &control{store: store, key: rand.Text(), schedules: schedule.New()}
 	c.approvals, _ = source.(codex.SessionApprovalClient)
 	c.prompts, _ = source.(codex.SessionPromptClient)
 	c.profiles = newProfileControl(source)
@@ -156,6 +162,18 @@ func (c *control) offer(id string) (offeredAction, error) {
 }
 
 func validAction(o offeredAction, r actionRequest) bool {
+	if len(r.EditID) > 128 || (r.EditID != "" && r.Schedule == nil) {
+		return false
+	}
+	if r.SendID != "" && (r.Schedule != nil || o.Kind != "prompt" || len(o.Questions) > 0) {
+		return false
+	}
+	if r.CancelID != "" {
+		return false
+	}
+	if r.Schedule != nil && (o.Kind != "prompt" || len(o.Questions) > 0 || !r.Schedule.valid(time.Now())) {
+		return false
+	}
 	if o.ID == "" || o.ID != r.Offer {
 		return false
 	}
@@ -200,6 +218,10 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			http.Error(w, "Invalid request", 400)
 			return
 		}
+		if action == "schedules" {
+			c.handleSchedules(w, r, body)
+			return
+		}
 		c.mu.Lock()
 		if c.pending != nil && !time.Now().Before(c.pending.until) {
 			c.pending = nil
@@ -238,6 +260,22 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(o.actionOffer)
 			return
 		}
+		if body.SendID != "" {
+			j, ok := c.sendNowJob(body.Session, body.SendID)
+			if !ok {
+				http.Error(w, errUnavailable.Error(), 409)
+				return
+			}
+			body.Answers = []string{j.Text}
+		}
+		if o.Kind == "prompt" && len(o.Questions) == 0 && body.SendID == "" && body.Schedule == nil {
+			for _, j := range c.schedules.List(body.Session) {
+				if j.Status != "sent" {
+					http.Error(w, "Pending trigger: edit, delete or use Send now", 409)
+					return
+				}
+			}
+		}
 		if !validAction(o, body) {
 			http.Error(w, errUnavailable.Error(), 409)
 			return
@@ -262,10 +300,28 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]any{"confirmation": p.id, "expires": p.until})
 			return
 		}
-		if o.Kind == "profile" {
+		if body.SendID != "" {
+			q := c.scheduleSnapshot()
+			err = c.schedules.DispatchNow(ctx, body.SendID, q.AccountFingerprint, time.Now(), func(ctx context.Context, j schedule.Job) error {
+				return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
+			})
+			c.publishSchedules()
+		} else if o.Kind == "profile" {
 			err = c.commitProfile(ctx, o, *body.Choice)
 		} else if o.Kind == "approval" {
 			err = c.approvals.RespondSessionApproval(ctx, o.token, o.decisions[*body.Choice])
+		} else if body.Schedule != nil {
+			q := c.scheduleSnapshot()
+			if !schedule.Fresh(q, time.Now()) || c.scheduleBlocked(body.Session) {
+				http.Error(w, errUnavailable.Error(), 409)
+				return
+			}
+			err = c.schedules.SaveIfCurrent(schedule.Job{Session: body.Session, Text: body.Answers[0], Trigger: body.Schedule.Trigger, At: body.Schedule.At, Zone: body.Schedule.Zone, Windows: schedule.WindowKeys(q)}, q.AccountFingerprint, time.Now(), body.EditID)
+			if err != nil {
+				http.Error(w, err.Error(), 409)
+				return
+			}
+			c.publishSchedules()
 		} else {
 			err = c.prompts.SendSessionPrompt(ctx, o.token, body.Answers)
 		}

@@ -21,6 +21,9 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	CurrentTask     string    `json:"currentTask,omitempty"`
+	LatestGuidance  string    `json:"latestGuidance,omitempty"`
+	Streaming       bool      `json:"streaming,omitempty"`
 	Name            string    `json:"name,omitempty"`
 	ID              string    `json:"id"`
 	Directory       string    `json:"directory"`
@@ -114,6 +117,7 @@ type quotaThreshold struct {
 }
 
 type state struct {
+	Triggers      []triggerSummary    `json:"triggers,omitempty"`
 	Profiles      []profileReview     `json:"profiles,omitempty"`
 	Thresholds    []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError  bool                `json:"profileError,omitempty"`
@@ -136,6 +140,7 @@ type store struct {
 	profileWindow   string
 	profileRevision uint64
 	quotaSnapshot   codex.Snapshot
+	scheduleQuota   codex.Snapshot
 	contexts        map[string]codex.SessionContext // Private: never published in state/SSE.
 	directories     map[string]string
 	mu              sync.Mutex
@@ -207,6 +212,7 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 	gap := s.state.QuotaError
 	s.state.QuotaError = err != nil
 	if err == nil {
+		s.scheduleQuota = q
 		s.quotaSnapshot = codex.CaptureQuotaProfile(q)
 		previous := s.state.Meters
 		if s.account != q.AccountFingerprint {
@@ -328,6 +334,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
 				ApprovalContext: approvalContext,
+				CurrentTask:     codex.SanitizeSessionContext(row.Context.CurrentTask), LatestGuidance: codex.SanitizeSessionContext(row.Context.LatestGuidance), Streaming: row.Context.Streaming,
 				RunningCommands: activity.RunningCommands, RunningLimited: activity.RunningLimited,
 				Samples: s.samples[row.ID],
 			})

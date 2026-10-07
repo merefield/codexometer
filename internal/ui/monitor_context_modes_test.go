@@ -109,7 +109,13 @@ func TestMonitorStatusAndContentHeadings(t *testing.T) {
 				full := strings.Split(ansi.Strip(m.renderMonitorContextDetail(120, 20, paletteFor(m.theme))), "\n")
 				badge := ansi.Strip(m.renderMonitorSessionBadge(s, 100, paletteFor(m.theme)))
 				if badge == "" {
-					badge = i18n.Text("SESSION CONTEXT")
+					badge = i18n.Text("IDLE")
+					if s.active {
+						badge = i18n.Text("ACTIVE")
+					}
+				}
+				if tc.state != monitorRunning || tc.err != "" {
+					badge = i18n.Text("STALE")
 				}
 				if !strings.Contains(full[0], badge) {
 					t.Fatalf("full title lost telemetry badge %q: %q", badge, full[0])

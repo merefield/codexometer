@@ -1,17 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
     review = '',
     suspended = false,
+    openScheduler = false,
     onProtectedChange = (_protected: boolean) => {},
   }: {
     session: string;
     observedCommand?: string;
     review?: string;
     suspended?: boolean;
+    openScheduler?: boolean;
     onProtectedChange?: (protectedState: boolean) => void;
   } = $props();
   interface Offer {
@@ -43,6 +45,108 @@
   let success = $state(false);
   let offerError = $state(false);
   let sent = $state('');
+  let editing = $state(false);
+  let editID = $state('');
+  let openedScheduler = $state(false);
+  let sendNowID = $state('');
+  let timing = $state('now');
+  let delay = $state(60);
+  let dateTime = $state('');
+  let scheduled = $state(false);
+  let triggerDescription = $state('');
+  interface Job {
+    id: string;
+    session: string;
+    text: string;
+    trigger: string;
+    at: string;
+    status: string;
+    canSend?: boolean;
+    waitingReason?: string;
+  }
+  let jobs = $state<Job[]>([]);
+  let pending = $derived(jobs.find((j) => j.status !== 'sent'));
+  let composer: HTMLTextAreaElement | undefined = $state();
+  function editJob(job: Job) {
+    if (editing) {
+      void tick().then(() => composer?.focus());
+      return;
+    }
+    if (
+      job.status !== 'pending' ||
+      busy ||
+      !offer?.id ||
+      offer.kind !== 'prompt' ||
+      offer.questions?.length
+    )
+      return;
+    editing = true;
+    editID = job.id;
+    void tick().then(() => composer?.focus());
+    answers = [job.text];
+    timing = job.trigger === 'quota' ? 'quota' : 'at';
+    confirmation = '';
+    sendNowID = '';
+    const d = new Date(job.at);
+    if (job.trigger !== 'quota')
+      dateTime = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+  }
+  $effect(() => {
+    if (
+      openScheduler &&
+      pending &&
+      !openedScheduler &&
+      offer?.id &&
+      offer.kind === 'prompt' &&
+      !offer.questions?.length
+    ) {
+      openedScheduler = true;
+      editJob(pending);
+    }
+  });
+  async function loadJobs() {
+    if (review) return;
+    try {
+      jobs = await controlRequest<Job[]>(
+        'schedules',
+        { session },
+        controller.signal,
+      );
+      if (
+        editing &&
+        !jobs.some((j) => j.id === editID && j.status === 'pending')
+      ) {
+        confirmation = '';
+      }
+      if (
+        sendNowID &&
+        !jobs.some((j) => j.id === sendNowID && j.status === 'pending')
+      ) {
+        confirmation = '';
+        sendNowID = '';
+      }
+    } catch {
+      /* Keep last known pending job visible on disconnect. */
+    }
+  }
+  async function cancelJob(id: string) {
+    try {
+      jobs = await controlRequest<Job[]>(
+        'schedules',
+        { session, cancelId: id },
+        controller.signal,
+      );
+      editing = false;
+      confirmation = '';
+      sendNowID = '';
+      answers = [];
+    } catch (error) {
+      notice =
+        error instanceof Error ? error.message : 'Unable to cancel trigger.';
+    }
+  }
   $effect(() => {
     onProtectedChange(busy || answers.some((answer) => answer.length > 0));
     return () => onProtectedChange(false);
@@ -91,17 +195,65 @@
                 questions[index].options?.includes(a)),
           ),
   );
+  let scheduling = $derived(
+    offer?.kind === 'prompt' && !offer.questions?.length && timing !== 'now',
+  );
+  let targetTime = $derived(
+    timing === 'delay' ? now + delay * 60000 : Date.parse(dateTime),
+  );
+  let scheduleError = $derived.by(() => {
+    if (!scheduling) return '';
+    if (editing && !jobs.some((j) => j.id === editID && j.status === 'pending'))
+      return 'Trigger changed, removed or already sent. Go back and reopen it; your draft has not been saved.';
+    if (!answers[0]?.trim()) return 'Enter a message to schedule.';
+    if (timing === 'quota') return '';
+    if (!Number.isFinite(targetTime) || targetTime <= now)
+      return 'Choose a future date/time or a delay greater than zero.';
+    const limit = new Date(now);
+    limit.setFullYear(limit.getFullYear() + 1);
+    return targetTime >= limit.getTime()
+      ? 'Choose a time within one year.'
+      : '';
+  });
+  function localTime(value: number | string) {
+    return new Date(value).toLocaleString([], { timeZoneName: 'short' });
+  }
+  function waitingText(job: Job) {
+    if (job.status !== 'pending') return job.status;
+    if (job.trigger === 'at' && Date.parse(job.at) > now)
+      return 'Due in ' + Math.ceil((Date.parse(job.at) - now) / 60000) + ' min';
+    const reason = stale
+      ? 'waiting for a fresh connection'
+      : job.waitingReason ||
+        (job.canSend
+          ? 'ready; awaiting dispatch'
+          : 'waiting for quota and an eligible idle session');
+    return (job.trigger === 'at' ? 'Time reached — ' : '') + reason;
+  }
   $effect(() => {
     if (stale || suspended || followUpBlocked || now >= expires)
       confirmation = '';
   });
   const controller = new AbortController();
   onMount(() => {
+    const key = (event: KeyboardEvent) => {
+      if (
+        event.ctrlKey &&
+        event.key.toLowerCase() === 's' &&
+        !review &&
+        pending
+      ) {
+        event.preventDefault();
+        editJob(pending);
+      }
+    };
+    window.addEventListener('keydown', key);
     let timer: ReturnType<typeof setTimeout>;
     const clock = setInterval(() => {
       now = Date.now();
     }, 1000);
     async function poll() {
+      await loadJobs();
       try {
         const next = await controlRequest<Offer>(
           'offer',
@@ -132,20 +284,54 @@
     }
     void poll();
     return () => {
+      window.removeEventListener('keydown', key);
       controller.abort();
       clearTimeout(timer);
       clearInterval(clock);
     };
   });
-  async function prepare() {
-    if (!offer?.id || busy || stale || suspended || followUpBlocked || !valid)
+  async function prepare(job?: Job) {
+    if (
+      !offer?.id ||
+      busy ||
+      stale ||
+      suspended ||
+      followUpBlocked ||
+      (job ? !job.canSend : !valid || !!scheduleError)
+    )
       return;
     const id = offer.id;
     busy = true;
     notice = '';
     success = false;
     confirmation = '';
+    sendNowID = job?.id || '';
     try {
+      const schedule =
+        !job &&
+        offer.kind === 'prompt' &&
+        !offer.questions?.length &&
+        timing !== 'now'
+          ? {
+              trigger: timing === 'quota' ? 'quota' : 'at',
+              zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              ...(timing === 'quota'
+                ? {}
+                : {
+                    at: (timing === 'delay'
+                      ? new Date(Date.now() + delay * 60000)
+                      : new Date(dateTime)
+                    ).toISOString(),
+                  }),
+            }
+          : undefined;
+      scheduled = !!schedule;
+      triggerDescription = schedule
+        ? schedule.trigger === 'quota'
+          ? 'After fresh quota becomes available, when the session is idle'
+          : localTime(schedule.at!) +
+            ' — not before this time; when quota and idle allow'
+        : '';
       const result = await controlRequest<{
         confirmation: string;
         expires: string;
@@ -155,9 +341,12 @@
           session,
           ...(review ? { review } : {}),
           offer: id,
+          ...(job ? { sendId: job.id } : {}),
+          ...(schedule ? { schedule } : {}),
+          ...(schedule && editing ? { editId: editID } : {}),
           ...(offer.kind === 'approval' || offer.kind === 'profile'
             ? { choice }
-            : { answers: [...answers] }),
+            : { answers: job ? [job.text] : [...answers] }),
         },
         controller.signal,
       );
@@ -200,8 +389,14 @@
         controller.signal,
       );
       success = true;
-      notice =
-        kind === 'profile'
+      editing = false;
+      if (scheduled) {
+        sent = '';
+        await loadJobs();
+      }
+      notice = scheduled
+        ? 'Trigger set. Closing Codexometer cancels it.'
+        : kind === 'profile'
           ? 'Profile decision completed.'
           : kind === 'approval'
             ? 'Decision sent.'
@@ -213,13 +408,69 @@
           : 'Outcome uncertain. Check Codex before taking another action; nothing was retried.';
     } finally {
       busy = false;
+      sendNowID = '';
+      await loadJobs();
       answers = [];
       choice = null;
     }
   }
 </script>
 
-{#if !followUpBlocked}
+{#if !review && offer?.kind !== 'approval' && !offer?.questions?.length && !['APPROVAL NEEDED', 'INPUT NEEDED'].includes(status || '')}
+  {#each jobs.filter((j) => j.status !== 'sent') as job (job.id)}
+    <section class="session-actions" aria-label="Pending follow-up">
+      <h3>
+        {job.status === 'uncertain'
+          ? 'CHECK TRIGGER — outcome uncertain; not retried'
+          : 'SCHEDULED FOLLOW-UP'}
+      </h3>
+      <p>TARGET // {job.session}</p>
+      <p>
+        {job.trigger === 'quota'
+          ? 'After confirmed quota recovery, when idle'
+          : `Not before ${localTime(job.at)}`}
+      </p>
+      <p role="status">{waitingText(job)}</p>
+      <pre class="saved-prompt">{job.text}</pre>
+      {#if notice}<p role="status">{notice}</p>{/if}
+      <p class="muted">
+        In memory only. Follows session model, reasoning and speed. Closing
+        Codexometer cancels pending work.
+      </p>
+      <button
+        disabled={busy ||
+          !offer?.id ||
+          offer.kind !== 'prompt' ||
+          !!offer.questions?.length ||
+          job.status !== 'pending'}
+        onclick={() => editJob(job)}>EDIT · Ctrl+S</button
+      >
+      <button
+        disabled={busy || job.status === 'sending'}
+        onclick={() => cancelJob(job.id)}>DELETE TRIGGER</button
+      >
+      {#if confirming && sendNowID === job.id}
+        <p>
+          Send this saved prompt now? This starts Codex work and consumes quota.
+        </p>
+        <button disabled={busy || stale || !job.canSend} onclick={commit}
+          >CONFIRM SEND NOW</button
+        >
+        <button
+          onclick={() => {
+            confirmation = '';
+            sendNowID = '';
+          }}>BACK</button
+        >
+      {:else}<button
+          disabled={busy || stale || !job.canSend || suspended}
+          onclick={() => prepare(job)}>SEND NOW</button
+        >{/if}
+    </section>
+  {/each}
+{/if}
+
+{#if !followUpBlocked && (!pending || editing || review || offer?.kind !== 'prompt' || offer.questions?.length)}
   <section class="session-actions" aria-label="Session controls">
     <h3>
       {review === 'profile'
@@ -284,7 +535,9 @@
         <legend
           >{offer.kind === 'approval' || offer.kind === 'profile'
             ? 'Choose a decision'
-            : 'Reply to this session'}</legend
+            : editing
+              ? 'EDIT SCHEDULED FOLLOW-UP'
+              : 'Reply to this session'}</legend
         >
         {#if offer.kind === 'approval' || offer.kind === 'profile'}
           {#each offer.choices || [] as option, index}
@@ -304,6 +557,53 @@
             </label>
           {/each}
         {:else}
+          {#if !offer.questions?.length}
+            <label class="answer"
+              >Send
+              <select bind:value={timing}>
+                {#if !editing}<option value="now">Now</option>{/if}<option
+                  value="quota">After quota refresh</option
+                ><option value="delay">After a delay</option><option value="at"
+                  >At a date and time</option
+                >
+              </select>
+            </label>
+            {#if timing === 'delay'}<label class="answer"
+                >Delay (minutes)<input
+                  type="number"
+                  min="1"
+                  max="525600"
+                  bind:value={delay}
+                /></label
+              >{/if}
+            {#if timing === 'at'}<label class="answer"
+                >Local date and time<input
+                  type="datetime-local"
+                  bind:value={dateTime}
+                /></label
+              >{/if}
+            {#if timing !== 'now'}
+              <p class="readout">
+                Will send: {timing === 'quota'
+                  ? 'when quota is available and this session is idle'
+                  : Number.isFinite(targetTime)
+                    ? localTime(targetTime)
+                    : 'choose a date and time'}
+              </p>
+              {#if timing !== 'quota'}<p class="muted">
+                  Not before this time; when quota and idle allow.
+                </p>{/if}
+              <p class="muted">
+                Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}.
+                One pending request per session; saving replaces it. Memory
+                only; Codexometer must stay running. Uses session model,
+                reasoning and speed.
+              </p>{/if}
+            {#if editing}<p class="muted">
+                The existing trigger remains active until saved or deleted. If
+                it changes or sends while you edit, saving is blocked.
+              </p>{/if}
+          {/if}
           {#each questions as question, index}
             <label class="answer"
               >{question.text}
@@ -323,6 +623,7 @@
                 >
               {:else}
                 <textarea
+                  bind:this={composer}
                   rows="3"
                   maxlength="4096"
                   autocomplete="off"
@@ -349,13 +650,16 @@
         {/if}
       </fieldset>
       {#if confirming}
+        {#if scheduled}<p>TRIGGER // {triggerDescription}</p>{/if}
         <p class="notice">
           Check the target and {offer.kind === 'profile'
             ? 'profile above'
             : offer.kind === 'approval'
               ? 'exact command and permission scope'
-              : 'message above'}. This will send to Codex; it may start work
-          using your quota. Confirmation expires in {Math.max(
+              : 'message above'}. {scheduled
+            ? 'This schedules a follow-up that will send automatically when eligible'
+            : 'This will send to Codex'}; it may start work using your quota.
+          Confirmation expires in {Math.max(
             0,
             Math.ceil((expires - now) / 1000),
           )}s.
@@ -363,7 +667,11 @@
         <button onclick={commit} disabled={busy || stale}
           >CONFIRM {offer.kind === 'approval' || offer.kind === 'profile'
             ? offer.choices?.[choice!]?.label
-            : 'SEND'}</button
+            : scheduled
+              ? editing
+                ? 'SAVE CHANGES'
+                : 'SCHEDULE'
+              : 'SEND'}</button
         >
         <button
           onclick={() => {
@@ -371,15 +679,33 @@
           }}>CANCEL</button
         >
       {:else}
-        <button onclick={prepare} disabled={busy || stale || !valid}
-          >{busy ? 'SENDING…' : 'REVIEW BEFORE SENDING'}</button
+        {#if scheduleError}<p role="status">{scheduleError}</p>{/if}
+        <button
+          onclick={() => prepare()}
+          disabled={busy || stale || !valid || !!scheduleError}
+          >{busy
+            ? 'SENDING…'
+            : editing
+              ? 'REVIEW CHANGES'
+              : 'REVIEW BEFORE SENDING'}</button
         >
       {/if}
+      {#if editing}<button
+          onclick={() => {
+            editing = false;
+            confirmation = '';
+            answers = [];
+          }}>BACK — KEEP TRIGGER</button
+        >{/if}
     {/if}
   </section>
 {/if}
 
 <style>
+  .saved-prompt {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   fieldset {
     border: 1px solid currentColor;
     margin: 0.5rem 0;
@@ -411,6 +737,7 @@
   }
   textarea {
     resize: vertical;
+    background: color-mix(in srgb, currentColor 8%, var(--bg));
   }
   button {
     margin: 0.3rem 0.5rem 0.3rem 0;

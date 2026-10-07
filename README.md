@@ -1315,6 +1315,22 @@ switch between graph-only, split, expanded, and full detail as described below.
   in-memory, per-thread context—not a full command history or command output.
   Missed events (including before attaching) can leave observations incomplete;
   local-log fallback only reports completion when it was recorded.
+- **CURRENT TASK** shows the observed initial prompt while its turn is running;
+  **LATEST GUIDANCE** keeps subsequent steering separate. Full detail shows the
+  bounded text, and wide terminal rows show short excerpts. Queued prompts stay
+  in **FOLLOW-UPS**, not the current task. These fields require live app-server
+  events: when attaching mid-turn, Codexometer does not invent a missing initial
+  prompt or use an unsent composer draft. After completion, **TASK** and the latest
+  guidance remain above the reply until the next turn. Short terminal rows omit
+  these excerpts when needed to prioritise the reply; full detail retains them.
+- **REPLY // STREAMING** grows from live app-server message deltas; commentary
+  remains distinct from final-answer text. Terminal updates are batched through
+  the existing active-session refresh (about once a second), not animated typing.
+  A completed message replaces the partial text authoritatively. Full terminal
+  detail follows a growing reply when already at the bottom, but preserves your
+  position after scrolling back. Web detail receives the same bounded live text
+  through its normal refresh. Local-only mode retains completed-message fallback;
+  missed events are not reconstructed and the existing context length cap applies.
 
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the
@@ -1487,6 +1503,64 @@ it again. Enter still submits rather than inserting a newline. This is a text
 editor, not the Codex slash-command UI. Secret answers retain a single-line
 masked password field.
 
+In terminal **full detail**, or the **selected wide detail row** when its context
+and composer fit, a live **WORKING** turn also offers a composer once
+its turn ID has been observed. Only the selected row accepts input; switching
+sessions retains a separate in-memory ordinary draft for each session; returning
+restores it without sending or focusing the editor. Drafts are lost on exit;
+secret/question answers and in-flight submissions are not saved as drafts.
+The full-detail border and composer heading show the short session ID and name
+(directory fallback for unnamed sessions); full IDs remain in secondary metadata.
+Switching between wide-row
+and full-screen detail for the same session
+preserves the draft and releases typing focus; click the composer or press Enter
+to continue editing. The animated progress dots sit directly above
+the input. While the editor is focused, **Enter steers the current turn**,
+**Tab queues the message for the next turn**, and **Esc requests interruption**
+without discarding the draft. **Ctrl+C** leaves the editor without interrupting;
+Esc outside the editor keeps its normal back-navigation behaviour. Once idle,
+Enter sends a normal follow-up. A working-to-idle transition preserves the
+draft but never submits it automatically; a key arriving during that transition
+is consumed so it cannot accidentally change meaning. Approval and question
+controls retain priority over the ordinary composer.
+
+Queuing uses Codex's experimental `thread/queue/add` API, not Codexometer's timed
+scheduler. Codex owns queued-message storage and dispatch, so queued messages
+may survive closing Codexometer. A **FOLLOW-UPS** panel above the composer combines
+native messages (**QUEUED**) and local **SCHEDULED** triggers
+(**AT …** or **AFTER QUOTA REFRESH**). A thin divider and subtle theme tint
+separate the panel from the conversation; keyboard selection adds a brighter
+row and arrow marker without using approval-warning colours. Scheduled entries aren't numbered as queue
+positions: their eligibility, rather than their position in this list, determines
+when they run. The panel remains visible during work and ordinary approvals,
+above the approval controls when those replace the composer. Quota-threshold
+reviews remain isolated. Empty panels disappear unless the queue is unavailable; wide session rows show one
+preview at a time, while full detail shows more entries as space permits.
+
+Use the mouse wheel over the panel, or **Alt+Q** then **↑/↓**, **Page Up/Down**,
+to browse. **Enter/E** edits, **X/Delete** requests deletion, and **Esc/Tab** leaves
+queue keyboard focus. Each entry also has clickable **EDIT** and **×** buttons;
+native deletion requires confirmation. Scheduled **NOW** retains its separate
+confirmation. Editing a native message does not pause Codex's queue. Its original
+ID and contents are rechecked; an already-started/deleted message is never recreated.
+The API has no compare-and-swap edit condition, so avoid editing the same message
+simultaneously in multiple clients. Messages with attachments or unsupported
+content can be deleted but must be edited in Codex to avoid losing their content.
+The native list refreshes every two seconds while selected, with queue-change
+notifications invalidating the refresh delay. Failed refreshes mark existing
+previews unavailable and disable their actions, and also show an unavailable
+indicator when no earlier preview exists. Successful submissions immediately show
+an **ACCEPTED // CHECKING QUEUE** receipt while a fresh server list is requested;
+this receipt has no edit/delete actions and disappears on reconciliation if the
+message has already started. Long context in a wide row retains a compact queue
+header; click it or press **Alt+Q** to open full detail. Local triggers still work without
+native queue support and remain memory-only: quitting cancels them.
+
+If the daemon lacks the native API, the action reports an error and
+retains the draft—there is no silent local scheduling fallback or automatic
+retry. These active-turn controls are currently terminal-only; browser controls
+continue to offer idle follow-ups and explicit approvals/questions.
+
 For a question with multiple parts, `Enter` records each answer locally; only
 after the last answer is the complete response sent. Use `↑`/`↓` to select offered
 choices. Custom text is accepted only if the question permits it, and secret
@@ -1501,14 +1575,15 @@ which can be a linked agent. The editor shows the target thread or question.
 Drafts are memory-only, bounded to 4,096 characters per answer, and discarded
 when leaving detail, hiding context, or when the request/connection changes.
 Submitted text is sent to Codex and can become part of its normal session history.
-No text is sent automatically; pressing Enter while focused is the send action.
+Drafts are never submitted automatically. Explicitly queued messages are
+dispatched by Codex when eligible.
 
 Capabilities are one-use and connection-bound. Follow-ups recheck the live idle
 state immediately before `turn/start`, and pending answers use their original
 JSON-RPC request and question IDs. The protocol has no atomic “start only if this
 completed turn is still current” condition, so avoid submitting in Codex and
 Codexometer simultaneously. Failed or ambiguous sends are never automatically
-retried: check Codex first. Local-only, disconnected, busy and very small views
+retried: check Codex first. Local-only, disconnected and very small views
 do not offer an editor; use Codex itself in those cases. Codexometer does not
 detect the CLI's visual keyboard-focus state or type into its terminal.
 
@@ -2459,6 +2534,98 @@ start additional Codex readers. Updates use an authenticated event stream with
 full snapshots on reconnect. Refresh errors and disconnections are labelled;
 cached observations are not proof that a session is still working. Account
 history is hidden unless its account matches the current successful quota read.
+
+### Scheduled session follow-ups (experimental)
+
+In **Sessions → full detail**, use **Ctrl+S** (or click the composer's
+schedule heading) to schedule a follow-up for an idle shared app-server session.
+The form replaces the conversation area inside the existing detail pane, not
+the dashboard. The composer stays anchored below it; on shorter terminals the
+form scrolls with the mouse wheel and follows keyboard focus. Esc or Ctrl+S
+returns to the conversation, preserving a new follow-up draft. Cancelling an
+edit to a saved trigger leaves that trigger and any separate reply draft intact.
+Normal Enter-to-send remains immediate. The structured form offers **after quota
+refresh**, a delay in hours/minutes, or a calendar date and local time. Use Tab to
+move between visible fields (Shift+Tab goes back), arrows to adjust, digits to
+enter hours/minutes, and Page Up/Down to change calendar month. Calendar arrows
+move by day or week. Enter advances through fields and activates the selected
+**Confirm schedule** or **Back** button. Escape returns without saving and leaves
+an existing trigger intact. The calendar shows
+the local timezone and UTC offset; check the displayed time around daylight-saving
+changes. Scheduling and queue controls use the selected interface language;
+translated calendars use numeric months/dates and localised weekday labels.
+Hover highlights the individual control without changing the selected trigger.
+The dashboard tabs, attention pills and footer remain usable while editing;
+navigating away retains the unsaved form in memory for that session. Explicit
+Back/Esc still cancels an edit. Editing or deleting a native queued message also
+stays inside the detail pane; Tab/Shift+Tab selects its controls, Enter confirms
+the selected action and Esc cancels.
+
+Writable web mode offers the same triggers in the full-detail composer, with the
+browser's date/time picker and a separate review/confirmation step. Read-only web
+mode cannot create or access scheduled prompts. Both composers have a subtle
+theme-coloured background.
+
+- **One pending follow-up per session.** Saving an edit replaces it. The
+  **TRIGGER SET** label replaces **TURN COMPLETE** in the session status and terminal
+  pill while a follow-up is queued; it is not repeated beside the token count.
+  Working and attention-needed statuses remain unchanged. Removing or sending
+  the trigger restores the underlying status. Full detail retains the saved prompt
+  and trigger information.
+  The full-detail border shows the current state; the body uses content labels
+  such as **FOLLOW-UP** and **LAST REPLY** rather than repeating that state.
+  Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
+  Click the pill or the label in the session's left-hand box to open that session's
+  detail page with the saved prompt, timing and actions; web provides equivalent
+  detail links. Use **Ctrl+S** or **Edit** there to amend the schedule.
+  Dismissing a terminal session row does not hide its pending-trigger pill or
+  cancel the request; clicking that pill restores the row and opens its detail page.
+- Terminal detail shows the saved prompt as a scheduled entry in **FOLLOW-UPS**,
+  above the ordinary composer, with the local date/time and timezone or quota
+  recovery condition. **EDIT** opens the existing scheduling form. Actual sending
+  can be late: the target session must be idle and quota must be available.
+  The scheduling form previews the exact local date/time for both **IN** and
+  **AT**, including timezone; delay starts when saved. Invalid messages/times
+  show an explanation before saving. Existing triggers use **SAVE CHANGES**.
+  Terminal keyboard hints follow the focused field; the selected trigger stays
+  underlined when unfocused and filled when focused.
+  **Ctrl+S** edits; **Ctrl+D** deletes the trigger. **Ctrl+N** requests
+  **Send now**, followed by **Ctrl+Y** or a confirmation click; Escape cancels that
+  confirmation. These actions also have clickable buttons. Send now remains
+  disabled without fresh available quota and an eligible idle session. It shares
+  the automatic dispatch guard so the same trigger cannot send twice. Editing
+  invalidates older Send now confirmations. Approval/question controls retain
+  priority over the pending-trigger controls.
+- Writable web detail provides **Edit · Ctrl+S**, **Delete trigger** and separately
+  confirmed **Send now**. Standard Tab/Shift+Tab and native form keyboard controls
+  cover the entire web form. Back leaves the existing trigger unchanged.
+  Browser editing does not pause the saved trigger. If it is changed, deleted or
+  sent while you edit, the old edit cannot overwrite or recreate it: go back and
+  reopen the current trigger. Edits are checked against the exact saved job.
+  Active approval/question and quota-profile review panes omit unrelated saved
+  follow-up text, without deleting the queued trigger.
+- **Memory only:** keep the Codexometer process running. Quitting, restarting or
+  crashing cancels its queue; it is not a durable background scheduler. Separate
+  Codexometer processes have separate queues. Closing a browser tab alone does
+  not stop the web server or its pending requests.
+- Sending requires a fresh quota snapshot, the same account and an authoritative
+  idle follow-up capability from the connected shared app-server. Approval,
+  question and quota-threshold reviews are not bypassed. Closed/unavailable
+  sessions wait until eligible or until you cancel them. A due request can send
+  late after the session becomes idle or the computer resumes.
+- **After quota refresh** checks actual quota recovery; reaching a predicted reset
+  time alone is insufficient. All reported quota windows must have capacity, with
+  no reported spend-control/limit block. This can conservatively wait for a bucket
+  unrelated to the selected model. No reset credit is redeemed automatically.
+  Choosing this trigger when quota is already available sends when next eligible.
+- Requests follow the session's model, reasoning and speed settings at dispatch;
+  no temporary overrides or natural-language time parsing are provided. Sending
+  starts ordinary Codex work and can consume quota and run tools under that
+  session's permissions. An uncertain send is retained for inspection and **never
+  automatically retried**; check Codex before cancelling and scheduling again.
+  A local preflight deferral known to have sent nothing remains pending instead.
+  Completed entries are pruned when scheduling new work, so they do not consume
+  the pending-queue limit.
 
 ### Optional browser session control
 

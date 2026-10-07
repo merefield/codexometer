@@ -44,7 +44,12 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	// Only populated on a local copy during a read-only render/hit-test pass.
+	geometry                            *monitorGeometryCache
+	scheduleUI                          scheduleUI
+	monitorQueue                        monitorQueueState
 	monitorPrompt                       monitorPromptState
+	monitorDrafts                       map[string]string
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
@@ -459,6 +464,20 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	colors := paletteFor(m.theme)
+	m.monitorPrompt.input.style(colors)
+	m.monitorQueue.input.style(colors)
+	m.scheduleUI.input.style(colors)
+	if next, cmd, handled := m.updateMonitorQueue(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
+	if next, cmd, handled := m.updateSchedule(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	if next, cmd, handled := m.updateMonitorPrompt(message); handled {
 		return next, cmd
 	} else {
@@ -1073,6 +1092,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
+		commands = append(commands, m.pollMonitorQueue())
+		commands = append(commands, m.dispatchSchedules())
 		if m.monitorState == monitorRunning {
 			now := time.Time(message)
 			if !m.monitorNextSample.IsZero() && !now.Before(m.monitorNextSample) {
@@ -1253,6 +1274,7 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 	}
 	if view != viewMonitor {
 		m.monitorDetailSent = detailSentState{}
+		m.stashMonitorDraft()
 		m.monitorPrompt = monitorPromptState{}
 		m.monitorContextDetail = ""
 		m.monitorContextExpanded = ""
@@ -2664,6 +2686,22 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 }
 
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	follow := false
+	if m.monitorContextDetail != "" {
+		if s, ok := m.contextDetailSession(); ok {
+			for _, update := range usage.Sessions {
+				if update.ID == s.id && update.Context.ThreadID == s.preview.ThreadID && update.Context.TurnID == s.preview.TurnID && (s.preview.Streaming || update.Context.Streaming) {
+					follow = m.monitorContextScroll >= m.monitorContextScrollLimit()
+					break
+				}
+			}
+		}
+	}
+	defer func() {
+		if follow {
+			m.monitorContextScroll = m.monitorContextScrollLimit()
+		}
+	}()
 	for index := range m.monitorSessionData {
 		m.monitorSessionData[index].active = false
 		m.monitorSessionData[index].working = false
@@ -2945,6 +2983,7 @@ func (m *Model) selectMonitorSession(direction int) {
 		m.monitorContextExpanded = ""
 		m.monitorApprovalConfirm = ""
 		m.monitorApprovalNotice = ""
+		m.stashMonitorDraft()
 		m.monitorPrompt = monitorPromptState{}
 	}
 	pageSize := max(m.monitorPageSize(), 1)

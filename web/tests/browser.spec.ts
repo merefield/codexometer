@@ -193,6 +193,72 @@ test.describe('quota profile reviews', () => {
   });
 });
 
+test('live detail separates the task and guidance from streamed replies', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'stream-root',
+    name: 'Stream test',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST REPLY',
+    text: 'Partial reply',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    currentTask: 'Build the <widget>',
+    latestGuidance: 'Use Go',
+    streaming: true,
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Build the <widget>', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'LATEST GUIDANCE', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'REPLY // STREAMING', exact: true }),
+  ).toBeVisible();
+  session.text = 'Authoritative finished reply';
+  session.streaming = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    page.getByRole('heading', { name: 'LAST REPLY', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(session.text, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'TASK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(session.currentTask, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
+  ).toHaveCount(0);
+});
+
 test('working detail preserves prose alongside command state', async ({
   page,
   pairingURL,
@@ -567,6 +633,10 @@ async function mockActions(page: Page, kind = 'approval') {
   await page.route('**/api/control/*', async (route) => {
     const action = route.request().url().split('/').pop()!;
     const body = route.request().postDataJSON();
+    if (action === 'schedules') {
+      await route.fulfill({ json: [] });
+      return;
+    }
     calls.push({ action, body });
     const result =
       action === 'offer'
@@ -581,6 +651,277 @@ async function mockActions(page: Page, kind = 'approval') {
   });
   return { snapshot, offer, calls };
 }
+
+test('scheduled follow-up is reviewed, visible and cancellable without sending immediately', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  let jobs: object[] = [];
+  await page.route('**/api/control/schedules', async (route) => {
+    if (route.request().postDataJSON().cancelId) jobs = [];
+    await route.fulfill({ json: jobs });
+  });
+  await page.route('**/api/control/commit', async (route) => {
+    jobs = [
+      {
+        id: 'job1',
+        session: 'parent',
+        text: 'Continue after quota recovery',
+        trigger: 'quota',
+        status: 'pending',
+      },
+    ];
+    await route.fulfill({ json: { message: 'scheduled' } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page
+    .getByRole('textbox', { name: 'Follow-up message' })
+    .fill('Continue after quota recovery');
+  await page
+    .getByRole('combobox', { name: 'Send', exact: true })
+    .selectOption('quota');
+  await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
+  expect(calls.find((c) => c.action === 'prepare')?.body).toMatchObject({
+    schedule: { trigger: 'quota' },
+    answers: ['Continue after quota recovery'],
+  });
+  await expect(
+    page.getByText(
+      'TRIGGER // After fresh quota becomes available, when the session is idle',
+    ),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'CONFIRM SCHEDULE' }).click();
+  const pending = page.getByRole('region', { name: 'Pending follow-up' });
+  await expect(pending).toContainText('Continue after quota recovery');
+  await expect(
+    page.getByRole('textbox', { name: 'Follow-up message' }),
+  ).toHaveCount(0);
+  await pending
+    .getByRole('button', { name: 'EDIT · Ctrl+S', exact: true })
+    .click();
+  await expect(
+    page.getByRole('textbox', { name: 'Follow-up message' }),
+  ).toHaveValue('Continue after quota recovery');
+  const draft = page.getByRole('textbox', { name: 'Follow-up message' });
+  await draft.fill('Unsaved scheduling edit');
+  await draft.press('Control+s');
+  await expect(draft).toHaveValue('Unsaved scheduling edit');
+  await expect(draft).toBeFocused();
+  await expect(
+    page.getByText('EDIT SCHEDULED FOLLOW-UP', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'REVIEW CHANGES', exact: true }),
+  ).toBeEnabled();
+  await expect(pending.locator('pre')).toHaveText(
+    'Continue after quota recovery',
+  );
+  await page
+    .getByRole('button', { name: 'REVIEW CHANGES', exact: true })
+    .click();
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ editId: 'job1', answers: ['Unsaved scheduling edit'] });
+  jobs = [
+    {
+      id: 'job2',
+      session: 'parent',
+      text: 'Newer trigger',
+      trigger: 'quota',
+      status: 'pending',
+    },
+  ];
+  await expect(
+    page.getByText(
+      'Trigger changed, removed or already sent. Go back and reopen it; your draft has not been saved.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'REVIEW CHANGES', exact: true }),
+  ).toBeDisabled();
+  await expect(draft).toHaveValue('Unsaved scheduling edit');
+  await expect(
+    page.getByRole('button', { name: 'CONFIRM SAVE CHANGES' }),
+  ).toHaveCount(0);
+  await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
+  await expect(pending).toHaveCount(0);
+});
+
+test('native approval detail omits unrelated scheduled prompt', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'approval');
+  await page.route('**/api/control/schedules', (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 'job1',
+          session: 'parent',
+          text: 'Unrelated scheduled prompt',
+          trigger: 'quota',
+          status: 'pending',
+        },
+      ],
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await expect(
+    page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('Unrelated scheduled prompt', { exact: true }),
+  ).toHaveCount(0);
+});
+
+test('schedule form explains invalid input and previews exact timing', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const timing = page.getByRole('combobox', { name: 'Send', exact: true });
+  await timing.selectOption('delay');
+  const review = page.getByRole('button', { name: 'REVIEW BEFORE SENDING' });
+  await expect(review).toBeDisabled();
+  await expect(
+    page.getByText('Enter a message to schedule.', { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('textbox', { name: 'Follow-up message' })
+    .fill('Continue later');
+  await page.getByRole('spinbutton', { name: 'Delay (minutes)' }).fill('0');
+  await expect(review).toBeDisabled();
+  await expect(
+    page.getByText('Choose a future date/time or a delay greater than zero.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole('spinbutton', { name: 'Delay (minutes)' }).fill('30');
+  await expect(review).toBeEnabled();
+  await expect(page.getByText(/^Will send:/)).toContainText(
+    String(new Date().getFullYear()),
+  );
+  await timing.selectOption('at');
+  await expect(review).toBeDisabled();
+  await timing.selectOption('quota');
+  await expect(review).toBeEnabled();
+  await expect(page.getByText(/^Will send:/)).toContainText(
+    'when quota is available and this session is idle',
+  );
+});
+
+test('trigger pill and row link open detail; send now confirms the saved job', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page, 'prompt');
+  let jobs: object[] = [
+    {
+      id: 'job1',
+      session: 'parent',
+      text: 'Saved job text',
+      trigger: 'at',
+      at: new Date(Date.now() + 3600000).toISOString(),
+      status: 'pending',
+      canSend: true,
+    },
+  ];
+  let sends = 0;
+  await page.route('**/api/control/schedules', (route) =>
+    route.fulfill({ json: jobs }),
+  );
+  await page.route('**/api/control/commit', (route) => {
+    sends++;
+    jobs = [];
+    return route.fulfill({ json: { message: 'Sent' } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    { ...snapshot, triggers: [{ session: 'parent', status: 'pending' }] },
+  );
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TRIGGER SET', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TURN COMPLETE', exact: true })
+      .and(page.locator('[href="#/sessions/parent"]')),
+  ).toHaveCount(0);
+  await page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link', { name: /TRIGGER SET/ })
+    .click();
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  await expect(text).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toContainText('Saved job text');
+  await expect(page.locator('.full-detail .detail-heading')).toContainText(
+    'TRIGGER SET',
+  );
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).not.toContainText('TRIGGER SET');
+  await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
+  await page
+    .locator('.telemetry')
+    .getByRole('link', { name: 'TRIGGER SET', exact: true })
+    .click();
+  await expect(text).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toContainText('Saved job text');
+  await page.getByRole('button', { name: 'SEND NOW', exact: true }).click();
+  expect(sends).toBe(0);
+  expect(
+    calls.filter((c) => c.action === 'prepare').at(-1)?.body,
+  ).toMatchObject({ sendId: 'job1', answers: ['Saved job text'] });
+  await page
+    .getByRole('button', { name: 'CONFIRM SEND NOW', exact: true })
+    .click();
+  await expect(
+    page.getByRole('region', { name: 'Pending follow-up' }),
+  ).toHaveCount(0);
+  expect(sends).toBe(1);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    { ...snapshot, triggers: [] },
+  );
+  await page.getByRole('link', { name: '← ALL SESSIONS' }).click();
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TURN COMPLETE', exact: true })
+      .and(page.locator('[href="#/sessions/parent"]')),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator('.telemetry')
+      .getByRole('link', { name: 'TRIGGER SET', exact: true }),
+  ).toHaveCount(0);
+});
 
 for (const control of [false, true]) {
   test(`approval commentary is full-detail-only (control=${control})`, async ({

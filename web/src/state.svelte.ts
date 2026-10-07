@@ -15,6 +15,9 @@ export interface Session {
   command: string;
   workingCommand?: string;
   approvalContext?: string;
+  currentTask?: string;
+  latestGuidance?: string;
+  streaming?: boolean;
   commandStatus?: string;
   runningCommands?: number;
   runningLimited?: boolean;
@@ -94,6 +97,7 @@ export interface Threshold {
   remaining?: number;
 }
 export interface Snapshot {
+  triggers?: { session: string; status: string }[];
   profiles?: {
     session: string;
     threshold: number;
@@ -139,7 +143,7 @@ let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
 export async function controlRequest<T>(
-  action: 'offer' | 'prepare' | 'commit',
+  action: 'offer' | 'prepare' | 'commit' | 'schedules',
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
