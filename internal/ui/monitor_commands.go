@@ -287,6 +287,10 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 	p := &m.monitorCommands
 	if r, ok := msg.(monitorCommandsResult); ok {
 		if p.open && p.session == r.session && p.request == r.request {
+			if m.meterView != viewMonitor || m.monitorContextTarget() != r.session {
+				m.closeMonitorCommands()
+				return m, nil, true
+			}
 			p.busy = false
 			p.notice = ""
 			if r.err != nil {
@@ -296,10 +300,21 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
 				}
 			} else if r.applied {
-				p.notice = "Change requested. Codex will apply it to subsequent turns."
-				if strings.HasPrefix(strings.TrimSpace(m.monitorPrompt.input.Value()), "/") {
+				// Applying settings invalidates both the option revision and
+				// the root suggestion catalogue. Reopen only from a fresh read.
+				m.monitorCommands = monitorCommandsState{request: p.request + 1}
+				m.monitorSuggestions = monitorSuggestionState{request: m.monitorSuggestions.request + 1}
+				if codex.IsSessionCommand(m.monitorPrompt.input.Value()) {
 					m.monitorPrompt.input.Reset()
 				}
+				if offer := m.monitorPromptOffer(); offer.Token != "" && len(offer.Questions) == 0 && len(m.monitorPrompt.offer.Questions) == 0 {
+					m.monitorPrompt.offer = offer
+					m.monitorPrompt.session = r.session
+				}
+				cmd := m.focusMonitorPrompt()
+				m.monitorPrompt.session = r.session
+				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
+				return m, cmd, true
 			} else {
 				p.menu = r.menu
 				if p.menu.Path == "" || p.menu.Path == "help" {

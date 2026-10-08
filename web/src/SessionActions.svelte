@@ -638,6 +638,7 @@
                 }}
                 onchange={() => {
                   answers = [''];
+                  void tick().then(() => composer?.focus());
                 }}
               />
             {/if}

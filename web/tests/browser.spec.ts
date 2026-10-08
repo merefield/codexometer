@@ -1249,27 +1249,45 @@ test('slash commands discover help and require a separate confirmation', async (
 }) => {
   const { calls } = await mockActions(page, 'prompt');
   const commands: string[] = [];
+  let revision = 'r0';
+  let rejectCommit = false;
   await page.route('**/api/control/commands', async (route) => {
     const body = route.request().postDataJSON();
     commands.push(body.command.mode);
     let result: object;
-    if (body.command.mode === 'prepare')
+    if (body.command.mode === 'prepare') {
+      // Applying a setting invalidates the old catalogue, as the real server does.
+      if (body.command.revision !== revision) {
+        await route.fulfill({
+          status: 409,
+          json: { error: 'Command unavailable or unconfirmed' },
+        });
+        return;
+      }
       result = {
         confirmation: 'command-token',
         expires: new Date(Date.now() + 30000).toISOString(),
       };
-    else if (body.command.mode === 'commit')
+    } else if (body.command.mode === 'commit') {
+      if (rejectCommit) {
+        await route.fulfill({
+          status: 409,
+          json: { error: 'Command unavailable or unconfirmed' },
+        });
+        return;
+      }
+      revision = 'r1';
       result = {
         message: 'Change requested. Codex will apply it to subsequent turns.',
       };
-    else
+    } else
       result =
         body.command.path === ''
           ? {
               title: '/ COMMANDS',
               help: 'Live options',
               path: '',
-              revision: 'r',
+              revision,
               choices: [
                 {
                   id: 'm',
@@ -1283,12 +1301,18 @@ test('slash commands discover help and require a separate confirmation', async (
               title: '/model/test',
               help: 'Server model help',
               path: 'model/test',
-              revision: 'r',
+              revision,
               choices: [
                 {
                   id: 'effort',
                   label: 'Medium',
                   help: 'Server effort description',
+                  action: true,
+                },
+                {
+                  id: 'high',
+                  label: 'High',
+                  help: 'Higher effort',
                   action: true,
                 },
               ],
@@ -1381,6 +1405,47 @@ test('slash commands discover help and require a separate confirmation', async (
   expect(commands.filter((c) => c === 'commit')).toHaveLength(1);
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
   await expect(text).toHaveValue('');
+  await expect(text).toBeFocused();
+  await expect(
+    panel.getByRole('button', { name: 'BACK', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'Medium', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'REFRESH OPTIONS', exact: true }),
+  ).toHaveCount(0);
+  // Repeating the same command must reopen a fresh catalogue, not the old revision.
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'High', exact: true }).click();
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(text).toHaveValue('');
+  await expect(
+    panel.getByRole('button', { name: 'High', exact: true }),
+  ).toHaveCount(0);
+  await expect(panel).not.toContainText('Change unconfirmed');
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(2);
+  // A failed confirmation retains the user's draft and the error context.
+  rejectCommit = true;
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'Medium', exact: true }).click();
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(panel).toContainText('Change unconfirmed');
+  await expect(text).toHaveValue('/mod');
+  await expect(
+    panel.getByRole('button', { name: 'BACK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toBeDisabled();
 });
 
 test('read-only status line supports multiple fields, ordering and persistence without control writes', async ({

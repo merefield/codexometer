@@ -1558,7 +1558,9 @@ Codex session-setting changes require a loaded, idle session and explicit confir
 30 seconds. The command and options are revalidated before sending; stale
 connections, pending approvals and changed options fail closed. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already
-used the setting. These changes do not modify global defaults, and automatic
+used the setting. Successful confirmations close the menu and return focus to
+the composer with a success notice; reopening fetches fresh options. Failed
+confirmations retain the draft and error context. These changes do not modify global defaults, and automatic
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
 

@@ -227,7 +227,11 @@
       });
       if (seq === request) {
         notice = result.message;
+        open = false;
+        menu = null;
         selected = null;
+        expires = 0;
+        dismissedQuery = null;
         onchange();
       }
     } catch {
@@ -251,6 +255,7 @@
   >
     / COMMANDS
   </button>
+  {#if notice && !open}<p role="status">{notice}</p>{/if}
   {#if open}
     <div
       class:command-popup={suggesting}
