@@ -227,7 +227,7 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 		entry := entries[i]
 		buttons := followupButtons(entry, width)
 		selected := q.focused && i == q.offset
-		marker := "  "
+		marker := ""
 		background := tint
 		if selected {
 			marker = "› "

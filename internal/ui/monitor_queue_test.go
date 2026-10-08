@@ -174,6 +174,21 @@ func TestComposerDoesNotStoreInFlightOrQuestionDrafts(t *testing.T) {
 	}
 }
 
+func TestFollowupRowsWithoutIndent(t *testing.T) {
+	m, _ := queueTestModel(false)
+	colors := paletteFor(m.theme)
+	lines := strings.Split(ansi.Strip(m.renderMonitorQueue(120, 3, colors)), "\n")
+	if !strings.HasPrefix(lines[1], "QUEUED // Check the tests") || !strings.HasPrefix(lines[2], "QUEUED // Update documentation") {
+		t.Fatalf("queue rows have unnecessary indentation: %q", lines)
+	}
+	buttonX := ansi.StringWidth(lines[1][:strings.Index(lines[1], "[EDIT]")])
+	m.monitorQueue.focused = true
+	selected := strings.Split(ansi.Strip(m.renderMonitorQueue(120, 3, colors)), "\n")
+	if !strings.HasPrefix(selected[1], "› QUEUED // Check the tests") || ansi.StringWidth(selected[1][:strings.Index(selected[1], "[EDIT]")]) != buttonX {
+		t.Fatal("selection marker was lost or moved the queue controls")
+	}
+}
+
 func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 	for _, inline := range []bool{false, true} {
 		m, _ := queueTestModel(inline)
