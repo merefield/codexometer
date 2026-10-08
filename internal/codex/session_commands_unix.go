@@ -29,8 +29,9 @@ func commandDigest(value any) string {
 	data, _ := json.Marshal(value)
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
-func commandText(value string) string { return SanitizeSessionContext(value) }
-func commandSafe(value string) bool   { return value != "" && commandText(value) == value }
+func commandText(value string) string  { return SanitizeSessionContext(value) }
+func commandSafe(value string) bool    { return value != "" && commandText(value) == value }
+func commandLabel(value string) string { return strings.Join(strings.Fields(commandText(value)), " ") }
 
 func (p *daemonStatusProvider) commandThread(ctx context.Context, id string) (commandThread, error) {
 	if id == "" || len(id) > 512 {
@@ -119,18 +120,22 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
 	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, thread.Status.Type, menu.Revision})
+	return normalizeCommandMenu(menu), nil
+}
+
+func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 	safeHelp := commandText(menu.Help) == strings.TrimSpace(menu.Help)
-	menu.Title, menu.Help = commandText(menu.Title), commandText(menu.Help)
+	menu.Title, menu.Help = commandLabel(menu.Title), commandText(menu.Help)
 	unique := make([]SessionCommandChoice, 0, len(menu.Choices))
 	seen := map[string]bool{}
 	for i := range menu.Choices {
 		o := &menu.Choices[i]
-		if o.method != "" && (!safeHelp || commandText(o.Label) != strings.TrimSpace(o.Label) || commandText(o.Help) != strings.TrimSpace(o.Help)) {
+		if o.method != "" && (!safeHelp || commandLabel(o.Label) != o.Label || commandText(o.Help) != strings.TrimSpace(o.Help)) {
 			o.method = ""
 			o.params = nil
 			o.Help = "Complete safe help unavailable. Use Codex for this option."
 		}
-		o.Label, o.Help = commandText(o.Label), commandText(o.Help)
+		o.Label, o.Help = commandLabel(o.Label), commandText(o.Help)
 		o.ID = commandDigest([]any{o.Label, o.Help, o.Next, o.method, o.params})
 		o.Action = o.method != ""
 		if !seen[o.ID] {
@@ -139,7 +144,7 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 		}
 	}
 	menu.Choices = unique
-	return menu, nil
+	return menu
 }
 
 func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread, path string) (SessionCommandMenu, error) {

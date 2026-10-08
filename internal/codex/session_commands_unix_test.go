@@ -80,3 +80,29 @@ func TestSessionCommandCataloguesAndSafeHelp(t *testing.T) {
 		t.Fatal("accepted repeating cursor")
 	}
 }
+
+func TestCommandMenuSingleLineLabelsFailClosed(t *testing.T) {
+	for _, label := range []string{"Enable\nFast", "Enable\r\nFast", "Enable\tFast", "Enable  Fast", " Enable Fast ", "Enable\u2028Fast", "Enable\x1b[31m Fast"} {
+		menu := normalizeCommandMenu(SessionCommandMenu{
+			Title: "Choose\na mode", Help: "First help line\nSecond help line",
+			Choices: []SessionCommandChoice{
+				{Label: label, Help: "Option help\nMore help", method: "thread/settings/update", params: map[string]any{"serviceTier": "flex"}},
+				{Label: "Browse\nonly", Help: "First\nSecond"},
+				{Label: "Unchanged", Help: "Safe\nmultiline help", method: "thread/settings/update", params: map[string]any{"serviceTier": nil}},
+			},
+		})
+		if menu.Title != "Choose a mode" || menu.Help != "First help line\nSecond help line" {
+			t.Fatalf("title/help normalization: %+v", menu)
+		}
+		changed := menu.Choices[0]
+		if strings.ContainsAny(changed.Label, "\n\r\t\u2028\x1b") || changed.Action || changed.method != "" || changed.params != nil {
+			t.Fatalf("normalized action remained executable: %+v", changed)
+		}
+		if menu.Choices[1].Label != "Browse only" || menu.Choices[1].Help != "First\nSecond" {
+			t.Fatal("browse label must be single line while help retains paragraphs")
+		}
+		if !menu.Choices[2].Action || menu.Choices[2].Help != "Safe\nmultiline help" {
+			t.Fatal("safe action or multiline help was unnecessarily disabled")
+		}
+	}
+}
