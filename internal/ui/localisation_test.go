@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,17 +22,34 @@ func TestLocalisedScreens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Separate processes keep package-level locale state isolated. Limit the
+	// workers instead of launching 17 race-instrumented renderers at once on
+	// small CI runners; every locale still runs the complete surface suite.
+	workers := make(chan struct{}, 2)
 	for _, code := range []string{"en-GB", "nl", "de", "fr", "it", "es", "ru", "ja", "zh-Hans", "sv", "nb", "tr", "et", "fi", "pt-BR", "da", "pt-PT"} {
 		t.Run(code, func(t *testing.T) {
-			cmd := exec.Command(exe, "-test.run=^TestLocalisedScreensHelper$")
+			t.Parallel()
+			workers <- struct{}{}
+			defer func() { <-workers }()
+			// The child timeout prints the active test stack; the outer deadline
+			// also bounds a child that hangs before the test harness starts.
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestLocalisedScreensHelper$", "-test.timeout=3m", "-test.v")
+			cmd.WaitDelay = 5 * time.Second
 			for _, env := range os.Environ() {
 				if !strings.HasPrefix(env, i18n.EnvironmentVariable+"=") && !strings.HasPrefix(env, "CODEXOMETER_LOCALE_HELPER=") {
 					cmd.Env = append(cmd.Env, env)
 				}
 			}
 			cmd.Env = append(cmd.Env, i18n.EnvironmentVariable+"="+code, "CODEXOMETER_LOCALE_HELPER=1")
-			if output, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("%v\n%s", err, output)
+			started := time.Now()
+			output, err := cmd.CombinedOutput()
+			// Include individual helper timings in go test -json artifacts on
+			// success too, so the next hotspot need not wait for a timeout.
+			t.Logf("locale %s completed in %s\n%s", code, time.Since(started), output)
+			if err != nil {
+				t.Fatalf("locale subprocess: %v (deadline: %v)", err, ctx.Err())
 			}
 		})
 	}

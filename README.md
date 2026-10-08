@@ -2918,8 +2918,8 @@ remain in the TUI. Existing regression tests cover English presentation across t
 and sizes, localisation, responsive layouts, mouse hit regions, session
 navigation, approvals, reset confirmation and quota learning. Additional launch
 tests ensure `--web` cannot start the terminal or benchmark discovery and normal
-launches never start web mode. CI retains `go test -race -cover ./...`, vet and
-build checks on Linux, macOS and Windows; browser tests currently run Chromium
+launches never start web mode. CI retains race-instrumented tests and coverage,
+vet and build checks on Linux, macOS and Windows; browser tests currently run Chromium
 on Linux. These checks provide regression evidence, not a guarantee that every
 terminal emulator or OS/browser combination is covered.
 
@@ -3158,6 +3158,23 @@ Measure test coverage:
 ```sh
 go test -cover ./...
 ```
+
+CI and release workflows run the core suite and localisation matrix separately,
+giving each its own explicit ten-minute package timeout without dropping tests,
+locales, coverage instrumentation or race detection:
+
+```sh
+go test -race -cover -timeout 10m -skip '^TestLocalisedScreens$' ./...
+go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
+```
+
+All 17 locale options run the complete localised-screen suite in isolated test
+subprocesses, with at most two locale workers active at once. Each child has a
+three-minute test timeout and an outer four-minute process deadline. CI uploads
+JSON test results, including per-locale helper timings, for seven days even on
+failure. The overall Go job is bounded to 25 minutes. Superseded ordinary CI runs
+are cancelled; release runs are not. Benchmark timeout-recovery tests use Go's
+virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 

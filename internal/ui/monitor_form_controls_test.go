@@ -34,7 +34,12 @@ func testScheduleRenderedControlSurfaces(t *testing.T) {
 			copy := m
 			copy.width = g.contentWidth
 			_, controls := copy.scheduleFormDocument()
-			plain := strings.Split(ansi.Strip(m.render()), "\n")
+			// Each hover starts from the same immutable model and fixed clock.
+			// Reuse its whole-screen baseline; still render and compare every
+			// hovered result, so colour-only and geometry regressions stay covered.
+			before := m.render()
+			beforePlain := ansi.Strip(before)
+			plain := strings.Split(beforePlain, "\n")
 			modes := 0
 			for _, c := range controls {
 				if strings.HasPrefix(c.key, "mode:") {
@@ -62,11 +67,10 @@ func testScheduleRenderedControlSurfaces(t *testing.T) {
 				if strings.HasPrefix(c.key, "day:") && c.value != m.scheduleUI.date.Day() {
 					continue
 				}
-				before := m.render()
 				next, _ := m.Update(tea.MouseMotionMsg{X: 4 + c.x, Y: row})
 				n := next.(Model)
 				after := n.render()
-				if n.scheduleUI.hover != c.key || before == after || ansi.Strip(before) != ansi.Strip(after) {
+				if n.scheduleUI.hover != c.key || before == after || beforePlain != ansi.Strip(after) {
 					t.Fatal("hover missing or changed layout", width, mode, c.key)
 				}
 				if c.focus != 5 && c.focus != 6 {
