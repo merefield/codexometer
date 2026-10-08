@@ -57,9 +57,4 @@ func TestMonitorSessionSettingsFollowUpdates(t *testing.T) {
 	if m.monitorSessionData[0].modelSettings != u.Sessions[0].ModelSettings {
 		t.Fatal("stale settings retained")
 	}
-	u.Sessions[0].ModelSettings = settings
-	m.resumeMonitorSessions(u, now, time.Minute)
-	if m.monitorSessionData[0].modelSettings != settings {
-		t.Fatal("resume lost settings")
-	}
 }

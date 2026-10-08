@@ -131,16 +131,6 @@ func TestMonitorCompletionDoesNotRequestAttention(t *testing.T) {
 	}
 }
 
-func TestMonitorResumeNewSessionRetainsContext(t *testing.T) {
-	m := contextTestModel()
-	preview := codex.SessionContext{Kind: codex.SessionContextQuestion, Text: "Please choose", ThreadID: "new", Source: "LIVE", InputToken: "question"}
-	m.resumeMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "new", Active: true, Context: preview, Attention: codex.SessionAttentionInput}}}, time.Now(), time.Minute)
-	i := m.monitorSessionIndex("new")
-	if i < 0 || m.monitorSessionData[i].preview != preview {
-		t.Fatal("new resume branch lost context")
-	}
-}
-
 func TestMonitorContextResponsiveHitTargets(t *testing.T) {
 	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 24}, {120, 40}, {180, 50}} {
 		m := contextTestModel()

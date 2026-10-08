@@ -46,31 +46,16 @@ func TestMonitorAverageRatesUseSharedCadence(t *testing.T) {
 			t.Fatal("session missed shared refresh")
 		}
 	}
-	m.monitorState, m.monitorStoppedAt = monitorPaused, now.Add(5*time.Second)
-	m.refreshMonitorRates(now.Add(time.Minute), true)
-	if m.monitorAverageRate != averageTokenRate(900, 65*time.Second) {
-		t.Fatal("paused average kept decaying")
-	}
 }
 
-func TestMonitorAverageRatesRefreshOnControls(t *testing.T) {
+func TestMonitorAverageRatesRefreshOnReset(t *testing.T) {
 	now := time.Now()
 	m := contextTestModel()
 	m.monitorStartedAt = now.Add(-time.Minute)
 	m.monitorBaseline, m.monitorLatest = 0, 600
 	m.monitorRateAt = now // Force must bypass the usual five-second gate.
 	u := codex.LiveUsageSnapshot{TotalTokens: 600, Sessions: []codex.LiveUsageSession{{ID: "root-one", TotalTokens: 600, Active: true}}}
-	n, _, ok := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchPause, usage: u, at: now})
-	m = n.(Model)
-	if !ok || m.monitorAverageRate != 600 {
-		t.Fatal("pause did not immediately refresh average")
-	}
-	n, _, ok = m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchResume, usage: u, at: now.Add(time.Minute)})
-	m = n.(Model)
-	if !ok || m.monitorRateAt != now.Add(time.Minute) || m.monitorAverageRate != 600 {
-		t.Fatal("resume did not immediately rebase average")
-	}
-	n, _, ok = m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchReset, usage: u, at: now.Add(time.Minute + time.Second)})
+	n, _, ok := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchReset, usage: u, at: now.Add(time.Second)})
 	m = n.(Model)
 	if !ok || m.monitorAverageRate != 0 {
 		t.Fatal("reset retained total average")

@@ -94,7 +94,7 @@ func TestProfileReviewExplainsThresholdAndChoice(t *testing.T) {
 }
 
 func TestProfileNativeAttentionAndHiddenControls(t *testing.T) {
-	for _, kind := range []string{"approval", "input", "question", "graph", "short", "paused", "error", "stale", "focused"} {
+	for _, kind := range []string{"approval", "input", "question", "graph", "short", "idle", "error", "stale", "focused"} {
 		t.Run(kind, func(t *testing.T) {
 			m, f := profileTestModel(t)
 			switch kind {
@@ -108,8 +108,8 @@ func TestProfileNativeAttentionAndHiddenControls(t *testing.T) {
 				m.setRowContext("one", contextGraph)
 			case "short":
 				m.height = 14
-			case "paused":
-				m.monitorState = monitorPaused
+			case "idle":
+				m.monitorState = monitorIdle
 			case "error":
 				m.monitorError = "disconnected"
 			case "stale":

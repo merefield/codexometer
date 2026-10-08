@@ -209,7 +209,7 @@ English rendering baseline captured from v0.12.0.
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
 - An always-on Sessions view that measures local token activity while Codexometer
-  is running, with a Reset button and a `p` hotkey for Pause/Resume.
+  is running, with a Reset button for establishing a fresh baseline.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
 - Dismissible session rows that automatically return on fresh activity,
@@ -586,7 +586,6 @@ codexometer --codex /path/to/codex
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle views within Quota or Usage |
 | `s` | Reset the Sessions baseline, or open Benchmark Scope |
-| `p` | Pause or resume live monitoring (Sessions view only) |
 | `h` | Reset all Sessions rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
@@ -1076,17 +1075,14 @@ The other top-level views are:
   describe currently visible rows. Elapsed time and average rate
   remain underneath when space permits; a clickable Reset control sits beside it.
   Account-wide quota details live in Quota, not Sessions.
-  During paused/unavailable observation, live state counts show **—**, not zero.
-  Pause/Resume remains available
-  through the `p` hotkey only, without a large Pause button taking space from
-  the readout. This pauses measurement, not Codex sessions. Active sessions
-  are checked once per second and the idle cadence relaxes to five seconds.
+  During unavailable observation, live state counts show **—**, not zero.
+  Active sessions are checked once per second and the idle cadence relaxes to five seconds.
   The Sessions tab light and status label pulse between bright and dim amber
   whenever any session needs input, approval, or a check. With nothing waiting,
   they pulse green while at least one session is working and remain steady green
   while the Codex runtime is healthy but idle. They turn red only when local
-  runtime health is observable and Codex is down, and remain dim while paused
-  or when runtime health cannot be established. Below,
+  runtime health is observable and Codex is down, and remain dim when runtime
+  health cannot be established. Below,
   every independent root session has a metrics box and its own graph.
   Spawned-agent descendants with an explicit Codex parent link are recursively
   aggregated into the root row, with a linked-agent count when nonzero and space permits.
@@ -1129,9 +1125,7 @@ The other top-level views are:
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
   closes the selected row.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
-  wheel to page through the rows. Pause performs an immediate final local read
-  instead of relying on the latest graph sample. Resume preserves the recorded
-  totals while excluding tokens and elapsed time from the paused interval.
+  wheel to page through the rows.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or
   conditional DigBench suite, or the active suite's complete catalog, against
   the selected or complete set of compatible model/reasoning-effort pairs.
@@ -1244,9 +1238,9 @@ rate and quota-share estimates remain lower priority. Entirely unavailable laten
 and output statistics are omitted rather than filling the card with `N/A`.
 
 **AVG TOK/MIN** is average observed tokens per minute since the measurement began
-(or the session joined), excluding paused time—not instantaneous generation speed.
+(or the session joined)—not instantaneous generation speed.
 The total and all session averages update together every five seconds, unaffected
-by mouse movement or keyboard-driven redraws. Start/reset/pause/resume update them
+by mouse movement or keyboard-driven redraws. Start and reset update them
 immediately; token counts and the rest of the interface retain their usual cadence.
 
 `CALLS` counts upstream model-response cycles observed after the current Sessions
@@ -1274,11 +1268,9 @@ Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessari
 zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
 missing, late-baseline, and reset-crossing windows do not produce a per-session
 number.
-Starting, resuming, or resetting reads quota before establishing the local token
-baseline, while Pause reads local tokens before the final quota snapshot, so the
-account observation brackets each monitored segment. These operations are not
-atomic, so unrelated account activity during either short boundary read remains
-another source of uncertainty.
+Starting or resetting reads quota before establishing the local token baseline.
+These operations are not atomic, so unrelated account activity during the short
+boundary read remains another source of uncertainty.
 
 #### Session context previews
 
@@ -1310,7 +1302,7 @@ switch between graph-only, split, expanded, and full detail as described below.
   do not guess the association. Compact/expanded row previews stay unchanged.
   Context is background information, not part of the action being authorised.
 - **LAST ACTIVITY** is observed commentary or a command, not proof that input
-  is required. Ages describe the last observed event; paused readings can be stale.
+  is required. Ages describe the last observed event and readings can be stale.
   During a turn, the latest assistant prose and shell command are retained
   separately in both terminal and web session detail: a command does not replace
   the explanation, and new commentary does not hide the command. Commands show
@@ -1356,7 +1348,7 @@ same action on that session. The presentations are:
    **WORKING** badge blinks only its ball, keeping the text and colour steady,
    and uses the same observed-work evidence as the animated dots,
    not merely recent activity. Completion and attention badges take priority;
-   paused/transitioning monitoring, observation errors, or inactive sessions
+   starting/resetting monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
    Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, a
@@ -1490,7 +1482,7 @@ or a shorter terminal remove that padding. Full detail uses its own threshold:
 at least 33 detail-panel rows must remain after the summary, pill row and padding,
 while also protecting composer controls and useful text space.
 **[+N →]** pages through additional sessions. Very short terminals reclaim this
-row to protect session content. Paused or failed observation
+row to protect session content. Failed observation
 suppresses these links until live readings return.
 
 On tall terminals, full detail retains the summary and attention strip. When
@@ -1799,7 +1791,7 @@ After new context arrives, the wave continues on its own while the session is
 observed as working with no attention flag. Recent activity alone is not enough:
 the reader must observe a working shared-server thread or a live local writer
 with an ongoing turn, including linked agents. It stops on completion, input/approval
-or check-session flags, inactive sessions, paused monitoring or observation errors.
+or check-session flags, inactive sessions or observation errors.
 Stopping the animation retains the plain successful-send acknowledgement for the
 same context (or the remainder of its three-second minimum), rather than losing
 delivery confirmation. New context then replaces it normally.
@@ -3042,11 +3034,8 @@ repeating the same per-thread requests on every active poll. When present, its
 loaded-thread runtime statuses make attention badges exact; when absent or
 unreachable, Codexometer silently uses the local rollout and writer-lock
 fallback described above. Graph history is bounded to the latest 4,096 samples.
-Pressing Pause performs one immediate final local read and forces complete
-session discovery, including Codex sessions resumed from older rollout
-directories. Resume rebases counters so activity during the pause is excluded;
-Reset clears the measurement and graphs without changing the paused/running
-state.
+Reset performs a fresh local read and clears the measurement and graphs before
+establishing a new baseline.
 
 ## Troubleshooting
 

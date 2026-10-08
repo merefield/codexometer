@@ -165,7 +165,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 			t.Errorf("partially translated medium-confidence estimate: %q", line)
 		}
 	})
-	for _, state := range []monitorState{monitorIdle, monitorRunning, monitorPaused} {
+	for _, state := range []monitorState{monitorIdle, monitorRunning} {
 		for _, width := range []int{12, 24, 40, 80} {
 			m := Model{monitorState: state}
 			graph := m.renderMonitorGraphSamples(width, 8, nil, i18n.Text("TOKEN BARS"), paletteFor(themeHacker))

@@ -16,7 +16,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-func TestMonitorAutoStartPauseResumeAndResetLifecycle(t *testing.T) {
+func TestMonitorAutoStartAndResetLifecycle(t *testing.T) {
 	baseline := int64(1_000)
 	model := New(stubLiveFetcher{stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()}}, time.Minute)
 	model.snapshot = codex.DemoSnapshot()
@@ -53,38 +53,6 @@ func TestMonitorAutoStartPauseResumeAndResetLifecycle(t *testing.T) {
 		t.Fatalf("30-second graph bucket was not recorded: %#v", model.monitorSamples)
 	}
 
-	updated, command = model.Update(key('p'))
-	model = updated.(Model)
-	if command == nil || model.monitorState != monitorPausing || model.flashedButton != footerButtonMonitorPause {
-		t.Fatalf("Pause did not request final sync: state=%d flash=%d command=%v", model.monitorState, model.flashedButton, command)
-	}
-	pauseSequence := model.monitorRequest
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchPause, sequence: pauseSequence,
-		usage: usageWithTokens(1_400), at: startedAt.Add(45 * time.Second),
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorPaused || model.monitorRecordedTokens() != 400 {
-		t.Fatalf("final usage was not recorded: state=%d total=%d", model.monitorState, model.monitorLatest-model.monitorBaseline)
-	}
-	if len(model.monitorSamples) != 1 {
-		t.Fatalf("partial final interval was incorrectly plotted as a 30-second bucket: %#v", model.monitorSamples)
-	}
-
-	updated, command = model.Update(key('p'))
-	model = updated.(Model)
-	if command == nil || model.monitorState != monitorResuming {
-		t.Fatalf("Resume did not request a fresh baseline: state=%d command=%v", model.monitorState, command)
-	}
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchResume, sequence: model.monitorRequest,
-		usage: usageWithTokens(1_600), at: startedAt.Add(75 * time.Second),
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorRunning || model.monitorRecordedTokens() != 400 {
-		t.Fatalf("Resume counted paused activity: state=%d total=%d", model.monitorState, model.monitorRecordedTokens())
-	}
-
 	updated, command = model.Update(key('s'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
@@ -100,104 +68,15 @@ func TestMonitorAutoStartPauseResumeAndResetLifecycle(t *testing.T) {
 	}
 }
 
-func TestMonitorResetPreservesPausedState(t *testing.T) {
-	startedAt := time.Unix(500, 0)
-	model := Model{
-		meterView: viewMonitor, monitorState: monitorPaused,
-		monitorStartedAt: startedAt, monitorStoppedAt: startedAt.Add(time.Minute),
-		monitorBaseline: 100, monitorLatest: 250,
-		monitorSamples: []monitorSample{{intervalTokens: 150}},
-	}
-	updated, command := model.Update(key('s'))
-	model = updated.(Model)
-	if command == nil || model.monitorState != monitorResetting || !model.monitorResetPaused {
-		t.Fatalf("paused Reset was not armed correctly: %#v", model)
-	}
-	resetAt := startedAt.Add(2 * time.Minute)
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchReset, sequence: model.monitorRequest,
-		usage: usageWithTokens(500), at: resetAt,
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorPaused || model.monitorRecordedTokens() != 0 ||
-		!model.monitorStoppedAt.Equal(resetAt) || !model.monitorNextFetch.IsZero() || len(model.monitorSamples) != 0 {
-		t.Fatalf("paused Reset changed run state or retained history: %#v", model)
-	}
-}
-
-func TestMonitorFailedResetRestoresPreviousRunState(t *testing.T) {
+func TestMonitorFailedResetRestoresRunningState(t *testing.T) {
 	now := time.Unix(700, 0)
-	for _, test := range []struct {
-		name   string
-		paused bool
-		want   monitorState
-	}{
-		{name: "running", want: monitorRunning},
-		{name: "paused", paused: true, want: monitorPaused},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			model := Model{
-				monitorState: monitorResetting, monitorRequest: 1,
-				monitorResetPaused: test.paused, monitorFetchActive: true,
-			}
-			updated, _ := model.Update(monitorFetchedMsg{
-				kind: monitorFetchReset, sequence: 1, err: errors.New("telemetry offline"), at: now,
-			})
-			model = updated.(Model)
-			if model.monitorState != test.want || model.monitorResetPaused {
-				t.Fatalf("failed Reset state = %d, reset-paused=%t; want %d, false", model.monitorState, model.monitorResetPaused, test.want)
-			}
-		})
-	}
-}
-
-func TestMonitorRejectedResumeDoesNotRebaseQuota(t *testing.T) {
-	now := time.Unix(800, 0)
-	model := Model{
-		monitorState: monitorResuming, monitorRequest: 1,
-		monitorLatest: 200,
-		monitorQuotaWindows: []monitorQuotaWindow{{
-			key: "primary", baselineUsed: 10, latestUsed: 12,
-		}},
-	}
+	model := Model{monitorState: monitorResetting, monitorRequest: 1, monitorFetchActive: true}
 	updated, _ := model.Update(monitorFetchedMsg{
-		kind: monitorFetchResume, sequence: 1, usage: usageWithTokens(100),
-		quota: monitorQuotaSnapshot(30, now.Add(time.Hour).Unix()), at: now,
+		kind: monitorFetchReset, sequence: 1, err: errors.New("telemetry offline"), at: now,
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorPaused || model.monitorQuotaWindows[0].baselineUsed != 10 || model.monitorQuotaWindows[0].latestUsed != 12 {
-		t.Fatalf("rejected Resume changed quota state: %#v", model.monitorQuotaWindows)
-	}
-}
-
-func TestMonitorResumeAfterFailedStartEstablishesFreshBaseline(t *testing.T) {
-	failedAt := time.Unix(900, 0)
-	model := Model{meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1}
-	updated, _ := model.Update(monitorFetchedMsg{
-		kind: monitorFetchStart, sequence: 1, err: errors.New("telemetry offline"), at: failedAt,
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorPaused || !model.monitorStartedAt.IsZero() {
-		t.Fatalf("failed Start state = %#v", model)
-	}
-
-	updated, command := model.Update(key('p'))
-	model = updated.(Model)
-	if command == nil || model.monitorState != monitorResuming {
-		t.Fatalf("Resume was not started after failed Start: %#v", model)
-	}
-	resumedAt := failedAt.Add(time.Minute)
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchResume, sequence: model.monitorRequest,
-		usage: usageWithTokens(500), quota: codex.DemoSnapshot(), at: resumedAt,
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorRunning || !model.monitorStartedAt.Equal(resumedAt) ||
-		model.monitorBaseline != 500 || model.monitorRecordedTokens() != 0 {
-		t.Fatalf("Resume did not establish a fresh baseline: %#v", model)
-	}
-	if elapsed := model.monitorElapsed(resumedAt.Add(time.Second)); elapsed != time.Second {
-		t.Fatalf("elapsed after recovered Resume = %s, want 1s", elapsed)
+	if model.monitorState != monitorRunning {
+		t.Fatalf("failed Reset state = %d; want %d", model.monitorState, monitorRunning)
 	}
 }
 
@@ -476,17 +355,6 @@ func TestMonitorSuppressesStaleAndMissingQuotaEstimates(t *testing.T) {
 		t.Fatalf("missing-window estimate = %q", got)
 	}
 
-	model.monitorQuotaWindows[0].stale = false
-	model.monitorState = monitorPausing
-	model.monitorRequest = 4
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchPause, sequence: 4, usage: codex.LiveUsageSnapshot{TotalTokens: 200},
-		quotaErr: errors.New("final quota offline"), at: startedAt.Add(time.Minute),
-	})
-	model = updated.(Model)
-	if got := model.monitorSessionQuotaEstimate(1); got != "EST LOCAL-ONLY 5H // STALE" {
-		t.Fatalf("failed-final estimate = %q", got)
-	}
 }
 
 func TestMonitorQuotaReadsBracketTheLocalTokenInterval(t *testing.T) {
@@ -502,13 +370,6 @@ func TestMonitorQuotaReadsBracketTheLocalTokenInterval(t *testing.T) {
 		t.Fatalf("initial baseline reads = %v; want %v", fetcher.calls, want)
 	}
 
-	fetcher.calls = nil
-	if message := model.monitorFetch(monitorFetchPause, 2)().(monitorFetchedMsg); message.err != nil {
-		t.Fatal(message.err)
-	}
-	if want := []string{"usage-fresh", "quota"}; !reflect.DeepEqual(fetcher.calls, want) {
-		t.Fatalf("Pause reads = %v; want %v", fetcher.calls, want)
-	}
 }
 
 func TestMonitorAddsANewlyDetectedRootWithoutLosingItsFirstUsage(t *testing.T) {
@@ -837,24 +698,14 @@ func TestMonitorSessionDismissControlRendersAndMatchesClickSurface(t *testing.T)
 	}
 }
 
-func TestMonitorSurfacesUnavailableAndFailedFinalUsage(t *testing.T) {
+func TestMonitorSurfacesUnavailableUsage(t *testing.T) {
 	model := Model{meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1}
 	updated, _ := model.Update(monitorFetchedMsg{
 		kind: monitorFetchStart, sequence: 1, err: errors.New("local telemetry unavailable"), at: time.Now(),
 	})
 	model = updated.(Model)
-	if model.monitorState != monitorPaused || !strings.Contains(model.monitorError, "local telemetry unavailable") {
+	if model.monitorState != monitorIdle || !model.monitorAutoStart || !strings.Contains(model.monitorError, "local telemetry unavailable") {
 		t.Fatalf("missing usage was not surfaced: %#v", model)
-	}
-
-	model.monitorState = monitorPausing
-	model.monitorRequest = 2
-	updated, _ = model.Update(monitorFetchedMsg{
-		kind: monitorFetchPause, sequence: 2, err: errors.New("offline"), at: time.Now(),
-	})
-	model = updated.(Model)
-	if model.monitorState != monitorPaused || model.monitorError != "offline" {
-		t.Fatalf("failed final sync was not surfaced: %#v", model)
 	}
 }
 
@@ -870,19 +721,6 @@ func TestMonitorFetchUsesConfiguredLocalSource(t *testing.T) {
 	message = missing.monitorFetch(monitorFetchStart, 8)().(monitorFetchedMsg)
 	if message.err == nil || !strings.Contains(message.err.Error(), "local Codex session telemetry") {
 		t.Fatalf("missing live source error = %v", message.err)
-	}
-}
-
-func TestMonitorPauseUsesFreshLocalSourceWhenAvailable(t *testing.T) {
-	fetcher := &stubFreshLiveFetcher{
-		stubFetcher: stubFetcher{snapshot: codex.DemoSnapshot()},
-		ordinary:    codex.LiveUsageSnapshot{TotalTokens: 100},
-		fresh:       codex.LiveUsageSnapshot{TotalTokens: 175},
-	}
-	model := New(fetcher, time.Minute)
-	message := model.monitorFetch(monitorFetchPause, 9)().(monitorFetchedMsg)
-	if message.err != nil || message.usage.TotalTokens != 175 || fetcher.freshCalls != 1 || fetcher.ordinaryCalls != 0 {
-		t.Fatalf("final read did not use fresh discovery: message=%#v fetcher=%#v", message, fetcher)
 	}
 }
 
@@ -1018,7 +856,7 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 		}
 
 		for index, width := range []int{geometry.resetRect.width} {
-			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorPause, true, colors)
+			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorReset, true, colors)
 			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
 				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
 			}
@@ -1028,17 +866,14 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 
 func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{40, 16}, {40, 24}, {60, 24}, {100, 36}, {160, 45}} {
-		for _, state := range []monitorState{
-			monitorIdle, monitorStarting, monitorRunning, monitorPausing,
-			monitorPaused, monitorResuming, monitorResetting,
-		} {
+		for _, state := range []monitorState{monitorIdle, monitorStarting, monitorRunning, monitorResetting} {
 			model := Model{
 				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
 				meterView: viewMonitor, monitorState: state,
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
-			// The former Pause surface is now readout, never a hidden control.
+			// The full left-hand surface is readout, never a hidden control.
 			for y := 0; y < geometry.topHeight; y++ {
 				for x := 0; x < geometry.readoutWidth; x++ {
 					if got := model.monitorButtonAt(2+x, dashboard.meterY+y); got != footerButtonNone {
@@ -1047,7 +882,7 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 				}
 			}
 			if geometry.readoutWidth < geometry.width*3/4 {
-				t.Fatal("readout did not reclaim Pause space")
+				t.Fatal("readout did not retain its expanded space")
 			}
 			for _, button := range []struct {
 				rect    monitorRect
@@ -1232,14 +1067,6 @@ type stubLiveFetcher struct {
 	err   error
 }
 
-type stubFreshLiveFetcher struct {
-	stubFetcher
-	ordinary      codex.LiveUsageSnapshot
-	fresh         codex.LiveUsageSnapshot
-	ordinaryCalls int
-	freshCalls    int
-}
-
 type orderedMonitorFetcher struct {
 	calls []string
 	quota codex.Snapshot
@@ -1254,21 +1081,6 @@ func (f *orderedMonitorFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 func (f *orderedMonitorFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
 	f.calls = append(f.calls, "usage")
 	return f.usage, nil
-}
-
-func (f *orderedMonitorFetcher) FetchTokenUsageFresh(context.Context) (codex.LiveUsageSnapshot, error) {
-	f.calls = append(f.calls, "usage-fresh")
-	return f.usage, nil
-}
-
-func (f *stubFreshLiveFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
-	f.ordinaryCalls++
-	return f.ordinary, nil
-}
-
-func (f *stubFreshLiveFetcher) FetchTokenUsageFresh(context.Context) (codex.LiveUsageSnapshot, error) {
-	f.freshCalls++
-	return f.fresh, nil
 }
 
 func (f stubLiveFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
