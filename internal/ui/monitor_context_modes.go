@@ -324,7 +324,7 @@ func (m Model) expandedContextAt(x, y int) string {
 			if s.id == m.monitorContextTarget() && m.monitorPromptOffer().Token != "" {
 				if rows := m.monitorPromptRows(cw, heights[i]); rows > 0 {
 					_, _, cy := monitorContextBodyLayout(heights[i], rows)
-					if y >= cy+1 && y < cy+rows-1 && x >= 2 && x < cw-2 {
+					if y >= cy+m.monitorPromptHeaderRows() && y < cy+rows-1 && x >= 2 && x < cw-2 {
 						return "prompt"
 					}
 				}

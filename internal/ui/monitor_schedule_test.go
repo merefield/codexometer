@@ -500,7 +500,7 @@ func TestScheduledIdleDetailTitleHasNoDuplicateStatus(t *testing.T) {
 		if !strings.Contains(lines[0], "● TRIGGER SET") || strings.Count(out, "TRIGGER SET") != 1 || strings.Contains(out, "SESSION CONTEXT") {
 			t.Fatal("idle trigger state missing, blinking, or repeated", out)
 		}
-		if !strings.Contains(out, "FOLLOW-UP //") || !strings.Contains(out, "The saved trigger prompt") {
+		if strings.Contains(out, "FOLLOW-UP //") || !strings.Contains(out, "The saved trigger prompt") {
 			t.Fatal("trigger information lost", out)
 		}
 	}

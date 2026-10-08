@@ -34,7 +34,7 @@ func TestMonitorPromptPlaceholderComposerBackground(t *testing.T) {
 				t.Fatal("composer has no background")
 			}
 			for x := 0; x < width-4; x++ {
-				cell := cells.CellAt(x, 1)
+				cell := cells.CellAt(x, 0)
 				if cell == nil || cell.Style.Bg == nil {
 					t.Fatalf("theme %d width %d: missing placeholder background at %d", theme, width, x)
 				}
@@ -143,6 +143,10 @@ func TestMonitorPromptQuestionsAndSecret(t *testing.T) {
 	m.monitorSessionData[0].preview.Kind = codex.SessionContextQuestion
 	m.monitorSessionData[0].preview.InputToken = c.offer.Token
 	m.focusMonitorPrompt()
+	question := strings.Split(ansi.Strip(m.renderMonitorPrompt(120, 30, paletteFor(m.theme))), "\n")
+	if len(question) != 3 || !strings.Contains(question[0], "REPLY 1/2") || !strings.Contains(question[0], "Pick one") || m.monitorPromptHeaderRows() != 1 {
+		t.Fatal("structured question lost its heading or answer progress")
+	}
 	m.monitorPrompt.input.SetValue("not offered")
 	m, cmd, _ := m.submitMonitorPrompt()
 	if cmd != nil || m.monitorPrompt.question != 0 {
@@ -270,7 +274,7 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 		if lipgloss.Width(out) > m.width || lipgloss.Height(out) > m.height {
 			t.Fatalf("overflow %v\n%s", size, ansi.Strip(out))
 		}
-		for row := y + 1; row < y+rows-1; row++ {
+		for row := y; row < y+rows-1; row++ {
 			for x := 4; x < g.contentWidth; x++ {
 				if got := m.monitorContextAt(x, g.meterY+row); got != "prompt" {
 					t.Fatalf("wrapped input miss %v %d,%d: %s", size, x, row, got)
@@ -284,7 +288,7 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 			t.Fatal("wrapping altered the submitted text")
 		}
 		m.monitorPrompt.input.SetValue("short")
-		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 3 {
+		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 2 {
 			t.Fatal("editor failed to shrink")
 		}
 	}

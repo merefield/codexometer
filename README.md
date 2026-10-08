@@ -1362,7 +1362,7 @@ same action on that session. The presentations are:
    restores the warning. A live request that is no longer pending does not
    regain the warning while its old preview awaits a refresh. Unsupported requests
    can still require action in Codex.
-   The selected session also offers a **FOLLOW-UP** composer here when the shared
+   The selected session also offers a follow-up composer here when the shared
    server confirms it is ready for input and the complete context plus composer
    fit. Only one inline composer is available at a time. Click its input line or
    press `Enter` to focus, then `Enter` to send; `Esc` leaves the editor without
@@ -2628,8 +2628,12 @@ history is hidden unless its account matches the current successful quota read.
 
 ### Scheduled session follow-ups (experimental)
 
-In **Sessions → full detail**, use **Ctrl+S** (or click the composer's
-schedule heading) to schedule a follow-up for an idle shared app-server session.
+In **Sessions → full detail**, use **Ctrl+S** (or click **Schedule** on the
+composer's key-hint line) to schedule a follow-up for an idle shared app-server session.
+Ordinary composers omit a redundant heading; the box title identifies the
+session. Active turns retain animated dots above the input, while structured
+questions retain their question heading and answer progress. Schedule/Close
+Schedule buttons keep their full labels when space allows, truncating hints first.
 The form replaces the conversation area inside the existing detail pane, not
 the dashboard. The composer stays anchored below it; on shorter terminals the
 form scrolls with the mouse wheel and follows keyboard focus. Esc or Ctrl+S
@@ -2664,7 +2668,7 @@ theme-coloured background.
   the trigger restores the underlying status. Full detail retains the saved prompt
   and trigger information.
   The full-detail border shows the current state; the body uses content labels
-  such as **FOLLOW-UP** and **LAST REPLY** rather than repeating that state.
+  such as **LAST REPLY** rather than repeating that state.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
   detail page with the saved prompt, timing and actions; web provides equivalent

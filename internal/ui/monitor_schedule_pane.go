@@ -19,7 +19,7 @@ func (m Model) schedulePaneLayout(width, height int) schedulePaneLayout {
 	for row := 9; row <= min(p.actionRow()+1, 23); row++ {
 		l.indices = append(l.indices, row)
 	}
-	l.composerRows = min(max(p.composerRows, 3), max(height-5, 1))
+	l.composerRows = min(max(p.composerRows, 2), max(height-5, 1))
 	l.textRows, _, l.composerY = monitorContextBodyLayout(height, l.composerRows)
 	l.scroll = min(max(p.scroll, 0), max(len(l.indices)-l.textRows, 0))
 	return l
@@ -93,21 +93,16 @@ func (m Model) renderScheduleDetail(width, height int, colors palette) string {
 		body[row] = document[l.indices[row+l.scroll]]
 	}
 	editor := m.scheduleUI.input
-	editor.configure(width, l.composerRows+6)
+	editor.configure(width, l.composerRows+7)
 	composer := make([]string, l.composerRows)
-	identity := m.scheduleUI.session
-	if s, ok := m.contextDetailSession(); ok {
-		identity = monitorSessionIdentity(s)
-	}
-	composer[0] = m.renderScheduleToggleHeader(width, identity, true, colors)
 	input := strings.Split(editor.View(colors), "\n")
 	inputEnd := l.composerRows
-	if l.composerRows >= 3 {
+	if l.composerRows >= 2 {
 		inputEnd--
 	}
-	for row := 1; row < inputEnd; row++ {
-		if row-1 < len(input) {
-			composer[row] = input[row-1]
+	for row := 0; row < inputEnd; row++ {
+		if row < len(input) {
+			composer[row] = input[row]
 		} else {
 			composer[row] = colors.label().Background(monitorComposerBackground(colors)).Width(max(width-4, 1)).Render("")
 		}
@@ -118,8 +113,8 @@ func (m Model) renderScheduleDetail(width, height int, colors palette) string {
 		hint = m.scheduleUI.notice
 		hintStyle = colors.label()
 	}
-	if l.composerRows >= 3 {
-		composer[l.composerRows-1] = hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	if l.composerRows >= 2 {
+		composer[l.composerRows-1] = m.renderScheduleToggleHint(width, hint, true, hintStyle, colors)
 	} else if l.composerRows == 1 && len(input) > 0 {
 		composer[0] = input[0]
 	}

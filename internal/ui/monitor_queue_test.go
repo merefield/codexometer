@@ -198,7 +198,7 @@ func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 			if strings.Contains(line, "FOLLOW-UPS // 2") {
 				queueY = y
 			}
-			if strings.Contains(line, "FOLLOW-UP // ") && !strings.Contains(line, "FOLLOW-UPS") {
+			if strings.Contains(line, "Click here or press Enter to write") || strings.Contains(line, "Keep this draft") {
 				composerY = y
 			}
 			for label, action := range map[string]string{"[EDIT]": "queue:edit:0", "[×]": "queue:delete:0"} {

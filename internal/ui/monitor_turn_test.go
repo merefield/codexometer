@@ -216,8 +216,16 @@ func TestWorkingComposerErrorAndScheduleIsolation(t *testing.T) {
 		t.Fatal("failed queue lost draft or hid error")
 	}
 	view := m.renderMonitorPrompt(120, 30, paletteFor(themeHacker))
-	if !strings.Contains(view, monitorDotWave(m.phase)) || !strings.Contains(view, "FOLLOW-UP") || strings.Contains(view, "WORKING") {
-		t.Fatal("composer must retain progress and identity without duplicating WORKING")
+	if !strings.Contains(view, monitorDotWave(m.phase)) || strings.Contains(view, "FOLLOW-UP") || strings.Contains(view, "WORKING") || len(strings.Split(view, "\n")) != 3 {
+		t.Fatal("composer must retain progress above the input without a redundant heading")
+	}
+	if ansi.Strip(strings.Split(view, "\n")[0]) != monitorDotWave(m.phase) {
+		t.Fatal("working composer heading must contain only activity dots")
+	}
+	m.monitorSessionData[0].working = false
+	view = m.renderMonitorPrompt(120, 30, paletteFor(themeHacker))
+	if strings.Contains(view, monitorDotWave(m.phase)) || m.monitorPromptHeaderRows() != 0 || len(strings.Split(view, "\n")) != 2 {
+		t.Fatal("inactive session retained a progress row")
 	}
 }
 

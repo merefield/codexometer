@@ -135,10 +135,11 @@ func (m Model) monitorPromptRows(width, height int) int {
 	}
 	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextTarget() && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
 		p := m.monitorPrompt
-		rows := 3
+		headerRows := m.monitorPromptHeaderRows()
+		rows := 2 + headerRows
 		if (p.input.Focused() || p.input.Value() != "") && !p.busy {
 			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
-			rows = p.input.Height() + 2
+			rows = p.input.Height() + 1 + headerRows
 		}
 		if m.monitorContextDetail == "" {
 			s, ok := m.contextDetailSession()
@@ -152,15 +153,35 @@ func (m Model) monitorPromptRows(width, height int) int {
 	return 0
 }
 
+func (m Model) monitorPromptHeaderRows() int {
+	if len(m.monitorPromptOffer().Questions) > 0 {
+		return 1
+	}
+	if m.monitorComposerActivity() != "" {
+		return 1
+	}
+	return 0
+}
+
+func (m Model) monitorComposerActivity() string {
+	if m.monitorPromptOffer().TurnID != "" {
+		if s, ok := m.contextDetailSession(); ok {
+			return m.sessionActivityDots(s)
+		}
+	}
+	return ""
+}
+
 // Inline drafts grow only into spare space, then scroll inside the editor;
 // they never displace the source context. Full detail keeps its usual viewport.
 func (m Model) monitorPromptEditorHeight(width, height int) int {
+	extra := 1 - m.monitorPromptHeaderRows()
 	if m.monitorContextDetail == "" {
 		if s, ok := m.contextDetailSession(); ok {
-			return min(height, max(8, height+3-len(expandedContextLines(width, s))))
+			return min(height+extra, max(8, height+3+extra-len(expandedContextLines(width, s))))
 		}
 	}
-	return height
+	return height + extra
 }
 
 func (m Model) monitorPromptSize() (int, int) {
@@ -207,13 +228,13 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	p := m.monitorPrompt
 	o := m.monitorPromptOffer()
-	identity := shortSessionID(o.ThreadID)
-	if s, ok := m.contextDetailSession(); ok {
-		identity = monitorSessionIdentity(s)
-	}
-	header := i18n.Text("FOLLOW-UP") + " // " + identity
+	header := m.monitorComposerActivity()
 	scheduling := m.monitorContextDetail != "" && o.Token != "" && len(o.Questions) == 0 && o.TurnID == ""
 	if len(o.Questions) > 0 {
+		identity := shortSessionID(o.ThreadID)
+		if s, ok := m.contextDetailSession(); ok {
+			identity = monitorSessionIdentity(s)
+		}
 		n := 0
 		if p.offer.Token == o.Token {
 			n = p.question
@@ -226,11 +247,6 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	hintStyle := colors.dimmed()
 	if o.TurnID != "" {
-		if s, ok := m.contextDetailSession(); ok {
-			if dots := m.sessionActivityDots(s); dots != "" {
-				header = dots + " // " + header
-			}
-		}
 		hint = "Enter: steer • Tab: queue next turn • Esc: interrupt"
 	}
 	if p.offer.Token == o.Token && (p.input.Focused() || p.input.Value() != "") && !p.busy {
@@ -254,15 +270,19 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	for i := range inputLines {
 		inputLines[i] = ansi.Truncate(inputLines[i], max(width-4, 1), "")
 	}
-	heading := colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…"))
-	if scheduling {
-		heading = m.renderScheduleToggleHeader(width, identity, false, colors)
-	}
 	if popup, _ := m.monitorSuggestionPopup(); popup.height > 0 {
 		hint = "↑/↓: select • Tab: complete • Enter: options • Esc: dismiss"
 		hintStyle = colors.dimmed()
 	}
-	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	footer := hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	if scheduling {
+		footer = m.renderScheduleToggleHint(width, hint, false, hintStyle, colors)
+	}
+	body := strings.Join(inputLines, "\n") + "\n" + footer
+	if header != "" {
+		body = colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…")) + "\n" + body
+	}
+	return body
 }
 
 func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {

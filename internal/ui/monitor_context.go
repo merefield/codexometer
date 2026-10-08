@@ -403,7 +403,7 @@ func (m Model) monitorContextAt(x, y int) string {
 		}
 		if rows := m.monitorPromptRows(g.contentWidth, g.meterHeight); rows > 0 && m.monitorPromptOffer().Token != "" {
 			_, _, controlY := monitorContextBodyLayout(g.meterHeight, rows)
-			inEditor := y >= controlY+1 && y < controlY+rows-1 && x >= 2 && x < g.contentWidth-2
+			inEditor := y >= controlY+m.monitorPromptHeaderRows() && y < controlY+rows-1 && x >= 2 && x < g.contentWidth-2
 			// Include the full-width bottom three rows of the detail frame,
 			// without taking clicks from the global footer below it.
 			inBottom := y >= g.meterHeight-3 && y < g.meterHeight && x >= 0 && x < g.contentWidth

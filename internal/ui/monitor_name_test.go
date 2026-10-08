@@ -31,7 +31,7 @@ func TestMonitorSessionNameDisplayAndRename(t *testing.T) {
 	}
 }
 
-func TestFullDetailAndComposerIdentifySession(t *testing.T) {
+func TestFullDetailIdentifiesSessionWithoutRepeatingComposerHeading(t *testing.T) {
 	for _, working := range []bool{false, true} {
 		m, _ := promptTestModel()
 		if working {
@@ -46,9 +46,12 @@ func TestFullDetailAndComposerIdentifySession(t *testing.T) {
 				identity = shortSessionID(m.monitorSessionData[0].id) + " // dashboard"
 			}
 			frame := strings.Split(ansi.Strip(m.renderMonitorContextDetail(160, 40, paletteFor(m.theme))), "\n")[0]
-			composer := strings.Split(ansi.Strip(m.renderMonitorPrompt(160, 40, paletteFor(m.theme))), "\n")[0]
-			if !strings.Contains(frame, identity) || !strings.Contains(composer, identity) {
+			composer := ansi.Strip(m.renderMonitorPrompt(160, 40, paletteFor(m.theme)))
+			if !strings.Contains(frame, identity) {
 				t.Fatalf("missing session identity: frame=%q composer=%q", frame, composer)
+			}
+			if strings.Contains(composer, identity) || strings.Contains(composer, "FOLLOW-UP") {
+				t.Fatalf("redundant composer heading: %q", composer)
 			}
 		}
 	}
