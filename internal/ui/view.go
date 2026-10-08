@@ -76,6 +76,9 @@ func (m Model) render() string {
 		} else if len(meters) == 1 {
 			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterView, colors))
 		}
+		if layout.footerSpacer {
+			parts = append(parts, strings.Repeat(" ", contentWidth))
+		}
 		parts = append(parts, footer)
 	}
 

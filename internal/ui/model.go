@@ -1539,6 +1539,7 @@ type dashboardGeometry struct {
 	meterY       int
 	footerY      int
 	headerSpacer bool
+	footerSpacer bool
 }
 
 func (m Model) dashboardLayout() dashboardGeometry {
@@ -1589,9 +1590,15 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
+	footerSpacing := 0
+	// Keep the minimum eight-row detail/composer layout on short terminals.
+	if meterHeight >= 9 && m.monitorStatusLineVisible(contentWidth) {
+		footerSpacing = 1
+		meterHeight--
+	}
 	footerY := meterY
 	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewThresholds || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
-		footerY += meterHeight
+		footerY += meterHeight + footerSpacing
 	}
 	return dashboardGeometry{
 		contentWidth: contentWidth,
@@ -1601,6 +1608,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		meterY:       meterY,
 		footerY:      footerY,
 		headerSpacer: statusHeight > 0,
+		footerSpacer: footerSpacing > 0,
 	}
 }
 

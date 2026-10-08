@@ -1528,7 +1528,7 @@ are clickable. Writable web mode exposes the same catalogue through
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
 | `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. Works without the shared daemon. |
 
-The detail footer uses subdued text in the bottom border in terminal mode, and
+The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
 the last line of full session detail on web. Its default fields are observed
 model/reasoning, speed, total session tokens (including linked agents) and
 directory. `/statusline` also offers model alone, reasoning alone, session name,
@@ -1542,7 +1542,9 @@ uses checkboxes, ordering buttons and Apply/Cancel, also available in read-only
 mode through the `/statusline` footer button. Selections persist in Codexometer's
 existing `preferences.json` on terminal and browser local storage on web; these
 are display preferences and do not modify Codex CLI configuration. Terminal
-footer text shortens to fit and leaves the Copy button in place.
+footer text shortens to fit and leaves the Copy button in place. A blank row
+separates a visible terminal status line from the global footer; very short
+terminals omit the status line and gap to preserve the composer and controls.
 
 Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of

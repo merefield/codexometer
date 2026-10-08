@@ -113,11 +113,13 @@ func (m Model) renderScheduleDetail(width, height int, colors palette) string {
 		}
 	}
 	hint := m.scheduleUI.focusHint()
+	hintStyle := colors.dimmed()
 	if m.scheduleUI.notice != "" {
 		hint = m.scheduleUI.notice
+		hintStyle = colors.label()
 	}
 	if l.composerRows >= 3 {
-		composer[l.composerRows-1] = colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+		composer[l.composerRows-1] = hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
 	} else if l.composerRows == 1 && len(input) > 0 {
 		composer[0] = input[0]
 	}

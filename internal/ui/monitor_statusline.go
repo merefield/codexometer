@@ -69,24 +69,38 @@ func (m Model) monitorStatusValues() map[string]string {
 	return statusline.Values(statusline.Data{Model: s.modelSettings.Model, Effort: s.modelSettings.ReasoningEffort, Speed: s.modelSettings.ServiceTier, Directory: s.workingDirectory, Name: s.name, ID: s.id, State: state, Source: s.preview.Source, Tokens: s.latest, Agents: s.agentCount})
 }
 
-// Write into the existing bottom border so the composer, scroll viewport,
-// approval buttons and Copy hit target keep their exact positions.
-func (m Model) withMonitorStatusLine(panel string, width int, copyLabel string, colors palette) string {
+func (m Model) monitorStatusLineText(width int, copyLabel string) string {
 	end := width - 2
 	if copyLabel != "" {
 		end = width - ansi.StringWidth(copyLabel) - 3
 	}
 	if end < 12 {
-		return panel
+		return ""
 	}
 	text := statusline.Text(m.monitorStatusLine, m.monitorStatusValues())
 	if text == "" {
+		return ""
+	}
+	return ansi.Truncate(text, max(end-3, 1), "…")
+}
+
+func (m Model) monitorStatusLineVisible(width int) bool {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || m.monitorCommands.open || m.monitorQueue.open {
+		return false
+	}
+	return m.monitorStatusLineText(width, m.renderMonitorCopy(width, m.monitorContextDetail, paletteFor(m.theme))) != ""
+}
+
+// Write into the existing bottom border; dashboard geometry reserves a blank
+// row below it only when this text is actually visible.
+func (m Model) withMonitorStatusLine(panel string, width int, copyLabel string, colors palette) string {
+	text := m.monitorStatusLineText(width, copyLabel)
+	if text == "" {
 		return panel
 	}
-	text = ansi.Truncate(text, max(end-3, 1), "…")
 	lines := strings.Split(panel, "\n")
 	last := lines[len(lines)-1]
-	value := colors.dimmed().Background(colors.background).Render(" " + text + " ")
+	value := colors.label().Foreground(colors.primary).Background(colors.background).Render(" " + text + " ")
 	lines[len(lines)-1] = ansi.Cut(last, 0, 1) + value + ansi.Cut(last, 1+ansi.StringWidth(value), width)
 	return strings.Join(lines, "\n")
 }

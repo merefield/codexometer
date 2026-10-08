@@ -223,6 +223,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	line := colors.dimmed().Background(monitorComposerBackground(colors)).
 		Width(max(width-4, 1)).Render(ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(width-4, 1), ""))
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
+	hintStyle := colors.dimmed()
 	if o.TurnID != "" {
 		header = i18n.Text("WORKING")
 		if s, ok := m.contextDetailSession(); ok {
@@ -244,8 +245,10 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	if p.notice != "" {
 		if !sentNotice(p.notice) {
 			hint = p.notice
+			hintStyle = colors.label()
 		} else if time.Now().Before(p.noticeUntil) || m.monitorDetailSent.session == m.monitorContextTarget() && time.Now().Before(m.monitorDetailSent.visibleUntil) {
 			hint = p.notice
+			hintStyle = colors.label()
 		}
 	}
 	inputLines := strings.Split(line, "\n")
@@ -258,8 +261,9 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	}
 	if popup, _ := m.monitorSuggestionPopup(); popup.height > 0 {
 		hint = "↑/↓: select • Tab: complete • Enter: options • Esc: dismiss"
+		hintStyle = colors.dimmed()
 	}
-	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
+	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
 }
 
 func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {

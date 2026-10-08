@@ -191,7 +191,11 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		return m.renderQueueEditor()
 	}
 	if m.scheduleUI.open {
-		return m.renderScheduleDetail(width, height, colors)
+		panel := m.renderScheduleDetail(width, height, colors)
+		if m.dashboardLayout().footerSpacer {
+			return m.withMonitorStatusLine(panel, width, "", colors)
+		}
+		return panel
 	}
 	document := m.contextDetailDocument(max(width-4, 1))
 	lines := make([]string, len(document))
@@ -216,7 +220,10 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	title := m.monitorDetailTitle(width, colors)
 	copyLabel := m.renderMonitorCopy(width, m.monitorContextDetail, colors)
 	panel := frameSizedWithActions(width, rows, title, action, copyLabel, body, colors.primary, colors)
-	return m.withMonitorStatusLine(panel, width, copyLabel, colors)
+	if m.dashboardLayout().footerSpacer {
+		return m.withMonitorStatusLine(panel, width, copyLabel, colors)
+	}
+	return panel
 }
 
 func (m Model) monitorDetailTitle(width int, colors palette) string {
