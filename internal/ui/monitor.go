@@ -121,13 +121,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	case monitorStarting:
 		state, hint = i18n.Text("STARTING"), i18n.Text("SCANNING LOCAL CODEX TELEMETRY")
 	case monitorRunning:
-		state, hint = i18n.Text("MONITORING ●"), i18n.Format("LIVE LOCAL SESSIONS %d // P TO PAUSE", m.monitorSessions)
-	case monitorPausing:
-		state, hint = i18n.Text("PAUSING"), i18n.Text("READING FINAL APPENDED TOKEN TELEMETRY")
-	case monitorPaused:
-		state, hint = i18n.Text("PAUSED"), i18n.Format("LOCAL SESSIONS %d // P TO RESUME", m.monitorSessions)
-	case monitorResuming:
-		state, hint = i18n.Text("RESUMING"), i18n.Text("REBASING AFTER PAUSED ACTIVITY")
+		state, hint = i18n.Text("MONITORING ●"), i18n.Format("LIVE LOCAL SESSIONS %d", m.monitorSessions)
 	case monitorResetting:
 		state, hint = i18n.Text("RESETTING"), i18n.Text("ESTABLISHING A FRESH BASELINE")
 	}
@@ -676,8 +670,6 @@ func (m Model) renderMonitorGraphWithAction(width, height int, samples []monitor
 		message := i18n.Text("WAITING FOR FIRST SAMPLE")
 		if m.monitorState == monitorIdle || m.monitorState == monitorStarting {
 			message = i18n.Text("STARTING MONITOR")
-		} else if m.monitorState == monitorPaused {
-			message = i18n.Text("NO COMPLETE 30 SEC SAMPLE")
 		}
 		message = ansi.Truncate(message, innerWidth, "")
 		row := plotHeight / 2
@@ -781,12 +773,8 @@ func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
 	return "", false
 }
 
-func (m Model) monitorPauseEnabled() bool {
-	return m.monitorState == monitorRunning || m.monitorState == monitorPaused
-}
-
 func (m Model) monitorResetEnabled() bool {
-	return m.monitorState == monitorRunning || m.monitorState == monitorPaused
+	return m.monitorState == monitorRunning
 }
 
 func (m Model) monitorElapsed(now time.Time) time.Duration {
@@ -794,9 +782,6 @@ func (m Model) monitorElapsed(now time.Time) time.Duration {
 		return 0
 	}
 	end := now
-	if m.monitorState == monitorPaused && !m.monitorStoppedAt.IsZero() {
-		end = m.monitorStoppedAt
-	}
 	if end.Before(m.monitorStartedAt) {
 		return 0
 	}
@@ -809,9 +794,6 @@ func (m Model) monitorSessionElapsed(session monitorSession, now time.Time) time
 		start = m.monitorStartedAt
 	}
 	end := now
-	if m.monitorState == monitorPaused && !m.monitorStoppedAt.IsZero() {
-		end = m.monitorStoppedAt
-	}
 	if start.IsZero() || end.Before(start) {
 		return 0
 	}

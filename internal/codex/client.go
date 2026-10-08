@@ -42,8 +42,7 @@ func (c Client) FetchTokenUsage(ctx context.Context) (LiveUsageSnapshot, error) 
 	return c.LiveUsage.FetchTokenUsage(ctx)
 }
 
-// FetchTokenUsageFresh forces complete local rollout discovery for a final
-// Monitor reading.
+// FetchTokenUsageFresh forces complete local rollout discovery.
 func (c Client) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, error) {
 	if c.LiveUsage == nil {
 		return LiveUsageSnapshot{}, errors.New("local Codex session telemetry is not configured")

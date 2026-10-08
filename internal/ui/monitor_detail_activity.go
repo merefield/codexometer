@@ -31,7 +31,7 @@ func (m Model) detailActivity() string {
 }
 
 // An acknowledgement confirms delivery, not ongoing activity. Preserve it
-// without animation when observation is paused, stopped or unavailable.
+// without animation when observation is stopped or unavailable.
 func (m Model) detailFeedback() string {
 	return m.detailFeedbackAt(time.Now())
 }

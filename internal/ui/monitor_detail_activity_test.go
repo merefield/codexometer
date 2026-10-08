@@ -105,9 +105,9 @@ func TestMainSessionContextDots(t *testing.T) {
 	if m.sessionActivityDots(s) == "" || m.sessionActivityDots(other) != "" {
 		t.Fatal("dots not session-specific")
 	}
-	m.monitorState = monitorPaused
+	m.monitorState = monitorIdle
 	if m.sessionActivityDots(s) != "" {
-		t.Fatal("paused monitor animated")
+		t.Fatal("idle monitor animated")
 	}
 	m.monitorState = monitorRunning
 	m.monitorContextHidden = true
@@ -129,11 +129,6 @@ func TestWorkingSignalReachesMonitor(t *testing.T) {
 	if m.monitorSessionData[0].working {
 		t.Fatal("idle update retained working state")
 	}
-	u.Sessions[0].Working = true
-	m.resumeMonitorSessions(u, now, time.Minute)
-	if !m.monitorSessionData[0].working {
-		t.Fatal("resume dropped working state")
-	}
 	m.syncMonitorSessions(codex.LiveUsageSnapshot{}, now)
 	if m.monitorSessionData[0].working {
 		t.Fatal("missing session retained working state")
@@ -145,7 +140,7 @@ func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
 		m, _ := promptTestModel()
 		m.monitorPrompt.notice = i18n.Text("Text sent ...")
 		m.recordDetailSent(m.monitorPrompt.notice)
-		m.monitorState = monitorPaused
+		m.monitorState = monitorIdle
 		layout := m.layoutDetailControls(100, 30)
 		if layout.kind != "prompt" || !strings.Contains(ansi.Strip(layout.render(m, 100, 30, paletteFor(m.theme))), m.monitorPrompt.notice) {
 			t.Fatal("prompt footer lost the successful acknowledgement")
@@ -153,14 +148,14 @@ func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
 	})
 	for _, text := range []string{i18n.Text("Text sent ..."), i18n.Text("Decision sent ...")} {
 		for name, suppress := range map[string]func(*Model){
-			"idle":     func(m *Model) { m.monitorSessionData[0].working = false },
-			"paused":   func(m *Model) { m.monitorState = monitorPaused },
-			"error":    func(m *Model) { m.monitorError = "observation unavailable" },
-			"inactive": func(m *Model) { m.monitorSessionData[0].active = false },
-			"complete": func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionComplete },
-			"input":    func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionInput },
-			"approval": func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionApproval },
-			"check":    func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionCheck },
+			"idle":         func(m *Model) { m.monitorSessionData[0].working = false },
+			"idle monitor": func(m *Model) { m.monitorState = monitorIdle },
+			"error":        func(m *Model) { m.monitorError = "observation unavailable" },
+			"inactive":     func(m *Model) { m.monitorSessionData[0].active = false },
+			"complete":     func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionComplete },
+			"input":        func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionInput },
+			"approval":     func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionApproval },
+			"check":        func(m *Model) { m.monitorSessionData[0].attention = codex.SessionAttentionCheck },
 		} {
 			t.Run(text+"/"+name, func(t *testing.T) {
 				m := contextTestModel()
@@ -178,7 +173,7 @@ func TestSuppressedActivityKeepsPlainAcknowledgement(t *testing.T) {
 					t.Fatalf("expired acknowledgement leaked into new context: %q", got)
 				}
 				m.monitorContextDetail = "root-two"
-				m.monitorState = monitorPaused
+				m.monitorState = monitorIdle
 				if got := m.detailFeedback(); got != "" {
 					t.Fatal("acknowledgement leaked into another session")
 				}

@@ -250,8 +250,8 @@ func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
 	updated, command = model.Update(key('p'))
 	model = updated.(Model)
-	if command == nil || model.monitorState != monitorPausing || model.flashedButton != footerButtonMonitorPause {
-		t.Fatalf("Monitor P did not pause: state=%d flash=%d", model.monitorState, model.flashedButton)
+	if command != nil || model.monitorState != monitorRunning || model.flashedButton != footerButtonNone {
+		t.Fatalf("Monitor P retained a removed action: state=%d flash=%d command=%v", model.monitorState, model.flashedButton, command)
 	}
 
 	model = Model{meterView: viewBenchmark}
@@ -338,13 +338,6 @@ func TestMonitorIndicatorUsesCodexActivityAndHealth(t *testing.T) {
 	model.monitorCodexStatusKnown = false
 	if model.monitorIndicatorColor(colors) != colors.dim {
 		t.Fatal("unknown Codex status was not shown as dim")
-	}
-	model.monitorState = monitorPaused
-	model.monitorCodexStatusKnown = true
-	model.monitorCodexUp = true
-	model.monitorCodexWorking = true
-	if model.monitorIndicatorColor(colors) != colors.dim {
-		t.Fatal("paused Monitor presented stale Codex health as current")
 	}
 	if lipgloss.Width(bright) != 100 || lipgloss.Width(dark) != 100 {
 		t.Fatalf("tab rail did not fill its responsive width: bright=%d dark=%d", lipgloss.Width(bright), lipgloss.Width(dark))

@@ -115,9 +115,9 @@ func TestWorkingComposerHasSingleAnimation(t *testing.T) {
 		if strings.Contains(m.renderMonitorPrompt(100, 30, paletteFor(m.theme)), m.monitorPrompt.notice) {
 			t.Fatal("notice did not expire")
 		}
-		m.monitorState = monitorPaused
+		m.monitorState = monitorIdle
 		if strings.Contains(m.renderMonitorPrompt(100, 30, paletteFor(m.theme)), monitorDotWave(m.phase)) {
-			t.Fatal("paused observation animated")
+			t.Fatal("idle observation animated")
 		}
 	}
 }

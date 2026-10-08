@@ -313,8 +313,8 @@ func (r *LiveUsageReader) FetchTokenUsage(ctx context.Context) (LiveUsageSnapsho
 }
 
 // FetchTokenUsageFresh forces a complete session discovery before consuming
-// telemetry. The Monitor uses this for its final Pause reading so a recently
-// resumed rollout in an older date directory cannot be missed.
+// telemetry so a recently resumed rollout in an older date directory cannot
+// be missed.
 func (r *LiveUsageReader) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, error) {
 	return r.fetchTokenUsage(ctx, true)
 }

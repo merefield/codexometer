@@ -260,14 +260,14 @@ func TestQueueActivityWithoutComposerAndSuppressedStates(t *testing.T) {
 		if !found || strings.Count(view, monitorDotWave(m.phase)) != 1 {
 			t.Fatal("missing queue or duplicated task animation")
 		}
-		for _, state := range []string{"idle", "paused", "error", "attention"} {
+		for _, state := range []string{"idle", "idle monitor", "error", "attention"} {
 			next := m
 			next.monitorSessionData = append([]monitorSession(nil), m.monitorSessionData...)
 			switch state {
 			case "idle":
 				next.monitorSessionData[0].working = false
-			case "paused":
-				next.monitorState = monitorPaused
+			case "idle monitor":
+				next.monitorState = monitorIdle
 			case "error":
 				next.monitorError = "stale"
 			case "attention":

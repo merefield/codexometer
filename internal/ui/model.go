@@ -24,10 +24,6 @@ type TokenUsageFetcher interface {
 	FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error)
 }
 
-type FreshTokenUsageFetcher interface {
-	FetchTokenUsageFresh(context.Context) (codex.LiveUsageSnapshot, error)
-}
-
 type BenchmarkRunner interface {
 	BenchmarkCombinationCount(context.Context) (int, error)
 	RunBenchmarkSuite(context.Context, []codex.BenchmarkTaskID, func(codex.BenchmarkEvent))
@@ -176,14 +172,12 @@ type Model struct {
 	monitorStartedAt        time.Time
 	monitorRateAt           time.Time
 	monitorAverageRate      int64
-	monitorStoppedAt        time.Time
 	monitorBaseline         int64
 	monitorLatest           int64
 	monitorSamples          []monitorSample
 	monitorRequest          uint64
 	monitorFetchActive      bool
 	monitorNextFetch        time.Time
-	monitorResetPaused      bool
 	monitorNextSample       time.Time
 	monitorBoundaryDue      bool
 	monitorGraphStart       int64
@@ -231,9 +225,6 @@ const (
 	monitorIdle monitorState = iota
 	monitorStarting
 	monitorRunning
-	monitorPausing
-	monitorPaused
-	monitorResuming
 	monitorResetting
 )
 
@@ -243,8 +234,6 @@ const (
 	monitorFetchStart monitorFetchKind = iota
 	monitorFetchSample
 	monitorFetchBoundary
-	monitorFetchPause
-	monitorFetchResume
 	monitorFetchReset
 )
 
@@ -386,7 +375,6 @@ const (
 	footerButtonView
 	footerButtonRefresh
 	footerButtonQuit
-	footerButtonMonitorPause
 	footerButtonMonitorReset
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
@@ -855,10 +843,6 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.benchmarkDetailScroll = m.benchmarkDetailMaximumScroll()
 				return m, nil
 			}
-		case "p":
-			if m.meterView == viewMonitor {
-				return m.pressFooterButton(footerButtonMonitorPause)
-			}
 		}
 	case tea.MouseMsg:
 		headerAction := m.headerActionAt(message.Mouse().X, message.Mouse().Y)
@@ -1072,11 +1056,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					m.quotaAPITelemetryIssue = i18n.Text("LOCAL TELEMETRY UNAVAILABLE")
 				}
 			}
-			if m.monitorState == monitorRunning || m.monitorState == monitorPausing {
+			if m.monitorState == monitorRunning {
 				m.syncMonitorQuotaSnapshot(message.snapshot)
 				m.monitorQuotaError = ""
 			}
-		} else if m.monitorState == monitorRunning || m.monitorState == monitorPausing {
+		} else if m.monitorState == monitorRunning {
 			m.monitorQuotaError = message.err.Error()
 		}
 		if m.monitorAutoStart && m.monitorState == monitorIdle {
@@ -1400,21 +1384,8 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			m.loading = true
 			return m, m.fetch()
 		}
-	case footerButtonMonitorPause:
-		if m.meterView != viewMonitor {
-			break
-		}
-		switch m.monitorState {
-		case monitorRunning:
-			m.monitorState = monitorPausing
-			return m.beginMonitorFetch(monitorFetchPause)
-		case monitorPaused:
-			m.monitorState = monitorResuming
-			return m.beginMonitorFetch(monitorFetchResume)
-		}
 	case footerButtonMonitorReset:
-		if m.meterView == viewMonitor && (m.monitorState == monitorRunning || m.monitorState == monitorPaused) {
-			m.monitorResetPaused = m.monitorState == monitorPaused
+		if m.meterView == viewMonitor && m.monitorState == monitorRunning {
 			m.monitorState = monitorResetting
 			return m.beginMonitorFetch(monitorFetchReset)
 		}
@@ -2253,10 +2224,6 @@ func (m Model) beginMonitorFetch(kind monitorFetchKind) (Model, tea.Cmd) {
 	switch kind {
 	case monitorFetchStart:
 		m.monitorState = monitorStarting
-	case monitorFetchPause:
-		m.monitorState = monitorPausing
-	case monitorFetchResume:
-		m.monitorState = monitorResuming
 	case monitorFetchReset:
 		m.monitorState = monitorResetting
 	}
@@ -2296,24 +2263,11 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 		}
 		var usage codex.LiveUsageSnapshot
 		var err error
-		if kind == monitorFetchStart || kind == monitorFetchResume || kind == monitorFetchReset {
-			// Bracket the measured local-token interval inside the account-quota
-			// interval: quota first when starting a segment, local telemetry first
-			// when pausing one.
+		if kind == monitorFetchStart || kind == monitorFetchReset {
+			// Capture the account-quota snapshot before establishing a new local
+			// token baseline so the two observations describe the same interval.
 			fetchQuota()
 			usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
-		} else if kind == monitorFetchPause {
-			if freshFetcher, ok := m.usageFetcher.(FreshTokenUsageFetcher); ok {
-				usage, err = freshFetcher.FetchTokenUsageFresh(context.Background())
-			} else {
-				usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
-			}
-			observedAt := time.Now()
-			fetchQuota()
-			return monitorFetchedMsg{
-				kind: kind, sequence: sequence, usage: usage, err: err,
-				quota: quota, quotaErr: quotaErr, at: observedAt,
-			}
 		} else {
 			usage, err = m.usageFetcher.FetchTokenUsage(context.Background())
 		}
@@ -2326,28 +2280,14 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 }
 
 func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd, bool) {
-	if message.kind == monitorFetchPause {
-		if message.quotaErr == nil {
-			m.syncMonitorQuotaSnapshot(message.quota)
-		}
-		m.applyMonitorQuotaResult(message)
-	}
 	if message.err != nil {
 		m.monitorError = message.err.Error()
-		if message.kind == monitorFetchPause {
-			m.monitorState = monitorPaused
-			m.monitorStoppedAt = message.at
-			m.refreshMonitorRates(message.at, true)
-		} else if message.kind == monitorFetchStart || message.kind == monitorFetchResume {
-			m.monitorState = monitorPaused
+		if message.kind == monitorFetchStart {
+			m.monitorState = monitorIdle
+			m.monitorAutoStart = true
 		} else if message.kind == monitorFetchReset {
-			if m.monitorResetPaused {
-				m.monitorState = monitorPaused
-			} else {
-				m.monitorState = monitorRunning
-				m.monitorNextFetch = message.at.Add(m.monitorPollInterval())
-			}
-			m.monitorResetPaused = false
+			m.monitorState = monitorRunning
+			m.monitorNextFetch = message.at.Add(m.monitorPollInterval())
 		}
 		return m, nil, false
 	}
@@ -2355,26 +2295,10 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	accepted := true
 	switch message.kind {
 	case monitorFetchStart:
-		m.resetMonitorFromSnapshot(message, false)
+		m.resetMonitorFromSnapshot(message)
 	case monitorFetchReset:
-		m.resetMonitorFromSnapshot(message, m.monitorResetPaused)
-	case monitorFetchResume:
-		if m.monitorUsageMovesBackwards(message.usage) {
-			m.monitorError = "local Codex token counter moved backwards"
-			m.monitorState = monitorPaused
-			accepted = false
-			break
-		}
-		if m.monitorStartedAt.IsZero() {
-			m.resetMonitorFromSnapshot(message, false)
-			break
-		}
-		if message.quotaErr == nil {
-			m.resumeMonitorQuotaSnapshot(message.quota)
-		}
-		m.applyMonitorQuotaResult(message)
-		m.resumeMonitorFromSnapshot(message)
-	case monitorFetchSample, monitorFetchBoundary, monitorFetchPause:
+		m.resetMonitorFromSnapshot(message)
+	case monitorFetchSample, monitorFetchBoundary:
 		if m.monitorUsageMovesBackwards(message.usage) {
 			m.monitorError = "local Codex token counter moved backwards"
 			accepted = false
@@ -2386,11 +2310,6 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			m.monitorError = ""
 			m.syncMonitorSessions(message.usage, message.at)
 			m.monitorSessions = m.visibleMonitorSessionCount()
-		}
-		if message.kind == monitorFetchPause {
-			m.monitorState = monitorPaused
-			m.monitorStoppedAt = message.at
-			m.monitorNextFetch = time.Time{}
 		}
 	}
 	if accepted {
@@ -2417,7 +2336,7 @@ func (m Model) monitorHasVisibleWaitingSession() bool {
 	return false
 }
 
-func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool) {
+func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg) {
 	m.monitorApprovalOrder = nil
 	m.monitorApprovalOrderCandidate = ""
 	m.monitorApprovalOrderSince = time.Time{}
@@ -2425,7 +2344,6 @@ func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool)
 	m.monitorContextExpanded = ""
 	m.monitorContextScroll = 0
 	m.monitorStartedAt = message.at
-	m.monitorStoppedAt = time.Time{}
 	m.monitorBaseline = message.usage.TotalTokens
 	m.monitorLatest = message.usage.TotalTokens
 	m.monitorGraphStart = message.usage.TotalTokens
@@ -2452,100 +2370,9 @@ func (m *Model) resetMonitorFromSnapshot(message monitorFetchedMsg, paused bool)
 	m.applyMonitorQuotaResult(message)
 	m.startMonitorSessions(message.usage, message.at)
 	m.monitorSessions = m.visibleMonitorSessionCount()
-	m.monitorResetPaused = false
-	if paused {
-		m.monitorState = monitorPaused
-		m.monitorStoppedAt = message.at
-		m.monitorNextFetch = time.Time{}
-		m.monitorNextSample = time.Time{}
-		return
-	}
 	m.monitorState = monitorRunning
 	m.monitorNextFetch = message.at.Add(m.monitorPollInterval())
 	m.monitorNextSample = message.at.Add(monitorSampleInterval)
-}
-
-func (m *Model) resumeMonitorFromSnapshot(message monitorFetchedMsg) {
-	pausedFor := time.Duration(0)
-	if !m.monitorStoppedAt.IsZero() && message.at.After(m.monitorStoppedAt) {
-		pausedFor = message.at.Sub(m.monitorStoppedAt)
-		m.monitorStartedAt = m.monitorStartedAt.Add(pausedFor)
-		for index := range m.monitorSamples {
-			m.monitorSamples[index].at = m.monitorSamples[index].at.Add(pausedFor)
-		}
-	}
-	recorded := m.monitorRecordedTokens()
-	m.monitorBaseline = message.usage.TotalTokens - recorded
-	m.monitorLatest = message.usage.TotalTokens
-	m.monitorGraphStart = message.usage.TotalTokens
-	m.resumeMonitorSessions(message.usage, message.at, pausedFor)
-	m.monitorSessions = m.visibleMonitorSessionCount()
-	m.monitorStoppedAt = time.Time{}
-	m.monitorState = monitorRunning
-	m.monitorError = ""
-	m.monitorBoundaryDue = false
-	m.monitorNextFetch = message.at.Add(m.monitorPollInterval())
-	m.monitorNextSample = message.at.Add(monitorSampleInterval)
-}
-
-func (m *Model) resumeMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time, pausedFor time.Duration) {
-	updates := make(map[string]codex.LiveUsageSession, len(usage.Sessions))
-	for _, update := range usage.Sessions {
-		updates[update.ID] = update
-	}
-	for index := range m.monitorSessionData {
-		session := &m.monitorSessionData[index]
-		if pausedFor > 0 {
-			session.startedAt = session.startedAt.Add(pausedFor)
-			for sampleIndex := range session.samples {
-				session.samples[sampleIndex].at = session.samples[sampleIndex].at.Add(pausedFor)
-			}
-		}
-		update, ok := updates[session.id]
-		if !ok {
-			session.active = false
-			session.working = false
-			session.attention = codex.SessionAttentionNone
-			continue
-		}
-		recorded := max(session.latest-session.baseline, int64(0))
-		session.baseline = update.TotalTokens - recorded
-		session.latest = update.TotalTokens
-		session.graphStart = update.TotalTokens
-		session.lastActivity = update.LastActivity
-		session.agentCount = max(session.agentCount, update.AgentCount)
-		session.active = update.Active
-		session.working = update.Working
-		session.attention = update.Attention
-		session.preview = update.Context
-		session.modelSettings = update.ModelSettings
-		session.name = update.Name
-		session.callSequence = latestModelCallSequence(update.ModelCalls)
-		session.turnSequence = latestTurnTimingSequence(update.TurnTimings)
-		if update.WorkingDirectory != "" {
-			session.workingDirectory = update.WorkingDirectory
-		}
-		if dismissal, ok := m.monitorDismissed[session.id]; ok {
-			dismissal.latest = session.latest
-			dismissal.lastActivity = session.lastActivity
-			dismissal.callSequence = session.callSequence
-			dismissal.turnSequence = session.turnSequence
-			dismissal.attention = session.attention
-			m.monitorDismissed[session.id] = dismissal
-		}
-		delete(updates, session.id)
-	}
-	for _, update := range updates {
-		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
-			id: update.ID, workingDirectory: update.WorkingDirectory,
-			name: update.Name, modelSettings: update.ModelSettings,
-			baseline: update.TotalTokens, latest: update.TotalTokens, graphStart: update.TotalTokens,
-			startedAt: observedAt, lastActivity: update.LastActivity, agentCount: update.AgentCount,
-			active: update.Active, working: update.Working, attention: update.Attention, preview: update.Context, displayed: update.Active,
-			unattributed: update.Unattributed, callSequence: latestModelCallSequence(update.ModelCalls),
-			turnSequence: latestTurnTimingSequence(update.TurnTimings),
-		})
-	}
 }
 
 func (m Model) monitorUsageMovesBackwards(usage codex.LiveUsageSnapshot) bool {
@@ -2613,45 +2440,6 @@ func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 		if !sameOptionalInt64(window.latestReset, meter.Window.ResetsAt) || meter.Window.UsedPercent < window.latestUsed {
 			window.resetDetected = true
 		}
-		window.latestUsed = meter.Window.UsedPercent
-		window.latestReset = cloneInt64(meter.Window.ResetsAt)
-		window.stale = false
-	}
-	for index := range m.monitorQuotaWindows {
-		if !seen[m.monitorQuotaWindows[index].key] {
-			m.monitorQuotaWindows[index].stale = true
-		}
-	}
-}
-
-// resumeMonitorQuotaSnapshot advances the quota baseline by any change observed
-// while polling was paused, preserving only the percentage-point delta already
-// recorded by the Monitor.
-func (m *Model) resumeMonitorQuotaSnapshot(snapshot codex.Snapshot) {
-	seen := make(map[string]bool)
-	for _, meter := range snapshot.Meters() {
-		key := monitorQuotaKey(meter)
-		seen[key] = true
-		index := -1
-		for candidate := range m.monitorQuotaWindows {
-			if m.monitorQuotaWindows[candidate].key == key {
-				index = candidate
-				break
-			}
-		}
-		if index < 0 {
-			m.monitorQuotaWindows = append(m.monitorQuotaWindows, monitorQuotaWindow{
-				key: key, label: monitorQuotaLabel(meter), baselineUsed: meter.Window.UsedPercent,
-				latestUsed: meter.Window.UsedPercent, latestReset: cloneInt64(meter.Window.ResetsAt), partial: true,
-			})
-			continue
-		}
-		window := &m.monitorQuotaWindows[index]
-		delta := window.latestUsed - window.baselineUsed
-		if !sameOptionalInt64(window.latestReset, meter.Window.ResetsAt) || meter.Window.UsedPercent < window.latestUsed {
-			window.resetDetected = true
-		}
-		window.baselineUsed = meter.Window.UsedPercent - delta
 		window.latestUsed = meter.Window.UsedPercent
 		window.latestReset = cloneInt64(meter.Window.ResetsAt)
 		window.stale = false

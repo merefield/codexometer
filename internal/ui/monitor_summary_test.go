@@ -44,34 +44,25 @@ func TestMonitorSummaryCountersAndObservationState(t *testing.T) {
 	if strings.Join(values, ",") != "625,2,0,0,1,1" {
 		t.Fatal("dismissal changed historical tokens or retained visible count", values)
 	}
-	for _, paused := range []bool{false, true} {
-		if paused {
-			m.monitorState = monitorPaused
-		} else {
-			m.monitorError = "lost"
-		}
-		values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-		if strings.Join(values, ",") != "625,2,—,—,—,—" {
-			t.Fatal("stale live counts", values)
-		}
-		if len(m.monitorAttentionSessions()) != 0 {
-			t.Fatal("stale attention buttons")
-		}
-		m.monitorError = ""
+	m.monitorError = "lost"
+	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
+	if strings.Join(values, ",") != "625,2,—,—,—,—" {
+		t.Fatal("stale live counts", values)
+	}
+	if len(m.monitorAttentionSessions()) != 0 {
+		t.Fatal("stale attention buttons")
 	}
 }
 
 func TestMonitorSummaryCountColours(t *testing.T) {
 	for theme := themeHacker; theme < themeCount; theme++ {
 		colors := paletteFor(theme)
-		for _, state := range []string{"zero", "active", "paused", "error"} {
+		for _, state := range []string{"zero", "active", "error"} {
 			m := attentionTestModel()
 			m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: "check", displayed: true, attention: codex.SessionAttentionCheck})
 			switch state {
 			case "zero":
 				m.monitorSessionData = nil
-			case "paused":
-				m.monitorState = monitorPaused
 			case "error":
 				m.monitorError = "unavailable"
 			}
@@ -510,7 +501,7 @@ func TestMonitorCompletedAttentionPills(t *testing.T) {
 			t.Fatal("completion pill not visible")
 		}
 	}
-	for _, reason := range []string{"resumed", "dismissed", "cleared", "paused", "error"} {
+	for _, reason := range []string{"resumed", "dismissed", "cleared", "error"} {
 		n := m
 		n.monitorSessionData = append([]monitorSession(nil), m.monitorSessionData...)
 		switch reason {
@@ -520,8 +511,6 @@ func TestMonitorCompletedAttentionPills(t *testing.T) {
 			n.monitorDismissed = map[string]monitorSessionDismissal{"root-three": {}}
 		case "cleared":
 			n.monitorSessionData[2].attention = codex.SessionAttentionNone
-		case "paused":
-			n.monitorState = monitorPaused
 		case "error":
 			n.monitorError = "unavailable"
 		}
