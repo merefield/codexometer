@@ -188,6 +188,51 @@ type historyTestClient struct {
 	err   error
 }
 
+func TestMonitorHistoryRefreshRejectsStalePreview(t *testing.T) {
+	m := historyTestModel()
+	h := m.monitorHistory["root-one"]
+	h.request = 1
+	h.requestedAt = time.Now()
+	m.monitorHistory["root-one"] = h
+	var turns []codex.SessionContext
+	for i := 4; i <= 13; i++ {
+		turns = append(turns, historyContext(i))
+	}
+	m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", request: 1, turns: turns})
+	// Telemetry still displays turn 3, which is outside the server's page.
+	// Observing it repeatedly (including during navigation) must not evict
+	// turn 4 or append turn 3 as the newest answer.
+	m.observeMonitorHistory()
+	m.moveMonitorHistory(-1)
+	got := m.monitorHistory["root-one"].turns
+	if len(got) != len(turns) || got[0].TurnID != "4" || got[len(got)-1].TurnID != "13" {
+		t.Fatalf("stale preview reordered history: first=%s last=%s", got[0].TurnID, got[len(got)-1].TurnID)
+	}
+	if c, ok := m.historicalContext(); !ok || c.TurnID != "13" {
+		t.Fatal("Previous did not select the newest recovered answer")
+	}
+	// Existing entries can still gain observed guidance without reordering.
+	c := historyContext(7)
+	c.LatestGuidance = "Preserve this guidance"
+	m.monitorSessionData[0].preview = c
+	m.observeMonitorHistory()
+	if got := m.monitorHistory["root-one"].turns[3]; got.TurnID != "7" || got.LatestGuidance != c.LatestGuidance {
+		t.Fatal("stale-preview guard prevented an existing entry update")
+	}
+	// New completions remain observable even if later history reads fail.
+	c = historyContext(14)
+	c.At = h.requestedAt.Add(time.Second)
+	m.monitorSessionData[0].preview = c
+	m.observeMonitorHistory()
+	got = m.monitorHistory["root-one"].turns
+	if len(got) != codex.SessionHistoryLimit || got[0].TurnID != "5" || got[len(got)-1].TurnID != "14" {
+		t.Fatal("new completion was lost after a successful server refresh")
+	}
+	if c, ok := m.historicalContext(); !ok || c.TurnID != "13" {
+		t.Fatal("new completion replaced the pinned answer")
+	}
+}
+
 func (c *historyTestClient) SessionHistory(context.Context, string) ([]codex.SessionContext, error) {
 	return c.turns, c.err
 }

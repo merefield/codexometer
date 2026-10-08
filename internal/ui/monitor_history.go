@@ -20,8 +20,12 @@ type monitorTurnHistory struct {
 	// eviction must never change the answer somebody is currently reading.
 	selected    *codex.SessionContext
 	requestedAt time.Time
-	busy        bool
-	request     uint64
+	// Successful server reads own the order of replies observed before the
+	// request. Lagging telemetry may update those entries, but not reappend
+	// an older reply that the bounded server page has already evicted.
+	observedThrough time.Time
+	busy            bool
+	request         uint64
 }
 
 type monitorHistoryResult struct {
@@ -77,6 +81,10 @@ func (m *Model) observeMonitorHistory() {
 	for _, s := range m.monitorSessionData {
 		if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && s.preview.Text != "" {
 			h := m.monitorHistory[s.id]
+			if !h.observedThrough.IsZero() && !s.preview.At.After(h.observedThrough) &&
+				!slices.ContainsFunc(h.turns, func(c codex.SessionContext) bool { return sameHistoryTurn(c, s.preview) }) {
+				continue
+			}
 			next := addHistoryTurn(h, s.preview)
 			if slices.Equal(h.turns, next.turns) {
 				continue
@@ -177,6 +185,7 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		h.busy = false
 		if result.err == nil && len(result.turns) > 0 {
+			h.observedThrough = h.requestedAt
 			// Server order is authoritative. Merge only observed turns not in
 			// that page (e.g. a completion newer than the asynchronous read).
 			old := h.turns
