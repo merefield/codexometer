@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "PREVIOUS TURN",
+  "LIVE SESSION": "LIVE SESSION",
+  " // %d OF %d": " // %d OF %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: PREVIOUS ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: NEXT ]",
+  "[ LIVE ]": "[ LIVE ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "Slash commands cannot be scheduled. Use // for literal slash text.",
   "STEER SENT": "STEER SENT",
   "TRIGGER SET": "TRIGGER SET",

@@ -27,6 +27,7 @@ type quotaDaemonFixture struct {
 	release       chan struct{}
 	commandStatus string
 	catalogues    map[string]map[string]any
+	historyReads  []map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -147,6 +148,9 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 					fixture.mu.Lock()
 				}
 			default:
+				if req.Method == "thread/turns/list" {
+					fixture.historyReads = append(fixture.historyReads, req.Params)
+				}
 				if value, ok := fixture.catalogues[req.Method]; ok {
 					result = value
 				} else {

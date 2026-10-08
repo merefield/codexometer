@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "ÖNCEKİ TUR",
+  "LIVE SESSION": "CANLI OTURUM",
+  " // %d OF %d": " // %d / %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: ÖNCEKİ ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: SONRAKİ ]",
+  "[ LIVE ]": "[ CANLI ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "Eğik çizgi komutları zamanlanamaz. Eğik çizgiyle başlayan düz metin için // kullanın.",
   "STEER SENT": "YÖNLENDİRME GÖNDERİLDİ",
   "TRIGGER SET": "TETİKLEYİCİ AYARLANDI",

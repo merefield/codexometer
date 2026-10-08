@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "VORIGE BEURT",
+  "LIVE SESSION": "LIVESESSIE",
+  " // %d OF %d": " // %d VAN %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: VORIGE ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: VOLGENDE ]",
+  "[ LIVE ]": "[ LIVE ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "Slashcommando's kunnen niet worden ingepland. Gebruik // voor letterlijke tekst met een slash.",
   "STEER SENT": "BIJSTURING VERZONDEN",
   "TRIGGER SET": "TRIGGER INGESTELD",

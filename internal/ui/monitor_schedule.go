@@ -65,6 +65,7 @@ func (m *Model) openSchedule() tea.Cmd {
 	if !m.hasSchedule(id) && (o.Token == "" || o.TurnID != "" || o.ThreadID != id || len(o.Questions) > 0) {
 		return nil
 	}
+	m.showLiveMonitorHistory()
 	q := m.scheduleUI.queue
 	if q == nil {
 		q = schedule.New()
@@ -214,6 +215,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 				m.monitorSessions = m.visibleMonitorSessionCount()
 				m.setRowContext(id, contextFull)
+				m.showLiveMonitorHistory()
 				row := m.monitorContextRows[id]
 				row.review = "context"
 				m.monitorContextRows[id] = row

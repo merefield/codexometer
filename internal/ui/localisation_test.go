@@ -60,6 +60,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_pill_compression", TestMonitorAttentionProgressiveCompression)
 	t.Run("monitor_pill_selection", TestMonitorSelectedPillMarkersPreserveLayout)
 	t.Run("monitor_context_surfaces", TestMonitorContextResponsiveHitTargets)
+	t.Run("monitor_history_surfaces", TestMonitorHistoryRenderedControlsAndLiveApproval)
 	t.Run("monitor_privacy_surfaces", TestMonitorContextPrivacyAndDismissRenderedTargets)
 	t.Run("monitor_approval_surfaces", TestMonitorApprovalRenderedTargets)
 	t.Run("monitor_expanded_surfaces", TestExpandedContextResponsiveHitTargets)

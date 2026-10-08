@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "上一轮",
+  "LIVE SESSION": "实时会话",
+  " // %d OF %d": " // %d / %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: 上一轮 ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: 下一轮 ]",
+  "[ LIVE ]": "[ 实时 ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "无法安排斜杠命令。对于以斜杠开头的普通文本，请使用 //。",
   "STEER SENT": "追加指令已发送",
   "TRIGGER SET": "已设触发器",

@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "VORHERIGER DURCHGANG",
+  "LIVE SESSION": "LIVE-SITZUNG",
+  " // %d OF %d": " // %d VON %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: ZURÜCK ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: WEITER ]",
+  "[ LIVE ]": "[ LIVE ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "Slash-Befehle können nicht geplant werden. Verwenden Sie // für wörtlichen Text mit Schrägstrich.",
   "STEER SENT": "STEUERUNG GESENDET",
   "TRIGGER SET": "AUSLÖSER GESETZT",

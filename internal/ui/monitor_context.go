@@ -205,12 +205,15 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	rows := max(height-2, 1)
 	layout := m.layoutDetailControls(width, height)
 	controls := layout.render(m, width, height, colors)
-	textRows, gap, _ := monitorContextBodyLayout(height, layout.rows)
+	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
 	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
 	end := min(start+textRows, len(lines))
 	bodyLines := append([]string(nil), lines[start:end]...)
+	if m.historyNavigationRows(width, height) > 0 {
+		bodyLines = append([]string{m.renderMonitorNavigationButtons(m.historyNavigationButtons(width, height), colors)}, bodyLines...)
+	}
 	if controls != "" {
-		for len(bodyLines) < textRows+gap {
+		for len(bodyLines) < textRows+gap+m.historyNavigationRows(width, height) {
 			bodyLines = append(bodyLines, "")
 		}
 		bodyLines = append(bodyLines, controls)
@@ -241,6 +244,9 @@ func (m Model) monitorDetailTitle(width int, colors palette) string {
 		}
 		if m.hasSessionProfile(s) {
 			title = i18n.Text("QUOTA THRESHOLD")
+		}
+		if _, historical := m.historicalContext(); historical {
+			title = i18n.Text("PREVIOUS TURN") + " // " + i18n.Text("LIVE SESSION") + ": " + title
 		}
 		title += " // " + monitorSessionIdentity(s)
 	}
@@ -291,7 +297,7 @@ func (m *Model) scrollMonitorContext(delta int) {
 func (m Model) monitorContextScrollLimit() int {
 	g := m.monitorDashboardLayout()
 	layout := m.layoutDetailControls(g.contentWidth, g.meterHeight)
-	rows, _, _ := monitorContextBodyLayout(g.meterHeight, layout.rows)
+	rows, _, _ := m.detailBodyLayout(g.contentWidth, g.meterHeight, layout.rows)
 	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
 	return limit
 }
@@ -398,6 +404,11 @@ func (m Model) monitorContextAt(x, y int) string {
 		return hit
 	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
+		if !m.monitorCommands.open && !m.monitorQueue.open && !m.scheduleUI.open {
+			if hit := monitorNavigationButtonsHit(m.historyNavigationButtons(g.contentWidth, g.meterHeight), x, y); hit != "" {
+				return hit
+			}
+		}
 		if hit := m.monitorNavigationHit(g.contentWidth, m.monitorContextDetail, true, x, y); hit != "" {
 			return hit
 		}
@@ -517,12 +528,19 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 		case "session-down":
 			m.selectMonitorSession(1)
 		case "prompt":
+			m.showLiveMonitorHistory()
 			cmd := m.focusMonitorPrompt()
 			return m, cmd, true
 		case "privacy":
 			m.toggleMonitorContext()
 		case "close":
 			m.stepBackMonitorContext()
+		case "history:previous":
+			m.moveMonitorHistory(-1)
+		case "history:next":
+			m.moveMonitorHistory(1)
+		case "history:live":
+			m.showLiveMonitorHistory()
 		default:
 			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
@@ -530,6 +548,7 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 				m.openMonitorAttention(m.monitorContextHover)
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "badge:"); ok {
 				m.setRowContext(id, contextFull)
+				m.showLiveMonitorHistory()
 				row := m.monitorContextRows[id]
 				row.review = "context"
 				m.monitorContextRows[id] = row

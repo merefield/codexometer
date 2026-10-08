@@ -212,9 +212,11 @@ func (m *Model) openMonitorAttention(action string) {
 			review = "profile"
 		}
 		if m.monitorContextDetail == item.id && m.selectedAttentionAction() == action {
+			m.showLiveMonitorHistory()
 			return
 		}
 		m.setRowContext(item.id, contextFull)
+		m.showLiveMonitorHistory()
 		row := m.monitorContextRows[item.id]
 		row.review = review
 		m.monitorContextRows[item.id] = row

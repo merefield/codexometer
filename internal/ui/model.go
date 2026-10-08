@@ -60,6 +60,8 @@ type Model struct {
 	monitorContextExpanded              string
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
+	monitorHistory                      map[string]monitorTurnHistory
+	monitorHistorySequence              uint64
 	monitorAttentionPage                int
 	monitorApprovalOrder                []string
 	monitorApprovalOrderCandidate       string
@@ -469,6 +471,11 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateMonitorHistory(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	if next, cmd, handled := m.updateMonitorSuggestions(message); handled {
 		return next, cmd
 	} else {
@@ -1107,6 +1114,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
+		commands = append(commands, m.pollMonitorHistory(time.Time(message)))
 		commands = append(commands, m.pollMonitorQueue())
 		commands = append(commands, m.dispatchSchedules())
 		if m.monitorState == monitorRunning {
@@ -2686,6 +2694,7 @@ func sameOptionalInt64(left, right *int64) bool {
 }
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	m.monitorHistory = nil
 	m.monitorSessionData = nil
 	m.monitorDismissed = nil
 	for _, session := range usage.Sessions {
@@ -2709,6 +2718,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			active: true, displayed: true, unattributed: true,
 		})
 	}
+	m.observeMonitorHistory()
 }
 
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
@@ -2724,7 +2734,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		}
 	}
 	defer func() {
-		if follow {
+		m.observeMonitorHistory()
+		if _, historical := m.historicalContext(); follow && !historical {
 			m.monitorContextScroll = m.monitorContextScrollLimit()
 		}
 	}()

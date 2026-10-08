@@ -79,6 +79,8 @@ Take useful text with you: **[ (C)OPY ]** sits at the bottom-right of split, wid
 
 Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; press Escape first if the composer is focused to restore keyboard scrolling. Copy includes offscreen text from the entire sanitized, bounded reply available to Codexometer—not an unlimited conversation transcript—and uses the same terminal clipboard support as Benchmark Copy. Copied text follows your terminal and operating system's normal clipboard retention.
 
+Queued work moving too quickly to read? In terminal full detail, use **Alt+Left / Alt+Right** or **Previous / Next / Live** to browse up to ten recent completed prompt/reply excerpts per session. The answer you're reading stays pinned while newer turns run; scrolling and Copy follow that answer, while approvals and composing always target the live session. Shared app-server history can recover quick completions and reload recent replies after restarting; older setups retain only replies observed during the current launch. No conversation history is written to disk by Codexometer.
+
 If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
 
 File-change approvals now have a proper diff review too: file paths, old/new line

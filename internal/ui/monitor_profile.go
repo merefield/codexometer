@@ -241,6 +241,7 @@ func (m Model) updateProfileKey(key string) (Model, tea.Cmd, bool) {
 }
 
 func (m Model) profileAction(action string, confirm bool) (Model, tea.Cmd, bool) {
+	m.showLiveMonitorHistory()
 	id, skip := strings.CutPrefix(action, "profile-skip:")
 	if !skip {
 		id = strings.TrimPrefix(action, "profile-apply:")

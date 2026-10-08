@@ -9,6 +9,11 @@ import (
 
 // Copy the complete observed reply, not its wrapped/truncated presentation.
 func (m Model) monitorCopyText(id string) string {
+	if id == m.monitorContextDetail {
+		if c, ok := m.historicalContext(); ok {
+			return codex.SanitizeSessionContext(c.Text)
+		}
+	}
 	for _, s := range m.monitorSessionData {
 		if s.id == id && m.monitorSessionVisible(s) && !m.hasSessionProfile(s) &&
 			(s.preview.Kind == codex.SessionContextReply || s.preview.Kind == codex.SessionContextActivity) {

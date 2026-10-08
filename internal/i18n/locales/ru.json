@@ -1,4 +1,10 @@
 {
+  "PREVIOUS TURN": "ПРЕДЫДУЩИЙ ХОД",
+  "LIVE SESSION": "ТЕКУЩИЙ СЕАНС",
+  " // %d OF %d": " // %d ИЗ %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: НАЗАД ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: ДАЛЕЕ ]",
+  "[ LIVE ]": "[ СЕЙЧАС ]",
   "Slash commands cannot be scheduled. Use // for literal slash text.": "Слеш-команды нельзя запланировать. Используйте // для обычного текста, начинающегося с косой черты.",
   "STEER SENT": "УКАЗАНИЕ ОТПРАВЛЕНО",
   "TRIGGER SET": "ТРИГГЕР ЗАДАН",

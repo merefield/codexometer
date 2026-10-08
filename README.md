@@ -1380,6 +1380,29 @@ same action on that session. The presentations are:
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
 
+   **Recent turn history:** `Alt+Left` opens the previous completed turn;
+   `Alt+Right` moves forwards, eventually returning to live detail. Click
+   **Previous**, **Next**, or **Live** for the same navigation. These controls
+   appear when replies have been retained and space permits; narrow layouts
+   shorten the labels, and the hotkeys remain available on short terminals.
+   Up/Down, Page Up/Down and the wheel still scroll the displayed reply; Copy
+   copies that reply. A historical answer stays pinned while queued work runs,
+   even if newer completions move it outside the recent-history cache.
+   Each session retains up to ten bounded prompt/reply excerpts in memory,
+   plus an answer currently being read. Full detail refreshes recent completed
+   turns through the shared app-server's read-only `thread/turns/list` endpoint,
+   recovering quick answers missed between telemetry updates and allowing
+   history to reload after restarting. Older/unavailable servers fall back to
+   replies actually observed during this launch; that fallback can miss fast
+   turns. Codexometer does not write conversation history to disk.
+   Approval controls and the composer always act on the **live session**,
+   never a saved turn. Current requests are shown separately under **LIVE
+   SESSION** while browsing history; focusing the composer returns to live
+   detail and retains your draft.
+   History reads request only the server's prompt/final-reply summary items,
+   not full command-output logs, and run asynchronously at most every five
+   seconds while full detail is visible.
+
 Whenever visible **LAST REPLY** or **LAST ACTIVITY** text is available, its box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
 Click it to copy a snapshot of that session's observed text, including offscreen text,
@@ -1797,7 +1820,9 @@ must be enlarged. These diagnostics do not relax any approval safeguards.
 
 The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
 previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
-survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
+survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
+uses a bounded in-memory cache and read-only app-server history where available.
+Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
 context can be unavailable. Terminal escapes and control/bidirectional-formatting
 characters are stripped. Previews remain in their original language and are not
