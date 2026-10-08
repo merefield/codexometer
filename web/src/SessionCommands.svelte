@@ -300,12 +300,11 @@
                 menu?.path === '' &&
                 selectedIndex === index}
               onclick={() => choose(o)}
-              >{o.label}{o.next
-                ? ' →'
-                : !o.action
-                  ? ' // HELP'
-                  : ''}{#if slash && menu?.path === ''}<span
-                  class="command-help">{o.help}</span
+              ><span class="command-name">{o.label}</span><span
+                class="command-tail"
+                >{o.next ? ' →' : !o.action ? ' // HELP' : ''}</span
+              >{#if slash && menu?.path === ''}<span class="command-help"
+                  >{o.help}</span
                 >{/if}</button
             >{/each}
         </div>
@@ -355,11 +354,39 @@
   }
   .vertical button {
     flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
     text-align: left;
     width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+    border-color: transparent;
+    color: var(--muted);
+    background: var(--panel);
+  }
+  .vertical .command-name,
+  .vertical .command-tail {
+    flex: none;
+  }
+  .vertical .command-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .vertical button.suggested {
+    outline: none;
+  }
+  .vertical button.suggested .command-name,
+  .vertical button:hover .command-name {
+    background: var(--accent);
+    color: var(--bg);
   }
   .vertical .command-help {
+    flex: 1;
+    min-width: 0;
     max-width: none;
+    color: var(--muted);
   }
   .command-options {
     display: flex;

@@ -2,11 +2,14 @@ package ui
 
 import (
 	"context"
+	"image"
+	"reflect"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -169,5 +172,30 @@ func TestMonitorSuggestionPopupScrollAndResize(t *testing.T) {
 		if cmd != nil || n.(Model).monitorSuggestions.selected != max(before-3, 0) {
 			t.Fatal("mouse wheel did not navigate popup without executing a command")
 		}
+	}
+}
+
+func TestMonitorSuggestionHelpIsSubduedAndSingleLine(t *testing.T) {
+	m, _ := suggestionTestModel(t)
+	m.width, m.height = 80, 30
+	m.monitorSuggestions.menu.Choices = []codex.SessionCommandChoice{{ID: "model", Label: "/model", Help: strings.Repeat("Long help\n", 40)}}
+	popup, _ := m.monitorSuggestionPopup()
+	colors := paletteFor(m.theme)
+	view := m.render()
+	line := strings.Split(ansi.Strip(view), "\n")[popup.y+1]
+	if !strings.Contains(line, "/model // Long help") || !strings.Contains(line, "…") || popup.height != 3 {
+		t.Fatal("long help did not stay on one ellipsized row", line)
+	}
+	cells := uv.NewScreenBuffer(m.width, m.height)
+	uv.NewStyledString(view).Draw(&cells, image.Rect(0, 0, m.width, m.height))
+	command := cells.CellAt(popup.x+2, popup.y+1)
+	help := cells.CellAt(popup.x+2+len("/model // "), popup.y+1)
+	if reflect.DeepEqual(command.Style.Bg, help.Style.Bg) {
+		t.Fatal("help inherited the command highlight")
+	}
+	want := uv.NewScreenBuffer(1, 1)
+	uv.NewStyledString(colors.dimmed().Render("x")).Draw(&want, image.Rect(0, 0, 1, 1))
+	if !reflect.DeepEqual(help.Style.Fg, want.CellAt(0, 0).Style.Fg) {
+		t.Fatal("help is not subdued")
 	}
 }

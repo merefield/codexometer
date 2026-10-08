@@ -1274,7 +1274,7 @@ test('slash commands discover help and require a separate confirmation', async (
                 {
                   id: 'm',
                   label: '/model',
-                  help: 'Choose a model',
+                  help: 'Choose a model. '.repeat(50),
                   next: 'model/test',
                 },
               ],
@@ -1318,6 +1318,32 @@ test('slash commands discover help and require a separate confirmation', async (
   expect(secondOption!.y).toBeGreaterThanOrEqual(
     firstOption!.y + firstOption!.height,
   );
+  const helpStyle = await initialOptions[0]
+    .locator('.command-help')
+    .evaluate((node) => {
+      const style = getComputedStyle(node);
+      const command = node.parentElement!.querySelector('.command-name')!;
+      return {
+        whiteSpace: style.whiteSpace,
+        overflow: style.overflow,
+        ellipsis: style.textOverflow,
+        clipped: node.scrollWidth > node.clientWidth,
+        helpBackground: style.backgroundColor,
+        commandBackground: getComputedStyle(command).backgroundColor,
+        sameLine:
+          Math.abs(
+            node.getBoundingClientRect().y - command.getBoundingClientRect().y,
+          ) < 5,
+      };
+    });
+  expect(helpStyle).toMatchObject({
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    ellipsis: 'ellipsis',
+    clipped: true,
+    sameLine: true,
+  });
+  expect(helpStyle.helpBackground).not.toBe(helpStyle.commandBackground);
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),

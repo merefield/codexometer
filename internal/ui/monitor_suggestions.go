@@ -93,16 +93,18 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 		selected := min(m.monitorSuggestions.selected, len(choices)-1)
 		for i := start; i < min(start+popup.height-2, len(choices)); i++ {
 			o := choices[i]
-			label := o.Label + " // " + strings.Join(strings.Fields(o.Help), " ")
-			style := colors.label().Background(colors.background).Width(popup.width - 2)
+			label := ansi.Truncate(o.Label, popup.width-4, "…")
+			style := colors.dimmed().Background(colors.background)
 			if i == selected {
 				style = style.Foreground(colors.background).Background(colors.primary).Bold(true)
 			}
-			lines = append(lines, style.Render(" "+ansi.Truncate(label, popup.width-4, "…")+" "))
+			help := ansi.Truncate(" // "+strings.Join(strings.Fields(o.Help), " "), max(popup.width-4-ansi.StringWidth(label), 0), "…")
+			row := " " + style.Render(label) + colors.dimmed().Background(colors.background).Render(help) + " "
+			lines = append(lines, lipgloss.NewStyle().Background(colors.background).Width(popup.width-2).Render(row))
 		}
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colors.primary).
-		Background(colors.background).Width(popup.width - 2).Render(strings.Join(lines, "\n"))
+		Background(colors.background).Width(popup.width).Render(strings.Join(lines, "\n"))
 	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
 }
 
