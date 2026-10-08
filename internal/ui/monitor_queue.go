@@ -222,7 +222,7 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	if spare := inner - ansi.StringWidth(header); spare > 1 {
 		header += " " + strings.Repeat("─", spare-1)
 	}
-	lines := []string{colors.label().Bold(true).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
+	lines := []string{colors.label().Bold(false).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
 	for i := start; i < min(start+rows-1, len(entries)); i++ {
 		entry := entries[i]
 		buttons := followupButtons(entry, width)
@@ -240,7 +240,7 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 		}
 		text = ansi.Truncate(text, space, "…")
 		text += strings.Repeat(" ", max(space-ansi.StringWidth(text), 0))
-		prefix := colors.label().Background(background)
+		prefix := colors.label().Bold(false).Background(background)
 		if selected {
 			prefix = prefix.Foreground(colors.primary).Bold(true)
 		}
@@ -252,9 +252,9 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 			} else if m.monitorContextHover == "queue:"+b.key+":"+strconv.Itoa(i) {
 				style = style.Foreground(colors.background).Background(colors.primary)
 			}
-			line += colors.label().Background(background).Render(" ") + style.Render(b.text)
+			line += colors.label().Bold(false).Background(background).Render(" ") + style.Render(b.text)
 		}
-		lines = append(lines, colors.label().Background(background).Width(inner).Render(line))
+		lines = append(lines, colors.label().Bold(false).Background(background).Width(inner).Render(line))
 	}
 	return strings.Join(lines, "\n")
 }

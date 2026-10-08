@@ -45,6 +45,24 @@ func TestQueuePanelThemeAndGeometry(t *testing.T) {
 						t.Fatalf("wrong background theme %d at %d,%d", theme, x, y)
 					}
 				}
+				// The queue stays readable at full theme colour without giving
+				// every pending item the weight of the selected row.
+				cell := cells.CellAt(0, y)
+				if bold := cell.Style.Attrs&uv.AttrBold != 0; bold != (y == 1) {
+					t.Fatalf("wrong queue emphasis theme %d row %d", theme, y)
+				}
+				foreground := colors.accent
+				if y < 2 {
+					foreground = colors.primary
+				}
+				if cell.Style.Fg == nil {
+					t.Fatal("queue text lost its theme colour")
+				}
+				r, g, b, a := cell.Style.Fg.RGBA()
+				wr, wg, wb, wa := foreground.RGBA()
+				if r != wr || g != wg || b != wb || a != wa {
+					t.Fatalf("queue text was dimmed theme %d row %d", theme, y)
+				}
 			}
 			entry := m.followupEntries()[0]
 			buttons := followupButtons(entry, width)
