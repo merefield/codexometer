@@ -13,6 +13,7 @@ type daemonContextState struct {
 	turnObserved                                    bool
 	userItems                                       map[string]bool
 	task, guidance                                  string
+	guidanceID                                      string
 	ended                                           bool
 	streamItem, streamTurn, streamText, streamPhase string
 	activeTurn                                      string
@@ -380,6 +381,10 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 		}
 		c.PendingApprovals = count
 		c.CurrentTask, c.LatestGuidance = state.task, state.guidance
+		c.LatestGuidanceID = state.guidanceID
+		if c.ThreadID == "" && (c.CurrentTask != "" || c.LatestGuidance != "") {
+			c.ThreadID, c.TurnID, c.Source = id, state.activeTurn, "LIVE"
+		}
 		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
 		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.PendingApprovalsLimited {
 			out[id] = c
@@ -424,6 +429,7 @@ func (s *daemonContextState) observeUserMessage(id, turn, text string) bool {
 		s.task = text
 	} else {
 		s.guidance = text
+		s.guidanceID = id
 	}
 	return true
 }

@@ -24,7 +24,7 @@ func TestLiveTaskGuidanceAndStream(t *testing.T) {
 	}
 	event("item/completed", `{"threadId":"root","turnId":"turn","item":{"type":"userMessage","id":"u2","content":[{"type":"text","text":"Use Go"}]}}`)
 	event("item/completed", `{"threadId":"root","turnId":"turn","item":{"type":"userMessage","id":"u1","content":[{"type":"text","text":"Build it"}]}}`)
-	if c := snapshot(); c.CurrentTask != "Build it" || c.LatestGuidance != "Use Go" {
+	if c := snapshot(); c.CurrentTask != "Build it" || c.LatestGuidance != "Use Go" || c.LatestGuidanceID != "u2" || c.ThreadID != "root" || c.TurnID != "turn" {
 		t.Fatal(c)
 	}
 	event("item/started", `{"threadId":"root","turnId":"turn","item":{"type":"agentMessage","id":"a","phase":"final_answer"}}`)
@@ -44,7 +44,7 @@ func TestLiveTaskGuidanceAndStream(t *testing.T) {
 		t.Fatal(c)
 	}
 	event("turn/started", `{"threadId":"root","turn":{"id":"next"}}`)
-	if c := snapshot(); c.Text != "" || c.CurrentTask != "" {
+	if c := snapshot(); c.Text != "" || c.CurrentTask != "" || c.LatestGuidanceID != "" {
 		t.Fatal(c)
 	}
 }

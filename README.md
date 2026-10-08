@@ -1604,10 +1604,15 @@ when they run. The panel remains visible during work and ordinary approvals,
 above the approval controls when those replace the composer. Quota-threshold
 reviews remain isolated. Empty panels disappear unless the queue is unavailable; wide session rows show one
 preview at a time, while full detail shows more entries as space permits.
+Successfully sent steering also appears here as **STEER SENT** until the live
+**LATEST GUIDANCE** catches up (or a positively newer turn supersedes it).
+These are read-only receipts, not queued work:
+they have no edit or cancel buttons, survive switching sessions within this run,
+and are never resent automatically.
 
 Use the mouse wheel over the panel, or **Alt+Q** then **↑/↓**, **Page Up/Down**,
 to browse. **Enter/E** edits, **X/Delete** requests deletion, and **Esc/Tab** leaves
-queue keyboard focus. Each entry also has clickable **EDIT** and **×** buttons;
+queue keyboard focus. Editable entries also have clickable **EDIT** and **×** buttons;
 native deletion requires confirmation. Scheduled **NOW** retains its separate
 confirmation. Editing a native message does not pause Codex's queue. Its original
 ID and contents are rechecked; an already-started/deleted message is never recreated.

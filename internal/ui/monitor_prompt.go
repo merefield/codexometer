@@ -71,6 +71,7 @@ type monitorTurnResult struct {
 	session, token, action string
 	text                   string
 	err                    error
+	steer                  monitorSteerReceipt
 }
 
 func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
@@ -269,6 +270,9 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	p := &m.monitorPrompt
 	if result, ok := msg.(monitorTurnResult); ok {
+		if result.err == nil && result.action == "steer" {
+			m.recordMonitorSteer(result.steer)
+		}
 		if p.session == result.session && p.offer.Token == result.token {
 			p.busy = false
 			if result.err != nil {
@@ -449,10 +453,15 @@ func (m Model) submitMonitorTurn(action string) (Model, tea.Cmd, bool) {
 	}
 	p.busy, p.notice = true, ""
 	session := p.session
+	steer := monitorSteerReceipt{session: session, thread: o.ThreadID, turn: o.TurnID, text: codex.SanitizeSessionContext(text), sentAt: time.Now()}
+	if s, ok := m.contextDetailSession(); ok {
+		steer.baselineID = s.preview.LatestGuidanceID
+		steer.baselineText = s.preview.LatestGuidance
+	}
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		return monitorTurnResult{session: session, token: o.Token, action: action, text: text, err: c.SendSessionTurn(ctx, o, action, text)}
+		return monitorTurnResult{session: session, token: o.Token, action: action, text: text, steer: steer, err: c.SendSessionTurn(ctx, o, action, text)}
 	}, true
 }
 

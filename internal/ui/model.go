@@ -48,6 +48,8 @@ type Model struct {
 	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
 	monitorQueue                        monitorQueueState
+	monitorSteers                       []monitorSteerReceipt
+	monitorSteerSequence                uint64
 	monitorPrompt                       monitorPromptState
 	monitorCommands                     monitorCommandsState
 	monitorSuggestions                  monitorSuggestionState
@@ -2382,6 +2384,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			m.monitorStoppedAt = message.at
 			m.monitorNextFetch = time.Time{}
 		}
+	}
+	if accepted {
+		m.reconcileMonitorSteers()
 	}
 	if accepted && message.kind != monitorFetchSample && message.kind != monitorFetchBoundary {
 		m.refreshMonitorRates(message.at, true)

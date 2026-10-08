@@ -17,6 +17,7 @@ import (
 type followupEntry struct {
 	label, text              string
 	receipt                  string
+	readOnly                 bool
 	native                   *codex.SessionQueuedMessage
 	trigger                  *schedule.Job
 	editable, removable, now bool
@@ -42,6 +43,11 @@ func (m Model) followupEntries() []followupEntry {
 			entries = append(entries, followupEntry{label: i18n.Text("ACCEPTED // CHECKING QUEUE"), text: text, receipt: "receipt:" + strconv.Itoa(i)})
 		}
 	}
+	for _, steer := range m.monitorSteers {
+		if steer.session == m.monitorContextTarget() {
+			entries = append(entries, followupEntry{label: i18n.Text("STEER SENT"), text: steer.text, receipt: "steer:" + strconv.FormatUint(steer.id, 10), readOnly: true})
+		}
+	}
 	if j, ok := m.pendingTrigger(); ok {
 		label := i18n.Text("AFTER QUOTA REFRESH")
 		if j.Trigger == "at" {
@@ -57,6 +63,9 @@ func (m Model) followupEntries() []followupEntry {
 }
 
 func followupButtons(entry followupEntry, width int) []triggerButton {
+	if entry.readOnly {
+		return nil
+	}
 	var buttons []triggerButton
 	if entry.trigger != nil {
 		buttons = append(buttons, triggerButton{text: i18n.Text("[NOW]"), key: "now", enabled: entry.now})
@@ -195,7 +204,9 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	if m.queueUnavailable() {
 		header = i18n.Text("FOLLOW-UPS // UNAVAILABLE")
 	}
-	if q.focused {
+	if q.focused && q.offset < len(entries) && entries[q.offset].readOnly {
+		header += " // ↑↓ · Esc"
+	} else if q.focused {
 		header += i18n.Text(" // ↑↓ · Enter: edit · X: delete · Esc")
 	} else {
 		header += " // Alt+Q"
@@ -223,7 +234,10 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 			background = monitorTintBackground(colors, 18)
 		}
 		text := marker + entry.label + " // " + strings.Join(strings.Fields(entry.text), " ")
-		space := max(buttons[0].x-1, 1)
+		space := inner
+		if len(buttons) > 0 {
+			space = max(buttons[0].x-1, 1)
+		}
 		text = ansi.Truncate(text, space, "…")
 		text += strings.Repeat(" ", max(space-ansi.StringWidth(text), 0))
 		prefix := colors.label().Background(background)
