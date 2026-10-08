@@ -120,6 +120,12 @@
       request++;
       busy = false;
       confirmation = '';
+      if (open) {
+        open = false;
+        dismissedQuery = query;
+      }
+      menu = null;
+      selected = null;
     }
   });
   $effect(() => {

@@ -1448,6 +1448,77 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toBeDisabled();
 });
 
+test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  let lists = 0;
+  const modes: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    modes.push(body.command.mode);
+    if (body.command.mode === 'list') lists++;
+    await route.fulfill({
+      json: {
+        title: '/ COMMANDS',
+        help: 'Live options',
+        path: '',
+        revision: 'r' + lists,
+        choices: [
+          { id: 'model', label: '/model', help: 'Model help', next: 'model' },
+        ],
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/mod');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  const before = lists;
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  await expect(
+    page.getByText(
+      'Session controls temporarily unavailable. Check Codex for current state.',
+    ),
+  ).toBeVisible();
+  expect(lists).toBe(before);
+  snapshot.sessionsError = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(text).toHaveValue('/mod');
+  // Dismiss any newly mounted suggestions, then explicitly reopen commands.
+  await text.press('Escape');
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  const recovered = lists;
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  expect(lists).toBeGreaterThan(recovered);
+  await text.press('Escape');
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  await expect(text).toHaveValue('/mod');
+  expect(modes.every((mode) => mode === 'list')).toBe(true);
+});
+
 test('read-only status line supports multiple fields, ordering and persistence without control writes', async ({
   page,
   pairingURL,
