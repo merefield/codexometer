@@ -87,6 +87,8 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 					m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
 				}
 				out := m.render()
+				plain := ansi.Strip(out)
+				lines := strings.Split(plain, "\n")
 				if lipgloss.Width(out) > width || lipgloss.Height(out) > height {
 					t.Fatalf("overflow %dx%d", width, height)
 				}
@@ -99,7 +101,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 					action := "decision:" + strconv.Itoa(i)
 					label := approvalShortcutLabel(option.Kind, confirmed && i == 0, i)
 					found := false
-					for y, line := range strings.Split(ansi.Strip(out), "\n") {
+					for y, line := range lines {
 						pos := strings.Index(line, label)
 						if pos < 0 {
 							continue

@@ -64,7 +64,7 @@ jobs:
     name: Test ${{ matrix.os }}
     needs: validate
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
     strategy:
@@ -114,8 +114,26 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -race -cover ./...
+      - name: Core tests (race and coverage)
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race -cover -json -timeout 10m -skip '^TestLocalisedScreens$' ./... | tee core-test-results.json
+
+      - name: Localised screens (all locales, race and coverage)
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race -cover -json -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui | tee locale-test-results.json
+
+      - name: Preserve test results and timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-go-tests-${{ matrix.os }}
+          path: '*-test-results.json'
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build
         run: go build -trimpath ./...

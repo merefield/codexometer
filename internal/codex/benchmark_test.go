@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode/utf8"
 )
@@ -354,6 +355,12 @@ func TestRunBenchmarkFailsClosedWhenUsageIsMissing(t *testing.T) {
 }
 
 func TestRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
+	// Virtual time advances only when goroutines are durably blocked. Thread
+	// setup cannot accidentally exhaust a 20 ms deadline on a busy CI runner.
+	synctest.Test(t, testRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues)
+}
+
+func testRunBenchmarkSuiteInterruptsTimedOutTurnAndContinues(t *testing.T) {
 	message := string(rawJSON(map[string]string{"code": correctStarlarkSubmission}))
 	server, requests := newFakeBenchmarkServer(
 		benchmarkEnvelope{ID: rawJSON(1), Result: rawJSON(map[string]any{
