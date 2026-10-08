@@ -138,10 +138,7 @@ func (layout detailControlLayout) render(m Model, width, height int, colors pale
 	body := layout.renderBase(m, width, height, colors)
 	if layout.queueRows > 0 {
 		queue := m.renderMonitorQueue(width, layout.queueRows, colors)
-		if body != "" {
-			return queue + "\n" + body
-		}
-		return queue
+		return stackMonitorQueue(queue, body, m.monitorQueueActivityFirst(width, height, layout.rows-layout.queueRows))
 	}
 	return body
 }

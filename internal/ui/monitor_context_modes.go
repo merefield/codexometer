@@ -209,11 +209,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	if s.id == m.monitorContextTarget() {
 		if queueRows := m.monitorQueueRows(width, height, n); queueRows > 0 {
 			queue := m.renderMonitorQueue(width, queueRows, colors)
-			if controls != "" {
-				controls = queue + "\n" + controls
-			} else {
-				controls = queue
-			}
+			controls = stackMonitorQueue(queue, controls, m.monitorQueueActivityFirst(width, height, n))
 			n += queueRows
 		}
 	}

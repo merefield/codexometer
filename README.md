@@ -1600,13 +1600,13 @@ its turn ID has been observed. Only the selected row accepts input; switching
 sessions retains a separate in-memory ordinary draft for each session; returning
 restores it without sending or focusing the editor. Drafts are lost on exit;
 secret/question answers and in-flight submissions are not saved as drafts.
-The full-detail border and composer heading show the short session ID and name
+The full-detail border shows the short session ID and name
 (directory fallback for unnamed sessions); full IDs remain in secondary metadata.
 Switching between wide-row
 and full-screen detail for the same session
 preserves the draft and releases typing focus; click the composer or press Enter
-to continue editing. The animated progress dots sit directly above
-the input. While the editor is focused, **Enter steers the current turn**,
+to continue editing. The animated progress dots sit above FOLLOW-UPS when the
+queue is visible, or directly above the input otherwise. While the editor is focused, **Enter steers the current turn**,
 **Tab queues the message for the next turn**, and **Esc requests interruption**
 without discarding the draft. **Ctrl+C** leaves the editor without interrupting;
 Esc outside the editor keeps its normal back-navigation behaviour. Once idle,
@@ -2656,7 +2656,8 @@ history is hidden unless its account matches the current successful quota read.
 In **Sessions → full detail**, use **Ctrl+S** (or click **Schedule** on the
 composer's key-hint line) to schedule a follow-up for an idle shared app-server session.
 Ordinary composers omit a redundant heading; the box title identifies the
-session. Active turns retain animated dots above the input, while structured
+session. Active turns retain animated dots above the input (above FOLLOW-UPS
+when the queue is visible), while structured
 questions retain their question heading and answer progress. Schedule/Close
 Schedule buttons keep their full labels when space allows, truncating hints first.
 The form replaces the conversation area inside the existing detail pane, not

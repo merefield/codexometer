@@ -265,6 +265,9 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 		return ""
 	}
 	_, _, top := monitorContextBodyLayout(height, controls+rows)
+	if m.monitorQueueActivityFirst(width, height, controls) {
+		top++ // the task's existing activity row now precedes the queue
+	}
 	if x < 2 || x >= width-2 || y < top || y >= top+rows {
 		return ""
 	}
@@ -283,6 +286,43 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 		}
 	}
 	return "queue:focus"
+}
+
+// Move the existing activity row, rather than adding a second animation or
+// moving the composer. Rendering and queue hit testing share this decision.
+func (m Model) monitorQueueActivityFirst(width, height, controls int) bool {
+	s, ok := m.contextDetailSession()
+	if !ok || m.sessionActivityDots(s) == "" || controls == 0 {
+		return false
+	}
+	if m.monitorContextDetail != "" {
+		base := m.layoutDetailControlsBase(width, height)
+		if base.kind == "notice" {
+			return base.notice == m.detailActivity()
+		}
+		return base.kind == "prompt" && m.monitorComposerActivity() != "" && len(m.monitorPromptOffer().Questions) == 0
+	}
+	if len(m.expandedApprovalButtons(width, height, s)) > 0 || m.monitorApprovalHasOutcome() {
+		return false
+	}
+	if m.monitorPromptRows(width, height) > 0 {
+		return m.monitorComposerActivity() != "" && len(m.monitorPromptOffer().Questions) == 0
+	}
+	return height >= 5 && width >= 7
+}
+
+func stackMonitorQueue(queue, controls string, activityFirst bool) string {
+	if controls == "" {
+		return queue
+	}
+	if activityFirst {
+		activity, rest, more := strings.Cut(controls, "\n")
+		if more {
+			return activity + "\n" + queue + "\n" + rest
+		}
+		return activity + "\n" + queue
+	}
+	return queue + "\n" + controls
 }
 
 func (m Model) monitorQueueAt(x, y int) string {
