@@ -242,17 +242,16 @@ curl -fsSL https://raw.githubusercontent.com/merefield/codexometer/main/install-
 
 The default destination is `/usr/local/bin`. For a user-local installation, set `CODEXOMETER_BIN_DIR="$HOME/.local/bin"` when running the installer. Keep your existing installation directory when upgrading and ensure it is on `PATH`.
 
-On Windows PowerShell:
+On Windows, paste this into built-in Windows PowerShell 5.1 or PowerShell 7. It launches the installer in a separate Windows PowerShell process:
 
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
-Set-ExecutionPolicy -Scope Process Bypass -Force
-& $installer
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer -ErrorAction Stop
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
 Remove-Item $installer
 ```
 
-The execution-policy override applies only to that PowerShell process; inspect the downloaded script before running it if required by your security policy.
+The execution-policy override applies only to the installer child process, leaving your current shell's policy and persistent machine/user settings unchanged. `-NoProfile` avoids custom profiles; `-UseBasicParsing` avoids Windows PowerShell 5.1's web-content parsing and associated security prompt. Organisational Group Policy, application-control rules and antivirus protections still apply. Inspect the downloaded script before running it if required by your security policy.
 
 Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. New Go 1.27-based macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.1 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
 

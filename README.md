@@ -287,16 +287,24 @@ Windows PowerShell 5.1 (`powershell`) or PowerShell 7 (`pwsh`). There is no need
 to upgrade PowerShell to install Codexometer. To check your shell version, run
 `$PSVersionTable`.
 
+The example below launches the installer in a separate built-in Windows
+PowerShell process. It can be pasted into either Windows PowerShell 5.1 or
+PowerShell 7 on Windows.
+
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) "install-codexometer.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer
-Set-ExecutionPolicy -Scope Process Bypass -Force
-& $installer
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/merefield/codexometer/main/install-release.ps1 -OutFile $installer -ErrorAction Stop
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
 Remove-Item $installer
 ```
 
-The execution-policy override applies only to that PowerShell process. Inspect
-the downloaded script before running it if required by your security policy.
+The execution-policy override applies only to the installer child process; it
+does not change your current shell's policy or the persistent machine/user
+settings. `-NoProfile` avoids custom profile interference, and
+`-UseBasicParsing` avoids Windows PowerShell 5.1's web-content parsing and its
+associated security prompt. This does not bypass organisational Group Policy,
+application-control rules or antivirus protections. Inspect the downloaded
+script before running it if required by your security policy.
 
 It installs into `%LOCALAPPDATA%\Programs\codexometer\bin` by default. Override
 that with `CODEXOMETER_BIN_DIR` or `-BinDir`; use `-Version vX.Y.Z` to select a
