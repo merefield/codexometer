@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -73,19 +74,13 @@ func (m Model) suggestionChoices() []codex.SessionCommandChoice {
 	return choices
 }
 
-func (m Model) suggestionRows(height int) int {
-	if !m.suggestionsActive() || m.monitorSuggestions.session != m.monitorPrompt.session {
-		return 0
-	}
-	return min(max(len(m.suggestionChoices()), 1), 4, max(height-9, 0))
-}
-
-func (m Model) renderMonitorSuggestions(width, height int, colors palette) []string {
-	count := m.suggestionRows(height)
-	if count == 0 {
-		return nil
+func (m Model) withMonitorSuggestions(view string, colors palette) string {
+	popup, start := m.monitorSuggestionPopup()
+	if popup.height == 0 {
+		return view
 	}
 	choices := m.suggestionChoices()
+	var lines []string
 	if len(choices) == 0 {
 		text := "No matching slash commands."
 		if m.monitorSuggestions.busy {
@@ -93,21 +88,22 @@ func (m Model) renderMonitorSuggestions(width, height int, colors palette) []str
 		} else if m.monitorSuggestions.err {
 			text = "Command catalogue unavailable. Use Codex."
 		}
-		return []string{colors.dimmed().Render(ansi.Truncate(text, max(width-4, 1), "…"))}
-	}
-	selected := min(m.monitorSuggestions.selected, len(choices)-1)
-	start := max(selected-count+1, 0)
-	var lines []string
-	for i := start; i < min(start+count, len(choices)); i++ {
-		o := choices[i]
-		label := o.Label + " // " + strings.Join(strings.Fields(o.Help), " ")
-		style := colors.label()
-		if i == selected {
-			style = style.Foreground(colors.background).Background(colors.primary).Bold(true)
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(text, popup.width-4, "…")))
+	} else {
+		selected := min(m.monitorSuggestions.selected, len(choices)-1)
+		for i := start; i < min(start+popup.height-2, len(choices)); i++ {
+			o := choices[i]
+			label := o.Label + " // " + strings.Join(strings.Fields(o.Help), " ")
+			style := colors.label().Background(colors.background).Width(popup.width - 2)
+			if i == selected {
+				style = style.Foreground(colors.background).Background(colors.primary).Bold(true)
+			}
+			lines = append(lines, style.Render(" "+ansi.Truncate(label, popup.width-4, "…")+" "))
 		}
-		lines = append(lines, style.Render(ansi.Truncate(label, max(width-4, 1), "…")))
 	}
-	return lines
+	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colors.primary).
+		Background(colors.background).Width(popup.width - 2).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
 }
 
 func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
@@ -162,6 +158,17 @@ func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	if mouse, ok := msg.(tea.MouseMsg); ok {
 		x, y := mouse.Mouse().X, mouse.Mouse().Y
+		if popup, _ := m.monitorSuggestionPopup(); popup.contains(x, y) {
+			switch mouse.Mouse().Button {
+			case tea.MouseWheelUp, tea.MouseWheelDown:
+				d := 3
+				if mouse.Mouse().Button == tea.MouseWheelUp {
+					d = -3
+				}
+				s.selected = min(max(s.selected+d, 0), max(len(choices)-1, 0))
+				return m, nil, true
+			}
+		}
 		if i := m.monitorSuggestionAt(x, y); i >= 0 && i < len(choices) {
 			s.selected = i
 			if _, click := msg.(tea.MouseClickMsg); click && mouse.Mouse().Button == tea.MouseLeft {
@@ -169,19 +176,27 @@ func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			return m, nil, true
 		}
+		// Popup borders and empty-state rows must not activate controls below.
+		if popup, _ := m.monitorSuggestionPopup(); popup.contains(x, y) {
+			return m, nil, true
+		}
 	}
 	return m, nil, false
 }
 
-func (m Model) monitorSuggestionAt(x, y int) int {
+// One shared rectangle anchors rendering and hit testing immediately above
+// the composer, without reserving rows or moving any existing controls.
+func (m Model) monitorSuggestionPopup() (popup monitorRect, start int) {
+	if !m.suggestionsActive() || m.monitorSuggestions.session != m.monitorPrompt.session {
+		return
+	}
 	w, h := m.monitorPromptSize()
-	count := m.suggestionRows(h)
-	if count == 0 {
-		return -1
+	rows := m.monitorPromptRows(w, h)
+	if rows == 0 || w < 12 {
+		return
 	}
 	g := m.monitorDashboardLayout()
-	x -= 4
-	y -= g.meterY
+	x, y := 4, g.meterY
 	if m.monitorContextDetail == "" {
 		a := m.monitorArea(g.contentWidth, g.meterHeight)
 		sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
@@ -190,27 +205,35 @@ func (m Model) monitorSuggestionAt(x, y int) int {
 		for i, s := range sessions {
 			if s.id == m.monitorContextTarget() {
 				mw, _, _ := monitorSessionColumnWidths(a.width)
-				x -= mw + 1
-				y -= rowY
+				x += mw + 1
+				y += rowY
 				found = true
 				break
 			}
 			rowY += heights[i]
 		}
 		if !found {
-			return -1
+			return
 		}
 	}
-	rows := m.monitorPromptRows(w, h)
-	if rows == 0 {
-		return -1
-	}
 	_, _, cy := monitorContextBodyLayout(h, rows)
-	y -= cy
-	if x < 0 || x >= w-4 || y < 0 || y >= count {
+	choices := m.suggestionChoices()
+	count := min(max(len(choices), 1), max(cy-3, 0))
+	if count == 0 {
+		return
+	}
+	width := min(w-4, 44)
+	for _, o := range choices {
+		width = min(w-4, max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4))
+	}
+	start = max(min(m.monitorSuggestions.selected, max(len(choices)-1, 0))-count+1, 0)
+	return monitorRect{x: x, y: y + cy - count - 2, width: width, height: count + 2}, start
+}
+
+func (m Model) monitorSuggestionAt(x, y int) int {
+	popup, start := m.monitorSuggestionPopup()
+	if popup.height == 0 || x <= popup.x || x >= popup.x+popup.width-1 || y <= popup.y || y >= popup.y+popup.height-1 || len(m.suggestionChoices()) == 0 {
 		return -1
 	}
-	choices := m.suggestionChoices()
-	start := max(min(m.monitorSuggestions.selected, max(len(choices)-1, 0))-count+1, 0)
-	return start + y
+	return start + y - popup.y - 1
 }

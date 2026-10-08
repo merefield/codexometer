@@ -1506,7 +1506,9 @@ editor, with the catalogue-backed slash-command subset described below. Secret a
 masked password field.
 
 **Live slash commands (shared app-server):** type `/` in the ordinary composer
-to see suggestions with supplied help. Typing `/mo` filters to matching commands;
+to see a vertical popup with supplied help. Typing `/mo` filters to matching commands;
+the popup shrinks as candidates drop out without moving the composer. Longer
+lists scroll within the available space (arrows or mouse wheel in the terminal).
 Up/Down selects, Tab completes the name, Enter opens its options and Escape
 dismisses suggestions while retaining the draft and typing focus. Suggestions
 are fetched asynchronously and filtered locally. They also work in a selected

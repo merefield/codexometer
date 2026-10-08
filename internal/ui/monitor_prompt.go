@@ -136,10 +136,9 @@ func (m Model) monitorPromptRows(width, height int) int {
 		p := m.monitorPrompt
 		rows := 3
 		if (p.input.Focused() || p.input.Value() != "") && !p.busy {
-			p.input.configure(width, m.monitorPromptEditorHeight(width, height)-m.suggestionRows(height))
+			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
 			rows = p.input.Height() + 2
 		}
-		rows += m.suggestionRows(height)
 		if m.monitorContextDetail == "" {
 			s, ok := m.contextDetailSession()
 			textRows, _, _ := monitorContextBodyLayout(height, rows)
@@ -236,7 +235,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	}
 	if p.offer.Token == o.Token && (p.input.Focused() || p.input.Value() != "") && !p.busy {
 		input := p.input
-		input.configure(width, m.monitorPromptEditorHeight(width, height)-m.suggestionRows(height))
+		input.configure(width, m.monitorPromptEditorHeight(width, height))
 		line = input.View(colors)
 	}
 	if p.busy {
@@ -257,8 +256,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	if scheduling {
 		heading = m.renderScheduleToggleHeader(width, identity, false, colors)
 	}
-	if suggestions := m.renderMonitorSuggestions(width, height, colors); len(suggestions) > 0 {
-		heading = strings.Join(suggestions, "\n") + "\n" + heading
+	if popup, _ := m.monitorSuggestionPopup(); popup.height > 0 {
 		hint = "↑/↓: select • Tab: complete • Enter: options • Esc: dismiss"
 	}
 	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))

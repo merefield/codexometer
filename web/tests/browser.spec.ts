@@ -1307,6 +1307,17 @@ test('slash commands discover help and require a separate confirmation', async (
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
   ).toBeVisible();
+  const popup = panel.locator('.command-popup');
+  await expect(popup).toBeVisible();
+  const initialPopup = await popup.boundingBox();
+  const initialComposer = await text.boundingBox();
+  const initialOptions = await popup.locator('.command-options button').all();
+  expect(initialOptions).toHaveLength(2);
+  const firstOption = await initialOptions[0].boundingBox();
+  const secondOption = await initialOptions[1].boundingBox();
+  expect(secondOption!.y).toBeGreaterThanOrEqual(
+    firstOption!.y + firstOption!.height,
+  );
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
@@ -1316,6 +1327,11 @@ test('slash commands discover help and require a separate confirmation', async (
     panel.getByRole('button', { name: '/model →', exact: true }),
   ).toBeVisible();
   await text.fill('/mo');
+  await expect(popup.locator('.command-options button')).toHaveCount(1);
+  const filteredPopup = await popup.boundingBox();
+  const filteredComposer = await text.boundingBox();
+  expect(filteredPopup!.height).toBeLessThan(initialPopup!.height);
+  expect(filteredComposer!.y).toBe(initialComposer!.y);
   await text.press('Tab');
   await expect(text).toHaveValue('/model');
   await text.press('Escape');

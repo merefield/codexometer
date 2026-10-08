@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { controlRequest, live } from './state.svelte';
   import { statusLineUI } from './preferences.svelte';
   let {
@@ -38,6 +38,7 @@
   let request = 0;
   let selectedIndex = $state(0);
   let dismissedQuery = $state<string | null>(null);
+  let optionList: HTMLDivElement | undefined = $state();
   const clock = setInterval(() => {
     now = Date.now();
   }, 1000);
@@ -57,9 +58,27 @@
     ),
   );
   let unavailable = $derived(!live.connected || !!live.data?.sessionsError);
+  let suggesting = $derived(
+    open && slash && (!menu || menu.path === '') && !selected,
+  );
   $effect(() => {
     query;
     selectedIndex = 0;
+  });
+  $effect(() => {
+    const index = selectedIndex;
+    choices;
+    if (suggesting)
+      void tick().then(() => {
+        const row = optionList?.children[index] as HTMLElement | undefined;
+        if (!row || !optionList) return;
+        const listRect = optionList.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        if (rowRect.top < listRect.top)
+          optionList.scrollTop += rowRect.top - listRect.top;
+        else if (rowRect.bottom > listRect.bottom)
+          optionList.scrollTop += rowRect.bottom - listRect.bottom;
+      });
   });
   export function handleKey(event: KeyboardEvent) {
     if (
@@ -233,67 +252,114 @@
     / COMMANDS
   </button>
   {#if open}
-    <h3>{menu?.title || '/ COMMANDS'}</h3>
-    <p class="muted">{menu?.help || 'Loading live options…'}</p>
-    {#if notice}<p role="status">{notice}</p>{/if}
-    {#if busy}<p role="status">Loading / sending…</p>{/if}
-    {#if selected}
-      <h4>{selected.label}</h4>
-      <pre>{selected.help || 'No additional help supplied by Codex.'}</pre>
-      {#if selected.action}<p class="notice">
-          TARGET // {session}. Changes affect subsequent turns of this session,
-          not global defaults. Automatic quota thresholds may later supersede
-          model settings.
-        </p>
+    <div
+      class:command-popup={suggesting}
+      aria-label={suggesting ? 'Slash command suggestions' : undefined}
+    >
+      {#if !suggesting}
+        <h3>{menu?.title || '/ COMMANDS'}</h3>
+        <p class="muted">{menu?.help || 'Loading live options…'}</p>
+      {/if}
+      {#if notice}<p role="status">{notice}</p>{/if}
+      {#if busy}<p role="status">Loading / sending…</p>{/if}
+      {#if selected}
+        <h4>{selected.label}</h4>
+        <pre>{selected.help || 'No additional help supplied by Codex.'}</pre>
+        {#if selected.action}<p class="notice">
+            TARGET // {session}. Changes affect subsequent turns of this
+            session, not global defaults. Automatic quota thresholds may later
+            supersede model settings.
+          </p>
+          <button
+            disabled={busy || unavailable || !confirmation || now >= expires}
+            onclick={commit}>CONFIRM CHANGE</button
+          >
+          {#if confirmation && now >= expires}<p>
+              Confirmation expired. Reopen the option.
+            </p>{/if}
+        {/if}
         <button
-          disabled={busy || unavailable || !confirmation || now >= expires}
-          onclick={commit}>CONFIRM CHANGE</button
+          disabled={busy}
+          onclick={() => {
+            selected = null;
+            confirmation = '';
+          }}>BACK</button
         >
-        {#if confirmation && now >= expires}<p>
-            Confirmation expired. Reopen the option.
+      {:else}
+        <div
+          class="command-options"
+          class:vertical={suggesting}
+          bind:this={optionList}
+        >
+          {#each choices as o, index (o.id)}<button
+              disabled={busy || unavailable}
+              title={o.help}
+              aria-label={o.label +
+                (o.next ? ' →' : !o.action ? ' // HELP' : '')}
+              class:suggested={slash &&
+                menu?.path === '' &&
+                selectedIndex === index}
+              onclick={() => choose(o)}
+              >{o.label}{o.next
+                ? ' →'
+                : !o.action
+                  ? ' // HELP'
+                  : ''}{#if slash && menu?.path === ''}<span
+                  class="command-help">{o.help}</span
+                >{/if}</button
+            >{/each}
+        </div>
+        {#if !busy && !choices.length}<p>
+            No available matching commands.
+          </p>{/if}
+        {#if slash && menu?.path === ''}<p class="muted">
+            ↑/↓ select · Tab complete · Enter options · Escape dismiss
           </p>{/if}
       {/if}
-      <button
-        disabled={busy}
-        onclick={() => {
-          selected = null;
-          confirmation = '';
-        }}>BACK</button
-      >
-    {:else}
-      <div class="command-options">
-        {#each choices as o, index (o.id)}<button
-            disabled={busy || unavailable}
-            title={o.help}
-            aria-label={o.label + (o.next ? ' →' : !o.action ? ' // HELP' : '')}
-            class:suggested={slash &&
-              menu?.path === '' &&
-              selectedIndex === index}
-            onclick={() => choose(o)}
-            >{o.label}{o.next
-              ? ' →'
-              : !o.action
-                ? ' // HELP'
-                : ''}{#if slash && menu?.path === ''}<span class="command-help"
-                >{o.help}</span
-              >{/if}</button
-          >{/each}
-      </div>
-      {#if !busy && !choices.length}<p>No available matching commands.</p>{/if}
-      {#if slash && menu?.path === ''}<p class="muted">
-          ↑/↓ select · Tab complete · Enter options · Escape dismiss
-        </p>{/if}
-    {/if}
-    <button disabled={busy} onclick={() => load('')}>ALL COMMANDS</button>
-    <button disabled={busy} onclick={() => load(menu?.path || '')}
-      >REFRESH OPTIONS</button
-    >
+      {#if !suggesting}
+        <button disabled={busy} onclick={() => load('')}>ALL COMMANDS</button>
+        <button disabled={busy} onclick={() => load(menu?.path || '')}
+          >REFRESH OPTIONS</button
+        >
+      {/if}
+    </div>
   {/if}
 </section>
 
 <style>
   .slash-commands {
     margin: 0.4rem 0;
+    position: relative;
+  }
+  .command-popup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    z-index: 5;
+    width: min(40rem, 100%);
+    box-sizing: border-box;
+    padding: 0.35rem;
+    border: 1px solid var(--accent);
+    background: var(--panel);
+    box-shadow: 0 0.3rem 1rem #0006;
+  }
+  .command-popup p {
+    margin: 0.3rem 0;
+    font-size: 0.8em;
+  }
+  .command-options.vertical {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.15rem;
+  }
+  .vertical button {
+    flex: none;
+    text-align: left;
+    width: 100%;
+  }
+  .vertical .command-help {
+    max-width: none;
   }
   .command-options {
     display: flex;

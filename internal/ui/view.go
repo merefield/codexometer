@@ -85,7 +85,7 @@ func (m Model) render() string {
 	if subtitleRow < len(rendered) {
 		rendered[subtitleRow] = linkHeaderVersion(rendered[subtitleRow], m.appVersion, m.versionHovered, colors)
 	}
-	return strings.Join(rendered, "\n")
+	return m.withMonitorSuggestions(strings.Join(rendered, "\n"), colors)
 }
 
 func renderHeader(width, phase int, signal, account, appVersion string, colors palette) string {
