@@ -25,14 +25,15 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 		m.width = width
 		w, h := m.monitorPromptSize()
 		rows := m.monitorPromptRows(w, h)
-		if rows != 3 || !strings.Contains(ansi.Strip(m.render()), i18n.Text("FOLLOW-UP")) {
+		placeholder := ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(w-4, 1), "")
+		if rows != 2 || !strings.Contains(ansi.Strip(m.render()), placeholder) {
 			t.Fatalf("missing inline composer at width %d", width)
 		}
 		g := m.dashboardLayout()
 		a := m.monitorArea(g.contentWidth, g.meterHeight)
 		mw, _, _ := monitorSessionColumnWidths(a.width)
 		_, _, cy := monitorContextBodyLayout(h, rows)
-		y := g.meterY + a.topHeight + a.gap - 1 + cy + 1
+		y := g.meterY + a.topHeight + a.gap - 1 + cy
 		for x := mw + 5; x < mw+3+w-2; x++ {
 			if got := m.monitorContextAt(x, y); got != "prompt" {
 				t.Fatalf("width %d click %d,%d = %q", width, x, y, got)
@@ -122,7 +123,7 @@ func TestInlineMonitorPromptSingleOwner(t *testing.T) {
 	}
 	id := m.monitorSessionData[1].id
 	c.offer.ThreadID = id
-	if got := strings.Count(ansi.Strip(m.render()), i18n.Text("FOLLOW-UP")); got != 1 {
+	if got := strings.Count(ansi.Strip(m.render()), i18n.Text("[ Click here or press Enter to write ]")); got != 1 {
 		t.Fatalf("rendered %d composers, want only selected row", got)
 	}
 	m, _ = promptKey(m, tea.KeyEnter, "")

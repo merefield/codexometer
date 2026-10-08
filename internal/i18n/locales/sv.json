@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "FÖREGÅENDE TUR",
+  "LIVE SESSION": "LIVESESSION",
+  " // %d OF %d": " // %d AV %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: FÖREGÅENDE ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: NÄSTA ]",
+  "[ LIVE ]": "[ LIVE ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Snedstreckskommandon kan inte schemaläggas. Använd // för vanlig text som börjar med ett snedstreck.",
+  "STEER SENT": "INSTRUKTION SKICKAD",
   "TRIGGER SET": "UTLÖSARE INSTÄLLD",
   "Ctrl+S: EDIT": "Ctrl+S: REDIGERA",
   "CURRENT TASK": "AKTUELL UPPGIFT",

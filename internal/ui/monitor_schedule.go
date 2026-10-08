@@ -65,13 +65,14 @@ func (m *Model) openSchedule() tea.Cmd {
 	if !m.hasSchedule(id) && (o.Token == "" || o.TurnID != "" || o.ThreadID != id || len(o.Questions) > 0) {
 		return nil
 	}
+	m.showLiveMonitorHistory()
 	q := m.scheduleUI.queue
 	if q == nil {
 		q = schedule.New()
 	}
 	p := scheduleUI{queue: q, polling: m.scheduleUI.polling, drafts: m.scheduleUI.drafts, open: true, session: id, input: newMonitorEditor(), hours: 1, date: time.Now().Add(time.Hour).Truncate(time.Minute)}
 	g := m.monitorDashboardLayout()
-	p.composerRows = max(3, m.monitorPromptRows(g.contentWidth, g.meterHeight))
+	p.composerRows = max(2, m.monitorPromptRows(g.contentWidth, g.meterHeight))
 	if m.monitorPrompt.session == id {
 		p.input = m.monitorPrompt.input
 	}
@@ -214,6 +215,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 				m.monitorSessions = m.visibleMonitorSessionCount()
 				m.setRowContext(id, contextFull)
+				m.showLiveMonitorHistory()
 				row := m.monitorContextRows[id]
 				row.review = "context"
 				m.monitorContextRows[id] = row
@@ -244,7 +246,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	g := m.monitorDashboardLayout()
-	p.input.configure(g.contentWidth, m.schedulePaneLayout(g.contentWidth, g.meterHeight).composerRows+6)
+	p.input.configure(g.contentWidth, m.schedulePaneLayout(g.contentWidth, g.meterHeight).composerRows+7)
 	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
 		layout := m.schedulePaneLayout(g.contentWidth, g.meterHeight)
 		if wheel.Y >= g.meterY+1 && wheel.Y < g.meterY+1+layout.textRows {
@@ -590,6 +592,8 @@ func (p scheduleUI) validation(now time.Time) string {
 	switch {
 	case text == "":
 		return i18n.Text("Enter a message to schedule.")
+	case codex.IsSessionCommand(text):
+		return i18n.Text("Slash commands cannot be scheduled. Use // for literal slash text.")
 	case len([]rune(text)) > 4096:
 		return i18n.Text("Keep the message within 4096 characters.")
 	case codex.SanitizeSessionContext(text) != text:

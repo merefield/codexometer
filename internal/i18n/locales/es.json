@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "TURNO ANTERIOR",
+  "LIVE SESSION": "SESIÓN EN DIRECTO",
+  " // %d OF %d": " // %d DE %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: ANTERIOR ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: SIGUIENTE ]",
+  "[ LIVE ]": "[ DIRECTO ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Los comandos con barra no se pueden programar. Usa // para texto literal que empiece por una barra.",
+  "STEER SENT": "INDICACIÓN ENVIADA",
   "TRIGGER SET": "ACTIVADOR CONFIGURADO",
   "Ctrl+S: EDIT": "Ctrl+S: EDITAR",
   "CURRENT TASK": "TAREA ACTUAL",

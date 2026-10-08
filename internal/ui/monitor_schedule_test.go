@@ -61,6 +61,8 @@ func TestScheduleFormRefinements(t *testing.T) {
 		want                 string
 	}{
 		{"", 0, 0, 0, now, "Enter a message"},
+		{"/model", 0, 0, 0, now, "Slash commands cannot be scheduled"},
+		{"//literal", 0, 0, 0, now, ""},
 		{"Test", 1, 0, 0, now, "Choose a future"},
 		{"Test", 2, 0, 0, now.Add(-time.Minute), "Choose a future"},
 		{"Test", 2, 0, 0, now.AddDate(2, 0, 0), "within one year"},
@@ -498,7 +500,7 @@ func TestScheduledIdleDetailTitleHasNoDuplicateStatus(t *testing.T) {
 		if !strings.Contains(lines[0], "● TRIGGER SET") || strings.Count(out, "TRIGGER SET") != 1 || strings.Contains(out, "SESSION CONTEXT") {
 			t.Fatal("idle trigger state missing, blinking, or repeated", out)
 		}
-		if !strings.Contains(out, "FOLLOW-UP //") || !strings.Contains(out, "The saved trigger prompt") {
+		if strings.Contains(out, "FOLLOW-UP //") || !strings.Contains(out, "The saved trigger prompt") {
 			t.Fatal("trigger information lost", out)
 		}
 	}

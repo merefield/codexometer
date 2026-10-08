@@ -1362,7 +1362,7 @@ same action on that session. The presentations are:
    restores the warning. A live request that is no longer pending does not
    regain the warning while its old preview awaits a refresh. Unsupported requests
    can still require action in Codex.
-   The selected session also offers a **FOLLOW-UP** composer here when the shared
+   The selected session also offers a follow-up composer here when the shared
    server confirms it is ready for input and the complete context plus composer
    fit. Only one inline composer is available at a time. Click its input line or
    press `Enter` to focus, then `Enter` to send; `Esc` leaves the editor without
@@ -1379,6 +1379,29 @@ same action on that session. The presentations are:
    `Left` or `Esc` returns to the Sessions overview with the same session showing
    full-width detail. When a reply editor is available,
    `Enter` focuses it instead of changing presentation.
+
+   **Recent turn history:** `Alt+Left` opens the previous completed turn;
+   `Alt+Right` moves forwards, eventually returning to live detail. Click
+   **Previous**, **Next**, or **Live** for the same navigation. These controls
+   appear when replies have been retained and space permits; narrow layouts
+   shorten the labels, and the hotkeys remain available on short terminals.
+   Up/Down, Page Up/Down and the wheel still scroll the displayed reply; Copy
+   copies that reply. A historical answer stays pinned while queued work runs,
+   even if newer completions move it outside the recent-history cache.
+   Each session retains up to ten bounded prompt/reply excerpts in memory,
+   plus an answer currently being read. Full detail refreshes recent completed
+   turns through the shared app-server's read-only `thread/turns/list` endpoint,
+   recovering quick answers missed between telemetry updates and allowing
+   history to reload after restarting. Older/unavailable servers fall back to
+   replies actually observed during this launch; that fallback can miss fast
+   turns. Codexometer does not write conversation history to disk.
+   Approval controls and the composer always act on the **live session**,
+   never a saved turn. Current requests are shown separately under **LIVE
+   SESSION** while browsing history; focusing the composer returns to live
+   detail and retains your draft.
+   History reads request only the server's prompt/final-reply summary items,
+   not full command-output logs, and run asynchronously at most every five
+   seconds while full detail is visible.
 
 Whenever visible **LAST REPLY** or **LAST ACTIVITY** text is available, its box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
@@ -1445,7 +1468,9 @@ status-coloured inversion, and both marker cells are clickable. Sessions without
 a pill do not cause another session to be marked. Overview pills remain unchanged,
 without markers or reserved marker space.
 The strip chooses the least compressed format that
-fits all pills: full labels, omit `//`, omit directories, then shorten Turn Complete
+fits all pills: full labels, omit `//`, progressively shorten the longest session
+names (or directory fallbacks) with `…`, omit names only when useful excerpts
+cannot fit, then shorten Turn Complete
 to **DONE** (translated). The short session ID is always retained. If the compact
 labels still do not fit, the strip uses overflow paging; unusually long translated
 states are shortened only as needed. Expanding the terminal restores fuller labels.
@@ -1500,8 +1525,74 @@ submit. Text wraps automatically and the editor grows upward, reducing the
 scrollable context area above it. Once it reaches the available height, the
 editor scrolls internally without truncating the draft; deleting text shrinks
 it again. Enter still submits rather than inserting a newline. This is a text
-editor, not the Codex slash-command UI. Secret answers retain a single-line
+editor, with the catalogue-backed slash-command subset described below. Secret answers retain a single-line
 masked password field.
+
+**Live slash commands (shared app-server):** type `/` in the ordinary composer
+to see a vertical popup with supplied help. Typing `/mo` filters to matching commands;
+the popup shrinks as candidates drop out without moving the composer. Longer
+lists scroll within the available space (arrows or mouse wheel in the terminal).
+Up/Down selects, Tab completes the name, Enter opens its options and Escape
+dismisses suggestions while retaining the draft and typing focus. Suggestions
+are fetched asynchronously and filtered locally. They also work in a selected
+wide terminal session row when space permits. Outside the full-detail composer,
+press `/` to open the full command browser. Use arrows and Enter to browse, **C** to confirm a
+setting change, Left to go back and Escape to return to the session. Buttons
+are clickable. Writable web mode exposes the same catalogue through
+**/ COMMANDS**, with the same composer suggestion shortcuts.
+
+| Command family | Live options and behaviour |
+| --- | --- |
+| `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
+| Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
+| `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
+| `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
+| `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
+| `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+| `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. Works without the shared daemon. |
+
+The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
+the last line of full session detail on web. Its default fields are observed
+model/reasoning, speed, total session tokens (including linked agents) and
+directory. `/statusline` also offers model alone, reasoning alone, session name,
+full session ID, observed state, linked-agent count and context source. Missing
+values are omitted. This is Codexometer's supported field set; the Codex CLI's
+own client-side picker is not dynamically exposed by app-server.
+
+In the terminal, **Space/Enter** toggles a field, **Left/Right** changes its order,
+**C** applies and **Escape** cancels. Selecting no fields hides the footer. Web
+uses checkboxes, ordering buttons and Apply/Cancel, also available in read-only
+mode through the `/statusline` footer button. Selections persist in Codexometer's
+existing `preferences.json` on terminal and browser local storage on web; these
+are display preferences and do not modify Codex CLI configuration. Terminal
+footer text shortens to fit and leaves the Copy button in place. A blank row
+separates a visible terminal status line from the global footer; very short
+terminals omit the status line and gap to preserve the composer and controls.
+
+Codex does not expose a general slash-command discovery/execution API. These are
+explicit adapters to supported app-server catalogues, not a reproduction of
+every CLI command. Options and help are fetched on demand, not hard-coded or
+persisted; installed-server support determines what appears. Plugin lifecycle
+endpoints are deliberately excluded while OpenAI marks them unsuitable for
+production clients. Experimental flags are browse-only because their mutation
+scope is process-wide rather than session-local. See the official
+[app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
+for the upstream catalogues.
+
+Codex session-setting changes require a loaded, idle session and explicit confirmation within
+30 seconds. The command and options are revalidated before sending; stale
+connections, pending approvals and changed options fail closed. A successful
+request is an acknowledgement, not a claim that a subsequent turn has already
+used the setting. Successful confirmations close the menu and return focus to
+the composer with a success notice; reopening fetches fresh options. Failed
+confirmations retain the draft and error context. These changes do not modify global defaults, and automatic
+quota thresholds may later supersede model settings. Uncertain requests are
+not retried automatically. Read-only web mode offers no command-control endpoint.
+
+Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
+Use `//` to send a literal leading slash (for example `//tmp/file` sends
+`/tmp/file`). Structured question answers are unaffected. API help is shown in
+the language supplied by Codex; new command-browser explanatory text is English.
 
 In terminal **full detail**, or the **selected wide detail row** when its context
 and composer fit, a live **WORKING** turn also offers a composer once
@@ -1509,13 +1600,13 @@ its turn ID has been observed. Only the selected row accepts input; switching
 sessions retains a separate in-memory ordinary draft for each session; returning
 restores it without sending or focusing the editor. Drafts are lost on exit;
 secret/question answers and in-flight submissions are not saved as drafts.
-The full-detail border and composer heading show the short session ID and name
+The full-detail border shows the short session ID and name
 (directory fallback for unnamed sessions); full IDs remain in secondary metadata.
 Switching between wide-row
 and full-screen detail for the same session
 preserves the draft and releases typing focus; click the composer or press Enter
-to continue editing. The animated progress dots sit directly above
-the input. While the editor is focused, **Enter steers the current turn**,
+to continue editing. The animated progress dots sit above FOLLOW-UPS when the
+queue is visible, or directly above the input otherwise. While the editor is focused, **Enter steers the current turn**,
 **Tab queues the message for the next turn**, and **Esc requests interruption**
 without discarding the draft. **Ctrl+C** leaves the editor without interrupting;
 Esc outside the editor keeps its normal back-navigation behaviour. Once idle,
@@ -1536,10 +1627,15 @@ when they run. The panel remains visible during work and ordinary approvals,
 above the approval controls when those replace the composer. Quota-threshold
 reviews remain isolated. Empty panels disappear unless the queue is unavailable; wide session rows show one
 preview at a time, while full detail shows more entries as space permits.
+Successfully sent steering also appears here as **STEER SENT** until the live
+**LATEST GUIDANCE** catches up (or a positively newer turn supersedes it).
+These are read-only receipts, not queued work:
+they have no edit or cancel buttons, survive switching sessions within this run,
+and are never resent automatically.
 
 Use the mouse wheel over the panel, or **Alt+Q** then **↑/↓**, **Page Up/Down**,
 to browse. **Enter/E** edits, **X/Delete** requests deletion, and **Esc/Tab** leaves
-queue keyboard focus. Each entry also has clickable **EDIT** and **×** buttons;
+queue keyboard focus. Editable entries also have clickable **EDIT** and **×** buttons;
 native deletion requires confirmation. Scheduled **NOW** retains its separate
 confirmation. Editing a native message does not pause Codex's queue. Its original
 ID and contents are rechecked; an already-started/deleted message is never recreated.
@@ -1724,7 +1820,9 @@ must be enlarged. These diagnostics do not relax any approval safeguards.
 
 The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
 previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
-survives restarts. No excerpt is saved. Each retained excerpt is capped at 4,096
+survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
+uses a bounded in-memory cache and read-only app-server history where available.
+Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
 context can be unavailable. Terminal escapes and control/bidirectional-formatting
 characters are stripped. Previews remain in their original language and are not
@@ -2555,8 +2653,13 @@ history is hidden unless its account matches the current successful quota read.
 
 ### Scheduled session follow-ups (experimental)
 
-In **Sessions → full detail**, use **Ctrl+S** (or click the composer's
-schedule heading) to schedule a follow-up for an idle shared app-server session.
+In **Sessions → full detail**, use **Ctrl+S** (or click **Schedule** on the
+composer's key-hint line) to schedule a follow-up for an idle shared app-server session.
+Ordinary composers omit a redundant heading; the box title identifies the
+session. Active turns retain animated dots above the input (above FOLLOW-UPS
+when the queue is visible), while structured
+questions retain their question heading and answer progress. Schedule/Close
+Schedule buttons keep their full labels when space allows, truncating hints first.
 The form replaces the conversation area inside the existing detail pane, not
 the dashboard. The composer stays anchored below it; on shorter terminals the
 form scrolls with the mouse wheel and follows keyboard focus. Esc or Ctrl+S
@@ -2591,7 +2694,7 @@ theme-coloured background.
   the trigger restores the underlying status. Full detail retains the saved prompt
   and trigger information.
   The full-detail border shows the current state; the body uses content labels
-  such as **FOLLOW-UP** and **LAST REPLY** rather than repeating that state.
+  such as **LAST REPLY** rather than repeating that state.
   Its terminal attention pill comes after TURN COMPLETE, at the lowest priority.
   Click the pill or the label in the session's left-hand box to open that session's
   detail page with the saved prompt, timing and actions; web provides equivalent

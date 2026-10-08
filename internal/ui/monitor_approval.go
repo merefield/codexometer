@@ -245,6 +245,7 @@ func (m Model) renderMonitorApprovalControls(width, height int, colors palette) 
 }
 
 func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
+	m.showLiveMonitorHistory()
 	token := m.monitorApprovalToken()
 	if token == "" {
 		m.monitorApprovalConfirm = ""

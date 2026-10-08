@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "EELMINE VOOR",
+  "LIVE SESSION": "REAALAJASEANSS",
+  " // %d OF %d": " // %d / %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: EELMINE ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: JÄRGMINE ]",
+  "[ LIVE ]": "[ OTSE ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Kaldkriipsukäske ei saa ajastada. Kaldkriipsuga algava tavateksti jaoks kasutage //.",
+  "STEER SENT": "JUHIS SAADETUD",
   "TRIGGER SET": "PÄÄSTIK SEATUD",
   "Ctrl+S: EDIT": "Ctrl+S: MUUDA",
   "CURRENT TASK": "PRAEGUNE ÜLESANNE",

@@ -46,6 +46,9 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if !ok {
 		return []detailLine{{i18n.Text("NO CONTEXT"), "metadata"}}
 	}
+	if c, historical := m.historicalContext(); historical {
+		return m.historyDocument(width, s, c)
+	}
 	if doc := m.profileDocument(s, width); doc != nil {
 		return doc
 	}

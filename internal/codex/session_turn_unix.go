@@ -23,6 +23,10 @@ func (p *daemonStatusProvider) SessionTurn(thread string) SessionPromptOffer {
 }
 
 func (p *daemonStatusProvider) SendSessionTurn(ctx context.Context, offer SessionPromptOffer, action, text string) error {
+	if action != "interrupt" && IsSessionCommand(text) {
+		return errors.New("slash commands cannot be steered or queued; open the command menu")
+	}
+	text = literalSessionText(text)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

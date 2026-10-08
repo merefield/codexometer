@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "EDELLINEN VUORO",
+  "LIVE SESSION": "REAALIAIKAINEN ISTUNTO",
+  " // %d OF %d": " // %d / %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: EDELLINEN ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: SEURAAVA ]",
+  "[ LIVE ]": "[ LIVE ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Kauttaviivakomentoja ei voi ajastaa. Käytä // tavalliselle tekstille, joka alkaa kauttaviivalla.",
+  "STEER SENT": "OHJE LÄHETETTY",
   "TRIGGER SET": "EHTO ASETETTU",
   "Ctrl+S: EDIT": "Ctrl+S: MUOKKAA",
   "CURRENT TASK": "NYKYINEN TEHTÄVÄ",

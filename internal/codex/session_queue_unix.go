@@ -107,6 +107,10 @@ func (p *daemonStatusProvider) SessionQueue(ctx context.Context, thread string) 
 }
 
 func (p *daemonStatusProvider) ChangeSessionQueue(ctx context.Context, thread string, item SessionQueuedMessage, text string, remove bool) error {
+	if !remove && IsSessionCommand(text) {
+		return errors.New("slash commands cannot be queued; use the command menu")
+	}
+	text = literalSessionText(text)
 	p.mu.Lock()
 	cap, ok := p.queueCapabilities[item.Token]
 	if !ok || cap.connection != p.connection || cap.thread != thread || cap.item.ID != item.ID || (!remove && !cap.item.Editable) {

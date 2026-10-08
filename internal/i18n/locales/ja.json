@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "前のターン",
+  "LIVE SESSION": "ライブセッション",
+  " // %d OF %d": " // %d / %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: 前へ ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: 次へ ]",
+  "[ LIVE ]": "[ ライブ ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "スラッシュコマンドは予約できません。スラッシュで始まる通常のテキストには // を使用してください。",
+  "STEER SENT": "追加指示を送信済み",
   "TRIGGER SET": "トリガー設定済み",
   "Ctrl+S: EDIT": "Ctrl+S: 編集",
   "CURRENT TASK": "現在のタスク",

@@ -17,6 +17,7 @@ import (
 type followupEntry struct {
 	label, text              string
 	receipt                  string
+	readOnly                 bool
 	native                   *codex.SessionQueuedMessage
 	trigger                  *schedule.Job
 	editable, removable, now bool
@@ -42,6 +43,11 @@ func (m Model) followupEntries() []followupEntry {
 			entries = append(entries, followupEntry{label: i18n.Text("ACCEPTED // CHECKING QUEUE"), text: text, receipt: "receipt:" + strconv.Itoa(i)})
 		}
 	}
+	for _, steer := range m.monitorSteers {
+		if steer.session == m.monitorContextTarget() {
+			entries = append(entries, followupEntry{label: i18n.Text("STEER SENT"), text: steer.text, receipt: "steer:" + strconv.FormatUint(steer.id, 10), readOnly: true})
+		}
+	}
 	if j, ok := m.pendingTrigger(); ok {
 		label := i18n.Text("AFTER QUOTA REFRESH")
 		if j.Trigger == "at" {
@@ -57,6 +63,9 @@ func (m Model) followupEntries() []followupEntry {
 }
 
 func followupButtons(entry followupEntry, width int) []triggerButton {
+	if entry.readOnly {
+		return nil
+	}
 	var buttons []triggerButton
 	if entry.trigger != nil {
 		buttons = append(buttons, triggerButton{text: i18n.Text("[NOW]"), key: "now", enabled: entry.now})
@@ -195,7 +204,9 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	if m.queueUnavailable() {
 		header = i18n.Text("FOLLOW-UPS // UNAVAILABLE")
 	}
-	if q.focused {
+	if q.focused && q.offset < len(entries) && entries[q.offset].readOnly {
+		header += " // ↑↓ · Esc"
+	} else if q.focused {
 		header += i18n.Text(" // ↑↓ · Enter: edit · X: delete · Esc")
 	} else {
 		header += " // Alt+Q"
@@ -211,22 +222,25 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	if spare := inner - ansi.StringWidth(header); spare > 1 {
 		header += " " + strings.Repeat("─", spare-1)
 	}
-	lines := []string{colors.label().Bold(true).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
+	lines := []string{colors.label().Bold(false).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
 	for i := start; i < min(start+rows-1, len(entries)); i++ {
 		entry := entries[i]
 		buttons := followupButtons(entry, width)
 		selected := q.focused && i == q.offset
-		marker := "  "
+		marker := ""
 		background := tint
 		if selected {
 			marker = "› "
 			background = monitorTintBackground(colors, 18)
 		}
 		text := marker + entry.label + " // " + strings.Join(strings.Fields(entry.text), " ")
-		space := max(buttons[0].x-1, 1)
+		space := inner
+		if len(buttons) > 0 {
+			space = max(buttons[0].x-1, 1)
+		}
 		text = ansi.Truncate(text, space, "…")
 		text += strings.Repeat(" ", max(space-ansi.StringWidth(text), 0))
-		prefix := colors.label().Background(background)
+		prefix := colors.label().Bold(false).Background(background)
 		if selected {
 			prefix = prefix.Foreground(colors.primary).Bold(true)
 		}
@@ -238,9 +252,9 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 			} else if m.monitorContextHover == "queue:"+b.key+":"+strconv.Itoa(i) {
 				style = style.Foreground(colors.background).Background(colors.primary)
 			}
-			line += colors.label().Background(background).Render(" ") + style.Render(b.text)
+			line += colors.label().Bold(false).Background(background).Render(" ") + style.Render(b.text)
 		}
-		lines = append(lines, colors.label().Background(background).Width(inner).Render(line))
+		lines = append(lines, colors.label().Bold(false).Background(background).Width(inner).Render(line))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -251,6 +265,9 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 		return ""
 	}
 	_, _, top := monitorContextBodyLayout(height, controls+rows)
+	if m.monitorQueueActivityFirst(width, height, controls) {
+		top++ // the task's existing activity row now precedes the queue
+	}
 	if x < 2 || x >= width-2 || y < top || y >= top+rows {
 		return ""
 	}
@@ -269,6 +286,43 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 		}
 	}
 	return "queue:focus"
+}
+
+// Move the existing activity row, rather than adding a second animation or
+// moving the composer. Rendering and queue hit testing share this decision.
+func (m Model) monitorQueueActivityFirst(width, height, controls int) bool {
+	s, ok := m.contextDetailSession()
+	if !ok || m.sessionActivityDots(s) == "" || controls == 0 {
+		return false
+	}
+	if m.monitorContextDetail != "" {
+		base := m.layoutDetailControlsBase(width, height)
+		if base.kind == "notice" {
+			return base.notice == m.detailActivity()
+		}
+		return base.kind == "prompt" && m.monitorComposerActivity() != "" && len(m.monitorPromptOffer().Questions) == 0
+	}
+	if len(m.expandedApprovalButtons(width, height, s)) > 0 || m.monitorApprovalHasOutcome() {
+		return false
+	}
+	if m.monitorPromptRows(width, height) > 0 {
+		return m.monitorComposerActivity() != "" && len(m.monitorPromptOffer().Questions) == 0
+	}
+	return height >= 5 && width >= 7
+}
+
+func stackMonitorQueue(queue, controls string, activityFirst bool) string {
+	if controls == "" {
+		return queue
+	}
+	if activityFirst {
+		activity, rest, more := strings.Cut(controls, "\n")
+		if more {
+			return activity + "\n" + queue + "\n" + rest
+		}
+		return activity + "\n" + queue
+	}
+	return queue + "\n" + controls
 }
 
 func (m Model) monitorQueueAt(x, y int) string {

@@ -1,4 +1,12 @@
 {
+  "PREVIOUS TURN": "FORRIGE TUR",
+  "LIVE SESSION": "LIVESESSION",
+  " // %d OF %d": " // %d AF %d",
+  "[ Alt+←: PREVIOUS ]": "[ Alt+←: FORRIGE ]",
+  "[ Alt+→: NEXT ]": "[ Alt+→: NÆSTE ]",
+  "[ LIVE ]": "[ LIVE ]",
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Skråstregskommandoer kan ikke planlægges. Brug // til almindelig tekst, der begynder med en skråstreg.",
+  "STEER SENT": "INSTRUKTION SENDT",
   "TRIGGER SET": "UDLØSER INDSTILLET",
   "Ctrl+S: EDIT": "Ctrl+S: REDIGER",
   "CURRENT TASK": "AKTUEL OPGAVE",

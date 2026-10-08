@@ -1243,6 +1243,368 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
 });
 
+test('slash commands discover help and require a separate confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  const commands: string[] = [];
+  let revision = 'r0';
+  let rejectCommit = false;
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    commands.push(body.command.mode);
+    let result: object;
+    if (body.command.mode === 'prepare') {
+      // Applying a setting invalidates the old catalogue, as the real server does.
+      if (body.command.revision !== revision) {
+        await route.fulfill({
+          status: 409,
+          json: { error: 'Command unavailable or unconfirmed' },
+        });
+        return;
+      }
+      result = {
+        confirmation: 'command-token',
+        expires: new Date(Date.now() + 30000).toISOString(),
+      };
+    } else if (body.command.mode === 'commit') {
+      if (rejectCommit) {
+        await route.fulfill({
+          status: 409,
+          json: { error: 'Command unavailable or unconfirmed' },
+        });
+        return;
+      }
+      revision = 'r1';
+      result = {
+        message: 'Change requested. Codex will apply it to subsequent turns.',
+      };
+    } else
+      result =
+        body.command.path === ''
+          ? {
+              title: '/ COMMANDS',
+              help: 'Live options',
+              path: '',
+              revision,
+              choices: [
+                {
+                  id: 'm',
+                  label: '/model',
+                  help: 'Choose a model. '.repeat(50),
+                  next: 'model/test',
+                },
+              ],
+            }
+          : {
+              title: '/model/test',
+              help: 'Server model help',
+              path: 'model/test',
+              revision,
+              choices: [
+                {
+                  id: 'effort',
+                  label: 'Medium',
+                  help: 'Server effort description',
+                  action: true,
+                },
+                {
+                  id: 'high',
+                  label: 'High',
+                  help: 'Higher effort',
+                  action: true,
+                },
+              ],
+            };
+    await route.fulfill({ json: result });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  const popup = panel.locator('.command-popup');
+  await expect(popup).toBeVisible();
+  const initialPopup = await popup.boundingBox();
+  const initialComposer = await text.boundingBox();
+  const initialOptions = await popup.locator('.command-options button').all();
+  expect(initialOptions).toHaveLength(2);
+  const firstOption = await initialOptions[0].boundingBox();
+  const secondOption = await initialOptions[1].boundingBox();
+  expect(secondOption!.y).toBeGreaterThanOrEqual(
+    firstOption!.y + firstOption!.height,
+  );
+  const helpStyle = await initialOptions[0]
+    .locator('.command-help')
+    .evaluate((node) => {
+      const style = getComputedStyle(node);
+      const command = node.parentElement!.querySelector('.command-name')!;
+      return {
+        whiteSpace: style.whiteSpace,
+        overflow: style.overflow,
+        ellipsis: style.textOverflow,
+        clipped: node.scrollWidth > node.clientWidth,
+        helpBackground: style.backgroundColor,
+        commandBackground: getComputedStyle(command).backgroundColor,
+        sameLine:
+          Math.abs(
+            node.getBoundingClientRect().y - command.getBoundingClientRect().y,
+          ) < 5,
+      };
+    });
+  expect(helpStyle).toMatchObject({
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    ellipsis: 'ellipsis',
+    clipped: true,
+    sameLine: true,
+  });
+  expect(helpStyle.helpBackground).not.toBe(helpStyle.commandBackground);
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toHaveCount(0);
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  await text.fill('/mo');
+  await expect(popup.locator('.command-options button')).toHaveCount(1);
+  const filteredPopup = await popup.boundingBox();
+  const filteredComposer = await text.boundingBox();
+  expect(filteredPopup!.height).toBeLessThan(initialPopup!.height);
+  expect(filteredComposer!.y).toBe(initialComposer!.y);
+  await text.press('Tab');
+  await expect(text).toHaveValue('/model');
+  await text.press('Escape');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toHaveCount(0);
+  await expect(text).toBeFocused();
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'Medium', exact: true }).click();
+  await expect(panel).toContainText('Server effort description');
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toBeEnabled();
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(0);
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(panel).toContainText('Change requested.');
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(1);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+  await expect(text).toHaveValue('');
+  await expect(text).toBeFocused();
+  await expect(
+    panel.getByRole('button', { name: 'BACK', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'Medium', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'REFRESH OPTIONS', exact: true }),
+  ).toHaveCount(0);
+  // Repeating the same command must reopen a fresh catalogue, not the old revision.
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'High', exact: true }).click();
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(text).toHaveValue('');
+  await expect(
+    panel.getByRole('button', { name: 'High', exact: true }),
+  ).toHaveCount(0);
+  await expect(panel).not.toContainText('Change unconfirmed');
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(2);
+  // A failed confirmation retains the user's draft and the error context.
+  rejectCommit = true;
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'Medium', exact: true }).click();
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(panel).toContainText('Change unconfirmed');
+  await expect(text).toHaveValue('/mod');
+  await expect(
+    panel.getByRole('button', { name: 'BACK', exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toBeDisabled();
+});
+
+test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  let lists = 0;
+  const modes: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    modes.push(body.command.mode);
+    if (body.command.mode === 'list') lists++;
+    await route.fulfill({
+      json: {
+        title: '/ COMMANDS',
+        help: 'Live options',
+        path: '',
+        revision: 'r' + lists,
+        choices: [
+          { id: 'model', label: '/model', help: 'Model help', next: 'model' },
+        ],
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/mod');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  const before = lists;
+  snapshot.sessionsError = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  await expect(
+    page.getByText(
+      'Session controls temporarily unavailable. Check Codex for current state.',
+    ),
+  ).toBeVisible();
+  expect(lists).toBe(before);
+  snapshot.sessionsError = false;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(text).toHaveValue('/mod');
+  // Dismiss any newly mounted suggestions, then explicitly reopen commands.
+  await text.press('Escape');
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  const recovered = lists;
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  expect(lists).toBeGreaterThan(recovered);
+  await text.press('Escape');
+  await expect(page.locator('.command-popup')).toHaveCount(0);
+  await expect(text).toHaveValue('/mod');
+  expect(modes.every((mode) => mode === 'list')).toBe(true);
+});
+
+test('read-only status line supports multiple fields, ordering and persistence without control writes', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    version: 'test',
+    control: false,
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    sessionsError: false,
+    sessionsAt: new Date().toISOString(),
+    statusLineFields: [
+      {
+        id: 'model-with-reasoning',
+        label: 'Model and reasoning',
+        help: 'Observed model and effort',
+        default: true,
+      },
+      {
+        id: 'used-tokens',
+        label: 'Tokens',
+        help: 'Observed tokens',
+        default: true,
+      },
+      {
+        id: 'thread-id',
+        label: 'Session ID',
+        help: 'Full identifier',
+        default: false,
+      },
+    ],
+    sessions: [
+      {
+        id: 'one',
+        name: 'Test session',
+        directory: '/work',
+        tokens: 1200,
+        agents: 0,
+        status: 'TURN COMPLETE',
+        contextKind: 'LAST REPLY',
+        text: 'Done.',
+        command: '',
+        source: 'LOCAL',
+        activity: new Date().toISOString(),
+        samples: [],
+        statusLine: {
+          'model-with-reasoning': 'model high',
+          'used-tokens': '1.2K tokens',
+          'thread-id': 'one',
+        },
+      },
+    ],
+  });
+  const writes: string[] = [];
+  await page.route('**/api/control/**', (route) => {
+    writes.push(route.request().url());
+    return route.abort();
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/one';
+  });
+  const line = page.getByLabel('Session status line', { exact: true });
+  await expect(line).toHaveText('model high · 1.2K tokens');
+  await page.getByRole('button', { name: 'Configure status line' }).click();
+  const picker = page.getByRole('region', { name: 'Status line fields' });
+  await picker.getByRole('checkbox', { name: /Model and reasoning/ }).uncheck();
+  await picker.getByRole('checkbox', { name: /Session ID/ }).check();
+  await picker.getByRole('button', { name: 'Move Session ID earlier' }).click();
+  await expect(page.getByLabel('Status line preview')).toContainText(
+    'one · 1.2K tokens',
+  );
+  await expect(line).toHaveText('model high · 1.2K tokens');
+  await picker.getByRole('button', { name: 'APPLY', exact: true }).click();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  await page.reload();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  await page.getByRole('button', { name: 'Configure status line' }).click();
+  await picker.getByRole('checkbox', { name: /Tokens/ }).uncheck();
+  await picker.getByRole('button', { name: 'CANCEL', exact: true }).click();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  expect(writes).toHaveLength(0);
+});
+
 test('quota review hides only follow-ups, cancels confirmation and preserves the draft', async ({
   page,
   pairingURL,

@@ -76,6 +76,9 @@ func (m Model) render() string {
 		} else if len(meters) == 1 {
 			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterView, colors))
 		}
+		if layout.footerSpacer {
+			parts = append(parts, strings.Repeat(" ", contentWidth))
+		}
 		parts = append(parts, footer)
 	}
 
@@ -85,7 +88,7 @@ func (m Model) render() string {
 	if subtitleRow < len(rendered) {
 		rendered[subtitleRow] = linkHeaderVersion(rendered[subtitleRow], m.appVersion, m.versionHovered, colors)
 	}
-	return strings.Join(rendered, "\n")
+	return m.withMonitorSuggestions(strings.Join(rendered, "\n"), colors)
 }
 
 func renderHeader(width, phase int, signal, account, appVersion string, colors palette) string {

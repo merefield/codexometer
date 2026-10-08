@@ -48,13 +48,20 @@ type Model struct {
 	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
 	monitorQueue                        monitorQueueState
+	monitorSteers                       []monitorSteerReceipt
+	monitorSteerSequence                uint64
 	monitorPrompt                       monitorPromptState
+	monitorCommands                     monitorCommandsState
+	monitorSuggestions                  monitorSuggestionState
+	monitorStatusLine                   []string
 	monitorDrafts                       map[string]string
 	monitorContextHidden                bool
 	monitorContextDetail                string
 	monitorContextExpanded              string
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
+	monitorHistory                      map[string]monitorTurnHistory
+	monitorHistorySequence              uint64
 	monitorAttentionPage                int
 	monitorApprovalOrder                []string
 	monitorApprovalOrderCandidate       string
@@ -464,6 +471,21 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateMonitorHistory(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
+	if next, cmd, handled := m.updateMonitorSuggestions(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
+	if next, cmd, handled := m.updateMonitorCommands(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	colors := paletteFor(m.theme)
 	m.monitorPrompt.input.style(colors)
 	m.monitorQueue.input.style(colors)
@@ -1092,6 +1114,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.phase++
 		commands := []tea.Cmd{secondTick()}
+		commands = append(commands, m.pollMonitorHistory(time.Time(message)))
 		commands = append(commands, m.pollMonitorQueue())
 		commands = append(commands, m.dispatchSchedules())
 		if m.monitorState == monitorRunning {
@@ -1526,6 +1549,7 @@ type dashboardGeometry struct {
 	meterY       int
 	footerY      int
 	headerSpacer bool
+	footerSpacer bool
 }
 
 func (m Model) dashboardLayout() dashboardGeometry {
@@ -1576,9 +1600,15 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	}
 	meterY := tabsY + tabsHeight + extraHeight
 	meterHeight := max(contentHeight-headerHeight-statusHeight-tabsHeight-extraHeight-footerHeight, 1)
+	footerSpacing := 0
+	// Keep the minimum eight-row detail/composer layout on short terminals.
+	if meterHeight >= 9 && m.monitorStatusLineVisible(contentWidth) {
+		footerSpacing = 1
+		meterHeight--
+	}
 	footerY := meterY
 	if m.meterView == viewUsage || m.meterView == viewResets || m.meterView == viewThresholds || m.meterView == viewMonitor || m.meterView == viewBenchmark || len(m.snapshot.Meters()) > 0 {
-		footerY += meterHeight
+		footerY += meterHeight + footerSpacing
 	}
 	return dashboardGeometry{
 		contentWidth: contentWidth,
@@ -1588,6 +1618,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 		meterY:       meterY,
 		footerY:      footerY,
 		headerSpacer: statusHeight > 0,
+		footerSpacer: footerSpacing > 0,
 	}
 }
 
@@ -2362,6 +2393,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			m.monitorNextFetch = time.Time{}
 		}
 	}
+	if accepted {
+		m.reconcileMonitorSteers()
+	}
 	if accepted && message.kind != monitorFetchSample && message.kind != monitorFetchBoundary {
 		m.refreshMonitorRates(message.at, true)
 	}
@@ -2660,6 +2694,7 @@ func sameOptionalInt64(left, right *int64) bool {
 }
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	m.monitorHistory = nil
 	m.monitorSessionData = nil
 	m.monitorDismissed = nil
 	for _, session := range usage.Sessions {
@@ -2683,6 +2718,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			active: true, displayed: true, unattributed: true,
 		})
 	}
+	m.observeMonitorHistory()
 }
 
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
@@ -2698,7 +2734,8 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		}
 	}
 	defer func() {
-		if follow {
+		m.observeMonitorHistory()
+		if _, historical := m.historicalContext(); follow && !historical {
 			m.monitorContextScroll = m.monitorContextScrollLimit()
 		}
 	}()

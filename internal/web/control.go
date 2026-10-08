@@ -23,6 +23,7 @@ import (
 // binds the browser's selection to the exact source request without disclosing
 // Codex tokens. One pending confirmation bounds memory (including secret input).
 type control struct {
+	commands  codex.SessionCommandsClient
 	schedules *schedule.Queue
 	profiles  *profileControl
 	mu        sync.Mutex
@@ -71,16 +72,17 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
-	EditID       string        `json:"editId,omitempty"`
-	SendID       string        `json:"sendId,omitempty"`
-	Schedule     *scheduleRule `json:"schedule,omitempty"`
-	CancelID     string        `json:"cancelId,omitempty"`
-	Review       string        `json:"review,omitempty"`
-	Session      string        `json:"session"`
-	Offer        string        `json:"offer"`
-	Choice       *int          `json:"choice,omitempty"`
-	Answers      []string      `json:"answers,omitempty"`
-	Confirmation string        `json:"confirmation,omitempty"`
+	Command      *commandRequest `json:"command,omitempty"`
+	EditID       string          `json:"editId,omitempty"`
+	SendID       string          `json:"sendId,omitempty"`
+	Schedule     *scheduleRule   `json:"schedule,omitempty"`
+	CancelID     string          `json:"cancelId,omitempty"`
+	Review       string          `json:"review,omitempty"`
+	Session      string          `json:"session"`
+	Offer        string          `json:"offer"`
+	Choice       *int            `json:"choice,omitempty"`
+	Answers      []string        `json:"answers,omitempty"`
+	Confirmation string          `json:"confirmation,omitempty"`
 }
 
 type preparedAction struct {
@@ -93,6 +95,7 @@ func newControl(source Source, store *store) *control {
 	c := &control{store: store, key: rand.Text(), schedules: schedule.New()}
 	c.approvals, _ = source.(codex.SessionApprovalClient)
 	c.prompts, _ = source.(codex.SessionPromptClient)
+	c.commands, _ = source.(codex.SessionCommandsClient)
 	c.profiles = newProfileControl(source)
 	return c
 }
@@ -220,6 +223,14 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			http.Error(w, "Invalid request", 400)
 			return
 		}
+		if action == "commands" {
+			c.handleCommands(w, r, body)
+			return
+		}
+		if body.Command != nil {
+			http.Error(w, "Invalid request", 400)
+			return
+		}
 		if action == "schedules" {
 			c.handleSchedules(w, r, body)
 			return
@@ -231,7 +242,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		// Consume before any IO, even on failure. Never retry ambiguous writes.
 		if action == "commit" {
 			p := c.pending
-			if p == nil || p.id != body.Confirmation || p.request.Session != body.Session || p.request.Offer != body.Offer || p.request.Review != body.Review {
+			if p == nil || p.request.Command != nil || p.id != body.Confirmation || p.request.Session != body.Session || p.request.Offer != body.Offer || p.request.Review != body.Review {
 				c.mu.Unlock()
 				http.Error(w, errUnavailable.Error(), 409)
 				return
@@ -280,6 +291,10 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		}
 		if !validAction(o, body) {
 			http.Error(w, errUnavailable.Error(), 409)
+			return
+		}
+		if o.Kind == "prompt" && len(o.Questions) == 0 && len(body.Answers) == 1 && codex.IsSessionCommand(body.Answers[0]) {
+			http.Error(w, "Use the command browser; use // for literal slash text", 400)
 			return
 		}
 		if action == "prepare" {

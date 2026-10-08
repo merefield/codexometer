@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import SessionCommands from './SessionCommands.svelte';
   import FileDiff from './FileDiff.svelte';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
@@ -72,6 +73,7 @@
   let jobs = $state<Job[]>([]);
   let pending = $derived(jobs.find((j) => j.status !== 'sent'));
   let composer: HTMLTextAreaElement | undefined = $state();
+  let commandBrowser: SessionCommands | undefined = $state();
   function editJob(job: Job) {
     if (editing) {
       void tick().then(() => composer?.focus());
@@ -296,6 +298,17 @@
     };
   });
   async function prepare(job?: Job) {
+    if (
+      !job &&
+      offer?.kind === 'prompt' &&
+      !offer.questions?.length &&
+      answers[0]?.trim().startsWith('/') &&
+      !answers[0]?.trim().startsWith('//')
+    ) {
+      notice =
+        'Choose a slash command from COMMANDS; use // for literal slash text.';
+      return;
+    }
     if (
       !offer?.id ||
       busy ||
@@ -614,6 +627,21 @@
               </p>{/if}
           {/if}
           {#each questions as question, index}
+            {#if index === 0 && review !== 'profile' && offer.kind === 'prompt' && !offer.questions?.length}
+              <SessionCommands
+                bind:this={commandBrowser}
+                {session}
+                query={answers[0] || ''}
+                oncomplete={(text) => {
+                  answers = [text];
+                  void tick().then(() => composer?.focus());
+                }}
+                onchange={() => {
+                  answers = [''];
+                  void tick().then(() => composer?.focus());
+                }}
+              />
+            {/if}
             <label class="answer"
               >{question.text}
               {#if question.secret}
@@ -633,6 +661,10 @@
               {:else}
                 <textarea
                   bind:this={composer}
+                  onkeydown={(event) => {
+                    if (offer?.kind === 'prompt' && !offer.questions?.length)
+                      commandBrowser?.handleKey(event);
+                  }}
                   rows="3"
                   maxlength="4096"
                   autocomplete="off"

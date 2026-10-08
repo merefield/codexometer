@@ -9,6 +9,7 @@ export const quotaViews = [
 ];
 const key = 'codexometer.web.preferences.v1';
 interface Preferences {
+  statusLine: string[] | null;
   tab: 'quota' | 'sessions' | 'usage';
   view: string;
   selected: string;
@@ -16,6 +17,7 @@ interface Preferences {
   layouts: { id: string; level: number }[];
 }
 const defaults: Preferences = {
+  statusLine: null,
   tab: 'quota',
   view: 'bars',
   selected: '',
@@ -27,6 +29,16 @@ function read(): Preferences {
     const value = JSON.parse(localStorage.getItem(key) || 'null');
     if (!value || typeof value !== 'object') return defaults;
     return {
+      statusLine: Array.isArray(value.statusLine)
+        ? ([
+            ...new Set(
+              value.statusLine.filter(
+                (id: unknown): id is string =>
+                  typeof id === 'string' && id.length < 64,
+              ),
+            ),
+          ].slice(0, 32) as string[])
+        : null,
       tab: ['quota', 'sessions', 'usage'].includes(value.tab)
         ? value.tab
         : 'quota',
@@ -55,6 +67,7 @@ function read(): Preferences {
   }
 }
 export const preferences = $state<Preferences>(read());
+export const statusLineUI = $state({ open: false });
 export function savePreferences() {
   const value = JSON.stringify(preferences);
   try {

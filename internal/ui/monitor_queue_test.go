@@ -174,40 +174,108 @@ func TestComposerDoesNotStoreInFlightOrQuestionDrafts(t *testing.T) {
 	}
 }
 
+func TestFollowupRowsWithoutIndent(t *testing.T) {
+	m, _ := queueTestModel(false)
+	colors := paletteFor(m.theme)
+	lines := strings.Split(ansi.Strip(m.renderMonitorQueue(120, 3, colors)), "\n")
+	if !strings.HasPrefix(lines[1], "QUEUED // Check the tests") || !strings.HasPrefix(lines[2], "QUEUED // Update documentation") {
+		t.Fatalf("queue rows have unnecessary indentation: %q", lines)
+	}
+	buttonX := ansi.StringWidth(lines[1][:strings.Index(lines[1], "[EDIT]")])
+	m.monitorQueue.focused = true
+	selected := strings.Split(ansi.Strip(m.renderMonitorQueue(120, 3, colors)), "\n")
+	if !strings.HasPrefix(selected[1], "› QUEUED // Check the tests") || ansi.StringWidth(selected[1][:strings.Index(selected[1], "[EDIT]")]) != buttonX {
+		t.Fatal("selection marker was lost or moved the queue controls")
+	}
+}
+
 func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 	for _, inline := range []bool{false, true} {
-		m, _ := queueTestModel(inline)
-		lines := strings.Split(ansi.Strip(m.render()), "\n")
-		queueY, composerY := -1, -1
-		for y, line := range lines {
-			if strings.Contains(line, "FOLLOW-UPS // 2") {
-				queueY = y
-			}
-			if strings.Contains(line, "WORKING") && strings.Contains(line, "FOLLOW-UP") {
-				composerY = y
-			}
-			for label, action := range map[string]string{"[EDIT]": "queue:edit:0", "[×]": "queue:delete:0"} {
-				if x := strings.Index(line, label); x >= 0 && strings.Contains(line, "Check the tests") {
-					x = ansi.StringWidth(line[:x])
-					for i := 0; i < ansi.StringWidth(label); i++ {
-						if got := m.monitorContextAt(x+i, y); got != action {
-							t.Fatalf("inline %v %s at %d,%d = %q", inline, label, x+i, y, got)
+		for _, size := range [][2]int{{80, 32}, {120, 40}, {200, 55}} {
+			m, _ := queueTestModel(inline)
+			m.width, m.height = size[0], size[1]
+			lines := strings.Split(ansi.Strip(m.render()), "\n")
+			queueY, composerY, activityY := -1, -1, -1
+			for y, line := range lines {
+				if strings.Contains(line, monitorDotWave(m.phase)) {
+					activityY = y
+				}
+				if strings.Contains(line, "FOLLOW-UPS // 2") {
+					queueY = y
+				}
+				if strings.Contains(line, "Click here or press Enter to write") || strings.Contains(line, "Keep this draft") {
+					composerY = y
+				}
+				for label, action := range map[string]string{"[EDIT]": "queue:edit:0", "[×]": "queue:delete:0"} {
+					if x := strings.Index(line, label); x >= 0 && strings.Contains(line, "Check the tests") {
+						x = ansi.StringWidth(line[:x])
+						for i := 0; i < ansi.StringWidth(label); i++ {
+							if got := m.monitorContextAt(x+i, y); got != action {
+								t.Fatalf("inline %v %s at %d,%d = %q", inline, label, x+i, y, got)
+							}
 						}
 					}
 				}
 			}
+			if queueY < 0 || composerY <= queueY {
+				t.Fatalf("queue not above composer: inline %v", inline)
+			}
+			if activityY != queueY-1 || strings.Count(strings.Join(lines, "\n"), monitorDotWave(m.phase)) != 1 {
+				t.Fatal("task activity must appear exactly once immediately above follow-ups")
+			}
+			if inline && !strings.Contains(lines[queueY], "1–1") {
+				t.Fatal("wide row didn't collapse queue")
+			}
+			// Composer remains anchored at its existing position.
+			w, h := m.monitorPromptSize()
+			rows := m.monitorPromptRows(w, h)
+			if rows != 3 && !m.monitorPrompt.input.Focused() {
+				t.Fatal("queue changed composer size")
+			}
+			m.monitorQueue.items = nil
+			withoutQueue := strings.Split(ansi.Strip(m.render()), "\n")
+			if withoutQueue[composerY] != lines[composerY] || !strings.Contains(withoutQueue[composerY-1], monitorDotWave(m.phase)) {
+				t.Fatal("moving animation shifted composer or lost its no-queue placement")
+			}
 		}
-		if queueY < 0 || composerY <= queueY {
-			t.Fatalf("queue not above composer: inline %v", inline)
+	}
+}
+
+func TestQueueActivityWithoutComposerAndSuppressedStates(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		m, c := queueTestModel(inline)
+		c.active = codex.SessionPromptOffer{}
+		m.monitorPrompt = monitorPromptState{}
+		view := ansi.Strip(m.render())
+		lines := strings.Split(view, "\n")
+		found := false
+		for y, line := range lines {
+			if strings.Contains(line, "FOLLOW-UPS // 2") {
+				found = true
+				if y == 0 || !strings.Contains(lines[y-1], monitorDotWave(m.phase)) {
+					t.Fatal("standalone task animation remained below queue")
+				}
+			}
 		}
-		if inline && !strings.Contains(lines[queueY], "1–1") {
-			t.Fatal("wide row didn't collapse queue")
+		if !found || strings.Count(view, monitorDotWave(m.phase)) != 1 {
+			t.Fatal("missing queue or duplicated task animation")
 		}
-		// Composer remains anchored at its existing position.
-		w, h := m.monitorPromptSize()
-		rows := m.monitorPromptRows(w, h)
-		if rows != 3 && !m.monitorPrompt.input.Focused() {
-			t.Fatal("queue changed composer size")
+		for _, state := range []string{"idle", "paused", "error", "attention"} {
+			next := m
+			next.monitorSessionData = append([]monitorSession(nil), m.monitorSessionData...)
+			switch state {
+			case "idle":
+				next.monitorSessionData[0].working = false
+			case "paused":
+				next.monitorState = monitorPaused
+			case "error":
+				next.monitorError = "stale"
+			case "attention":
+				next.monitorSessionData[0].attention = codex.SessionAttentionInput
+			}
+			if strings.Contains(ansi.Strip(next.render()), monitorDotWave(m.phase)) {
+				t.Fatalf("queue animated %s session", state)
+			}
 		}
 	}
 }

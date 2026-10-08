@@ -141,6 +141,10 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 		p.mu.Unlock()
 		return errors.New("prompt expired or answer invalid; check Codex")
 	}
+	if len(offer.Questions) == 0 && IsSessionCommand(answers[0]) {
+		p.mu.Unlock()
+		return errors.New("use the command menu; prefix with // to send literal slash text")
+	}
 	// Consume the capability before any IO. Never automatically retry an
 	// ambiguous write, or send it over a replacement connection.
 	if requestID != "" {
@@ -181,6 +185,6 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 	}
 	return p.requestOn(ctx, connection, "turn/start", map[string]any{
 		"threadId": offer.ThreadID,
-		"input":    []any{map[string]any{"type": "text", "text": answers[0]}},
+		"input":    []any{map[string]any{"type": "text", "text": literalSessionText(answers[0])}},
 	}, nil)
 }

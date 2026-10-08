@@ -10,6 +10,7 @@
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
+  import StatusLine from './StatusLine.svelte';
   import SessionCopy from './SessionCopy.svelte';
   import FileDiff from './FileDiff.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
@@ -379,6 +380,7 @@
             session={selected}
             active
           />{/key}{/if}
+      {#key selected.id}<StatusLine session={selected} {stale} />{/key}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a

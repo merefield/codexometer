@@ -1231,6 +1231,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 				// final message. Keep its reply, but retain observed prompt
 				// context only for the same positively identified turn.
 				preview.CurrentTask, preview.LatestGuidance = live.CurrentTask, live.LatestGuidance
+				preview.LatestGuidanceID = live.LatestGuidanceID
+				preview.TurnID = live.TurnID
 			}
 		}
 		// A persisted request is not proof that it is still outstanding. Match
