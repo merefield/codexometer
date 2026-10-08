@@ -184,6 +184,9 @@ func (m Model) contextDetailSession() (monitorSession, bool) {
 }
 
 func (m Model) renderMonitorContextDetail(width, height int, colors palette) string {
+	if m.monitorCommands.open {
+		return m.renderMonitorCommands(width, height, colors)
+	}
 	if m.monitorQueue.open {
 		return m.renderQueueEditor()
 	}

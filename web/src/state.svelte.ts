@@ -150,7 +150,7 @@ let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
 export async function controlRequest<T>(
-  action: 'offer' | 'prepare' | 'commit' | 'schedules',
+  action: 'offer' | 'prepare' | 'commit' | 'schedules' | 'commands',
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {

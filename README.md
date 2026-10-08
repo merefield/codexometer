@@ -1445,7 +1445,9 @@ status-coloured inversion, and both marker cells are clickable. Sessions without
 a pill do not cause another session to be marked. Overview pills remain unchanged,
 without markers or reserved marker space.
 The strip chooses the least compressed format that
-fits all pills: full labels, omit `//`, omit directories, then shorten Turn Complete
+fits all pills: full labels, omit `//`, progressively shorten the longest session
+names (or directory fallbacks) with `…`, omit names only when useful excerpts
+cannot fit, then shorten Turn Complete
 to **DONE** (translated). The short session ID is always retained. If the compact
 labels still do not fit, the strip uses overflow paging; unusually long translated
 states are shortened only as needed. Expanding the terminal restores fuller labels.
@@ -1500,8 +1502,51 @@ submit. Text wraps automatically and the editor grows upward, reducing the
 scrollable context area above it. Once it reaches the available height, the
 editor scrolls internally without truncating the draft; deleting text shrinks
 it again. Enter still submits rather than inserting a newline. This is a text
-editor, not the Codex slash-command UI. Secret answers retain a single-line
+editor, with the catalogue-backed slash-command subset described below. Secret answers retain a single-line
 masked password field.
+
+**Live slash commands (shared app-server):** type `/` in the ordinary composer
+to see suggestions with supplied help. Typing `/mo` filters to matching commands;
+Up/Down selects, Tab completes the name, Enter opens its options and Escape
+dismisses suggestions while retaining the draft and typing focus. Suggestions
+are fetched asynchronously and filtered locally. They also work in a selected
+wide terminal session row when space permits. Outside the full-detail composer,
+press `/` to open the full command browser. Use arrows and Enter to browse, **C** to confirm a
+setting change, Left to go back and Escape to return to the session. Buttons
+are clickable. Writable web mode exposes the same catalogue through
+**/ COMMANDS**, with the same composer suggestion shortcuts.
+
+| Command family | Live options and behaviour |
+| --- | --- |
+| `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
+| Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
+| `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
+| `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
+| `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
+| `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+
+Codex does not expose a general slash-command discovery/execution API. These are
+explicit adapters to supported app-server catalogues, not a reproduction of
+every CLI command. Options and help are fetched on demand, not hard-coded or
+persisted; installed-server support determines what appears. Plugin lifecycle
+endpoints are deliberately excluded while OpenAI marks them unsuitable for
+production clients. Experimental flags are browse-only because their mutation
+scope is process-wide rather than session-local. See the official
+[app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
+for the upstream catalogues.
+
+Setting changes require a loaded, idle session and explicit confirmation within
+30 seconds. The command and options are revalidated before sending; stale
+connections, pending approvals and changed options fail closed. A successful
+request is an acknowledgement, not a claim that a subsequent turn has already
+used the setting. These changes do not modify global defaults, and automatic
+quota thresholds may later supersede model settings. Uncertain requests are
+not retried automatically. Read-only web mode offers no command-control endpoint.
+
+Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
+Use `//` to send a literal leading slash (for example `//tmp/file` sends
+`/tmp/file`). Structured question answers are unaffected. API help is shown in
+the language supplied by Codex; new command-browser explanatory text is English.
 
 In terminal **full detail**, or the **selected wide detail row** when its context
 and composer fit, a live **WORKING** turn also offers a composer once

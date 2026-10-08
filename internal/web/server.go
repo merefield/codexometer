@@ -103,7 +103,7 @@ func (s *server) handler() http.Handler {
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
 	if s.control != nil {
-		for _, action := range []string{"offer", "prepare", "commit", "schedules"} {
+		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands"} {
 			mux.Handle("POST /api/control/"+action, s.authorize(http.HandlerFunc(s.control.handle(action, "http://"+s.host))))
 		}
 	}

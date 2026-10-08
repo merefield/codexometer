@@ -232,7 +232,27 @@ func (m *Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigation
 	// Choose the least compressed presentation that fits the entire list.
 	// A resize that makes everything fit also returns to the first page.
 	for compact := 0; compact < 4; compact++ {
-		buttons := m.layoutMonitorAttention(sessions, width, maxRows, compact, false)
+		// After dropping separators, cap the longest names progressively before
+		// removing names altogether. Binary search avoids per-cell work on wide
+		// terminals. Six cells retain a useful excerpt plus the ellipsis.
+		if compact == 2 {
+			var best []monitorNavigationButton
+			for low, high := 6, width; low <= high; {
+				limit := low + (high-low)/2
+				candidate := m.layoutMonitorAttention(sessions, width, maxRows, 1, limit, false)
+				if len(candidate) == len(sessions) {
+					best = candidate
+					low = limit + 1
+				} else {
+					high = limit - 1
+				}
+			}
+			if len(best) > 0 {
+				m.markSelectedAttention(best)
+				return best, best[len(best)-1].rect.y + 1
+			}
+		}
+		buttons := m.layoutMonitorAttention(sessions, width, maxRows, compact, 0, false)
 		if len(buttons) == len(sessions) {
 			m.markSelectedAttention(buttons)
 			return buttons, buttons[len(buttons)-1].rect.y + 1
@@ -244,7 +264,7 @@ func (m *Model) monitorAttentionButtons(width, maxRows int) ([]monitorNavigation
 	}
 	reserve := lipgloss.Width(fmt.Sprintf("[+%d →]", len(sessions))) + 1
 	limit := max(width-reserve, 1)
-	buttons := m.layoutMonitorAttention(sessions[start:], limit, maxRows, 3, true)
+	buttons := m.layoutMonitorAttention(sessions[start:], limit, maxRows, 3, 0, true)
 	if len(buttons) == 0 {
 		return nil, 0
 	}
@@ -282,7 +302,7 @@ func (m *Model) markSelectedAttention(buttons []monitorNavigationButton) {
 	}
 }
 
-func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, rows, compact int, truncate bool) []monitorNavigationButton {
+func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, rows, compact, nameLimit int, truncate bool) []monitorNavigationButton {
 	x, y := 0, 0
 	markerWidth := 0
 	if m.monitorContextDetail != "" {
@@ -319,6 +339,9 @@ func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, r
 			name = terminalLabel(s.name)
 		}
 		if compact < 2 && name != "" {
+			if nameLimit > 0 {
+				name = ansi.Truncate(name, nameLimit, "…")
+			}
 			separator := " // "
 			if compact == 1 {
 				separator = " "

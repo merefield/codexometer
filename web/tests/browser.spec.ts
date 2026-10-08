@@ -1243,6 +1243,104 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
 });
 
+test('slash commands discover help and require a separate confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  const commands: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    commands.push(body.command.mode);
+    let result: object;
+    if (body.command.mode === 'prepare')
+      result = {
+        confirmation: 'command-token',
+        expires: new Date(Date.now() + 30000).toISOString(),
+      };
+    else if (body.command.mode === 'commit')
+      result = {
+        message: 'Change requested. Codex will apply it to subsequent turns.',
+      };
+    else
+      result =
+        body.command.path === ''
+          ? {
+              title: '/ COMMANDS',
+              help: 'Live options',
+              path: '',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'm',
+                  label: '/model',
+                  help: 'Choose a model',
+                  next: 'model/test',
+                },
+              ],
+            }
+          : {
+              title: '/model/test',
+              help: 'Server model help',
+              path: 'model/test',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'effort',
+                  label: 'Medium',
+                  help: 'Server effort description',
+                  action: true,
+                },
+              ],
+            };
+    await route.fulfill({ json: result });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toHaveCount(0);
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  await text.fill('/mo');
+  await text.press('Tab');
+  await expect(text).toHaveValue('/model');
+  await text.press('Escape');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toHaveCount(0);
+  await expect(text).toBeFocused();
+  await text.fill('/mod');
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeVisible();
+  await text.press('Enter');
+  await panel.getByRole('button', { name: 'Medium', exact: true }).click();
+  await expect(panel).toContainText('Server effort description');
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toBeEnabled();
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(0);
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(panel).toContainText('Change requested.');
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(1);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+  await expect(text).toHaveValue('');
+});
+
 test('quota review hides only follow-ups, cancels confirmation and preserves the draft', async ({
   page,
   pairingURL,

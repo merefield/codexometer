@@ -587,6 +587,55 @@ func TestMonitorAttentionProgressiveCompression(t *testing.T) {
 	}
 }
 
+func TestMonitorAttentionShortensLongestNamesBeforeDroppingThem(t *testing.T) {
+	for _, detail := range []bool{false, true} {
+		for _, longName := range []string{strings.Repeat("long-session-name-", 12), strings.Repeat("日本語セッション", 20)} {
+			m := attentionTestModel()
+			m.monitorSessionData = []monitorSession{
+				{id: "session-AAA01", name: longName, displayed: true, attention: codex.SessionAttentionComplete},
+				{id: "session-BBB02", workingDirectory: "/work/project", displayed: true, attention: codex.SessionAttentionComplete},
+				{id: "session-CCC03", name: "docs", displayed: true, attention: codex.SessionAttentionComplete},
+				{id: "session-DDD04", name: "tests", displayed: true, attention: codex.SessionAttentionComplete},
+			}
+			if detail {
+				m.monitorContextDetail = "session-AAA01"
+			}
+			for _, width := range []int{150, 180, 220} {
+				buttons, rows := m.monitorAttentionButtons(width, 1)
+				if len(buttons) != 4 || rows != 1 {
+					t.Fatalf("width %d: missing pills: %+v", width, buttons)
+				}
+				if !strings.Contains(buttons[0].label, "…") {
+					t.Fatal("long name not abbreviated", buttons[0].label)
+				}
+				for i, name := range []string{"project", "docs", "tests"} {
+					if !strings.Contains(buttons[i+1].label, name) {
+						t.Fatalf("short name %q unnecessarily removed: %+v", name, buttons)
+					}
+				}
+				last := buttons[len(buttons)-1].rect
+				if last.x+last.width > width || width-last.x-last.width > 2 {
+					t.Fatalf("unused/overflowing space at width %d: %+v", width, buttons)
+				}
+				for _, b := range buttons {
+					if lipgloss.Width(b.label) != b.rect.width {
+						t.Fatal("Unicode label width drifted")
+					}
+					for x := b.rect.x; x < b.rect.x+b.rect.width; x++ {
+						if monitorNavigationButtonsHit(buttons, x, b.rect.y) != b.action {
+							t.Fatal("shortened pill click target drifted")
+						}
+					}
+				}
+			}
+			buttons, _ := m.monitorAttentionButtons(1000, 1)
+			if !strings.Contains(buttons[0].label, " // "+longName) {
+				t.Fatal("expansion did not restore original name")
+			}
+		}
+	}
+}
+
 func TestMonitorSelectedPillMarkersPreserveLayout(t *testing.T) {
 	for _, width := range []int{24, 40, 80, 240} {
 		m := attentionTestModel()

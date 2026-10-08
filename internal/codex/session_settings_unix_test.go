@@ -17,14 +17,16 @@ import (
 )
 
 type quotaDaemonFixture struct {
-	mu       sync.Mutex
-	sessions map[string]QuotaSession
-	writes   []map[string]any
-	fail     string
-	queued   bool
-	notify   bool
-	started  chan struct{}
-	release  chan struct{}
+	mu            sync.Mutex
+	sessions      map[string]QuotaSession
+	writes        []map[string]any
+	fail          string
+	queued        bool
+	notify        bool
+	started       chan struct{}
+	release       chan struct{}
+	commandStatus string
+	catalogues    map[string]map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -104,6 +106,12 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				s, ok := fixture.sessions[id]
 				failure = !ok || fixture.fail == id
 				result = map[string]any{"model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}}
+			case "thread/read":
+				status := fixture.commandStatus
+				if status == "" {
+					status = "idle"
+				}
+				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}}
 			case "thread/settings/update":
 				fixture.writes = append(fixture.writes, req.Params)
 				desired := fixture.sessions[id]
@@ -139,7 +147,11 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 					fixture.mu.Lock()
 				}
 			default:
-				failure = true
+				if value, ok := fixture.catalogues[req.Method]; ok {
+					result = value
+				} else {
+					failure = true
+				}
 			}
 			fixture.mu.Unlock()
 			response := map[string]any{"id": *req.ID, "result": result}

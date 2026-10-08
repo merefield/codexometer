@@ -136,9 +136,10 @@ func (m Model) monitorPromptRows(width, height int) int {
 		p := m.monitorPrompt
 		rows := 3
 		if (p.input.Focused() || p.input.Value() != "") && !p.busy {
-			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
+			p.input.configure(width, m.monitorPromptEditorHeight(width, height)-m.suggestionRows(height))
 			rows = p.input.Height() + 2
 		}
+		rows += m.suggestionRows(height)
 		if m.monitorContextDetail == "" {
 			s, ok := m.contextDetailSession()
 			textRows, _, _ := monitorContextBodyLayout(height, rows)
@@ -200,7 +201,7 @@ func (m *Model) focusMonitorPrompt() tea.Cmd {
 	m.monitorPrompt.input.setSecret(len(o.Questions) > 0 && o.Questions[m.monitorPrompt.question].Secret)
 	m.monitorPrompt.input.configure(w, m.monitorPromptEditorHeight(w, h))
 	m.monitorPrompt.notice = ""
-	return m.monitorPrompt.input.Focus()
+	return tea.Batch(m.monitorPrompt.input.Focus(), m.syncMonitorSuggestions())
 }
 
 func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
@@ -235,7 +236,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	}
 	if p.offer.Token == o.Token && (p.input.Focused() || p.input.Value() != "") && !p.busy {
 		input := p.input
-		input.configure(width, m.monitorPromptEditorHeight(width, height))
+		input.configure(width, m.monitorPromptEditorHeight(width, height)-m.suggestionRows(height))
 		line = input.View(colors)
 	}
 	if p.busy {
@@ -255,6 +256,10 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	heading := colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…"))
 	if scheduling {
 		heading = m.renderScheduleToggleHeader(width, identity, false, colors)
+	}
+	if suggestions := m.renderMonitorSuggestions(width, height, colors); len(suggestions) > 0 {
+		heading = strings.Join(suggestions, "\n") + "\n" + heading
+		hint = "↑/↓: select • Tab: complete • Enter: options • Esc: dismiss"
 	}
 	return heading + "\n" + strings.Join(inputLines, "\n") + "\n" + colors.label().Render(ansi.Truncate(hint, max(width-4, 1), "…"))
 }
@@ -362,12 +367,18 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.input.Blur()
 			return m, nil, true
 		case "enter":
+			if len(p.offer.Questions) == 0 && codex.IsSessionCommand(p.input.Value()) {
+				return m.openMonitorCommands(strings.TrimSpace(p.input.Value()))
+			}
 			if p.offer.TurnID != "" {
 				return m.submitMonitorTurn("steer")
 			}
 			return m.submitMonitorPrompt()
 		case "tab":
 			if p.offer.TurnID != "" {
+				if codex.IsSessionCommand(p.input.Value()) {
+					return m.openMonitorCommands(strings.TrimSpace(p.input.Value()))
+				}
 				return m.submitMonitorTurn("queue")
 			}
 		case "up", "down":
@@ -392,7 +403,8 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	case tea.KeyPressMsg, tea.PasteMsg:
 		var cmd tea.Cmd
 		p.input, cmd = p.input.Update(msg)
-		return m, cmd, true
+		m.monitorSuggestions.selected = 0
+		return m, tea.Batch(cmd, m.syncMonitorSuggestions()), true
 	}
 	before := p.input.Value()
 	var cmd tea.Cmd

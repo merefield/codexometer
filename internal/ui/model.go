@@ -49,6 +49,8 @@ type Model struct {
 	scheduleUI                          scheduleUI
 	monitorQueue                        monitorQueueState
 	monitorPrompt                       monitorPromptState
+	monitorCommands                     monitorCommandsState
+	monitorSuggestions                  monitorSuggestionState
 	monitorDrafts                       map[string]string
 	monitorContextHidden                bool
 	monitorContextDetail                string
@@ -464,6 +466,16 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateMonitorSuggestions(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
+	if next, cmd, handled := m.updateMonitorCommands(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	colors := paletteFor(m.theme)
 	m.monitorPrompt.input.style(colors)
 	m.monitorQueue.input.style(colors)
