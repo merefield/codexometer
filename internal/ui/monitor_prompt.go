@@ -321,6 +321,28 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if wasFocused && layout.monitorPromptRows(w, h) == 0 {
 		p.input.Blur()
 	}
+	// A newly visible approval may replace the focused composer. Let an
+	// explicit grant shortcut select it, but never reinterpret that first key
+	// as confirmation, a decline, or an action on a different session.
+	if wasFocused && !p.input.Focused() && !p.busy && !p.input.secret && len(p.offer.Questions) == 0 && p.session == m.monitorContextTarget() {
+		if key, ok := msg.(tea.KeyPressMsg); ok && !key.IsRepeat {
+			name := key.String()
+			if len(name) == 1 && name[0] >= '1' && name[0] <= '8' {
+				index := int(name[0] - '1')
+				if s, ok := m.contextDetailSession(); ok && s.preview.ApprovalOptions[index].GrantsPermission() {
+					for _, b := range m.visibleMonitorApprovalButtons() {
+						if b.action == fmt.Sprintf("decision:%d", index) {
+							m.stashMonitorDraft()
+							*p = monitorPromptState{session: p.session}
+							m.monitorApprovalConfirm = ""
+							m.monitorApprovalNumberReleased = false
+							return m.updateMonitorApprovalKey(name)
+						}
+					}
+				}
+			}
+		}
+	}
 	if p.session != "" && (m.meterView != viewMonitor || m.monitorContextTarget() != p.session || m.contextTargetHidden() || m.monitorContextDetail == "" && m.monitorSelectedID != p.session) {
 		m.stashMonitorDraft()
 		*p = monitorPromptState{}
