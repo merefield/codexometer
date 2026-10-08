@@ -61,6 +61,8 @@ func TestScheduleFormRefinements(t *testing.T) {
 		want                 string
 	}{
 		{"", 0, 0, 0, now, "Enter a message"},
+		{"/model", 0, 0, 0, now, "Slash commands cannot be scheduled"},
+		{"//literal", 0, 0, 0, now, ""},
 		{"Test", 1, 0, 0, now, "Choose a future"},
 		{"Test", 2, 0, 0, now.Add(-time.Minute), "Choose a future"},
 		{"Test", 2, 0, 0, now.AddDate(2, 0, 0), "within one year"},

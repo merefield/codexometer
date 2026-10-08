@@ -1,4 +1,5 @@
 {
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Kaldkriipsukäske ei saa ajastada. Kaldkriipsuga algava tavateksti jaoks kasutage //.",
   "STEER SENT": "JUHIS SAADETUD",
   "TRIGGER SET": "PÄÄSTIK SEATUD",
   "Ctrl+S: EDIT": "Ctrl+S: MUUDA",

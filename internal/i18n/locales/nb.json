@@ -1,4 +1,5 @@
 {
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Skråstrekkommandoer kan ikke planlegges. Bruk // for vanlig tekst som begynner med en skråstrek.",
   "STEER SENT": "INSTRUKSJON SENDT",
   "TRIGGER SET": "UTLØSER ANGITT",
   "Ctrl+S: EDIT": "Ctrl+S: REDIGER",

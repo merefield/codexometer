@@ -1,4 +1,5 @@
 {
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Os comandos de barra não podem ser agendados. Use // para texto literal que comece por uma barra.",
   "STEER SENT": "ORIENTAÇÃO ENVIADA",
   "TRIGGER SET": "ACIONADOR DEFINIDO",
   "Ctrl+S: EDIT": "Ctrl+S: EDITAR",

@@ -591,7 +591,7 @@ func (p scheduleUI) validation(now time.Time) string {
 	case text == "":
 		return i18n.Text("Enter a message to schedule.")
 	case codex.IsSessionCommand(text):
-		return "Slash commands cannot be scheduled. Use // for literal slash text."
+		return i18n.Text("Slash commands cannot be scheduled. Use // for literal slash text.")
 	case len([]rune(text)) > 4096:
 		return i18n.Text("Keep the message within 4096 characters.")
 	case codex.SanitizeSessionContext(text) != text:

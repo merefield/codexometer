@@ -1,4 +1,5 @@
 {
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "Слеш-команды нельзя запланировать. Используйте // для обычного текста, начинающегося с косой черты.",
   "STEER SENT": "УКАЗАНИЕ ОТПРАВЛЕНО",
   "TRIGGER SET": "ТРИГГЕР ЗАДАН",
   "Ctrl+S: EDIT": "Ctrl+S: ИЗМЕНИТЬ",

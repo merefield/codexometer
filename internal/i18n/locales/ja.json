@@ -1,4 +1,5 @@
 {
+  "Slash commands cannot be scheduled. Use // for literal slash text.": "スラッシュコマンドは予約できません。スラッシュで始まる通常のテキストには // を使用してください。",
   "STEER SENT": "追加指示を送信済み",
   "TRIGGER SET": "トリガー設定済み",
   "Ctrl+S: EDIT": "Ctrl+S: 編集",
