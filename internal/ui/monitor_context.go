@@ -214,7 +214,9 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	body := strings.Join(bodyLines, "\n")
 	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
 	title := m.monitorDetailTitle(width, colors)
-	return frameSizedWithActions(width, rows, title, action, m.renderMonitorCopy(width, m.monitorContextDetail, colors), body, colors.primary, colors)
+	copyLabel := m.renderMonitorCopy(width, m.monitorContextDetail, colors)
+	panel := frameSizedWithActions(width, rows, title, action, copyLabel, body, colors.primary, colors)
+	return m.withMonitorStatusLine(panel, width, copyLabel, colors)
 }
 
 func (m Model) monitorDetailTitle(width int, colors palette) string {

@@ -1524,6 +1524,23 @@ are clickable. Writable web mode exposes the same catalogue through
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+| `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. Works without the shared daemon. |
+
+The detail footer uses subdued text in the bottom border in terminal mode, and
+the last line of full session detail on web. Its default fields are observed
+model/reasoning, speed, total session tokens (including linked agents) and
+directory. `/statusline` also offers model alone, reasoning alone, session name,
+full session ID, observed state, linked-agent count and context source. Missing
+values are omitted. This is Codexometer's supported field set; the Codex CLI's
+own client-side picker is not dynamically exposed by app-server.
+
+In the terminal, **Space/Enter** toggles a field, **Left/Right** changes its order,
+**C** applies and **Escape** cancels. Selecting no fields hides the footer. Web
+uses checkboxes, ordering buttons and Apply/Cancel, also available in read-only
+mode through the `/statusline` footer button. Selections persist in Codexometer's
+existing `preferences.json` on terminal and browser local storage on web; these
+are display preferences and do not modify Codex CLI configuration. Terminal
+footer text shortens to fit and leaves the Copy button in place.
 
 Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of
@@ -1535,7 +1552,7 @@ scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
 
-Setting changes require a loaded, idle session and explicit confirmation within
+Codex session-setting changes require a loaded, idle session and explicit confirmation within
 30 seconds. The command and options are revalidated before sending; stale
 connections, pending approvals and changed options fail closed. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already

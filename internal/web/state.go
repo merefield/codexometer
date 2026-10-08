@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/statusline"
 	"github.com/merefield/codexometer/internal/version"
 )
 
@@ -21,6 +22,7 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	StatusLine      map[string]string    `json:"statusLine"`
 	FileChanges     []codex.FileDiffLine `json:"fileChanges,omitempty"`
 	CurrentTask     string               `json:"currentTask,omitempty"`
 	LatestGuidance  string               `json:"latestGuidance,omitempty"`
@@ -118,23 +120,24 @@ type quotaThreshold struct {
 }
 
 type state struct {
-	Triggers      []triggerSummary    `json:"triggers,omitempty"`
-	Profiles      []profileReview     `json:"profiles,omitempty"`
-	Thresholds    []quotaThreshold    `json:"thresholds,omitempty"`
-	ProfileError  bool                `json:"profileError,omitempty"`
-	Control       bool                `json:"control"`
-	Version       string              `json:"version"`
-	Meters        []meter             `json:"meters"`
-	Credits       []credit            `json:"credits"`
-	CreditCount   int                 `json:"creditCount"`
-	Sessions      []session           `json:"sessions"`
-	Usage         *codex.AccountUsage `json:"usage"`
-	QuotaAt       time.Time           `json:"quotaAt"`
-	SessionsAt    time.Time           `json:"sessionsAt"`
-	UsageAt       time.Time           `json:"usageAt"`
-	QuotaError    bool                `json:"quotaError"`
-	SessionsError bool                `json:"sessionsError"`
-	UsageError    bool                `json:"usageError"`
+	StatusLineFields []statusline.Field  `json:"statusLineFields"`
+	Triggers         []triggerSummary    `json:"triggers,omitempty"`
+	Profiles         []profileReview     `json:"profiles,omitempty"`
+	Thresholds       []quotaThreshold    `json:"thresholds,omitempty"`
+	ProfileError     bool                `json:"profileError,omitempty"`
+	Control          bool                `json:"control"`
+	Version          string              `json:"version"`
+	Meters           []meter             `json:"meters"`
+	Credits          []credit            `json:"credits"`
+	CreditCount      int                 `json:"creditCount"`
+	Sessions         []session           `json:"sessions"`
+	Usage            *codex.AccountUsage `json:"usage"`
+	QuotaAt          time.Time           `json:"quotaAt"`
+	SessionsAt       time.Time           `json:"sessionsAt"`
+	UsageAt          time.Time           `json:"usageAt"`
+	QuotaError       bool                `json:"quotaError"`
+	SessionsError    bool                `json:"sessionsError"`
+	UsageError       bool                `json:"usageError"`
 }
 
 type store struct {
@@ -157,7 +160,7 @@ type store struct {
 }
 
 func newStore() *store {
-	s := &store{state: state{Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
+	s := &store{state: state{StatusLineFields: statusline.Fields(), Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
 	s.publish()
 	return s
 }
@@ -331,7 +334,8 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
 				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
-				Status: sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
+				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
+				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
 				ApprovalContext: approvalContext,

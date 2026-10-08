@@ -9,13 +9,14 @@ import (
 // Command catalogues are interface-neutral, live and memory-only. Front ends
 // render metadata; they never manufacture RPC methods or permission profiles.
 type SessionCommandChoice struct {
-	ID     string `json:"id"`
-	Label  string `json:"label"`
-	Help   string `json:"help"`
-	Next   string `json:"next,omitempty"`
-	Action bool   `json:"action,omitempty"`
-	method string
-	params map[string]any
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Help     string `json:"help"`
+	Next     string `json:"next,omitempty"`
+	Action   bool   `json:"action,omitempty"`
+	Selected bool   `json:"selected,omitempty"`
+	method   string
+	params   map[string]any
 }
 
 type SessionCommandMenu struct {
@@ -23,6 +24,7 @@ type SessionCommandMenu struct {
 	Help     string                 `json:"help"`
 	Path     string                 `json:"path"`
 	Revision string                 `json:"revision"`
+	Multiple bool                   `json:"multiple,omitempty"`
 	Choices  []SessionCommandChoice `json:"choices"`
 }
 

@@ -51,6 +51,7 @@ type Model struct {
 	monitorPrompt                       monitorPromptState
 	monitorCommands                     monitorCommandsState
 	monitorSuggestions                  monitorSuggestionState
+	monitorStatusLine                   []string
 	monitorDrafts                       map[string]string
 	monitorContextHidden                bool
 	monitorContextDetail                string

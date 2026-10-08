@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/statusline"
 )
 
 type monitorCommandsState struct {
@@ -23,6 +24,7 @@ type monitorCommandsState struct {
 }
 type monitorCommandsResult struct {
 	session string
+	path    string
 	request uint64
 	menu    codex.SessionCommandMenu
 	applied bool
@@ -31,8 +33,25 @@ type monitorCommandsResult struct {
 
 func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 	p := &m.monitorCommands
+	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if strings.TrimPrefix(strings.TrimSpace(path), "/") == "statusline" {
+		p.busy = false
+		p.detail = false
+		p.notice = ""
+		p.selected = 0
+		p.scroll = 0
+		p.request++
+		p.menu = m.statusLineMenu()
+		return nil
+	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
 	if !ok {
+		if path == "" || path == "help" {
+			p.menu = localCommandsMenu()
+			p.busy = false
+			p.notice = ""
+			return nil
+		}
 		p.notice = "Shared app-server commands unavailable."
 		return nil
 	}
@@ -48,12 +67,13 @@ func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
 		menu, err := c.SessionCommands(ctx, id, path)
-		return monitorCommandsResult{session: id, request: seq, menu: menu, err: err}
+		return monitorCommandsResult{session: id, path: path, request: seq, menu: menu, err: err}
 	}
 }
 
 func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
-	if _, ok := m.fetcher.(codex.SessionCommandsClient); !ok {
+	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if _, ok := m.fetcher.(codex.SessionCommandsClient); !ok && path != "statusline" && path != "" && path != "help" {
 		m.monitorPrompt.notice = "Slash commands require the shared app-server."
 		return m, nil, true
 	}
@@ -91,6 +111,12 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		cmd := m.loadMonitorCommands(o.Next)
 		return m, cmd, true
 	}
+	if m.monitorCommands.menu.Multiple {
+		p := &m.monitorCommands
+		p.menu.Choices = append([]codex.SessionCommandChoice(nil), p.menu.Choices...)
+		p.menu.Choices[p.selected].Selected = !o.Selected
+		return m, nil, true
+	}
 	m.monitorCommands.detail = true
 	m.monitorCommands.scroll = 0
 	m.monitorCommands.until = time.Now().Add(30 * time.Second)
@@ -99,6 +125,15 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 
 func (m Model) confirmMonitorCommand() (Model, tea.Cmd, bool) {
 	p := &m.monitorCommands
+	if p.open && p.menu.Multiple && p.menu.Path == "statusline" {
+		m.monitorStatusLine = statusline.Normalize(statusLineSelection(p.menu))
+		if codex.IsSessionCommand(m.monitorPrompt.input.Value()) {
+			m.monitorPrompt.input.Reset()
+		}
+		m.persistPreferences()
+		m.closeMonitorCommands()
+		return m, nil, true
+	}
 	o, ok := m.commandChoice()
 	if !p.detail || !ok || !o.Action || p.busy || p.notice != "" {
 		return m, nil, true
@@ -132,6 +167,9 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	p := m.monitorCommands
 	w := max(width-4, 1)
 	capacity := max(height-5, 1)
+	if p.menu.Multiple {
+		capacity = max(height-6, 1)
+	}
 	var rows []commandDisplayRow
 	if p.busy {
 		return []commandDisplayRow{{text: "Loading / sending…", choice: -1}}
@@ -162,7 +200,13 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	for i := start; i < min(start+capacity, len(p.menu.Choices)); i++ {
 		o := p.menu.Choices[i]
 		label := o.Label
-		if o.Next != "" {
+		if p.menu.Multiple {
+			mark := "[ ] "
+			if o.Selected {
+				mark = "[x] "
+			}
+			label = mark + label + " // " + o.Help
+		} else if o.Next != "" {
 			label += " →"
 		} else if !o.Action {
 			label += " // HELP"
@@ -172,13 +216,22 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	if len(rows) == 0 {
 		rows = append(rows, commandDisplayRow{text: "No available options. Use Codex for unsupported commands.", choice: -1})
 	}
+	if p.menu.Multiple {
+		preview := statusline.Text(statusLineSelection(p.menu), m.monitorStatusValues())
+		if preview == "" {
+			preview = "—"
+		}
+		rows = append(rows, commandDisplayRow{text: ansi.Truncate("Preview // "+preview, w, "…"), choice: -1})
+	}
 	return rows
 }
 
 func (m Model) commandFooter(width int) []commandDisplayRow {
 	p := m.monitorCommands
 	var buttons []commandDisplayRow
-	if o, ok := m.commandChoice(); ok && p.detail && o.Action && !p.busy && p.notice == "" {
+	if p.menu.Multiple {
+		buttons = append(buttons, commandDisplayRow{text: "[ C APPLY ]", action: "confirm"})
+	} else if o, ok := m.commandChoice(); ok && p.detail && o.Action && !p.busy && p.notice == "" {
 		buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
 	}
 	buttons = append(buttons, commandDisplayRow{text: "[ ← BACK ]", action: "back"}, commandDisplayRow{text: "[ ESC CLOSE ]", action: "close"})
@@ -215,7 +268,11 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 		footer = append(footer, style.Render(b.text))
 	}
 	if len(body) > 1 {
-		body[len(body)-2] = colors.dimmed().Render(ansi.Truncate("↑/↓ select or scroll • Enter open • / root", max(width-4, 1), ""))
+		hint := "↑/↓ select or scroll • Enter open • / root"
+		if p.menu.Multiple {
+			hint = "↑/↓ select • Space toggle • ←/→ order • C apply"
+		}
+		body[len(body)-2] = colors.dimmed().Render(ansi.Truncate(hint, max(width-4, 1), ""))
 		body[len(body)-1] = strings.Join(footer, "  ")
 	}
 	identity := shortSessionID(p.session)
@@ -233,7 +290,11 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.busy = false
 			p.notice = ""
 			if r.err != nil {
-				p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
+				if !r.applied && (r.path == "" || r.path == "help") {
+					p.menu = localCommandsMenu()
+				} else {
+					p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
+				}
 			} else if r.applied {
 				p.notice = "Change requested. Codex will apply it to subsequent turns."
 				if strings.HasPrefix(strings.TrimSpace(m.monitorPrompt.input.Value()), "/") {
@@ -241,6 +302,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 			} else {
 				p.menu = r.menu
+				if p.menu.Path == "" || p.menu.Path == "help" {
+					p.menu.Choices = append(p.menu.Choices, localStatusLineChoice())
+				}
 			}
 		}
 		return m, nil, true
@@ -271,6 +335,24 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m.loadMonitorCommands(path)
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok {
+		if p.menu.Multiple {
+			switch key.String() {
+			case "space":
+				return m.chooseMonitorCommand()
+			case "left", "right":
+				d := 1
+				if key.String() == "left" {
+					d = -1
+				}
+				target := p.selected + d
+				if target >= 0 && target < len(p.menu.Choices) {
+					p.menu.Choices = append([]codex.SessionCommandChoice(nil), p.menu.Choices...)
+					p.menu.Choices[p.selected], p.menu.Choices[target] = p.menu.Choices[target], p.menu.Choices[p.selected]
+					p.selected = target
+				}
+				return m, nil, true
+			}
+		}
 		switch key.String() {
 		case "esc":
 			m.closeMonitorCommands()

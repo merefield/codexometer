@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"errors"
+	"github.com/merefield/codexometer/internal/statusline"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,12 +13,13 @@ import (
 // Operational, account, quota-estimation, session, and token-event data are
 // never stored.
 type Preferences struct {
-	HideSessionContext bool   `json:"hideSessionContext,omitempty"`
-	Theme              string `json:"theme,omitempty"`
-	MainTab            string `json:"mainTab,omitempty"`
-	QuotaView          string `json:"quotaView,omitempty"`
-	BenchmarkFilter    string `json:"benchmarkFilter,omitempty"`
-	BenchmarkRank      string `json:"benchmarkRank,omitempty"`
+	HideSessionContext bool     `json:"hideSessionContext,omitempty"`
+	Theme              string   `json:"theme,omitempty"`
+	MainTab            string   `json:"mainTab,omitempty"`
+	QuotaView          string   `json:"quotaView,omitempty"`
+	BenchmarkFilter    string   `json:"benchmarkFilter,omitempty"`
+	BenchmarkRank      string   `json:"benchmarkRank,omitempty"`
+	StatusLine         []string `json:"statusLine"`
 }
 
 type PreferenceStore interface {
@@ -77,6 +79,9 @@ func NewWithPreferences(fetcher Fetcher, refreshEvery time.Duration, store Prefe
 }
 
 func (m *Model) applyPreferences(preferences Preferences) {
+	if preferences.StatusLine != nil {
+		m.monitorStatusLine = statusline.Normalize(preferences.StatusLine)
+	}
 	m.monitorContextHidden = preferences.HideSessionContext
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
@@ -116,6 +121,7 @@ func (m Model) persistPreferences() {
 		QuotaView:          quotaViewPreferenceNames[m.selectedQuotaView()],
 		BenchmarkFilter:    benchmarkFilterPreferenceNames[m.benchmarkFilter],
 		BenchmarkRank:      benchmarkRankPreferenceNames[m.benchmarkRankMode],
+		StatusLine:         m.monitorStatusLine,
 	})
 }
 

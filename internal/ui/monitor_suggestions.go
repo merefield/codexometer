@@ -45,6 +45,7 @@ func (m *Model) syncMonitorSuggestions() tea.Cmd {
 	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
 	if !ok {
+		*s = monitorSuggestionState{active: true, session: m.monitorPrompt.session, request: s.request + 1, menu: localCommandsMenu()}
 		return nil
 	}
 	*s = monitorSuggestionState{active: true, busy: true, session: m.monitorPrompt.session, request: s.request + 1}
@@ -115,6 +116,7 @@ func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if s.active && s.session == r.session && s.request == r.request {
 			s.busy = false
 			s.menu = r.menu
+			s.menu.Choices = append(s.menu.Choices, localStatusLineChoice())
 			s.err = r.err != nil
 		}
 		return m, nil, true

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { controlRequest, live } from './state.svelte';
+  import { statusLineUI } from './preferences.svelte';
   let {
     session,
     query = '',
@@ -119,14 +120,46 @@
         session,
         command: { mode: 'list', path },
       });
-      if (seq === request) menu = result;
+      if (seq === request) {
+        if (path === '' || path === 'help')
+          result.choices.push({
+            id: 'local-statusline',
+            label: '/statusline',
+            help: 'Choose multiple fields for Codexometer’s detail footer.',
+            next: 'statusline',
+          });
+        menu = result;
+      }
     } catch {
-      if (seq === request) notice = 'Command catalogue unavailable. Use Codex.';
+      if (seq === request) {
+        notice = 'Command catalogue unavailable. Use Codex.';
+        if (path === '' || path === 'help')
+          menu = {
+            title: '/ COMMANDS',
+            help: 'Local display settings remain available.',
+            path: '',
+            revision: '',
+            choices: [
+              {
+                id: 'local-statusline',
+                label: '/statusline',
+                help: 'Choose multiple fields for Codexometer’s detail footer.',
+                next: 'statusline',
+              },
+            ],
+          };
+      }
     } finally {
       if (seq === request) busy = false;
     }
   }
   async function choose(o: Choice) {
+    if (o.next === 'statusline') {
+      statusLineUI.open = true;
+      open = false;
+      dismissedQuery = query;
+      return;
+    }
     if (o.next) {
       await load(o.next);
       return;

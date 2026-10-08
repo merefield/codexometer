@@ -1341,6 +1341,92 @@ test('slash commands discover help and require a separate confirmation', async (
   await expect(text).toHaveValue('');
 });
 
+test('read-only status line supports multiple fields, ordering and persistence without control writes', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    version: 'test',
+    control: false,
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    sessionsError: false,
+    sessionsAt: new Date().toISOString(),
+    statusLineFields: [
+      {
+        id: 'model-with-reasoning',
+        label: 'Model and reasoning',
+        help: 'Observed model and effort',
+        default: true,
+      },
+      {
+        id: 'used-tokens',
+        label: 'Tokens',
+        help: 'Observed tokens',
+        default: true,
+      },
+      {
+        id: 'thread-id',
+        label: 'Session ID',
+        help: 'Full identifier',
+        default: false,
+      },
+    ],
+    sessions: [
+      {
+        id: 'one',
+        name: 'Test session',
+        directory: '/work',
+        tokens: 1200,
+        agents: 0,
+        status: 'TURN COMPLETE',
+        contextKind: 'LAST REPLY',
+        text: 'Done.',
+        command: '',
+        source: 'LOCAL',
+        activity: new Date().toISOString(),
+        samples: [],
+        statusLine: {
+          'model-with-reasoning': 'model high',
+          'used-tokens': '1.2K tokens',
+          'thread-id': 'one',
+        },
+      },
+    ],
+  });
+  const writes: string[] = [];
+  await page.route('**/api/control/**', (route) => {
+    writes.push(route.request().url());
+    return route.abort();
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/one';
+  });
+  const line = page.getByLabel('Session status line', { exact: true });
+  await expect(line).toHaveText('model high · 1.2K tokens');
+  await page.getByRole('button', { name: 'Configure status line' }).click();
+  const picker = page.getByRole('region', { name: 'Status line fields' });
+  await picker.getByRole('checkbox', { name: /Model and reasoning/ }).uncheck();
+  await picker.getByRole('checkbox', { name: /Session ID/ }).check();
+  await picker.getByRole('button', { name: 'Move Session ID earlier' }).click();
+  await expect(page.getByLabel('Status line preview')).toContainText(
+    'one · 1.2K tokens',
+  );
+  await expect(line).toHaveText('model high · 1.2K tokens');
+  await picker.getByRole('button', { name: 'APPLY', exact: true }).click();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  await page.reload();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  await page.getByRole('button', { name: 'Configure status line' }).click();
+  await picker.getByRole('checkbox', { name: /Tokens/ }).uncheck();
+  await picker.getByRole('button', { name: 'CANCEL', exact: true }).click();
+  await expect(line).toHaveText('one · 1.2K tokens');
+  expect(writes).toHaveLength(0);
+});
+
 test('quota review hides only follow-ups, cancels confirmation and preserves the draft', async ({
   page,
   pairingURL,
