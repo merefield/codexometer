@@ -52,6 +52,49 @@ func TestApprovalShortcutAfterFocusedComposer(t *testing.T) {
 	}
 }
 
+func TestApprovalShortcutAfterComposerTelemetryTransition(t *testing.T) {
+	for _, wide := range []bool{false, true} {
+		for _, enhanced := range []bool{false, true} {
+			m := approvalTestModel()
+			m.keyboardEventTypes = enhanced
+			if wide {
+				m.width, m.height = 180, 60
+				m.monitorSessionData = m.monitorSessionData[:1]
+				m.setRowContext("root-one", contextWide)
+			}
+			m.monitorPrompt = monitorPromptState{session: "root-one", offer: codex.SessionPromptOffer{Token: "previous", TurnID: "turn"}, input: newMonitorEditor()}
+			m.monitorPrompt.input.SetValue("Keep my draft")
+			m.monitorPrompt.input.Focus()
+			// An intervening redraw/telemetry message blurs the composer before
+			// the user's first approval key, unlike the direct key handoff test.
+			m, _ = approvalEvent(m, tea.MouseMotionMsg{X: 0, Y: 0})
+			if m.monitorPrompt.input.Focused() || m.monitorPrompt.offer.Token != "" {
+				t.Fatal("approval did not retire the old composer capability")
+			}
+			m, cmd := approvalEvent(m, key('1'))
+			if cmd != nil || m.monitorApprovalConfirm != "live/decision:0" {
+				t.Fatalf("wide=%v enhanced=%v: first approval number swallowed after telemetry", wide, enhanced)
+			}
+			if m.monitorDrafts["root-one"] != "Keep my draft" {
+				t.Fatal("telemetry transition lost ordinary draft")
+			}
+			m, _ = approvalEvent(m, tea.MouseMotionMsg{X: 1, Y: 0})
+			if m.monitorApprovalConfirm != "live/decision:0" {
+				t.Fatal("subsequent redraw cleared the armed approval")
+			}
+			if enhanced {
+				m, _ = approvalEvent(m, tea.KeyReleaseMsg{Code: '1'})
+				m, cmd = approvalEvent(m, key('1'))
+			} else {
+				m, cmd = approvalEvent(m, key('c'))
+			}
+			if cmd == nil || !m.monitorApprovalBusy {
+				t.Fatal("confirmation swallowed after telemetry transition")
+			}
+		}
+	}
+}
+
 func TestApprovalComposerTransitionDoesNotReinterpretOtherInput(t *testing.T) {
 	for _, scenario := range []string{"decline", "cancel", "confirm", "repeat", "different-session", "clipped", "paste", "secret"} {
 		t.Run(scenario, func(t *testing.T) {

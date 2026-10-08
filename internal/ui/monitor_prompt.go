@@ -226,13 +226,11 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	hint := i18n.Text("Enter: send / next answer • Esc: leave editor • ↑/↓: choices")
 	hintStyle := colors.dimmed()
 	if o.TurnID != "" {
-		header = i18n.Text("WORKING")
 		if s, ok := m.contextDetailSession(); ok {
 			if dots := m.sessionActivityDots(s); dots != "" {
-				header += " " + dots
+				header = dots + " // " + header
 			}
 		}
-		header += " // " + i18n.Text("FOLLOW-UP") + " // " + identity
 		hint = "Enter: steer • Tab: queue next turn • Esc: interrupt"
 	}
 	if p.offer.Token == o.Token && (p.input.Focused() || p.input.Value() != "") && !p.busy {
@@ -361,7 +359,13 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if next.Token != "" {
 				p.offer = next
 			} else {
-				p.input.Blur()
+				// Retire the obsolete working capability, not just its focus.
+				// Otherwise every later approval key re-enters this transition
+				// and is swallowed forever after an intervening telemetry tick.
+				m.stashMonitorDraft()
+				*p = monitorPromptState{session: p.session}
+				m.monitorApprovalConfirm = ""
+				m.monitorApprovalNumberReleased = false
 			}
 			if _, key := msg.(tea.KeyPressMsg); key {
 				return m, nil, true

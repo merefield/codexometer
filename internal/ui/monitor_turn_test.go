@@ -216,8 +216,8 @@ func TestWorkingComposerErrorAndScheduleIsolation(t *testing.T) {
 		t.Fatal("failed queue lost draft or hid error")
 	}
 	view := m.renderMonitorPrompt(120, 30, paletteFor(themeHacker))
-	if !strings.Contains(view, monitorDotWave(m.phase)) || !strings.Contains(view, "WORKING") {
-		t.Fatal("missing progress above composer")
+	if !strings.Contains(view, monitorDotWave(m.phase)) || !strings.Contains(view, "FOLLOW-UP") || strings.Contains(view, "WORKING") {
+		t.Fatal("composer must retain progress and identity without duplicating WORKING")
 	}
 }
 
