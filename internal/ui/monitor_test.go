@@ -709,6 +709,31 @@ func TestMonitorSurfacesUnavailableUsage(t *testing.T) {
 	}
 }
 
+func TestMonitorFailedStartRetriesOnLaterRefresh(t *testing.T) {
+	failedAt := time.Unix(3_000, 0)
+	model := Model{
+		meterView: viewMonitor, monitorState: monitorStarting, monitorRequest: 1,
+		usageFetcher: stubLiveFetcher{},
+	}
+	updated, _ := model.Update(monitorFetchedMsg{
+		kind: monitorFetchStart, sequence: 1, err: errors.New("telemetry offline"), at: failedAt,
+	})
+	model = updated.(Model)
+	if model.monitorState != monitorIdle || !model.monitorAutoStart {
+		t.Fatalf("failed Start was not left ready to retry: %#v", model)
+	}
+
+	retryAt := failedAt.Add(time.Minute)
+	updated, command := model.Update(fetchedMsg{
+		snapshot: codex.DemoSnapshot(), usage: usageWithTokens(500), at: retryAt,
+	})
+	model = updated.(Model)
+	if command != nil || model.monitorState != monitorRunning || model.monitorAutoStart ||
+		model.monitorBaseline != 500 || model.monitorLatest != 500 || !model.monitorStartedAt.Equal(retryAt) {
+		t.Fatalf("later refresh did not establish a fresh running baseline: %#v", model)
+	}
+}
+
 func TestMonitorFetchUsesConfiguredLocalSource(t *testing.T) {
 	want := codex.LiveUsageSnapshot{TotalTokens: 321, SessionCount: 2}
 	model := New(stubLiveFetcher{usage: want}, time.Minute)
