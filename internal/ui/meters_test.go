@@ -153,32 +153,6 @@ func TestResetProgressUsesWindowStartAndClamps(t *testing.T) {
 	}
 }
 
-func TestConsumptionProjectionDistinguishesSafeEarlyAndUnavailable(t *testing.T) {
-	duration := int64(100)
-	reset := time.Unix(20_000, 0)
-	now := reset.Add(-50 * time.Minute)
-	window := codex.Window{UsedPercent: 25, WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())}
-	projection := consumptionProjectionFor(window, now)
-	if projection.kind != consumptionProjectionSafe || projection.projectedRemaining != 50 {
-		t.Fatalf("safe projection = %#v, want 50%% remaining", projection)
-	}
-
-	window.UsedPercent = 75
-	projection = consumptionProjectionFor(window, now)
-	if projection.kind != consumptionProjectionEarly || projection.timeToExhaustion < 16*time.Minute || projection.timeToExhaustion > 17*time.Minute ||
-		projection.earlyBy < 33*time.Minute || projection.earlyBy > 34*time.Minute {
-		t.Fatalf("early projection = %#v, want limit in about 17m and 33m early", projection)
-	}
-
-	window.UsedPercent = 0
-	if projection := consumptionProjectionFor(window, now); projection.kind != consumptionProjectionNoBurn {
-		t.Fatalf("zero-burn projection = %#v", projection)
-	}
-	if projection := consumptionProjectionFor(codex.Window{UsedPercent: 25}, now); projection.kind != consumptionProjectionUnavailable {
-		t.Fatalf("unavailable projection = %#v", projection)
-	}
-}
-
 func TestMonthlyCreditMeterShowsDetailsWithoutInventingCycleProgress(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	reset := time.Now().Add(14 * 24 * time.Hour).Unix()

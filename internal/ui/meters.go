@@ -444,58 +444,6 @@ func radialCanvasSize(width, height, legendWidth int) (int, int) {
 	return cellWidth, cellHeight
 }
 
-type consumptionProjectionKind int
-
-const (
-	consumptionProjectionUnavailable consumptionProjectionKind = iota
-	consumptionProjectionNoBurn
-	consumptionProjectionSafe
-	consumptionProjectionEarly
-	consumptionProjectionExhausted
-)
-
-type consumptionProjection struct {
-	kind               consumptionProjectionKind
-	timeToExhaustion   time.Duration
-	earlyBy            time.Duration
-	projectedRemaining int
-}
-
-func consumptionProjectionFor(window codex.Window, now time.Time) consumptionProjection {
-	if window.WindowDurationMins == nil || window.ResetsAt == nil || *window.WindowDurationMins <= 0 {
-		return consumptionProjection{kind: consumptionProjectionUnavailable}
-	}
-	duration := time.Duration(*window.WindowDurationMins) * time.Minute
-	resetAt := time.Unix(*window.ResetsAt, 0)
-	elapsed := now.Sub(resetAt.Add(-duration))
-	if elapsed <= 0 || elapsed >= duration {
-		return consumptionProjection{kind: consumptionProjectionUnavailable}
-	}
-	used := min(max(window.UsedPercent, 0), 100)
-	if used == 0 {
-		return consumptionProjection{kind: consumptionProjectionNoBurn}
-	}
-	if used >= 100 {
-		return consumptionProjection{kind: consumptionProjectionExhausted}
-	}
-	timeToExhaustion := time.Duration(float64(elapsed) * float64(100-used) / float64(used))
-	exhaustsAt := now.Add(timeToExhaustion)
-	if !exhaustsAt.Before(resetAt) {
-		projectedUsed := float64(used) * float64(duration) / float64(elapsed)
-		projectedRemaining := int(math.Round(100 - projectedUsed))
-		return consumptionProjection{
-			kind:               consumptionProjectionSafe,
-			timeToExhaustion:   timeToExhaustion,
-			projectedRemaining: min(max(projectedRemaining, 0), 100),
-		}
-	}
-	return consumptionProjection{
-		kind:             consumptionProjectionEarly,
-		timeToExhaustion: timeToExhaustion,
-		earlyBy:          resetAt.Sub(exhaustsAt),
-	}
-}
-
 func verticallyCenterLines(lines []string, height int) []string {
 	if height <= len(lines) {
 		return lines[:height]

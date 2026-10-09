@@ -40,6 +40,19 @@ func TestWindowStartUsesSnapshotWithoutHistory(t *testing.T) {
 	}
 }
 
+func TestWindowStartProjectionAtQuotaBoundary(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	for used, want := range map[int]float64{25: 50, 50: 100, 75: 150, 100: 200} {
+		trend, ok := Project(WindowStart, testWindow(now, used), nil, now)
+		if !ok || trend.Projected != want {
+			t.Fatalf("used=%d projection=%v valid=%v, want %v", used, trend.Projected, ok, want)
+		}
+	}
+	if _, ok := Project(WindowStart, codex.Window{UsedPercent: 25}, nil, now); ok {
+		t.Fatal("unknown cycle must not produce a projection")
+	}
+}
+
 func TestRecentRegressionRequiresContinuousCoverage(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	w := testWindow(now, 40)
