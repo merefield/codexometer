@@ -210,7 +210,8 @@ includes the explicit backgrounds used for consistent terminal rendering.
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
 - An always-on Sessions view that measures local token activity while Codexometer
-  is running, with a Reset button for establishing a fresh baseline.
+  is running, with a Zero button for establishing a fresh baseline. Zero affects
+  only the local measurement interval and does not use a quota-reset token.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
 - Dismissible session rows that automatically return on fresh activity,
@@ -470,7 +471,7 @@ Set up the recommended arrangement as follows.
    new live context arrives.
 
 5. Leave Codexometer running while you work. Session monitoring starts automatically;
-   use Reset when you want a fresh measured interval, and keep unrelated Codex
+   use Zero when you want a fresh measured interval, and keep unrelated Codex
    activity quiet while running Benchmarks if you want the cleanest comparisons.
 
 Codexometer subscribes only to thread IDs that are already loaded by the
@@ -586,7 +587,7 @@ codexometer --codex /path/to/codex
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle views within Quota or Usage |
-| `s` | Reset the Sessions baseline, or open Benchmark Scope |
+| `s` | Zero the Sessions baseline, or open Benchmark Scope |
 | `g` | Cycle available trend periods in Quota → Pace or Zone |
 | `h` | Toggle the trace in Quota → Pace or Zone; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
@@ -1097,7 +1098,7 @@ The other top-level views are:
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
-  remain underneath when space permits; a clickable Reset control sits beside it.
+  remain underneath when space permits; a clickable Zero control sits beside it.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1144,7 +1145,7 @@ The other top-level views are:
   when tokens, model calls, turn timing, durable activity, or attention moves
   forward, or when an inactive session becomes active again. An alert already
   visible when `[×]` is clicked is dismissed with its row; a later new or
-  changed alert restores it. Resetting session monitoring also restores every dismissed
+  changed alert restores it. Zeroing session monitoring also restores every dismissed
   row. With the keyboard, `Down` initially selects the top row, `Up` initially
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
   closes the selected row.
@@ -1261,7 +1262,7 @@ and output statistics are omitted rather than filling the card with `N/A`.
 **AVG TOK/MIN** is average observed tokens per minute since the measurement began
 (or the session joined)—not instantaneous generation speed.
 The total and all session averages update together every five seconds, unaffected
-by mouse movement or keyboard-driven redraws. Start and reset update them
+by mouse movement or keyboard-driven redraws. Start and Zero update them
 immediately; token counts and the rest of the interface retain their usual cadence.
 
 `CALLS` counts upstream model-response cycles observed after the current Sessions
@@ -1289,7 +1290,7 @@ Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessari
 zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
 missing, late-baseline, and reset-crossing windows do not produce a per-session
 number.
-Starting or resetting reads quota before establishing the local token baseline.
+Starting or zeroing reads quota before establishing the local token baseline.
 These operations are not atomic, so unrelated account activity during the short
 boundary read remains another source of uncertainty.
 
@@ -1369,7 +1370,7 @@ same action on that session. The presentations are:
    **WORKING** badge blinks only its ball, keeping the text and colour steady,
    and uses the same observed-work evidence as the animated dots,
    not merely recent activity. Completion and attention badges take priority;
-   starting/resetting monitoring, observation errors, or inactive sessions
+   starting/zeroing monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
    Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, a

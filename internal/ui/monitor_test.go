@@ -760,7 +760,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "ZERO (S)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -854,8 +854,8 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	if command != nil || model.hoveredButton != footerButtonMonitorReset {
 		t.Fatal("hovering the Reset box did not select it")
 	}
-	hovered := model.renderMonitorButton(14, 6, "RE(S)ET", footerButtonMonitorReset, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("RE(S)ET")
+	hovered := model.renderMonitorButton(14, 6, "ZERO (S)", footerButtonMonitorReset, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("ZERO (S)")
 	if !strings.Contains(hovered, wantHover) {
 		t.Fatal("hovering the Reset box did not highlight its label")
 	}

@@ -88,9 +88,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := m.monitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	resetLabel := i18n.Text("RE(S)ET")
+	resetLabel := i18n.Text("ZERO (S)")
 	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-		resetLabel = "(S)"
+		resetLabel = "0 (S)"
 	}
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton)
@@ -123,7 +123,7 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	case monitorRunning:
 		state, hint = i18n.Text("MONITORING ●"), i18n.Format("LIVE LOCAL SESSIONS %d", m.monitorSessions)
 	case monitorResetting:
-		state, hint = i18n.Text("RESETTING"), i18n.Text("ESTABLISHING A FRESH BASELINE")
+		state, hint = i18n.Text("ZEROING"), i18n.Text("ESTABLISHING A FRESH BASELINE")
 	}
 	if m.monitorError != "" {
 		state, hint = i18n.Text("NO TOKEN SIGNAL"), m.monitorError
