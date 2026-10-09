@@ -11,7 +11,7 @@ func TestAppleTerminalTrueColorOptions(t *testing.T) {
 		t.Fatal("older Apple Terminal was forced to true colour")
 	}
 	for _, extra := range []string{
-		"COLORTERM=truecolor", "COLORTERM=256color", "NO_COLOR=1", "CLICOLOR=0",
+		"COLORTERM=truecolor", "COLORTERM=256color", "NO_COLOR=", "NO_COLOR=0", "NO_COLOR=1", "CLICOLOR=0",
 		"TERM=dumb", "TERM=screen-256color", "TERM=tmux-256color", "TERM=xterm",
 		"TERM_PROGRAM=iTerm.app", "TMUX=/tmp/socket", "STY=session",
 		"SSH_TTY=/dev/ttys001", "SSH_CONNECTION=remote",

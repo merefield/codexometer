@@ -18,9 +18,10 @@ func terminalProgramOptions(environ []string, appleTrueColor bool) []tea.Program
 			env[key] = value
 		}
 	}
+	_, noColor := env["NO_COLOR"]
 	if !appleTrueColor || env["TERM_PROGRAM"] != "Apple_Terminal" ||
 		env["TERM"] != "xterm-256color" || env["COLORTERM"] != "" ||
-		env["NO_COLOR"] != "" || env["CLICOLOR"] == "0" ||
+		noColor || env["CLICOLOR"] == "0" ||
 		env["TMUX"] != "" || env["STY"] != "" ||
 		env["SSH_TTY"] != "" || env["SSH_CONNECTION"] != "" {
 		return nil
