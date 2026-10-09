@@ -147,7 +147,8 @@
     };
   });
   let observedLabel = $derived.by(() => {
-    if (continuous.length < 2) return 'ONE OBSERVATION';
+    if (continuous.length === 0) return 'NO OBSERVATIONS';
+    if (continuous.length === 1) return 'ONE OBSERVATION';
     const minutes = Math.floor(observedMilliseconds / 60_000);
     if (minutes < 60) return `${minutes} MIN CONTINUOUS`;
     const hours = Math.floor(minutes / 60);

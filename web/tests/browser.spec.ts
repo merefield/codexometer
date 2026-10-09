@@ -2302,6 +2302,66 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
   });
 });
 
+test('Zone and Pace distinguish empty, single and continuous observations', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const point = (minutesAgo: number, elapsed: number) => ({
+    at: new Date(now.getTime() - minutesAgo * 60_000).toISOString(),
+    elapsed,
+    used: 25,
+    break: false,
+  });
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      {
+        name: 'Weekly',
+        used: 25,
+        duration: 100,
+        reset: Math.floor(now.getTime() / 1000) + 3000,
+        details: '',
+        trail: [] as ReturnType<typeof point>[],
+      },
+    ],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  for (const view of ['ZONE', 'PACE']) {
+    await page.getByRole('link', { name: view, exact: true }).click();
+    for (const [trail, label] of [
+      [[], 'NO OBSERVATIONS'],
+      [[point(0, 50)], 'ONE OBSERVATION'],
+      [[point(30, 20), point(0, 50)], '30 MIN CONTINUOUS'],
+      [[], 'NO OBSERVATIONS'],
+    ] as const) {
+      snapshot.meters[0].trail = [...trail];
+      await page.evaluate(
+        (snapshot) =>
+          window.dispatchEvent(
+            new CustomEvent('test-snapshot', { detail: snapshot }),
+          ),
+        snapshot,
+      );
+      await expect(page.locator('.zone-controls small')).toHaveText(
+        'HISTORY // ' + label,
+      );
+    }
+  }
+});
+
 test('consumption zone offers trace control and observed trend periods', async ({
   page,
   pairingURL,
