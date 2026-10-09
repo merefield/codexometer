@@ -39,7 +39,7 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	// Baseline includes Pace/Zone graph controls, explicit panel/border
 	// backgrounds and Sessions Zero/Close All; every theme, view and size
 	// remains covered.
-	const want = "1e065b4fdf8c78946db123ebc8a6a75f10e907b26220f2d7df3730cf8157a5c6"
+	const want = "07592d4740f0a32a45f7dd70c153e889f4101e5793e33cb61daf35c0a4edd34c"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

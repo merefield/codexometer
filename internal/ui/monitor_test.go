@@ -53,7 +53,7 @@ func TestMonitorAutoStartAndResetLifecycle(t *testing.T) {
 		t.Fatalf("30-second graph bucket was not recorded: %#v", model.monitorSamples)
 	}
 
-	updated, command = model.Update(key('s'))
+	updated, command = model.Update(key('z'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
 		t.Fatalf("Reset did not request a fresh baseline: state=%d flash=%d", model.monitorState, model.flashedButton)
@@ -760,7 +760,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "ZERO (S)", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "(Z)ERO", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -854,8 +854,8 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	if command != nil || model.hoveredButton != footerButtonMonitorReset {
 		t.Fatal("hovering the Reset box did not select it")
 	}
-	hovered := model.renderMonitorButton(14, 6, "ZERO (S)", footerButtonMonitorReset, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("ZERO (S)")
+	hovered := model.renderMonitorButton(14, 6, "(Z)ERO", footerButtonMonitorReset, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(Z)ERO")
 	if !strings.Contains(hovered, wantHover) {
 		t.Fatal("hovering the Reset box did not highlight its label")
 	}

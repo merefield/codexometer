@@ -95,17 +95,28 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := m.monitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	resetLabel := i18n.Text("ZERO (S)")
+	resetLabel := i18n.Text("(Z)ERO")
 	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-		resetLabel = "0 (S)"
+		resetLabel = "0 (Z)"
 		if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-			resetLabel = "0"
+			resetLabel = "0\n(Z)"
 		}
 	}
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	closeAllLabel := i18n.Text("CLOSE ALL")
+	closeAllLabel := i18n.Text("CL(O)SE ALL")
 	if layout.closeAllRect.width < lipgloss.Width(closeAllLabel)+2 {
-		closeAllLabel = "[××]"
+		wrapped := strings.Replace(closeAllLabel, " ", "\n", 1)
+		if lipgloss.Width(wrapped)+2 <= layout.closeAllRect.width && lipgloss.Height(wrapped)+2 <= layout.topHeight {
+			closeAllLabel = wrapped
+		} else {
+			closeAllLabel = "[××]\n(O)"
+		}
+	}
+	if m.monitorCloseAllArmed() {
+		closeAllLabel = i18n.Text("C(O)NFIRM") + "\nEsc"
+		if layout.closeAllRect.width < lipgloss.Width(i18n.Text("C(O)NFIRM"))+2 {
+			closeAllLabel = "(O)?\nEsc"
+		}
 	}
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)

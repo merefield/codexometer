@@ -587,7 +587,9 @@ codexometer --codex /path/to/codex
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle views within Quota or Usage |
-| `s` | Zero the Sessions baseline, or open Benchmark Scope |
+| `z` | Zero the Sessions baseline |
+| `s` | Open Benchmark Scope (Benchmark view only) |
+| `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace or Zone |
 | `h` | Toggle the trace in Quota → Pace or Zone; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
@@ -1099,8 +1101,9 @@ The other top-level views are:
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
   remain underneath when space permits; clickable Zero and Close All controls
-  sit beside it. Close All dismisses every visible session row, including those
-  outside the current page, while keeping the measurement baseline and telemetry.
+  sit beside it, labelled `(Z)ERO` and `CL(O)SE ALL`. Close All dismisses
+  every visible session row, including those outside the current page, while
+  keeping the measurement baseline and telemetry.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1151,8 +1154,13 @@ The other top-level views are:
   row. With the keyboard, `Down` initially selects the top row, `Up` initially
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
   closes the selected row. Close All applies the same dismissal and automatic
-  return behavior to all rows. On narrow terminals its label becomes `[××]`;
-  it is disabled when no rows are visible.
+  return behavior to all rows. On narrow terminals its label becomes `[××]`
+  with `(O)` below it; Zero shows `0` with `(Z)`.
+  Close All requires confirmation: click or press `o` once to arm it, then click
+  or press `o` again within five seconds to confirm. `Esc` cancels. A change
+  to the visible rows requires a fresh confirmation; switching views or Zero
+  cancels an armed action.
+  Close All is disabled when no rows are visible.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or

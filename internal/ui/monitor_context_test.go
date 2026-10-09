@@ -178,7 +178,7 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	if m.monitorContextScroll == 0 {
 		t.Fatal("detail did not scroll")
 	}
-	updated, _ = m.Update(key('s'))
+	updated, _ = m.Update(key('z'))
 	m = updated.(Model)
 	if m.monitorState != monitorRunning {
 		t.Fatal("modal activated underlying reset")
