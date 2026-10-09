@@ -404,9 +404,19 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			}
 		}
 		if _, mouse := msg.(tea.MouseMsg); !mouse {
+			before := p.input.Value()
 			var cmd tea.Cmd
 			p.input, cmd = p.input.Update(msg)
-			return m, cmd, true
+			switch msg.(type) {
+			case tea.KeyPressMsg, tea.PasteMsg:
+				return m, cmd, true
+			}
+			// Private clipboard/cursor events belong to the widget. Dashboard
+			// ticks, telemetry, resize and action results must keep flowing;
+			// swallowing one tick permanently stops its self-scheduling loop.
+			if cmd != nil || p.input.Value() != before {
+				return m, cmd, true
+			}
 		}
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok {

@@ -266,3 +266,64 @@ func TestMonitorRenameEditorReviewAndConfirmation(t *testing.T) {
 		t.Fatal("rename did not restore draft and notice")
 	}
 }
+
+func renameEditorTestModel(t *testing.T) Model {
+	t.Helper()
+	m, base := commandTestModel(t)
+	m.fetcher = &renameTestClient{commandTestClient: base}
+	m, cmd, _ := m.openMonitorCommands("rename")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if !m.monitorCommands.menu.Input || !m.monitorCommands.input.Focused() {
+		t.Fatal("rename editor did not open")
+	}
+	return m
+}
+
+func TestMonitorRenameEditorKeepsBackgroundUpdates(t *testing.T) {
+	t.Run("poll ticker", func(t *testing.T) {
+		m := renameEditorTestModel(t)
+		phase := m.phase
+		next, cmd := m.Update(secondMsg(time.Now()))
+		m = next.(Model)
+		if m.phase != phase+1 || cmd == nil || !m.monitorFetchActive {
+			t.Fatal("rename editor swallowed the ticker: animation and polling will never resume")
+		}
+		if !m.monitorCommands.open || m.monitorCommands.input.Value() != "Current name" {
+			t.Fatal("background tick changed the rename draft")
+		}
+	})
+	t.Run("telemetry and steer reconciliation", func(t *testing.T) {
+		m := renameEditorTestModel(t)
+		m.monitorRequest, m.monitorFetchActive = 7, true
+		m.recordMonitorSteer(monitorSteerReceipt{session: "root-one", thread: "root-one", turn: "turn", text: "new guidance"})
+		next, _ := m.Update(monitorFetchedMsg{kind: monitorFetchSample, sequence: 7, at: time.Now(), usage: codex.LiveUsageSnapshot{
+			TotalTokens: 100,
+			Sessions: []codex.LiveUsageSession{{ID: "root-one", Name: "Renamed root", TotalTokens: 100, Active: true,
+				Attention: codex.SessionAttentionApproval,
+				Context:   codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "root-one", TurnID: "turn", Text: "new approval", LatestGuidance: "new guidance", LatestGuidanceID: "guidance-2"},
+			}},
+		}})
+		m = next.(Model)
+		if m.monitorFetchActive || m.monitorLatest != 100 || m.monitorSessionData[0].name != "Renamed root" || m.monitorSessionData[0].preview.Text != "new approval" || m.monitorSessionData[0].attention != codex.SessionAttentionApproval || len(m.monitorSteers) != 0 {
+			t.Fatal("rename editor swallowed telemetry: name, approvals and sent-steer receipts remain stale")
+		}
+		// The editor can close normally even in the buggy version. Verify that
+		// the completed fetch was released so later ticks schedule another read.
+		m.closeMonitorCommands()
+		phase := m.phase
+		next, cmd := m.Update(secondMsg(time.Now().Add(2 * time.Second)))
+		m = next.(Model)
+		if cmd == nil || m.phase != phase+1 || m.monitorRequest != 8 || !m.monitorFetchActive {
+			t.Fatal("polling did not continue after leaving the rename editor")
+		}
+	})
+	t.Run("window resize", func(t *testing.T) {
+		m := renameEditorTestModel(t)
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 50})
+		m = next.(Model)
+		if m.width != 180 || m.height != 50 {
+			t.Fatal("rename editor swallowed window size")
+		}
+	})
+}
