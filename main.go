@@ -657,7 +657,7 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 	model.SetInline(inline)
 	model.SetResetThreshold(resetThreshold)
 	model.SetResetWarningHours(resetWarningHours)
-	finalModel, runErr := tea.NewProgram(model).Run()
+	finalModel, runErr := tea.NewProgram(model, terminalProgramOptions(os.Environ(), appleTerminalSupportsTrueColor())...).Run()
 	if final, ok := finalModel.(ui.Model); ok {
 		final.CancelQuotaWork()
 	}

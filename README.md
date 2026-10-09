@@ -180,8 +180,9 @@ original English messages; preserve formatting placeholders and parenthesised
 hotkeys. New presentation strings should use `i18n.Text` (literal text) or
 `i18n.Format` (formatted messages) before layout. Quota-window plural forms live
 in `units.json`. The tests check catalogue parity, placeholder/hotkey integrity,
-language matching, cross-language layouts and click targets, and a byte-for-byte
-English rendering baseline captured from v0.12.0.
+language matching, cross-language layouts and click targets, and an English
+rendering snapshot covering every theme, view and terminal size. The snapshot
+includes the explicit backgrounds used for consistent terminal rendering.
 
 ## What it shows
 
@@ -3059,8 +3060,27 @@ uses API billing and rate limits instead of ChatGPT subscription windows.
 ### Colors or symbols look wrong
 
 Use a terminal with true-color and Unicode support, such as Windows Terminal,
-the current macOS Terminal, iTerm2, or a modern Linux terminal. Ensure the
-selected font includes block, arrow, and emoji glyphs.
+macOS Terminal on Tahoe (26) or newer, iTerm2, or a modern Linux terminal. Ensure
+the selected font includes block, arrow, and emoji glyphs. Local Apple Terminal
+on Tahoe or newer is recognised as true-colour even when an existing profile
+still advertises `xterm-256color`; older versions retain automatic colour fallback.
+An explicit `COLORTERM` or colour-disable preference is respected, and remote or
+multiplexed sessions retain normal capability detection. For a one-off 256-colour
+comparison, use `TERM=xterm-256color COLORTERM=256color codexometer`.
+
+The full-screen dashboard paints its theme background across panels, borders,
+buttons and surrounding space without changing the Terminal profile. Inline mode
+paints only its own content. Editor tints and button highlights remain distinct.
+Small gaps in box-character joins can still depend on the font and size; try a
+slightly larger font and an opaque Terminal profile.
+
+### Approval badge without decision buttons
+
+Click the approval pill in Sessions to open the complete review. Decision buttons
+use solid fills and show their keyboard shortcuts. Compact session panes show
+an `APPROVAL — OPEN DETAIL →` link when the complete request and controls cannot
+fit. Local or unsupported requests explain why they must be handled in Codex;
+a badge alone does not guarantee that a live approval can be answered here.
 
 ### The terminal is too small
 

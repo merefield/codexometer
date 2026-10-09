@@ -239,9 +239,22 @@ func (m Model) renderMonitorApprovalControls(width, height int, colors palette) 
 	}
 	rows := make([]string, buttons[len(buttons)-1].y+1)
 	for _, b := range buttons {
-		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + m.renderContextAction(b.action, b.label, colors)
+		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + m.renderMonitorApprovalAction(b.action, b.label, colors)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// Decision controls keep a solid fill even before hover, so they remain
+// discoverable independently of the terminal profile's default background.
+func (m Model) renderMonitorApprovalAction(action, label string, colors palette) string {
+	background := colors.primary
+	if m.approvalConfirmationActive(m.monitorApprovalToken(), action) {
+		background = colors.warning
+	}
+	if m.monitorContextHover == action {
+		background = colors.accent
+	}
+	return colors.label().Foreground(colors.background).Background(background).Render(label)
 }
 
 func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {

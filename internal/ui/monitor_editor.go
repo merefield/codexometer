@@ -173,7 +173,7 @@ func (e monitorEditor) View(colors palette) string {
 	if e.secret {
 		return e.password.View()
 	}
-	return e.area.View()
+	return withDefaultBackground(e.area.View(), monitorComposerBackground(colors))
 }
 
 func monitorComposerBackground(colors palette) color.RGBA {

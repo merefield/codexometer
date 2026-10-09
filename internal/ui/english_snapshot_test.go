@@ -37,8 +37,8 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
 	// Baseline includes Usage summary metrics and report controls,
-	// plus main's current pricing footer; every theme, view and size is covered.
-	const want = "d76336a3d8c675014741f20d9205b5d19521a107a738b95a8f699b042bdd4592"
+	// plus explicit panel/border backgrounds; every theme, view and size is covered.
+	const want = "fcf9729e202a9d19276bafc5b3fade210bde62e5ac7883237721c89385e37267"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

@@ -180,7 +180,7 @@ func (m Model) renderMonitorButton(width, height int, label string, id footerBut
 	if id == m.flashedButton {
 		style = style.Bold(true).Foreground(colors.background).Background(colors.primary).BorderForeground(colors.primary)
 	}
-	return style.Render(label)
+	return withDefaultBackground(style.BorderBackground(colors.background).Render(label), style.GetBackground())
 }
 
 func (m Model) renderMonitorGraph(width, height int, colors palette) string {

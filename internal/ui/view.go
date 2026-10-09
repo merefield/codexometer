@@ -16,7 +16,13 @@ import (
 )
 
 func (m Model) View() tea.View {
-	view := tea.NewView(m.render())
+	content := m.render()
+	if !m.inline && m.width > 0 && m.height > 0 {
+		// Paint the complete alternate screen without changing the user's
+		// terminal profile. Inline mode only paints its own content.
+		content = lipgloss.NewStyle().Width(m.width).Height(m.height).Render(content)
+	}
+	view := tea.NewView(withDefaultBackground(content, paletteFor(m.theme).background))
 	view.AltScreen = !m.inline
 	view.MouseMode = tea.MouseModeAllMotion
 	view.KeyboardEnhancements.ReportEventTypes = true
@@ -264,6 +270,7 @@ func frameSizedWithActions(width, height int, title, titleAction, footerAction, 
 		Border(lipgloss.RoundedBorder()).
 		BorderTop(false).
 		BorderForeground(color).
+		BorderBackground(colors.background).
 		Foreground(colors.primary).
 		Background(colors.background)
 	if height > 0 {
@@ -272,7 +279,7 @@ func frameSizedWithActions(width, height int, title, titleAction, footerAction, 
 		// reserving one extra row for that border.
 		style = style.Height(height + 1)
 	}
-	renderedBody := style.Render(body)
+	renderedBody := withDefaultBackground(style.Render(body), colors.background)
 	if footerAction != "" {
 		lines := strings.Split(renderedBody, "\n")
 		lines[len(lines)-1] = renderFrameFooterWithAction(width, footerAction, color, colors)
