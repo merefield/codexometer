@@ -90,7 +90,7 @@ func configureFileApproval(c *SessionContext, grantRoot string, state *daemonCon
 		c.ApprovalBlocked = "permissions"
 		return
 	}
-	if SanitizeSessionContext(c.Text) != c.Text {
+	if SanitizeApprovalText(c.Text) != c.Text {
 		c.ApprovalBlocked = "sanitised"
 		return
 	}

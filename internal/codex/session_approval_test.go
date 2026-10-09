@@ -38,7 +38,7 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 		"malformed action":        {"kind": 42},
 		"wrong turn":              {"turnId": "other"},
 		"wrong item":              {"itemId": "other"},
-		"truncated":               {"command": strings.Repeat("x", 5000)},
+		"truncated":               {"command": strings.Repeat("x", approvalTextLimit+1)},
 		"controls":                {"command": "echo \x1b[31mhidden"},
 		"hidden directory suffix": {"cwd": "/work\t"},
 		"bidi":                    {"command": "echo \u202Ehidden"},
@@ -108,7 +108,7 @@ func TestApprovalRejectionDiagnostics(t *testing.T) {
 		{map[string]any{"itemId": "unknown", "command": "pwd"}, "missing-directory"},
 		{map[string]any{"turnId": "", "command": "pwd", "cwd": "/work"}, "missing-identity"},
 		{map[string]any{"availableDecisions": []string{}}, "decisions"},
-		{map[string]any{"command": strings.Repeat("x", 5000)}, "truncated"},
+		{map[string]any{"command": strings.Repeat("x", approvalTextLimit+1)}, "truncated"},
 		{map[string]any{"command": "pwd\t"}, "sanitised"},
 	} {
 		_, c := approvalFixture(t, tc.fields)
@@ -119,5 +119,30 @@ func TestApprovalRejectionDiagnostics(t *testing.T) {
 	_, c := approvalFixture(t, nil)
 	if c.ApprovalBlocked != "" || c.ApprovalToken == "" {
 		t.Fatal("eligible request gained a rejection")
+	}
+}
+
+func TestLongCommandApprovalKeepsCompleteReview(t *testing.T) {
+	command := "python3 - <<'PY'\n" + strings.Repeat("print('long review')\n", 400) + "# END OF COMMAND\nPY"
+	reason := strings.Repeat("Long explanation. ", 400) + "END OF JUSTIFICATION"
+	_, c := approvalFixture(t, map[string]any{"command": command, "reason": reason})
+	if c.ApprovalToken == "" || c.ApprovalBlocked != "" || c.CommandDetails.Command != command || c.CommandDetails.Justification != reason || !strings.Contains(c.Text, command) || !strings.Contains(c.Text, reason) {
+		t.Fatal("long approval lost its complete review or controls")
+	}
+	if SanitizeSessionContext(reason) == reason {
+		t.Fatal("fixture does not exceed the ordinary excerpt budget")
+	}
+}
+
+func TestLongApprovalCorrelatesCompleteStartedCommand(t *testing.T) {
+	states := map[string]*daemonContextState{}
+	command := strings.Repeat("echo long-command\n", 400) + "END OF COMMAND"
+	raw, _ := json.Marshal(map[string]any{"threadId": "root", "turnId": "turn", "item": map[string]any{"id": "cmd", "type": "commandExecution", "command": command, "cwd": "/work"}})
+	daemonContextEvent(states, "item/started", nil, raw, time.Now())
+	raw, _ = json.Marshal(map[string]any{"threadId": "root", "turnId": "turn", "itemId": "cmd", "reason": "Review command", "availableDecisions": []string{"accept", "decline"}})
+	daemonContextEvent(states, "item/commandExecution/requestApproval", json.RawMessage(`"req"`), raw, time.Now())
+	c := states["root"].requests[`"req"`]
+	if c.ApprovalToken == "" || c.CommandDetails.Command != command {
+		t.Fatal("started-command fallback truncated the approval")
 	}
 }

@@ -1564,6 +1564,7 @@ are clickable. Writable web mode exposes the same catalogue through
 
 | Command family | Live options and behaviour |
 | --- | --- |
+| `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
@@ -1600,6 +1601,8 @@ scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
 
+Renames require a loaded session and explicit confirmation within 30 seconds; a concurrent rename or reconnect invalidates the confirmation. The updated name appears on the next telemetry refresh.
+
 Codex session-setting changes require a loaded, idle session and explicit confirmation within
 30 seconds. The command and options are revalidated before sending; stale
 connections, pending approvals and changed options fail closed. A successful
@@ -1609,6 +1612,16 @@ the composer with a success notice; reopening fetches fresh options. Failed
 confirmations retain the draft and error context. These changes do not modify global defaults, and automatic
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
+
+**Remaining CLI command gaps** (compared with the official documented CLI list):
+
+| Area | Commands not implemented as Codexometer slash commands |
+| --- | --- |
+| Session lifecycle and conversation actions | `/new`, `/clear`, `/resume`, `/fork`, `/archive`, `/delete`, `/compact`, `/review`, `/init`, `/goal`, `/side`, `/btw`, `/approve` |
+| CLI navigation and display | `/agent`, `/subagents`, `/copy`, `/diff`, `/status`, `/usage`, `/raw`, `/title`, `/theme`, `/pets`, `/pet`, `/keymap`, `/vim`, `/app`, `/exit`, `/quit` |
+| Configuration and tools | `/ide`, `/plugins`, `/memories`, `/import`, `/feedback`, `/logout`, `/mention`, `/personality`, `/ps`, `/stop`, `/setup-default-sandbox`, `/sandbox-add-read-dir`, `/debug-config` |
+
+`/apps`, `/skills`, `/mcp`, `/hooks` and `/experimental` remain **browse-only** here; CLI invocation, installation, authentication, trust and toggle actions are not implemented. `/plan` changes mode but does not implement the CLI's optional prompt argument. `/fast` and other advertised tiers are session overrides, rather than persistent CLI defaults. `/statusline` configures Codexometer's own footer. Existing session navigation, copying and telemetry views provide some analogous actions without those slash names. Availability upstream varies by platform, version and enabled features; see the [official CLI command reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands).
 
 Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
 Use `//` to send a literal leading slash (for example `//tmp/file` sends
@@ -1823,6 +1836,8 @@ also show the same activity dots at the bottom left, independently for each
 session. Short boxes prioritise readable context and approval controls; the
 compact view omits the dots when fewer than three body rows fit. Sent-message
 acknowledgement animations remain confined to full detail.
+
+Full approval reviews use a separate **65,536-character** budget, so longer commands and justifications retain their complete text and decision buttons. Ordinary telemetry excerpts remain limited to 4,096 characters. Requests exceeding the approval budget still require Codex; the reason stays pinned below the scrolling Detail text. **Home/End** jump to the first/last Detail line. Approval controls stay fixed while the review scrolls.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

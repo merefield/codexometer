@@ -166,13 +166,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "missing-identity"
 		case !allowed:
 			c.ApprovalBlocked = "decisions"
-		case len([]rune(c.Text)) > sessionContextLimit:
+		case len([]rune(c.Text)) > approvalTextLimit:
 			c.ApprovalBlocked = "truncated"
-		case SanitizeSessionContext(c.Text) != c.Text || SanitizeSessionContext(command) != command || SanitizeSessionContext(p.CWD) != p.CWD:
+		case SanitizeApprovalText(c.Text) != c.Text || SanitizeApprovalText(command) != command || SanitizeApprovalText(p.CWD) != p.CWD:
 			c.ApprovalBlocked = "sanitised"
 		default:
 			c.ApprovalToken = rand.Text()
-			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeSessionContext(p.Reason), Command: command, Directory: p.CWD}
+			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeApprovalText(p.Reason), Command: command, Directory: p.CWD}
 		}
 	case "item/fileChange/requestApproval":
 		c.Kind, c.Text = SessionContextApproval, p.Reason
@@ -294,8 +294,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			// remain ineligible for approval, without retaining unbounded text.
 			bounded := func(s string) string {
 				r := []rune(s)
-				if len(r) > sessionContextLimit+1 {
-					return string(r[:sessionContextLimit+1])
+				if len(r) > approvalTextLimit+1 {
+					return string(r[:approvalTextLimit+1])
 				}
 				return s
 			}
@@ -317,7 +317,11 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	default:
 		return
 	}
-	c.Text = SanitizeSessionContext(c.Text)
+	if c.Kind == SessionContextApproval {
+		c.Text = SanitizeApprovalText(c.Text)
+	} else {
+		c.Text = SanitizeSessionContext(c.Text)
+	}
 	if c.Text == "" {
 		return
 	}

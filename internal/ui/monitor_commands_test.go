@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,5 +204,65 @@ func TestMonitorCommandsLateSuccessCannotClearAnotherSessionDraft(t *testing.T) 
 	m, cmd = approvalEvent(m, result)
 	if cmd != nil || m.monitorCommands.open || m.monitorPrompt.session != "root-two" || m.monitorPrompt.input.Value() != "/keep this other draft" || m.monitorPrompt.notice != "" {
 		t.Fatal("late success modified the newly selected session")
+	}
+}
+
+type renameTestClient struct {
+	*commandTestClient
+	path string
+}
+
+func (f *renameTestClient) SessionCommands(_ context.Context, _ string, path string) (codex.SessionCommandMenu, error) {
+	f.path = path
+	m := codex.SessionCommandMenu{Title: "/rename", Path: path, Revision: "rename-revision"}
+	if path == "rename" {
+		m.Input = true
+		m.Value = "Current name"
+	} else {
+		name, _ := url.PathUnescape(strings.TrimPrefix(path, "rename/"))
+		m.Choices = []codex.SessionCommandChoice{{ID: "rename-choice", Label: "Rename to " + name, Help: "Only the saved name changes.", Action: true}}
+	}
+	return m, nil
+}
+func TestMonitorRenameEditorReviewAndConfirmation(t *testing.T) {
+	m, base := commandTestModel(t)
+	f := &renameTestClient{commandTestClient: base}
+	m.fetcher = f
+	m.monitorPrompt.input.SetValue("unsent ordinary draft")
+	m, cmd, _ := m.openMonitorCommands("rename")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if !m.monitorCommands.menu.Input || !m.monitorCommands.input.Focused() || m.monitorCommands.input.Value() != "Current name" {
+		t.Fatal("rename editor missing or not focused")
+	}
+	m.monitorCommands.input.SetValue("quota / review")
+	// Letters used as global shortcuts belong to the name editor.
+	next, _ = m.Update(key('r'))
+	m = next.(Model)
+	if !strings.Contains(m.monitorCommands.input.Value(), "r") || !m.monitorCommands.open {
+		t.Fatal("name editor lost input")
+	}
+	m.monitorCommands.input.SetValue("quota / review")
+	m, cmd, _ = m.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil || !m.monitorCommands.busy || f.calls != 0 {
+		t.Fatal("review missing or rename sent before confirmation")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if f.path != "rename/"+url.PathEscape("quota / review") || !m.monitorCommands.detail || !strings.Contains(ansi.Strip(m.render()), "quota / review") {
+		t.Fatal("new name not reviewed", f.path)
+	}
+	m, cmd, _ = m.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("Enter bypassed rename confirmation")
+	}
+	m, cmd, _ = m.confirmMonitorCommand()
+	if cmd == nil {
+		t.Fatal("missing confirmed rename")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "unsent ordinary draft" || !strings.Contains(m.monitorPrompt.notice, "rename requested") {
+		t.Fatal("rename did not restore draft and notice")
 	}
 }

@@ -356,6 +356,10 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 		case "esc", "x":
 			m.stepBackMonitorContext()
 			return m, nil, true
+		case "home":
+			m.monitorContextScroll = 0
+		case "end":
+			m.scrollMonitorContext(m.monitorContextScrollLimit())
 		case "up":
 			m.scrollMonitorContext(-1)
 		case "down":

@@ -26,6 +26,8 @@
     path: string;
     revision: string;
     choices: Choice[];
+    input?: boolean;
+    value?: string;
   }
   let open = $state(false),
     busy = $state(false),
@@ -35,6 +37,7 @@
   let confirmation = $state(''),
     expires = $state(0),
     now = $state(Date.now());
+  let name = $state('');
   let request = 0;
   let selectedIndex = $state(0);
   let dismissedQuery = $state<string | null>(null);
@@ -154,6 +157,9 @@
             next: 'statusline',
           });
         menu = result;
+        name = result.value || '';
+        if (result.path.startsWith('rename/') && result.choices.length === 1)
+          void choose(result.choices[0]);
       }
     } catch {
       if (seq === request) {
@@ -273,13 +279,36 @@
       {/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       {#if busy}<p role="status">Loading / sending…</p>{/if}
-      {#if selected}
+      {#if menu?.input}
+        <form
+          onsubmit={(event) => {
+            event.preventDefault();
+            if (name.trim() && !busy && !unavailable)
+              void load('rename/' + encodeURIComponent(name.trim()));
+          }}
+        >
+          <label
+            >SESSION NAME <input
+              aria-label="Session name"
+              bind:value={name}
+              maxlength="512"
+              disabled={busy || unavailable}
+            /></label
+          >
+          <button type="submit" disabled={busy || unavailable || !name.trim()}
+            >REVIEW RENAME</button
+          >
+        </form>
+      {:else if selected}
         <h4>{selected.label}</h4>
         <pre>{selected.help || 'No additional help supplied by Codex.'}</pre>
         {#if selected.action}<p class="notice">
-            TARGET // {session}. Changes affect subsequent turns of this
-            session, not global defaults. Automatic quota thresholds may later
-            supersede model settings.
+            TARGET // {session}.
+            {#if menu?.path.startsWith('rename/')}Only this session's saved name
+              changes.
+            {:else}Changes affect subsequent turns of this session, not global
+              defaults. Automatic quota thresholds may later supersede model
+              settings.{/if}
           </p>
           <button
             disabled={busy || unavailable || !confirmation || now >= expires}

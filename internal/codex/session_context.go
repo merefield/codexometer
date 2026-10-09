@@ -69,9 +69,23 @@ type ApprovalCommandDetails struct {
 
 const sessionContextLimit = 4096
 
+// Approval reviews need the complete request, rather than a telemetry excerpt.
+// Keep a separate bounded budget; ordinary context retains its smaller limit.
+const approvalTextLimit = 64 * 1024
+
 // SanitizeSessionContext removes terminal escapes and control/bidi formatting.
 // It does not promise to redact secrets embedded in ordinary message text.
 func SanitizeSessionContext(text string) string {
+	return sanitizeContextText(text, sessionContextLimit)
+}
+
+// SanitizeApprovalText preserves long review text within the approval budget.
+// Callers must still reject a capability if sanitization changes its request.
+func SanitizeApprovalText(text string) string {
+	return sanitizeContextText(text, approvalTextLimit)
+}
+
+func sanitizeContextText(text string, limit int) string {
 	text = ansi.Strip(strings.ToValidUTF8(text, "�"))
 	text = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
@@ -84,8 +98,8 @@ func SanitizeSessionContext(text string) string {
 	}, text)
 	text = strings.ReplaceAll(text, "\t", "    ")
 	runes := []rune(strings.TrimSpace(text))
-	if len(runes) > sessionContextLimit {
-		return string(runes[:sessionContextLimit-1]) + "…"
+	if len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
 	}
 	return string(runes)
 }

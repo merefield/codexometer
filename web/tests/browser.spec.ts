@@ -1448,6 +1448,101 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toBeDisabled();
 });
 
+test('rename edits and reviews a name before a separate confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt');
+  const modes: string[] = [];
+  let reviewed = '';
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    const { mode, path } = body.command;
+    modes.push(mode);
+    let result: object;
+    if (mode === 'prepare') {
+      expect(path).toBe('rename/' + encodeURIComponent('quota / review 界'));
+      result = {
+        confirmation: 'rename-token',
+        expires: new Date(Date.now() + 30000).toISOString(),
+      };
+    } else if (mode === 'commit') {
+      expect(body.confirmation).toBe('rename-token');
+      result = { message: 'Session renamed.' };
+    } else if (path === '') {
+      result = {
+        title: '/ COMMANDS',
+        help: 'Commands',
+        path: '',
+        revision: 'r',
+        choices: [
+          {
+            id: 'rename',
+            label: '/rename',
+            help: 'Rename the session',
+            next: 'rename',
+          },
+        ],
+      };
+    } else if (path === 'rename') {
+      result = {
+        title: '/rename',
+        help: 'Enter a name, review and confirm.',
+        path,
+        revision: 'r',
+        input: true,
+        value: 'Current name',
+        choices: [],
+      };
+    } else {
+      reviewed = decodeURIComponent(path.slice('rename/'.length));
+      result = {
+        title: '/rename',
+        help: 'Only the saved name changes.',
+        path,
+        revision: 'r',
+        choices: [
+          {
+            id: 'name',
+            label: 'Rename to ' + reviewed,
+            help: 'New name: ' + reviewed,
+            action: true,
+          },
+        ],
+      };
+    }
+    await route.fulfill({ json: result });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/ren');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await panel.getByRole('button', { name: '/rename →', exact: true }).click();
+  const input = panel.getByRole('textbox', {
+    name: 'Session name',
+    exact: true,
+  });
+  await expect(input).toHaveValue('Current name');
+  await input.fill('quota / review 界');
+  await panel.getByRole('button', { name: 'REVIEW RENAME' }).click();
+  await expect(
+    panel.getByRole('heading', { name: 'Rename to quota / review 界' }),
+  ).toBeVisible();
+  expect(reviewed).toBe('quota / review 界');
+  expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
+  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toHaveCount(0);
+  expect(modes.filter((m) => m === 'commit')).toHaveLength(1);
+  expect(calls.filter((call) => call.action === 'prepare')).toHaveLength(0);
+});
+
 test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
   page,
   pairingURL,

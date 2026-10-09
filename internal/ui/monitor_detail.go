@@ -67,6 +67,10 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		return lines
 	}
 	c := s.preview
+	sanitize := codex.SanitizeSessionContext
+	if c.Kind == codex.SessionContextApproval {
+		sanitize = codex.SanitizeApprovalText
+	}
 	var lines []detailLine
 	appendText := func(text, kind, prefix string) {
 		for _, line := range strings.Split(ansi.Hardwrap(text, max(width-lipgloss.Width(prefix), 1), true), "\n") {
@@ -117,7 +121,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
 	} else if c.Kind == codex.SessionContextApproval && c.FileChanges != "" {
 		section(contextTitle(c))
-		appendText(codex.SanitizeSessionContext(c.Text), "body", "")
+		appendText(sanitize(c.Text), "body", "")
 		lines = append(lines, detailLine{})
 		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
@@ -125,25 +129,25 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		d := c.CommandDetails
 		if strings.TrimSpace(d.Justification) != "" {
 			section(i18n.Text("JUSTIFICATION"))
-			appendText(codex.SanitizeSessionContext(d.Justification), "body", "")
+			appendText(sanitize(d.Justification), "body", "")
 		}
 		section(i18n.Text("COMMAND"))
 		prefix := "│ "
 		if width < 3 {
 			prefix = ""
 		}
-		appendText(codex.SanitizeSessionContext(d.Command), "command", prefix)
+		appendText(sanitize(d.Command), "command", prefix)
 		section(i18n.Text("WORKING DIRECTORY"))
-		appendText(codex.SanitizeSessionContext(d.Directory), "metadata", "")
+		appendText(sanitize(d.Directory), "metadata", "")
 		for _, option := range c.ApprovalOptions {
 			if option.Detail != "" {
 				section(i18n.Text("PERSISTENT PERMISSION RULE"))
-				appendText(codex.SanitizeSessionContext(option.Detail), "warning", "")
+				appendText(sanitize(option.Detail), "warning", "")
 			}
 		}
 	} else if c.Text != "" {
 		section(contextTitle(c))
-		text := codex.SanitizeSessionContext(c.Text)
+		text := sanitize(c.Text)
 		// Legacy/unstructured requests remain verbatim. This cosmetic spacer
 		// does not claim to identify an authoritative command boundary.
 		if c.Kind == codex.SessionContextApproval {

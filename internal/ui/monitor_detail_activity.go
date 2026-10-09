@@ -115,6 +115,11 @@ func (m Model) layoutDetailControlsBase(width, height int) detailControlLayout {
 	if rows := m.monitorApprovalControlRows(width, height); rows > 0 {
 		return detailControlLayout{kind: "approval", rows: rows}
 	}
+	if s, ok := m.contextDetailSession(); ok && s.preview.Kind == codex.SessionContextApproval && !m.monitorApprovalHasOutcome() {
+		notice := i18n.Text("REPLY IN CODEX") + " // " + m.monitorApprovalBlockReason(s.preview)
+		rows := len(strings.Split(ansi.Hardwrap(notice, max(width-4, 1), true), "\n"))
+		return detailControlLayout{kind: "approval-blocked", rows: min(rows, max(min(height-5, 3), 1)), notice: notice}
+	}
 	if m.monitorContextDetail != "" && m.hasSchedule(m.monitorContextDetail) && len(m.monitorPromptOffer().Questions) == 0 && (m.scheduleUI.confirmID != "" || m.scheduleUI.notice != "") {
 		if width < 24 || height < 8 {
 			return detailControlLayout{kind: "notice", rows: 1, notice: i18n.Text("Ctrl+S: EDIT")}
@@ -154,6 +159,13 @@ func (layout detailControlLayout) renderBase(m Model, width, height int, colors 
 		return m.renderMonitorApprovalControls(width, height, colors)
 	case "prompt":
 		return m.renderMonitorPrompt(width, height, colors)
+	case "approval-blocked":
+		lines := strings.Split(ansi.Hardwrap(layout.notice, max(width-4, 1), true), "\n")
+		lines = lines[:min(len(lines), layout.rows)]
+		for i := range lines {
+			lines[i] = colors.label().Foreground(colors.warning).Render(ansi.Truncate(lines[i], max(width-4, 1), ""))
+		}
+		return strings.Join(lines, "\n")
 	case "notice":
 		return colors.label().Render(ansi.Truncate(layout.notice, max(width-4, 1), ""))
 	default:

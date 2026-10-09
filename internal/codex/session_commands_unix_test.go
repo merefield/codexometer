@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -104,5 +105,79 @@ func TestCommandMenuSingleLineLabelsFailClosed(t *testing.T) {
 		if !menu.Choices[2].Action || menu.Choices[2].Help != "Safe\nmultiline help" {
 			t.Fatal("safe action or multiline help was unnecessarily disabled")
 		}
+	}
+}
+
+func TestSessionRenameScopedAndConfirmed(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	ctx := context.Background()
+	f.names = map[string]string{"one": "Original", "two": "Other session"}
+	f.commandStatus = "active"
+	root, err := p.SessionCommands(ctx, "one", "")
+	found := false
+	for _, o := range root.Choices {
+		found = found || o.Next == "rename"
+	}
+	if err != nil || !found {
+		t.Fatal("rename missing from root", err)
+	}
+	input, err := p.SessionCommands(ctx, "one", "rename")
+	if err != nil || !input.Input || input.Value != "Original" {
+		t.Fatal("missing current-name editor", input, err)
+	}
+	name := "Review / quota + rendering 界"
+	m, err := p.SessionCommands(ctx, "one", "rename/"+url.PathEscape(name))
+	if err != nil || len(m.Choices) != 1 || !m.Choices[0].Action {
+		t.Fatal(m, err)
+	}
+	if len(f.nameWrites) != 0 {
+		t.Fatal("preparing rename sent a mutation")
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, "stale", m.Choices[0].ID); err == nil {
+		t.Fatal("stale rename accepted")
+	}
+	if err := p.ExecuteSessionCommand(ctx, "two", m.Path, m.Revision, m.Choices[0].ID); err == nil {
+		t.Fatal("cross-session rename accepted")
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	if len(f.nameWrites) != 1 || f.names["one"] != name || f.names["two"] != "Other session" || len(f.writes) != 0 {
+		t.Error("wrong rename scope", f.nameWrites)
+	}
+	f.mu.Unlock()
+	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
+		t.Fatal("changed name did not invalidate confirmation")
+	}
+}
+
+func TestSessionRenameRejectsUnsafeAndChangedNames(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	ctx := context.Background()
+	for _, path := range []string{"rename/", "rename/%zz", "rename/a/b", "rename/" + url.PathEscape("bad\nname"), "rename/" + url.PathEscape("bad\x1b[31mname"), "rename/" + strings.Repeat("x", 513)} {
+		if _, err := p.SessionCommands(ctx, "one", path); err == nil {
+			t.Fatalf("accepted unsafe name %q", path)
+		}
+	}
+	m, err := p.SessionCommands(ctx, "one", "/rename My session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.names = map[string]string{"one": "Renamed elsewhere"}
+	f.mu.Unlock()
+	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
+		t.Fatal("overwrote concurrent rename")
+	}
+	m, err = p.SessionCommands(ctx, "one", m.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.fail = "rename"
+	f.mu.Unlock()
+	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
+		t.Fatal("server rejection reported success")
 	}
 }
