@@ -889,7 +889,8 @@ choose one of these six views with its sub-tab or `v`:
    descriptions. Expiring credits appear first, non-expiring credits last.
    Scroll with Up/Down or Page Up/Page Down when necessary.
 
-Pace and Zone use terminal-cell backgrounds and sub-cell Braille lines. The
+Pace and Zone use terminal-cell backgrounds and densely plotted, continuous
+Braille strokes for traces, trends and the safety reference. The
 current dot is bright; the observed trace is pale for contrast against the dark
 background. Click **Trend** (`g`) to cycle **Window Start**, **Last 30 Minutes**,
 **Last Hour**, **Last 24 Hours**, or **Off**; recent intervals are skipped until
@@ -897,7 +898,7 @@ at least one quota window has enough uninterrupted observations. A window
 without that coverage reports `TREND UNAVAILABLE` rather than using another
 interval. **Window Start** is the default and uses the current dot and origin,
 so it needs no earlier observations. Click **Trace** (`h`) to hide/show the
-path; it is on by default. The dotted trend starts at the selected interval's
+path; it is on by default. The continuous trend starts at the selected interval's
 beginning, passes through the dot and continues to the plot boundary. It is
 green if projected consumption at reset is at most 100%, dark red otherwise.
 These are coarse linear estimates, not OpenAI forecasts. History is bounded,

@@ -66,6 +66,49 @@ func TestQuotaPlotAxesAndProjection(t *testing.T) {
 	}
 }
 
+func TestQuotaLinesUseDenseBrailleWithoutDashGaps(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	w := graphWindow(now, 75)
+	const width, height = 60, 15
+	for _, pace := range []bool{false, true} {
+		out := ansi.Strip(renderQuotaPlot(width, height, w, now, pace, quotaPlotOptions{hideTrace: true}, paletteFor(themeHacker)))
+		if strings.ContainsAny(out, "╭╮╰╯↗↘▸") {
+			t.Fatal("dense Braille graph contains box-drawing elbows or arrows")
+		}
+		trend, ok := quotagraph.Project(quotagraph.WindowStart, w, nil, now)
+		if !ok {
+			t.Fatal("missing test projection")
+		}
+		segment, ok := trend.Segment(pace)
+		if !ok {
+			t.Fatal("missing test segment")
+		}
+		canvas := quotaCanvas{width: width - 6, height: height - 4, pace: pace, cells: make([]quotaPlotCell, (width-6)*(height-4))}
+		guideEnd := 100.0
+		if pace {
+			guideEnd = 0
+		}
+		canvas.line(0, 0, 100, guideEnd, nil, 1, 0)
+		canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, nil, 3, 0)
+		elapsed, _ := quotagraph.Elapsed(w, now)
+		y := float64(w.UsedPercent)
+		if pace {
+			y -= elapsed
+		}
+		canvas.mark(elapsed, y, '●', nil, 4)
+		lines := strings.Split(out, "\n")
+		for row := 0; row < canvas.height; row++ {
+			runes := []rune(lines[row+1])
+			for col := 0; col < canvas.width; col++ {
+				cell := canvas.cells[row*canvas.width+col]
+				if cell.priority > 0 && cell.priority < 4 && runes[col+5] != rune(0x2800+cell.mask) {
+					t.Fatalf("pace=%v line priority=%d has a gap at %d,%d", pace, cell.priority, col, row)
+				}
+			}
+		}
+	}
+}
+
 func TestQuotaCanvasPreservesDotAndDirection(t *testing.T) {
 	c := quotaCanvas{width: 20, height: 10, pace: true, cells: make([]quotaPlotCell, 200)}
 	_, above := c.position(50, 25)

@@ -208,7 +208,7 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 		return y
 	}
 	guide := lipgloss.Color("#708276")
-	canvas.line(0, 0, 100, value(100, 100), guide, 1, 4)
+	canvas.line(0, 0, 100, value(100, 100), guide, 1, 0)
 	if !options.hideTrace {
 		for i, point := range options.points {
 			if i > 0 && !point.Break {
@@ -223,7 +223,7 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 	}
 	if projected {
 		if segment, ok := trend.Segment(pace); ok {
-			canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, trendInk, 3, 3)
+			canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, trendInk, 3, 0)
 		}
 	}
 	canvas.mark(elapsed, value(elapsed, used), '●', lipgloss.Color("#FFFFFF"), 4)
