@@ -2509,10 +2509,10 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
     .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
     .click();
   const consumption = page.getByRole('radio', {
-    name: 'CONSUMPTION',
+    name: 'Consumption',
     exact: true,
   });
-  const pace = page.getByRole('radio', { name: 'PACE', exact: true });
+  const pace = page.getByRole('radio', { name: 'Pace', exact: true });
   const line = page.locator('.trend-line');
   const dot = page.locator('.position-dot');
   const safe = page.locator('.pace-line');

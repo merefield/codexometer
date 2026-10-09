@@ -156,14 +156,15 @@
   });
 </script>
 
-<div class="zone-modes" role="group" aria-label="Zone graph presentation">
+<div class="zone-modes" role="group" aria-label="Style">
+  <span class="muted">Style:</span>
   <label
     ><input
       type="radio"
       name={gradient + '-mode'}
       value="consumption"
       bind:group={graphMode}
-    /> CONSUMPTION</label
+    /> Consumption</label
   >
   <label
     ><input
@@ -171,7 +172,7 @@
       name={gradient + '-mode'}
       value="pace"
       bind:group={graphMode}
-    /> PACE</label
+    /> Pace</label
   >
 </div>
 <div class="zone-canvas" bind:clientWidth={width} bind:clientHeight={height}>
@@ -382,24 +383,23 @@
 <style>
   .zone-modes {
     display: flex;
-    justify-content: center;
-    gap: 8px;
+    align-self: center;
+    align-items: center;
+    gap: 12px;
     flex-shrink: 0;
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 12px;
   }
   .zone-modes label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     cursor: pointer;
-    border: 1px solid var(--edge);
-    border-radius: 4px;
-    padding: 5px 8px;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink);
   }
-  .zone-modes label:has(input:checked),
   .zone-modes label:hover {
-    border-color: var(--accent);
     color: var(--accent);
   }
   .zone-modes input {
