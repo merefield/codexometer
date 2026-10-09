@@ -5,14 +5,10 @@
     used,
     elapsed,
     trail = [],
-    duration,
-    reset,
   }: {
     used: number;
     elapsed: number;
     trail?: Meter['trail'];
-    duration: number | null;
-    reset: number | null;
   } = $props();
   type TrailPoint = NonNullable<Meter['trail']>[number];
   type TrendMode = 'off' | 'halfHour' | 'hour' | 'day' | 'window';
@@ -59,11 +55,6 @@
       Date.parse(continuous.at(-1)!.at) - Date.parse(continuous[0].at),
     );
   });
-  let windowObserved = $derived.by(() => {
-    if (!duration || !reset || continuous.length < 2) return false;
-    const cycleStart = reset * 1000 - duration * 60_000;
-    return Math.abs(Date.parse(continuous[0].at) - cycleStart) <= 120_000;
-  });
   function observedPeriod(span: number): boolean {
     if (observedMilliseconds < span || continuous.length < 2) return false;
     const cutoff = Date.parse(continuous.at(-1)!.at) - span;
@@ -76,14 +67,13 @@
     halfHour: observedPeriod(30 * 60_000),
     hour: observedPeriod(60 * 60_000),
     day: observedPeriod(24 * 60 * 60_000),
-    window: windowObserved,
+    window: Number.isFinite(elapsed) && elapsed > 0 && Number.isFinite(used),
   });
   $effect(() => {
     if (!availability[trendMode]) trendMode = 'off';
   });
   function trendPoints(mode: TrendMode): TrailPoint[] {
     if (mode === 'off' || !availability[mode]) return [];
-    if (mode === 'window') return continuous;
     const span =
       mode === 'halfHour'
         ? 30 * 60_000
@@ -112,10 +102,13 @@
     return variance > 0 ? Math.max(0, covariance / variance) : null;
   }
   let trend = $derived.by(() => {
-    const slope = regressionSlope(trendPoints(trendMode));
+    const slope =
+      trendMode === 'window' && availability.window
+        ? used / elapsed
+        : regressionSlope(trendPoints(trendMode));
     if (slope === null) return null;
     let x1 = 0;
-    let y1 = used - slope * elapsed;
+    let y1 = trendMode === 'window' ? 0 : used - slope * elapsed;
     let x2 = 100;
     let y2 = used + slope * (100 - elapsed);
     if (slope > 0 && y1 < 0) {
@@ -229,8 +222,11 @@
         d={trend.path}
         marker-mid={`url(#${gradient}-trend-arrow)`}
         ><title
-          >Recent consumption trajectory projects {trend.projected.toFixed(1)}%
-          at reset if continued</title
+          >{trendMode === 'window'
+            ? 'Window-average pace'
+            : 'Recent consumption trajectory'} projects {trend.projected.toFixed(
+            1,
+          )}% at reset if continued</title
         ></path
       >
     {/if}
@@ -285,7 +281,7 @@
         <option value="window" disabled={!availability.window}
           >FROM WINDOW START{availability.window
             ? ''
-            : ' — NOT FULLY OBSERVED'}</option
+            : ' — NO TIME ELAPSED'}</option
         >
       </select></label
     >

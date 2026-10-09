@@ -2376,7 +2376,7 @@ test('consumption zone offers trace control and observed trend periods', async (
   await expect(trend.locator('option[value="day"]')).not.toHaveAttribute(
     'disabled',
   );
-  await expect(trend.locator('option[value="window"]')).toHaveAttribute(
+  await expect(trend.locator('option[value="window"]')).not.toHaveAttribute(
     'disabled',
   );
   await trace.uncheck();
@@ -2402,6 +2402,53 @@ test('consumption zone offers trace control and observed trend periods', async (
     path: 'test-results/consumption-zone-trend.png',
     fullPage: true,
   });
+
+  // Window-average pace uses the known current dot, even with no history.
+  snapshot.meters[0].trail = [];
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('off');
+  await expect(trend.locator('option[value="halfHour"]')).toHaveAttribute(
+    'disabled',
+  );
+  await trend.selectOption('window');
+  const line = page.locator('.trend-line');
+  await expect(line).toBeVisible();
+  const axes = await page.locator('.axes').getAttribute('d');
+  const bottom = /V([\d.]+)/.exec(axes!)![1];
+  expect(await line.getAttribute('d')).toMatch(new RegExp(`^M48 ${bottom} L`));
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 70.0% PROJECTED AT RESET',
+  );
+
+  // No consumption yields a horizontal line; zero elapsed time has no rate.
+  snapshot.meters[0].used = 0;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 0.0% PROJECTED AT RESET',
+  );
+  expect(await line.getAttribute('d')).not.toMatch(/NaN|Infinity/);
+  snapshot.meters[0].reset = end + 7 * 24 * 60 * 60;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('off');
+  await expect(trend.locator('option[value="window"]')).toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="window"]')).toContainText(
+    'NO TIME ELAPSED',
+  );
+  await expect(line).toHaveCount(0);
 });
 
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
