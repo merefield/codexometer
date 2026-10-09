@@ -36,9 +36,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline includes Usage summary metrics and report controls,
-	// plus main's current pricing footer; every theme, view and size is covered.
-	const want = "d76336a3d8c675014741f20d9205b5d19521a107a738b95a8f699b042bdd4592"
+	// Baseline includes the renamed Pace tab, new Zone view and graph controls;
+	// every theme, view and size remains covered.
+	const want = "dfadcb7e2554e56fb4002a7dc2b72d1bf03b561e1a481d499a80a638f9b346e3"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

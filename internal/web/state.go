@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
 	"github.com/merefield/codexometer/internal/version"
 )
@@ -69,37 +70,22 @@ type meterIdentity struct {
 	kind    codex.MeterKind
 }
 
-type zonePoint struct {
-	At      time.Time `json:"at"`
-	Elapsed float64   `json:"elapsed"`
-	Used    int       `json:"used"`
-	Break   bool      `json:"break"`
-}
+type zonePoint = quotagraph.Point
 
 // Bound memory and snapshot size while retaining the original observation.
-const maxZonePoints = 720
+// At the default one-minute quota cadence this also preserves a full day for
+// the optional Consumption Zone trend.
+const maxZonePoints = quotagraph.MaxPoints
 
 func observeZone(m meter, previous []meter, now time.Time, gap bool) []zonePoint {
-	if m.Duration == nil || *m.Duration <= 0 || m.Reset == nil || *m.Reset <= 0 {
-		return nil
-	}
-	x := max(0, min(100, 100*(1-(float64(*m.Reset)-float64(now.Unix()))/(float64(*m.Duration)*60))))
-	var points []zonePoint
+	window := codex.Window{UsedPercent: m.Used, WindowDurationMins: m.Duration, ResetsAt: m.Reset}
 	for _, old := range previous {
-		if old.identity == m.identity && old.Duration != nil && old.Reset != nil && *old.Duration == *m.Duration && *old.Reset == *m.Reset && len(old.Trail) > 0 {
-			last := old.Trail[len(old.Trail)-1]
-			if now.After(last.At) && m.Used >= last.Used && x >= last.Elapsed {
-				points = append(points, old.Trail...)
-			}
-			break
+		if old.identity == m.identity {
+			before := codex.Window{UsedPercent: old.Used, WindowDurationMins: old.Duration, ResetsAt: old.Reset}
+			return quotagraph.Record(window, before, old.Trail, now, gap)
 		}
 	}
-	points = append(points, zonePoint{At: now, Elapsed: x, Used: m.Used, Break: gap})
-	if len(points) > maxZonePoints {
-		points = append(points[:1], points[len(points)-(maxZonePoints-1):]...)
-		points[1].Break = true
-	}
-	return points
+	return quotagraph.Record(window, codex.Window{}, nil, now, gap)
 }
 
 type credit struct {

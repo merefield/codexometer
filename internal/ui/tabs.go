@@ -92,10 +92,10 @@ func mainTabLayout(width int, showMonitorLight bool) ([]mainTab, string) {
 func quotaViewTabLayout(width int, thresholds ...bool) ([]viewTab, string) {
 	order := append([]meterViewID(nil), quotaViewOrder[:]...)
 	tiers := [][]string{
-		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ CONSUMPTION PACE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮"), i18n.Text("╭ RESETS ╮")},
-		{"╭BAR╮", "╭PACE╮", "╭PIE╮", "╭FUEL╮", "╭RST╮"},
-		{"[B]", "[C]", "[P]", "[F]", "[R]"},
-		{"B", "C", "P", "F", "R"},
+		{i18n.Text("╭ BARS ╮"), i18n.Text("╭ PACE ╮"), i18n.Text("╭ ZONE ╮"), i18n.Text("╭ PIE ╮"), i18n.Text("╭ FUEL TANK ╮"), i18n.Text("╭ RESETS ╮")},
+		{"╭BAR╮", "╭PACE╮", "╭ZONE╮", "╭PIE╮", "╭FUEL╮", "╭RST╮"},
+		{"[B]", "[C]", "[Z]", "[P]", "[F]", "[R]"},
+		{"B", "C", "Z", "P", "F", "R"},
 	}
 	if len(thresholds) > 0 && thresholds[0] {
 		order = append(order, viewThresholds)

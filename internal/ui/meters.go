@@ -16,14 +16,14 @@ import (
 
 func usesMeterGrid(view meterViewID) bool {
 	switch view {
-	case viewBars, viewPie, viewConsumptionPace, viewFuel:
+	case viewBars, viewPie, viewPace, viewZone, viewFuel:
 		return true
 	default:
 		return false
 	}
 }
 
-func renderMeterGrid(width, height int, meters []codex.Meter, view meterViewID, colors palette) string {
+func renderMeterGrid(width, height int, meters []codex.Meter, view meterViewID, colors palette, graphs ...quotaPlotOptions) string {
 	if len(meters) == 0 {
 		return ""
 	}
@@ -51,7 +51,11 @@ func renderMeterGrid(width, height int, meters []codex.Meter, view meterViewID, 
 				pieces = append(pieces, strings.Repeat(" ", columnGap))
 			}
 			if meterIndex < len(meters) {
-				pieces = append(pieces, renderMeterArea(columnWidths[column], rowHeight, meters[meterIndex], view, colors))
+				var options []quotaPlotOptions
+				if meterIndex < len(graphs) {
+					options = graphs[meterIndex : meterIndex+1]
+				}
+				pieces = append(pieces, renderMeterArea(columnWidths[column], rowHeight, meters[meterIndex], view, colors, options...))
 			} else {
 				pieces = append(pieces, strings.Repeat(" ", columnWidths[column]))
 			}
@@ -66,8 +70,11 @@ func renderMeterGrid(width, height int, meters []codex.Meter, view meterViewID, 
 }
 
 func meterGridColumns(width, height, meterCount int, view meterViewID) int {
-	if view == viewBars || view == viewConsumptionPace || view == viewFuel {
+	if view == viewBars || view == viewFuel {
 		return 1
+	}
+	if isQuotaGraph(view) {
+		return max(1, min(meterCount, width/36))
 	}
 	minimumColumns := 1
 	maximumColumns := meterCount
@@ -123,7 +130,7 @@ func renderMeter(width int, meter codex.Meter, view meterViewID, colors palette)
 	return renderMeterArea(width, 0, meter, view, colors)
 }
 
-func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, colors palette) string {
+func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, colors palette, graphs ...quotaPlotOptions) string {
 	used := min(max(meter.Window.UsedPercent, 0), 100)
 	free := 100 - used
 	color := meterColor(used, colors)
@@ -162,18 +169,32 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	bodyHeight := 0
 	visualHeight := 0
 	detailLines := meterDetailLines(meter.Details)
+	if isQuotaGraph(view) && height > 0 {
+		// Preserve the plot before optional API-equivalent telemetry.
+		detailLines = detailLines[:min(len(detailLines), max(height-10, 0))]
+	}
 	if height > 0 {
 		bodyHeight = max(height-2, 1)
 		chromeHeight := 3 + len(detailLines)
+		if isQuotaGraph(view) {
+			chromeHeight = 2 + len(detailLines)
+		}
 		visualHeight = max(bodyHeight-chromeHeight, 1)
 	}
 	now := time.Now()
 	visual := renderVisualizationSized(innerWidth, visualHeight, used, view, color, colors)
-	if view == viewConsumptionPace {
-		visual = renderConsumptionPaceMeterSized(innerWidth, visualHeight, meter.Window, now, colors)
+	if isQuotaGraph(view) {
+		options := quotaPlotOptions{}
+		if len(graphs) > 0 {
+			options = graphs[0]
+		}
+		visual = renderQuotaPlot(innerWidth, visualHeight, meter.Window, now, view == viewPace, options, colors)
 	}
 	gaugeWidth := min(max(lipgloss.Width(visual), 1), innerWidth)
 	resetGauge := renderResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
+	if isQuotaGraph(view) {
+		resetGauge = colors.dimmed().Render(reset)
+	}
 	if view == viewFuel {
 		gaugeWidth = max(innerWidth-6, 1)
 		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
@@ -274,18 +295,6 @@ func resetProgress(window codex.Window, now time.Time) (int, bool) {
 	return min(max(progress, 0), 100), true
 }
 
-// consumptionPace compares how much of the window has elapsed with how much
-// quota has been consumed. Positive headroom means consumption is behind time;
-// negative headroom means quota is being consumed too quickly.
-func consumptionPace(window codex.Window, now time.Time) (int, bool) {
-	elapsed, ok := resetProgress(window, now)
-	if !ok {
-		return 0, false
-	}
-	used := min(max(window.UsedPercent, 0), 100)
-	return min(max(elapsed-used, -100), 100), true
-}
-
 func meterColor(used int, colors palette) imagecolor.Color {
 	if used >= 90 {
 		return colors.danger
@@ -304,8 +313,10 @@ func renderVisualizationSized(width, height, used int, view meterViewID, color i
 	switch view {
 	case viewPie:
 		return renderPieSized(width, height, used, color, colors)
-	case viewConsumptionPace:
-		return renderConsumptionPaceSized(width, height, 0, false, colors)
+	case viewPace:
+		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), true, quotaPlotOptions{}, colors)
+	case viewZone:
+		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), false, quotaPlotOptions{}, colors)
 	case viewFuel:
 		return renderFuelTankSized(width, height, used, color, colors)
 	case viewBars:
@@ -431,234 +442,6 @@ func radialCanvasSize(width, height, legendWidth int) (int, int) {
 	cellWidth := max(min(availableWidth, height*2), 1)
 	cellHeight := max(min(height, (availableWidth+1)/2), 1)
 	return cellWidth, cellHeight
-}
-
-func renderConsumptionPaceSized(width, height, pace int, available bool, colors palette) string {
-	return renderConsumptionPaceWithProjectionSized(width, height, pace, available, "", colors)
-}
-
-func renderConsumptionPaceMeterSized(width, height int, window codex.Window, now time.Time, colors palette) string {
-	pace, available := consumptionPace(window, now)
-	projection := formatConsumptionProjection(consumptionProjectionFor(window, now))
-	return renderConsumptionPaceWithProjectionSized(width, height, pace, available, projection, colors)
-}
-
-func renderConsumptionPaceWithProjectionSized(width, height, pace int, available bool, projection string, colors palette) string {
-	width = max(width, 1)
-	pace = min(max(pace, -100), 100)
-	center := (width - 1) / 2
-	marker := center
-	if available && width > 1 {
-		marker = int(math.Round(float64(pace+100) * float64(width-1) / 200))
-	}
-
-	markerColor := colors.accent
-	if pace > 0 {
-		markerColor = colors.primary
-	} else if pace < 0 {
-		markerColor = colors.danger
-	}
-	axis := paceAxis(width, center, marker, pace, available, markerColor, colors)
-
-	status := i18n.Text("PACE DATA UNAVAILABLE")
-	if available {
-		switch {
-		case pace > 0:
-			status = i18n.Format("HEADROOM %+d POINTS // UNDER PACE", pace)
-		case pace < 0:
-			status = i18n.Format("DEFICIT %+d POINTS // OVER PACE", pace)
-		default:
-			status = i18n.Text("BALANCED +0 POINTS // ON PACE")
-		}
-	}
-	status = lipgloss.NewStyle().Bold(true).Foreground(markerColor).Render(ansi.Truncate(status, width, ""))
-	caption := colors.dimmed().Render(ansi.Truncate(i18n.Text("CONSUMPTION PACE // TIME - USAGE"), width, ""))
-	labels := colors.dimmed().Render(paceScaleLabels(width))
-
-	lines := []string{caption, labels, axis, status}
-	if projection != "" {
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(projection, width, "")))
-	}
-	if height <= 0 {
-		height = len(lines)
-	}
-	switch height {
-	case 1:
-		lines = lines[2:3]
-	case 2:
-		lines = lines[2:4]
-	case 3:
-		if projection != "" {
-			lines = lines[2:]
-		} else {
-			lines = lines[1:]
-		}
-	case 4:
-		if projection != "" {
-			lines = lines[1:]
-		}
-	}
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
-}
-
-type consumptionProjectionKind int
-
-const (
-	consumptionProjectionUnavailable consumptionProjectionKind = iota
-	consumptionProjectionNoBurn
-	consumptionProjectionSafe
-	consumptionProjectionEarly
-	consumptionProjectionExhausted
-)
-
-type consumptionProjection struct {
-	kind               consumptionProjectionKind
-	timeToExhaustion   time.Duration
-	earlyBy            time.Duration
-	projectedRemaining int
-}
-
-func consumptionProjectionFor(window codex.Window, now time.Time) consumptionProjection {
-	if window.WindowDurationMins == nil || window.ResetsAt == nil || *window.WindowDurationMins <= 0 {
-		return consumptionProjection{kind: consumptionProjectionUnavailable}
-	}
-	duration := time.Duration(*window.WindowDurationMins) * time.Minute
-	resetAt := time.Unix(*window.ResetsAt, 0)
-	elapsed := now.Sub(resetAt.Add(-duration))
-	if elapsed <= 0 || elapsed >= duration {
-		return consumptionProjection{kind: consumptionProjectionUnavailable}
-	}
-	used := min(max(window.UsedPercent, 0), 100)
-	if used == 0 {
-		return consumptionProjection{kind: consumptionProjectionNoBurn}
-	}
-	if used >= 100 {
-		return consumptionProjection{kind: consumptionProjectionExhausted}
-	}
-	timeToExhaustion := time.Duration(float64(elapsed) * float64(100-used) / float64(used))
-	exhaustsAt := now.Add(timeToExhaustion)
-	if !exhaustsAt.Before(resetAt) {
-		projectedUsed := float64(used) * float64(duration) / float64(elapsed)
-		projectedRemaining := int(math.Round(100 - projectedUsed))
-		return consumptionProjection{
-			kind:               consumptionProjectionSafe,
-			timeToExhaustion:   timeToExhaustion,
-			projectedRemaining: min(max(projectedRemaining, 0), 100),
-		}
-	}
-	return consumptionProjection{
-		kind:             consumptionProjectionEarly,
-		timeToExhaustion: timeToExhaustion,
-		earlyBy:          resetAt.Sub(exhaustsAt),
-	}
-}
-
-func formatConsumptionProjection(projection consumptionProjection) string {
-	switch projection.kind {
-	case consumptionProjectionNoBurn:
-		return "LINEAR PROJECTION // NO BURN YET"
-	case consumptionProjectionSafe:
-		return i18n.Format("LINEAR PROJECTION // SAFE THROUGH RESET // ~%d%% LEFT", projection.projectedRemaining)
-	case consumptionProjectionEarly:
-		return i18n.Format("LINEAR PROJECTION // LIMIT IN ~%s // %s EARLY",
-			projectionDuration(projection.timeToExhaustion), projectionDuration(projection.earlyBy))
-	case consumptionProjectionExhausted:
-		return "LINEAR PROJECTION // LIMIT REACHED"
-	default:
-		return ""
-	}
-}
-
-func projectionDuration(duration time.Duration) string {
-	if duration < time.Minute {
-		return "<1M"
-	}
-	minutes := int(math.Round(duration.Minutes()))
-	days := minutes / (24 * 60)
-	hours := minutes / 60 % 24
-	remainingMinutes := minutes % 60
-	switch {
-	case days > 0 && hours > 0:
-		return fmt.Sprintf("%dD %dH", days, hours)
-	case days > 0:
-		return fmt.Sprintf("%dD", days)
-	case hours > 0 && remainingMinutes > 0:
-		return fmt.Sprintf("%dH %dM", hours, remainingMinutes)
-	case hours > 0:
-		return fmt.Sprintf("%dH", hours)
-	default:
-		return fmt.Sprintf("%dM", remainingMinutes)
-	}
-}
-
-func paceAxis(width, center, marker, pace int, available bool, markerColor imagecolor.Color, colors palette) string {
-	if width < 3 {
-		value := "?"
-		color := colors.warning
-		if available {
-			value = "▲"
-			color = markerColor
-		}
-		return lipgloss.PlaceHorizontal(width, lipgloss.Center, lipgloss.NewStyle().Bold(true).Foreground(color).Render(value))
-	}
-
-	carriageStart := min(max(marker-1, 0), width-3)
-	carriageEnd := carriageStart + 2
-	carriage := "[▲]"
-	if !available {
-		carriage = "[?]"
-		markerColor = colors.warning
-	}
-	carriageRunes := []rune(carriage)
-	carriageStyle := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(markerColor)
-	trailStyle := lipgloss.NewStyle().Foreground(markerColor)
-	dimmed := colors.dimmed()
-
-	var axis strings.Builder
-	for column := 0; column < width; column++ {
-		if column >= carriageStart && column <= carriageEnd {
-			axis.WriteString(carriageStyle.Render(string(carriageRunes[column-carriageStart])))
-			continue
-		}
-		r := '─'
-		switch column {
-		case 0:
-			r = '├'
-		case center:
-			r = '┼'
-		case width - 1:
-			r = '┤'
-		}
-		inTrail := available && ((pace > 0 && column > center && column < carriageStart) ||
-			(pace < 0 && column < center && column > carriageEnd))
-		if inTrail {
-			axis.WriteString(trailStyle.Render("━"))
-			continue
-		}
-		axis.WriteString(dimmed.Render(string(r)))
-	}
-	return axis.String()
-}
-
-func paceScaleLabels(width int) string {
-	if width < 11 {
-		return ansi.Truncate(lipgloss.PlaceHorizontal(width, lipgloss.Center, "-  0  +"), width, "")
-	}
-	labels := make([]rune, width)
-	for index := range labels {
-		labels[index] = ' '
-	}
-	writeAt := func(offset int, value string) {
-		for index, r := range []rune(value) {
-			if offset+index >= 0 && offset+index < len(labels) {
-				labels[offset+index] = r
-			}
-		}
-	}
-	writeAt(0, "-100")
-	writeAt((width-1)/2, "0")
-	writeAt(width-4, "+100")
-	return string(labels)
 }
 
 func verticallyCenterLines(lines []string, height int) []string {
