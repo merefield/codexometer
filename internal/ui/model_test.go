@@ -271,7 +271,7 @@ func TestFooterButtonsSupportHoverAndMouseClicks(t *testing.T) {
 
 	updated, command = model.Update(footerMouseMessage(t, model, footerButtonView, true))
 	model = updated.(Model)
-	if command == nil || model.meterView != viewConsumptionPace || model.flashedButton != footerButtonView {
+	if command == nil || model.meterView != viewPace || model.flashedButton != footerButtonView {
 		t.Fatalf("view click selected view=%d flash=%d", model.meterView, model.flashedButton)
 	}
 

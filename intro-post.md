@@ -24,7 +24,7 @@ The interface runs locally in a terminal, with clickable and hover-highlighted c
 
 The interface has four main tabs:
 
-- **Quota** — switch between Bars, Consumption Pace, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal or an early-exhaustion projection. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
+- **Quota** — switch between Bars, Pace, Zone, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal. Zone and Pace graphs in both terminal and browser trace observed history and project consumption trends, showing either total consumption or distance from safety. The terminal uses Braille lines and dark colour bands; the browser uses smoother SVG with directional arrows. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
 - **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The wider **SESSION TOTALS** readout keeps a clickable Reset beside it. Page through sessions and dismiss finished rows with `[×]` without closing them: fresh activity brings them back.
 - **Usage** — explore OpenAI account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. New **Breakdown** and **Windows** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. History is fetched directly from OpenAI on each run, with no local usage ledger. Unavailable data and approximate periods are labelled rather than guessed.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
@@ -119,9 +119,14 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 
 Prefer a browser window? `codexometer --web` now offers an **experimental,
 read-only by default** Quota, Sessions and Usage dashboard with the same retro spirit:
-responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
-now traces the observed quota path, with a marked starting point and gaps for
-failed observations. Sessions offers graph-only, split, wide and full-page
+responsive gauges, live activity graphs and usage heatmaps. Zone
+traces the observed quota path, with a marked starting point and gaps for
+failed observations. The separate Pace view shows distance from the safe line,
+replacing the former horizontal gauge. Both graphs offer the same
+trace and trend controls. Arrowed trends use the
+whole-window average by default or an observed recent period; green means
+projected usage stays within quota at reset, dark red means it exceeds it.
+Sessions offers graph-only, split, wide and full-page
 detail, with a compact totals strip for observed tokens, listed sessions and
 separate working/approval/input/inferred-check counts. Linked-agent tokens are
 already included, and stale observations are labelled. Select sessions with ↑/↓,
@@ -253,7 +258,7 @@ Remove-Item $installer
 
 The execution-policy override applies only to the installer child process, leaving your current shell's policy and persistent machine/user settings unchanged. `-NoProfile` avoids custom profiles; `-UseBasicParsing` avoids Windows PowerShell 5.1's web-content parsing and associated security prompt. Organisational Group Policy, application-control rules and antivirus protections still apply. Inspect the downloaded script before running it if required by your security policy.
 
-Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. New Go 1.27-based macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.1 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
+Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. New Go 1.27-based macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.2 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
 
 Full installation, authentication, privacy, monitoring, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
 

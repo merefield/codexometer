@@ -230,6 +230,7 @@ a {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  container-type: inline-size;
 }
 .quota-card > :not(.meter-graphic) {
   flex-shrink: 0;
@@ -252,16 +253,6 @@ a {
 .quota-card .timeline {
   flex: 1;
   min-height: 8px;
-}
-.quota-card .pace {
-  flex: 1;
-  height: auto;
-  min-height: 20px;
-  margin: 20px 14px 8px;
-}
-.quota-card .readout {
-  margin: 6px 0;
-  font-size: clamp(18px, 2vw, 28px);
 }
 .quota-grid.zone {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
@@ -310,25 +301,6 @@ a {
 }
 .pie-fill {
   fill: var(--accent);
-}
-.pace {
-  height: 28px;
-  margin: 28px 14px 15px;
-  position: relative;
-  background: linear-gradient(90deg, #6d3838, var(--edge) 50%, #376348);
-}
-.pace-mid {
-  position: absolute;
-  left: 50%;
-  border-left: 2px solid var(--ink);
-  height: 100%;
-}
-.pace-marker {
-  position: absolute;
-  transform: translateX(-50%);
-  top: -16px;
-  color: var(--accent);
-  font-size: 27px;
 }
 .readout {
   overflow-wrap: anywhere;

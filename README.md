@@ -252,7 +252,7 @@ actually returns.
 - The `codex` CLI installed and available on `PATH`.
 - A current ChatGPT login in Codex.
 - A modern terminal with ANSI color and Unicode support.
-- On macOS, version 13 (Ventura) or later for builds using Go 1.27.1.
+- On macOS, version 13 (Ventura) or later for builds using Go 1.27.
   The v0.19.0 release was built with Go 1.26.6; this newer minimum applies
   to subsequent Go 1.27-based builds.
 
@@ -587,7 +587,8 @@ codexometer --codex /path/to/codex
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle views within Quota or Usage |
 | `s` | Reset the Sessions baseline, or open Benchmark Scope |
-| `h` | Reset all Sessions rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `g` | Cycle available trend periods in Quota → Pace or Zone |
+| `h` | Toggle the trace in Quota → Pace or Zone; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
@@ -609,7 +610,7 @@ codexometer --codex /path/to/codex
 
 The responsive top rail below the account status selects Quota, Sessions, Usage, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
-Consumption Pace, Pie, Fuel Tank, and Resets; select these with the mouse or cycle them
+Pace, Zone, Pie, Fuel Tank, and Resets; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
 and return. Both rails condense automatically as the terminal narrows.
 The footer presents the remaining actions as clickable buttons, including View
@@ -869,23 +870,45 @@ The default remains the original green hacker-terminal presentation.
 ## Views and quota presentations
 
 The top-level tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**. Within Quota,
-choose one of these five views with its sub-tab or `v`:
+choose one of these six views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Consumption Pace** — a signed horizontal scale comparing elapsed window
-   time with quota consumed. Positive headroom means consumption is behind
-   elapsed time; a negative deficit means quota is being used too quickly. A
-   clearly labelled linear projection reports `SAFE THROUGH RESET` or estimates
-   how long remains until exhaustion and how early that is relative to reset.
-3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+2. **Pace** — elapsed-window time on X, consumed percentage minus elapsed
+   percentage on Y (−100 to +100 percentage points). Above the horizontal safe
+   line means consumption is ahead of time; below it means headroom. Dark colour
+   bands fade from amber at safety toward red above and green below.
+3. **Zone** — elapsed-window time on X and 0–100% consumption on Y, with a
+   diagonal steady-consumption line and a red/amber/green background. Above
+   the diagonal means over pace; below it means headroom.
+4. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
    for clean curves at any size.
-4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
+5. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
-5. **Resets** — available reset credits, grant dates, expiry dates and backend
+6. **Resets** — available reset credits, grant dates, expiry dates and backend
    descriptions. Expiring credits appear first, non-expiring credits last.
    Scroll with Up/Down or Page Up/Page Down when necessary.
+
+Pace and Zone use terminal-cell backgrounds and densely plotted, continuous
+Braille strokes for traces, trends and the safety reference. The
+current dot is bright; the observed trace is pale for contrast against the dark
+background. Click **Trend** (`g`) to cycle **Window Start**, **Last 30 Minutes**,
+**Last Hour**, **Last 24 Hours**, or **Off**; recent intervals are skipped until
+at least one quota window has enough uninterrupted observations. A window
+without that coverage reports `TREND UNAVAILABLE` rather than using another
+interval. **Window Start** is the default and uses the current dot and origin,
+so it needs no earlier observations. Click **Trace** (`h`) to hide/show the
+path; it is on by default. The continuous trend starts at the selected interval's
+beginning, passes through the dot and continues to the plot boundary. It is
+green if projected consumption at reset is at most 100%, dark red otherwise.
+These are coarse linear estimates, not OpenAI forecasts. History is bounded,
+in memory only, collected at each quota refresh even on other tabs, and cleared
+when the account or quota cycle changes. Failed refreshes leave gaps rather
+than connecting an invented path. Graphs share rows when width permits, add
+rows for extra windows, and fall back to compact readouts when too small to plot.
+Unknown window timing cannot be graphed. The browser offers the same variants
+and trend choices with smoother SVG lines, directional arrows and backgrounds.
 
 The reset shortcut opens Resets and asks for confirmation before redeeming.
 When individual credit details are supplied, Codexometer sends the ID of the
@@ -1138,7 +1161,7 @@ The other top-level views are:
 
 The layout responds to both terminal dimensions and the number of rate limits
 returned by Codex. Header, status, errors, footer, and meter grid divide the
-available rectangle proportionally. Bars, Consumption Pace, and Fuel Tank flow
+available rectangle proportionally. Bars and Fuel Tank flow
 one meter per row. Codexometer does not hardcode the currently returned window
 set: it renders every primary and secondary window from every limit bucket,
 including a 300-minute window as `5 HOURS`, plus an effective monthly credit
@@ -1149,20 +1172,17 @@ Meter rows always use identical heights; indivisible spare rows become quiet
 space above the footer instead of stretching one quota block more than another.
 Pie uses at least two columns when multiple limits exist, adding rows when that
 preserves more radial detail and adding columns when the terminal is wide
-enough. Consumption Pace calculates `elapsed window % - quota used %`, placing
-under-budget consumption on the positive side and over-budget consumption on
-the negative side. Its linear projection assumes the average burn observed
-since the calculated cycle start continues unchanged: remaining time is
-`elapsed time × (1 - U) / U`. It reports safe when the resulting exhaustion
-time falls at or after reset, and hides the projection when timing is
-insufficient. This is a trend estimate, not a backend forecast. Every Quota view
-also shows a `RESET CYCLE` comparison:
+enough. Pace and Zone use as many graph columns as remain readable and scale
+both axes to each card's remaining space. Bars, Pie and Fuel Tank
+also show a `RESET CYCLE` comparison:
 its label and countdown occupy one line, while its progress bar occupies a
 separate line with the same width and active colour as the main visualization.
 Its percentage is elapsed time from the calculated window start
 (`reset - duration`) to the next reset. When Codex supplies a monthly reset but
 not a cycle start, the card says `CYCLE START UNAVAILABLE`, shows the known
-countdown, and leaves the comparison bar unfilled. Every visualization
+countdown, and leaves the comparison bar unfilled. Pace and Zone instead
+show elapsed time on their X axes and retain a separate reset countdown.
+Every visualization
 receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
@@ -2542,33 +2562,65 @@ codexometer --web --web-port 8765
 5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
 
 This preview is **read-only by default and UK-English-only**, not feature parity with
-the terminal. It includes Bars, Consumption Pace, Consumption Zone, Pie and Fuel Tank quota
+the terminal. It includes Bars, Pace, Zone, Pie and Fuel Tank quota
 presentations; reset inventory with disclosed expiry information; local session
 telemetry with expandable/full-page context and synchronised activity graphs;
 and account history with a daily heatmap, monthly/cumulative bars, a 6/12-month
 selector and an accessible data table. Five browser themes are available.
 `CODEXOMETER_LANG` continues to configure the terminal, not this preview.
 
-**Consumption Zone** plots each window's elapsed quota period horizontally and
+**Zone** plots each window's elapsed quota period horizontally and
 0–100% consumption vertically. The bottom-left to top-right diagonal represents
 steady consumption: above it means usage is outpacing elapsed time, below it means
 headroom. The background fades from red at the top left through amber to green at
 the bottom right, and a high-contrast dot marks the current position (last known
-consumption against the current elapsed time). A white trail connects successful
-quota observations, with an open circle marking the first observation. This is
-the quota window's observed path, **not usage attributed to an individual Codex
-session**, a reconstruction of earlier history, or a prediction of future use.
-Windows without a known duration and reset date cannot be plotted.
-An expandable, keyboard-accessible **OBSERVATION TABLE** supplies the same
-retained history as text: observation time, elapsed period, consumed percentage
-and breaks between segments. It updates alongside the plotted trail.
+consumption against the current elapsed time). **TRACE PATH** is enabled by
+default and can be unchecked; it draws a near-black line through successful
+quota observations, with a subtly outlined circle marking the first observation.
+This is the quota window's observed path,
+**not usage attributed to an individual Codex session**, a reconstruction of
+earlier history, or a prediction of future use.
+Windows without a known duration and reset date cannot be plotted. A separate,
+expandable, keyboard-accessible **OBSERVATION DATA** disclosure
+supplies the same retained history as text: observation time, elapsed period,
+consumed percentage and breaks between segments. It updates alongside the
+plotted trail.
+
+**Pace** is a separate quota view using the same graph and controls.
+It replaces the former horizontal Consumption Pace gauge in both interfaces,
+keeps the elapsed-period X axis and shows
+consumed percentage minus elapsed-period percentage on Y, in percentage points
+from −100 to +100. Zero is the horizontal safe line: positive values mean usage
+is ahead of time, negative values mean headroom. Its background is uniform
+across each row, fading from amber at safety through orange to red above, and
+from amber to green below. The dot, observed path and projection all use the
+same transformed coordinates.
+
+The **TREND** selector defaults to **FROM WINDOW START** and can be switched
+off. When enough uninterrupted observations exist, it can instead fit recent
+velocity over the last 30 minutes, last hour or last 24 hours.
+**FROM WINDOW START** uses the whole-window
+average: current consumption divided by elapsed quota-period percentage. Its
+line starts at the origin, passes through the current dot and extends to the
+graph edge; it works immediately without retained history once some time has
+elapsed in a known quota window.
+The dotted projection starts at the beginning of the selected trend period,
+passes through the current dot and continues to the graph edge. It uses
+periodic arrows to show direction; its caption estimates consumption at reset or
+warns when exhaustion is projected first. Both presentations colour it green
+when projected consumption at reset is at most 100%, dark red otherwise.
+In Pace, the selected trend period controls the slope relative to safety:
+slower-than-steady consumption slopes downward, faster consumption upward.
+Recent periods without enough observed
+history remain visible but disabled. This is a linear extrapolation of coarse
+whole-percentage observations, not an OpenAI forecast.
 
 Trails are held only in the web server's memory, survive browser reloads and tab
 changes, and restart when the server stops. A changed account, reset date or
 window duration, a lower consumption reading, a backwards clock or a removed
 window starts a fresh trail. Failed reads add no points and leave a break before
-the next observation. Each window retains at most 720 points: the original start
-plus the latest 719; the omitted interval is shown as a gap. Readings between
+the next observation. Each window retains at most 1,500 points: the original start
+plus the latest 1,499; the omitted interval is shown as a gap. Readings between
 polls are not known. Account-change isolation depends on the account identity
 available from the existing reader.
 
@@ -2624,7 +2676,7 @@ session IDs. Navigation and layout controls never send actions to Codex.
 
 The browser uses a compact dashboard layout: quota plots share the available
 width and height below the tabs. Pie charts retain their circular shape, while
-Consumption Zone scales each axis independently and keeps text legible. On short
+Zone and Pace scale each axis independently and keep text legible. On short
 windows or with many quota windows, content scrolls without hiding the footer
 controls or shrinking plots below a readable minimum.
 
@@ -3195,7 +3247,7 @@ virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 
-- Go 1.27.1+
+- Go 1.27.2+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation

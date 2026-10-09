@@ -13,6 +13,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/version"
 )
 
@@ -105,6 +106,9 @@ type Model struct {
 	theme                               themeID
 	meterView                           meterViewID
 	quotaMeterView                      meterViewID
+	quotaGraphs                         quotagraph.History
+	quotaGraphMode                      quotagraph.Mode
+	quotaGraphHideTrace                 bool
 	hoveredMainTab                      mainTabID
 	mainTabHovered                      bool
 	hoveredView                         meterViewID
@@ -392,6 +396,8 @@ const (
 	footerButtonBenchmarkDone
 	footerButtonBenchmarkScope
 	footerButtonBenchmarkStop
+	footerButtonQuotaTrend
+	footerButtonQuotaTrace
 )
 
 type footerButton struct {
@@ -608,6 +614,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPressMsg:
+		if isQuotaGraph(m.meterView) {
+			switch strings.ToLower(message.String()) {
+			case "g":
+				return m.pressFooterButton(footerButtonQuotaTrend)
+			case "h":
+				return m.pressFooterButton(footerButtonQuotaTrace)
+			}
+		}
 		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
 			return m, nil
 		}
@@ -1032,6 +1046,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		m.err = message.err
+		observedAt := message.at
+		if observedAt.IsZero() {
+			observedAt = time.Now()
+		}
+		m.quotaGraphs.Observe(message.snapshot, message.err != nil, observedAt)
 		var quotaStepCommand tea.Cmd
 		if message.err == nil {
 			if m.snapshot.AccountFingerprint != message.snapshot.AccountFingerprint {
@@ -1356,6 +1375,14 @@ func (m Model) pressMonitorSessionDismiss(id string) (tea.Model, tea.Cmd) {
 
 func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	switch button {
+	case footerButtonQuotaTrend:
+		if isQuotaGraph(m.meterView) {
+			m.cycleQuotaTrend()
+		}
+	case footerButtonQuotaTrace:
+		if isQuotaGraph(m.meterView) {
+			m.quotaGraphHideTrace = !m.quotaGraphHideTrace
+		}
 	case footerButtonTheme:
 		m.theme = m.theme.next()
 		m.prepareBenchmarkDetailTranscript()
@@ -1486,6 +1513,9 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 	if m.meterView != viewUsage && m.loading && len(m.snapshot.Meters()) == 0 {
 		return footerButtonNone
 	}
+	if button := m.quotaGraphButtonAt(x, y); button != footerButtonNone {
+		return button
+	}
 	if m.meterView == viewMonitor {
 		if button := m.monitorButtonAt(x, y); button != footerButtonNone {
 			return button
@@ -1543,6 +1573,9 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if m.meterView.isQuota() {
 		tabsHeight++
 	}
+	if isQuotaGraph(m.meterView) {
+		tabsHeight++
+	}
 	tabsHeight += m.resetControlsLayout(contentWidth).extraRows
 	const framedErrorHeight = 3
 	const footerHeight = 2
@@ -1555,8 +1588,9 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	if len(meters) == 0 && m.meterView != viewUsage && m.meterView != viewResets && m.meterView != viewThresholds {
 		extraHeight += framedErrorHeight
 	}
-	if (m.meterView == viewBars || m.meterView == viewConsumptionPace || m.meterView == viewFuel) && len(meters) > 0 {
-		minimumMeterHeight := len(meters) * 3
+	if (m.meterView == viewBars || m.meterView == viewFuel || isQuotaGraph(m.meterView)) && len(meters) > 0 {
+		columns := meterGridColumns(contentWidth, contentHeight, len(meters), m.meterView)
+		minimumMeterHeight := ((len(meters) + columns - 1) / columns) * 3
 		meterHeightWithSpacer := contentHeight - headerHeight - statusHeight - tabsHeight - extraHeight - footerHeight
 		meterHeightWithoutSpacer := meterHeightWithSpacer + statusHeight
 		if meterHeightWithSpacer < minimumMeterHeight && meterHeightWithoutSpacer >= minimumMeterHeight {

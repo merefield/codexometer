@@ -1886,15 +1886,14 @@ test('pairing, all quota views, navigation and refresh', async ({
   await expect(page.getByRole('meter').first()).toBeVisible();
   await page.getByRole('link', { name: 'PIE', exact: true }).click();
   await expect(page.locator('svg')).toHaveCount(2);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION PACE', exact: true })
-    .click();
-  await expect(page.locator('.pace')).toHaveCount(2);
-  await expect(page.getByText('−100 // OVER BUDGET')).toHaveCount(2);
-  await expect(page.getByText('+100 // HEADROOM')).toHaveCount(2);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
+  await expect(page.locator('.consumption-zone')).toHaveCount(2);
+  await expect(
+    page.getByText('DISTANCE FROM SAFETY (PP)', { exact: true }),
+  ).toHaveCount(2);
+  await expect(page.locator('.pace-marker')).toHaveCount(0);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(2);
   await expect(page.locator('.position-dot')).toHaveCount(2);
   await page.getByRole('link', { name: 'FUEL TANK', exact: true }).click();
@@ -2256,9 +2255,7 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
     }),
   );
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(3);
   expect(
     await page.locator('.position-dot').evaluateAll((nodes) =>
@@ -2305,6 +2302,375 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
   });
 });
 
+test('Zone and Pace distinguish empty, single and continuous observations', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const point = (minutesAgo: number, elapsed: number) => ({
+    at: new Date(now.getTime() - minutesAgo * 60_000).toISOString(),
+    elapsed,
+    used: 25,
+    break: false,
+  });
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      {
+        name: 'Weekly',
+        used: 25,
+        duration: 100,
+        reset: Math.floor(now.getTime() / 1000) + 3000,
+        details: '',
+        trail: [] as ReturnType<typeof point>[],
+      },
+    ],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  for (const view of ['ZONE', 'PACE']) {
+    await page.getByRole('link', { name: view, exact: true }).click();
+    for (const [trail, label] of [
+      [[], 'NO OBSERVATIONS'],
+      [[point(0, 50)], 'ONE OBSERVATION'],
+      [[point(30, 20), point(0, 50)], '30 MIN CONTINUOUS'],
+      [[], 'NO OBSERVATIONS'],
+    ] as const) {
+      snapshot.meters[0].trail = [...trail];
+      await page.evaluate(
+        (snapshot) =>
+          window.dispatchEvent(
+            new CustomEvent('test-snapshot', { detail: snapshot }),
+          ),
+        snapshot,
+      );
+      await expect(page.locator('.zone-controls small')).toHaveText(
+        'HISTORY // ' + label,
+      );
+    }
+  }
+});
+
+test('consumption zone offers trace control and observed trend periods', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const end = Math.floor(now.getTime() / 1000);
+  const point = (hoursAgo: number, elapsed: number, used: number) => ({
+    at: new Date(now.getTime() - hoursAgo * 60 * 60 * 1000).toISOString(),
+    elapsed,
+    used,
+    break: false,
+  });
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      {
+        name: 'Weekly',
+        used: 40,
+        duration: 7 * 24 * 60,
+        reset: end + 3 * 24 * 60 * 60,
+        details: '',
+        trail: [
+          point(25, 42, 20),
+          point(24, 42.6, 21),
+          point(1, 56.5, 38),
+          point(0.25, 56.95, 39),
+          point(0, 57.1, 40),
+        ],
+      },
+    ],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+
+  const graph = page.locator('.consumption-zone');
+  const trend = page.getByLabel('Trend period');
+  const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
+  await expect(trace).toBeChecked();
+  await expect(page.locator('.observation-trail')).toBeVisible();
+  await expect(page.locator('.observation-trail-casing')).toBeVisible();
+  await expect(page.locator('.observation-details summary')).toBeVisible();
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expect(trend).toHaveValue('window');
+  await expect(trend.locator('option[value="halfHour"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="hour"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="day"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="window"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await trace.uncheck();
+  await expect(page.locator('.observation-trail')).toHaveCount(0);
+  await expect(page.locator('.observation-trail-casing')).toHaveCount(0);
+  await expect(page.locator('.observation-details summary')).toBeVisible();
+  await trace.check();
+  await expect(page.locator('.observation-trail')).toBeVisible();
+  await expect(page.locator('.observation-trail-casing')).toBeVisible();
+  await expect(graph).toHaveAttribute('aria-label', /5 observations/);
+
+  await trend.selectOption('off');
+  await expect(page.locator('.trend-line')).toHaveCount(0);
+  async function expectTrendStart(minutes: number) {
+    const width = Number(
+      await page.locator('.zone-field').getAttribute('width'),
+    );
+    const expectedX =
+      48 + (((4 / 7) * 100 - (minutes / (7 * 24 * 60)) * 100) / 100) * width;
+    const startX = Number(
+      (await page.locator('.trend-line').getAttribute('d'))!.match(
+        /^M([\d.]+)/,
+      )![1],
+    );
+    expect(startX).toBeCloseTo(expectedX, 5);
+  }
+  await trend.selectOption('halfHour');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(30);
+  await trend.selectOption('hour');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(60);
+  await expect(page.locator('.trend-arrow')).toBeAttached();
+  await expect(
+    page.getByText(/PROJECTED AT RESET|EXHAUSTION PROJECTED/),
+  ).toBeVisible();
+  await trend.selectOption('day');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(24 * 60);
+  await page.screenshot({
+    path: 'test-results/consumption-zone-trend.png',
+    fullPage: true,
+  });
+
+  // Window-average pace uses the known current dot, even with no history.
+  snapshot.meters[0].trail = [];
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('window');
+  await expect(trend.locator('option[value="halfHour"]')).toHaveAttribute(
+    'disabled',
+  );
+  await trend.selectOption('window');
+  const line = page.locator('.trend-line');
+  await expect(line).toBeVisible();
+  const axes = await page.locator('.axes').getAttribute('d');
+  const bottom = /V([\d.]+)/.exec(axes!)![1];
+  expect(await line.getAttribute('d')).toMatch(new RegExp(`^M48 ${bottom} L`));
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 70.0% PROJECTED AT RESET',
+  );
+
+  // No consumption yields a horizontal line; zero elapsed time has no rate.
+  snapshot.meters[0].used = 0;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 0.0% PROJECTED AT RESET',
+  );
+  expect(await line.getAttribute('d')).not.toMatch(/NaN|Infinity/);
+  snapshot.meters[0].reset = end + 7 * 24 * 60 * 60;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('window');
+  await expect(trend.locator('option[value="window"]')).toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="window"]')).toContainText(
+    'NO TIME ELAPSED',
+  );
+  await expect(line).toHaveCount(0);
+  // The default resumes automatically once the new window has elapsed time.
+  snapshot.meters[0].used = 40;
+  snapshot.meters[0].reset = end + 3 * 24 * 60 * 60;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('window');
+  await expect(line).toBeVisible();
+});
+
+test('pace zone transforms the dot and trace and colours trends by their endpoint', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const elapsed = (4 / 7) * 100;
+  const meter = {
+    name: 'Weekly',
+    used: 80,
+    duration: 7 * 24 * 60,
+    reset: now.getTime() / 1000 + 3 * 24 * 60 * 60,
+    details: '',
+    trail: [{ at: now.toISOString(), elapsed, used: 80, break: false }],
+  };
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [meter],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  const consumption = page.getByRole('link', {
+    name: 'ZONE',
+    exact: true,
+  });
+  const pace = page.getByRole('link', { name: 'PACE', exact: true });
+  const line = page.locator('.trend-line');
+  const dot = page.locator('.position-dot');
+  const safe = page.locator('.pace-line');
+  const trend = page.getByLabel('Trend period');
+  await expect(consumption).toHaveAttribute('aria-current', 'page');
+  await expect(pace).not.toHaveAttribute('aria-current', 'page');
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+  const originalX = await dot.getAttribute('cx');
+  await pace.click();
+  await expect(consumption).not.toHaveAttribute('aria-current', 'page');
+  await expect(pace).toHaveAttribute('aria-current', 'page');
+  await expect(dot).toHaveAttribute('cx', originalX!);
+  await expect(page.locator('.axis-title').first()).toHaveText(
+    'DISTANCE FROM SAFETY (PP)',
+  );
+  const safeY = Number(await safe.getAttribute('y1'));
+  expect(Number(await safe.getAttribute('y2'))).toBe(safeY);
+  const bottom = Number(
+    /V([\d.]+)/.exec((await page.locator('.axes').getAttribute('d'))!)![1],
+  );
+  const expectedY = bottom - ((80 - elapsed + 100) / 200) * (bottom - 20);
+  expect(Number(await dot.getAttribute('cy'))).toBeCloseTo(expectedY, 5);
+  expect(expectedY).toBeLessThan(safeY);
+  expect(await page.locator('.observation-trail').getAttribute('d')).toBe(
+    `M${originalX} ${expectedY}`,
+  );
+  const gradient = page.locator('linearGradient');
+  await expect(gradient).toHaveAttribute('x2', '0%');
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // +40.0 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+
+  async function update() {
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      snapshot,
+    );
+  }
+  function recentSlope(slope: number) {
+    const delta = (0.5 / (7 * 24)) * 100;
+    meter.trail = [
+      {
+        at: new Date(now.getTime() - 30 * 60_000).toISOString(),
+        elapsed: elapsed - delta,
+        used: 80 - slope * delta,
+        break: false,
+      },
+      { at: now.toISOString(), elapsed, used: 80, break: false },
+    ];
+  }
+  // Improving towards safety is still red if it ends above zero at reset.
+  recentSlope(0.8);
+  await update();
+  await trend.selectOption('halfHour');
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // +14.3 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+  let coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
+  const plotWidth = Number(
+    await page.locator('.zone-field').getAttribute('width'),
+  );
+  const startX = 48 + ((elapsed - (0.5 / (7 * 24)) * 100) / 100) * plotWidth;
+  expect(coords[0]).toBeCloseTo(startX, 5);
+  expect(coords.at(-2)!).toBeCloseTo(48 + plotWidth, 5);
+  expect(coords.at(-1)!).toBeGreaterThan(coords[1]);
+  expect(coords.at(-1)!).toBeLessThan(safeY);
+
+  // Slow enough to recover: green, with the endpoint below the safe line.
+  recentSlope(0.1);
+  await update();
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  await expect(page.locator('.trend-arrow')).toHaveCSS(
+    'fill',
+    'rgb(17, 91, 53)',
+  );
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // -15.7 PP AT RESET',
+  );
+  coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
+  expect(coords.at(-1)!).toBeGreaterThan(safeY);
+  await page.screenshot({
+    path: 'test-results/consumption-zone-pace.png',
+    fullPage: true,
+  });
+  await consumption.click();
+  await expect(trend).toHaveValue('halfHour');
+  await expect(gradient).toHaveAttribute('x2', '100%');
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+
+  // Exactly 100% projected consumption is within safety in either view.
+  meter.used = elapsed;
+  await update();
+  await trend.selectOption('window');
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  await pace.click();
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 0.0 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  expect(await line.getAttribute('d')).not.toMatch(/NaN|Infinity/);
+});
+
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
   page,
   pairingURL,
@@ -2313,8 +2679,8 @@ test('quota graphics use viewport height and keep compact navigation accessible'
   await page.goto(pairingURL);
   for (const [name, graphic] of [
     ['BARS', '.gauge:not(.timeline)'],
-    ['CONSUMPTION PACE', '.pace'],
-    ['CONSUMPTION ZONE', '.zone-canvas'],
+    ['PACE', '.zone-canvas'],
+    ['ZONE', '.zone-canvas'],
     ['PIE', '.pie-wrap'],
     ['FUEL TANK', '.gauge:not(.timeline)'],
   ]) {
@@ -2343,9 +2709,7 @@ test('quota graphics use viewport height and keep compact navigation accessible'
     await expect(plot).toBeVisible();
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.zone-canvas')).toHaveCount(2);
   await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
@@ -2821,10 +3185,10 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   const trail = page.locator('.observation-trail');
+  const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
+  await expect(trace).toBeChecked();
   await expect(page.locator('.trail-start')).toHaveCount(1);
   expect((await trail.getAttribute('d'))?.match(/M/g)).toHaveLength(2);
   expect((await trail.getAttribute('d'))?.match(/L/g)).toHaveLength(1);
@@ -2848,9 +3212,17 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   await expect(dataRows.nth(2)).toContainText('Gap before this observation');
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
+  await expect(trace).toBeChecked();
   await expect(trail).toHaveCount(1);
   await page.reload();
-  await expect(page.locator('.trail-caption')).toContainText('3 OBSERVATIONS');
+  await expect(trace).toBeChecked();
+  await expect(trail).toHaveCount(1);
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /3 observations/,
+  );
+  await page.locator('.observation-details summary').click();
+  await expect(table).toBeVisible();
   snapshot.meters[0].trail.push({
     at: '2026-09-10T16:00:00Z',
     elapsed: 50,
@@ -2862,8 +3234,10 @@ test('zone trail renders start, gap and live updates across navigation and reloa
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(page.locator('.trail-caption')).toContainText('4 OBSERVATIONS');
-  await page.locator('.observation-details summary').click();
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /4 observations/,
+  );
   await expect(table.locator('tbody tr')).toHaveCount(4);
   snapshot.meters[0].trail = [snapshot.meters[0].trail[3]];
   await page.evaluate(
@@ -2871,9 +3245,9 @@ test('zone trail renders start, gap and live updates across navigation and reloa
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(page.locator('.trail-caption')).toContainText('1 OBSERVATION');
-  await expect(page.locator('.trail-caption')).not.toContainText(
-    '1 OBSERVATIONS',
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /1 observation;/,
   );
   await expect(table.locator('tbody tr')).toHaveCount(1);
 });
