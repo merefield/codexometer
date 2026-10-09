@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -83,32 +84,36 @@ func TestBackgroundFillPreservesStylesAndLinks(t *testing.T) {
 }
 
 func TestDashboardCanvasBackgroundAndInlineBounds(t *testing.T) {
-	for theme := themeHacker; theme < themeCount; theme++ {
-		for _, size := range [][2]int{{40, 16}, {80, 24}, {120, 40}} {
-			for view := viewBars; view < viewCount; view++ {
-				m := Model{snapshot: codex.DemoSnapshot(), width: size[0], height: size[1], theme: theme, meterView: view}
-				output := m.View().Content
-				lines := backgroundTestLines(output)
-				if len(lines) != m.height || lipgloss.Width(output) != m.width {
-					t.Fatalf("canvas geometry changed: theme %d view %d at %v", theme, view, size)
-				}
-				for y, line := range lines {
-					for x, cell := range line {
-						if cell.Style.Bg == nil {
-							t.Fatalf("unpainted canvas cell: theme %d view %d at %d,%d", theme, view, x, y)
+	// Compare identical observations: two renders must not cross a real-clock
+	// countdown boundary and masquerade as an inline padding regression.
+	synctest.Test(t, func(t *testing.T) {
+		for theme := themeHacker; theme < themeCount; theme++ {
+			for _, size := range [][2]int{{40, 16}, {80, 24}, {120, 40}} {
+				for view := viewBars; view < viewCount; view++ {
+					m := Model{snapshot: codex.DemoSnapshot(), width: size[0], height: size[1], theme: theme, meterView: view}
+					output := m.View().Content
+					lines := backgroundTestLines(output)
+					if len(lines) != m.height || lipgloss.Width(output) != m.width {
+						t.Fatalf("canvas geometry changed: theme %d view %d at %v", theme, view, size)
+					}
+					for y, line := range lines {
+						for x, cell := range line {
+							if cell.Style.Bg == nil {
+								t.Fatalf("unpainted canvas cell: theme %d view %d at %d,%d", theme, view, x, y)
+							}
 						}
 					}
-				}
-				m.inline = true
-				if ansi.Strip(m.View().Content) != ansi.Strip(m.render()) {
-					t.Fatal("inline rendering gained full-screen padding")
-				}
-				if m.View().BackgroundColor != nil {
-					t.Fatal("rendering changed the terminal profile background")
+					m.inline = true
+					if ansi.Strip(m.View().Content) != ansi.Strip(m.render()) {
+						t.Fatalf("inline rendering gained full-screen padding: theme %d view %d at %v", theme, view, size)
+					}
+					if m.View().BackgroundColor != nil {
+						t.Fatal("rendering changed the terminal profile background")
+					}
 				}
 			}
 		}
-	}
+	})
 }
 
 func TestMonitorButtonBlankRowsHaveBackground(t *testing.T) {
