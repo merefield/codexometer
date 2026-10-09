@@ -77,7 +77,9 @@ type zonePoint struct {
 }
 
 // Bound memory and snapshot size while retaining the original observation.
-const maxZonePoints = 720
+// At the default one-minute quota cadence this also preserves a full day for
+// the optional Consumption Zone trend.
+const maxZonePoints = 1500
 
 func observeZone(m meter, previous []meter, now time.Time, gap bool) []zonePoint {
 	if m.Duration == nil || *m.Duration <= 0 || m.Reset == nil || *m.Reset <= 0 {

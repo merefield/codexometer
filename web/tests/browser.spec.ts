@@ -2305,6 +2305,105 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
   });
 });
 
+test('consumption zone offers trace control and observed trend periods', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const end = Math.floor(now.getTime() / 1000);
+  const point = (hoursAgo: number, elapsed: number, used: number) => ({
+    at: new Date(now.getTime() - hoursAgo * 60 * 60 * 1000).toISOString(),
+    elapsed,
+    used,
+    break: false,
+  });
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [
+      {
+        name: 'Weekly',
+        used: 40,
+        duration: 7 * 24 * 60,
+        reset: end + 3 * 24 * 60 * 60,
+        details: '',
+        trail: [
+          point(25, 42, 20),
+          point(24, 42.6, 21),
+          point(1, 56.5, 38),
+          point(0.25, 56.95, 39),
+          point(0, 57.1, 40),
+        ],
+      },
+    ],
+  };
+  await page.route('**/api/events', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'data: ' + JSON.stringify(snapshot) + '\n\n',
+    }),
+  );
+  await page.goto(pairingURL);
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+
+  const graph = page.locator('.consumption-zone');
+  const trend = page.getByLabel('Trend period');
+  const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
+  await expect(trace).toBeChecked();
+  await expect(page.locator('.observation-trail')).toBeVisible();
+  await expect(page.locator('.observation-trail-casing')).toBeVisible();
+  await expect(page.locator('.observation-details summary')).toBeVisible();
+  await expect(page.locator('.trend-line')).toHaveCount(0);
+  await expect(trend).toHaveValue('off');
+  await expect(trend.locator('option[value="halfHour"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="hour"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="day"]')).not.toHaveAttribute(
+    'disabled',
+  );
+  await expect(trend.locator('option[value="window"]')).toHaveAttribute(
+    'disabled',
+  );
+  await trace.uncheck();
+  await expect(page.locator('.observation-trail')).toHaveCount(0);
+  await expect(page.locator('.observation-trail-casing')).toHaveCount(0);
+  await expect(page.locator('.observation-details summary')).toBeVisible();
+  await trace.check();
+  await expect(page.locator('.observation-trail')).toBeVisible();
+  await expect(page.locator('.observation-trail-casing')).toBeVisible();
+  await expect(graph).toHaveAttribute('aria-label', /5 observations/);
+
+  await trend.selectOption('halfHour');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await trend.selectOption('hour');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expect(page.locator('.trend-arrow')).toBeAttached();
+  await expect(
+    page.getByText(/PROJECTED AT RESET|EXHAUSTION PROJECTED/),
+  ).toBeVisible();
+  await trend.selectOption('day');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await page.screenshot({
+    path: 'test-results/consumption-zone-trend.png',
+    fullPage: true,
+  });
+});
+
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
   page,
   pairingURL,
@@ -2825,6 +2924,8 @@ test('zone trail renders start, gap and live updates across navigation and reloa
     .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
     .click();
   const trail = page.locator('.observation-trail');
+  const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
+  await expect(trace).toBeChecked();
   await expect(page.locator('.trail-start')).toHaveCount(1);
   expect((await trail.getAttribute('d'))?.match(/M/g)).toHaveLength(2);
   expect((await trail.getAttribute('d'))?.match(/L/g)).toHaveLength(1);
@@ -2848,9 +2949,17 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   await expect(dataRows.nth(2)).toContainText('Gap before this observation');
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
+  await expect(trace).toBeChecked();
   await expect(trail).toHaveCount(1);
   await page.reload();
-  await expect(page.locator('.trail-caption')).toContainText('3 OBSERVATIONS');
+  await expect(trace).toBeChecked();
+  await expect(trail).toHaveCount(1);
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /3 observations/,
+  );
+  await page.locator('.observation-details summary').click();
+  await expect(table).toBeVisible();
   snapshot.meters[0].trail.push({
     at: '2026-09-10T16:00:00Z',
     elapsed: 50,
@@ -2862,8 +2971,10 @@ test('zone trail renders start, gap and live updates across navigation and reloa
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(page.locator('.trail-caption')).toContainText('4 OBSERVATIONS');
-  await page.locator('.observation-details summary').click();
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /4 observations/,
+  );
   await expect(table.locator('tbody tr')).toHaveCount(4);
   snapshot.meters[0].trail = [snapshot.meters[0].trail[3]];
   await page.evaluate(
@@ -2871,9 +2982,9 @@ test('zone trail renders start, gap and live updates across navigation and reloa
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(page.locator('.trail-caption')).toContainText('1 OBSERVATION');
-  await expect(page.locator('.trail-caption')).not.toContainText(
-    '1 OBSERVATIONS',
+  await expect(page.locator('.consumption-zone')).toHaveAttribute(
+    'aria-label',
+    /1 observation;/,
   );
   await expect(table.locator('tbody tr')).toHaveCount(1);
 });

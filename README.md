@@ -2553,21 +2553,34 @@ selector and an accessible data table. Five browser themes are available.
 steady consumption: above it means usage is outpacing elapsed time, below it means
 headroom. The background fades from red at the top left through amber to green at
 the bottom right, and a high-contrast dot marks the current position (last known
-consumption against the current elapsed time). A white trail connects successful
-quota observations, with an open circle marking the first observation. This is
-the quota window's observed path, **not usage attributed to an individual Codex
-session**, a reconstruction of earlier history, or a prediction of future use.
-Windows without a known duration and reset date cannot be plotted.
-An expandable, keyboard-accessible **OBSERVATION TABLE** supplies the same
-retained history as text: observation time, elapsed period, consumed percentage
-and breaks between segments. It updates alongside the plotted trail.
+consumption against the current elapsed time). **TRACE PATH** is enabled by
+default and can be unchecked; it draws a near-black line through successful
+quota observations, with a subtly outlined circle marking the first observation.
+This is the quota window's observed path,
+**not usage attributed to an individual Codex session**, a reconstruction of
+earlier history, or a prediction of future use.
+Windows without a known duration and reset date cannot be plotted. When the
+trace is enabled, an expandable, keyboard-accessible **OBSERVATION TABLE**
+supplies the same retained history as text: observation time, elapsed period,
+consumed percentage and breaks between segments. It updates alongside the
+plotted trail.
+
+An independent **TREND** selector is off by default. When enough uninterrupted
+observations exist, it can fit recent velocity over the last 30 minutes, last
+hour, last 24 hours, or the whole quota window when observation began within two
+minutes of its start.
+The accent-coloured dotted projection passes through the current dot and uses
+periodic arrows to show direction; its caption estimates consumption at reset or
+warns when exhaustion is projected first. Unobserved periods remain visible but
+disabled. This is a linear extrapolation of coarse whole-percentage observations,
+not an OpenAI forecast.
 
 Trails are held only in the web server's memory, survive browser reloads and tab
 changes, and restart when the server stops. A changed account, reset date or
 window duration, a lower consumption reading, a backwards clock or a removed
 window starts a fresh trail. Failed reads add no points and leave a break before
-the next observation. Each window retains at most 720 points: the original start
-plus the latest 719; the omitted interval is shown as a gap. Readings between
+the next observation. Each window retains at most 1,500 points: the original start
+plus the latest 1,499; the omitted interval is shown as a gap. Readings between
 polls are not known. Account-change isolation depends on the account identity
 available from the existing reader.
 
