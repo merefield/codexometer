@@ -5,10 +5,12 @@
     used,
     elapsed,
     trail = [],
+    duration,
   }: {
     used: number;
     elapsed: number;
     trail?: Meter['trail'];
+    duration: number | null;
   } = $props();
   type TrailPoint = NonNullable<Meter['trail']>[number];
   type TrendMode = 'off' | 'halfHour' | 'hour' | 'day' | 'window';
@@ -18,6 +20,7 @@
   let graphMode = $state<'consumption' | 'pace'>('consumption');
   let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
+  const trendMinutes = { off: 0, halfHour: 30, hour: 60, day: 1440, window: 0 };
   let paceView = $derived(graphMode === 'pace');
   let yTicks = $derived(paceView ? [-100, -50, 0, 50, 100] : ticks);
   let minimum = $derived(paceView ? -100 : 0);
@@ -84,12 +87,7 @@
   });
   function trendPoints(mode: TrendMode): TrailPoint[] {
     if (mode === 'off' || !availability[mode]) return [];
-    const span =
-      mode === 'halfHour'
-        ? 30 * 60_000
-        : mode === 'hour'
-          ? 60 * 60_000
-          : 24 * 60 * 60_000;
+    const span = trendMinutes[mode] * 60_000;
     const cutoff = Date.parse(continuous.at(-1)!.at) - span;
     const start = continuous.findIndex(
       (point) => Date.parse(point.at) >= cutoff,
@@ -116,16 +114,17 @@
       trendMode === 'window' && availability.window
         ? used / elapsed
         : regressionSlope(trendPoints(trendMode));
-    if (slope === null) return null;
+    if (slope === null || !duration) return null;
     const projected = used + slope * (100 - elapsed);
     const intercept = trendMode === 'window' ? 0 : used - slope * elapsed;
     const graphSlope = slope - (paceView ? 1 : 0);
-    let x1 = 0;
+    let x1 = Math.max(0, elapsed - (trendMinutes[trendMode] / duration) * 100);
+    if (trendMode === 'window') x1 = 0;
     let x2 = 100;
     if (graphSlope !== 0) {
       const lower = (minimum - intercept) / graphSlope;
       const upper = (minimum + range - intercept) / graphSlope;
-      x1 = Math.max(0, Math.min(lower, upper));
+      x1 = Math.max(x1, Math.min(lower, upper));
       x2 = Math.min(100, Math.max(lower, upper));
     }
     if (x1 > x2) return null;

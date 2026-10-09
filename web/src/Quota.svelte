@@ -125,6 +125,7 @@
                   used={meter.used}
                   elapsed={cycle}
                   trail={meter.trail || []}
+                  duration={meter.duration}
                 />
               {:else}<p class="empty">
                   Cycle duration or reset date unavailable — position cannot be

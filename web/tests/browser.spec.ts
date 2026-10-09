@@ -2385,16 +2385,32 @@ test('consumption zone offers trace control and observed trend periods', async (
 
   await trend.selectOption('off');
   await expect(page.locator('.trend-line')).toHaveCount(0);
+  async function expectTrendStart(minutes: number) {
+    const width = Number(
+      await page.locator('.zone-field').getAttribute('width'),
+    );
+    const expectedX =
+      48 + (((4 / 7) * 100 - (minutes / (7 * 24 * 60)) * 100) / 100) * width;
+    const startX = Number(
+      (await page.locator('.trend-line').getAttribute('d'))!.match(
+        /^M([\d.]+)/,
+      )![1],
+    );
+    expect(startX).toBeCloseTo(expectedX, 5);
+  }
   await trend.selectOption('halfHour');
   await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(30);
   await trend.selectOption('hour');
   await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(60);
   await expect(page.locator('.trend-arrow')).toBeAttached();
   await expect(
     page.getByText(/PROJECTED AT RESET|EXHAUSTION PROJECTED/),
   ).toBeVisible();
   await trend.selectOption('day');
   await expect(page.locator('.trend-line')).toBeVisible();
+  await expectTrendStart(24 * 60);
   await page.screenshot({
     path: 'test-results/consumption-zone-trend.png',
     fullPage: true,
@@ -2558,6 +2574,12 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
   );
   await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
   let coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
+  const plotWidth = Number(
+    await page.locator('.zone-field').getAttribute('width'),
+  );
+  const startX = 48 + ((elapsed - (0.5 / (7 * 24)) * 100) / 100) * plotWidth;
+  expect(coords[0]).toBeCloseTo(startX, 5);
+  expect(coords.at(-2)!).toBeCloseTo(48 + plotWidth, 5);
   expect(coords.at(-1)!).toBeGreaterThan(coords[1]);
   expect(coords.at(-1)!).toBeLessThan(safeY);
 

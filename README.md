@@ -2582,7 +2582,8 @@ average: current consumption divided by elapsed quota-period percentage. Its
 line starts at the origin, passes through the current dot and extends to the
 graph edge; it works immediately without retained history once some time has
 elapsed in a known quota window.
-The dotted projection passes through the current dot and uses
+The dotted projection starts at the beginning of the selected trend period,
+passes through the current dot and continues to the graph edge. It uses
 periodic arrows to show direction; its caption estimates consumption at reset or
 warns when exhaustion is projected first. Both presentations colour it green
 when projected consumption at reset is at most 100%, dark red otherwise.
