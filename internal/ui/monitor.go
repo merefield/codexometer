@@ -27,8 +27,9 @@ func (r monitorRect) contains(x, y int) bool {
 }
 
 type monitorView struct {
-	view      string
-	resetRect monitorRect
+	view         string
+	resetRect    monitorRect
+	closeAllRect monitorRect
 }
 
 type monitorGeometry struct {
@@ -41,6 +42,7 @@ type monitorGeometry struct {
 	graphHeight   int
 	readoutWidth  int
 	resetRect     monitorRect
+	closeAllRect  monitorRect
 }
 
 const monitorDismissLabel = "[×]"
@@ -55,8 +57,12 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	}
 	graphHeight := max(height-topHeight-gap, 1)
 
-	resetWidth := min(max(width/5, 8), max(width-2, 1))
-	readoutWidth := max(width-resetWidth-gap, 1)
+	// Keep the summary usable on narrow terminals; compact both controls when
+	// their full translated labels cannot fit.
+	controlsWidth := min(max(width/4, 22), max(width*2/5, 3))
+	resetWidth := max((controlsWidth-gap)/2, 1)
+	closeAllWidth := max(controlsWidth-resetWidth-gap, 1)
+	readoutWidth := max(width-controlsWidth-gap, 1)
 	if height >= 12 {
 		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
@@ -69,6 +75,7 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 		graphHeight:  graphHeight,
 		readoutWidth: readoutWidth,
 		resetRect:    monitorRect{x: readoutWidth + gap, width: resetWidth, height: topHeight},
+		closeAllRect: monitorRect{x: readoutWidth + gap + resetWidth + gap, width: closeAllWidth, height: topHeight},
 	}
 }
 
@@ -91,9 +98,17 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	resetLabel := i18n.Text("ZERO (S)")
 	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
 		resetLabel = "0 (S)"
+		if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
+			resetLabel = "0"
+		}
 	}
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton)
+	closeAllLabel := i18n.Text("CLOSE ALL")
+	if layout.closeAllRect.width < lipgloss.Width(closeAllLabel)+2 {
+		closeAllLabel = "[××]"
+	}
+	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
+	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
 	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	parts := []string{top}
 	if layout.attentionRows > 0 {
@@ -106,7 +121,7 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	}
 
 	return monitorView{
-		view: view, resetRect: layout.resetRect,
+		view: view, resetRect: layout.resetRect, closeAllRect: layout.closeAllRect,
 	}
 }
 
@@ -740,6 +755,9 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	if m.monitorResetEnabled() && area.resetRect.contains(localX, localY) {
 		return footerButtonMonitorReset
 	}
+	if m.monitorCloseAllEnabled() && area.closeAllRect.contains(localX, localY) {
+		return footerButtonMonitorCloseAll
+	}
 	return footerButtonNone
 }
 
@@ -775,6 +793,10 @@ func (m Model) monitorSessionDismissAt(x, y int) (string, bool) {
 
 func (m Model) monitorResetEnabled() bool {
 	return m.monitorState == monitorRunning
+}
+
+func (m Model) monitorCloseAllEnabled() bool {
+	return m.monitorState == monitorRunning && m.visibleMonitorSessionCount() > 0
 }
 
 func (m Model) monitorElapsed(now time.Time) time.Duration {

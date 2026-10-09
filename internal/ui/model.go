@@ -380,6 +380,7 @@ const (
 	footerButtonRefresh
 	footerButtonQuit
 	footerButtonMonitorReset
+	footerButtonMonitorCloseAll
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
 	footerButtonBenchmarkSelected
@@ -1415,6 +1416,10 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		if m.meterView == viewMonitor && m.monitorState == monitorRunning {
 			m.monitorState = monitorResetting
 			return m.beginMonitorFetch(monitorFetchReset)
+		}
+	case footerButtonMonitorCloseAll:
+		if m.meterView == viewMonitor && m.monitorCloseAllEnabled() {
+			m.dismissAllMonitorSessions()
 		}
 	case footerButtonBenchmarkPrevious:
 		if !m.benchmarkRunActive() {
@@ -2659,6 +2664,28 @@ func (m *Model) dismissMonitorSession(id string) {
 	m.monitorSessions = m.visibleMonitorSessionCount()
 	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
 	m.monitorScroll = min(m.monitorScroll, maximumScroll)
+}
+
+// Dismiss the whole list, including rows outside the current page. Retain
+// previous dismissal watermarks so bulk dismissal cannot delay their return.
+func (m *Model) dismissAllMonitorSessions() {
+	m.stashMonitorDraft()
+	for _, session := range m.monitorSessionData {
+		if m.monitorSessionVisible(session) {
+			m.dismissMonitorSession(session.id)
+		}
+	}
+	m.monitorSelectedID = ""
+	m.monitorScroll = 0
+	m.monitorContextDetail = ""
+	m.monitorContextExpanded = ""
+	m.monitorContextScroll = 0
+	m.monitorContextHover = ""
+	m.monitorApprovalConfirm = ""
+	m.monitorPrompt = monitorPromptState{}
+	m.monitorDismissHover = ""
+	m.monitorDismissFlash = ""
+	m.monitorDismissSeq++
 }
 
 func (m *Model) restoreMonitorSessionOnActivity(session *monitorSession) {

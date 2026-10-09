@@ -1098,7 +1098,9 @@ The other top-level views are:
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
-  remain underneath when space permits; a clickable Zero control sits beside it.
+  remain underneath when space permits; clickable Zero and Close All controls
+  sit beside it. Close All dismisses every visible session row, including those
+  outside the current page, while keeping the measurement baseline and telemetry.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1148,7 +1150,9 @@ The other top-level views are:
   changed alert restores it. Zeroing session monitoring also restores every dismissed
   row. With the keyboard, `Down` initially selects the top row, `Up` initially
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
-  closes the selected row.
+  closes the selected row. Close All applies the same dismissal and automatic
+  return behavior to all rows. On narrow terminals its label becomes `[××]`;
+  it is disabled when no rows are visible.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or
