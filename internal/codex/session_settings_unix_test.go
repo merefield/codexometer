@@ -28,6 +28,8 @@ type quotaDaemonFixture struct {
 	commandStatus string
 	catalogues    map[string]map[string]any
 	historyReads  []map[string]any
+	names         map[string]string
+	nameWrites    []map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -112,7 +114,16 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				if status == "" {
 					status = "idle"
 				}
-				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}}
+				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id]}
+			case "thread/name/set":
+				fixture.nameWrites = append(fixture.nameWrites, req.Params)
+				failure = fixture.fail == "rename"
+				if !failure {
+					if fixture.names == nil {
+						fixture.names = map[string]string{}
+					}
+					fixture.names[id], _ = req.Params["name"].(string)
+				}
 			case "thread/settings/update":
 				fixture.writes = append(fixture.writes, req.Params)
 				desired := fixture.sessions[id]

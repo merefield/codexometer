@@ -210,7 +210,8 @@ includes the explicit backgrounds used for consistent terminal rendering.
   graph, with a 6/12-month range and lifetime, peak-day, and streak summaries
   when supplied. This server-side history can lag live local telemetry.
 - An always-on Sessions view that measures local token activity while Codexometer
-  is running, with a Reset button for establishing a fresh baseline.
+  is running, with a Zero button for establishing a fresh baseline. Zero affects
+  only the local measurement interval and does not use a quota-reset token.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
 - Dismissible session rows that automatically return on fresh activity,
@@ -470,7 +471,7 @@ Set up the recommended arrangement as follows.
    new live context arrives.
 
 5. Leave Codexometer running while you work. Session monitoring starts automatically;
-   use Reset when you want a fresh measured interval, and keep unrelated Codex
+   use Zero when you want a fresh measured interval, and keep unrelated Codex
    activity quiet while running Benchmarks if you want the cleanest comparisons.
 
 Codexometer subscribes only to thread IDs that are already loaded by the
@@ -586,7 +587,9 @@ codexometer --codex /path/to/codex
 | `Shift+Tab` | Select the previous top-level tab |
 | `r` | Refresh account history in Usage; otherwise refresh quota data |
 | `v` | Cycle views within Quota or Usage |
-| `s` | Reset the Sessions baseline, or open Benchmark Scope |
+| `z` | Zero the Sessions baseline |
+| `s` | Open Benchmark Scope (Benchmark view only) |
+| `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace or Zone |
 | `h` | Toggle the trace in Quota → Pace or Zone; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
@@ -1097,7 +1100,10 @@ The other top-level views are:
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
-  remain underneath when space permits; a clickable Reset control sits beside it.
+  remain underneath when space permits; clickable Zero and Close All controls
+  sit beside it, labelled `(Z)ERO` and `CL(O)SE ALL`. Close All dismisses
+  every visible session row, including those outside the current page, while
+  keeping the measurement baseline and telemetry.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1144,10 +1150,17 @@ The other top-level views are:
   when tokens, model calls, turn timing, durable activity, or attention moves
   forward, or when an inactive session becomes active again. An alert already
   visible when `[×]` is clicked is dismissed with its row; a later new or
-  changed alert restores it. Resetting session monitoring also restores every dismissed
+  changed alert restores it. Zeroing session monitoring also restores every dismissed
   row. With the keyboard, `Down` initially selects the top row, `Up` initially
   selects the bottom row, subsequent arrow presses move the highlight, and `x`
-  closes the selected row.
+  closes the selected row. Close All applies the same dismissal and automatic
+  return behavior to all rows. On narrow terminals its label becomes `[××]`
+  with `(O)` below it; Zero shows `0` with `(Z)`.
+  Close All requires confirmation: click or press `o` once to arm it, then click
+  or press `o` again within five seconds to confirm. `Esc` cancels. A change
+  to the visible rows requires a fresh confirmation; switching views or Zero
+  cancels an armed action.
+  Close All is disabled when no rows are visible.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or
@@ -1261,7 +1274,7 @@ and output statistics are omitted rather than filling the card with `N/A`.
 **AVG TOK/MIN** is average observed tokens per minute since the measurement began
 (or the session joined)—not instantaneous generation speed.
 The total and all session averages update together every five seconds, unaffected
-by mouse movement or keyboard-driven redraws. Start and reset update them
+by mouse movement or keyboard-driven redraws. Start and Zero update them
 immediately; token counts and the rest of the interface retain their usual cadence.
 
 `CALLS` counts upstream model-response cycles observed after the current Sessions
@@ -1289,7 +1302,7 @@ Codex. `NO INTEGER Δ` means no whole-point movement was observed, not necessari
 zero consumption; a smaller apportioned estimate is shown as `<1PP`. Stale,
 missing, late-baseline, and reset-crossing windows do not produce a per-session
 number.
-Starting or resetting reads quota before establishing the local token baseline.
+Starting or zeroing reads quota before establishing the local token baseline.
 These operations are not atomic, so unrelated account activity during the short
 boundary read remains another source of uncertainty.
 
@@ -1369,7 +1382,7 @@ same action on that session. The presentations are:
    **WORKING** badge blinks only its ball, keeping the text and colour steady,
    and uses the same observed-work evidence as the animated dots,
    not merely recent activity. Completion and attention badges take priority;
-   starting/resetting monitoring, observation errors, or inactive sessions
+   starting/zeroing monitoring, observation errors, or inactive sessions
    suppress **WORKING**. Compact previews keep their content-type title.
    Eligible approval buttons sit below the complete command/request
    and source session. If the complete request plus controls cannot fit, a
@@ -1564,6 +1577,7 @@ are clickable. Writable web mode exposes the same catalogue through
 
 | Command family | Live options and behaviour |
 | --- | --- |
+| `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
@@ -1600,6 +1614,8 @@ scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
 
+Renames require a loaded session and explicit confirmation within 30 seconds; a concurrent rename or reconnect invalidates the confirmation. The updated name appears on the next telemetry refresh.
+
 Codex session-setting changes require a loaded, idle session and explicit confirmation within
 30 seconds. The command and options are revalidated before sending; stale
 connections, pending approvals and changed options fail closed. A successful
@@ -1609,6 +1625,16 @@ the composer with a success notice; reopening fetches fresh options. Failed
 confirmations retain the draft and error context. These changes do not modify global defaults, and automatic
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
+
+**Remaining CLI command gaps** (compared with the official documented CLI list):
+
+| Area | Commands not implemented as Codexometer slash commands |
+| --- | --- |
+| Session lifecycle and conversation actions | `/new`, `/clear`, `/resume`, `/fork`, `/archive`, `/delete`, `/compact`, `/review`, `/init`, `/goal`, `/side`, `/btw`, `/approve` |
+| CLI navigation and display | `/agent`, `/subagents`, `/copy`, `/diff`, `/status`, `/usage`, `/raw`, `/title`, `/theme`, `/pets`, `/pet`, `/keymap`, `/vim`, `/app`, `/exit`, `/quit` |
+| Configuration and tools | `/ide`, `/plugins`, `/memories`, `/import`, `/feedback`, `/logout`, `/mention`, `/personality`, `/ps`, `/stop`, `/setup-default-sandbox`, `/sandbox-add-read-dir`, `/debug-config` |
+
+`/apps`, `/skills`, `/mcp`, `/hooks` and `/experimental` remain **browse-only** here; CLI invocation, installation, authentication, trust and toggle actions are not implemented. `/plan` changes mode but does not implement the CLI's optional prompt argument. `/fast` and other advertised tiers are session overrides, rather than persistent CLI defaults. `/statusline` configures Codexometer's own footer. Existing session navigation, copying and telemetry views provide some analogous actions without those slash names. Availability upstream varies by platform, version and enabled features; see the [official CLI command reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands).
 
 Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
 Use `//` to send a literal leading slash (for example `//tmp/file` sends
@@ -1823,6 +1849,8 @@ also show the same activity dots at the bottom left, independently for each
 session. Short boxes prioritise readable context and approval controls; the
 compact view omits the dots when fewer than three body rows fit. Sent-message
 acknowledgement animations remain confined to full detail.
+
+Full approval reviews use a separate **65,536-character** budget, so longer commands and justifications retain their complete text and decision buttons. Ordinary telemetry excerpts remain limited to 4,096 characters. Requests exceeding the approval budget still require Codex; the reason stays pinned below the scrolling Detail text. **Home/End** jump to the first/last Detail line. Approval controls stay fixed while the review scrolls. Tabs, leading/trailing whitespace and Windows line endings do not disable approval buttons; display formatting preserves the original command and directory used for the decision.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

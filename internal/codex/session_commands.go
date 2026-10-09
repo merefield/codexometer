@@ -25,6 +25,8 @@ type SessionCommandMenu struct {
 	Path     string                 `json:"path"`
 	Revision string                 `json:"revision"`
 	Multiple bool                   `json:"multiple,omitempty"`
+	Input    bool                   `json:"input,omitempty"`
+	Value    string                 `json:"value,omitempty"`
 	Choices  []SessionCommandChoice `json:"choices"`
 }
 

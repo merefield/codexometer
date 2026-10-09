@@ -53,7 +53,7 @@ func TestMonitorAutoStartAndResetLifecycle(t *testing.T) {
 		t.Fatalf("30-second graph bucket was not recorded: %#v", model.monitorSamples)
 	}
 
-	updated, command = model.Update(key('s'))
+	updated, command = model.Update(key('z'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
 		t.Fatalf("Reset did not request a fresh baseline: state=%d flash=%d", model.monitorState, model.flashedButton)
@@ -760,7 +760,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
-		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "RE(S)ET", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
+		for _, want := range []string{"SESSION TOTALS", "TOKENS", "6,250", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK*", "(Z)ERO", "LOCAL TOKEN BARS", "AUTO 0-10K", "█", "░"} {
 			if !strings.Contains(plain, want) {
 				t.Errorf("%dx%d monitor missing %q:\n%s", size.width, size.height, want, plain)
 			}
@@ -830,7 +830,7 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	dashboard := model.dashboardLayout()
 	geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
 	area := model.renderMonitorArea(dashboard.contentWidth, dashboard.meterHeight, colors)
-	if area.resetRect != geometry.resetRect {
+	if area.resetRect != geometry.resetRect || area.closeAllRect != geometry.closeAllRect {
 		t.Fatalf("rendered controls diverged from pure layout: rendered=%#v layout=%#v", area, geometry)
 	}
 	originX := 2
@@ -854,8 +854,8 @@ func TestMonitorLargeButtonsAreClickableAcrossTheirBoxes(t *testing.T) {
 	if command != nil || model.hoveredButton != footerButtonMonitorReset {
 		t.Fatal("hovering the Reset box did not select it")
 	}
-	hovered := model.renderMonitorButton(14, 6, "RE(S)ET", footerButtonMonitorReset, true, colors)
-	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("RE(S)ET")
+	hovered := model.renderMonitorButton(14, 6, "(Z)ERO", footerButtonMonitorReset, true, colors)
+	wantHover := lipgloss.NewStyle().Bold(true).Foreground(colors.accent).Background(colors.background).Render("(Z)ERO")
 	if !strings.Contains(hovered, wantHover) {
 		t.Fatal("hovering the Reset box did not highlight its label")
 	}
@@ -880,7 +880,7 @@ func TestMonitorHeaderComponentsHonorAllocatedDimensions(t *testing.T) {
 			t.Errorf("%dx%d readout rendered %dx%d, want %dx%d", size.width, size.height, gotWidth, gotHeight, geometry.readoutWidth, geometry.topHeight)
 		}
 
-		for index, width := range []int{geometry.resetRect.width} {
+		for index, width := range []int{geometry.resetRect.width, geometry.closeAllRect.width} {
 			button := model.renderMonitorButton(width, geometry.topHeight, "BUTTON", footerButtonMonitorReset, true, colors)
 			if gotWidth, gotHeight := lipgloss.Width(button), lipgloss.Height(button); gotWidth != width || gotHeight != geometry.topHeight {
 				t.Errorf("%dx%d button %d rendered %dx%d, want %dx%d", size.width, size.height, index, gotWidth, gotHeight, width, geometry.topHeight)
@@ -895,6 +895,7 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 			model := Model{
 				snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
 				meterView: viewMonitor, monitorState: state,
+				monitorSessionData: []monitorSession{{id: "visible", displayed: true}},
 			}
 			dashboard := model.dashboardLayout()
 			geometry := layoutMonitorArea(dashboard.contentWidth, dashboard.meterHeight)
@@ -906,8 +907,8 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 					}
 				}
 			}
-			if geometry.readoutWidth < geometry.width*3/4 {
-				t.Fatal("readout did not retain its expanded space")
+			if geometry.readoutWidth < geometry.width*3/5 {
+				t.Fatal("readout did not retain enough space beside the controls")
 			}
 			for _, button := range []struct {
 				rect    monitorRect
@@ -915,6 +916,7 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 				enabled bool
 			}{
 				{geometry.resetRect, footerButtonMonitorReset, model.monitorResetEnabled()},
+				{geometry.closeAllRect, footerButtonMonitorCloseAll, model.monitorCloseAllEnabled()},
 			} {
 				want := footerButtonNone
 				if button.enabled {

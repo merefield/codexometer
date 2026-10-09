@@ -147,8 +147,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 		allowed := c.ApprovalOptions[0].Kind != ""
-		// Fail closed if the display loses ANY command/request content, or if
-		// this is a broader grant rather than an ordinary command decision.
+		// Check completeness and supported action semantics independently of
+		// normal display formatting. Preserve the original command and directory.
 		switch {
 		case !kindValid:
 			c.ApprovalBlocked = "approval-kind"
@@ -166,13 +166,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "missing-identity"
 		case !allowed:
 			c.ApprovalBlocked = "decisions"
-		case len([]rune(c.Text)) > sessionContextLimit:
+		case !approvalTextFits(c.Text) || !approvalTextFits(p.Reason) || !approvalTextFits(command) || !approvalTextFits(p.CWD):
 			c.ApprovalBlocked = "truncated"
-		case SanitizeSessionContext(c.Text) != c.Text || SanitizeSessionContext(command) != command || SanitizeSessionContext(p.CWD) != p.CWD:
+		case !approvalTextDisplayable(c.Text) || !approvalTextDisplayable(p.Reason) || !approvalTextDisplayable(command) || !approvalTextDisplayable(p.CWD):
 			c.ApprovalBlocked = "sanitised"
 		default:
 			c.ApprovalToken = rand.Text()
-			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeSessionContext(p.Reason), Command: command, Directory: p.CWD}
+			c.CommandDetails = ApprovalCommandDetails{Justification: SanitizeApprovalText(p.Reason), Command: command, Directory: p.CWD}
 		}
 	case "item/fileChange/requestApproval":
 		c.Kind, c.Text = SessionContextApproval, p.Reason
@@ -294,8 +294,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			// remain ineligible for approval, without retaining unbounded text.
 			bounded := func(s string) string {
 				r := []rune(s)
-				if len(r) > sessionContextLimit+1 {
-					return string(r[:sessionContextLimit+1])
+				if len(r) > approvalTextLimit+1 {
+					return string(r[:approvalTextLimit+1])
 				}
 				return s
 			}
@@ -317,7 +317,11 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	default:
 		return
 	}
-	c.Text = SanitizeSessionContext(c.Text)
+	if c.Kind == SessionContextApproval {
+		c.Text = SanitizeApprovalText(c.Text)
+	} else {
+		c.Text = SanitizeSessionContext(c.Text)
+	}
 	if c.Text == "" {
 		return
 	}

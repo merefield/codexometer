@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -21,6 +23,7 @@ type monitorCommandsState struct {
 	notice                  string
 	until                   time.Time
 	footerHover             string
+	input                   textinput.Model
 }
 type monitorCommandsResult struct {
 	session string
@@ -55,6 +58,7 @@ func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 		p.notice = "Shared app-server commands unavailable."
 		return nil
 	}
+	p.input.Blur()
 	p.busy = true
 	p.detail = false
 	p.notice = ""
@@ -89,6 +93,7 @@ func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
 }
 
 func (m *Model) closeMonitorCommands() {
+	m.monitorCommands.input.Blur()
 	m.monitorCommands.open = false
 	m.monitorCommands.request++
 	m.monitorCommands.busy = false
@@ -153,7 +158,7 @@ func (m Model) confirmMonitorCommand() (Model, tea.Cmd, bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
 		err := c.ExecuteSessionCommand(ctx, id, path, rev, o.ID)
-		return monitorCommandsResult{session: id, request: seq, applied: true, err: err}
+		return monitorCommandsResult{session: id, path: path, request: seq, applied: true, err: err}
 	}, true
 }
 
@@ -180,6 +185,18 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		return rows
 	}
+	if p.menu.Input {
+		rows = append(rows, commandDisplayRow{text: "SESSION NAME", choice: -1})
+		p.input.SetWidth(max(w-2, 1))
+		rows = append(rows, commandDisplayRow{text: p.input.View(), choice: -1})
+		for _, line := range strings.Split(ansi.Hardwrap(p.menu.Help, w, true), "\n") {
+			if len(rows) >= capacity {
+				break
+			}
+			rows = append(rows, commandDisplayRow{text: line, choice: -1})
+		}
+		return rows
+	}
 	if p.detail {
 		o, ok := m.commandChoice()
 		if !ok {
@@ -187,7 +204,12 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		text := o.Label + "\n\n" + p.menu.Help + "\n\n" + o.Help
 		if o.Action {
-			text += "\n\nTARGET // " + p.session + "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
+			text += "\n\nTARGET // " + p.session
+			if strings.HasPrefix(p.menu.Path, "rename/") {
+				text += "\nOnly this session's saved name changes. Confirm after reviewing the new name."
+			} else {
+				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
+			}
 		}
 		lines := strings.Split(ansi.Hardwrap(text, w, true), "\n")
 		start := min(p.scroll, max(len(lines)-capacity, 0))
@@ -229,7 +251,9 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 func (m Model) commandFooter(width int) []commandDisplayRow {
 	p := m.monitorCommands
 	var buttons []commandDisplayRow
-	if p.menu.Multiple {
+	if p.menu.Input && !p.busy {
+		buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "review"})
+	} else if p.menu.Multiple {
 		buttons = append(buttons, commandDisplayRow{text: "[ C APPLY ]", action: "confirm"})
 	} else if o, ok := m.commandChoice(); ok && p.detail && o.Action && !p.busy && p.notice == "" {
 		buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
@@ -269,7 +293,9 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 	}
 	if len(body) > 1 {
 		hint := "↑/↓ select or scroll • Enter open • / root"
-		if p.menu.Multiple {
+		if p.menu.Input {
+			hint = "Enter review • Escape cancel"
+		} else if p.menu.Multiple {
 			hint = "↑/↓ select • Space toggle • ←/→ order • C apply"
 		}
 		body[len(body)-2] = colors.dimmed().Render(ansi.Truncate(hint, max(width-4, 1), ""))
@@ -314,9 +340,24 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				cmd := m.focusMonitorPrompt()
 				m.monitorPrompt.session = r.session
 				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
+				if strings.HasPrefix(r.path, "rename/") {
+					m.monitorPrompt.notice = "Session renamed."
+				}
 				return m, cmd, true
 			} else {
 				p.menu = r.menu
+				if p.menu.Input {
+					p.input = textinput.New()
+					p.input.CharLimit = 512
+					p.input.SetWidth(max(m.monitorDashboardLayout().contentWidth-6, 1))
+					p.input.SetValue(p.menu.Value)
+					cmd := p.input.Focus()
+					return m, cmd, true
+				}
+				if strings.HasPrefix(p.menu.Path, "rename/") && len(p.menu.Choices) == 1 {
+					p.detail = true
+					p.until = time.Now().Add(30 * time.Second)
+				}
 				if p.menu.Path == "" || p.menu.Path == "help" {
 					p.menu.Choices = append(p.menu.Choices, localStatusLineChoice())
 				}
@@ -348,6 +389,35 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			path = ""
 		}
 		return m.loadMonitorCommands(path)
+	}
+	if p.menu.Input && !p.busy {
+		if key, ok := msg.(tea.KeyPressMsg); ok {
+			switch key.String() {
+			case "esc":
+				m.closeMonitorCommands()
+				return m, nil, true
+			case "enter":
+				return m.reviewMonitorCommandInput()
+			case "ctrl+c":
+				m.closeMonitorCommands()
+				return m, nil, false
+			}
+		}
+		if _, mouse := msg.(tea.MouseMsg); !mouse {
+			before := p.input.Value()
+			var cmd tea.Cmd
+			p.input, cmd = p.input.Update(msg)
+			switch msg.(type) {
+			case tea.KeyPressMsg, tea.PasteMsg:
+				return m, cmd, true
+			}
+			// Private clipboard/cursor events belong to the widget. Dashboard
+			// ticks, telemetry, resize and action results must keep flowing;
+			// swallowing one tick permanently stops its self-scheduling loop.
+			if cmd != nil || p.input.Value() != before {
+				return m, cmd, true
+			}
+		}
 	}
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		if p.menu.Multiple {
@@ -440,6 +510,8 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.footerHover = b.action
 					if click && v.Button == tea.MouseLeft {
 						switch b.action {
+						case "review":
+							return m.reviewMonitorCommandInput()
 						case "confirm":
 							return m.confirmMonitorCommand()
 						case "back":
@@ -456,4 +528,17 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func (m Model) reviewMonitorCommandInput() (Model, tea.Cmd, bool) {
+	p := &m.monitorCommands
+	if !p.menu.Input || p.menu.Path != "rename" || p.busy {
+		return m, nil, true
+	}
+	name := strings.TrimSpace(p.input.Value())
+	if name == "" {
+		return m, nil, true
+	}
+	cmd := m.loadMonitorCommands("rename/" + url.PathEscape(name))
+	return m, cmd, true
 }

@@ -241,10 +241,10 @@ func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	}
 
 	model = Model{meterView: viewMonitor, monitorState: monitorRunning}
-	updated, command = model.Update(key('s'))
+	updated, command = model.Update(key('z'))
 	model = updated.(Model)
 	if command == nil || model.monitorState != monitorResetting || model.flashedButton != footerButtonMonitorReset {
-		t.Fatalf("Monitor S did not reset: state=%d flash=%d", model.monitorState, model.flashedButton)
+		t.Fatalf("Monitor Z did not zero: state=%d flash=%d", model.monitorState, model.flashedButton)
 	}
 
 	model = Model{meterView: viewMonitor, monitorState: monitorRunning}

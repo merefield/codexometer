@@ -69,9 +69,35 @@ type ApprovalCommandDetails struct {
 
 const sessionContextLimit = 4096
 
+// Approval reviews need the complete request, rather than a telemetry excerpt.
+// Keep a separate bounded budget; ordinary context retains its smaller limit.
+const approvalTextLimit = 64 * 1024
+
 // SanitizeSessionContext removes terminal escapes and control/bidi formatting.
 // It does not promise to redact secrets embedded in ordinary message text.
 func SanitizeSessionContext(text string) string {
+	return sanitizeContextText(text, sessionContextLimit, true)
+}
+
+// SanitizeApprovalText formats a bounded approval review for terminal display.
+// Ordinary whitespace formatting does not change the original approval action.
+func SanitizeApprovalText(text string) string {
+	return sanitizeContextText(text, approvalTextLimit, false)
+}
+
+// Account for tab expansion so an eligible review cannot be clipped in display.
+func approvalTextFits(text string) bool {
+	return len([]rune(text))+3*strings.Count(text, "\t") <= approvalTextLimit
+}
+
+// approvalTextDisplayable checks for content that terminal rendering would lose.
+// Tabs, line breaks and surrounding spaces are ordinary request formatting;
+// CRLF is a normal line ending on Windows. Keep the original action unchanged.
+func approvalTextDisplayable(text string) bool {
+	return safePatchText(strings.ReplaceAll(text, "\r\n", "\n"))
+}
+
+func sanitizeContextText(text string, limit int, trim bool) string {
 	text = ansi.Strip(strings.ToValidUTF8(text, "�"))
 	text = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
@@ -83,9 +109,12 @@ func SanitizeSessionContext(text string) string {
 		return r
 	}, text)
 	text = strings.ReplaceAll(text, "\t", "    ")
-	runes := []rune(strings.TrimSpace(text))
-	if len(runes) > sessionContextLimit {
-		return string(runes[:sessionContextLimit-1]) + "…"
+	if trim {
+		text = strings.TrimSpace(text)
+	}
+	runes := []rune(text)
+	if len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
 	}
 	return string(runes)
 }

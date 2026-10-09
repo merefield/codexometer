@@ -21,8 +21,8 @@ type commandModel struct {
 }
 
 type commandThread struct {
-	ID, Cwd string
-	Status  struct{ Type string }
+	ID, Cwd, Name string
+	Status        struct{ Type string }
 }
 
 func commandDigest(value any) string {
@@ -107,6 +107,9 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 		return SessionCommandMenu{}, ErrSessionCommand
 	}
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if name, ok := strings.CutPrefix(path, "rename "); ok {
+		path = "rename/" + url.PathEscape(strings.TrimSpace(name))
+	}
 	thread, err := p.commandThread(ctx, id)
 	if err != nil {
 		return SessionCommandMenu{}, err
@@ -119,7 +122,7 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
-	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, thread.Status.Type, menu.Revision})
+	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, thread.Status.Type, thread.Name, menu.Revision})
 	return normalizeCommandMenu(menu), nil
 }
 
@@ -151,7 +154,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	m := SessionCommandMenu{Title: "/" + path, Help: "Live options from the shared Codex app-server.", Choices: []SessionCommandChoice{}}
 	parts := strings.Split(path, "/")
 	if path == "" || path == "help" {
-		families := []string{"model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
+		families := []string{"rename", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
 		menus := make([]SessionCommandMenu, len(families))
 		errs := make([]error, len(families))
 		var wg sync.WaitGroup
@@ -161,7 +164,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		}
 		wg.Wait()
 		for i, family := range families {
-			if errs[i] == nil && len(menus[i].Choices) > 0 {
+			if errs[i] == nil && (len(menus[i].Choices) > 0 || menus[i].Input) {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: menus[i].Help, Next: family})
 			}
 		}
@@ -180,7 +183,29 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Settings changes target this session only, require confirmation and are available only while idle. Catalogues marked browse-only do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Changes target this session only and require confirmation. Model and permission settings are available only while idle. Catalogues marked browse-only do not execute tools or change global configuration."
+		return m, nil
+	}
+	if parts[0] == "rename" {
+		m.Title = "/rename"
+		m.Help = "Rename this session in Codex. Enter a single-line name, then review and confirm the change. It does not send a prompt or change model settings."
+		if path == "rename" {
+			m.Input = true
+			m.Value = commandLabel(t.Name)
+			return m, nil
+		}
+		if len(parts) != 2 {
+			return m, ErrSessionCommand
+		}
+		name, err := url.PathUnescape(parts[1])
+		if err != nil || name == "" || len([]rune(name)) > 512 || commandLabel(name) != name {
+			return m, ErrSessionCommand
+		}
+		m.Choices = append(m.Choices, SessionCommandChoice{
+			Label:  "Rename to " + name,
+			Help:   "Current name: " + commandLabel(t.Name) + "\nNew name: " + name + "\nOnly this session's saved name changes.",
+			method: "thread/name/set", params: map[string]any{"threadId": t.ID, "name": name},
+		})
 		return m, nil
 	}
 	if parts[0] == "model" || parts[0] == "tier" || parts[0] == "plan" || parts[0] == "permissions" {
@@ -294,7 +319,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 }
 
 func commandReserved(s string) bool {
-	for _, name := range []string{"help", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
+	for _, name := range []string{"help", "rename", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
 		if s == name {
 			return true
 		}
@@ -321,7 +346,7 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 	for _, o := range m.Choices {
 		if o.ID == choice && o.Action {
 			p.mu.Lock()
-			valid := p.connection == conn && (p.contexts[id] == nil || len(p.contexts[id].requests) == 0)
+			valid := p.connection == conn && (o.method == "thread/name/set" || p.contexts[id] == nil || len(p.contexts[id].requests) == 0)
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand

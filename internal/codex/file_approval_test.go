@@ -133,3 +133,16 @@ func TestFileDiffTotals(t *testing.T) {
 		t.Fatal("empty diff has changes")
 	}
 }
+
+func TestFileApprovalReasonWhitespace(t *testing.T) {
+	for _, reason := range []string{"  Review the patch.  ", "Review the patch.\n", "Review\tthis patch.\r\n"} {
+		_, c := fileApprovalFixture(t, testFilePatch, map[string]any{"reason": reason})
+		if c.ApprovalToken == "" || c.ApprovalBlocked != "" || c.FileChanges == "" {
+			t.Fatalf("ordinary reason whitespace disabled decisions: %s", c.ApprovalBlocked)
+		}
+	}
+	_, c := fileApprovalFixture(t, testFilePatch, map[string]any{"reason": strings.Repeat("x", approvalTextLimit+1)})
+	if c.ApprovalToken != "" || c.ApprovalBlocked != "truncated" {
+		t.Fatalf("incomplete review: blocked=%s actionable=%v", c.ApprovalBlocked, c.ApprovalToken != "")
+	}
+}

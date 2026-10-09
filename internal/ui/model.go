@@ -198,6 +198,8 @@ type Model struct {
 	monitorCopyFlash        string
 	monitorCopySequence     uint64
 	monitorDismissSeq       uint64
+	monitorCloseAllConfirm  []string
+	monitorCloseAllUntil    time.Time
 	monitorScroll           int
 	monitorError            string
 	monitorQuotaWindows     []monitorQuotaWindow
@@ -380,6 +382,7 @@ const (
 	footerButtonRefresh
 	footerButtonQuit
 	footerButtonMonitorReset
+	footerButtonMonitorCloseAll
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
 	footerButtonBenchmarkSelected
@@ -626,6 +629,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.meterView == viewMonitor {
+			if strings.EqualFold(message.String(), "o") {
+				if !message.IsRepeat && m.monitorContextDetail == "" && m.monitorCloseAllEnabled() {
+					return m.pressFooterButton(footerButtonMonitorCloseAll)
+				}
+				return m, nil
+			}
+			if message.String() == "esc" && len(m.monitorCloseAllConfirm) > 0 {
+				m.clearMonitorCloseAllConfirmation()
+				return m, nil
+			}
 			next, cmd, handled := m.updateMonitorContextKey(strings.ToLower(message.String()))
 			m = next
 			if handled {
@@ -699,10 +712,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "t":
 			return m.pressFooterButton(footerButtonTheme)
-		case "s":
+		case "z":
 			if m.meterView == viewMonitor {
 				return m.pressFooterButton(footerButtonMonitorReset)
 			}
+		case "s":
 			if m.meterView == viewBenchmark && !m.benchmarkScopeOpen && m.benchmarkDetail == nil && len(m.benchmarkPlan.Models) > 0 {
 				updated, command := m.pressFooterButton(footerButtonBenchmarkScope)
 				next := updated.(Model)
@@ -1294,6 +1308,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
+	m.clearMonitorCloseAllConfirmation()
 	m.clearQuotaConfirmation()
 	if view != m.meterView {
 		m.monitorApprovalConfirm = ""
@@ -1413,8 +1428,13 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		}
 	case footerButtonMonitorReset:
 		if m.meterView == viewMonitor && m.monitorState == monitorRunning {
+			m.clearMonitorCloseAllConfirmation()
 			m.monitorState = monitorResetting
 			return m.beginMonitorFetch(monitorFetchReset)
+		}
+	case footerButtonMonitorCloseAll:
+		if m.meterView == viewMonitor && m.monitorCloseAllEnabled() {
+			m.requestMonitorCloseAll()
 		}
 	case footerButtonBenchmarkPrevious:
 		if !m.benchmarkRunActive() {
@@ -2516,6 +2536,7 @@ func sameOptionalInt64(left, right *int64) bool {
 }
 
 func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	m.clearMonitorCloseAllConfirmation()
 	m.monitorHistory = nil
 	m.monitorSessionData = nil
 	m.monitorDismissed = nil
@@ -2634,6 +2655,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 }
 
 func (m *Model) dismissMonitorSession(id string) {
+	m.clearMonitorCloseAllConfirmation()
 	m.clearQuotaConfirmation()
 	if id == m.monitorContextTarget() {
 		m.monitorContextDetail = ""
@@ -2659,6 +2681,28 @@ func (m *Model) dismissMonitorSession(id string) {
 	m.monitorSessions = m.visibleMonitorSessionCount()
 	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
 	m.monitorScroll = min(m.monitorScroll, maximumScroll)
+}
+
+// Dismiss the whole list, including rows outside the current page. Retain
+// previous dismissal watermarks so bulk dismissal cannot delay their return.
+func (m *Model) dismissAllMonitorSessions() {
+	m.stashMonitorDraft()
+	for _, session := range m.monitorSessionData {
+		if m.monitorSessionVisible(session) {
+			m.dismissMonitorSession(session.id)
+		}
+	}
+	m.monitorSelectedID = ""
+	m.monitorScroll = 0
+	m.monitorContextDetail = ""
+	m.monitorContextExpanded = ""
+	m.monitorContextScroll = 0
+	m.monitorContextHover = ""
+	m.monitorApprovalConfirm = ""
+	m.monitorPrompt = monitorPromptState{}
+	m.monitorDismissHover = ""
+	m.monitorDismissFlash = ""
+	m.monitorDismissSeq++
 }
 
 func (m *Model) restoreMonitorSessionOnActivity(session *monitorSession) {

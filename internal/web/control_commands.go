@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -48,7 +49,11 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 			http.Error(w, "Command unconfirmed; check Codex before retrying", 409)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Change requested. Codex will apply it to subsequent turns."})
+		message := "Change requested. Codex will apply it to subsequent turns."
+		if strings.HasPrefix(q.Path, "rename/") {
+			message = "Session renamed."
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 		return
 	}
 	m, err := c.commands.SessionCommands(ctx, body.Session, q.Path)
