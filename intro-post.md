@@ -120,8 +120,12 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 Prefer a browser window? `codexometer --web` now offers an **experimental,
 read-only by default** Quota, Sessions and Usage dashboard with the same retro spirit:
 responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
-now traces the observed quota path, with a marked starting point and gaps for
-failed observations. Sessions offers graph-only, split, wide and full-page
+traces the observed quota path, with a marked starting point and gaps for
+failed observations. Centred Consumption / Pace radio buttons switch between
+total consumption and distance from the safe line. Arrowed trends use the
+whole-window average by default or an observed recent period; green means
+projected usage stays within quota at reset, dark red means it exceeds it.
+Sessions offers graph-only, split, wide and full-page
 detail, with a compact totals strip for observed tokens, listed sessions and
 separate working/approval/input/inferred-check counts. Linked-agent tokens are
 already included, and stale observations are labelled. Select sessions with ↑/↓,

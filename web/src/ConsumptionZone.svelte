@@ -15,8 +15,13 @@
   const gradient = $props.id();
   let showObservations = $state(false);
   let showTrace = $state(true);
+  let graphMode = $state<'consumption' | 'pace'>('consumption');
   let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
+  let paceView = $derived(graphMode === 'pace');
+  let yTicks = $derived(paceView ? [-100, -50, 0, 50, 100] : ticks);
+  let minimum = $derived(paceView ? -100 : 0);
+  let range = $derived(paceView ? 200 : 100);
   let width = $state(400);
   let height = $state(240);
   let right = $derived(width - 24);
@@ -26,15 +31,19 @@
   let x = $derived(
     48 + (Math.max(0, Math.min(100, elapsed)) / 100) * plotWidth,
   );
-  let y = $derived(
-    bottom - (Math.max(0, Math.min(100, used)) / 100) * plotHeight,
-  );
+  function plotY(value: number): number {
+    return bottom - ((value - minimum) / range) * plotHeight;
+  }
+  function graphValue(consumption: number, time: number): number {
+    return paceView ? consumption - time : consumption;
+  }
+  let y = $derived(plotY(graphValue(used, elapsed)));
   let difference = $derived(used - elapsed);
   let path = $derived(
     trail
       .map(
         (p, i) =>
-          `${i === 0 || p.break ? 'M' : 'L'}${48 + (p.elapsed / 100) * plotWidth} ${bottom - (p.used / 100) * plotHeight}`,
+          `${i === 0 || p.break ? 'M' : 'L'}${48 + (p.elapsed / 100) * plotWidth} ${plotY(graphValue(p.used, p.elapsed))}`,
       )
       .join(' '),
   );
@@ -108,33 +117,34 @@
         ? used / elapsed
         : regressionSlope(trendPoints(trendMode));
     if (slope === null) return null;
+    const projected = used + slope * (100 - elapsed);
+    const intercept = trendMode === 'window' ? 0 : used - slope * elapsed;
+    const graphSlope = slope - (paceView ? 1 : 0);
     let x1 = 0;
-    let y1 = trendMode === 'window' ? 0 : used - slope * elapsed;
     let x2 = 100;
-    let y2 = used + slope * (100 - elapsed);
-    if (slope > 0 && y1 < 0) {
-      x1 = elapsed - used / slope;
-      y1 = 0;
+    if (graphSlope !== 0) {
+      const lower = (minimum - intercept) / graphSlope;
+      const upper = (minimum + range - intercept) / graphSlope;
+      x1 = Math.max(0, Math.min(lower, upper));
+      x2 = Math.min(100, Math.max(lower, upper));
     }
-    if (slope > 0 && y2 > 100) {
-      x2 = elapsed + (100 - used) / slope;
-      y2 = 100;
-    }
-    x1 = Math.max(0, Math.min(100, x1));
-    x2 = Math.max(0, Math.min(100, x2));
+    if (x1 > x2) return null;
+    const y1 = intercept + graphSlope * x1;
+    const y2 = intercept + graphSlope * x2;
     const pixelLength = Math.hypot(
       ((x2 - x1) / 100) * plotWidth,
-      ((y2 - y1) / 100) * plotHeight,
+      ((y2 - y1) / range) * plotHeight,
     );
     const vertices = Math.max(3, Math.min(9, Math.floor(pixelLength / 65) + 2));
     const points = Array.from({ length: vertices }, (_, index) => {
       const px = x1 + ((x2 - x1) * index) / (vertices - 1);
       const py = y1 + ((y2 - y1) * index) / (vertices - 1);
-      return `${48 + (px / 100) * plotWidth} ${bottom - (py / 100) * plotHeight}`;
+      return `${48 + (px / 100) * plotWidth} ${plotY(py)}`;
     });
     return {
       path: `M${points.join(' L')}`,
-      projected: used + slope * (100 - elapsed),
+      projected,
+      safe: projected <= 100,
     };
   });
   let observedLabel = $derived.by(() => {
@@ -147,17 +157,43 @@
   });
 </script>
 
+<div class="zone-modes" role="group" aria-label="Zone graph presentation">
+  <label
+    ><input
+      type="radio"
+      name={gradient + '-mode'}
+      value="consumption"
+      bind:group={graphMode}
+    /> CONSUMPTION</label
+  >
+  <label
+    ><input
+      type="radio"
+      name={gradient + '-mode'}
+      value="pace"
+      bind:group={graphMode}
+    /> PACE</label
+  >
+</div>
 <div class="zone-canvas" bind:clientWidth={width} bind:clientHeight={height}>
   <svg
     class="consumption-zone"
+    style:--trend-color={trend?.safe ? '#115b35' : '#7f1825'}
     viewBox={`0 0 ${width} ${height}`}
     role="img"
-    aria-label={`Consumption zone: ${used}% consumed, ${elapsed.toFixed(1)}% of quota period elapsed. ${difference > 0 ? 'Above' : difference < 0 ? 'Below' : 'On'} the steady-consumption line.${showTrace && trail.length ? ` Trace path contains ${trail.length} ${trail.length === 1 ? 'observation' : 'observations'}; gaps are not interpolated.` : ''}`}
+    aria-label={`${paceView ? 'Pace zone' : 'Consumption zone'}: ${used}% consumed, ${elapsed.toFixed(1)}% of quota period elapsed. ${paceView ? `${difference.toFixed(1)} percentage points from safety.` : `${difference > 0 ? 'Above' : difference < 0 ? 'Below' : 'On'} the steady-consumption line.`}${showTrace && trail.length ? ` Trace path contains ${trail.length} ${trail.length === 1 ? 'observation' : 'observations'}; gaps are not interpolated.` : ''}`}
   >
     <defs>
-      <linearGradient id={gradient} x1="0%" y1="0%" x2="100%" y2="100%">
+      <linearGradient
+        id={gradient}
+        x1="0%"
+        y1="0%"
+        x2={paceView ? '0%' : '100%'}
+        y2="100%"
+      >
         <stop offset="0%" stop-color="#b93749" />
-        <stop offset="50%" stop-color="#8c793d" />
+        {#if paceView}<stop offset="25%" stop-color="#bf6f32" />{/if}
+        <stop offset="50%" stop-color={paceView ? '#ae903b' : '#8c793d'} />
         <stop offset="100%" stop-color="#23855d" />
       </linearGradient>
       <marker
@@ -189,35 +225,44 @@
         x2={48 + (tick / 100) * plotWidth}
         y2={bottom}
       />
-      <line
-        class="grid"
-        x1="48"
-        y1={bottom - (tick / 100) * plotHeight}
-        x2={right}
-        y2={bottom - (tick / 100) * plotHeight}
-      />
       <text
         x={48 + (tick / 100) * plotWidth}
         y={bottom + 20}
         text-anchor="middle">{tick}%</text
       >
-      <text x="34" y={bottom + 4 - (tick / 100) * plotHeight} text-anchor="end"
-        >{tick}%</text
+    {/each}
+    {#each yTicks as tick}
+      <line class="grid" x1="48" y1={plotY(tick)} x2={right} y2={plotY(tick)} />
+      <text x="40" y={plotY(tick) + 4} text-anchor="end"
+        >{paceView ? `${tick > 0 ? '+' : ''}${tick}` : `${tick}%`}</text
       >
     {/each}
     <path class="axes" d={`M48 20 V${bottom} H${right}`} />
-    <line class="pace-line" x1="48" y1={bottom} x2={right} y2="20" />
+    <line
+      class="pace-line"
+      x1="48"
+      y1={plotY(0)}
+      x2={right}
+      y2={paceView ? plotY(0) : plotY(100)}
+    />
+    {#if paceView}<text
+        class="safe-label"
+        x={right - 5}
+        y={plotY(0) - 6}
+        text-anchor="end">SAFE</text
+      >{/if}
     {#if showTrace && trail.length}
       <path class="observation-trail-casing" d={path} />
       <path class="observation-trail" d={path} />
       <circle
         class="trail-start"
         cx={48 + (trail[0].elapsed / 100) * plotWidth}
-        cy={bottom - (trail[0].used / 100) * plotHeight}
+        cy={plotY(graphValue(trail[0].used, trail[0].elapsed))}
         r="5"><title>First observation: {date(trail[0].at)}</title></circle
       >
     {/if}
     {#if trend}
+      <path class="trend-casing" d={trend.path} />
       <path
         class="trend-line"
         d={trend.path}
@@ -231,7 +276,9 @@
         ></path
       >
     {/if}
-    <text x="48" y="12" class="axis-title">CONSUMPTION</text>
+    <text x="48" y="12" class="axis-title"
+      >{paceView ? 'DISTANCE FROM SAFETY (PP)' : 'CONSUMPTION'}</text
+    >
     <text
       x={48 + plotWidth / 2}
       y={height - 5}
@@ -240,24 +287,35 @@
     >
     <circle class="position-halo" cx={x} cy={y} r="10" />
     <circle class="position-dot" cx={x} cy={y} r="5">
-      <title>{used}% consumed // {elapsed.toFixed(1)}% of period elapsed</title>
+      <title
+        >{used}% consumed // {elapsed.toFixed(1)}% of period elapsed{paceView
+          ? ` // ${difference.toFixed(1)} PP from safety`
+          : ''}</title
+      >
     </circle>
   </svg>
 </div>
 <div class="zone-footer">
   <p class="zone-caption">
-    {used}% USED // {elapsed.toFixed(1)}% TIME ELAPSED<br />
+    {#if paceView}{difference > 0 ? '+' : ''}{difference.toFixed(1)} PP FROM SAFETY{:else}{used}%
+      USED{/if} // {elapsed.toFixed(1)}% TIME ELAPSED<br />
     <span class="muted"
       >{Math.abs(difference) < 0.05
         ? 'ON PACE'
         : difference > 0
-          ? 'ABOVE THE LINE — CONSUMING FASTER THAN TIME'
-          : 'BELOW THE LINE — WITHIN PACE'}</span
+          ? paceView
+            ? 'ABOVE SAFETY — CONSUMPTION AHEAD OF TIME'
+            : 'ABOVE THE LINE — CONSUMING FASTER THAN TIME'
+          : paceView
+            ? 'BELOW SAFETY — QUOTA HEADROOM'
+            : 'BELOW THE LINE — WITHIN PACE'}</span
     >
     {#if trend}<br /><span class="trend-summary"
-        >TREND // {trend.projected >= 100
-          ? 'QUOTA EXHAUSTION PROJECTED'
-          : `${trend.projected.toFixed(1)}% PROJECTED AT RESET`}</span
+        >TREND // {paceView
+          ? `${trend.projected - 100 > 0 ? '+' : ''}${(trend.projected - 100).toFixed(1)} PP AT RESET`
+          : trend.projected >= 100
+            ? 'QUOTA EXHAUSTION PROJECTED'
+            : `${trend.projected.toFixed(1)}% PROJECTED AT RESET`}</span
       >{/if}
   </p>
   <div class="zone-controls">
@@ -323,6 +381,32 @@
   </details>{/if}
 
 <style>
+  .zone-modes {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .zone-modes label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 5px 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .zone-modes label:has(input:checked),
+  .zone-modes label:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .zone-modes input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
   .observation-details {
     font-size: 12px;
   }
@@ -357,6 +441,10 @@
   .axis-title {
     font-size: 12px;
     letter-spacing: 0.04em;
+  }
+  .safe-label {
+    fill: #fff;
+    font-size: 11px;
   }
   .grid {
     stroke: #fff;
@@ -400,12 +488,20 @@
   }
   .trend-line {
     fill: none;
-    stroke: var(--accent);
+    stroke: var(--trend-color);
     stroke-width: 2;
     stroke-dasharray: 3 6;
   }
   .trend-arrow {
-    fill: var(--accent);
+    fill: var(--trend-color);
+    stroke: rgb(255 255 255 / 45%);
+    stroke-width: 0.5;
+  }
+  .trend-casing {
+    fill: none;
+    stroke: rgb(255 255 255 / 45%);
+    stroke-width: 4;
+    stroke-dasharray: 3 6;
   }
   .zone-caption {
     flex: 1 1 auto;

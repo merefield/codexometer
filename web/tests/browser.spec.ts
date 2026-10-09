@@ -2347,12 +2347,7 @@ test('consumption zone offers trace control and observed trend periods', async (
       },
     ],
   };
-  await page.route('**/api/events', (route) =>
-    route.fulfill({
-      contentType: 'text/event-stream',
-      body: 'data: ' + JSON.stringify(snapshot) + '\n\n',
-    }),
-  );
+  await mockStream(page, snapshot);
   await page.goto(pairingURL);
   await page
     .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
@@ -2461,6 +2456,144 @@ test('consumption zone offers trace control and observed trend periods', async (
   );
   await expect(trend).toHaveValue('window');
   await expect(line).toBeVisible();
+});
+
+test('pace zone transforms the dot and trace and colours trends by their endpoint', async ({
+  page,
+  pairingURL,
+}) => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  await page.clock.setFixedTime(now);
+  const elapsed = (4 / 7) * 100;
+  const meter = {
+    name: 'Weekly',
+    used: 80,
+    duration: 7 * 24 * 60,
+    reset: now.getTime() / 1000 + 3 * 24 * 60 * 60,
+    details: '',
+    trail: [{ at: now.toISOString(), elapsed, used: 80, break: false }],
+  };
+  const snapshot = {
+    version: 'test',
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    usage: null,
+    quotaAt: now.toISOString(),
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    meters: [meter],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page
+    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
+    .click();
+  const consumption = page.getByRole('radio', {
+    name: 'CONSUMPTION',
+    exact: true,
+  });
+  const pace = page.getByRole('radio', { name: 'PACE', exact: true });
+  const line = page.locator('.trend-line');
+  const dot = page.locator('.position-dot');
+  const safe = page.locator('.pace-line');
+  const trend = page.getByLabel('Trend period');
+  await expect(consumption).toBeChecked();
+  await expect(pace).not.toBeChecked();
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+  const originalX = await dot.getAttribute('cx');
+  await pace.check();
+  await expect(consumption).not.toBeChecked();
+  await expect(pace).toBeChecked();
+  await expect(dot).toHaveAttribute('cx', originalX!);
+  await expect(page.locator('.axis-title').first()).toHaveText(
+    'DISTANCE FROM SAFETY (PP)',
+  );
+  const safeY = Number(await safe.getAttribute('y1'));
+  expect(Number(await safe.getAttribute('y2'))).toBe(safeY);
+  const bottom = Number(
+    /V([\d.]+)/.exec((await page.locator('.axes').getAttribute('d'))!)![1],
+  );
+  const expectedY = bottom - ((80 - elapsed + 100) / 200) * (bottom - 20);
+  expect(Number(await dot.getAttribute('cy'))).toBeCloseTo(expectedY, 5);
+  expect(expectedY).toBeLessThan(safeY);
+  expect(await page.locator('.observation-trail').getAttribute('d')).toBe(
+    `M${originalX} ${expectedY}`,
+  );
+  const gradient = page.locator('linearGradient');
+  await expect(gradient).toHaveAttribute('x2', '0%');
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // +40.0 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+
+  async function update() {
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      snapshot,
+    );
+  }
+  function recentSlope(slope: number) {
+    const delta = (0.5 / (7 * 24)) * 100;
+    meter.trail = [
+      {
+        at: new Date(now.getTime() - 30 * 60_000).toISOString(),
+        elapsed: elapsed - delta,
+        used: 80 - slope * delta,
+        break: false,
+      },
+      { at: now.toISOString(), elapsed, used: 80, break: false },
+    ];
+  }
+  // Improving towards safety is still red if it ends above zero at reset.
+  recentSlope(0.8);
+  await update();
+  await trend.selectOption('halfHour');
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // +14.3 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
+  let coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
+  expect(coords.at(-1)!).toBeGreaterThan(coords[1]);
+  expect(coords.at(-1)!).toBeLessThan(safeY);
+
+  // Slow enough to recover: green, with the endpoint below the safe line.
+  recentSlope(0.1);
+  await update();
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  await expect(page.locator('.trend-arrow')).toHaveCSS(
+    'fill',
+    'rgb(17, 91, 53)',
+  );
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // -15.7 PP AT RESET',
+  );
+  coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
+  expect(coords.at(-1)!).toBeGreaterThan(safeY);
+  await page.screenshot({
+    path: 'test-results/consumption-zone-pace.png',
+    fullPage: true,
+  });
+  await consumption.check();
+  await expect(trend).toHaveValue('halfHour');
+  await expect(gradient).toHaveAttribute('x2', '100%');
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+
+  // Exactly 100% projected consumption is within safety in either view.
+  meter.used = elapsed;
+  await update();
+  await trend.selectOption('window');
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  await pace.check();
+  await expect(page.locator('.trend-summary')).toHaveText(
+    'TREND // 0.0 PP AT RESET',
+  );
+  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
+  expect(await line.getAttribute('d')).not.toMatch(/NaN|Infinity/);
 });
 
 test('quota graphics use viewport height and keep compact navigation accessible', async ({

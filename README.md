@@ -2565,6 +2565,15 @@ supplies the same retained history as text: observation time, elapsed period,
 consumed percentage and breaks between segments. It updates alongside the
 plotted trail.
 
+Centred **CONSUMPTION / PACE** radio buttons switch the graph presentation.
+Consumption is the default. Pace keeps the elapsed-period X axis and shows
+consumed percentage minus elapsed-period percentage on Y, in percentage points
+from −100 to +100. Zero is the horizontal safe line: positive values mean usage
+is ahead of time, negative values mean headroom. Its background is uniform
+across each row, fading from amber at safety through orange to red above, and
+from amber to green below. The dot, observed path and projection all use the
+same transformed coordinates.
+
 The **TREND** selector defaults to **FROM WINDOW START** and can be switched
 off. When enough uninterrupted observations exist, it can instead fit recent
 velocity over the last 30 minutes, last hour or last 24 hours.
@@ -2573,9 +2582,13 @@ average: current consumption divided by elapsed quota-period percentage. Its
 line starts at the origin, passes through the current dot and extends to the
 graph edge; it works immediately without retained history once some time has
 elapsed in a known quota window.
-The accent-coloured dotted projection passes through the current dot and uses
+The dotted projection passes through the current dot and uses
 periodic arrows to show direction; its caption estimates consumption at reset or
-warns when exhaustion is projected first. Recent periods without enough observed
+warns when exhaustion is projected first. Both presentations colour it green
+when projected consumption at reset is at most 100%, dark red otherwise.
+In Pace, the selected trend period controls the slope relative to safety:
+slower-than-steady consumption slopes downward, faster consumption upward.
+Recent periods without enough observed
 history remain visible but disabled. This is a linear extrapolation of coarse
 whole-percentage observations, not an OpenAI forecast.
 
