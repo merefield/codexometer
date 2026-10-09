@@ -12,7 +12,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-var quotaMeterViews = []meterViewID{viewBars, viewConsumptionPace, viewPie, viewFuel}
+var quotaMeterViews = []meterViewID{viewBars, viewPace, viewZone, viewPie, viewFuel}
 
 func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 	colors := paletteFor(themeHacker)
@@ -22,7 +22,8 @@ func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 	}{
 		{viewBars, "█"},
 		{viewPie, "BRAILLE PIE"},
-		{viewConsumptionPace, "PACE DATA UNAVAILABLE"},
+		{viewPace, "GRAPH DATA UNAVAILABLE"},
+		{viewZone, "GRAPH DATA UNAVAILABLE"},
 		{viewFuel, "RANGE"},
 	}
 	for _, test := range tests {
@@ -55,7 +56,7 @@ func TestEveryViewIncludesResetCycleGauge(t *testing.T) {
 		Name:   "1 HOUR",
 		Window: codex.Window{UsedPercent: 40, WindowDurationMins: &duration, ResetsAt: &reset},
 	}
-	for _, view := range quotaMeterViews {
+	for _, view := range []meterViewID{viewBars, viewPie, viewFuel} {
 		output := ansi.Strip(renderMeterArea(80, 18, meter, view, colors))
 		if !strings.Contains(output, "RESET CYCLE  50%") {
 			t.Errorf("%s missing reset-cycle comparison gauge:\n%s", view.name(), output)
@@ -152,23 +153,6 @@ func TestResetProgressUsesWindowStartAndClamps(t *testing.T) {
 	}
 }
 
-func TestConsumptionPaceComparesElapsedTimeWithUsage(t *testing.T) {
-	duration := int64(100)
-	reset := time.Unix(20_000, 0)
-	now := reset.Add(-50 * time.Minute)
-	window := codex.Window{UsedPercent: 25, WindowDurationMins: &duration, ResetsAt: ptr(reset.Unix())}
-	if got, ok := consumptionPace(window, now); !ok || got != 25 {
-		t.Fatalf("under-pace consumption = %d, %v; want +25, true", got, ok)
-	}
-	window.UsedPercent = 75
-	if got, ok := consumptionPace(window, now); !ok || got != -25 {
-		t.Fatalf("over-pace consumption = %d, %v; want -25, true", got, ok)
-	}
-	if _, ok := consumptionPace(codex.Window{UsedPercent: 25}, now); ok {
-		t.Fatal("missing window timing unexpectedly produced a consumption pace")
-	}
-}
-
 func TestConsumptionProjectionDistinguishesSafeEarlyAndUnavailable(t *testing.T) {
 	duration := int64(100)
 	reset := time.Unix(20_000, 0)
@@ -178,9 +162,6 @@ func TestConsumptionProjectionDistinguishesSafeEarlyAndUnavailable(t *testing.T)
 	if projection.kind != consumptionProjectionSafe || projection.projectedRemaining != 50 {
 		t.Fatalf("safe projection = %#v, want 50%% remaining", projection)
 	}
-	if label := formatConsumptionProjection(projection); !strings.Contains(label, "SAFE THROUGH RESET") || !strings.Contains(label, "~50% LEFT") {
-		t.Fatalf("safe projection label = %q", label)
-	}
 
 	window.UsedPercent = 75
 	projection = consumptionProjectionFor(window, now)
@@ -188,16 +169,13 @@ func TestConsumptionProjectionDistinguishesSafeEarlyAndUnavailable(t *testing.T)
 		projection.earlyBy < 33*time.Minute || projection.earlyBy > 34*time.Minute {
 		t.Fatalf("early projection = %#v, want limit in about 17m and 33m early", projection)
 	}
-	if label := formatConsumptionProjection(projection); !strings.Contains(label, "LIMIT IN ~17M") || !strings.Contains(label, "33M EARLY") {
-		t.Fatalf("early projection label = %q", label)
-	}
 
 	window.UsedPercent = 0
-	if label := formatConsumptionProjection(consumptionProjectionFor(window, now)); !strings.Contains(label, "NO BURN YET") {
-		t.Fatalf("zero-burn projection label = %q", label)
+	if projection := consumptionProjectionFor(window, now); projection.kind != consumptionProjectionNoBurn {
+		t.Fatalf("zero-burn projection = %#v", projection)
 	}
-	if label := formatConsumptionProjection(consumptionProjectionFor(codex.Window{UsedPercent: 25}, now)); label != "" {
-		t.Fatalf("unavailable projection was displayed: %q", label)
+	if projection := consumptionProjectionFor(codex.Window{UsedPercent: 25}, now); projection.kind != consumptionProjectionUnavailable {
+		t.Fatalf("unavailable projection = %#v", projection)
 	}
 }
 
@@ -308,46 +286,6 @@ func TestFuelTankStatsFollowReverseGaugeDirection(t *testing.T) {
 	usedAt := strings.Index(stats, "USED  25%")
 	if freeAt < 0 || usedAt < 0 || freeAt >= usedAt {
 		t.Fatalf("fuel stats do not show free on the left and used on the right: %q", stats)
-	}
-}
-
-func TestConsumptionPaceGaugeUsesSignedHorizontalAxis(t *testing.T) {
-	colors := paletteFor(themeHacker)
-	positive := ansi.Strip(renderConsumptionPaceSized(41, 4, 25, true, colors))
-	negative := ansi.Strip(renderConsumptionPaceSized(41, 4, -25, true, colors))
-	for _, want := range []string{"-100", "+100", "HEADROOM +25 POINTS", "CONSUMPTION PACE"} {
-		if !strings.Contains(positive, want) {
-			t.Fatalf("positive pace gauge missing %q: %q", want, positive)
-		}
-	}
-	if !strings.Contains(negative, "DEFICIT -25 POINTS") {
-		t.Fatalf("negative pace gauge missing deficit: %q", negative)
-	}
-	if !strings.Contains(positive, "[▲]") || !strings.Contains(negative, "[▲]") {
-		t.Fatalf("pace gauges do not use the highlighted sliding carriage: positive=%q negative=%q", positive, negative)
-	}
-	if !strings.Contains(positive, "━") || !strings.Contains(negative, "━") {
-		t.Fatalf("pace gauges do not show a trail from zero: positive=%q negative=%q", positive, negative)
-	}
-	positiveMarker := runeColumn(lineContainingRune(positive, '▲'), '▲')
-	negativeMarker := runeColumn(lineContainingRune(negative, '▲'), '▲')
-	if positiveMarker <= 20 || negativeMarker >= 20 {
-		t.Fatalf("pace markers did not straddle zero: negative=%d positive=%d", negativeMarker, positiveMarker)
-	}
-}
-
-func TestConsumptionPaceCarriageStaysInsideResponsiveAxis(t *testing.T) {
-	colors := paletteFor(themeNightshade)
-	for _, width := range []int{1, 2, 3, 4, 9, 20, 41, 80} {
-		for _, pace := range []int{-100, -25, 0, 25, 100} {
-			output := renderConsumptionPaceSized(width, 1, pace, true, colors)
-			if got := lipgloss.Width(output); got != width {
-				t.Errorf("width %d pace %d rendered width %d: %q", width, pace, got, ansi.Strip(output))
-			}
-			if got := lipgloss.Height(output); got != 1 {
-				t.Errorf("width %d pace %d rendered height %d", width, pace, got)
-			}
-		}
 	}
 }
 

@@ -29,18 +29,20 @@ const (
 	viewBars meterViewID = iota
 	viewMonitor
 	viewPie
-	viewConsumptionPace
+	viewPace
 	viewFuel
 	viewBenchmark
 	viewUsage
 	viewResets
 	viewThresholds
+	viewZone
 	viewCount
 )
 
 var quotaViewOrder = [...]meterViewID{
 	viewBars,
-	viewConsumptionPace,
+	viewPace,
+	viewZone,
 	viewPie,
 	viewFuel,
 	viewResets,
@@ -75,12 +77,13 @@ func (s meterViewID) name() string {
 		i18n.Text("BARS"),
 		i18n.Text("SESSIONS"),
 		i18n.Text("PIE"),
-		i18n.Text("CONSUMPTION PACE"),
+		i18n.Text("PACE"),
 		i18n.Text("FUEL TANK"),
 		i18n.Text("BENCHMARK"),
 		i18n.Text("USAGE"),
 		i18n.Text("RESETS"),
 		i18n.Text("THRESHOLDS"),
+		i18n.Text("ZONE"),
 	}[s]
 }
 

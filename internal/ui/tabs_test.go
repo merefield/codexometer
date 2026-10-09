@@ -44,7 +44,7 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 func TestThresholdTabOnlyAppearsWithConfiguredSteps(t *testing.T) {
 	without, _ := quotaViewTabLayout(160, false)
 	with, _ := quotaViewTabLayout(160, true)
-	if len(without) != 5 || len(with) != 6 || with[5].view != viewThresholds || with[4].view != viewResets {
+	if len(without) != 6 || len(with) != 7 || with[6].view != viewThresholds || with[5].view != viewResets {
 		t.Fatal("Thresholds must follow Resets only when configured")
 	}
 	m := Model{meterView: viewResets, quotaSteps: []codex.QuotaStep{{Threshold: 80}}}
@@ -90,10 +90,10 @@ func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 		width int
 		want  string
 	}{
-		{width: 100, want: "CONSUMPTION PACE"},
+		{width: 100, want: "PACE"},
 		{width: 34, want: "PACE"},
-		{width: 15, want: "[C]"},
-		{width: 5, want: "C"},
+		{width: 18, want: "[C]"},
+		{width: 6, want: "C"},
 	} {
 		t.Run(test.want, func(t *testing.T) {
 			tabs, _ := quotaViewTabLayout(test.width)
@@ -110,7 +110,7 @@ func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 			if !strings.Contains(labels.String(), test.want) {
 				t.Fatalf("width %d labels %q do not contain %q", test.width, labels.String(), test.want)
 			}
-			if len(tabs) >= 3 && (tabs[1].view != viewConsumptionPace || !strings.Contains(tabs[1].label, test.want) || tabs[2].view != viewPie) {
+			if len(tabs) >= 4 && (tabs[1].view != viewPace || !strings.Contains(tabs[1].label, test.want) || tabs[2].view != viewZone || tabs[3].view != viewPie) {
 				t.Fatalf("width %d tab order/labels do not match views: %#v", test.width, tabs)
 			}
 		})
@@ -156,16 +156,16 @@ func TestQuotaViewTabsSupportHoverClickAndPulse(t *testing.T) {
 	}
 	updated, command := model.Update(mouse)
 	model = updated.(Model)
-	if command != nil || !model.viewHovered || model.hoveredView != viewConsumptionPace {
+	if command != nil || !model.viewHovered || model.hoveredView != viewPace {
 		t.Fatalf("consumption pace hover was not recorded: hovered=%v view=%d", model.viewHovered, model.hoveredView)
 	}
 
 	updated, command = model.Update(tea.MouseClickMsg(mouse))
 	model = updated.(Model)
-	if command == nil || model.meterView != viewConsumptionPace || model.quotaMeterView != viewConsumptionPace || !model.viewFlashing || model.flashedView != viewConsumptionPace {
+	if command == nil || model.meterView != viewPace || model.quotaMeterView != viewPace || !model.viewFlashing || model.flashedView != viewPace {
 		t.Fatalf("consumption pace click did not select, remember, and pulse: view=%d remembered=%d flashing=%v", model.meterView, model.quotaMeterView, model.viewFlashing)
 	}
-	updated, _ = model.Update(viewTabFlashExpiredMsg{view: viewConsumptionPace, sequence: model.viewSequence})
+	updated, _ = model.Update(viewTabFlashExpiredMsg{view: viewPace, sequence: model.viewSequence})
 	model = updated.(Model)
 	if model.viewFlashing {
 		t.Fatal("current tab pulse did not expire")
@@ -226,7 +226,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 
 func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model := Model{meterView: viewBars}
-	for _, want := range []meterViewID{viewConsumptionPace, viewPie, viewFuel, viewResets, viewBars} {
+	for _, want := range []meterViewID{viewPace, viewZone, viewPie, viewFuel, viewResets, viewBars} {
 		updated, command := model.Update(key('v'))
 		model = updated.(Model)
 		if command == nil || model.meterView != want || model.quotaMeterView != want || model.flashedButton != footerButtonView {
@@ -269,12 +269,12 @@ func TestQuotaSubTabsOnlyRenderAndHitTestWithinQuota(t *testing.T) {
 		output := ansi.Strip(model.render())
 		layout := model.dashboardLayout()
 		if view.isQuota() {
-			if layout.quotaTabsY < 0 || !strings.Contains(output, "CONSUMPTION PACE") {
+			if layout.quotaTabsY < 0 || !strings.Contains(output, "╭ PACE ╮") {
 				t.Fatalf("Quota did not render its sub-tab rail:\n%s", output)
 			}
 			continue
 		}
-		if layout.quotaTabsY != -1 || strings.Contains(output, "CONSUMPTION PACE") {
+		if layout.quotaTabsY != -1 || strings.Contains(output, "╭ PACE ╮") {
 			t.Fatalf("%s exposed Quota sub-tabs", view.name())
 		}
 		for y := 0; y < model.height; y++ {

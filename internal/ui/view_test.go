@@ -318,7 +318,7 @@ func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 }
 
 func TestGaugeGridViewClassification(t *testing.T) {
-	for _, view := range []meterViewID{viewBars, viewPie, viewConsumptionPace, viewFuel} {
+	for _, view := range []meterViewID{viewBars, viewPie, viewPace, viewZone, viewFuel} {
 		if got := usesMeterGrid(view); !got {
 			t.Errorf("usesMeterGrid(%s) = false, want true", view.name())
 		}
@@ -376,7 +376,7 @@ func TestGridRespondsToFourRateLimitsAndTerminalShape(t *testing.T) {
 
 func TestHorizontalStylesAlwaysFlowOneMeterPerRow(t *testing.T) {
 	meters := codex.DemoSnapshot().Meters()
-	for _, view := range []meterViewID{viewBars, viewConsumptionPace, viewFuel} {
+	for _, view := range []meterViewID{viewBars, viewFuel} {
 		if columns := meterGridColumns(160, 30, len(meters), view); columns != 1 {
 			t.Fatalf("%s used %d columns, want one", view.name(), columns)
 		}
@@ -420,7 +420,7 @@ func TestMeterGridKeepsRowHeightsEqualAndPadsAboveFooter(t *testing.T) {
 
 func TestMeterGridUsesAllocatedHeightWithoutInternalOverflow(t *testing.T) {
 	meters := codex.DemoSnapshot().Meters()
-	for _, view := range []meterViewID{viewPie, viewConsumptionPace} {
+	for _, view := range []meterViewID{viewPie, viewPace} {
 		output := ansi.Strip(renderMeterGrid(116, 24, meters, view, paletteFor(themeHacker)))
 		height := strings.Count(output, "\n") + 1
 		if height != 24 {

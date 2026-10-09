@@ -45,6 +45,9 @@ func (m Model) render() string {
 		if m.meterView.isQuota() {
 			parts = append(parts, m.renderQuotaViewTabs(contentWidth, colors))
 		}
+		if isQuotaGraph(m.meterView) {
+			parts = append(parts, m.renderQuotaGraphControls(contentWidth, colors))
+		}
 		if m.err != nil && m.meterView != viewUsage {
 			errorView := renderError(contentWidth, m.err, colors)
 			parts = append(parts, errorView)
@@ -61,6 +64,10 @@ func (m Model) render() string {
 			parts = append(parts, emptyView)
 		}
 		footer := m.renderFooter(contentWidth, colors)
+		var graphOptions []quotaPlotOptions
+		if isQuotaGraph(m.meterView) {
+			graphOptions = m.quotaPlotOptions()
+		}
 		if m.meterView == viewThresholds {
 			parts = append(parts, m.renderThresholds(contentWidth, layout.meterHeight, colors))
 		} else if m.meterView == viewResets {
@@ -72,9 +79,9 @@ func (m Model) render() string {
 		} else if m.meterView == viewBenchmark {
 			parts = append(parts, m.renderBenchmarkArea(contentWidth, layout.meterHeight, colors))
 		} else if len(meters) > 1 {
-			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterView, colors))
+			parts = append(parts, renderMeterGrid(contentWidth, layout.meterHeight, meters, m.meterView, colors, graphOptions...))
 		} else if len(meters) == 1 {
-			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterView, colors))
+			parts = append(parts, renderMeterArea(contentWidth, layout.meterHeight, meters[0], m.meterView, colors, graphOptions...))
 		}
 		if layout.footerSpacer {
 			parts = append(parts, strings.Repeat(" ", contentWidth))
