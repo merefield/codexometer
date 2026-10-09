@@ -104,7 +104,7 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 		}
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colors.primary).
-		Background(colors.background).Width(popup.width).Render(strings.Join(lines, "\n"))
+		Background(colors.background).BorderBackground(colors.background).Width(popup.width).Render(strings.Join(lines, "\n"))
 	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
 }
 
