@@ -181,9 +181,12 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 		status = i18n.Format("%+.1f PP FROM SAFETY", used-elapsed)
 	}
 	trend, projected := quotagraph.Project(options.mode, window, options.points, now)
-	trendInk := lipgloss.Color("#9D2537")
-	if trend.Projected <= 100 {
-		trendInk = lipgloss.Color("#45DB79")
+	trendInk := colors.dim
+	if projected {
+		trendInk = lipgloss.Color("#9D2537")
+		if trend.Projected <= 100 {
+			trendInk = lipgloss.Color("#45DB79")
+		}
 	}
 	projection := ""
 	if projected {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,40 @@ func TestQuotaPlotAxesAndProjection(t *testing.T) {
 	}
 	if strings.Contains(renderQuotaPlot(60, 15, w, now, true, quotaPlotOptions{mode: quotagraph.Off}, paletteFor(themeHacker)), "AT RESET") {
 		t.Fatal("Off still rendered projection")
+	}
+}
+
+func TestQuotaUnavailableTrendIsMuted(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	for theme := themeHacker; theme < themeCount; theme++ {
+		colors := paletteFor(theme)
+		for _, pace := range []bool{false, true} {
+			for _, options := range []quotaPlotOptions{{mode: quotagraph.HalfHour}, {mode: quotagraph.Hour}, {mode: quotagraph.Day}} {
+				out := renderQuotaPlot(60, 15, graphWindow(now, 25), now, pace, options, colors)
+				if got, want := strings.Split(out, "\n")[14], colors.dimmed().Render("TREND UNAVAILABLE"); got != want {
+					t.Fatalf("theme=%v pace=%v mode=%v unavailable trend is not muted: %q", theme, pace, options.mode, got)
+				}
+			}
+			for _, test := range []struct {
+				used      int
+				ink       string
+				projected float64
+			}{
+				{25, "#45DB79", 50},
+				{50, "#45DB79", 100},
+				{75, "#9D2537", 150},
+			} {
+				out := renderQuotaPlot(60, 15, graphWindow(now, test.used), now, pace, quotaPlotOptions{}, colors)
+				text := fmt.Sprintf("TREND // %.1f%% AT RESET", test.projected)
+				if pace {
+					text = fmt.Sprintf("TREND // %+.1f PP AT RESET", test.projected-100)
+				}
+				want := lipgloss.NewStyle().Foreground(lipgloss.Color(test.ink)).Render(text)
+				if got := strings.Split(out, "\n")[14]; got != want {
+					t.Fatalf("valid projection lost its endpoint colour: %q", got)
+				}
+			}
+		}
 	}
 }
 
