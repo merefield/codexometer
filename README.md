@@ -1850,7 +1850,7 @@ session. Short boxes prioritise readable context and approval controls; the
 compact view omits the dots when fewer than three body rows fit. Sent-message
 acknowledgement animations remain confined to full detail.
 
-Full approval reviews use a separate **65,536-character** budget, so longer commands and justifications retain their complete text and decision buttons. Ordinary telemetry excerpts remain limited to 4,096 characters. Requests exceeding the approval budget still require Codex; the reason stays pinned below the scrolling Detail text. **Home/End** jump to the first/last Detail line. Approval controls stay fixed while the review scrolls.
+Full approval reviews use a separate **65,536-character** budget, so longer commands and justifications retain their complete text and decision buttons. Ordinary telemetry excerpts remain limited to 4,096 characters. Requests exceeding the approval budget still require Codex; the reason stays pinned below the scrolling Detail text. **Home/End** jump to the first/last Detail line. Approval controls stay fixed while the review scrolls. Tabs, leading/trailing whitespace and Windows line endings do not disable approval buttons; display formatting preserves the original command and directory used for the decision.
 
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or

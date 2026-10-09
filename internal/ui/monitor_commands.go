@@ -341,7 +341,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				m.monitorPrompt.session = r.session
 				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
 				if strings.HasPrefix(r.path, "rename/") {
-					m.monitorPrompt.notice = "Session rename requested. The name updates on the next refresh."
+					m.monitorPrompt.notice = "Session renamed."
 				}
 				return m, cmd, true
 			} else {

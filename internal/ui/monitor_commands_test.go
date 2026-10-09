@@ -262,7 +262,7 @@ func TestMonitorRenameEditorReviewAndConfirmation(t *testing.T) {
 	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
-	if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "unsent ordinary draft" || !strings.Contains(m.monitorPrompt.notice, "rename requested") {
+	if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "unsent ordinary draft" || m.monitorPrompt.notice != "Session renamed." {
 		t.Fatal("rename did not restore draft and notice")
 	}
 }

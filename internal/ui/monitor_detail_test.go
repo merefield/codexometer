@@ -89,3 +89,26 @@ func TestApprovalCommentaryFullDetailOnly(t *testing.T) {
 		t.Fatal("context leaked into row")
 	}
 }
+
+func TestApprovalDetailKeepsCommandWhitespaceAndControls(t *testing.T) {
+	m := approvalTestModel()
+	c := &m.monitorSessionData[0].preview
+	c.CommandDetails = codex.ApprovalCommandDetails{Command: "\n  printf 'a\tb'  \r\n\n", Directory: "/work"}
+	before := *c
+	var command []string
+	for _, line := range m.contextDetailDocument(120) {
+		if line.kind == "command" {
+			command = append(command, strings.TrimPrefix(line.text, "│ "))
+		}
+	}
+	if got := strings.Join(command, "\n"); got != "\n  printf 'a    b'  \n\n" {
+		t.Fatalf("command formatting lost: %q", got)
+	}
+	g := m.monitorDashboardLayout()
+	if !m.monitorApprovalControls(g.contentWidth, g.meterHeight) {
+		t.Fatal("whitespace disabled approval controls")
+	}
+	if *c != before {
+		t.Fatal("display formatting changed the original approval")
+	}
+}

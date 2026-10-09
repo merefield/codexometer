@@ -28,7 +28,7 @@ func TestCommandConfirmationIsBoundAndSingleUse(t *testing.T) {
 	s, _, token := controlServer(t)
 	f := &commandsFake{revision: "current"}
 	s.control.commands = f
-	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "prepare", Path: "model/test", Revision: "current", Choice: "choice"}}
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "prepare", Path: "rename/new-name", Revision: "current", Choice: "choice"}}
 	w := actionCall(s, token, "commands", b)
 	var response struct{ Confirmation string }
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Confirmation == "" {
@@ -45,6 +45,10 @@ func TestCommandConfirmationIsBoundAndSingleUse(t *testing.T) {
 	b.Command = &commandRequest{Mode: "commit"}
 	if w = actionCall(s, token, "commands", b); w.Code != 200 || f.calls != 1 {
 		t.Fatalf("commit %d %s calls %d", w.Code, w.Body, f.calls)
+	}
+	var result struct{ Message string }
+	if json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Message != "Session renamed." {
+		t.Fatal("confirmed rename reported as still pending", w.Body)
 	}
 	if w = actionCall(s, token, "commands", b); w.Code != 409 || f.calls != 1 {
 		t.Fatal("replayed command")

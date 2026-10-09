@@ -51,7 +51,7 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 		}
 		message := "Change requested. Codex will apply it to subsequent turns."
 		if strings.HasPrefix(q.Path, "rename/") {
-			message = "Session rename requested. The name updates on the next refresh."
+			message = "Session renamed."
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 		return

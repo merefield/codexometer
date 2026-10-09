@@ -147,8 +147,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			}
 		}
 		allowed := c.ApprovalOptions[0].Kind != ""
-		// Fail closed if the display loses ANY command/request content, or if
-		// this is a broader grant rather than an ordinary command decision.
+		// Check completeness and supported action semantics independently of
+		// normal display formatting. Preserve the original command and directory.
 		switch {
 		case !kindValid:
 			c.ApprovalBlocked = "approval-kind"
@@ -166,9 +166,9 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "missing-identity"
 		case !allowed:
 			c.ApprovalBlocked = "decisions"
-		case len([]rune(c.Text)) > approvalTextLimit:
+		case !approvalTextFits(c.Text) || !approvalTextFits(p.Reason) || !approvalTextFits(command) || !approvalTextFits(p.CWD):
 			c.ApprovalBlocked = "truncated"
-		case SanitizeApprovalText(c.Text) != c.Text || SanitizeApprovalText(command) != command || SanitizeApprovalText(p.CWD) != p.CWD:
+		case !approvalTextDisplayable(c.Text) || !approvalTextDisplayable(p.Reason) || !approvalTextDisplayable(command) || !approvalTextDisplayable(p.CWD):
 			c.ApprovalBlocked = "sanitised"
 		default:
 			c.ApprovalToken = rand.Text()
