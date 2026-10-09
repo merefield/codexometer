@@ -1886,15 +1886,14 @@ test('pairing, all quota views, navigation and refresh', async ({
   await expect(page.getByRole('meter').first()).toBeVisible();
   await page.getByRole('link', { name: 'PIE', exact: true }).click();
   await expect(page.locator('svg')).toHaveCount(2);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION PACE', exact: true })
-    .click();
-  await expect(page.locator('.pace')).toHaveCount(2);
-  await expect(page.getByText('−100 // OVER BUDGET')).toHaveCount(2);
-  await expect(page.getByText('+100 // HEADROOM')).toHaveCount(2);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
+  await expect(page.locator('.consumption-zone')).toHaveCount(2);
+  await expect(
+    page.getByText('DISTANCE FROM SAFETY (PP)', { exact: true }),
+  ).toHaveCount(2);
+  await expect(page.locator('.pace-marker')).toHaveCount(0);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(2);
   await expect(page.locator('.position-dot')).toHaveCount(2);
   await page.getByRole('link', { name: 'FUEL TANK', exact: true }).click();
@@ -2256,9 +2255,7 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
     }),
   );
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(3);
   expect(
     await page.locator('.position-dot').evaluateAll((nodes) =>
@@ -2349,9 +2346,7 @@ test('consumption zone offers trace control and observed trend periods', async (
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
 
   const graph = page.locator('.consumption-zone');
   const trend = page.getByLabel('Trend period');
@@ -2505,25 +2500,23 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
-  const consumption = page.getByRole('radio', {
-    name: 'Consumption',
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  const consumption = page.getByRole('link', {
+    name: 'ZONE',
     exact: true,
   });
-  const pace = page.getByRole('radio', { name: 'Pace', exact: true });
+  const pace = page.getByRole('link', { name: 'PACE', exact: true });
   const line = page.locator('.trend-line');
   const dot = page.locator('.position-dot');
   const safe = page.locator('.pace-line');
   const trend = page.getByLabel('Trend period');
-  await expect(consumption).toBeChecked();
-  await expect(pace).not.toBeChecked();
+  await expect(consumption).toHaveAttribute('aria-current', 'page');
+  await expect(pace).not.toHaveAttribute('aria-current', 'page');
   await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
   const originalX = await dot.getAttribute('cx');
-  await pace.check();
-  await expect(consumption).not.toBeChecked();
-  await expect(pace).toBeChecked();
+  await pace.click();
+  await expect(consumption).not.toHaveAttribute('aria-current', 'page');
+  await expect(pace).toHaveAttribute('aria-current', 'page');
   await expect(dot).toHaveAttribute('cx', originalX!);
   await expect(page.locator('.axis-title').first()).toHaveText(
     'DISTANCE FROM SAFETY (PP)',
@@ -2600,7 +2593,7 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
     path: 'test-results/consumption-zone-pace.png',
     fullPage: true,
   });
-  await consumption.check();
+  await consumption.click();
   await expect(trend).toHaveValue('halfHour');
   await expect(gradient).toHaveAttribute('x2', '100%');
   await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
@@ -2610,7 +2603,7 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
   await update();
   await trend.selectOption('window');
   await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
-  await pace.check();
+  await pace.click();
   await expect(page.locator('.trend-summary')).toHaveText(
     'TREND // 0.0 PP AT RESET',
   );
@@ -2626,8 +2619,8 @@ test('quota graphics use viewport height and keep compact navigation accessible'
   await page.goto(pairingURL);
   for (const [name, graphic] of [
     ['BARS', '.gauge:not(.timeline)'],
-    ['CONSUMPTION PACE', '.pace'],
-    ['CONSUMPTION ZONE', '.zone-canvas'],
+    ['PACE', '.zone-canvas'],
+    ['ZONE', '.zone-canvas'],
     ['PIE', '.pie-wrap'],
     ['FUEL TANK', '.gauge:not(.timeline)'],
   ]) {
@@ -2656,9 +2649,7 @@ test('quota graphics use viewport height and keep compact navigation accessible'
     await expect(plot).toBeVisible();
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   await expect(page.locator('.zone-canvas')).toHaveCount(2);
   await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
@@ -3134,9 +3125,7 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page
-    .getByRole('link', { name: 'CONSUMPTION ZONE', exact: true })
-    .click();
+  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
   const trail = page.locator('.observation-trail');
   const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
   await expect(trace).toBeChecked();

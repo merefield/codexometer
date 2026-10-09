@@ -40,13 +40,7 @@
       href={'#/quota/' + item}
       class:active={view === item}
       aria-current={view === item ? 'page' : undefined}
-      >{item === 'pace'
-        ? 'CONSUMPTION PACE'
-        : item === 'zone'
-          ? 'CONSUMPTION ZONE'
-          : item === 'fuel'
-            ? 'FUEL TANK'
-            : item.toUpperCase()}</a
+      >{item === 'fuel' ? 'FUEL TANK' : item.toUpperCase()}</a
     >{/each}
 </nav>
 {#if live.data}
@@ -81,12 +75,11 @@
   {:else}
     <div
       class:radial={view === 'pie'}
-      class:zone={view === 'zone'}
+      class:zone={view === 'zone' || view === 'pace'}
       class="quota-grid"
     >
       {#each live.data.meters as meter}
         {@const cycle = elapsed(meter)}
-        {@const pace = cycle === null ? null : cycle - meter.used}
         <section class="panel quota-card">
           <h2>{meter.name}</h2>
           <div class="spread">
@@ -119,39 +112,18 @@
                     />{/if}
                 </svg>
               </div>
-            {:else if view === 'zone'}
+            {:else if view === 'zone' || view === 'pace'}
               {#if cycle !== null}
                 <ConsumptionZone
                   used={meter.used}
                   elapsed={cycle}
                   trail={meter.trail || []}
                   duration={meter.duration}
+                  paceView={view === 'pace'}
                 />
               {:else}<p class="empty">
                   Cycle duration or reset date unavailable — position cannot be
                   plotted.
-                </p>{/if}
-            {:else if view === 'pace'}
-              {#if pace !== null}
-                <div class="pace">
-                  <div class="pace-mid"></div>
-                  <span class="pace-marker" style:left={`${(pace + 100) / 2}%`}
-                    >▼</span
-                  >
-                </div>
-                <div class="spread muted">
-                  <span>−100 // OVER BUDGET</span><span>+100 // HEADROOM</span>
-                </div>
-                <p class="readout">
-                  {pace >= 0 ? '+' : ''}{pace.toFixed(1)} PP
-                  <small
-                    >{pace >= 0
-                      ? 'WITHIN PACE'
-                      : 'USING FASTER THAN TIME'}</small
-                  >
-                </p>
-              {:else}<p class="empty">
-                  Cycle duration unavailable — pace cannot be calculated.
                 </p>{/if}
             {:else}
               <div

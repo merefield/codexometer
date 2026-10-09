@@ -6,22 +6,22 @@
     elapsed,
     trail = [],
     duration,
+    paceView = false,
   }: {
     used: number;
     elapsed: number;
     trail?: Meter['trail'];
     duration: number | null;
+    paceView?: boolean;
   } = $props();
   type TrailPoint = NonNullable<Meter['trail']>[number];
   type TrendMode = 'off' | 'halfHour' | 'hour' | 'day' | 'window';
   const gradient = $props.id();
   let showObservations = $state(false);
   let showTrace = $state(true);
-  let graphMode = $state<'consumption' | 'pace'>('consumption');
   let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
   const trendMinutes = { off: 0, halfHour: 30, hour: 60, day: 1440, window: 0 };
-  let paceView = $derived(graphMode === 'pace');
   let yTicks = $derived(paceView ? [-100, -50, 0, 50, 100] : ticks);
   let minimum = $derived(paceView ? -100 : 0);
   let range = $derived(paceView ? 200 : 100);
@@ -156,25 +156,6 @@
   });
 </script>
 
-<div class="zone-modes" role="group" aria-label="Style">
-  <span class="muted">Style:</span>
-  <label
-    ><input
-      type="radio"
-      name={gradient + '-mode'}
-      value="consumption"
-      bind:group={graphMode}
-    /> Consumption</label
-  >
-  <label
-    ><input
-      type="radio"
-      name={gradient + '-mode'}
-      value="pace"
-      bind:group={graphMode}
-    /> Pace</label
-  >
-</div>
 <div class="zone-canvas" bind:clientWidth={width} bind:clientHeight={height}>
   <svg
     class="consumption-zone"
@@ -381,31 +362,6 @@
   </details>{/if}
 
 <style>
-  .zone-modes {
-    display: flex;
-    align-self: center;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
-    border: 1px solid var(--edge);
-    border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 12px;
-  }
-  .zone-modes label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    cursor: pointer;
-    color: var(--ink);
-  }
-  .zone-modes label:hover {
-    color: var(--accent);
-  }
-  .zone-modes input {
-    margin: 0;
-    accent-color: var(--accent);
-  }
   .observation-details {
     font-size: 12px;
   }

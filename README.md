@@ -2541,14 +2541,14 @@ codexometer --web --web-port 8765
 5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
 
 This preview is **read-only by default and UK-English-only**, not feature parity with
-the terminal. It includes Bars, Consumption Pace, Consumption Zone, Pie and Fuel Tank quota
+the terminal. It includes Bars, Pace, Zone, Pie and Fuel Tank quota
 presentations; reset inventory with disclosed expiry information; local session
 telemetry with expandable/full-page context and synchronised activity graphs;
 and account history with a daily heatmap, monthly/cumulative bars, a 6/12-month
 selector and an accessible data table. Five browser themes are available.
 `CODEXOMETER_LANG` continues to configure the terminal, not this preview.
 
-**Consumption Zone** plots each window's elapsed quota period horizontally and
+**Zone** plots each window's elapsed quota period horizontally and
 0–100% consumption vertically. The bottom-left to top-right diagonal represents
 steady consumption: above it means usage is outpacing elapsed time, below it means
 headroom. The background fades from red at the top left through amber to green at
@@ -2565,8 +2565,9 @@ supplies the same retained history as text: observation time, elapsed period,
 consumed percentage and breaks between segments. It updates alongside the
 plotted trail.
 
-Centred **CONSUMPTION / PACE** radio buttons switch the graph presentation.
-Consumption is the default. Pace keeps the elapsed-period X axis and shows
+**Pace** is a separate quota view using the same graph and controls.
+It replaces the browser's former horizontal Consumption Pace gauge,
+keeps the elapsed-period X axis and shows
 consumed percentage minus elapsed-period percentage on Y, in percentage points
 from −100 to +100. Zero is the horizontal safe line: positive values mean usage
 is ahead of time, negative values mean headroom. Its background is uniform
@@ -2654,7 +2655,7 @@ session IDs. Navigation and layout controls never send actions to Codex.
 
 The browser uses a compact dashboard layout: quota plots share the available
 width and height below the tabs. Pie charts retain their circular shape, while
-Consumption Zone scales each axis independently and keeps text legible. On short
+Zone and Pace scale each axis independently and keep text legible. On short
 windows or with many quota windows, content scrolls without hiding the footer
 controls or shrinking plots below a readable minimum.
 

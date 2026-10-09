@@ -24,7 +24,7 @@ The interface runs locally in a terminal, with clickable and hover-highlighted c
 
 The interface has four main tabs:
 
-- **Quota** — switch between Bars, Consumption Pace, Consumption Zone, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal or an early-exhaustion projection. The experimental web-only Consumption Zone can optionally trace observed history and project an arrowed recent-consumption trend. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
+- **Quota** — switch between Bars, Consumption Pace, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal or an early-exhaustion projection. The experimental browser's Zone and Pace graphs trace observed history and project arrowed consumption trends, showing either total consumption or distance from safety. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
 - **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The wider **SESSION TOTALS** readout keeps a clickable Reset beside it. Page through sessions and dismiss finished rows with `[×]` without closing them: fresh activity brings them back.
 - **Usage** — explore OpenAI account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. New **Breakdown** and **Windows** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. History is fetched directly from OpenAI on each run, with no local usage ledger. Unavailable data and approximate periods are labelled rather than guessed.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
@@ -119,10 +119,11 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 
 Prefer a browser window? `codexometer --web` now offers an **experimental,
 read-only by default** Quota, Sessions and Usage dashboard with the same retro spirit:
-responsive gauges, live activity graphs and usage heatmaps. Consumption Zone
+responsive gauges, live activity graphs and usage heatmaps. Zone
 traces the observed quota path, with a marked starting point and gaps for
-failed observations. Centred Consumption / Pace radio buttons switch between
-total consumption and distance from the safe line. Arrowed trends use the
+failed observations. The separate Pace view shows distance from the safe line,
+replacing the browser's former horizontal gauge. Both graphs offer the same
+trace and trend controls. Arrowed trends use the
 whole-window average by default or an observed recent period; green means
 projected usage stays within quota at reset, dark red means it exceeds it.
 Sessions offers graph-only, split, wide and full-page
