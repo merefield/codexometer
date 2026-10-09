@@ -2565,9 +2565,10 @@ supplies the same retained history as text: observation time, elapsed period,
 consumed percentage and breaks between segments. It updates alongside the
 plotted trail.
 
-An independent **TREND** selector is off by default. When enough uninterrupted
-observations exist, it can fit recent velocity over the last 30 minutes, last
-hour or last 24 hours. **FROM WINDOW START** instead uses the whole-window
+The **TREND** selector defaults to **FROM WINDOW START** and can be switched
+off. When enough uninterrupted observations exist, it can instead fit recent
+velocity over the last 30 minutes, last hour or last 24 hours.
+**FROM WINDOW START** uses the whole-window
 average: current consumption divided by elapsed quota-period percentage. Its
 line starts at the origin, passes through the current dot and extends to the
 graph edge; it works immediately without retained history once some time has
@@ -2575,8 +2576,8 @@ elapsed in a known quota window.
 The accent-coloured dotted projection passes through the current dot and uses
 periodic arrows to show direction; its caption estimates consumption at reset or
 warns when exhaustion is projected first. Recent periods without enough observed
-history remain visible but disabled. This is a linear extrapolation of coarse whole-percentage observations,
-not an OpenAI forecast.
+history remain visible but disabled. This is a linear extrapolation of coarse
+whole-percentage observations, not an OpenAI forecast.
 
 Trails are held only in the web server's memory, survive browser reloads and tab
 changes, and restart when the server stops. A changed account, reset date or

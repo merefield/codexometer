@@ -15,7 +15,7 @@
   const gradient = $props.id();
   let showObservations = $state(false);
   let showTrace = $state(true);
-  let trendMode = $state<TrendMode>('off');
+  let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
   let width = $state(400);
   let height = $state(240);
@@ -70,7 +70,8 @@
     window: Number.isFinite(elapsed) && elapsed > 0 && Number.isFinite(used),
   });
   $effect(() => {
-    if (!availability[trendMode]) trendMode = 'off';
+    if (trendMode !== 'window' && !availability[trendMode])
+      trendMode = 'window';
   });
   function trendPoints(mode: TrendMode): TrailPoint[] {
     if (mode === 'off' || !availability[mode]) return [];
@@ -164,8 +165,8 @@
         viewBox="0 0 8 8"
         refX="5"
         refY="4"
-        markerWidth="7"
-        markerHeight="7"
+        markerWidth="14"
+        markerHeight="14"
         orient="auto"
         markerUnits="userSpaceOnUse"
       >

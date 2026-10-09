@@ -2365,8 +2365,8 @@ test('consumption zone offers trace control and observed trend periods', async (
   await expect(page.locator('.observation-trail')).toBeVisible();
   await expect(page.locator('.observation-trail-casing')).toBeVisible();
   await expect(page.locator('.observation-details summary')).toBeVisible();
-  await expect(page.locator('.trend-line')).toHaveCount(0);
-  await expect(trend).toHaveValue('off');
+  await expect(page.locator('.trend-line')).toBeVisible();
+  await expect(trend).toHaveValue('window');
   await expect(trend.locator('option[value="halfHour"]')).not.toHaveAttribute(
     'disabled',
   );
@@ -2388,6 +2388,8 @@ test('consumption zone offers trace control and observed trend periods', async (
   await expect(page.locator('.observation-trail-casing')).toBeVisible();
   await expect(graph).toHaveAttribute('aria-label', /5 observations/);
 
+  await trend.selectOption('off');
+  await expect(page.locator('.trend-line')).toHaveCount(0);
   await trend.selectOption('halfHour');
   await expect(page.locator('.trend-line')).toBeVisible();
   await trend.selectOption('hour');
@@ -2410,7 +2412,7 @@ test('consumption zone offers trace control and observed trend periods', async (
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(trend).toHaveValue('off');
+  await expect(trend).toHaveValue('window');
   await expect(trend.locator('option[value="halfHour"]')).toHaveAttribute(
     'disabled',
   );
@@ -2441,7 +2443,7 @@ test('consumption zone offers trace control and observed trend periods', async (
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(trend).toHaveValue('off');
+  await expect(trend).toHaveValue('window');
   await expect(trend.locator('option[value="window"]')).toHaveAttribute(
     'disabled',
   );
@@ -2449,6 +2451,16 @@ test('consumption zone offers trace control and observed trend periods', async (
     'NO TIME ELAPSED',
   );
   await expect(line).toHaveCount(0);
+  // The default resumes automatically once the new window has elapsed time.
+  snapshot.meters[0].used = 40;
+  snapshot.meters[0].reset = end + 3 * 24 * 60 * 60;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(trend).toHaveValue('window');
+  await expect(line).toBeVisible();
 });
 
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
