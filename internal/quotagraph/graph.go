@@ -230,12 +230,8 @@ func Project(mode Mode, window codex.Window, points []Point, now time.Time) (Tre
 
 type Segment struct{ X1, Y1, X2, Y2 float64 }
 
-func (t Trend) Segment(pace bool) (Segment, bool) {
+func (t Trend) Segment() (Segment, bool) {
 	slope, lower, upper := t.Slope, 0.0, 100.0
-	if pace {
-		slope--
-		lower = -100
-	}
 	x1, x2 := t.Start, 100.0
 	if slope != 0 {
 		a, b := (lower-t.Intercept)/slope, (upper-t.Intercept)/slope

@@ -35,14 +35,12 @@ const (
 	viewUsage
 	viewResets
 	viewThresholds
-	viewZone
 	viewCount
 )
 
 var quotaViewOrder = [...]meterViewID{
 	viewBars,
 	viewPace,
-	viewZone,
 	viewPie,
 	viewFuel,
 	viewResets,
@@ -83,7 +81,6 @@ func (s meterViewID) name() string {
 		i18n.Text("USAGE"),
 		i18n.Text("RESETS"),
 		i18n.Text("THRESHOLDS"),
-		i18n.Text("ZONE"),
 	}[s]
 }
 

@@ -20,13 +20,9 @@ func TestWindowStartUsesSnapshotWithoutHistory(t *testing.T) {
 	if !ok || trend.Slope != .5 || trend.Projected != 50 || trend.Start != 0 || trend.Intercept != 0 {
 		t.Fatalf("origin projection: %+v %v", trend, ok)
 	}
-	zone, ok := trend.Segment(false)
+	zone, ok := trend.Segment()
 	if !ok || zone != (Segment{0, 0, 100, 50}) {
 		t.Fatalf("zone segment: %+v %v", zone, ok)
-	}
-	pace, ok := trend.Segment(true)
-	if !ok || pace != (Segment{0, 0, 100, -50}) {
-		t.Fatalf("pace segment: %+v %v", pace, ok)
 	}
 	w.UsedPercent = 0
 	if trend, ok = Project(WindowStart, w, nil, now); !ok || trend.Projected != 0 {
@@ -79,19 +75,18 @@ func TestRecentRegressionRequiresContinuousCoverage(t *testing.T) {
 func TestTrendClipping(t *testing.T) {
 	for _, test := range []struct {
 		trend Trend
-		pace  bool
 		want  Segment
 	}{
-		{Trend{Slope: 2}, false, Segment{0, 0, 50, 100}},
-		{Trend{Slope: 3}, true, Segment{0, 0, 50, 100}},
-		{Trend{Slope: 1, Intercept: -20, Start: 10}, false, Segment{20, 0, 100, 80}},
+		{Trend{Slope: 2}, Segment{0, 0, 50, 100}},
+		{Trend{Slope: 4}, Segment{0, 0, 25, 100}},
+		{Trend{Slope: 1, Intercept: -20, Start: 10}, Segment{20, 0, 100, 80}},
 	} {
-		got, ok := test.trend.Segment(test.pace)
+		got, ok := test.trend.Segment()
 		if !ok || got != test.want {
 			t.Fatalf("clip %+v: %+v %v", test, got, ok)
 		}
 	}
-	if _, ok := (Trend{Intercept: 200}).Segment(false); ok {
+	if _, ok := (Trend{Intercept: 200}).Segment(); ok {
 		t.Fatal("horizontal line outside plot should be omitted")
 	}
 }

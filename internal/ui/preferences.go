@@ -145,7 +145,7 @@ func reverseThemePreferences(values map[themeID]string) map[string]themeID {
 }
 
 var quotaViewPreferenceNames = map[meterViewID]string{
-	viewBars: "bars", viewPie: "pie", viewPace: "pace", viewZone: "zone", viewFuel: "fuel-tank", viewResets: "resets", viewThresholds: "thresholds",
+	viewBars: "bars", viewPie: "pie", viewPace: "pace", viewFuel: "fuel-tank", viewResets: "resets", viewThresholds: "thresholds",
 }
 
 var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)
@@ -155,9 +155,10 @@ func reverseViewPreferences(values map[meterViewID]string) map[string]meterViewI
 	for id, value := range values {
 		reversed[value] = id
 	}
-	// Preserve the previous Consumption Pace preference after the rename.
+	// Restore previous graph selections to the former Zone, now named Pace.
 	if _, ok := values[viewPace]; ok {
 		reversed["consumption-pace"] = viewPace
+		reversed["zone"] = viewPace
 	}
 	return reversed
 }

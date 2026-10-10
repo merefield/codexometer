@@ -1,10 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { replace } from 'svelte-spa-router';
   import { live, date } from './state.svelte';
   import type { Meter } from './state.svelte';
   import Thresholds from './Thresholds.svelte';
-  import ConsumptionZone from './ConsumptionZone.svelte';
-  import { preferences, quotaViews } from './preferences.svelte';
+  import ConsumptionPace from './ConsumptionPace.svelte';
+  import {
+    preferences,
+    quotaViews,
+    normaliseQuotaView,
+  } from './preferences.svelte';
   let { params = {} }: { params?: { view?: string } } = $props();
   let views = $derived(
     quotaViews.filter(
@@ -13,7 +18,9 @@
   );
   let now = $state(Date.now());
   let view = $derived(
-    views.includes(params.view || '') ? params.view! : 'bars',
+    views.includes(normaliseQuotaView(params.view))
+      ? normaliseQuotaView(params.view)
+      : 'bars',
   );
   onMount(() => {
     const timer = setInterval(() => (now = Date.now()), 1000);
@@ -28,6 +35,9 @@
   }
   $effect(() => {
     preferences.view = view;
+    if (params.view === 'zone' || params.view === 'consumption-pace') {
+      void replace('/quota/pace');
+    }
   });
   function sector(used: number): string {
     const angle = (used / 100) * Math.PI * 2;
@@ -75,7 +85,7 @@
   {:else}
     <div
       class:radial={view === 'pie'}
-      class:zone={view === 'zone' || view === 'pace'}
+      class:zone={view === 'pace'}
       class="quota-grid"
     >
       {#each live.data.meters as meter}
@@ -112,14 +122,13 @@
                     />{/if}
                 </svg>
               </div>
-            {:else if view === 'zone' || view === 'pace'}
+            {:else if view === 'pace'}
               {#if cycle !== null}
-                <ConsumptionZone
+                <ConsumptionPace
                   used={meter.used}
                   elapsed={cycle}
                   trail={meter.trail || []}
                   duration={meter.duration}
-                  paceView={view === 'pace'}
                 />
               {:else}<p class="empty">
                   Cycle duration or reset date unavailable — position cannot be

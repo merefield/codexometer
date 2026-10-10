@@ -36,10 +36,10 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 		}
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
-	// Baseline includes Pace/Zone graph controls, explicit panel/border
+	// Baseline includes Pace graph controls, explicit panel/border
 	// backgrounds and Sessions Zero/Close All; every theme, view and size
 	// remains covered.
-	const want = "07592d4740f0a32a45f7dd70c153e889f4101e5793e33cb61daf35c0a4edd34c"
+	const want = "19ec27af5176579e3145b5af72749d86f293f9ab00e7d3358970eeee0b513e50"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}
