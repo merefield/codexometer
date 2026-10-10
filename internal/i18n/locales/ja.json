@@ -514,5 +514,6 @@
   "pending": "保留中",
   "sending": "送信中",
   "uncertain": "不明",
-  "sent": "送信済み"
+  "sent": "送信済み",
+  "Could not open web link.": "ウェブリンクを開けませんでした。"
 }

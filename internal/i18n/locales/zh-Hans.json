@@ -514,5 +514,6 @@
   "pending": "待处理",
   "sending": "发送中",
   "uncertain": "不确定",
-  "sent": "已发送"
+  "sent": "已发送",
+  "Could not open web link.": "无法打开网页链接。"
 }

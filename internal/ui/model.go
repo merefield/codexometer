@@ -73,6 +73,7 @@ type Model struct {
 	monitorApprovalNoticeToken          string
 	monitorDetailSent                   detailSentState
 	versionHovered                      bool
+	sessionWebLinkError                 bool
 	history                             accountHistoryState
 	resetThreshold                      int
 	resetWarningHours                   int
@@ -503,6 +504,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m = next
 	}
 	switch message := message.(type) {
+	case sessionWebLinkOpenedMsg:
+		m.sessionWebLinkError = message.err != nil
+		return m, nil
 	case tea.KeyboardEnhancementsMsg:
 		m.keyboardEventTypes = message.SupportsEventTypes()
 		m.monitorApprovalNumberReleased = false
@@ -873,6 +877,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
+		if cmd, handled := m.sessionWebLinkClick(message); handled {
+			m.sessionWebLinkError = false
+			return m, cmd
+		}
 		headerAction := m.headerActionAt(message.Mouse().X, message.Mouse().Y)
 		m.versionHovered = headerAction == "version"
 		if click, ok := message.(tea.MouseClickMsg); ok && click.Mouse().Button == tea.MouseLeft {

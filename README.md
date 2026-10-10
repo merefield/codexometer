@@ -630,8 +630,8 @@ The version number links to its release highlights
 (development builds link to their base release; prerelease tags are preserved).
 Use your terminal's hyperlink gesture (usually
 Ctrl-click; some terminals use Cmd-click or a context menu). The version is
-underlined on hover and uses a standard OSC 8 hyperlink; Codexometer does not
-launch a browser process. Your terminal must support hyperlinks, including
+underlined on hover and uses a standard OSC 8 hyperlink; opening the version
+link is handled by the terminal. Your terminal must support hyperlinks, including
 when running over SSH or in WSL. Existing tab and button shortcuts are unchanged.
 
 ### Quota health signal
@@ -1361,6 +1361,25 @@ switch between graph-only, split, expanded, and full detail as described below.
   position after scrolling back. Web detail receives the same bounded live text
   through its normal refresh. Local-only mode retains completed-message fallback;
   missed events are not reconstructed and the existing context length cap applies.
+
+Terminal session text marks HTTP/HTTPS web links explicitly and underlines both
+Markdown labels and visible URLs. Wrapped links and scrolled-in fragments retain
+their full destination. In prose, complete inline Markdown links to the HTTPS
+domains `github.com`, `openai.com` and `chatgpt.com`, including their subdomains, display
+just their underlined label; other domains keep both the label and URL visible.
+Custom ports and HTTP destinations keep their URLs visible. Bare URLs, code and
+approval requests retain their original visible text. Copy always uses the
+original unwrapped source, including Markdown destinations.
+
+When Codexometer runs locally on macOS, left-click a session web link to open it
+in your default browser. Codexometer consumes that click before session
+navigation or approval handling, and passes the URL directly to macOS without a
+shell. Windows and SSH sessions use the terminal's hyperlink gesture (normally
+Ctrl-click in Windows Terminal; Cmd+Shift+click bypasses mouse capture in Ghostty).
+The macOS fallback is disabled when an SSH environment marker is present. Tiny
+text areas under 12 columns and incomplete, oversized or unsupported destinations stay
+plain. The version and pricing links continue to use the terminal's native
+hyperlink handling.
 
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the

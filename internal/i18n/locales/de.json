@@ -514,5 +514,6 @@
   "pending": "ausstehend",
   "sending": "wird gesendet",
   "uncertain": "unklar",
-  "sent": "gesendet"
+  "sent": "gesendet",
+  "Could not open web link.": "Weblink konnte nicht geöffnet werden."
 }

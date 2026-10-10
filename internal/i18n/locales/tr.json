@@ -514,5 +514,6 @@
   "pending": "bekliyor",
   "sending": "gönderiliyor",
   "uncertain": "belirsiz",
-  "sent": "gönderildi"
+  "sent": "gönderildi",
+  "Could not open web link.": "Web bağlantısı açılamadı."
 }

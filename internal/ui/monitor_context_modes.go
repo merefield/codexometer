@@ -135,8 +135,12 @@ func (m *Model) setRowContext(id string, mode int) {
 }
 
 func expandedContextLines(width int, s monitorSession) []string {
+	wrap := sessionWebTextLines
+	if s.preview.Kind == codex.SessionContextApproval {
+		wrap = sessionWebLiteralTextLines
+	}
 	if s.preview.FileChanges != "" {
-		lines := strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1), true), "\n")
+		lines := wrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1))
 		for _, line := range fileApprovalDocument(s.preview.FileChanges, max(width-4, 1)) {
 			lines = append(lines, line.text)
 		}
@@ -157,7 +161,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 		}
 		text += "\n\n" + codex.SanitizeSessionContext(s.preview.Text)
 	}
-	return strings.Split(ansi.Hardwrap(text, max(width-4, 1), true), "\n")
+	return wrap(text, max(width-4, 1))
 }
 
 // Inline decisions are only offered when the complete source/request fits
@@ -233,8 +237,8 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		lines[i] = colors.label().Render(lines[i])
 	}
 	if s.preview.FileChanges != "" {
-		offset := len(strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1), true), "\n"))
 		document := fileApprovalDocument(s.preview.FileChanges, max(width-4, 1))
+		offset := len(expandedContextLines(width, s)) - len(document)
 		for i, line := range document {
 			if i+offset < len(lines) {
 				if i+offset == len(lines)-1 && len(document)+offset > len(lines) {

@@ -132,7 +132,11 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 	if text == "" {
 		text = i18n.Text("NO CONTEXT")
 	}
-	lines := strings.Split(ansi.Hardwrap(text, inner, true), "\n")
+	wrap := sessionWebTextLines
+	if s.preview.Kind == codex.SessionContextApproval {
+		wrap = sessionWebLiteralTextLines
+	}
+	lines := wrap(text, inner)
 	bodyRows := max(height-2, 1)
 	dots := m.sessionActivityDots(s)
 	if bodyRows < 3 || inner < 3 {

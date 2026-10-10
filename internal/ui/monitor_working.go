@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
@@ -41,8 +39,8 @@ func workingCommandTitle(a codex.SessionActivity) string {
 // Reserve space for the command on roomy rows; tiny previews prioritise prose.
 func workingContextLines(c codex.SessionContext, width, rows int, compact bool) []string {
 	width, rows = max(width, 1), max(rows, 1)
-	fit := func(text string, n int) []string {
-		lines := strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(text), width, true), "\n")
+	fit := func(text string, n int, cook bool) []string {
+		lines := wrappedSessionWebText(codex.SanitizeSessionContext(text), width, cook)
 		if len(lines) > n {
 			lines = lines[:n]
 			lines[n-1] = ansi.Truncate(lines[n-1], max(width-1, 0), "") + "…"
@@ -59,16 +57,16 @@ func workingContextLines(c codex.SessionContext, width, rows int, compact bool) 
 		if compact {
 			proseRows = min(proseRows, 2)
 		}
-		lines = fit(a.Prose, proseRows)
+		lines = fit(a.Prose, proseRows, true)
 	}
 	if rows-len(lines) >= 3 && len(lines) > 0 {
 		lines = append(lines, "")
 	}
 	if rows-len(lines) >= 2 {
 		lines = append(lines, ansi.Truncate(workingCommandTitle(a), width, "…"))
-		lines = append(lines, fit(a.Command, rows-len(lines))...)
+		lines = append(lines, fit(a.Command, rows-len(lines), false)...)
 	} else if len(lines) == 0 {
-		lines = fit(a.Command, rows)
+		lines = fit(a.Command, rows, false)
 	}
 	return lines
 }

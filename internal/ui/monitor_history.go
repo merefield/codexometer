@@ -315,7 +315,7 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 			return
 		}
 		lines = append(lines, detailLine{}, detailLine{ansi.Truncate(title, width, "…"), "heading"})
-		for _, line := range strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(text), width, true), "\n") {
+		for _, line := range sessionWebTextLines(codex.SanitizeSessionContext(text), width) {
 			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "body"})
 		}
 	}
