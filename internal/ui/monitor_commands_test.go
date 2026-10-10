@@ -408,11 +408,11 @@ func speedCommandTestModel(t *testing.T) (Model, *speedCommandTestClient) {
 	return next.(Model), f
 }
 
-func TestMonitorSpeedPickerUpFromBottomAndCApply(t *testing.T) {
+func TestMonitorSpeedPickerEnterReviewThenCConfirm(t *testing.T) {
 	m, f := speedCommandTestModel(t)
 	m.monitorPrompt.input.SetValue("/fast")
 	view := ansi.Strip(m.render())
-	for _, text := range []string{"Standard (default)", "Fast", "> Slow // CURRENT", "[ C APPLY ]", "C apply"} {
+	for _, text := range []string{"Standard (default)", "Fast", "> Slow // CURRENT", "[ ENTER REVIEW ]", "Enter review", "C confirm"} {
 		if !strings.Contains(view, text) {
 			t.Fatalf("missing %q in %s", text, view)
 		}
@@ -425,17 +425,25 @@ func TestMonitorSpeedPickerUpFromBottomAndCApply(t *testing.T) {
 	if cmd != nil || f.calls != 0 || m.monitorCommands.selected != 1 || m.monitorCommands.detail || !strings.Contains(ansi.Strip(m.render()), "> Fast") {
 		t.Fatal("Up from bottom did not highlight the preceding speed")
 	}
-	for _, code := range []rune{tea.KeyEnter, tea.KeyRight} {
+	next, cmd = m.Update(key('c'))
+	m = next.(Model)
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("C applied an unreviewed speed")
+	}
+	for _, code := range []rune{tea.KeyEnter, tea.KeyEnter, tea.KeyRight} {
 		next, cmd = m.Update(tea.KeyPressMsg{Code: code})
 		m = next.(Model)
 		if cmd != nil || f.calls != 0 || m.monitorCommands.detail {
 			t.Fatal("Enter/Right left the list or applied without C")
 		}
 	}
+	if m.monitorCommands.reviewedChoice != "fast" || !strings.Contains(ansi.Strip(m.render()), "[ C CONFIRM ]") || !strings.Contains(ansi.Strip(m.render()), "Standard (default)") {
+		t.Fatal("Enter did not provisionally review the speed while retaining all choices")
+	}
 	next, cmd = m.Update(key('c'))
 	m = next.(Model)
 	if cmd == nil || !m.monitorCommands.busy {
-		t.Fatal("C Apply did not send the highlighted speed")
+		t.Fatal("C Confirm did not send the reviewed speed")
 	}
 	_, duplicate := m.Update(key('c'))
 	if duplicate != nil {
@@ -448,7 +456,7 @@ func TestMonitorSpeedPickerUpFromBottomAndCApply(t *testing.T) {
 	}
 }
 
-func TestMonitorSpeedPickerClickSelectsAndFooterApplies(t *testing.T) {
+func TestMonitorSpeedPickerFooterReviewsThenConfirms(t *testing.T) {
 	for _, width := range []int{60, 120} {
 		m, f := speedCommandTestModel(t)
 		m.width = width
@@ -458,7 +466,13 @@ func TestMonitorSpeedPickerClickSelectsAndFooterApplies(t *testing.T) {
 		if cmd != nil || f.calls != 0 || m.monitorCommands.selected != 0 || m.monitorCommands.detail {
 			t.Fatal("click applied speed or hid the list")
 		}
-		x, y = renderedTextStart(t, m, "[ C APPLY ]")
+		x, y = renderedTextStart(t, m, "[ ENTER REVIEW ]")
+		next, cmd = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+		if cmd != nil || f.calls != 0 || m.monitorCommands.reviewedChoice != "default" {
+			t.Fatal("footer review applied or failed to stage the choice")
+		}
+		x, y = renderedTextStart(t, m, "[ C CONFIRM ]")
 		next, cmd = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		m = next.(Model)
 		if cmd == nil {
@@ -507,5 +521,66 @@ func TestMonitorSlashSelectionUsesHighlightColors(t *testing.T) {
 				t.Fatalf("%s did not use the appropriate selected/subdued colours", label)
 			}
 		}
+	}
+}
+
+func TestMonitorSpeedReviewIsBoundToChoiceAndExpires(t *testing.T) {
+	m, f := speedCommandTestModel(t)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	if m.monitorCommands.reviewedChoice != "slow" {
+		t.Fatal("Enter did not stage current choice")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = next.(Model)
+	if m.monitorCommands.reviewedChoice != "" {
+		t.Fatal("changing highlight retained old review")
+	}
+	_, cmd := m.Update(key('c'))
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("different choice applied without review")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	m.monitorCommands.until = time.Now().Add(-time.Second)
+	next, cmd = m.Update(key('c'))
+	m = next.(Model)
+	if cmd != nil || f.calls != 0 || m.monitorCommands.reviewedChoice != "" {
+		t.Fatal("expired review applied")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	_, cmd = m.Update(key('c'))
+	if cmd == nil {
+		t.Fatal("fresh review could not confirm")
+	}
+	cmd()
+	if f.calls != 1 || f.choice != "fast" {
+		t.Fatal("confirmed wrong choice")
+	}
+}
+
+func TestMonitorModelReasoningEnterReviewBeforeC(t *testing.T) {
+	m, f := commandTestModel(t)
+	_, cmd := m.Update(key('c'))
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("unreviewed model/reasoning applied")
+	}
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	if cmd != nil || f.calls != 0 || !m.monitorCommands.detail || !strings.Contains(ansi.Strip(m.render()), "[ C CONFIRM ]") {
+		t.Fatal("Enter did not provisionally review reasoning")
+	}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("second Enter confirmed")
+	}
+	_, cmd = m.Update(key('c'))
+	if cmd == nil {
+		t.Fatal("C did not confirm reviewed model/reasoning")
+	}
+	cmd()
+	if f.calls != 1 {
+		t.Fatal("incorrect mutation count")
 	}
 }

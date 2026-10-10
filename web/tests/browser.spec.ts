@@ -1433,13 +1433,23 @@ test('slash commands discover help and require a separate confirmation', async (
   await text.press('ArrowDown');
   await expect(high).toHaveClass(/suggested/);
   await expect(medium).not.toHaveClass(/suggested/);
-  await medium.click();
+  await medium.focus();
+  await medium.press('c');
+  expect(
+    commands.filter((c) => c === 'prepare' || c === 'commit'),
+  ).toHaveLength(0);
+  await medium.press('Enter');
   await expect(panel).toContainText('Server effort description');
   await expect(
     panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
   ).toBeEnabled();
   expect(commands.filter((c) => c === 'commit')).toHaveLength(0);
-  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+  const review = panel.getByRole('group', { name: 'Review command change' });
+  await expect(review).toBeFocused();
+  await review.press('Enter');
+  await review.press('Enter');
+  expect(commands.filter((c) => c === 'commit')).toHaveLength(0);
+  await review.press('c');
   await expect(panel).toContainText('Change requested.');
   expect(commands.filter((c) => c === 'commit')).toHaveLength(1);
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
@@ -1693,7 +1703,7 @@ async function openSpeedCommands(page: Page, pairingURL: string) {
   return { text, panel, list };
 }
 
-test('speed picker keeps all choices visible and C applies the highlighted speed', async ({
+test('speed picker keeps choices visible while Enter reviews and C confirms', async ({
   page,
   pairingURL,
 }) => {
@@ -1711,13 +1721,19 @@ test('speed picker keeps all choices visible and C applies the highlighted speed
   await expect(fast).toHaveAttribute('aria-selected', 'true');
   await expect(slow).toHaveAttribute('aria-selected', 'false');
   await expect(slow).toContainText('CURRENT');
+  await list.press('c');
+  expect(calls.every((c) => c.mode === 'list')).toBe(true);
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toBeDisabled();
   await list.press('Enter');
+  await expect(panel).toContainText('REVIEW // Fast');
   await expect(list).toBeVisible();
   await expect(list.getByRole('option')).toHaveCount(3);
   await expect(text).toHaveValue('/fast');
-  expect(calls.every((c) => c.mode === 'list')).toBe(true);
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
   await expect(
-    panel.getByRole('button', { name: 'C APPLY', exact: true }),
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
   ).toBeEnabled();
   await list.press('c');
   await expect(list).toHaveCount(0);
@@ -1730,7 +1746,7 @@ test('speed picker keeps all choices visible and C applies the highlighted speed
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
 });
 
-test('speed picker clicks select, footer C applies, and Escape preserves the draft', async ({
+test('speed picker footer reviews then confirms and Escape preserves the draft', async ({
   page,
   pairingURL,
 }) => {
@@ -1756,12 +1772,83 @@ test('speed picker clicks select, footer C applies, and Escape preserves the dra
   await list
     .getByRole('option', { name: 'Standard (default)', exact: true })
     .click();
-  await panel.getByRole('button', { name: 'C APPLY', exact: true }).click();
+  await panel
+    .getByRole('button', { name: 'ENTER REVIEW', exact: true })
+    .click();
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toBeEnabled();
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+  await panel
+    .getByRole('button', { name: 'C CONFIRM CHANGE', exact: true })
+    .click();
   await expect(list).toHaveCount(0);
   expect(
     calls.filter((c) => c.mode === 'prepare').map((c) => c.choice),
   ).toEqual(['default']);
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+});
+
+test('changing a provisional speed cancels its confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockSpeedCommands(page);
+  const { panel, list } = await openSpeedCommands(page, pairingURL);
+  const confirm = panel.getByRole('button', {
+    name: 'C CONFIRM CHANGE',
+    exact: true,
+  });
+  await list.press('Enter');
+  await expect(confirm).toBeEnabled();
+  await list.press('ArrowUp');
+  await expect(confirm).toBeDisabled();
+  await expect(panel).not.toContainText('REVIEW // Slow');
+  await list.press('c');
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+  await list.press('Enter');
+  await expect(confirm).toBeEnabled();
+  // Enter on the confirmation button must still only review, never commit.
+  await confirm.press('Enter');
+  await expect(confirm).toBeEnabled();
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+  await confirm.press('c');
+  await expect(list).toHaveCount(0);
+  expect(
+    calls.filter((c) => c.mode === 'prepare').map((c) => c.choice),
+  ).toEqual(['priority', 'flex', 'flex']);
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+});
+
+test('expired or cancelled speed reviews cannot commit', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockSpeedCommands(page);
+  const { panel, list, text } = await openSpeedCommands(page, pairingURL);
+  const confirm = panel.getByRole('button', {
+    name: 'C CONFIRM CHANGE',
+    exact: true,
+  });
+  await list.press('Enter');
+  await expect(confirm).toBeEnabled();
+  await page.clock.setFixedTime(new Date(Date.now() + 60000));
+  await list.press('c');
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+  await expect(confirm).toBeDisabled();
+  await expect(panel).toContainText('Review expired');
+  await page.clock.setFixedTime(new Date(Date.now()));
+  await list.press('Enter');
+  await expect(confirm).toBeEnabled();
+  await list.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(text).toHaveValue('/fast');
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await panel.getByRole('button', { name: '/fast →', exact: true }).click();
+  await expect(list).toBeFocused();
+  await expect(confirm).toBeDisabled();
+  await list.press('c');
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
 });
 
 test('unconfirmed speed changes preserve the list and draft without retrying', async ({
@@ -1772,12 +1859,16 @@ test('unconfirmed speed changes preserve the list and draft without retrying', a
   rejectCommit();
   const { text, panel, list } = await openSpeedCommands(page, pairingURL);
   await list.press('ArrowUp');
+  await list.press('Enter');
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toBeEnabled();
   await list.press('c');
   await expect(panel).toContainText('Change unconfirmed.');
   await expect(list.getByRole('option')).toHaveCount(3);
   await expect(text).toHaveValue('/fast');
   await expect(
-    panel.getByRole('button', { name: 'C APPLY', exact: true }),
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
   ).toBeDisabled();
   await list.press('c');
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);

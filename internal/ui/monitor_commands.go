@@ -21,6 +21,7 @@ type monitorCommandsState struct {
 	menu                    codex.SessionCommandMenu
 	selected, scroll, hover int
 	notice                  string
+	reviewedChoice          string
 	until                   time.Time
 	footerHover             string
 	input                   textinput.Model
@@ -36,6 +37,8 @@ type monitorCommandsResult struct {
 
 func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 	p := &m.monitorCommands
+	p.reviewedChoice = ""
+	p.until = time.Time{}
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
 	if strings.TrimPrefix(strings.TrimSpace(path), "/") == "statusline" {
 		p.busy = false
@@ -117,6 +120,11 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		return m, cmd, true
 	}
 	if m.monitorCommands.menu.Picker {
+		p := &m.monitorCommands
+		if o.Action && p.notice == "" {
+			p.reviewedChoice = o.ID
+			p.until = time.Now().Add(30 * time.Second)
+		}
 		return m, nil, true
 	}
 	if m.monitorCommands.menu.Multiple {
@@ -143,10 +151,15 @@ func (m Model) confirmMonitorCommand() (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	o, ok := m.commandChoice()
-	if (!p.detail && !p.menu.Picker) || !ok || !o.Action || p.busy || p.notice != "" {
+	reviewed := p.detail || (p.menu.Picker && p.reviewedChoice == o.ID)
+	if !reviewed || !ok || !o.Action || p.busy || p.notice != "" {
 		return m, nil, true
 	}
-	if !p.menu.Picker && time.Now().After(p.until) {
+	if time.Now().After(p.until) {
+		if p.menu.Picker {
+			p.reviewedChoice = ""
+			return m, nil, true
+		}
 		p.notice = "Confirmation expired; reopen the option."
 		return m, nil, true
 	}
@@ -217,6 +230,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			} else if strings.HasPrefix(p.menu.Path, "cd/") {
 				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
 			} else {
+				text += "\nNo change sent yet. C confirms the selected setting. Model, reasoning and speed settings can change token usage and cost."
 				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
 			}
 		}
@@ -250,6 +264,17 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	if len(rows) == 0 {
 		rows = append(rows, commandDisplayRow{text: "No available options. Use Codex for unsupported commands.", choice: -1})
 	}
+	if p.menu.Picker {
+		if o, ok := m.commandChoice(); ok && p.reviewedChoice == o.ID {
+			message := "REVIEW // " + o.Label + " — no change yet; C confirms."
+			if time.Now().After(p.until) {
+				message = "Review expired. Press Enter to review again."
+			}
+			if len(rows) < capacity {
+				rows = append(rows, commandDisplayRow{text: ansi.Truncate(message, w, "…"), choice: -1})
+			}
+		}
+	}
 	if p.menu.Picker && len(rows) < capacity {
 		if o, ok := m.commandChoice(); ok {
 			rows = append(rows, commandDisplayRow{choice: -1})
@@ -276,10 +301,14 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	var buttons []commandDisplayRow
 	if p.menu.Input && !p.busy {
 		buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "review"})
-	} else if p.menu.Multiple || (p.menu.Picker && !p.busy && p.notice == "") {
+	} else if p.menu.Multiple {
 		buttons = append(buttons, commandDisplayRow{text: "[ C APPLY ]", action: "confirm"})
-	} else if o, ok := m.commandChoice(); ok && p.detail && o.Action && !p.busy && p.notice == "" {
-		buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
+	} else if o, ok := m.commandChoice(); ok && o.Action && !p.busy && p.notice == "" {
+		if p.detail || (p.menu.Picker && p.reviewedChoice == o.ID && time.Now().Before(p.until)) {
+			buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
+		} else {
+			buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "stage"})
+		}
 	}
 	buttons = append(buttons, commandDisplayRow{text: "[ ← BACK ]", action: "back"}, commandDisplayRow{text: "[ ESC CLOSE ]", action: "close"})
 	used := 0
@@ -329,7 +358,9 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 		if p.menu.Input {
 			hint = "Enter review • Escape cancel"
 		} else if p.menu.Picker {
-			hint = "↑/↓ select • C apply • Escape cancel"
+			hint = "↑/↓ select • Enter review • C confirm • Esc cancel"
+		} else if p.detail {
+			hint = "↑/↓ scroll • C confirm • ← back • Escape cancel"
 		} else if p.menu.Multiple {
 			hint = "↑/↓ select • Space toggle • ←/→ order • C apply"
 		}
@@ -504,6 +535,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			cmd := m.loadMonitorCommands("")
 			return m, cmd, true
 		case "enter", "right":
+			if p.menu.Picker && key.String() == "right" {
+				return m, nil, true
+			}
 			if !p.detail {
 				return m.chooseMonitorCommand()
 			}
@@ -520,7 +554,11 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if p.detail {
 				p.scroll = max(0, p.scroll+d)
 			} else {
+				before := p.selected
 				p.selected = min(max(0, p.selected+d), max(len(p.menu.Choices)-1, 0))
+				if before != p.selected {
+					p.reviewedChoice = ""
+				}
 			}
 		}
 		return m, nil, true
@@ -540,7 +578,11 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if p.detail {
 				p.scroll = max(0, p.scroll+d)
 			} else {
+				before := p.selected
 				p.selected = min(max(0, p.selected+d), max(len(p.menu.Choices)-1, 0))
+				if before != p.selected {
+					p.reviewedChoice = ""
+				}
 			}
 			return m, nil, true
 		}
@@ -551,6 +593,13 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if y < len(rows) && rows[y].action == "choose" {
 			p.hover = rows[y].choice
 			if click && v.Button == tea.MouseLeft {
+				if p.menu.Picker {
+					if p.selected != p.hover {
+						p.reviewedChoice = ""
+					}
+					p.selected = p.hover
+					return m, nil, true
+				}
 				p.selected = p.hover
 				return m.chooseMonitorCommand()
 			}
@@ -564,6 +613,8 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 						switch b.action {
 						case "review":
 							return m.reviewMonitorCommandInput()
+						case "stage":
+							return m.chooseMonitorCommand()
 						case "confirm":
 							return m.confirmMonitorCommand()
 						case "back":
