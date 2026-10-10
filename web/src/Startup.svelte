@@ -80,7 +80,7 @@
       if (event instanceof PointerEvent && event.button !== 0) return;
       if (
         event instanceof KeyboardEvent &&
-        (event.metaKey || event.ctrlKey || event.altKey)
+        (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       )
         return;
       if (

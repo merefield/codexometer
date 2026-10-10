@@ -783,6 +783,8 @@ Codex's context-window bookkeeping updates are recognised only when the window
 and both complete, explicit zero-token-class breakdowns match its synthetic fill record.
 They rebase the local counter without adding response costs, token totals or
 model-call graph pulses. Quota learning restarts as `LOCAL ACCOUNTING REBASED`.
+Events with a missing or null cumulative total are ignored without replacing
+the current baseline, including inherited child history and historical scans.
 Missing input/output usage and inconsistent response/cumulative usage instead
 restart as `MISSING RESPONSE USAGE` or `INCONSISTENT RESPONSE USAGE`; no costs
 are guessed. Unknown model/tier or unavailable pricing remains `UNPRICED USAGE`.

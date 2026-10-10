@@ -967,9 +967,14 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 		event.Payload.Type != "token_count" || event.Payload.Info == nil {
 		return rolloutTokenRecord{}, false
 	}
-	lastUsage := event.Payload.Info.LastTokenUsage.benchmarkUsage()
-	outputKnown := event.Payload.Info.LastTokenUsage.OutputTokens != nil
 	info := event.Payload.Info
+	// An absent cumulative counter is unknown, not a reset to zero. Reject it
+	// before either live consumption or historical/inherited baseline scans.
+	if info.TotalTokenUsage.TotalTokens == nil {
+		return rolloutTokenRecord{}, false
+	}
+	lastUsage := info.LastTokenUsage.benchmarkUsage()
+	outputKnown := info.LastTokenUsage.OutputTokens != nil
 	// Require every core token field in both breakdowns. Missing legacy
 	// telemetry must never be mistaken for Codex's synthetic full-context event.
 	zeroClasses := func(u rolloutTokenUsage) bool {
@@ -980,12 +985,12 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 			u.TotalTokens != nil && u.CacheWriteInputTokens == 0
 	}
 	contextFill := info.ModelContextWindow != nil && *info.ModelContextWindow > 0 &&
-		optionalRolloutTokens(info.TotalTokenUsage.TotalTokens) == *info.ModelContextWindow &&
+		*info.TotalTokenUsage.TotalTokens == *info.ModelContextWindow &&
 		zeroClasses(info.TotalTokenUsage) && zeroClasses(info.LastTokenUsage)
 	return rolloutTokenRecord{
 		usageAvailable:    info.LastTokenUsage.InputTokens != nil && outputKnown,
 		contextWindowFill: contextFill,
-		total:             optionalRolloutTokens(info.TotalTokenUsage.TotalTokens),
+		total:             *info.TotalTokenUsage.TotalTokens,
 		outputTokens:      lastUsage.OutputTokens, outputKnown: outputKnown,
 		usage: lastUsage,
 		at:    event.Timestamp, ordinal: event.Ordinal,

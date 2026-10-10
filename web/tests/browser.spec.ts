@@ -4097,6 +4097,45 @@ test.describe('browser startup', () => {
     });
   }
 
+  test('modified startup shortcuts pass through without skipping the intro', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.4);
+    await page.goto(pairingURL);
+    const intro = page.locator('.startup');
+    await expect(intro).toBeVisible();
+    await page.evaluate(() => {
+      document.addEventListener('keydown', (event) => {
+        document.documentElement.dataset.shortcutKey = event.key;
+        document.documentElement.dataset.shortcutPrevented = String(
+          event.defaultPrevented,
+        );
+      });
+    });
+    for (const shortcut of [
+      'Shift+Tab',
+      'Control+ArrowLeft',
+      'Alt+ArrowRight',
+      'Meta+k',
+      'Shift',
+    ]) {
+      await page.keyboard.press(shortcut);
+      await expect(intro).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute(
+        'data-shortcut-prevented',
+        'false',
+      );
+    }
+    // An unmodified key still skips and is consumed before reaching the app.
+    await page.keyboard.press('ArrowDown');
+    await expect(intro).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-shortcut-key',
+      'Shift',
+    );
+  });
+
   test('reduced motion opens directly and can also cancel an active intro', async ({
     page,
     pairingURL,
