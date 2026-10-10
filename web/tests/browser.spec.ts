@@ -1330,7 +1330,7 @@ test('slash commands discover help and require a separate confirmation', async (
   const panel = page.getByRole('region', { name: 'Session slash commands' });
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
   const popup = panel.locator('.command-popup');
   await expect(popup).toBeVisible();
   const initialPopup = await popup.boundingBox();
@@ -1375,7 +1375,10 @@ test('slash commands discover help and require a separate confirmation', async (
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
   await text.fill('/mo');
   await expect(popup.locator('.command-options button')).toHaveCount(1);
   const filteredPopup = await popup.boundingBox();
@@ -1392,7 +1395,7 @@ test('slash commands discover help and require a separate confirmation', async (
   await text.fill('/mod');
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
   await text.press('Enter');
   await panel.getByRole('button', { name: 'Medium', exact: true }).click();
   await expect(panel).toContainText('Server effort description');
@@ -1448,100 +1451,117 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toBeDisabled();
 });
 
-test('rename edits and reviews a name before a separate confirmation', async ({
-  page,
-  pairingURL,
-}) => {
-  const { calls } = await mockActions(page, 'prompt');
-  const modes: string[] = [];
-  let reviewed = '';
-  await page.route('**/api/control/commands', async (route) => {
-    const body = route.request().postDataJSON();
-    const { mode, path } = body.command;
-    modes.push(mode);
-    let result: object;
-    if (mode === 'prepare') {
-      expect(path).toBe('rename/' + encodeURIComponent('quota / review 界'));
-      result = {
-        confirmation: 'rename-token',
-        expires: new Date(Date.now() + 30000).toISOString(),
-      };
-    } else if (mode === 'commit') {
-      expect(body.confirmation).toBe('rename-token');
-      result = { message: 'Session renamed.' };
-    } else if (path === '') {
-      result = {
-        title: '/ COMMANDS',
-        help: 'Commands',
-        path: '',
-        revision: 'r',
-        choices: [
-          {
-            id: 'rename',
-            label: '/rename',
-            help: 'Rename the session',
-            next: 'rename',
-          },
-        ],
-      };
-    } else if (path === 'rename') {
-      result = {
-        title: '/rename',
-        help: 'Enter a name, review and confirm.',
-        path,
-        revision: 'r',
-        input: true,
-        value: 'Current name',
-        choices: [],
-      };
-    } else {
-      reviewed = decodeURIComponent(path.slice('rename/'.length));
-      result = {
-        title: '/rename',
-        help: 'Only the saved name changes.',
-        path,
-        revision: 'r',
-        choices: [
-          {
-            id: 'name',
-            label: 'Rename to ' + reviewed,
-            help: 'New name: ' + reviewed,
-            action: true,
-          },
-        ],
-      };
-    }
-    await route.fulfill({ json: result });
-  });
-  await page.goto(pairingURL);
-  await page.evaluate(() => {
-    location.hash = '/sessions/parent';
-  });
-  const text = page
-    .locator('.detail-workspace')
-    .getByRole('textbox', { name: 'Follow-up message' });
-  await text.fill('/ren');
-  const panel = page.getByRole('region', { name: 'Session slash commands' });
-  await panel.getByRole('button', { name: '/rename →', exact: true }).click();
-  const input = panel.getByRole('textbox', {
-    name: 'Session name',
-    exact: true,
-  });
-  await expect(input).toHaveValue('Current name');
-  await input.fill('quota / review 界');
-  await panel.getByRole('button', { name: 'REVIEW RENAME' }).click();
-  await expect(
-    panel.getByRole('heading', { name: 'Rename to quota / review 界' }),
-  ).toBeVisible();
-  expect(reviewed).toBe('quota / review 界');
-  expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
-  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
-  await expect(
-    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
-  ).toHaveCount(0);
-  expect(modes.filter((m) => m === 'commit')).toHaveLength(1);
-  expect(calls.filter((call) => call.action === 'prepare')).toHaveLength(0);
-});
+for (const command of ['rename', 'cd']) {
+  test(
+    command + ' edits and reviews input before a separate confirmation',
+    async ({ page, pairingURL }) => {
+      const { calls } = await mockActions(page, 'prompt');
+      const value =
+        command === 'cd' ? '/new  directory 界' : 'quota / review 界';
+      const label = command === 'cd' ? 'Working directory' : 'Session name';
+      const message =
+        command === 'cd' ? 'Working directory changed.' : 'Session renamed.';
+      const modes: string[] = [];
+      let reviewed = '';
+      await page.route('**/api/control/commands', async (route) => {
+        const body = route.request().postDataJSON();
+        const { mode, path } = body.command;
+        modes.push(mode);
+        let result: object;
+        if (mode === 'prepare') {
+          expect(path).toBe(command + '/' + encodeURIComponent(value));
+          result = {
+            confirmation: command + '-token',
+            expires: new Date(Date.now() + 30000).toISOString(),
+          };
+        } else if (mode === 'commit') {
+          expect(body.confirmation).toBe(command + '-token');
+          result = { message };
+        } else if (path === '') {
+          result = {
+            title: '/ COMMANDS',
+            help: 'Commands',
+            path: '',
+            revision: 'r',
+            choices: [
+              {
+                id: 'rename',
+                label: '/' + command,
+                help: 'Rename the session',
+                next: command,
+              },
+            ],
+          };
+        } else if (path === command) {
+          result = {
+            title: '/' + command,
+            help: 'Enter a name, review and confirm.',
+            path,
+            revision: 'r',
+            input: true,
+            inputLabel: label,
+            inputLimit: command === 'cd' ? 1024 : 512,
+            value: 'Current name',
+            choices: [],
+          };
+        } else {
+          reviewed = decodeURIComponent(path.slice(command.length + 1));
+          result = {
+            title: '/' + command,
+            help: 'Only the saved name changes.',
+            path,
+            revision: 'r',
+            choices: [
+              {
+                id: 'name',
+                label: 'Review ' + reviewed,
+                help: 'New name: ' + reviewed,
+                action: true,
+              },
+            ],
+          };
+        }
+        await route.fulfill({ json: result });
+      });
+      await page.goto(pairingURL);
+      await page.evaluate(() => {
+        location.hash = '/sessions/parent';
+      });
+      const text = page
+        .locator('.detail-workspace')
+        .getByRole('textbox', { name: 'Follow-up message' });
+      await text.fill('/' + command);
+      const panel = page.getByRole('region', {
+        name: 'Session slash commands',
+      });
+      await panel
+        .getByRole('button', { name: '/' + command + ' →', exact: true })
+        .click();
+      const input = panel.getByRole('textbox', {
+        name: label,
+        exact: true,
+      });
+      await expect(input).toHaveValue('Current name');
+      await input.fill(value);
+      await panel
+        .getByRole('button', {
+          name: command === 'cd' ? 'REVIEW DIRECTORY' : 'REVIEW RENAME',
+        })
+        .click();
+      await expect(
+        panel.getByRole('heading', { name: 'Review ' + value }),
+      ).toBeVisible();
+      expect(reviewed).toBe(value);
+      expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
+      await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+      await expect(
+        panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+      ).toHaveCount(0);
+      expect(modes.filter((m) => m === 'commit')).toHaveLength(1);
+      expect(calls.filter((call) => call.action === 'prepare')).toHaveLength(0);
+    },
+  );
+}
 
 test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
   page,
@@ -1981,16 +2001,21 @@ test('pairing, all quota views, navigation and refresh', async ({
   await expect(page.getByRole('meter').first()).toBeVisible();
   await page.getByRole('link', { name: 'PIE', exact: true }).click();
   await expect(page.locator('svg')).toHaveCount(2);
+  await expect(
+    page.getByRole('link', { name: 'ZONE', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'PACE', exact: true }),
+  ).toHaveCount(1);
   await page.getByRole('link', { name: 'PACE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(2);
+  await expect(page.getByText('CONSUMPTION', { exact: true })).toHaveCount(2);
   await expect(
     page.getByText('DISTANCE FROM SAFETY (PP)', { exact: true }),
-  ).toHaveCount(2);
+  ).toHaveCount(0);
+  await expect(page.locator('.position-dot')).toHaveCount(2);
   await expect(page.locator('.pace-marker')).toHaveCount(0);
   await expect(page.getByRole('radio')).toHaveCount(0);
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
-  await expect(page.locator('.consumption-zone')).toHaveCount(2);
-  await expect(page.locator('.position-dot')).toHaveCount(2);
   await page.getByRole('link', { name: 'FUEL TANK', exact: true }).click();
   await expect(page.getByRole('meter', { name: 'Fuel remaining' })).toHaveCount(
     2,
@@ -2311,7 +2336,7 @@ test('empty and all-zero graphs announce a zero peak without invalid heights', a
   ).toBe(true);
 });
 
-test('consumption zone plots bounded coordinates and handles missing windows', async ({
+test('pace graph plots bounded coordinates and handles missing windows', async ({
   page,
   pairingURL,
 }) => {
@@ -2350,7 +2375,7 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
     }),
   );
   await page.goto(pairingURL);
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
   await expect(page.locator('.consumption-zone')).toHaveCount(3);
   expect(
     await page.locator('.position-dot').evaluateAll((nodes) =>
@@ -2397,7 +2422,7 @@ test('consumption zone plots bounded coordinates and handles missing windows', a
   });
 });
 
-test('Zone and Pace distinguish empty, single and continuous observations', async ({
+test('Pace distinguishes empty, single and continuous observations', async ({
   page,
   pairingURL,
 }) => {
@@ -2434,7 +2459,7 @@ test('Zone and Pace distinguish empty, single and continuous observations', asyn
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  for (const view of ['ZONE', 'PACE']) {
+  for (const view of ['PACE']) {
     await page.getByRole('link', { name: view, exact: true }).click();
     for (const [trail, label] of [
       [[], 'NO OBSERVATIONS'],
@@ -2457,7 +2482,7 @@ test('Zone and Pace distinguish empty, single and continuous observations', asyn
   }
 });
 
-test('consumption zone offers trace control and observed trend periods', async ({
+test('pace graph offers trace control and observed trend periods', async ({
   page,
   pairingURL,
 }) => {
@@ -2501,7 +2526,7 @@ test('consumption zone offers trace control and observed trend periods', async (
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
 
   const graph = page.locator('.consumption-zone');
   const trend = page.getByLabel('Trend period');
@@ -2624,7 +2649,7 @@ test('consumption zone offers trace control and observed trend periods', async (
   await expect(line).toBeVisible();
 });
 
-test('pace zone transforms the dot and trace and colours trends by their endpoint', async ({
+test('Pace preserves the former Zone coordinates, diagonal and endpoint colours', async ({
   page,
   pairingURL,
 }) => {
@@ -2655,45 +2680,30 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
-  const consumption = page.getByRole('link', {
-    name: 'ZONE',
-    exact: true,
-  });
-  const pace = page.getByRole('link', { name: 'PACE', exact: true });
-  const line = page.locator('.trend-line');
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
+  await expect(page).toHaveURL(/#\/quota\/pace$/);
   const dot = page.locator('.position-dot');
   const safe = page.locator('.pace-line');
+  const line = page.locator('.trend-line');
   const trend = page.getByLabel('Trend period');
-  await expect(consumption).toHaveAttribute('aria-current', 'page');
-  await expect(pace).not.toHaveAttribute('aria-current', 'page');
-  await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
-  const originalX = await dot.getAttribute('cx');
-  await pace.click();
-  await expect(consumption).not.toHaveAttribute('aria-current', 'page');
-  await expect(pace).toHaveAttribute('aria-current', 'page');
-  await expect(dot).toHaveAttribute('cx', originalX!);
-  await expect(page.locator('.axis-title').first()).toHaveText(
-    'DISTANCE FROM SAFETY (PP)',
-  );
-  const safeY = Number(await safe.getAttribute('y1'));
-  expect(Number(await safe.getAttribute('y2'))).toBe(safeY);
   const bottom = Number(
     /V([\d.]+)/.exec((await page.locator('.axes').getAttribute('d'))!)![1],
   );
-  const expectedY = bottom - ((80 - elapsed + 100) / 200) * (bottom - 20);
-  expect(Number(await dot.getAttribute('cy'))).toBeCloseTo(expectedY, 5);
-  expect(expectedY).toBeLessThan(safeY);
-  expect(await page.locator('.observation-trail').getAttribute('d')).toBe(
-    `M${originalX} ${expectedY}`,
+  const plotWidth = Number(
+    await page.locator('.zone-field').getAttribute('width'),
   );
-  const gradient = page.locator('linearGradient');
-  await expect(gradient).toHaveAttribute('x2', '0%');
-  await expect(page.locator('.trend-summary')).toHaveText(
-    'TREND // +40.0 PP AT RESET',
+  const expectedX = 48 + (elapsed / 100) * plotWidth;
+  const expectedY = bottom - 0.8 * (bottom - 20);
+  expect(Number(await dot.getAttribute('cx'))).toBeCloseTo(expectedX, 5);
+  expect(Number(await dot.getAttribute('cy'))).toBeCloseTo(expectedY, 5);
+  expect(Number(await safe.getAttribute('y1'))).toBe(bottom);
+  expect(Number(await safe.getAttribute('y2'))).toBe(20);
+  await expect(page.locator('.axis-title').first()).toHaveText('CONSUMPTION');
+  await expect(page.locator('linearGradient')).toHaveAttribute('x2', '100%');
+  expect(await page.locator('.observation-trail').getAttribute('d')).toBe(
+    `M${expectedX} ${expectedY}`,
   );
   await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
-
   async function update() {
     await page.evaluate(
       (detail) =>
@@ -2713,57 +2723,75 @@ test('pace zone transforms the dot and trace and colours trends by their endpoin
       { at: now.toISOString(), elapsed, used: 80, break: false },
     ];
   }
-  // Improving towards safety is still red if it ends above zero at reset.
+  // Even a slope below the diagonal is unsafe if it exhausts quota before reset.
   recentSlope(0.8);
   await update();
   await trend.selectOption('halfHour');
   await expect(page.locator('.trend-summary')).toHaveText(
-    'TREND // +14.3 PP AT RESET',
+    'TREND // QUOTA EXHAUSTION PROJECTED',
   );
   await expect(line).toHaveCSS('stroke', 'rgb(127, 24, 37)');
-  let coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
-  const plotWidth = Number(
-    await page.locator('.zone-field').getAttribute('width'),
-  );
   const startX = 48 + ((elapsed - (0.5 / (7 * 24)) * 100) / 100) * plotWidth;
+  let coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
   expect(coords[0]).toBeCloseTo(startX, 5);
-  expect(coords.at(-2)!).toBeCloseTo(48 + plotWidth, 5);
-  expect(coords.at(-1)!).toBeGreaterThan(coords[1]);
-  expect(coords.at(-1)!).toBeLessThan(safeY);
-
-  // Slow enough to recover: green, with the endpoint below the safe line.
+  expect(coords.at(-2)!).toBeLessThan(48 + plotWidth);
+  expect(coords.at(-1)!).toBeCloseTo(20, 5);
+  // Safe projection reaches the right edge below 100% consumption.
   recentSlope(0.1);
   await update();
   await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
-  await expect(page.locator('.trend-arrow')).toHaveCSS(
-    'fill',
-    'rgb(17, 91, 53)',
-  );
   await expect(page.locator('.trend-summary')).toHaveText(
-    'TREND // -15.7 PP AT RESET',
+    'TREND // 84.3% PROJECTED AT RESET',
   );
   coords = (await line.getAttribute('d'))!.match(/[\d.-]+/g)!.map(Number);
-  expect(coords.at(-1)!).toBeGreaterThan(safeY);
-  await page.screenshot({
-    path: 'test-results/consumption-zone-pace.png',
-    fullPage: true,
-  });
-  await consumption.click();
-  await expect(trend).toHaveValue('halfHour');
-  await expect(gradient).toHaveAttribute('x2', '100%');
-  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
-
-  // Exactly 100% projected consumption is within safety in either view.
+  expect(coords.at(-2)!).toBeCloseTo(48 + plotWidth, 5);
+  expect(coords.at(-1)!).toBeGreaterThan(20);
+  // Exactly 100% projected consumption still uses the safe endpoint colour.
   meter.used = elapsed;
   await update();
   await trend.selectOption('window');
   await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
-  await pace.click();
-  await expect(page.locator('.trend-summary')).toHaveText(
-    'TREND // 0.0 PP AT RESET',
-  );
-  await expect(line).toHaveCSS('stroke', 'rgb(17, 91, 53)');
   expect(await line.getAttribute('d')).not.toMatch(/NaN|Infinity/);
+});
+
+test('old graph bookmarks and saved selections restore the renamed Pace view', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'codexometer.web.preferences.v1',
+      JSON.stringify({ tab: 'quota', view: 'zone' }),
+    ),
+  );
+  await page.goto(pairingURL);
+  await expect(page).toHaveURL(/#\/quota\/pace$/);
+  for (const alias of ['zone', 'consumption-pace', 'pace']) {
+    await page.evaluate((alias) => {
+      location.hash = '/quota/' + alias;
+    }, alias);
+    await expect(page).toHaveURL(/#\/quota\/pace$/);
+    await expect(
+      page.getByRole('link', { name: 'PACE', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+    await expect(
+      page.getByRole('link', { name: 'ZONE', exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator('.axis-title').first()).toHaveText('CONSUMPTION');
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            JSON.parse(localStorage.getItem('codexometer.web.preferences.v1')!)
+              .view,
+        ),
+      )
+      .toBe('pace');
+    await page.reload();
+    await expect(
+      page.getByRole('link', { name: 'PACE', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+  }
 });
 
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
@@ -2775,7 +2803,6 @@ test('quota graphics use viewport height and keep compact navigation accessible'
   for (const [name, graphic] of [
     ['BARS', '.gauge:not(.timeline)'],
     ['PACE', '.zone-canvas'],
-    ['ZONE', '.zone-canvas'],
     ['PIE', '.pie-wrap'],
     ['FUEL TANK', '.gauge:not(.timeline)'],
   ]) {
@@ -2804,7 +2831,7 @@ test('quota graphics use viewport height and keep compact navigation accessible'
     await expect(plot).toBeVisible();
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
   await expect(page.locator('.zone-canvas')).toHaveCount(2);
   await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
@@ -3247,7 +3274,7 @@ test('session totals count parent usage once and update for live, stale and empt
   ).toBe(true);
 });
 
-test('zone trail renders start, gap and live updates across navigation and reload', async ({
+test('pace trail renders start, gap and live updates across navigation and reload', async ({
   page,
   pairingURL,
 }) => {
@@ -3280,7 +3307,7 @@ test('zone trail renders start, gap and live updates across navigation and reloa
   };
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
-  await page.getByRole('link', { name: 'ZONE', exact: true }).click();
+  await page.getByRole('link', { name: 'PACE', exact: true }).click();
   const trail = page.locator('.observation-trail');
   const trace = page.getByRole('checkbox', { name: 'TRACE PATH' });
   await expect(trace).toBeChecked();
@@ -3468,4 +3495,64 @@ test('session content is text, not HTML or executable instructions', async ({
   ).toHaveCount(0);
   expect(dialogs).toEqual([]);
   expect(externalRequests).toEqual([]);
+});
+
+test('cwd shows the running directory without preparing a mutation', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const modes: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const { mode, path } = route.request().postDataJSON().command;
+    modes.push(mode);
+    await route.fulfill({
+      json:
+        path === ''
+          ? {
+              title: '/ COMMANDS',
+              help: 'Commands',
+              path: '',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'cwd',
+                  label: '/cwd',
+                  help: 'Show directory',
+                  next: 'cwd',
+                },
+              ],
+            }
+          : {
+              title: '/cwd',
+              help: 'Running directory',
+              path: 'cwd',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'directory',
+                  label: 'Current directory',
+                  help: 'Working directory: /dev/projects',
+                },
+              ],
+            },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await panel.getByRole('button', { name: '/cwd →', exact: true }).click();
+  await panel
+    .getByRole('button', { name: 'Current directory // HELP', exact: true })
+    .click();
+  await expect(
+    panel.getByText('Working directory: /dev/projects', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toHaveCount(0);
+  expect(modes.every((mode) => mode === 'list')).toBe(true);
 });

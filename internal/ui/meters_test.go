@@ -12,7 +12,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-var quotaMeterViews = []meterViewID{viewBars, viewPace, viewZone, viewPie, viewFuel}
+var quotaMeterViews = []meterViewID{viewBars, viewPace, viewPie, viewFuel}
 
 func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 	colors := paletteFor(themeHacker)
@@ -23,7 +23,6 @@ func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 		{viewBars, "█"},
 		{viewPie, "BRAILLE PIE"},
 		{viewPace, "GRAPH DATA UNAVAILABLE"},
-		{viewZone, "GRAPH DATA UNAVAILABLE"},
 		{viewFuel, "RANGE"},
 	}
 	for _, test := range tests {

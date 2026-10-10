@@ -44,7 +44,7 @@ func TestMainTabsChooseResponsiveLabels(t *testing.T) {
 func TestThresholdTabOnlyAppearsWithConfiguredSteps(t *testing.T) {
 	without, _ := quotaViewTabLayout(160, false)
 	with, _ := quotaViewTabLayout(160, true)
-	if len(without) != 6 || len(with) != 7 || with[6].view != viewThresholds || with[5].view != viewResets {
+	if len(without) != 5 || len(with) != 6 || with[5].view != viewThresholds || with[4].view != viewResets {
 		t.Fatal("Thresholds must follow Resets only when configured")
 	}
 	m := Model{meterView: viewResets, quotaSteps: []codex.QuotaStep{{Threshold: 80}}}
@@ -110,7 +110,7 @@ func TestQuotaViewTabsChooseResponsiveLabels(t *testing.T) {
 			if !strings.Contains(labels.String(), test.want) {
 				t.Fatalf("width %d labels %q do not contain %q", test.width, labels.String(), test.want)
 			}
-			if len(tabs) >= 4 && (tabs[1].view != viewPace || !strings.Contains(tabs[1].label, test.want) || tabs[2].view != viewZone || tabs[3].view != viewPie) {
+			if len(tabs) >= 4 && (tabs[1].view != viewPace || !strings.Contains(tabs[1].label, test.want) || tabs[2].view != viewPie) {
 				t.Fatalf("width %d tab order/labels do not match views: %#v", test.width, tabs)
 			}
 		})
@@ -226,7 +226,7 @@ func TestQuotaStyleIsRememberedAcrossMainTabNavigation(t *testing.T) {
 
 func TestVSelectsQuotaViewAndMonitorShortcutsStayScoped(t *testing.T) {
 	model := Model{meterView: viewBars}
-	for _, want := range []meterViewID{viewPace, viewZone, viewPie, viewFuel, viewResets, viewBars} {
+	for _, want := range []meterViewID{viewPace, viewPie, viewFuel, viewResets, viewBars} {
 		updated, command := model.Update(key('v'))
 		model = updated.(Model)
 		if command == nil || model.meterView != want || model.quotaMeterView != want || model.flashedButton != footerButtonView {

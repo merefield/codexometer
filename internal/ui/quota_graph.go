@@ -14,7 +14,7 @@ import (
 	"github.com/merefield/codexometer/internal/quotagraph"
 )
 
-func isQuotaGraph(view meterViewID) bool { return view == viewPace || view == viewZone }
+func isQuotaGraph(view meterViewID) bool { return view == viewPace }
 
 type quotaPlotOptions struct {
 	points    []quotagraph.Point
@@ -105,14 +105,10 @@ type quotaPlotCell struct {
 
 type quotaCanvas struct {
 	width, height int
-	pace          bool
 	cells         []quotaPlotCell
 }
 
 func (c quotaCanvas) position(x, y float64) (int, int) {
-	if c.pace {
-		y = (y + 100) / 2
-	}
 	return int(math.Round(x / 100 * float64(c.width*2-1))), int(math.Round((1 - y/100) * float64(c.height*4-1)))
 }
 
@@ -166,7 +162,7 @@ func quotaFieldColor(risk float64) color.Color {
 	return color.RGBA{R: uint8(float64(amber.R)*(1-weight) + float64(end.R)*weight), G: uint8(float64(amber.G)*(1-weight) + float64(end.G)*weight), B: uint8(float64(amber.B)*(1-weight) + float64(end.B)*weight), A: 255}
 }
 
-func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace bool, options quotaPlotOptions, colors palette) string {
+func renderQuotaPlot(width, height int, window codex.Window, now time.Time, options quotaPlotOptions, colors palette) string {
 	width = max(width, 1)
 	if height <= 0 {
 		height = 10
@@ -177,9 +173,6 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 	}
 	used := float64(max(0, min(100, window.UsedPercent)))
 	status := i18n.Format("%.0f%% USED // %.1f%% TIME", used, elapsed)
-	if pace {
-		status = i18n.Format("%+.1f PP FROM SAFETY", used-elapsed)
-	}
 	trend, projected := quotagraph.Project(options.mode, window, options.points, now)
 	trendInk := colors.dim
 	if projected {
@@ -191,9 +184,6 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 	projection := ""
 	if projected {
 		projection = i18n.Format("TREND // %.1f%% AT RESET", trend.Projected)
-		if pace {
-			projection = i18n.Format("TREND // %+.1f PP AT RESET", trend.Projected-100)
-		}
 	} else if options.mode != quotagraph.Off {
 		projection = i18n.Text("TREND UNAVAILABLE")
 	}
@@ -203,54 +193,35 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 		return quotaPlotFit([]string{status, projection}, width, height)
 	}
 	plotWidth, plotHeight := width-6, height-4
-	canvas := quotaCanvas{width: plotWidth, height: plotHeight, pace: pace, cells: make([]quotaPlotCell, plotWidth*plotHeight)}
-	value := func(x, y float64) float64 {
-		if pace {
-			return y - x
-		}
-		return y
-	}
+	canvas := quotaCanvas{width: plotWidth, height: plotHeight, cells: make([]quotaPlotCell, plotWidth*plotHeight)}
 	guide := lipgloss.Color("#708276")
-	canvas.line(0, 0, 100, value(100, 100), guide, 1, 0)
+	canvas.line(0, 0, 100, 100, guide, 1, 0)
 	if !options.hideTrace {
 		for i, point := range options.points {
 			if i > 0 && !point.Break {
 				before := options.points[i-1]
-				canvas.line(before.Elapsed, value(before.Elapsed, float64(before.Used)), point.Elapsed, value(point.Elapsed, float64(point.Used)), lipgloss.Color("#BAD4C7"), 2, 0)
+				canvas.line(before.Elapsed, float64(before.Used), point.Elapsed, float64(point.Used), lipgloss.Color("#BAD4C7"), 2, 0)
 			}
 		}
 		if len(options.points) > 0 {
 			p := options.points[0]
-			canvas.mark(p.Elapsed, value(p.Elapsed, float64(p.Used)), '○', guide, 2)
+			canvas.mark(p.Elapsed, float64(p.Used), '○', guide, 2)
 		}
 	}
 	if projected {
-		if segment, ok := trend.Segment(pace); ok {
+		if segment, ok := trend.Segment(); ok {
 			canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, trendInk, 3, 0)
 		}
 	}
-	canvas.mark(elapsed, value(elapsed, used), '●', lipgloss.Color("#FFFFFF"), 4)
+	canvas.mark(elapsed, used, '●', lipgloss.Color("#FFFFFF"), 4)
 	caption := i18n.Text("CONSUMPTION")
-	if pace {
-		caption = i18n.Text("DISTANCE FROM SAFETY (PP)")
-	}
 	lines := []string{colors.dimmed().Render(ansi.Truncate(caption, width, ""))}
 	for row := 0; row < plotHeight; row++ {
 		label := "    "
 		if row == 0 {
-			if pace {
-				label = "+100"
-			} else {
-				label = "100%"
-			}
+			label = "100%"
 		} else if row == plotHeight-1 {
-			if pace {
-				label = "-100"
-			} else {
-				label = "  0%"
-			}
-		} else if row == plotHeight/2 && pace {
-			label = "   0"
+			label = "  0%"
 		}
 		var line strings.Builder
 		line.WriteString(colors.dimmed().Render(label + "│"))
@@ -259,9 +230,6 @@ func renderQuotaPlot(width, height int, window codex.Window, now time.Time, pace
 			x := float64(col) / float64(max(plotWidth-1, 1))
 			y := 1 - float64(row)/float64(max(plotHeight-1, 1))
 			risk := y - x
-			if pace {
-				risk = 2*y - 1
-			}
 			style := lipgloss.NewStyle().Background(quotaFieldColor(risk))
 			r := ' '
 			if cell.mask != 0 {

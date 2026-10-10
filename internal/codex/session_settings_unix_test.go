@@ -30,6 +30,9 @@ type quotaDaemonFixture struct {
 	historyReads  []map[string]any
 	names         map[string]string
 	nameWrites    []map[string]any
+	cwds          map[string]string
+	ignoreCwd     bool
+	environments  []any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -108,13 +111,17 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 			case "thread/resume":
 				s, ok := fixture.sessions[id]
 				failure = !ok || fixture.fail == id
-				result = map[string]any{"model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}}
+				cwd := fixture.cwds[id]
+				if cwd == "" {
+					cwd = "/work"
+				}
+				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}}
 			case "thread/read":
 				status := fixture.commandStatus
 				if status == "" {
 					status = "idle"
 				}
-				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id]}
+				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments}
 			case "thread/name/set":
 				fixture.nameWrites = append(fixture.nameWrites, req.Params)
 				failure = fixture.fail == "rename"
@@ -124,8 +131,20 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 					}
 					fixture.names[id], _ = req.Params["name"].(string)
 				}
+			case "thread/queue/list":
+				result = map[string]any{"data": []any{}}
+				if fixture.queued {
+					result["data"] = []any{map[string]any{"id": "queued"}}
+				}
 			case "thread/settings/update":
 				fixture.writes = append(fixture.writes, req.Params)
+				failure = fixture.fail == "cwd"
+				if cwd, ok := req.Params["cwd"].(string); ok && !failure && !fixture.queued && !fixture.ignoreCwd {
+					if fixture.cwds == nil {
+						fixture.cwds = map[string]string{}
+					}
+					fixture.cwds[id] = cwd
+				}
 				desired := fixture.sessions[id]
 				if v, ok := req.Params["model"].(string); ok {
 					desired.Model = v

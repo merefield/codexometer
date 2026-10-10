@@ -514,5 +514,6 @@
   "pending": "väntande",
   "sending": "skickar",
   "uncertain": "oklart",
-  "sent": "skickat"
+  "sent": "skickat",
+  "Could not open web link.": "Kunde inte öppna webblänken."
 }

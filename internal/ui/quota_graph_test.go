@@ -21,17 +21,15 @@ func graphWindow(now time.Time, used int) codex.Window {
 
 func TestQuotaPlotsFitResponsiveRectangles(t *testing.T) {
 	now := time.Unix(1800000000, 0)
-	for _, pace := range []bool{false, true} {
-		for _, width := range []int{1, 9, 17, 18, 30, 80, 140} {
-			for _, height := range []int{1, 2, 5, 6, 12, 30} {
-				for _, used := range []int{0, 25, 75, 100} {
-					out := renderQuotaPlot(width, height, graphWindow(now, used), now, pace, quotaPlotOptions{}, paletteFor(themeHacker))
-					if lipgloss.Width(out) > width || lipgloss.Height(out) != height {
-						t.Fatalf("pace=%v %dx%d used=%d rendered %dx%d", pace, width, height, used, lipgloss.Width(out), lipgloss.Height(out))
-					}
-					if width >= 18 && height >= 6 && !strings.Contains(out, "●") {
-						t.Fatal("current dot missing")
-					}
+	for _, width := range []int{1, 9, 17, 18, 30, 80, 140} {
+		for _, height := range []int{1, 2, 5, 6, 12, 30} {
+			for _, used := range []int{0, 25, 75, 100} {
+				out := renderQuotaPlot(width, height, graphWindow(now, used), now, quotaPlotOptions{}, paletteFor(themeHacker))
+				if lipgloss.Width(out) > width || lipgloss.Height(out) != height {
+					t.Fatalf("%dx%d used=%d rendered %dx%d", width, height, used, lipgloss.Width(out), lipgloss.Height(out))
+				}
+				if width >= 18 && height >= 6 && !strings.Contains(out, "●") {
+					t.Fatal("current dot missing")
 				}
 			}
 		}
@@ -41,28 +39,25 @@ func TestQuotaPlotsFitResponsiveRectangles(t *testing.T) {
 func TestQuotaPlotAxesAndProjection(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	w := graphWindow(now, 25)
-	zone := ansi.Strip(renderQuotaPlot(60, 15, w, now, false, quotaPlotOptions{}, paletteFor(themeHacker)))
-	pace := ansi.Strip(renderQuotaPlot(60, 15, w, now, true, quotaPlotOptions{}, paletteFor(themeHacker)))
+	pace := ansi.Strip(renderQuotaPlot(60, 15, w, now, quotaPlotOptions{}, paletteFor(themeHacker)))
 	for _, want := range []string{"100%", "TIME ELAPSED", "25% USED // 50.0% TIME", "50.0% AT RESET"} {
-		if !strings.Contains(zone, want) {
-			t.Fatalf("Zone missing %q:\n%s", want, zone)
-		}
-	}
-	for _, want := range []string{"+100", "-100", "-25.0 PP FROM SAFETY", "-50.0 PP AT RESET"} {
 		if !strings.Contains(pace, want) {
 			t.Fatalf("Pace missing %q:\n%s", want, pace)
 		}
 	}
-	for _, graph := range []string{zone, pace} {
-		if strings.ContainsAny(graph, "↗↘▸") {
-			t.Fatal("terminal graph still contains trend arrows")
+	for _, removed := range []string{"+100", "-100", "PP FROM SAFETY", "PP AT RESET", "DISTANCE FROM SAFETY"} {
+		if strings.Contains(pace, removed) {
+			t.Fatalf("removed graph transform still present: %q", removed)
 		}
 	}
-	off := ansi.Strip(renderQuotaPlot(60, 15, w, now, false, quotaPlotOptions{mode: quotagraph.Off}, paletteFor(themeHacker)))
-	if strings.Join(strings.Split(zone, "\n")[1:12], "\n") == strings.Join(strings.Split(off, "\n")[1:12], "\n") {
+	if strings.ContainsAny(pace, "↗↘▸") {
+		t.Fatal("terminal graph still contains trend arrows")
+	}
+	off := ansi.Strip(renderQuotaPlot(60, 15, w, now, quotaPlotOptions{mode: quotagraph.Off}, paletteFor(themeHacker)))
+	if strings.Join(strings.Split(pace, "\n")[1:12], "\n") == strings.Join(strings.Split(off, "\n")[1:12], "\n") {
 		t.Fatal("removing arrows also removed the trend line")
 	}
-	if strings.Contains(renderQuotaPlot(60, 15, w, now, true, quotaPlotOptions{mode: quotagraph.Off}, paletteFor(themeHacker)), "AT RESET") {
+	if strings.Contains(renderQuotaPlot(60, 15, w, now, quotaPlotOptions{mode: quotagraph.Off}, paletteFor(themeHacker)), "AT RESET") {
 		t.Fatal("Off still rendered projection")
 	}
 }
@@ -71,31 +66,26 @@ func TestQuotaUnavailableTrendIsMuted(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	for theme := themeHacker; theme < themeCount; theme++ {
 		colors := paletteFor(theme)
-		for _, pace := range []bool{false, true} {
-			for _, options := range []quotaPlotOptions{{mode: quotagraph.HalfHour}, {mode: quotagraph.Hour}, {mode: quotagraph.Day}} {
-				out := renderQuotaPlot(60, 15, graphWindow(now, 25), now, pace, options, colors)
-				if got, want := strings.Split(out, "\n")[14], colors.dimmed().Render("TREND UNAVAILABLE"); got != want {
-					t.Fatalf("theme=%v pace=%v mode=%v unavailable trend is not muted: %q", theme, pace, options.mode, got)
-				}
+		for _, options := range []quotaPlotOptions{{mode: quotagraph.HalfHour}, {mode: quotagraph.Hour}, {mode: quotagraph.Day}} {
+			out := renderQuotaPlot(60, 15, graphWindow(now, 25), now, options, colors)
+			if got, want := strings.Split(out, "\n")[14], colors.dimmed().Render("TREND UNAVAILABLE"); got != want {
+				t.Fatalf("theme=%v mode=%v unavailable trend is not muted: %q", theme, options.mode, got)
 			}
-			for _, test := range []struct {
-				used      int
-				ink       string
-				projected float64
-			}{
-				{25, "#45DB79", 50},
-				{50, "#45DB79", 100},
-				{75, "#9D2537", 150},
-			} {
-				out := renderQuotaPlot(60, 15, graphWindow(now, test.used), now, pace, quotaPlotOptions{}, colors)
-				text := fmt.Sprintf("TREND // %.1f%% AT RESET", test.projected)
-				if pace {
-					text = fmt.Sprintf("TREND // %+.1f PP AT RESET", test.projected-100)
-				}
-				want := lipgloss.NewStyle().Foreground(lipgloss.Color(test.ink)).Render(text)
-				if got := strings.Split(out, "\n")[14]; got != want {
-					t.Fatalf("valid projection lost its endpoint colour: %q", got)
-				}
+		}
+		for _, test := range []struct {
+			used      int
+			ink       string
+			projected float64
+		}{
+			{25, "#45DB79", 50},
+			{50, "#45DB79", 100},
+			{75, "#9D2537", 150},
+		} {
+			out := renderQuotaPlot(60, 15, graphWindow(now, test.used), now, quotaPlotOptions{}, colors)
+			text := fmt.Sprintf("TREND // %.1f%% AT RESET", test.projected)
+			want := lipgloss.NewStyle().Foreground(lipgloss.Color(test.ink)).Render(text)
+			if got := strings.Split(out, "\n")[14]; got != want {
+				t.Fatalf("valid projection lost its endpoint colour: %q", got)
 			}
 		}
 	}
@@ -105,55 +95,47 @@ func TestQuotaLinesUseDenseBrailleWithoutDashGaps(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	w := graphWindow(now, 75)
 	const width, height = 60, 15
-	for _, pace := range []bool{false, true} {
-		out := ansi.Strip(renderQuotaPlot(width, height, w, now, pace, quotaPlotOptions{hideTrace: true}, paletteFor(themeHacker)))
-		if strings.ContainsAny(out, "╭╮╰╯↗↘▸") {
-			t.Fatal("dense Braille graph contains box-drawing elbows or arrows")
-		}
-		trend, ok := quotagraph.Project(quotagraph.WindowStart, w, nil, now)
-		if !ok {
-			t.Fatal("missing test projection")
-		}
-		segment, ok := trend.Segment(pace)
-		if !ok {
-			t.Fatal("missing test segment")
-		}
-		canvas := quotaCanvas{width: width - 6, height: height - 4, pace: pace, cells: make([]quotaPlotCell, (width-6)*(height-4))}
-		guideEnd := 100.0
-		if pace {
-			guideEnd = 0
-		}
-		canvas.line(0, 0, 100, guideEnd, nil, 1, 0)
-		canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, nil, 3, 0)
-		elapsed, _ := quotagraph.Elapsed(w, now)
-		y := float64(w.UsedPercent)
-		if pace {
-			y -= elapsed
-		}
-		canvas.mark(elapsed, y, '●', nil, 4)
-		lines := strings.Split(out, "\n")
-		for row := 0; row < canvas.height; row++ {
-			runes := []rune(lines[row+1])
-			for col := 0; col < canvas.width; col++ {
-				cell := canvas.cells[row*canvas.width+col]
-				if cell.priority > 0 && cell.priority < 4 && runes[col+5] != rune(0x2800+cell.mask) {
-					t.Fatalf("pace=%v line priority=%d has a gap at %d,%d", pace, cell.priority, col, row)
-				}
+	out := ansi.Strip(renderQuotaPlot(width, height, w, now, quotaPlotOptions{hideTrace: true}, paletteFor(themeHacker)))
+	if strings.ContainsAny(out, "╭╮╰╯↗↘▸") {
+		t.Fatal("dense Braille graph contains box-drawing elbows or arrows")
+	}
+	trend, ok := quotagraph.Project(quotagraph.WindowStart, w, nil, now)
+	if !ok {
+		t.Fatal("missing test projection")
+	}
+	segment, ok := trend.Segment()
+	if !ok {
+		t.Fatal("missing test segment")
+	}
+	canvas := quotaCanvas{width: width - 6, height: height - 4, cells: make([]quotaPlotCell, (width-6)*(height-4))}
+	guideEnd := 100.0
+	canvas.line(0, 0, 100, guideEnd, nil, 1, 0)
+	canvas.line(segment.X1, segment.Y1, segment.X2, segment.Y2, nil, 3, 0)
+	elapsed, _ := quotagraph.Elapsed(w, now)
+	y := float64(w.UsedPercent)
+	canvas.mark(elapsed, y, '●', nil, 4)
+	lines := strings.Split(out, "\n")
+	for row := 0; row < canvas.height; row++ {
+		runes := []rune(lines[row+1])
+		for col := 0; col < canvas.width; col++ {
+			cell := canvas.cells[row*canvas.width+col]
+			if cell.priority > 0 && cell.priority < 4 && runes[col+5] != rune(0x2800+cell.mask) {
+				t.Fatalf("line priority=%d has a gap at %d,%d", cell.priority, col, row)
 			}
 		}
 	}
 }
 
 func TestQuotaCanvasPreservesDotAndDirection(t *testing.T) {
-	c := quotaCanvas{width: 20, height: 10, pace: true, cells: make([]quotaPlotCell, 200)}
-	_, above := c.position(50, 25)
-	_, below := c.position(50, -25)
+	c := quotaCanvas{width: 20, height: 10, cells: make([]quotaPlotCell, 200)}
+	_, above := c.position(50, 75)
+	_, below := c.position(50, 25)
 	if above >= below {
-		t.Fatal("positive pace must appear above safety")
+		t.Fatal("greater consumption must appear above safety")
 	}
-	c.mark(50, 0, '●', nil, 4)
-	c.line(0, 0, 100, 0, nil, 3, 0)
-	px, py := c.position(50, 0)
+	c.mark(50, 50, '●', nil, 4)
+	c.line(0, 0, 100, 100, nil, 3, 0)
+	px, py := c.position(50, 50)
 	if c.cells[(py/4)*c.width+px/2].symbol != '●' {
 		t.Fatal("trend overwrote the current dot")
 	}
@@ -163,7 +145,7 @@ func TestQuotaCanvasPreservesDotAndDirection(t *testing.T) {
 }
 
 func TestQuotaGraphButtonsTrackRenderedSurfaces(t *testing.T) {
-	for _, view := range []meterViewID{viewPace, viewZone} {
+	for _, view := range []meterViewID{viewPace} {
 		for _, width := range []int{24, 40, 80, 120} {
 			m := Model{snapshot: codex.DemoSnapshot(), meterView: view, width: width, height: 30}
 			layout := m.dashboardLayout()
@@ -240,18 +222,23 @@ func TestQuotaGraphRefreshCollectionIsIndependentOfSelectedTab(t *testing.T) {
 	}
 }
 
-func TestQuotaGraphPreferencesPreserveRenameAndNewView(t *testing.T) {
-	for saved, want := range map[string]meterViewID{"consumption-pace": viewPace, "pace": viewPace, "zone": viewZone} {
-		m := Model{}
+func TestQuotaGraphPreferencesRestoreFormerZoneAsPace(t *testing.T) {
+	for saved, want := range map[string]meterViewID{"consumption-pace": viewPace, "pace": viewPace, "zone": viewPace} {
+		store := &memoryPreferenceStore{}
+		m := Model{preferenceStore: store}
 		m.applyPreferences(Preferences{QuotaView: saved})
-		if m.meterView != want {
+		if m.meterView != want || m.quotaMeterView != want || quotaViewPreferenceNames[want] != "pace" {
 			t.Fatalf("saved %q restored %v", saved, m.meterView)
+		}
+		m.persistPreferences()
+		if store.preferences.QuotaView != "pace" {
+			t.Fatalf("saved alias %q was not canonicalised", saved)
 		}
 	}
 }
 
 func TestQuotaGraphsUseMultipleColumnsOnlyWhenReadable(t *testing.T) {
-	for _, view := range []meterViewID{viewPace, viewZone} {
+	for _, view := range []meterViewID{viewPace} {
 		if meterGridColumns(36, 24, 4, view) != 1 || meterGridColumns(80, 24, 4, view) != 2 || meterGridColumns(160, 30, 4, view) != 4 {
 			t.Fatal("graph grid does not adapt to available width and window count")
 		}

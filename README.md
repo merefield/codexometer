@@ -590,8 +590,8 @@ codexometer --codex /path/to/codex
 | `z` | Zero the Sessions baseline |
 | `s` | Open Benchmark Scope (Benchmark view only) |
 | `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
-| `g` | Cycle available trend periods in Quota → Pace or Zone |
-| `h` | Toggle the trace in Quota → Pace or Zone; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `g` | Cycle available trend periods in Quota → Pace |
+| `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
@@ -613,7 +613,7 @@ codexometer --codex /path/to/codex
 
 The responsive top rail below the account status selects Quota, Sessions, Usage, or
 Benchmark by mouse, `Tab`, or `Shift+Tab`. Quota adds a second rail for Bars,
-Pace, Zone, Pie, Fuel Tank, and Resets; select these with the mouse or cycle them
+Pace, Pie, Fuel Tank, and Resets; select these with the mouse or cycle them
 with `v`. Codexometer remembers the selected Quota view when you leave
 and return. Both rails condense automatically as the terminal narrows.
 The footer presents the remaining actions as clickable buttons, including View
@@ -630,8 +630,8 @@ The version number links to its release highlights
 (development builds link to their base release; prerelease tags are preserved).
 Use your terminal's hyperlink gesture (usually
 Ctrl-click; some terminals use Cmd-click or a context menu). The version is
-underlined on hover and uses a standard OSC 8 hyperlink; Codexometer does not
-launch a browser process. Your terminal must support hyperlinks, including
+underlined on hover and uses a standard OSC 8 hyperlink; opening the version
+link is handled by the terminal. Your terminal must support hyperlinks, including
 when running over SSH or in WSL. Existing tab and button shortcuts are unchanged.
 
 ### Quota health signal
@@ -873,27 +873,23 @@ The default remains the original green hacker-terminal presentation.
 ## Views and quota presentations
 
 The top-level tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**. Within Quota,
-choose one of these six views with its sub-tab or `v`:
+choose one of these five views with its sub-tab or `v`:
 
 1. **Bars** — chunky quota bars, with one full-width rate-limit window per row.
-2. **Pace** — elapsed-window time on X, consumed percentage minus elapsed
-   percentage on Y (−100 to +100 percentage points). Above the horizontal safe
-   line means consumption is ahead of time; below it means headroom. Dark colour
-   bands fade from amber at safety toward red above and green below.
-3. **Zone** — elapsed-window time on X and 0–100% consumption on Y, with a
+2. **Pace** — elapsed-window time on X and 0–100% consumption on Y, with a
    diagonal steady-consumption line and a red/amber/green background. Above
    the diagonal means over pace; below it means headroom.
-4. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
+3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
    for clean curves at any size.
-5. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
+4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
    backward and aligns exactly with the tank's first and last inner cells.
-6. **Resets** — available reset credits, grant dates, expiry dates and backend
+5. **Resets** — available reset credits, grant dates, expiry dates and backend
    descriptions. Expiring credits appear first, non-expiring credits last.
    Scroll with Up/Down or Page Up/Page Down when necessary.
 
-Pace and Zone use terminal-cell backgrounds and densely plotted, continuous
+Pace uses terminal-cell backgrounds and densely plotted, continuous
 Braille strokes for traces, trends and the safety reference. The
 current dot is bright; the observed trace is pale for contrast against the dark
 background. Click **Trend** (`g`) to cycle **Window Start**, **Last 30 Minutes**,
@@ -910,7 +906,7 @@ in memory only, collected at each quota refresh even on other tabs, and cleared
 when the account or quota cycle changes. Failed refreshes leave gaps rather
 than connecting an invented path. Graphs share rows when width permits, add
 rows for extra windows, and fall back to compact readouts when too small to plot.
-Unknown window timing cannot be graphed. The browser offers the same variants
+Unknown window timing cannot be graphed. The browser offers the same graph
 and trend choices with smoother SVG lines, directional arrows and backgrounds.
 
 The reset shortcut opens Resets and asks for confirmation before redeeming.
@@ -1185,7 +1181,7 @@ Meter rows always use identical heights; indivisible spare rows become quiet
 space above the footer instead of stretching one quota block more than another.
 Pie uses at least two columns when multiple limits exist, adding rows when that
 preserves more radial detail and adding columns when the terminal is wide
-enough. Pace and Zone use as many graph columns as remain readable and scale
+enough. Pace uses as many graph columns as remain readable and scales
 both axes to each card's remaining space. Bars, Pie and Fuel Tank
 also show a `RESET CYCLE` comparison:
 its label and countdown occupy one line, while its progress bar occupies a
@@ -1193,8 +1189,8 @@ separate line with the same width and active colour as the main visualization.
 Its percentage is elapsed time from the calculated window start
 (`reset - duration`) to the next reset. When Codex supplies a monthly reset but
 not a cycle start, the card says `CYCLE START UNAVAILABLE`, shows the known
-countdown, and leaves the comparison bar unfilled. Pace and Zone instead
-show elapsed time on their X axes and retain a separate reset countdown.
+countdown, and leaves the comparison bar unfilled. Pace instead
+shows elapsed time on its X axis and retains a separate reset countdown.
 Every visualization
 receives its card's remaining width and height, and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
@@ -1366,6 +1362,25 @@ switch between graph-only, split, expanded, and full detail as described below.
   through its normal refresh. Local-only mode retains completed-message fallback;
   missed events are not reconstructed and the existing context length cap applies.
 
+Terminal session text marks HTTP/HTTPS web links explicitly and underlines both
+Markdown labels and visible URLs. Wrapped links and scrolled-in fragments retain
+their full destination. In prose, complete inline Markdown links to the HTTPS
+domains `github.com`, `openai.com` and `chatgpt.com`, including their subdomains, display
+just their underlined label; other domains keep both the label and URL visible.
+Custom ports and HTTP destinations keep their URLs visible. Bare URLs, code and
+approval requests retain their original visible text. Copy always uses the
+original unwrapped source, including Markdown destinations.
+
+When Codexometer runs locally on macOS, left-click a session web link to open it
+in your default browser. Codexometer consumes that click before session
+navigation or approval handling, and passes the URL directly to macOS without a
+shell. Windows and SSH sessions use the terminal's hyperlink gesture (normally
+Ctrl-click in Windows Terminal; Cmd+Shift+click bypasses mouse capture in Ghostty).
+The macOS fallback is disabled when an SSH environment marker is present. Tiny
+text areas under 12 columns and incomplete, oversized or unsupported destinations stay
+plain. The version and pricing links continue to use the terminal's native
+hyperlink handling.
+
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the
 same action on that session. The presentations are:
@@ -1416,7 +1431,11 @@ same action on that session. The presentations are:
 
    **Recent turn history:** `Alt+Left` opens the previous completed turn;
    `Alt+Right` moves forwards, eventually returning to live detail. Click
-   **Previous**, **Next**, or **Live** for the same navigation. These controls
+   **Previous**, **Next**, or **Live** for the same navigation. On macOS, use
+   `Option+Left` / `Option+Right`: the default Terminal.app and Ghostty
+   word-movement encodings are also recognised while the reply editor is
+   unfocused. While typing, those encodings continue to move between words;
+   leave the editor before navigating history. These controls
    appear when replies have been retained and space permits; narrow layouts
    shorten the labels, and the hotkeys remain available on short terminals.
    Up/Down, Page Up/Down and the wheel still scroll the displayed reply; Copy
@@ -1577,6 +1596,8 @@ are clickable. Writable web mode exposes the same catalogue through
 
 | Command family | Live options and behaviour |
 | --- | --- |
+| `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
+| `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
@@ -1608,8 +1629,8 @@ Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of
 every CLI command. Options and help are fetched on demand, not hard-coded or
 persisted; installed-server support determines what appears. Plugin lifecycle
-endpoints are deliberately excluded while OpenAI marks them unsuitable for
-production clients. Experimental flags are browse-only because their mutation
+actions are excluded because installation, authentication and configuration
+review flows are not implemented. Experimental flags are browse-only because their mutation
 scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
@@ -1626,15 +1647,20 @@ confirmations retain the draft and error context. These changes do not modify gl
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
 
-**Remaining CLI command gaps** (compared with the official documented CLI list):
+**Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
+compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
+and the reason for each missing adapter. Several missing commands already have
+server APIs (`/compact`, `/fork`, `/review`, `/goal`, `/ps`, `/stop`); they need
+Codexometer workflows. Native display commands need local UI implementations.
+The published reference is incomplete for this version and includes older names.
 
-| Area | Commands not implemented as Codexometer slash commands |
-| --- | --- |
-| Session lifecycle and conversation actions | `/new`, `/clear`, `/resume`, `/fork`, `/archive`, `/delete`, `/compact`, `/review`, `/init`, `/goal`, `/side`, `/btw`, `/approve` |
-| CLI navigation and display | `/agent`, `/subagents`, `/copy`, `/diff`, `/status`, `/usage`, `/raw`, `/title`, `/theme`, `/pets`, `/pet`, `/keymap`, `/vim`, `/app`, `/exit`, `/quit` |
-| Configuration and tools | `/ide`, `/plugins`, `/memories`, `/import`, `/feedback`, `/logout`, `/mention`, `/personality`, `/ps`, `/stop`, `/setup-default-sandbox`, `/sandbox-add-read-dir`, `/debug-config` |
-
-`/apps`, `/skills`, `/mcp`, `/hooks` and `/experimental` remain **browse-only** here; CLI invocation, installation, authentication, trust and toggle actions are not implemented. `/plan` changes mode but does not implement the CLI's optional prompt argument. `/fast` and other advertised tiers are session overrides, rather than persistent CLI defaults. `/statusline` configures Codexometer's own footer. Existing session navigation, copying and telemetry views provide some analogous actions without those slash names. Availability upstream varies by platform, version and enabled features; see the [official CLI command reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands).
+`/cd` requires an existing local directory and no queued messages. Confirmation
+rechecks the target (including symlinks), current running directory and session
+state. The server retains current permission settings and other workspace roots.
+The native CLI’s project trust/configuration reload and conversation-fork workflow
+is not performed; use native `/cd` for that full transition. `/cwd` and `/pwd`
+read running configuration rather than captured thread metadata. Failed or
+unconfirmed directory updates are not reported as completed or retried.
 
 Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
 Use `//` to send a literal leading slash (for example `//tmp/file` sends
@@ -2590,14 +2616,14 @@ codexometer --web --web-port 8765
 5. Press Ctrl+C in the launching terminal to stop the server and invalidate access.
 
 This preview is **read-only by default and UK-English-only**, not feature parity with
-the terminal. It includes Bars, Pace, Zone, Pie and Fuel Tank quota
+the terminal. It includes Bars, Pace, Pie and Fuel Tank quota
 presentations; reset inventory with disclosed expiry information; local session
 telemetry with expandable/full-page context and synchronised activity graphs;
 and account history with a daily heatmap, monthly/cumulative bars, a 6/12-month
 selector and an accessible data table. Five browser themes are available.
 `CODEXOMETER_LANG` continues to configure the terminal, not this preview.
 
-**Zone** plots each window's elapsed quota period horizontally and
+**Pace** plots each window's elapsed quota period horizontally and
 0–100% consumption vertically. The bottom-left to top-right diagonal represents
 steady consumption: above it means usage is outpacing elapsed time, below it means
 headroom. The background fades from red at the top left through amber to green at
@@ -2614,15 +2640,10 @@ supplies the same retained history as text: observation time, elapsed period,
 consumed percentage and breaks between segments. It updates alongside the
 plotted trail.
 
-**Pace** is a separate quota view using the same graph and controls.
-It replaces the former horizontal Consumption Pace gauge in both interfaces,
-keeps the elapsed-period X axis and shows
-consumed percentage minus elapsed-period percentage on Y, in percentage points
-from −100 to +100. Zero is the horizontal safe line: positive values mean usage
-is ahead of time, negative values mean headroom. Its background is uniform
-across each row, fading from amber at safety through orange to red above, and
-from amber to green below. The dot, observed path and projection all use the
-same transformed coordinates.
+Pace preserves the former Zone graph. The former distance-from-safety Pace
+view has been removed. Saved `zone` selections and browser `#/quota/zone`
+links open the retained graph as Pace; older `consumption-pace` selections
+also resolve to it.
 
 The **TREND** selector defaults to **FROM WINDOW START** and can be switched
 off. When enough uninterrupted observations exist, it can instead fit recent
@@ -2635,10 +2656,8 @@ elapsed in a known quota window.
 The dotted projection starts at the beginning of the selected trend period,
 passes through the current dot and continues to the graph edge. It uses
 periodic arrows to show direction; its caption estimates consumption at reset or
-warns when exhaustion is projected first. Both presentations colour it green
+warns when exhaustion is projected first. Both interfaces colour it green
 when projected consumption at reset is at most 100%, dark red otherwise.
-In Pace, the selected trend period controls the slope relative to safety:
-slower-than-steady consumption slopes downward, faster consumption upward.
 Recent periods without enough observed
 history remain visible but disabled. This is a linear extrapolation of coarse
 whole-percentage observations, not an OpenAI forecast.
@@ -2704,7 +2723,7 @@ session IDs. Navigation and layout controls never send actions to Codex.
 
 The browser uses a compact dashboard layout: quota plots share the available
 width and height below the tabs. Pie charts retain their circular shape, while
-Zone and Pace scale each axis independently and keep text legible. On short
+Pace scales each axis independently and keeps text legible. On short
 windows or with many quota windows, content scrolls without hiding the footer
 controls or shrinking plots below a readable minimum.
 

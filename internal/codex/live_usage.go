@@ -109,12 +109,13 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
-	sessionNames    map[string]string
-	nameIndexInfo   os.FileInfo
-	daemonContexts  map[string]SessionContext
-	SessionsRoot    string
-	WriterLocksRoot string
-	statusProvider  sessionStatusProvider
+	sessionNames      map[string]string
+	nameIndexInfo     os.FileInfo
+	daemonContexts    map[string]SessionContext
+	daemonDirectories map[string]string
+	SessionsRoot      string
+	WriterLocksRoot   string
+	statusProvider    sessionStatusProvider
 
 	mu                        sync.Mutex
 	initialized               bool
@@ -340,6 +341,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
 	r.daemonContexts = nil
+	r.daemonDirectories = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
@@ -347,6 +349,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
+			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -1277,6 +1280,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	for _, session := range groups {
 		if root := byID[session.ID]; root != nil && !session.Unattributed {
 			session.ModelSettings = root.modelSettings
+		}
+		if cwd := r.daemonDirectories[session.ID]; cwd != "" {
+			session.WorkingDirectory = cwd
 		}
 		session.Working = groupWorking[session.ID]
 		if session.Attention == SessionAttentionComplete && groupWorking[session.ID] {

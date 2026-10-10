@@ -1,12 +1,16 @@
 export const quotaViews = [
   'bars',
   'pace',
-  'zone',
   'pie',
   'fuel',
   'resets',
   'thresholds',
 ];
+// Preserve saved Zone selections and older graph links after the rename.
+export function normaliseQuotaView(view: unknown): string {
+  if (view === 'zone' || view === 'consumption-pace') return 'pace';
+  return typeof view === 'string' && quotaViews.includes(view) ? view : 'bars';
+}
 const key = 'codexometer.web.preferences.v1';
 interface Preferences {
   statusLine: string[] | null;
@@ -42,7 +46,7 @@ function read(): Preferences {
       tab: ['quota', 'sessions', 'usage'].includes(value.tab)
         ? value.tab
         : 'quota',
-      view: quotaViews.includes(value.view) ? value.view : 'bars',
+      view: normaliseQuotaView(value.view),
       selected:
         typeof value.selected === 'string' ? value.selected.slice(0, 256) : '',
       defaultDetail: value.defaultDetail === 1 ? 1 : 0,

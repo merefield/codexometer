@@ -180,6 +180,9 @@ func (m Model) renderFooter(width int, colors palette) string {
 		remaining = 0
 	}
 	left := i18n.Format("AUTO-SCAN %s", compactDuration(remaining))
+	if m.sessionWebLinkError {
+		left = i18n.Text("Could not open web link.")
+	}
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
 		left += i18n.Format("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}

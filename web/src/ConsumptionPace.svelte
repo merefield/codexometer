@@ -6,13 +6,11 @@
     elapsed,
     trail = [],
     duration,
-    paceView = false,
   }: {
     used: number;
     elapsed: number;
     trail?: Meter['trail'];
     duration: number | null;
-    paceView?: boolean;
   } = $props();
   type TrailPoint = NonNullable<Meter['trail']>[number];
   type TrendMode = 'off' | 'halfHour' | 'hour' | 'day' | 'window';
@@ -22,9 +20,8 @@
   let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
   const trendMinutes = { off: 0, halfHour: 30, hour: 60, day: 1440, window: 0 };
-  let yTicks = $derived(paceView ? [-100, -50, 0, 50, 100] : ticks);
-  let minimum = $derived(paceView ? -100 : 0);
-  let range = $derived(paceView ? 200 : 100);
+  const minimum = 0;
+  const range = 100;
   let width = $state(400);
   let height = $state(240);
   let right = $derived(width - 24);
@@ -37,16 +34,13 @@
   function plotY(value: number): number {
     return bottom - ((value - minimum) / range) * plotHeight;
   }
-  function graphValue(consumption: number, time: number): number {
-    return paceView ? consumption - time : consumption;
-  }
-  let y = $derived(plotY(graphValue(used, elapsed)));
+  let y = $derived(plotY(used));
   let difference = $derived(used - elapsed);
   let path = $derived(
     trail
       .map(
         (p, i) =>
-          `${i === 0 || p.break ? 'M' : 'L'}${48 + (p.elapsed / 100) * plotWidth} ${plotY(graphValue(p.used, p.elapsed))}`,
+          `${i === 0 || p.break ? 'M' : 'L'}${48 + (p.elapsed / 100) * plotWidth} ${plotY(p.used)}`,
       )
       .join(' '),
   );
@@ -117,7 +111,7 @@
     if (slope === null || !duration) return null;
     const projected = used + slope * (100 - elapsed);
     const intercept = trendMode === 'window' ? 0 : used - slope * elapsed;
-    const graphSlope = slope - (paceView ? 1 : 0);
+    const graphSlope = slope;
     let x1 = Math.max(0, elapsed - (trendMinutes[trendMode] / duration) * 100);
     if (trendMode === 'window') x1 = 0;
     let x2 = 100;
@@ -163,19 +157,12 @@
     style:--trend-color={trend?.safe ? '#115b35' : '#7f1825'}
     viewBox={`0 0 ${width} ${height}`}
     role="img"
-    aria-label={`${paceView ? 'Pace zone' : 'Consumption zone'}: ${used}% consumed, ${elapsed.toFixed(1)}% of quota period elapsed. ${paceView ? `${difference.toFixed(1)} percentage points from safety.` : `${difference > 0 ? 'Above' : difference < 0 ? 'Below' : 'On'} the steady-consumption line.`}${showTrace && trail.length ? ` Trace path contains ${trail.length} ${trail.length === 1 ? 'observation' : 'observations'}; gaps are not interpolated.` : ''}`}
+    aria-label={`Pace: ${used}% consumed, ${elapsed.toFixed(1)}% of quota period elapsed. ${difference > 0 ? 'Above' : difference < 0 ? 'Below' : 'On'} the steady-consumption line.${showTrace && trail.length ? ` Trace path contains ${trail.length} ${trail.length === 1 ? 'observation' : 'observations'}; gaps are not interpolated.` : ''}`}
   >
     <defs>
-      <linearGradient
-        id={gradient}
-        x1="0%"
-        y1="0%"
-        x2={paceView ? '0%' : '100%'}
-        y2="100%"
-      >
+      <linearGradient id={gradient} x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#b93749" />
-        {#if paceView}<stop offset="25%" stop-color="#bf6f32" />{/if}
-        <stop offset="50%" stop-color={paceView ? '#ae903b' : '#8c793d'} />
+        <stop offset="50%" stop-color="#8c793d" />
         <stop offset="100%" stop-color="#23855d" />
       </linearGradient>
       <marker
@@ -213,33 +200,19 @@
         text-anchor="middle">{tick}%</text
       >
     {/each}
-    {#each yTicks as tick}
+    {#each ticks as tick}
       <line class="grid" x1="48" y1={plotY(tick)} x2={right} y2={plotY(tick)} />
-      <text x="40" y={plotY(tick) + 4} text-anchor="end"
-        >{paceView ? `${tick > 0 ? '+' : ''}${tick}` : `${tick}%`}</text
-      >
+      <text x="40" y={plotY(tick) + 4} text-anchor="end">{tick}%</text>
     {/each}
     <path class="axes" d={`M48 20 V${bottom} H${right}`} />
-    <line
-      class="pace-line"
-      x1="48"
-      y1={plotY(0)}
-      x2={right}
-      y2={paceView ? plotY(0) : plotY(100)}
-    />
-    {#if paceView}<text
-        class="safe-label"
-        x={right - 5}
-        y={plotY(0) - 6}
-        text-anchor="end">SAFE</text
-      >{/if}
+    <line class="pace-line" x1="48" y1={plotY(0)} x2={right} y2={plotY(100)} />
     {#if showTrace && trail.length}
       <path class="observation-trail-casing" d={path} />
       <path class="observation-trail" d={path} />
       <circle
         class="trail-start"
         cx={48 + (trail[0].elapsed / 100) * plotWidth}
-        cy={plotY(graphValue(trail[0].used, trail[0].elapsed))}
+        cy={plotY(trail[0].used)}
         r="5"><title>First observation: {date(trail[0].at)}</title></circle
       >
     {/if}
@@ -258,9 +231,7 @@
         ></path
       >
     {/if}
-    <text x="48" y="12" class="axis-title"
-      >{paceView ? 'DISTANCE FROM SAFETY (PP)' : 'CONSUMPTION'}</text
-    >
+    <text x="48" y="12" class="axis-title">CONSUMPTION</text>
     <text
       x={48 + plotWidth / 2}
       y={height - 5}
@@ -269,35 +240,24 @@
     >
     <circle class="position-halo" cx={x} cy={y} r="10" />
     <circle class="position-dot" cx={x} cy={y} r="5">
-      <title
-        >{used}% consumed // {elapsed.toFixed(1)}% of period elapsed{paceView
-          ? ` // ${difference.toFixed(1)} PP from safety`
-          : ''}</title
-      >
+      <title>{used}% consumed // {elapsed.toFixed(1)}% of period elapsed</title>
     </circle>
   </svg>
 </div>
 <div class="zone-footer">
   <p class="zone-caption">
-    {#if paceView}{difference > 0 ? '+' : ''}{difference.toFixed(1)} PP FROM SAFETY{:else}{used}%
-      USED{/if} // {elapsed.toFixed(1)}% TIME ELAPSED<br />
+    {used}% USED // {elapsed.toFixed(1)}% TIME ELAPSED<br />
     <span class="muted"
       >{Math.abs(difference) < 0.05
         ? 'ON PACE'
         : difference > 0
-          ? paceView
-            ? 'ABOVE SAFETY — CONSUMPTION AHEAD OF TIME'
-            : 'ABOVE THE LINE — CONSUMING FASTER THAN TIME'
-          : paceView
-            ? 'BELOW SAFETY — QUOTA HEADROOM'
-            : 'BELOW THE LINE — WITHIN PACE'}</span
+          ? 'ABOVE THE LINE — CONSUMING FASTER THAN TIME'
+          : 'BELOW THE LINE — WITHIN PACE'}</span
     >
     {#if trend}<br /><span class="trend-summary"
-        >TREND // {paceView
-          ? `${trend.projected - 100 > 0 ? '+' : ''}${(trend.projected - 100).toFixed(1)} PP AT RESET`
-          : trend.projected >= 100
-            ? 'QUOTA EXHAUSTION PROJECTED'
-            : `${trend.projected.toFixed(1)}% PROJECTED AT RESET`}</span
+        >TREND // {trend.projected >= 100
+          ? 'QUOTA EXHAUSTION PROJECTED'
+          : `${trend.projected.toFixed(1)}% PROJECTED AT RESET`}</span
       >{/if}
   </p>
   <div class="zone-controls">
@@ -397,10 +357,6 @@
   .axis-title {
     font-size: 12px;
     letter-spacing: 0.04em;
-  }
-  .safe-label {
-    fill: #fff;
-    font-size: 11px;
   }
   .grid {
     stroke: #fff;

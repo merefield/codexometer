@@ -318,7 +318,7 @@ func TestPieViewPlacesQuotaWindowsSideBySide(t *testing.T) {
 }
 
 func TestGaugeGridViewClassification(t *testing.T) {
-	for _, view := range []meterViewID{viewBars, viewPie, viewPace, viewZone, viewFuel} {
+	for _, view := range []meterViewID{viewBars, viewPie, viewPace, viewFuel} {
 		if got := usesMeterGrid(view); !got {
 			t.Errorf("usesMeterGrid(%s) = false, want true", view.name())
 		}

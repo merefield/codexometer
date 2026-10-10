@@ -514,5 +514,6 @@
   "pending": "odottaa",
   "sending": "lähetetään",
   "uncertain": "epäselvä",
-  "sent": "lähetetty"
+  "sent": "lähetetty",
+  "Could not open web link.": "Verkkolinkkiä ei voitu avata."
 }

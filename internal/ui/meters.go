@@ -16,7 +16,7 @@ import (
 
 func usesMeterGrid(view meterViewID) bool {
 	switch view {
-	case viewBars, viewPie, viewPace, viewZone, viewFuel:
+	case viewBars, viewPie, viewPace, viewFuel:
 		return true
 	default:
 		return false
@@ -188,7 +188,7 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 		if len(graphs) > 0 {
 			options = graphs[0]
 		}
-		visual = renderQuotaPlot(innerWidth, visualHeight, meter.Window, now, view == viewPace, options, colors)
+		visual = renderQuotaPlot(innerWidth, visualHeight, meter.Window, now, options, colors)
 	}
 	gaugeWidth := min(max(lipgloss.Width(visual), 1), innerWidth)
 	resetGauge := renderResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
@@ -314,9 +314,7 @@ func renderVisualizationSized(width, height, used int, view meterViewID, color i
 	case viewPie:
 		return renderPieSized(width, height, used, color, colors)
 	case viewPace:
-		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), true, quotaPlotOptions{}, colors)
-	case viewZone:
-		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), false, quotaPlotOptions{}, colors)
+		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), quotaPlotOptions{}, colors)
 	case viewFuel:
 		return renderFuelTankSized(width, height, used, color, colors)
 	case viewBars:

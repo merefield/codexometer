@@ -514,5 +514,6 @@
   "pending": "ootel",
   "sending": "saatmisel",
   "uncertain": "ebakindel",
-  "sent": "saadetud"
+  "sent": "saadetud",
+  "Could not open web link.": "Veebilinki ei saanud avada."
 }

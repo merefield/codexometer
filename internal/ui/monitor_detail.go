@@ -73,7 +73,11 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	}
 	var lines []detailLine
 	appendText := func(text, kind, prefix string) {
-		for _, line := range strings.Split(ansi.Hardwrap(text, max(width-lipgloss.Width(prefix), 1), true), "\n") {
+		wrap := sessionWebTextLines
+		if c.Kind == codex.SessionContextApproval || kind != "body" {
+			wrap = sessionWebLiteralTextLines
+		}
+		for _, line := range wrap(text, max(width-lipgloss.Width(prefix), 1)) {
 			// A double-width glyph cannot fit a one-cell viewport. Clip that
 			// degenerate case; normal widths retain every wrapped character.
 			lines = append(lines, detailLine{ansi.Truncate(prefix+line, width, ""), kind})
@@ -190,7 +194,7 @@ func (m Model) contextDetailLines(width int) []string {
 	doc := m.contextDetailDocument(width)
 	lines := make([]string, len(doc))
 	for i, line := range doc {
-		lines[i] = line.text
+		lines[i] = ansi.Strip(line.text)
 	}
 	return lines
 }

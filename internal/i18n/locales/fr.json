@@ -514,5 +514,6 @@
   "pending": "en attente",
   "sending": "envoi",
   "uncertain": "incertain",
-  "sent": "envoyé"
+  "sent": "envoyé",
+  "Could not open web link.": "Impossible d’ouvrir le lien web."
 }

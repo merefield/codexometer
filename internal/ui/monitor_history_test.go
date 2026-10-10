@@ -3,12 +3,14 @@ package ui
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
@@ -273,5 +275,95 @@ func TestMonitorHistoryAsyncRecoveryAndFallback(t *testing.T) {
 	m.focusMonitorPrompt()
 	if _, ok := m.historicalContext(); ok {
 		t.Fatal("composer focus did not return to live session")
+	}
+}
+
+// Decode the bytes sent by the default macOS terminal keymaps, rather than
+// constructing an already-normalised arrow event that bypasses the bug.
+func historyTerminalKey(t *testing.T, sequence string) tea.KeyPressMsg {
+	t.Helper()
+	decoder := uv.EventDecoder{}
+	n, event := decoder.Decode([]byte(sequence))
+	key, ok := event.(uv.KeyPressEvent)
+	if !ok || n != len(sequence) {
+		t.Fatalf("terminal sequence %q did not decode as one key: %T", sequence, event)
+	}
+	return tea.KeyPressMsg(key)
+}
+
+func TestMonitorHistoryTerminalArrowEncodings(t *testing.T) {
+	for _, keys := range []struct{ name, previous, next string }{
+		{"native", "\x1b[1;3D", "\x1b[1;3C"},
+		{"macOS defaults", "\x1bb", "\x1bf"},
+	} {
+		t.Run(keys.name, func(t *testing.T) {
+			m := historyTestModel()
+			next, _ := m.Update(historyTerminalKey(t, keys.previous))
+			m = next.(Model)
+			c, selected := m.historicalContext()
+			if keys.name == "macOS defaults" && runtime.GOOS != "darwin" {
+				if selected {
+					t.Fatal("macOS fallback changed another platform's navigation")
+				}
+				return
+			}
+			if !selected || c.TurnID != "2" || m.monitorContextDetail != "root-one" {
+				t.Fatal("terminal key did not open previous turn")
+			}
+			next, _ = m.Update(historyTerminalKey(t, keys.next))
+			m = next.(Model)
+			if c, ok := m.historicalContext(); !ok || c.TurnID != "3" {
+				t.Fatal("terminal key did not advance history")
+			}
+			next, _ = m.Update(historyTerminalKey(t, keys.next))
+			if _, selected := next.(Model).historicalContext(); selected {
+				t.Fatal("next did not return to live detail")
+			}
+		})
+	}
+}
+
+func TestMonitorHistoryMacArrowEncodingsKeepEditorWordMovement(t *testing.T) {
+	for _, sequence := range []string{"\x1bb", "\x1bf"} {
+		m := historyTestModel()
+		m.focusMonitorPrompt()
+		m.monitorPrompt.input.SetValue("one two three")
+		m.monitorPrompt.input.CursorEnd()
+		// Put the cursor at the start of the final word for forward movement.
+		if sequence == "\x1bf" {
+			next, _ := m.Update(historyTerminalKey(t, "\x1bb"))
+			m = next.(Model)
+		}
+		next, _ := m.Update(historyTerminalKey(t, sequence))
+		m = next.(Model)
+		if _, historical := m.historicalContext(); historical || !m.monitorPrompt.input.Focused() {
+			t.Fatal("word movement selected history or left the editor")
+		}
+		m, _ = promptKey(m, 'X', "X")
+		want := "one two Xthree"
+		if sequence == "\x1bf" {
+			want = "one two threeX"
+		}
+		if m.monitorPrompt.input.Value() != want {
+			t.Fatalf("word movement/edit changed: %q, want %q", m.monitorPrompt.input.Value(), want)
+		}
+	}
+}
+
+func TestMonitorHistoryMacArrowEncodingsRespectOtherViewsAndEditors(t *testing.T) {
+	for _, configure := range []func(*Model){
+		func(m *Model) { m.meterView = viewBars },
+		func(m *Model) { m.setRowContext("root-one", contextWide) },
+		func(m *Model) { m.monitorCommands.open = true },
+		func(m *Model) { m.monitorQueue.open = true },
+		func(m *Model) { m.scheduleUI.open = true },
+	} {
+		for _, sequence := range []string{"\x1bb", "\x1bf"} {
+			m := historyTestModel()
+			configure(&m)
+			if n, _, handled := m.updateMonitorHistory(historyTerminalKey(t, sequence)); handled || n.monitorHistory["root-one"].selected != nil {
+				t.Fatal("macOS history alias intercepted another view/editor")
+			}
+		}
 	}
 }
