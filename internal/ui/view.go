@@ -30,6 +30,12 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) render() string {
+	if m.startup.active() {
+		return m.renderStartup()
+	}
+	if m.startup.pending && !m.inline && (m.width <= 0 || m.height <= 0) {
+		return ""
+	}
 	m.geometry = &monitorGeometryCache{}
 	colors := paletteFor(m.theme)
 	layout := m.dashboardLayout()
