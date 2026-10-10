@@ -298,7 +298,7 @@ func TestSessionCookedLinkSurvivesWrappedLabelAndScroll(t *testing.T) {
 
 func TestSessionCookedWebLinksRenderAcrossProfilesAndKeepCopy(t *testing.T) {
 	target := "https://developers.openai.com/codex/app-server"
-	text := "See [API documentation](" + target + ")"
+	text := "See [API documentation](" + target + ") at `27461d0`"
 	m := contextTestModel()
 	m.width, m.height = 120, 40
 	m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextReply, Text: text, ThreadID: "root-one"}
@@ -386,5 +386,37 @@ func TestSessionTitledLinksKeepMalformedAndUntrustedSource(t *testing.T) {
 		if cell.Link.URL != "" && (cell.Link.URL != "https://example.com/a" || cell.Style.Underline != uv.UnderlineSingle) {
 			t.Fatal("untrusted label/URL lost destination or underline")
 		}
+	}
+}
+
+func TestSessionWebLinksCookBesideInlineCode(t *testing.T) {
+	target := "https://github.com/merefield/codexometer/pull/81"
+	link := "[PR #81](" + target + ")"
+	for _, tc := range []struct{ name, source, display string }{
+		{"previous reply", "Resolved all three review threads on " + link + " and pushed `27461d0`:", "Resolved all three review threads on PR #81 and pushed `27461d0`:"},
+		{"code before link", "`27461d0` see " + link, "`27461d0` see PR #81"},
+		{"code on both sides", "`before` " + link + " `after`", "`before` PR #81 `after`"},
+		{"double backticks", "``use `code` here`` " + link, "``use `code` here`` PR #81"},
+		{"long delimiter", "text ````code ` and ``` here```` " + link, "text ````code ` and ``` here```` PR #81"},
+		{"multiline span", "`start\n" + link + "\nend` see " + link, "`start\n" + link + "\nend` see PR #81"},
+		{"same line code link", "`" + link + "` then " + link, "`" + link + "` then PR #81"},
+		{"escaped backtick", "\\`literal " + link, "\\`literal PR #81"},
+
+		{"escaped first tick in run", "\\``" + link + "` then " + link, "\\``" + link + "` then PR #81"},
+		{"even backslashes", "\\\\`" + link + "` then " + link, "\\\\`" + link + "` then PR #81"},
+		{"unmatched backtick", "text `literal " + link, "text `literal PR #81"},
+		{"escaped closing inside code", "`" + link + "\\` then " + link, "`" + link + "\\` then PR #81"},
+		{"paragraph boundary", "text `literal\n\n" + link + " then `", "text `literal\n\nPR #81 then `"},
+		{"fence boundary", "text `literal\n~~~\n" + link + "\n~~~\n" + link + " `", "text `literal\n~~~\n" + link + "\n~~~\nPR #81 `"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			linked := linkSessionWebText(tc.source)
+			if got := ansi.Strip(linked); got != tc.display {
+				t.Fatalf("prose next to code was not cooked correctly:\n got %q\nwant %q", got, tc.display)
+			}
+			if got := ansi.Strip(formatSessionWebLinks(tc.source, false)); got != tc.source {
+				t.Fatalf("literal source changed: %q", got)
+			}
+		})
 	}
 }

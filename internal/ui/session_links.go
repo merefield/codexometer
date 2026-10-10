@@ -197,12 +197,12 @@ func cookSessionWebURL(target string) bool {
 	return false
 }
 
-// Be conservative about literal code: lines containing backticks, indented code
-// and fenced blocks retain their exact visible text even on allowlisted hosts.
+// Code blocks and matched inline code spans retain their exact visible text.
+// Inline delimiters protect their span rather than unrelated prose on the line.
 func sessionLinkLiteralRanges(text string) (ranges [][2]int) {
 	var fence byte
-	var fenceLength, inlineTicks int
-	offset := 0
+	var fenceLength int
+	offset, inlineStart := 0, 0
 	for _, line := range strings.SplitAfter(text, "\n") {
 		trimmed := strings.TrimLeft(line, " ")
 		run := 0
@@ -219,28 +219,73 @@ func sessionLinkLiteralRanges(text string) (ranges [][2]int) {
 				fence = 0
 			}
 		}
-		inInlineCode := inlineTicks != 0
-		if !inFence && fence == 0 {
-			for index := 0; index < len(line); index++ {
-				if line[index] != '`' {
-					continue
-				}
-				end := index + 1
-				for end < len(line) && line[end] == '`' {
-					end++
-				}
-				if inlineTicks == 0 {
-					inlineTicks = end - index
-				} else if inlineTicks == end-index {
-					inlineTicks = 0
-				}
-				index = end - 1
+		block := inFence || fence != 0 || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
+		end := offset + len(line)
+		// Inline code cannot cross a code block or paragraph boundary.
+		if block || strings.TrimSpace(line) == "" {
+			ranges = append(ranges, sessionInlineCodeRanges(text[inlineStart:offset], inlineStart)...)
+			if block {
+				ranges = append(ranges, [2]int{offset, end})
 			}
+			inlineStart = end
 		}
-		if inFence || fence != 0 || inInlineCode || inlineTicks != 0 || strings.ContainsRune(line, '`') || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") {
-			ranges = append(ranges, [2]int{offset, offset + len(line)})
+		offset = end
+	}
+	ranges = append(ranges, sessionInlineCodeRanges(text[inlineStart:], inlineStart)...)
+	return ranges
+}
+
+func sessionInlineCodeRanges(text string, offset int) (ranges [][2]int) {
+	type delimiter struct {
+		start, end, next int
+		escaped          bool
+	}
+	var runs []delimiter
+	for index := 0; index < len(text); {
+		if text[index] != '`' {
+			index++
+			continue
 		}
-		offset += len(line)
+		end := index + 1
+		for end < len(text) && text[end] == '`' {
+			end++
+		}
+		slashes := 0
+		for previous := index - 1; previous >= 0 && text[previous] == '\\'; previous-- {
+			slashes++
+		}
+		runs = append(runs, delimiter{index, end, -1, slashes%2 != 0})
+		index = end
+	}
+	if len(runs) < 2 {
+		return nil
+	}
+	// Find matching runs once, bounding work even with many unmatched delimiters.
+	next := make(map[int]int)
+	for index := len(runs) - 1; index >= 0; index-- {
+		length := runs[index].end - runs[index].start
+		// Outside code a backslash escapes only the first backtick of a run.
+		openingLength := length
+		if runs[index].escaped {
+			openingLength--
+		}
+		if following, ok := next[openingLength]; ok {
+			runs[index].next = following
+		}
+		next[length] = index
+	}
+	for index := 0; index < len(runs); index++ {
+		opening := runs[index]
+		if opening.next < 0 {
+			continue
+		}
+		if opening.escaped {
+			opening.start++
+		}
+		// Backslashes are literal inside code, so they cannot escape a closing run.
+		closing := runs[opening.next]
+		ranges = append(ranges, [2]int{offset + opening.start, offset + closing.end})
+		index = opening.next
 	}
 	return ranges
 }
