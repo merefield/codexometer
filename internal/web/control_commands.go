@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
 
 type commandRequest struct {
@@ -18,7 +20,7 @@ type commandRequest struct {
 
 func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body actionRequest) {
 	q := body.Command
-	if c.commands == nil || q == nil || body.Review != "" || body.Offer != "" || body.Choice != nil || len(body.Answers) != 0 || body.Schedule != nil || body.EditID != "" || body.SendID != "" || body.CancelID != "" || len(q.Path) > 2048 || len(q.Revision) > 128 || len(q.Choice) > 128 || (q.Mode != "list" && q.Mode != "prepare" && q.Mode != "commit") {
+	if c.commands == nil || q == nil || body.Review != "" || body.Offer != "" || body.Choice != nil || len(body.Answers) != 0 || body.Schedule != nil || body.EditID != "" || body.SendID != "" || body.CancelID != "" || !codex.ValidSessionCommandPath(q.Path) || len(q.Revision) > 128 || len(q.Choice) > 128 || (q.Mode != "list" && q.Mode != "prepare" && q.Mode != "commit") {
 		http.Error(w, "Commands unavailable", 400)
 		return
 	}

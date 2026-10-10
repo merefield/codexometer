@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -179,5 +180,39 @@ func TestSessionRenameRejectsUnsafeAndChangedNames(t *testing.T) {
 	f.mu.Unlock()
 	if err := p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
 		t.Fatal("server rejection reported success")
+	}
+}
+
+func TestSessionRenameMaximumUnicodeInput(t *testing.T) {
+	for _, runeText := range []string{"界", "😀"} {
+		for _, direct := range []bool{false, true} {
+			t.Run(runeText+fmt.Sprint(direct), func(t *testing.T) {
+				p, f := newQuotaDaemon(t)
+				f.names = map[string]string{"one": "Original", "two": "Other session"}
+				name := strings.Repeat(runeText, SessionRenameInputLimit)
+				path := "rename/" + url.PathEscape(name)
+				if len(path) <= 2048 {
+					t.Fatal("regression fixture did not exceed old transport cap")
+				}
+				if direct {
+					path = "/rename " + name
+				}
+				m, err := p.SessionCommands(context.Background(), "one", path)
+				if err != nil || len(m.Choices) != 1 || !m.Choices[0].Action {
+					t.Fatal("valid Unicode rename rejected", m, err)
+				}
+				if len(f.nameWrites) != 0 {
+					t.Fatal("review changed name")
+				}
+				if err := p.ExecuteSessionCommand(context.Background(), "one", m.Path, m.Revision, m.Choices[0].ID); err != nil {
+					t.Fatal(err)
+				}
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				if len(f.nameWrites) != 1 || f.names["one"] != name || f.names["two"] != "Other session" {
+					t.Fatal("incorrect Unicode rename", f.nameWrites)
+				}
+			})
+		}
 	}
 }

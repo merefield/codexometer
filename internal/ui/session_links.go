@@ -13,6 +13,8 @@ import (
 
 const sessionWebLinkID = "id=codexometer-session-web"
 
+var sessionMarkdownBlankLine = regexp.MustCompile(`\r?\n[ \t]*\r?\n`)
+
 var sessionWebURL = regexp.MustCompile(`(?i)https?://[^\s<>"'\x60\x00-\x20]+`)
 
 // Only display copies gain links. Clipboard text and approval payloads stay plain.
@@ -29,6 +31,10 @@ func formatSessionWebLinks(text string, cook bool) string {
 	var out strings.Builder
 	previous, literalIndex := 0, 0
 	for _, match := range matches {
+		// A cooked link consumes its title too, including any URL-like text.
+		if match[0] < previous {
+			continue
+		}
 		start, end := match[0], match[1]
 		end = sessionWebURLEnd(text, start, end)
 		target := text[start:end]
@@ -44,14 +50,14 @@ func formatSessionWebLinks(text string, cook bool) string {
 				index += previous
 				label := text[index+1 : labelEnd]
 				// Keep incomplete, escaped, image and nested Markdown literal.
-				closing := ")"
-				if text[labelEnd:start] == "](<" {
-					closing = ">)"
+				angle := text[labelEnd:start] == "](<"
+				closing, complete := sessionMarkdownLinkEnd(text, end, angle)
+				if !angle && strings.Count(target, "(") != strings.Count(target, ")") {
+					complete = false
 				}
 				if label != "" && !strings.ContainsAny(label, "[]\n\r\\") &&
-					(index == 0 || (text[index-1] != '\\' && text[index-1] != '!')) &&
-					strings.HasPrefix(text[end:], closing) {
-					labelStart, markdownEnd = index, end+len(closing)
+					(index == 0 || (text[index-1] != '\\' && text[index-1] != '!')) && complete {
+					labelStart, markdownEnd = index, closing
 				}
 			}
 		}
@@ -81,7 +87,7 @@ func formatSessionWebLinks(text string, cook bool) string {
 // Inline Markdown has an explicit closing delimiter, so trailing punctuation
 // inside its destination is part of the URL. Plain prose uses balanced trimming.
 func sessionWebURLEnd(text string, start, end int) int {
-	if start >= 3 && text[start-3:start] == "](<" && strings.HasPrefix(text[end:], ">)") {
+	if start >= 3 && text[start-3:start] == "](<" && strings.HasPrefix(text[end:], ">") {
 		return end
 	}
 	if start >= 2 && text[start-2:start] == "](" {
@@ -97,6 +103,8 @@ func sessionWebURLEnd(text string, start, end int) int {
 				depth--
 			}
 		}
+		// A title follows whitespace, outside the URL captured by the regexp.
+		return end
 	}
 	for end > start {
 		candidate := text[start:end]
@@ -111,6 +119,61 @@ func sessionWebURLEnd(text string, start, end int) int {
 		break
 	}
 	return end
+}
+
+// Consume the remainder of a complete inline link, including an optional title
+// delimited by double quotes, single quotes or parentheses. Invalid/incomplete
+// titles stay visible, and the destination is never inferred from title text.
+func sessionMarkdownLinkEnd(text string, end int, angle bool) (int, bool) {
+	index := end
+	if angle {
+		if index >= len(text) || text[index] != '>' {
+			return end, false
+		}
+		index++
+	}
+	if index < len(text) && text[index] == ')' {
+		return index + 1, !sessionMarkdownBlankLine.MatchString(text[end : index+1])
+	}
+	spaced := index
+	for index < len(text) && strings.ContainsRune(" \t\r\n", rune(text[index])) {
+		index++
+	}
+	if index == spaced || index >= len(text) {
+		return end, false
+	}
+	if text[index] == ')' {
+		return index + 1, !sessionMarkdownBlankLine.MatchString(text[end : index+1])
+	}
+	closing := text[index]
+	if closing == '(' {
+		closing = ')'
+	} else if closing != '"' && closing != '\'' {
+		return end, false
+	}
+	index++
+	for index < len(text) {
+		ch := text[index]
+		if ch == '\\' && index+1 < len(text) {
+			index += 2
+			continue
+		}
+		if ch == closing {
+			index++
+			for index < len(text) && strings.ContainsRune(" \t\r\n", rune(text[index])) {
+				index++
+			}
+			if index < len(text) && text[index] == ')' {
+				return index + 1, !sessionMarkdownBlankLine.MatchString(text[end : index+1])
+			}
+			return end, false
+		}
+		if ch == '(' && closing == ')' {
+			return end, false
+		}
+		index++
+	}
+	return end, false
 }
 
 func sessionWebLink(target, label string) string {

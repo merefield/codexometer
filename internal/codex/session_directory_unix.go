@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 )
@@ -68,11 +69,11 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 		return m, ErrSessionCommand
 	}
 	if path == "cd" {
-		m.Input, m.InputLabel, m.InputLimit, m.Value = true, "Working directory", 1024, cwd
+		m.Input, m.InputLabel, m.InputLimit, m.Value = true, "Working directory", SessionDirectoryInputLimit, cwd
 		return m, nil
 	}
 	input, err := url.PathUnescape(strings.TrimPrefix(path, "cd/"))
-	if err != nil || input == "" || strings.Contains(input, "\x00") {
+	if err != nil || input == "" || !utf8.ValidString(input) || utf8.RuneCountInString(input) > SessionDirectoryInputLimit || strings.Contains(input, "\x00") {
 		return m, ErrSessionCommand
 	}
 	// The review retains the supplied path; resolving it again at confirmation

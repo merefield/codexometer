@@ -325,3 +325,66 @@ func TestSessionCookedWebLinksRenderAcrossProfilesAndKeepCopy(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionCookedLinksWithMarkdownTitles(t *testing.T) {
+	for _, tc := range []struct{ name, source, target string }{
+		{"double quotes", `[docs](https://github.com/openai/codex "Codex")`, "https://github.com/openai/codex"},
+		{"single quotes", `[docs](https://developers.openai.com/codex 'Codex')`, "https://developers.openai.com/codex"},
+		{"parentheses", `[docs](https://chatgpt.com/help (Help))`, "https://chatgpt.com/help"},
+		{"angle destination", `[docs](<https://github.com/openai/codex> "Codex")`, "https://github.com/openai/codex"},
+		{"empty title", `[docs](https://github.com/openai/codex "")`, "https://github.com/openai/codex"},
+		{"escaped quotes", `[docs](https://github.com/openai/codex "Say \"hello\"")`, "https://github.com/openai/codex"},
+		{"balanced destination", `[docs](https://github.com/a_(b) "Codex")`, "https://github.com/a_(b)"},
+		{"destination punctuation", `[docs](https://github.com/a! "Codex")`, "https://github.com/a!"},
+		{"angle punctuation", `[docs](<https://github.com/a!> 'Codex')`, "https://github.com/a!"},
+		{"query", `[docs](https://github.com/a?x=1&y=2 "Codex")`, "https://github.com/a?x=1&y=2"},
+		{"URL in title", `[docs](https://github.com/a "https://example.com/title")`, "https://github.com/a"},
+		{"multiline title", "[docs](https://github.com/a \"line one\nline two\")", "https://github.com/a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			linked := linkSessionWebText("See " + tc.source + " after https://example.com/next")
+			if got := ansi.Strip(linked); got != "See docs after https://example.com/next" {
+				t.Fatalf("unexpected display: %q", got)
+			}
+			cells := backgroundTestLines(linked)[0]
+			for _, cell := range cells[4:8] {
+				if cell.Link.URL != tc.target || cell.Style.Underline != uv.UnderlineSingle {
+					t.Fatalf("label changed destination or underline: %+v", cell)
+				}
+			}
+			if sessionWebLinkAt(linked, 15, 0) != "https://example.com/next" {
+				t.Fatal("title consumed following URL")
+			}
+			if got := ansi.Strip(formatSessionWebLinks(tc.source, false)); got != tc.source {
+				t.Fatalf("literal display changed: %q", got)
+			}
+		})
+	}
+}
+
+func TestSessionTitledLinksKeepMalformedAndUntrustedSource(t *testing.T) {
+	for _, source := range []string{
+		`[docs](https://github.com/a "unterminated)`,
+		`[docs](https://github.com/a 'mismatched")`,
+		`[docs](https://github.com/a"no space")`,
+		`[docs](<https://github.com/a>"no space")`,
+		`[docs](https://github.com/a "title" junk)`,
+		`[docs](https://github.com/a (nested (title)))`,
+		`[docs](https://github.com/a_(b "unbalanced destination")`,
+		"[docs](https://github.com/a\n\n\"blank line\")",
+		"[docs](https://github.com/a \"blank\n \nline\")",
+		"[docs](https://github.com/a \"title\"\r\n\t\r\n)",
+		`[docs](https://example.com/a "untrusted host")`,
+		"`[docs](https://github.com/a \"literal code\")`",
+	} {
+		if got := ansi.Strip(linkSessionWebText(source)); got != source {
+			t.Fatalf("invalid/untrusted/literal link cooked: %q => %q", source, got)
+		}
+	}
+	linked := linkSessionWebText(`[docs](https://example.com/a "untrusted host")`)
+	for _, cell := range backgroundTestLines(linked)[0] {
+		if cell.Link.URL != "" && (cell.Link.URL != "https://example.com/a" || cell.Style.Underline != uv.UnderlineSingle) {
+			t.Fatal("untrusted label/URL lost destination or underline")
+		}
+	}
+}

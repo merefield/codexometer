@@ -107,7 +107,7 @@ func (p *daemonStatusProvider) commandModels(ctx context.Context) ([]commandMode
 }
 
 func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path string) (SessionCommandMenu, error) {
-	if len(path) > 2048 {
+	if !ValidSessionCommandPath(path) {
 		return SessionCommandMenu{}, ErrSessionCommand
 	}
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
@@ -117,7 +117,7 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 	if directory, ok := strings.CutPrefix(path, "cd "); ok {
 		path = "cd/" + url.PathEscape(strings.TrimSpace(directory))
 	}
-	if len(path) > 2048 {
+	if !ValidSessionCommandPath(path) {
 		return SessionCommandMenu{}, ErrSessionCommand
 	}
 	thread, err := p.commandThread(ctx, id)
@@ -218,7 +218,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.Help = "Rename this session in Codex. Enter a single-line name, then review and confirm the change. It does not send a prompt or change model settings."
 		if path == "rename" {
 			m.Input = true
-			m.InputLabel, m.InputLimit = "Session name", 512
+			m.InputLabel, m.InputLimit = "Session name", SessionRenameInputLimit
 			m.Value = commandLabel(t.Name)
 			return m, nil
 		}
@@ -226,7 +226,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			return m, ErrSessionCommand
 		}
 		name, err := url.PathUnescape(parts[1])
-		if err != nil || name == "" || len([]rune(name)) > 512 || commandLabel(name) != name {
+		if err != nil || name == "" || len([]rune(name)) > SessionRenameInputLimit || commandLabel(name) != name {
 			return m, ErrSessionCommand
 		}
 		m.Choices = append(m.Choices, SessionCommandChoice{

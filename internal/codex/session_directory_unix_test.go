@@ -297,3 +297,32 @@ func TestSessionDirectoryTelemetryTracksReadAndSettingsEvents(t *testing.T) {
 		t.Fatal("directory observations retained after disconnect")
 	}
 }
+
+func TestSessionDirectoryLongEncodedUnicodePath(t *testing.T) {
+	p, f, base := directoryFixture(t)
+	segment := strings.Repeat("界", 70)
+	input := strings.Join([]string{segment, segment, segment, segment}, "/")
+	target := filepath.Join(base, input)
+	if err := os.MkdirAll(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := "cd/" + url.PathEscape(input)
+	if len(path) <= 2048 {
+		t.Fatal("regression fixture did not exceed old transport cap")
+	}
+	m, err := p.SessionCommands(context.Background(), "one", path)
+	if err != nil || len(m.Choices) != 1 || !m.Choices[0].Action {
+		t.Fatal("valid directory rejected", m, err)
+	}
+	if len(f.writes) != 0 {
+		t.Fatal("review changed directory")
+	}
+	if err := p.ExecuteSessionCommand(context.Background(), "one", m.Path, m.Revision, m.Choices[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.writes) != 1 || f.cwds["one"] != target || f.cwds["two"] != "/other" {
+		t.Fatal("incorrect directory change", f.writes)
+	}
+}
