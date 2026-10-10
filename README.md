@@ -2623,7 +2623,9 @@ codexometer --web --web-port 8765
 
 1. Run one of these commands and keep that terminal open.
 2. Open the private `http://127.0.0.1:PORT/#pair=...` link printed in the terminal
-   within five minutes. The application does not automatically launch a browser.
+   within five minutes. Terminal output includes an underlined hyperlink; in
+   Ghostty on macOS, hold Cmd while clicking. Redirected output remains plain text.
+   The application does not automatically launch a browser.
 3. Pairing exchanges the one-use secret for a temporary browser capability and
    removes the secret from the visible URL. Do not share the original link.
 4. Browse **Quota**, **Sessions**, and **Usage**. Refresh and browser Back/Forward
