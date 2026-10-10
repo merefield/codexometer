@@ -116,6 +116,9 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		cmd := m.loadMonitorCommands(o.Next)
 		return m, cmd, true
 	}
+	if m.monitorCommands.menu.Picker {
+		return m, nil, true
+	}
 	if m.monitorCommands.menu.Multiple {
 		p := &m.monitorCommands
 		p.menu.Choices = append([]codex.SessionCommandChoice(nil), p.menu.Choices...)
@@ -140,10 +143,10 @@ func (m Model) confirmMonitorCommand() (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	o, ok := m.commandChoice()
-	if !p.detail || !ok || !o.Action || p.busy || p.notice != "" {
+	if (!p.detail && !p.menu.Picker) || !ok || !o.Action || p.busy || p.notice != "" {
 		return m, nil, true
 	}
-	if time.Now().After(p.until) {
+	if !p.menu.Picker && time.Now().After(p.until) {
 		p.notice = "Confirmation expired; reopen the option."
 		return m, nil, true
 	}
@@ -228,6 +231,9 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	for i := start; i < min(start+capacity, len(p.menu.Choices)); i++ {
 		o := p.menu.Choices[i]
 		label := o.Label
+		if p.menu.Picker && o.Selected {
+			label += " // CURRENT"
+		}
 		if p.menu.Multiple {
 			mark := "[ ] "
 			if o.Selected {
@@ -244,6 +250,17 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	if len(rows) == 0 {
 		rows = append(rows, commandDisplayRow{text: "No available options. Use Codex for unsupported commands.", choice: -1})
 	}
+	if p.menu.Picker && len(rows) < capacity {
+		if o, ok := m.commandChoice(); ok {
+			rows = append(rows, commandDisplayRow{choice: -1})
+			for _, line := range strings.Split(ansi.Hardwrap(o.Help, w, true), "\n") {
+				if len(rows) >= capacity {
+					break
+				}
+				rows = append(rows, commandDisplayRow{text: line, choice: -1})
+			}
+		}
+	}
 	if p.menu.Multiple {
 		preview := statusline.Text(statusLineSelection(p.menu), m.monitorStatusValues())
 		if preview == "" {
@@ -259,7 +276,7 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	var buttons []commandDisplayRow
 	if p.menu.Input && !p.busy {
 		buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "review"})
-	} else if p.menu.Multiple {
+	} else if p.menu.Multiple || (p.menu.Picker && !p.busy && p.notice == "") {
 		buttons = append(buttons, commandDisplayRow{text: "[ C APPLY ]", action: "confirm"})
 	} else if o, ok := m.commandChoice(); ok && p.detail && o.Action && !p.busy && p.notice == "" {
 		buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
@@ -284,10 +301,20 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 			break
 		}
 		style := colors.label()
-		if r.action != "" && (r.choice == p.selected || r.choice == p.hover) {
-			style = style.Foreground(colors.primary).Bold(true)
+		text := r.text
+		if r.action != "" {
+			style = colors.dimmed()
+			if r.choice == p.selected {
+				style = style.Foreground(colors.background).Background(colors.primary).Bold(true)
+				text = "> " + text
+			} else {
+				text = "  " + text
+				if r.choice == p.hover {
+					style = style.Underline(true)
+				}
+			}
 		}
-		body[i] = style.Render(ansi.Truncate(r.text, max(width-4, 1), ""))
+		body[i] = style.Render(ansi.Truncate(text, max(width-4, 1), ""))
 	}
 	var footer []string
 	for _, b := range m.commandFooter(width) {
@@ -301,6 +328,8 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 		hint := "↑/↓ select or scroll • Enter open • / root"
 		if p.menu.Input {
 			hint = "Enter review • Escape cancel"
+		} else if p.menu.Picker {
+			hint = "↑/↓ select • C apply • Escape cancel"
 		} else if p.menu.Multiple {
 			hint = "↑/↓ select • Space toggle • ←/→ order • C apply"
 		}
@@ -332,6 +361,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
 				}
 			} else if r.applied {
+				speed := p.menu.Picker
 				// Applying settings invalidates both the option revision and
 				// the root suggestion catalogue. Reopen only from a fresh read.
 				m.monitorCommands = monitorCommandsState{request: p.request + 1}
@@ -346,6 +376,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				cmd := m.focusMonitorPrompt()
 				m.monitorPrompt.session = r.session
 				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
+				if speed {
+					m.monitorPrompt.notice = "Session speed changed. Applies to subsequent turns."
+				}
 				if strings.HasPrefix(r.path, "rename/") {
 					m.monitorPrompt.notice = "Session renamed."
 				} else if strings.HasPrefix(r.path, "cd/") {
@@ -354,6 +387,14 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				return m, cmd, true
 			} else {
 				p.menu = r.menu
+				if p.menu.Picker {
+					for i, o := range p.menu.Choices {
+						if o.Selected {
+							p.selected = i
+							break
+						}
+					}
+				}
 				if p.menu.Input {
 					p.input = textinput.New()
 					p.input.CharLimit = p.menu.InputLimit

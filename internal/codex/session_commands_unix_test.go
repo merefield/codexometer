@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSessionCommandsModelAndTier(t *testing.T) {
@@ -33,10 +34,10 @@ func TestSessionCommandsModelAndTier(t *testing.T) {
 	}
 	f.mu.Unlock()
 	m, err = p.SessionCommands(ctx, "one", "fast")
-	if err != nil || len(m.Choices) != 2 {
+	if err != nil || len(m.Choices) != 3 || !m.Picker {
 		t.Fatalf("tier alias: %+v %v", m, err)
 	}
-	if err = p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err != nil {
+	if err = p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[1].ID); err != nil {
 		t.Fatal(err)
 	}
 	f.mu.Lock()
@@ -45,7 +46,7 @@ func TestSessionCommandsModelAndTier(t *testing.T) {
 	}
 	f.commandStatus = "active"
 	f.mu.Unlock()
-	if err = p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[1].ID); err == nil {
+	if err = p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
 		t.Fatal("accepted action after turn started")
 	}
 	if _, err = p.SessionCommands(ctx, "closed", "model"); err == nil {
@@ -214,5 +215,70 @@ func TestSessionRenameMaximumUnicodeInput(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestSessionSpeedPickerListsCurrentAndAppliesAdvertisedIDs(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	tier := "priority"
+	f.mu.Lock()
+	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium", Tier: &tier}
+	f.mu.Unlock()
+	ctx := context.Background()
+	menu, err := p.SessionCommands(ctx, "one", "fast")
+	if err != nil || !menu.Picker || len(menu.Choices) != 3 {
+		t.Fatalf("incomplete picker: %+v %v", menu, err)
+	}
+	for i, label := range []string{"Standard (default)", "Fast", "Slow"} {
+		if menu.Choices[i].Label != label || !menu.Choices[i].Action || menu.Choices[i].Selected != (i == 2) {
+			t.Fatalf("wrong label/action/current speed: %+v", menu.Choices)
+		}
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	current := f.sessions["one"]
+	if len(f.writes) != 1 || f.writes[0]["serviceTier"] != "flex" || len(f.writes[0]) != 2 || current.Model != "small" || current.Effort != "medium" || f.sessions["two"].Tier != nil {
+		t.Errorf("speed change altered other settings/session or guessed the tier: %+v %+v", f.writes, current)
+	}
+	f.mu.Unlock()
+	menu, err = p.SessionCommands(ctx, "one", "fast")
+	if err != nil || !menu.Choices[1].Selected || menu.Choices[2].Selected {
+		t.Fatalf("applied speed not reflected on reopen: %+v %v", menu, err)
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	if len(f.writes) != 2 || f.writes[1]["serviceTier"] != nil || f.sessions["one"].Tier != nil {
+		t.Error("default did not clear the override")
+	}
+	f.mu.Unlock()
+	menu, err = p.SessionCommands(ctx, "one", "fast")
+	if err != nil || !menu.Choices[0].Selected {
+		t.Fatal("default speed not marked current", err)
+	}
+}
+
+func TestSessionSpeedPickerDoesNotTreatQueuedWriteAsApplied(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.mu.Lock()
+	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
+	f.queued = true
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	menu, err := p.SessionCommands(ctx, "one", "fast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[1].ID); err == nil {
+		t.Fatal("queued speed update reported as applied")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.writes) != 1 || f.sessions["one"].Tier != nil {
+		t.Fatal("unconfirmed write was retried or changed running speed")
 	}
 }

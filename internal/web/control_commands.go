@@ -52,6 +52,9 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 			return
 		}
 		message := "Change requested. Codex will apply it to subsequent turns."
+		if p.speed {
+			message = "Session speed changed. Applies to subsequent turns."
+		}
 		if strings.HasPrefix(q.Path, "rename/") {
 			message = "Session renamed."
 		} else if strings.HasPrefix(q.Path, "cd/") {
@@ -75,7 +78,7 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 	}
 	for _, o := range m.Choices {
 		if o.ID == q.Choice && o.Action {
-			p := &preparedAction{request: body, id: rand.Text(), until: time.Now().Add(30 * time.Second)}
+			p := &preparedAction{request: body, speed: m.Picker, id: rand.Text(), until: time.Now().Add(30 * time.Second)}
 			c.mu.Lock()
 			c.pending = p
 			c.mu.Unlock()

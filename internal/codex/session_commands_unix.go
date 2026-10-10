@@ -285,15 +285,31 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 					return m, nil
 				}
 				if parts[0] == "tier" && model.Model == current.Model {
+					advertised := false
 					for _, tier := range model.ServiceTiers {
-						if tier.ID == target {
+						if tier.ID == target && commandSafe(tier.ID) && commandSafe(tier.Name) {
 							m.Title = "/" + strings.ToLower(tier.Name)
-							m.Help = tier.Description
-							setting("Enable "+tier.Name, tier.Description, map[string]any{"serviceTier": tier.ID})
-							setting("Use default tier", "Clear this session's explicit speed override.", map[string]any{"serviceTier": nil})
-							return m, nil
+							advertised = true
+							break
 						}
 					}
+					if !advertised {
+						return m, ErrSessionCommand
+					}
+					m.Picker = true
+					m.Help = "Choose a speed for this session. Changes apply to subsequent turns; automatic quota thresholds may later replace them."
+					setting("Standard (default)", "Clear this session's explicit speed override and use the server default.", map[string]any{"serviceTier": nil})
+					m.Choices[len(m.Choices)-1].Selected = canonicalQuotaSessionTier(current.Tier) == "default"
+					seen := map[string]bool{"default": true}
+					for _, tier := range model.ServiceTiers {
+						if !commandSafe(tier.ID) || !commandSafe(tier.Name) || seen[tier.ID] {
+							continue
+						}
+						seen[tier.ID] = true
+						setting(tier.Name, tier.Description, map[string]any{"serviceTier": tier.ID})
+						m.Choices[len(m.Choices)-1].Selected = canonicalQuotaSessionTier(current.Tier) == canonicalQuotaTier(tier.ID)
+					}
+					return m, nil
 				}
 			}
 		case "permissions":
@@ -414,6 +430,17 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 					case <-ticker.C:
 					}
 				}
+			}
+			if m.Picker {
+				current, err := p.readQuotaSession(ctx, id)
+				if err != nil {
+					return err
+				}
+				current.Tier = nil
+				if tier, ok := o.params["serviceTier"].(string); ok {
+					current.Tier = &tier
+				}
+				return p.writeQuotaSettings(ctx, current, o.params)
 			}
 			return p.requestOn(ctx, conn, o.method, o.params, nil)
 		}

@@ -46,7 +46,7 @@ Aliases on one row share the rating and implementation. Lifecycle commands share
 | `/experimental` | Browse only | P3 | Medium | `experimentalFeature/list`. Enablement changes process/configuration scope, rather than a single session; no mutation UI. Proposed next increment: review an advertised enablement change with its process/configuration scope and refresh/restart effects made clear. |
 | `/statusline` | Local equivalent | Done | — | Codexometer's own footer picker; also available in read-only web mode. Does not edit the native CLI's status line. |
 | `/help` | Local catalogue | Done | — | Codexometer catalogue entry; absent from the upstream registry. |
-| Advertised speed aliases, e.g. `/fast` | Session adapter | Done | — | Use live model-advertised tier names/IDs, with confirmed session overrides; global defaults remain out of scope. |
+| Advertised speed aliases, e.g. `/fast` | Session adapter | Done | — | Show all live model-advertised speeds plus the default in one picker; Up/Down selects and C Apply commits a verified session override. Global defaults remain out of scope. |
 
 `/help` is Codexometer's catalogue entry, absent from this upstream registry. Speed aliases such as `/fast` appear only when the current model advertises that tier; IDs are not guessed. They change session overrides rather than native persistent defaults.
 

@@ -3,13 +3,16 @@ package ui
 import (
 	"context"
 	"errors"
+	"image"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -372,5 +375,137 @@ func TestMonitorDirectoryEditorReviewAndConfirmation(t *testing.T) {
 	m = next.(Model)
 	if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "unsent directory draft" || m.monitorPrompt.notice != "Working directory changed." {
 		t.Fatal("directory change lost draft or notice")
+	}
+}
+
+type speedCommandTestClient struct {
+	*commandTestClient
+	choice string
+}
+
+func (f *speedCommandTestClient) SessionCommands(context.Context, string, string) (codex.SessionCommandMenu, error) {
+	return codex.SessionCommandMenu{Title: "/fast", Path: "tier/flex", Revision: "speed-revision", Picker: true, Choices: []codex.SessionCommandChoice{
+		{ID: "default", Label: "Standard (default)", Help: "Server default speed", Action: true},
+		{ID: "fast", Label: "Fast", Help: "Advertised faster speed", Action: true},
+		{ID: "slow", Label: "Slow", Help: "Advertised slower speed", Action: true, Selected: true},
+	}}, nil
+}
+func (f *speedCommandTestClient) ExecuteSessionCommand(_ context.Context, _, path, revision, choice string) error {
+	if path != "tier/flex" || revision != "speed-revision" {
+		return codex.ErrSessionCommand
+	}
+	f.calls++
+	f.choice = choice
+	return nil
+}
+func speedCommandTestModel(t *testing.T) (Model, *speedCommandTestClient) {
+	t.Helper()
+	m, base := commandTestModel(t)
+	f := &speedCommandTestClient{commandTestClient: base}
+	m.fetcher = f
+	m, cmd, _ := m.openMonitorCommands("fast")
+	next, _ := m.Update(cmd())
+	return next.(Model), f
+}
+
+func TestMonitorSpeedPickerUpFromBottomAndCApply(t *testing.T) {
+	m, f := speedCommandTestModel(t)
+	m.monitorPrompt.input.SetValue("/fast")
+	view := ansi.Strip(m.render())
+	for _, text := range []string{"Standard (default)", "Fast", "> Slow // CURRENT", "[ C APPLY ]", "C apply"} {
+		if !strings.Contains(view, text) {
+			t.Fatalf("missing %q in %s", text, view)
+		}
+	}
+	if m.monitorCommands.selected != 2 || m.monitorCommands.detail {
+		t.Fatal("current speed not highlighted in the list")
+	}
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = next.(Model)
+	if cmd != nil || f.calls != 0 || m.monitorCommands.selected != 1 || m.monitorCommands.detail || !strings.Contains(ansi.Strip(m.render()), "> Fast") {
+		t.Fatal("Up from bottom did not highlight the preceding speed")
+	}
+	for _, code := range []rune{tea.KeyEnter, tea.KeyRight} {
+		next, cmd = m.Update(tea.KeyPressMsg{Code: code})
+		m = next.(Model)
+		if cmd != nil || f.calls != 0 || m.monitorCommands.detail {
+			t.Fatal("Enter/Right left the list or applied without C")
+		}
+	}
+	next, cmd = m.Update(key('c'))
+	m = next.(Model)
+	if cmd == nil || !m.monitorCommands.busy {
+		t.Fatal("C Apply did not send the highlighted speed")
+	}
+	_, duplicate := m.Update(key('c'))
+	if duplicate != nil {
+		t.Fatal("busy picker allowed duplicate C Apply")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if f.calls != 1 || f.choice != "fast" || m.monitorCommands.open || m.monitorPrompt.input.Value() != "" || !strings.Contains(m.monitorPrompt.notice, "Session speed changed.") {
+		t.Fatal("wrong applied speed, draft or success state")
+	}
+}
+
+func TestMonitorSpeedPickerClickSelectsAndFooterApplies(t *testing.T) {
+	for _, width := range []int{60, 120} {
+		m, f := speedCommandTestModel(t)
+		m.width = width
+		x, y := renderedTextStart(t, m, "Standard (default)")
+		next, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+		if cmd != nil || f.calls != 0 || m.monitorCommands.selected != 0 || m.monitorCommands.detail {
+			t.Fatal("click applied speed or hid the list")
+		}
+		x, y = renderedTextStart(t, m, "[ C APPLY ]")
+		next, cmd = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+		if cmd == nil {
+			t.Fatal("footer Apply is not clickable")
+		}
+		cmd()
+		if f.calls != 1 || f.choice != "default" {
+			t.Fatal("footer applied the wrong highlighted speed")
+		}
+	}
+}
+
+func TestMonitorSlashListsHaveOneVisibleSelection(t *testing.T) {
+	m, _ := commandTestModel(t)
+	m.monitorCommands.menu.Choices = append(m.monitorCommands.menu.Choices, codex.SessionCommandChoice{ID: "high", Label: "High", Action: true})
+	if !strings.Contains(ansi.Strip(m.render()), "> Medium") {
+		t.Fatal("selected option has no visible highlight marker")
+	}
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = next.(Model)
+	view := ansi.Strip(m.render())
+	if !strings.Contains(view, "> High") || strings.Contains(view, "> Medium") {
+		t.Fatal("selection highlight did not follow Down")
+	}
+}
+
+func TestMonitorSlashSelectionUsesHighlightColors(t *testing.T) {
+	m, _ := commandTestModel(t)
+	m.monitorCommands.menu.Choices = append(m.monitorCommands.menu.Choices, codex.SessionCommandChoice{ID: "high", Label: "High", Action: true})
+	for _, selected := range []int{0, 1} {
+		m.monitorCommands.selected = selected
+		view := m.render()
+		cells := uv.NewScreenBuffer(m.width, m.height)
+		uv.NewStyledString(view).Draw(&cells, image.Rect(0, 0, m.width, m.height))
+		expected := uv.NewScreenBuffer(2, 1)
+		colors := paletteFor(m.theme)
+		uv.NewStyledString(colors.label().Foreground(colors.background).Background(colors.primary).Render("x")+colors.dimmed().Render("x")).Draw(&expected, image.Rect(0, 0, 2, 1))
+		for index, label := range []string{"Medium", "High"} {
+			x, y := renderedTextStart(t, m, label)
+			got := cells.CellAt(x, y).Style
+			want := expected.CellAt(1, 0).Style
+			if index == selected {
+				want = expected.CellAt(0, 0).Style
+			}
+			if !reflect.DeepEqual(got.Fg, want.Fg) || (index == selected && !reflect.DeepEqual(got.Bg, want.Bg)) {
+				t.Fatalf("%s did not use the appropriate selected/subdued colours", label)
+			}
+		}
 	}
 }

@@ -19,6 +19,7 @@
     help: string;
     next?: string;
     action?: boolean;
+    selected?: boolean;
   }
   interface Menu {
     title: string;
@@ -27,6 +28,7 @@
     revision: string;
     choices: Choice[];
     input?: boolean;
+    picker?: boolean;
     inputLabel?: string;
     inputLimit?: number;
     value?: string;
@@ -44,6 +46,9 @@
   let selectedIndex = $state(0);
   let dismissedQuery = $state<string | null>(null);
   let optionList: HTMLDivElement | undefined = $state();
+  const listID = $props.id();
+  const picking = $derived(open && !!menu?.picker && !selected);
+  const browsing = $derived(open && !menu?.input && !selected);
   const clock = setInterval(() => {
     now = Date.now();
   }, 1000);
@@ -73,7 +78,7 @@
   $effect(() => {
     const index = selectedIndex;
     choices;
-    if (suggesting)
+    if (browsing)
       void tick().then(() => {
         const row = optionList?.children[index] as HTMLElement | undefined;
         if (!row || !optionList) return;
@@ -87,9 +92,9 @@
   });
   export function handleKey(event: KeyboardEvent) {
     if (
-      !slash ||
       !open ||
-      (menu && menu.path !== '') ||
+      !browsing ||
+      (!slash && !optionList?.contains(event.target as Node)) ||
       selected ||
       unavailable ||
       event.isComposing ||
@@ -98,14 +103,25 @@
       event.altKey
     )
       return;
-    if (!['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(event.key))
+    if (
+      !['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(event.key) &&
+      !(picking && event.key.toLowerCase() === 'c')
+    )
       return;
+    if (menu?.path !== '' && event.key === 'Tab') return;
     if (event.key === 'Tab' && event.shiftKey) return;
     event.preventDefault();
+    event.stopPropagation();
     if (event.key === 'Escape') {
       open = false;
       dismissedQuery = query;
       confirmation = '';
+      if (menu?.picker) oncomplete(query);
+      return;
+    }
+    if (busy) return;
+    if (picking && event.key.toLowerCase() === 'c') {
+      void applySpeed();
       return;
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -113,8 +129,16 @@
         Math.max(selectedIndex + (event.key === 'ArrowUp' ? -1 : 1), 0),
         Math.max(choices.length - 1, 0),
       );
+      if (!picking && optionList?.contains(event.target as Node)) {
+        void tick().then(() =>
+          (
+            optionList?.children[selectedIndex] as HTMLElement | undefined
+          )?.focus(),
+        );
+      }
       return;
     }
+    if (picking) return;
     const option = choices[selectedIndex];
     if (!option || busy) return;
     if (event.key === 'Tab') oncomplete(option.label);
@@ -159,6 +183,13 @@
             next: 'statusline',
           });
         menu = result;
+        selectedIndex = result.picker
+          ? Math.max(
+              result.choices.findIndex((choice) => choice.selected),
+              0,
+            )
+          : 0;
+        if (result.picker) void tick().then(() => optionList?.focus());
         name = result.value || '';
         if (
           (result.path.startsWith('rename/') ||
@@ -191,6 +222,11 @@
     }
   }
   async function choose(o: Choice) {
+    if (menu?.picker) {
+      selectedIndex = choices.findIndex((choice) => choice.id === o.id);
+      optionList?.focus();
+      return;
+    }
     if (o.next === 'statusline') {
       statusLineUI.open = true;
       open = false;
@@ -231,6 +267,51 @@
       if (seq === request) busy = false;
     }
   }
+  async function applySpeed() {
+    const option = choices[selectedIndex];
+    if (!picking || !menu || !option?.action || unavailable || busy || notice)
+      return;
+    const path = menu.path;
+    const revision = menu.revision;
+    const seq = ++request;
+    busy = true;
+    try {
+      const prepared = await controlRequest<{
+        confirmation: string;
+        expires: string;
+      }>('commands', {
+        session,
+        command: { mode: 'prepare', path, revision, choice: option.id },
+      });
+      if (seq !== request || unavailable || !open) return;
+      if (
+        !prepared.confirmation ||
+        !Number.isFinite(Date.parse(prepared.expires)) ||
+        Date.now() >= Date.parse(prepared.expires)
+      ) {
+        throw new Error('Speed change confirmation unavailable');
+      }
+      const result = await controlRequest<{ message: string }>('commands', {
+        session,
+        confirmation: prepared.confirmation,
+        command: { mode: 'commit', path },
+      });
+      if (seq === request) {
+        notice = result.message;
+        open = false;
+        menu = null;
+        selected = null;
+        dismissedQuery = null;
+        onchange();
+      }
+    } catch {
+      if (seq === request)
+        notice = 'Change unconfirmed. Check Codex before retrying.';
+    } finally {
+      if (seq === request) busy = false;
+    }
+  }
+
   async function commit() {
     if (!confirmation || unavailable || busy || now >= expires || !menu) return;
     const token = confirmation;
@@ -260,6 +341,37 @@
     }
   }
 </script>
+
+{#snippet options()}
+  {#each choices as o, index (o.id)}<button
+      id={`${listID}-${index}`}
+      role={picking ? 'option' : undefined}
+      aria-selected={picking ? selectedIndex === index : undefined}
+      tabindex={picking ? -1 : undefined}
+      disabled={busy || unavailable}
+      title={o.help}
+      aria-label={o.label +
+        (picking && o.selected ? ' // CURRENT' : '') +
+        (o.next ? ' →' : !o.action ? ' // HELP' : '')}
+      class:suggested={selectedIndex === index}
+      onfocus={() => {
+        if (!picking) selectedIndex = index;
+      }}
+      onclick={() => {
+        selectedIndex = index;
+        void choose(o);
+      }}
+      ><span class="command-name">{o.label}</span><span class="command-tail"
+        >{picking && o.selected ? ' // CURRENT' : ''}{o.next
+          ? ' →'
+          : !o.action
+            ? ' // HELP'
+            : ''}</span
+      >{#if (slash && menu?.path === '') || picking}<span class="command-help"
+          >{o.help}</span
+        >{/if}</button
+    >{/each}
+{/snippet}
 
 <section aria-label="Session slash commands" class="slash-commands">
   <button
@@ -335,28 +447,33 @@
           }}>BACK</button
         >
       {:else}
-        <div
-          class="command-options"
-          class:vertical={suggesting}
-          bind:this={optionList}
-        >
-          {#each choices as o, index (o.id)}<button
-              disabled={busy || unavailable}
-              title={o.help}
-              aria-label={o.label +
-                (o.next ? ' →' : !o.action ? ' // HELP' : '')}
-              class:suggested={slash &&
-                menu?.path === '' &&
-                selectedIndex === index}
-              onclick={() => choose(o)}
-              ><span class="command-name">{o.label}</span><span
-                class="command-tail"
-                >{o.next ? ' →' : !o.action ? ' // HELP' : ''}</span
-              >{#if slash && menu?.path === ''}<span class="command-help"
-                  >{o.help}</span
-                >{/if}</button
-            >{/each}
-        </div>
+        {#if picking}
+          <div
+            class="command-options vertical"
+            role="listbox"
+            aria-label="Session speed"
+            aria-activedescendant={`${listID}-${selectedIndex}`}
+            tabindex="0"
+            onkeydown={handleKey}
+            bind:this={optionList}
+          >
+            {@render options()}
+          </div>
+        {:else}
+          <div
+            class="command-options"
+            class:vertical={suggesting}
+            role="toolbar"
+            tabindex="-1"
+            aria-label="Command options"
+            onkeydown={handleKey}
+            bind:this={optionList}
+          >
+            {@render options()}
+          </div>
+        {/if}
+        {#if picking}<p class="muted">{choices[selectedIndex]?.help}</p>
+          <p class="muted">↑/↓ select · C apply · Escape cancel</p>{/if}
         {#if !busy && !choices.length}<p>
             No available matching commands.
           </p>{/if}
@@ -365,10 +482,25 @@
           </p>{/if}
       {/if}
       {#if !suggesting}
+        {#if picking}<button
+            onclick={applySpeed}
+            disabled={busy ||
+              unavailable ||
+              !choices[selectedIndex]?.action ||
+              !!notice}>C APPLY</button
+          >{/if}
         <button disabled={busy} onclick={() => load('')}>ALL COMMANDS</button>
         <button disabled={busy} onclick={() => load(menu?.path || '')}
           >REFRESH OPTIONS</button
         >
+        {#if picking}<button
+            disabled={busy}
+            onclick={() => {
+              open = false;
+              dismissedQuery = query;
+              oncomplete(query);
+            }}>ESC CLOSE</button
+          >{/if}
       {/if}
     </div>
   {/if}
@@ -426,10 +558,16 @@
   .vertical button.suggested {
     outline: none;
   }
-  .vertical button.suggested .command-name,
-  .vertical button:hover .command-name {
+  .command-options button.suggested .command-name {
     background: var(--accent);
     color: var(--bg);
+    font-weight: 700;
+  }
+  .command-options button:not(.suggested):hover .command-name {
+    text-decoration: underline;
+  }
+  .command-options button {
+    color: var(--muted);
   }
   .vertical .command-help {
     flex: 1;

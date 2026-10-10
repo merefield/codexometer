@@ -63,11 +63,13 @@ type SessionCommandChoice struct {
 }
 
 type SessionCommandMenu struct {
-	Title      string                 `json:"title"`
-	Help       string                 `json:"help"`
-	Path       string                 `json:"path"`
-	Revision   string                 `json:"revision"`
-	Multiple   bool                   `json:"multiple,omitempty"`
+	Title    string `json:"title"`
+	Help     string `json:"help"`
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Multiple bool   `json:"multiple,omitempty"`
+	// Picker keeps choices visible; the highlighted option is applied explicitly.
+	Picker     bool                   `json:"picker,omitempty"`
 	Input      bool                   `json:"input,omitempty"`
 	InputLabel string                 `json:"inputLabel,omitempty"`
 	InputLimit int                    `json:"inputLimit,omitempty"`

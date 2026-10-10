@@ -86,6 +86,7 @@ type actionRequest struct {
 }
 
 type preparedAction struct {
+	speed   bool
 	request actionRequest
 	id      string
 	until   time.Time

@@ -1410,7 +1410,30 @@ test('slash commands discover help and require a separate confirmation', async (
     panel.getByRole('button', { name: '/model →', exact: true }),
   ).toBeEnabled();
   await text.press('Enter');
-  await panel.getByRole('button', { name: 'Medium', exact: true }).click();
+  const medium = panel.getByRole('button', { name: 'Medium', exact: true });
+  const high = panel.getByRole('button', { name: 'High', exact: true });
+  await expect(medium).toHaveClass(/suggested/);
+  await expect(high).not.toHaveClass(/suggested/);
+  const selectedStyle = await medium
+    .locator('.command-name')
+    .evaluate((node) => ({
+      color: getComputedStyle(node).color,
+      background: getComputedStyle(node).backgroundColor,
+      weight: getComputedStyle(node).fontWeight,
+    }));
+  const unselectedStyle = await high
+    .locator('.command-name')
+    .evaluate((node) => ({
+      color: getComputedStyle(node).color,
+      background: getComputedStyle(node).backgroundColor,
+    }));
+  expect(selectedStyle.background).not.toBe(unselectedStyle.background);
+  expect(selectedStyle.color).not.toBe(unselectedStyle.color);
+  expect(Number(selectedStyle.weight)).toBeGreaterThanOrEqual(700);
+  await text.press('ArrowDown');
+  await expect(high).toHaveClass(/suggested/);
+  await expect(medium).not.toHaveClass(/suggested/);
+  await medium.click();
   await expect(panel).toContainText('Server effort description');
   await expect(
     panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
@@ -1575,6 +1598,190 @@ for (const command of ['rename', 'cd']) {
     },
   );
 }
+
+async function mockSpeedCommands(page: Page) {
+  await mockActions(page, 'prompt');
+  const calls: { mode: string; path: string; choice?: string }[] = [];
+  let reject = false;
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    const command = body.command;
+    calls.push(command);
+    if (reject && command.mode === 'commit') {
+      await route.fulfill({ status: 409, json: { error: 'Changed' } });
+      return;
+    }
+    await route.fulfill({
+      json:
+        command.mode === 'prepare'
+          ? {
+              confirmation: 'speed-token',
+              expires: new Date(Date.now() + 30000).toISOString(),
+            }
+          : command.mode === 'commit'
+            ? { message: 'Session speed changed. Applies to subsequent turns.' }
+            : command.path === ''
+              ? {
+                  title: '/ COMMANDS',
+                  help: 'Live commands',
+                  path: '',
+                  revision: 'r',
+                  choices: [
+                    {
+                      id: 'speed',
+                      label: '/fast',
+                      help: 'Choose speed',
+                      next: 'tier/flex',
+                    },
+                  ],
+                }
+              : {
+                  title: '/fast',
+                  help: 'Choose session speed',
+                  path: 'tier/flex',
+                  revision: 'r',
+                  picker: true,
+                  choices: [
+                    {
+                      id: 'default',
+                      label: 'Standard (default)',
+                      help: 'Use the server default',
+                      action: true,
+                    },
+                    {
+                      id: 'flex',
+                      label: 'Fast',
+                      help: 'Advertised faster tier',
+                      action: true,
+                    },
+                    {
+                      id: 'priority',
+                      label: 'Slow',
+                      help: 'Advertised slower tier',
+                      action: true,
+                      selected: true,
+                    },
+                  ],
+                },
+    });
+  });
+  return {
+    calls,
+    rejectCommit: () => {
+      reject = true;
+    },
+  };
+}
+
+async function openSpeedCommands(page: Page, pairingURL: string) {
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('/fast');
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByRole('button', { name: '/fast →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  const list = panel.getByRole('listbox', { name: 'Session speed' });
+  await expect(list).toBeFocused();
+  await expect(list.getByRole('option')).toHaveCount(3);
+  return { text, panel, list };
+}
+
+test('speed picker keeps all choices visible and C applies the highlighted speed', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockSpeedCommands(page);
+  const { text, panel, list } = await openSpeedCommands(page, pairingURL);
+  const slow = list.getByRole('option', {
+    name: 'Slow // CURRENT',
+    exact: true,
+  });
+  const fast = list.getByRole('option', { name: 'Fast', exact: true });
+  await expect(slow).toHaveAttribute('aria-selected', 'true');
+  await list.press('ArrowDown');
+  await expect(slow).toHaveAttribute('aria-selected', 'true');
+  await list.press('ArrowUp');
+  await expect(fast).toHaveAttribute('aria-selected', 'true');
+  await expect(slow).toHaveAttribute('aria-selected', 'false');
+  await expect(slow).toContainText('CURRENT');
+  await list.press('Enter');
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('option')).toHaveCount(3);
+  await expect(text).toHaveValue('/fast');
+  expect(calls.every((c) => c.mode === 'list')).toBe(true);
+  await expect(
+    panel.getByRole('button', { name: 'C APPLY', exact: true }),
+  ).toBeEnabled();
+  await list.press('c');
+  await expect(list).toHaveCount(0);
+  await expect(panel).toContainText('Session speed changed.');
+  await expect(text).toHaveValue('');
+  await expect(text).toBeFocused();
+  expect(calls.filter((c) => c.mode === 'prepare')).toEqual([
+    { mode: 'prepare', path: 'tier/flex', revision: 'r', choice: 'flex' },
+  ]);
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+});
+
+test('speed picker clicks select, footer C applies, and Escape preserves the draft', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockSpeedCommands(page);
+  const { text, panel, list } = await openSpeedCommands(page, pairingURL);
+  await list
+    .getByRole('option', { name: 'Standard (default)', exact: true })
+    .click();
+  await expect(
+    list.getByRole('option', { name: 'Standard (default)', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  expect(calls.every((c) => c.mode === 'list')).toBe(true);
+  await list.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(text).toHaveValue('/fast');
+  await expect(text).toBeFocused();
+  await text.fill('/fas');
+  await expect(
+    panel.getByRole('button', { name: '/fast →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await expect(list).toBeFocused();
+  await list
+    .getByRole('option', { name: 'Standard (default)', exact: true })
+    .click();
+  await panel.getByRole('button', { name: 'C APPLY', exact: true }).click();
+  await expect(list).toHaveCount(0);
+  expect(
+    calls.filter((c) => c.mode === 'prepare').map((c) => c.choice),
+  ).toEqual(['default']);
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+});
+
+test('unconfirmed speed changes preserve the list and draft without retrying', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls, rejectCommit } = await mockSpeedCommands(page);
+  rejectCommit();
+  const { text, panel, list } = await openSpeedCommands(page, pairingURL);
+  await list.press('ArrowUp');
+  await list.press('c');
+  await expect(panel).toContainText('Change unconfirmed.');
+  await expect(list.getByRole('option')).toHaveCount(3);
+  await expect(text).toHaveValue('/fast');
+  await expect(
+    panel.getByRole('button', { name: 'C APPLY', exact: true }),
+  ).toBeDisabled();
+  await list.press('c');
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+});
 
 test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
   page,
