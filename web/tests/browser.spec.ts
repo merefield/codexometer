@@ -3571,7 +3571,11 @@ test('cwd shows the running directory without preparing a mutation', async ({
 });
 
 test.describe('browser startup', () => {
-  test.use({ reducedMotion: 'no-preference', controlMode: true });
+  test.use({
+    reducedMotion: 'no-preference',
+    controlMode: true,
+    deviceScaleFactor: 2,
+  });
 
   async function freezeStartup(page: Page, choice: number) {
     await page.addInitScript((value) => {
@@ -3652,6 +3656,12 @@ test.describe('browser startup', () => {
       const full = (await wordmark.boundingBox())!;
       expect(full.x).toBeCloseTo(0, 0);
       expect(full.width).toBeCloseTo(large.width, 0);
+      // The SVG must paint at its displayed size, rather than magnifying a
+      // small compositor raster. This also exercises Retina-scale rendering.
+      const paintWidth = await wordmark
+        .locator('svg')
+        .evaluate((svg) => svg.clientWidth);
+      expect(paintWidth).toBeCloseTo(full.width, 0);
       await page.clock.runFor(949);
       const near = (await wordmark.boundingBox())!;
       const target = (await page.locator('.brand').boundingBox())!;

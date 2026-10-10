@@ -17,11 +17,11 @@
   }>();
   let entrance = $state<ReturnType<typeof createEntrance>>();
   let elapsed = $state(0);
-  let viewport = $state({ width: 0, height: 0 });
+  let viewport = $state({ width: 0, height: 0, pixelRatio: 1 });
   let destination = $state({ x: 0, y: 0, width: 0 });
   const letters = $derived(entrance ? lettering(entrance, elapsed) : undefined);
-  const transform = $derived.by(() => {
-    if (!entrance) return '';
+  const geometry = $derived.by(() => {
+    if (!entrance) return { x: 0, y: 0, width: 0 };
     const duration = entranceDuration[entrance.variant];
     const progress = Math.min(
       Math.max((elapsed - duration - holdDuration) / dockDuration, 0),
@@ -39,7 +39,12 @@
         : 0;
     const x = incoming + destination.x * eased;
     const y = centre + (destination.y - centre) * eased;
-    return `translate3d(${x}px, ${y}px, 0) scale(${width / logoWidth})`;
+    // Size the SVG viewport itself: compositor scaling can magnify a cached
+    // low-resolution raster even when the source artwork is vector. Align its
+    // position and dimensions with physical pixels on standard/Retina displays.
+    const align = (value: number) =>
+      Math.round(value * viewport.pixelRatio) / viewport.pixelRatio;
+    return { x: align(x), y: align(y), width: align(width) };
   });
 
   onMount(() => {
@@ -56,7 +61,11 @@
     const start = performance.now();
     const measure = () => {
       const bounds = target?.getBoundingClientRect();
-      viewport = { width: window.innerWidth, height: window.innerHeight };
+      viewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        pixelRatio: window.devicePixelRatio || 1,
+      };
       if (bounds)
         destination = { x: bounds.x, y: bounds.y, width: bounds.width };
     };
@@ -126,7 +135,9 @@
   {#if letters}
     <div
       class="wordmark"
-      style:transform
+      style:left={`${geometry.x}px`}
+      style:top={`${geometry.y}px`}
+      style:width={`${geometry.width}px`}
       data-text={letters.text}
       data-cursor={letters.dot ? letters.cursor : undefined}
     >
@@ -153,11 +164,6 @@
   }
   .wordmark {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 45px;
-    transform-origin: 0 0;
-    will-change: transform;
   }
   button {
     position: absolute;
