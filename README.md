@@ -778,7 +778,14 @@ limits are one reason confidence never rises above Medium. Ordinary input, cache
 cache-write input, and output are priced separately; requests above the
 published 272,000-input-token threshold use the corresponding long-context
 rates where OpenAI publishes them. Unknown models or missing price classes fail
-closed as `UNPRICED MODEL MIX` rather than being guessed or treated as free.
+closed as `UNPRICED USAGE` rather than being guessed or treated as free.
+Codex's context-window bookkeeping updates are recognised only when the window
+and both complete, explicit zero-token-class breakdowns match its synthetic fill record.
+They rebase the local counter without adding response costs, token totals or
+model-call graph pulses. Quota learning restarts as `LOCAL ACCOUNTING REBASED`.
+Missing input/output usage and inconsistent response/cumulative usage instead
+restart as `MISSING RESPONSE USAGE` or `INCONSISTENT RESPONSE USAGE`; no costs
+are guessed. Unknown model/tier or unavailable pricing remains `UNPRICED USAGE`.
 Core, Extended, and DigBench trials use ephemeral threads that intentionally do
 not appear in normal persisted session telemetry. While a subscription-funded
 benchmark suite is active, Quota views replace the numeric API-equivalent
@@ -831,7 +838,7 @@ used quota falls, the account or window definition changes, finalized counters
 regress, the quota moves five points without any matching priced local call, or
 an unknown/unpriced model occurs. The learning readout retains the reason, for
 example `RESTARTED: WINDOW RESET`, `WINDOW DEFINITION CHANGED`, `LOCAL
-ACCOUNTING REBASED`, `UNPRICED MODEL MIX`, or `LOCAL COVERAGE GAP`, while new
+ACCOUNTING REBASED`, `UNPRICED USAGE`, or `LOCAL COVERAGE GAP`, while new
 clean movement accumulates. It never silently returns to `0/5PP`. Even a valid
 estimate can still vary with reasoning effort, model mix, caching, prompt
 shape, and backend quota weighting, so compare ranges and sample counts rather

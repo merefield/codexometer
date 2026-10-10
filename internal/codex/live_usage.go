@@ -30,20 +30,26 @@ const (
 // kept separate until daemon model resolution or requested-model fallback.
 // APIEqUSD remains standard cost. Quota learning adds APIEqTierPremiumUSD;
 // APIEqUnknownTierCalls identifies standard fallbacks with missing tier evidence.
+// Missing/inconsistent response usage has separate monotonic counters from
+// unavailable pricing. AccountingAdjustments counts recognised synthetic context
+// fills; those are excluded from observed tokens, activity and response graphs.
 type LiveUsageSnapshot struct {
-	TotalTokens           int64
-	LastActivity          time.Time
-	SessionCount          int
-	Sessions              []LiveUsageSession
-	CodexStatusKnown      bool
-	CodexUp               bool
-	CodexWorking          bool
-	APIEqUSD              float64
-	APIEqPricedCalls      int64
-	APIEqUnpricedCalls    int64
-	APIEqPendingCalls     int64
-	APIEqTierPremiumUSD   float64
-	APIEqUnknownTierCalls int64
+	TotalTokens                 int64
+	LastActivity                time.Time
+	SessionCount                int
+	Sessions                    []LiveUsageSession
+	CodexStatusKnown            bool
+	CodexUp                     bool
+	CodexWorking                bool
+	APIEqUSD                    float64
+	APIEqPricedCalls            int64
+	APIEqUnpricedCalls          int64
+	APIEqMissingUsageCalls      int64
+	APIEqInconsistentUsageCalls int64
+	APIEqAccountingAdjustments  int64
+	APIEqPendingCalls           int64
+	APIEqTierPremiumUSD         float64
+	APIEqUnknownTierCalls       int64
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -81,8 +87,9 @@ const (
 	SessionAttentionComplete
 )
 
-// LiveModelCall is the small, content-free usage pulse persisted after one
-// upstream model response.
+// LiveModelCall is a small, content-free response-usage pulse. APIEqIssue retains
+// the reason a response could not be priced. Synthetic context bookkeeping does
+// not create pulses.
 type LiveModelCall struct {
 	Sequence             uint64
 	At                   time.Time
@@ -91,6 +98,7 @@ type LiveModelCall struct {
 	Model                string
 	APIEqUSD             float64
 	APIEqKnown           bool
+	APIEqIssue           string
 	apiEqFinalized       bool
 	RequestedServiceTier string
 	APIEqTierPremiumUSD  float64
@@ -117,24 +125,27 @@ type LiveUsageReader struct {
 	WriterLocksRoot   string
 	statusProvider    sessionStatusProvider
 
-	mu                        sync.Mutex
-	initialized               bool
-	startedAt                 time.Time
-	lastDiscovery             time.Time
-	lastFullDiscovery         time.Time
-	files                     map[string]*rolloutCursor
-	totalTokens               int64
-	apiEqUSD                  float64
-	apiEqTierPremiumUSD       float64
-	apiEqUnknownTierCalls     int64
-	apiEqPricedCalls          int64
-	apiEqUnknownCalls         int64
-	lastActivity              time.Time
-	nextEventSequence         uint64
-	daemonObservationSequence uint64
-	resolvedObservations      []resolvedModelObservation
-	pendingModelResolutions   []pendingModelResolution
-	daemonSubscribedThreads   map[string]struct{}
+	mu                          sync.Mutex
+	initialized                 bool
+	startedAt                   time.Time
+	lastDiscovery               time.Time
+	lastFullDiscovery           time.Time
+	files                       map[string]*rolloutCursor
+	totalTokens                 int64
+	apiEqUSD                    float64
+	apiEqTierPremiumUSD         float64
+	apiEqUnknownTierCalls       int64
+	apiEqPricedCalls            int64
+	apiEqUnknownCalls           int64
+	apiEqMissingUsageCalls      int64
+	apiEqInconsistentUsageCalls int64
+	apiEqAccountingAdjustments  int64
+	lastActivity                time.Time
+	nextEventSequence           uint64
+	daemonObservationSequence   uint64
+	resolvedObservations        []resolvedModelObservation
+	pendingModelResolutions     []pendingModelResolution
+	daemonSubscribedThreads     map[string]struct{}
 }
 
 type rolloutCursor struct {
@@ -185,30 +196,37 @@ type rolloutEvent struct {
 	Payload   struct {
 		Type string `json:"type"`
 		Info *struct {
-			TotalTokenUsage rolloutTokenUsage `json:"total_token_usage"`
-			LastTokenUsage  rolloutTokenUsage `json:"last_token_usage"`
+			TotalTokenUsage    rolloutTokenUsage `json:"total_token_usage"`
+			LastTokenUsage     rolloutTokenUsage `json:"last_token_usage"`
+			ModelContextWindow *int64            `json:"model_context_window"`
 		} `json:"info"`
 	} `json:"payload"`
 }
 
 type rolloutTokenUsage struct {
-	InputTokens           int64  `json:"input_tokens"`
-	CachedInputTokens     int64  `json:"cached_input_tokens"`
+	InputTokens           *int64 `json:"input_tokens"`
+	CachedInputTokens     *int64 `json:"cached_input_tokens"`
 	CacheWriteInputTokens int64  `json:"cache_write_input_tokens"`
 	OutputTokens          *int64 `json:"output_tokens"`
-	ReasoningOutputTokens int64  `json:"reasoning_output_tokens"`
-	TotalTokens           int64  `json:"total_tokens"`
+	ReasoningOutputTokens *int64 `json:"reasoning_output_tokens"`
+	TotalTokens           *int64 `json:"total_tokens"`
+}
+
+func optionalRolloutTokens(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func (u rolloutTokenUsage) benchmarkUsage() BenchmarkUsage {
-	output := int64(0)
-	if u.OutputTokens != nil {
-		output = *u.OutputTokens
-	}
 	return BenchmarkUsage{
-		InputTokens: u.InputTokens, CachedInputTokens: u.CachedInputTokens,
-		CacheWriteInputTokens: u.CacheWriteInputTokens, OutputTokens: output,
-		ReasoningOutputTokens: u.ReasoningOutputTokens, TotalTokens: u.TotalTokens,
+		InputTokens:           optionalRolloutTokens(u.InputTokens),
+		CachedInputTokens:     optionalRolloutTokens(u.CachedInputTokens),
+		CacheWriteInputTokens: u.CacheWriteInputTokens,
+		OutputTokens:          optionalRolloutTokens(u.OutputTokens),
+		ReasoningOutputTokens: optionalRolloutTokens(u.ReasoningOutputTokens),
+		TotalTokens:           optionalRolloutTokens(u.TotalTokens),
 	}
 }
 
@@ -397,10 +415,13 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		CodexUp:          codexUp,
 		CodexWorking:     codexWorking,
 		APIEqUSD:         r.apiEqUSD, APIEqPricedCalls: r.apiEqPricedCalls,
-		APIEqUnpricedCalls:    r.apiEqUnknownCalls,
-		APIEqPendingCalls:     int64(len(r.pendingModelResolutions)),
-		APIEqTierPremiumUSD:   r.apiEqTierPremiumUSD,
-		APIEqUnknownTierCalls: r.apiEqUnknownTierCalls,
+		APIEqUnpricedCalls:          r.apiEqUnknownCalls,
+		APIEqMissingUsageCalls:      r.apiEqMissingUsageCalls,
+		APIEqInconsistentUsageCalls: r.apiEqInconsistentUsageCalls,
+		APIEqAccountingAdjustments:  r.apiEqAccountingAdjustments,
+		APIEqPendingCalls:           int64(len(r.pendingModelResolutions)),
+		APIEqTierPremiumUSD:         r.apiEqTierPremiumUSD,
+		APIEqUnknownTierCalls:       r.apiEqUnknownTierCalls,
 	}, nil
 }
 
@@ -635,6 +656,17 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 					cursor.totalTokens = record.total
 					continue
 				}
+				// Codex fills its context counter after ContextWindowExceeded. This
+				// exact, complete zero-breakdown shape is bookkeeping, not a
+				// response. Rebase the cursor without adding tokens or a graph
+				// pulse; the separate counter makes quota learning restart safely.
+				if record.contextWindowFill && record.usage.TotalTokens == max(record.total-cursor.totalTokens, 0) {
+					if record.total != cursor.totalTokens {
+						r.apiEqAccountingAdjustments++
+					}
+					cursor.totalTokens = record.total
+					continue
+				}
 				if record.total >= cursor.totalTokens {
 					delta := record.total - cursor.totalTokens
 					r.totalTokens += delta
@@ -649,7 +681,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 						r.nextEventSequence++
 						model := cursor.currentModel
 						pricingUsage := record.usage
-						usageMatchesDelta := record.usage.TotalTokens == delta
+						usageMatchesDelta := record.usageAvailable && record.usage.TotalTokens == delta && validateBenchmarkUsage(record.usage) == ""
 						_, daemonSubscribed := r.daemonSubscribedThreads[cursor.threadID]
 						resolutionPending := daemonSubscribed && cursor.threadID != "" && cursor.currentTurnID != ""
 						resolved := false
@@ -668,7 +700,16 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							r.finalizeCallPricing(&call, pricingUsage)
 						} else if !resolutionDeferred {
 							call.apiEqFinalized = true
-							r.apiEqUnknownCalls++
+							if !record.usageAvailable {
+								call.APIEqIssue = "missing response input/output usage"
+								r.apiEqMissingUsageCalls++
+							} else {
+								call.APIEqIssue = validateBenchmarkUsage(record.usage)
+								if call.APIEqIssue == "" {
+									call.APIEqIssue = "cumulative token increase does not match last response usage"
+								}
+								r.apiEqInconsistentUsageCalls++
+							}
 						}
 						cursor.modelCalls = appendBounded(cursor.modelCalls, call, telemetryHistoryMax)
 						if resolutionDeferred {
@@ -728,9 +769,9 @@ func (r *LiveUsageReader) reconcilePendingModelResolutions() {
 	for _, pending := range r.pendingModelResolutions {
 		call := r.modelCall(pending.callSequence)
 		if call == nil {
-			// The call aged out of the bounded per-session history before it
-			// could be finalized. Preserve fail-closed monotonic accounting.
-			r.apiEqUnknownCalls++
+			// The response aged out before model resolution; the loss is a
+			// usage-coverage issue, not evidence of an unsupported model.
+			r.apiEqMissingUsageCalls++
 			continue
 		}
 		if call.apiEqFinalized {
@@ -907,12 +948,14 @@ func tokenTotalRecord(line []byte) (int64, time.Time, *uint64, bool) {
 }
 
 type rolloutTokenRecord struct {
-	total        int64
-	outputTokens int64
-	outputKnown  bool
-	usage        BenchmarkUsage
-	at           time.Time
-	ordinal      *uint64
+	usageAvailable    bool
+	contextWindowFill bool
+	total             int64
+	outputTokens      int64
+	outputKnown       bool
+	usage             BenchmarkUsage
+	at                time.Time
+	ordinal           *uint64
 }
 
 func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
@@ -926,9 +969,24 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 	}
 	lastUsage := event.Payload.Info.LastTokenUsage.benchmarkUsage()
 	outputKnown := event.Payload.Info.LastTokenUsage.OutputTokens != nil
+	info := event.Payload.Info
+	// Require every core token field in both breakdowns. Missing legacy
+	// telemetry must never be mistaken for Codex's synthetic full-context event.
+	zeroClasses := func(u rolloutTokenUsage) bool {
+		return u.InputTokens != nil && *u.InputTokens == 0 &&
+			u.OutputTokens != nil && *u.OutputTokens == 0 &&
+			u.CachedInputTokens != nil && *u.CachedInputTokens == 0 &&
+			u.ReasoningOutputTokens != nil && *u.ReasoningOutputTokens == 0 &&
+			u.TotalTokens != nil && u.CacheWriteInputTokens == 0
+	}
+	contextFill := info.ModelContextWindow != nil && *info.ModelContextWindow > 0 &&
+		optionalRolloutTokens(info.TotalTokenUsage.TotalTokens) == *info.ModelContextWindow &&
+		zeroClasses(info.TotalTokenUsage) && zeroClasses(info.LastTokenUsage)
 	return rolloutTokenRecord{
-		total:        event.Payload.Info.TotalTokenUsage.TotalTokens,
-		outputTokens: lastUsage.OutputTokens, outputKnown: outputKnown,
+		usageAvailable:    info.LastTokenUsage.InputTokens != nil && outputKnown,
+		contextWindowFill: contextFill,
+		total:             optionalRolloutTokens(info.TotalTokenUsage.TotalTokens),
+		outputTokens:      lastUsage.OutputTokens, outputKnown: outputKnown,
 		usage: lastUsage,
 		at:    event.Timestamp, ordinal: event.Ordinal,
 	}, true

@@ -701,7 +701,7 @@ func TestLiveUsageReaderRerouteCorrectionFailsClosedOnUnpriceableUsage(t *testin
 	reader.reconcilePendingModelResolutions()
 	call := reader.files["rollout"].modelCalls[0]
 	if call.Model != "gpt-5.6-terra" || call.APIEqKnown || reader.apiEqUSD != 0 ||
-		reader.apiEqPricedCalls != 0 || reader.apiEqUnknownCalls != 1 {
+		reader.apiEqPricedCalls != 0 || reader.apiEqUnknownCalls != 0 || reader.apiEqInconsistentUsageCalls != 1 || call.APIEqIssue == "" {
 		t.Fatalf("unpriceable reroute correction = call %#v reader %#v", call, reader)
 	}
 }

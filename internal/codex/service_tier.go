@@ -65,9 +65,18 @@ func rolloutTierRecord(line []byte) (string, *uint64, time.Time, bool) {
 }
 
 func (r *LiveUsageReader) finalizeCallPricing(call *LiveModelCall, usage BenchmarkUsage) {
-	call.APIEqUSD, call.APIEqKnown, _ = EstimateStandardAPIEqCost(call.Model, usage)
+	if issue := validateBenchmarkUsage(usage); issue != "" {
+		call.APIEqIssue = issue
+		call.apiEqFinalized = true
+		r.apiEqInconsistentUsageCalls++
+		return
+	}
+	call.APIEqUSD, call.APIEqKnown, call.APIEqIssue = EstimateStandardAPIEqCost(call.Model, usage)
 	if call.APIEqKnown {
 		call.APIEqTierPremiumUSD, call.APIEqKnown = requestedTierPremium(call.Model, call.RequestedServiceTier, call.APIEqUSD)
+		if !call.APIEqKnown {
+			call.APIEqIssue = "unavailable pricing for requested service tier"
+		}
 	}
 	call.apiEqFinalized = true
 	if call.APIEqKnown {
