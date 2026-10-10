@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -215,14 +216,28 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 		m.saveMonitorHistory(result.id, h)
 		return m, nil, true
 	}
-	if key, ok := msg.(tea.KeyPressMsg); ok && (key.String() == "alt+left" || key.String() == "alt+right") &&
+	if key, ok := msg.(tea.KeyPressMsg); ok &&
 		m.meterView == viewMonitor && m.monitorContextDetail != "" && !m.contextTargetHidden() && !m.monitorCommands.open && !m.scheduleUI.open && !m.monitorQueue.open {
-		delta := -1
-		if key.String() == "alt+right" {
+		delta := 0
+		switch key.String() {
+		case "alt+left":
+			delta = -1
+		case "alt+right":
 			delta = 1
+		case "alt+b", "alt+f":
+			// Terminal.app and Ghostty's macOS defaults encode Option+arrows
+			// as word movement. Keep those keys with a focused reply editor.
+			if runtime.GOOS == "darwin" && !m.monitorPrompt.input.Focused() {
+				delta = -1
+				if key.String() == "alt+f" {
+					delta = 1
+				}
+			}
 		}
-		m.moveMonitorHistory(delta)
-		return m, nil, true
+		if delta != 0 {
+			m.moveMonitorHistory(delta)
+			return m, nil, true
+		}
 	}
 	return m, nil, false
 }
