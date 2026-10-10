@@ -18,10 +18,11 @@ type sessionStatusProvider interface {
 }
 
 type sessionDaemonSnapshot struct {
-	Contexts          map[string]SessionContext
-	Statuses          map[string]sessionRuntimeStatus
-	ModelObservations []resolvedModelObservation
-	SubscribedThreads map[string]struct{}
+	Contexts           map[string]SessionContext
+	WorkingDirectories map[string]string
+	Statuses           map[string]sessionRuntimeStatus
+	ModelObservations  []resolvedModelObservation
+	SubscribedThreads  map[string]struct{}
 }
 
 // resolvedModelObservation links one exact app-server response usage event to

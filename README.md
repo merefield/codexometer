@@ -1577,6 +1577,8 @@ are clickable. Writable web mode exposes the same catalogue through
 
 | Command family | Live options and behaviour |
 | --- | --- |
+| `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
+| `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
@@ -1608,8 +1610,8 @@ Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of
 every CLI command. Options and help are fetched on demand, not hard-coded or
 persisted; installed-server support determines what appears. Plugin lifecycle
-endpoints are deliberately excluded while OpenAI marks them unsuitable for
-production clients. Experimental flags are browse-only because their mutation
+actions are excluded because installation, authentication and configuration
+review flows are not implemented. Experimental flags are browse-only because their mutation
 scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
@@ -1626,15 +1628,20 @@ confirmations retain the draft and error context. These changes do not modify gl
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
 
-**Remaining CLI command gaps** (compared with the official documented CLI list):
+**Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
+compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
+and the reason for each missing adapter. Several missing commands already have
+server APIs (`/compact`, `/fork`, `/review`, `/goal`, `/ps`, `/stop`); they need
+Codexometer workflows. Native display commands need local UI implementations.
+The published reference is incomplete for this version and includes older names.
 
-| Area | Commands not implemented as Codexometer slash commands |
-| --- | --- |
-| Session lifecycle and conversation actions | `/new`, `/clear`, `/resume`, `/fork`, `/archive`, `/delete`, `/compact`, `/review`, `/init`, `/goal`, `/side`, `/btw`, `/approve` |
-| CLI navigation and display | `/agent`, `/subagents`, `/copy`, `/diff`, `/status`, `/usage`, `/raw`, `/title`, `/theme`, `/pets`, `/pet`, `/keymap`, `/vim`, `/app`, `/exit`, `/quit` |
-| Configuration and tools | `/ide`, `/plugins`, `/memories`, `/import`, `/feedback`, `/logout`, `/mention`, `/personality`, `/ps`, `/stop`, `/setup-default-sandbox`, `/sandbox-add-read-dir`, `/debug-config` |
-
-`/apps`, `/skills`, `/mcp`, `/hooks` and `/experimental` remain **browse-only** here; CLI invocation, installation, authentication, trust and toggle actions are not implemented. `/plan` changes mode but does not implement the CLI's optional prompt argument. `/fast` and other advertised tiers are session overrides, rather than persistent CLI defaults. `/statusline` configures Codexometer's own footer. Existing session navigation, copying and telemetry views provide some analogous actions without those slash names. Availability upstream varies by platform, version and enabled features; see the [official CLI command reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands).
+`/cd` requires an existing local directory and no queued messages. Confirmation
+rechecks the target (including symlinks), current running directory and session
+state. The server retains current permission settings and other workspace roots.
+The native CLI’s project trust/configuration reload and conversation-fork workflow
+is not performed; use native `/cd` for that full transition. `/cwd` and `/pwd`
+read running configuration rather than captured thread metadata. Failed or
+unconfirmed directory updates are not reported as completed or retried.
 
 Slash commands cannot be sent, steered, queued or scheduled as ordinary prompts.
 Use `//` to send a literal leading slash (for example `//tmp/file` sends

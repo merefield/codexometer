@@ -186,7 +186,11 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		return rows
 	}
 	if p.menu.Input {
-		rows = append(rows, commandDisplayRow{text: "SESSION NAME", choice: -1})
+		label := p.menu.InputLabel
+		if label == "" {
+			label = "Session name"
+		}
+		rows = append(rows, commandDisplayRow{text: strings.ToUpper(label), choice: -1})
 		p.input.SetWidth(max(w-2, 1))
 		rows = append(rows, commandDisplayRow{text: p.input.View(), choice: -1})
 		for _, line := range strings.Split(ansi.Hardwrap(p.menu.Help, w, true), "\n") {
@@ -207,6 +211,8 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			text += "\n\nTARGET // " + p.session
 			if strings.HasPrefix(p.menu.Path, "rename/") {
 				text += "\nOnly this session's saved name changes. Confirm after reviewing the new name."
+			} else if strings.HasPrefix(p.menu.Path, "cd/") {
+				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
 			} else {
 				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
 			}
@@ -342,19 +348,24 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
 				if strings.HasPrefix(r.path, "rename/") {
 					m.monitorPrompt.notice = "Session renamed."
+				} else if strings.HasPrefix(r.path, "cd/") {
+					m.monitorPrompt.notice = "Working directory changed."
 				}
 				return m, cmd, true
 			} else {
 				p.menu = r.menu
 				if p.menu.Input {
 					p.input = textinput.New()
-					p.input.CharLimit = 512
+					p.input.CharLimit = p.menu.InputLimit
+					if p.input.CharLimit <= 0 {
+						p.input.CharLimit = 512
+					}
 					p.input.SetWidth(max(m.monitorDashboardLayout().contentWidth-6, 1))
 					p.input.SetValue(p.menu.Value)
 					cmd := p.input.Focus()
 					return m, cmd, true
 				}
-				if strings.HasPrefix(p.menu.Path, "rename/") && len(p.menu.Choices) == 1 {
+				if (strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")) && len(p.menu.Choices) == 1 {
 					p.detail = true
 					p.until = time.Now().Add(30 * time.Second)
 				}
@@ -532,13 +543,13 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 func (m Model) reviewMonitorCommandInput() (Model, tea.Cmd, bool) {
 	p := &m.monitorCommands
-	if !p.menu.Input || p.menu.Path != "rename" || p.busy {
+	if !p.menu.Input || (p.menu.Path != "rename" && p.menu.Path != "cd") || p.busy {
 		return m, nil, true
 	}
 	name := strings.TrimSpace(p.input.Value())
 	if name == "" {
 		return m, nil, true
 	}
-	cmd := m.loadMonitorCommands("rename/" + url.PathEscape(name))
+	cmd := m.loadMonitorCommands(p.menu.Path + "/" + url.PathEscape(name))
 	return m, cmd, true
 }

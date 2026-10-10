@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type commandModel struct {
@@ -23,6 +24,9 @@ type commandModel struct {
 type commandThread struct {
 	ID, Cwd, Name string
 	Status        struct{ Type string }
+	Environments  []struct {
+		EnvironmentID string `json:"environmentId"`
+	}
 }
 
 func commandDigest(value any) string {
@@ -110,6 +114,12 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 	if name, ok := strings.CutPrefix(path, "rename "); ok {
 		path = "rename/" + url.PathEscape(strings.TrimSpace(name))
 	}
+	if directory, ok := strings.CutPrefix(path, "cd "); ok {
+		path = "cd/" + url.PathEscape(strings.TrimSpace(directory))
+	}
+	if len(path) > 2048 {
+		return SessionCommandMenu{}, ErrSessionCommand
+	}
 	thread, err := p.commandThread(ctx, id)
 	if err != nil {
 		return SessionCommandMenu{}, err
@@ -153,8 +163,22 @@ func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread, path string) (SessionCommandMenu, error) {
 	m := SessionCommandMenu{Title: "/" + path, Help: "Live options from the shared Codex app-server.", Choices: []SessionCommandChoice{}}
 	parts := strings.Split(path, "/")
+	// Directory-scoped inventories must follow running settings after /cd,
+	// even while the captured thread metadata still contains the old cwd.
+	if parts[0] == "permissions" || parts[0] == "skills" || parts[0] == "hooks" {
+		p.mu.Lock()
+		conn := p.connection
+		p.mu.Unlock()
+		cwd, err := p.commandDirectory(ctx, conn, t.ID)
+		if err != nil {
+			return m, err
+		}
+		t.Cwd = cwd
+		m.Revision = commandDigest(cwd)
+	}
+
 	if path == "" || path == "help" {
-		families := []string{"rename", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
+		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
 		menus := make([]SessionCommandMenu, len(families))
 		errs := make([]error, len(families))
 		var wg sync.WaitGroup
@@ -186,11 +210,15 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.Help = "Choose a command. Options/help are discovered live. Changes target this session only and require confirmation. Model and permission settings are available only while idle. Catalogues marked browse-only do not execute tools or change global configuration."
 		return m, nil
 	}
+	if parts[0] == "cd" || parts[0] == "cwd" || parts[0] == "pwd" {
+		return p.commandDirectoryMenu(ctx, t, path)
+	}
 	if parts[0] == "rename" {
 		m.Title = "/rename"
 		m.Help = "Rename this session in Codex. Enter a single-line name, then review and confirm the change. It does not send a prompt or change model settings."
 		if path == "rename" {
 			m.Input = true
+			m.InputLabel, m.InputLimit = "Session name", 512
 			m.Value = commandLabel(t.Name)
 			return m, nil
 		}
@@ -213,7 +241,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		if err != nil {
 			return m, err
 		}
-		m.Revision = commandDigest(current)
+		m.Revision = commandDigest([]any{current, t.Cwd})
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
 			if t.Status.Type != "idle" {
@@ -319,7 +347,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 }
 
 func commandReserved(s string) bool {
-	for _, name := range []string{"help", "rename", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
+	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
 		if s == name {
 			return true
 		}
@@ -350,6 +378,42 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand
+			}
+			if cwd, changingDirectory := o.params["cwd"].(string); changingDirectory {
+				var queue struct {
+					Data       *[]json.RawMessage
+					NextCursor *string
+				}
+				if err := p.requestOn(ctx, conn, "thread/queue/list", map[string]any{"threadId": id, "limit": 1}, &queue); err != nil {
+					return err
+				}
+				if queue.Data == nil || len(*queue.Data) != 0 || (queue.NextCursor != nil && *queue.NextCursor != "") {
+					return ErrSessionCommand
+				}
+				if err := p.requestOn(ctx, conn, o.method, o.params, nil); err != nil {
+					return err
+				}
+				// An empty settings response acknowledges queuing only. Read the
+				// running configuration before reporting success; old servers may
+				// silently ignore a field they do not recognise. Never retry writes.
+				verifyCtx, cancel := context.WithTimeout(ctx, daemonStatusRefreshEvery)
+				defer cancel()
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					active, err := p.commandDirectory(verifyCtx, conn, id)
+					if err != nil {
+						return err
+					}
+					if active == cwd {
+						return nil
+					}
+					select {
+					case <-verifyCtx.Done():
+						return fmt.Errorf("directory update unconfirmed: %w", verifyCtx.Err())
+					case <-ticker.C:
+					}
+				}
 			}
 			return p.requestOn(ctx, conn, o.method, o.params, nil)
 		}

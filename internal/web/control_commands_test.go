@@ -82,3 +82,22 @@ func TestCommandsRejectStaleAndMixedRequests(t *testing.T) {
 		t.Fatal("invalid request mutated settings")
 	}
 }
+
+func TestDirectoryCommandReportsVerifiedSuccess(t *testing.T) {
+	s, _, token := controlServer(t)
+	f := &commandsFake{revision: "current"}
+	s.control.commands = f
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "prepare", Path: "cd/new", Revision: "current", Choice: "choice"}}
+	w := actionCall(s, token, "commands", b)
+	var response struct{ Confirmation string }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &response) != nil {
+		t.Fatal(w.Body)
+	}
+	b.Confirmation = response.Confirmation
+	b.Command = &commandRequest{Mode: "commit"}
+	w = actionCall(s, token, "commands", b)
+	var result struct{ Message string }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Message != "Working directory changed." || f.calls != 1 {
+		t.Fatal(w.Body)
+	}
+}

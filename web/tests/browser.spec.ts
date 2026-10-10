@@ -1330,7 +1330,7 @@ test('slash commands discover help and require a separate confirmation', async (
   const panel = page.getByRole('region', { name: 'Session slash commands' });
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
   const popup = panel.locator('.command-popup');
   await expect(popup).toBeVisible();
   const initialPopup = await popup.boundingBox();
@@ -1375,7 +1375,10 @@ test('slash commands discover help and require a separate confirmation', async (
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
+  await expect(
+    panel.getByRole('button', { name: '/model →', exact: true }),
+  ).toBeEnabled();
   await text.fill('/mo');
   await expect(popup.locator('.command-options button')).toHaveCount(1);
   const filteredPopup = await popup.boundingBox();
@@ -1392,7 +1395,7 @@ test('slash commands discover help and require a separate confirmation', async (
   await text.fill('/mod');
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
-  ).toBeVisible();
+  ).toBeEnabled();
   await text.press('Enter');
   await panel.getByRole('button', { name: 'Medium', exact: true }).click();
   await expect(panel).toContainText('Server effort description');
@@ -1448,100 +1451,117 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toBeDisabled();
 });
 
-test('rename edits and reviews a name before a separate confirmation', async ({
-  page,
-  pairingURL,
-}) => {
-  const { calls } = await mockActions(page, 'prompt');
-  const modes: string[] = [];
-  let reviewed = '';
-  await page.route('**/api/control/commands', async (route) => {
-    const body = route.request().postDataJSON();
-    const { mode, path } = body.command;
-    modes.push(mode);
-    let result: object;
-    if (mode === 'prepare') {
-      expect(path).toBe('rename/' + encodeURIComponent('quota / review 界'));
-      result = {
-        confirmation: 'rename-token',
-        expires: new Date(Date.now() + 30000).toISOString(),
-      };
-    } else if (mode === 'commit') {
-      expect(body.confirmation).toBe('rename-token');
-      result = { message: 'Session renamed.' };
-    } else if (path === '') {
-      result = {
-        title: '/ COMMANDS',
-        help: 'Commands',
-        path: '',
-        revision: 'r',
-        choices: [
-          {
-            id: 'rename',
-            label: '/rename',
-            help: 'Rename the session',
-            next: 'rename',
-          },
-        ],
-      };
-    } else if (path === 'rename') {
-      result = {
-        title: '/rename',
-        help: 'Enter a name, review and confirm.',
-        path,
-        revision: 'r',
-        input: true,
-        value: 'Current name',
-        choices: [],
-      };
-    } else {
-      reviewed = decodeURIComponent(path.slice('rename/'.length));
-      result = {
-        title: '/rename',
-        help: 'Only the saved name changes.',
-        path,
-        revision: 'r',
-        choices: [
-          {
-            id: 'name',
-            label: 'Rename to ' + reviewed,
-            help: 'New name: ' + reviewed,
-            action: true,
-          },
-        ],
-      };
-    }
-    await route.fulfill({ json: result });
-  });
-  await page.goto(pairingURL);
-  await page.evaluate(() => {
-    location.hash = '/sessions/parent';
-  });
-  const text = page
-    .locator('.detail-workspace')
-    .getByRole('textbox', { name: 'Follow-up message' });
-  await text.fill('/ren');
-  const panel = page.getByRole('region', { name: 'Session slash commands' });
-  await panel.getByRole('button', { name: '/rename →', exact: true }).click();
-  const input = panel.getByRole('textbox', {
-    name: 'Session name',
-    exact: true,
-  });
-  await expect(input).toHaveValue('Current name');
-  await input.fill('quota / review 界');
-  await panel.getByRole('button', { name: 'REVIEW RENAME' }).click();
-  await expect(
-    panel.getByRole('heading', { name: 'Rename to quota / review 界' }),
-  ).toBeVisible();
-  expect(reviewed).toBe('quota / review 界');
-  expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
-  await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
-  await expect(
-    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
-  ).toHaveCount(0);
-  expect(modes.filter((m) => m === 'commit')).toHaveLength(1);
-  expect(calls.filter((call) => call.action === 'prepare')).toHaveLength(0);
-});
+for (const command of ['rename', 'cd']) {
+  test(
+    command + ' edits and reviews input before a separate confirmation',
+    async ({ page, pairingURL }) => {
+      const { calls } = await mockActions(page, 'prompt');
+      const value =
+        command === 'cd' ? '/new  directory 界' : 'quota / review 界';
+      const label = command === 'cd' ? 'Working directory' : 'Session name';
+      const message =
+        command === 'cd' ? 'Working directory changed.' : 'Session renamed.';
+      const modes: string[] = [];
+      let reviewed = '';
+      await page.route('**/api/control/commands', async (route) => {
+        const body = route.request().postDataJSON();
+        const { mode, path } = body.command;
+        modes.push(mode);
+        let result: object;
+        if (mode === 'prepare') {
+          expect(path).toBe(command + '/' + encodeURIComponent(value));
+          result = {
+            confirmation: command + '-token',
+            expires: new Date(Date.now() + 30000).toISOString(),
+          };
+        } else if (mode === 'commit') {
+          expect(body.confirmation).toBe(command + '-token');
+          result = { message };
+        } else if (path === '') {
+          result = {
+            title: '/ COMMANDS',
+            help: 'Commands',
+            path: '',
+            revision: 'r',
+            choices: [
+              {
+                id: 'rename',
+                label: '/' + command,
+                help: 'Rename the session',
+                next: command,
+              },
+            ],
+          };
+        } else if (path === command) {
+          result = {
+            title: '/' + command,
+            help: 'Enter a name, review and confirm.',
+            path,
+            revision: 'r',
+            input: true,
+            inputLabel: label,
+            inputLimit: command === 'cd' ? 1024 : 512,
+            value: 'Current name',
+            choices: [],
+          };
+        } else {
+          reviewed = decodeURIComponent(path.slice(command.length + 1));
+          result = {
+            title: '/' + command,
+            help: 'Only the saved name changes.',
+            path,
+            revision: 'r',
+            choices: [
+              {
+                id: 'name',
+                label: 'Review ' + reviewed,
+                help: 'New name: ' + reviewed,
+                action: true,
+              },
+            ],
+          };
+        }
+        await route.fulfill({ json: result });
+      });
+      await page.goto(pairingURL);
+      await page.evaluate(() => {
+        location.hash = '/sessions/parent';
+      });
+      const text = page
+        .locator('.detail-workspace')
+        .getByRole('textbox', { name: 'Follow-up message' });
+      await text.fill('/' + command);
+      const panel = page.getByRole('region', {
+        name: 'Session slash commands',
+      });
+      await panel
+        .getByRole('button', { name: '/' + command + ' →', exact: true })
+        .click();
+      const input = panel.getByRole('textbox', {
+        name: label,
+        exact: true,
+      });
+      await expect(input).toHaveValue('Current name');
+      await input.fill(value);
+      await panel
+        .getByRole('button', {
+          name: command === 'cd' ? 'REVIEW DIRECTORY' : 'REVIEW RENAME',
+        })
+        .click();
+      await expect(
+        panel.getByRole('heading', { name: 'Review ' + value }),
+      ).toBeVisible();
+      expect(reviewed).toBe(value);
+      expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
+      await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+      await expect(
+        panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+      ).toHaveCount(0);
+      expect(modes.filter((m) => m === 'commit')).toHaveLength(1);
+      expect(calls.filter((call) => call.action === 'prepare')).toHaveLength(0);
+    },
+  );
+}
 
 test('unavailable slash commands close without losing the draft and recover with a fresh catalogue', async ({
   page,
@@ -3468,4 +3488,64 @@ test('session content is text, not HTML or executable instructions', async ({
   ).toHaveCount(0);
   expect(dialogs).toEqual([]);
   expect(externalRequests).toEqual([]);
+});
+
+test('cwd shows the running directory without preparing a mutation', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const modes: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const { mode, path } = route.request().postDataJSON().command;
+    modes.push(mode);
+    await route.fulfill({
+      json:
+        path === ''
+          ? {
+              title: '/ COMMANDS',
+              help: 'Commands',
+              path: '',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'cwd',
+                  label: '/cwd',
+                  help: 'Show directory',
+                  next: 'cwd',
+                },
+              ],
+            }
+          : {
+              title: '/cwd',
+              help: 'Running directory',
+              path: 'cwd',
+              revision: 'r',
+              choices: [
+                {
+                  id: 'directory',
+                  label: 'Current directory',
+                  help: 'Working directory: /dev/projects',
+                },
+              ],
+            },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
+  await panel.getByRole('button', { name: '/cwd →', exact: true }).click();
+  await panel
+    .getByRole('button', { name: 'Current directory // HELP', exact: true })
+    .click();
+  await expect(
+    panel.getByText('Working directory: /dev/projects', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+  ).toHaveCount(0);
+  expect(modes.every((mode) => mode === 'list')).toBe(true);
 });

@@ -727,6 +727,7 @@ func TestLiveUsageReaderFinalizesRequestedModelWhenDaemonHasNoReroute(t *testing
 
 type stubSessionStatusProvider struct {
 	statuses     map[string]sessionRuntimeStatus
+	directories  map[string]string
 	observations []resolvedModelObservation
 	subscribed   map[string]struct{}
 	unavailable  bool
@@ -737,7 +738,7 @@ func (s stubSessionStatusProvider) Fetch(context.Context, []string) (sessionDaem
 		return sessionDaemonSnapshot{}, false
 	}
 	return sessionDaemonSnapshot{
-		Statuses: s.statuses, ModelObservations: s.observations, SubscribedThreads: s.subscribed,
+		Statuses: s.statuses, ModelObservations: s.observations, SubscribedThreads: s.subscribed, WorkingDirectories: s.directories,
 	}, true
 }
 
@@ -1279,5 +1280,26 @@ func TestRolloutHelpers(t *testing.T) {
 	}
 	if _, _, ok := tokenTotal([]byte(strings.ReplaceAll(tokenCountLine(now, 7), "event_msg", "other"))); ok {
 		t.Fatal("non-event token payload was accepted")
+	}
+}
+
+func TestLiveUsageDirectoryFollowsRuntimeAndFallsBackAfterDisconnect(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	path := testRolloutPath(t, home, now, "directory")
+	writeRollout(t, path, sessionMetaLine("directory", `"cli"`, "/original", nil)+"\n")
+	reader, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{statuses: map[string]sessionRuntimeStatus{"directory": sessionRuntimeIdle}, directories: map[string]string{"directory": "/changed"}}
+	usage, err := reader.FetchTokenUsage(context.Background())
+	if err != nil || len(usage.Sessions) != 1 || usage.Sessions[0].WorkingDirectory != "/changed" {
+		t.Fatal("stale displayed directory", usage, err)
+	}
+	reader.statusProvider = stubSessionStatusProvider{unavailable: true}
+	usage, err = reader.FetchTokenUsage(context.Background())
+	if err != nil || usage.Sessions[0].WorkingDirectory != "/original" {
+		t.Fatal("stale runtime directory survived disconnect", usage, err)
 	}
 }

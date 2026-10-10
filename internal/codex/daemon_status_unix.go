@@ -27,24 +27,25 @@ type daemonStatusProvider struct {
 	contexts          map[string]*daemonContextState
 	socketPath        string
 
-	mu               sync.Mutex
-	connection       *websocket.Conn
-	nextRequestID    int64
-	pending          map[int64]chan daemonEnvelope
-	subscribed       map[string]struct{}
-	reroutedTurns    map[daemonTurnKey]string
-	observations     []resolvedModelObservation
-	nextSequence     uint64
-	lastStatusAt     time.Time
-	statusThreads    map[string]struct{}
-	statuses         map[string]sessionRuntimeStatus
-	threadSettings   map[string]QuotaSession
-	settingsVersions map[string]uint64
-	settingsVersion  uint64
-	settingsSignal   chan struct{}
-	settingsMu       sync.Mutex
-	settingsClosed   bool
-	writeMu          sync.Mutex
+	mu                sync.Mutex
+	connection        *websocket.Conn
+	nextRequestID     int64
+	pending           map[int64]chan daemonEnvelope
+	subscribed        map[string]struct{}
+	reroutedTurns     map[daemonTurnKey]string
+	observations      []resolvedModelObservation
+	nextSequence      uint64
+	lastStatusAt      time.Time
+	statusThreads     map[string]struct{}
+	statuses          map[string]sessionRuntimeStatus
+	threadSettings    map[string]QuotaSession
+	threadDirectories map[string]string
+	settingsVersions  map[string]uint64
+	settingsVersion   uint64
+	settingsSignal    chan struct{}
+	settingsMu        sync.Mutex
+	settingsClosed    bool
+	writeMu           sync.Mutex
 }
 
 type daemonTurnKey struct {
@@ -80,7 +81,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 			if _, ok := loaded[threadID]; !ok || p.isSubscribed(threadID) {
 				continue
 			}
-			var resumed json.RawMessage
+			var resumed struct{ Cwd string }
 			if err := p.request(ctx, "thread/resume", map[string]any{
 				"threadId": threadID, "excludeTurns": true,
 			}, &resumed); err != nil {
@@ -88,6 +89,9 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 			}
 			p.mu.Lock()
 			p.subscribed[threadID] = struct{}{}
+			if filepath.IsAbs(resumed.Cwd) {
+				p.threadDirectories[threadID] = resumed.Cwd
+			}
 			p.mu.Unlock()
 		}
 	}
@@ -134,12 +138,16 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
+	directories := make(map[string]string, len(threadIDs))
 	for _, threadID := range threadIDs {
 		if status, ok := p.statuses[threadID]; ok {
 			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
 				status = sessionRuntimeComplete
 			}
 			statuses[threadID] = status
+			if cwd := p.threadDirectories[threadID]; cwd != "" {
+				directories[threadID] = cwd
+			}
 		}
 	}
 	subscribed := make(map[string]struct{}, len(p.subscribed))
@@ -147,10 +155,11 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		subscribed[threadID] = struct{}{}
 	}
 	return sessionDaemonSnapshot{
-		Contexts:          daemonContextSnapshot(p.contexts, threadIDs, statuses),
-		Statuses:          statuses,
-		ModelObservations: append([]resolvedModelObservation(nil), p.observations...),
-		SubscribedThreads: subscribed,
+		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
+		WorkingDirectories: directories,
+		Statuses:           statuses,
+		ModelObservations:  append([]resolvedModelObservation(nil), p.observations...),
+		SubscribedThreads:  subscribed,
 	}
 }
 
@@ -203,6 +212,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 		p.mu.Lock()
 		delete(p.subscribed, threadID)
 		delete(p.contexts, threadID)
+		delete(p.threadDirectories, threadID)
 		for key := range p.reroutedTurns {
 			if key.threadID == threadID {
 				delete(p.reroutedTurns, key)
@@ -245,6 +255,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)
 	p.threadSettings = make(map[string]QuotaSession)
+	p.threadDirectories = make(map[string]string)
 	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
@@ -415,16 +426,26 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		var notification struct {
 			ThreadID       string `json:"threadId"`
 			ThreadSettings struct {
+				Cwd         string  `json:"cwd"`
 				Model       string  `json:"model"`
 				Effort      string  `json:"effort"`
 				ServiceTier *string `json:"serviceTier"`
 			} `json:"threadSettings"`
 		}
-		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" ||
-			notification.ThreadSettings.Model == "" || notification.ThreadSettings.Effort == "" {
+		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" {
 			return
 		}
 		p.mu.Lock()
+		if filepath.IsAbs(notification.ThreadSettings.Cwd) {
+			if p.threadDirectories == nil {
+				p.threadDirectories = map[string]string{}
+			}
+			p.threadDirectories[notification.ThreadID] = notification.ThreadSettings.Cwd
+		}
+		if notification.ThreadSettings.Model == "" || notification.ThreadSettings.Effort == "" {
+			p.mu.Unlock()
+			return
+		}
 		if p.threadSettings == nil {
 			p.threadSettings = make(map[string]QuotaSession)
 		}
@@ -516,6 +537,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.statusThreads = nil
 	p.statuses = nil
 	p.threadSettings = nil
+	p.threadDirectories = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)
 		p.settingsSignal = nil

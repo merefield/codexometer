@@ -27,6 +27,8 @@
     revision: string;
     choices: Choice[];
     input?: boolean;
+    inputLabel?: string;
+    inputLimit?: number;
     value?: string;
   }
   let open = $state(false),
@@ -158,7 +160,11 @@
           });
         menu = result;
         name = result.value || '';
-        if (result.path.startsWith('rename/') && result.choices.length === 1)
+        if (
+          (result.path.startsWith('rename/') ||
+            result.path.startsWith('cd/')) &&
+          result.choices.length === 1
+        )
           void choose(result.choices[0]);
       }
     } catch {
@@ -283,20 +289,21 @@
         <form
           onsubmit={(event) => {
             event.preventDefault();
-            if (name.trim() && !busy && !unavailable)
-              void load('rename/' + encodeURIComponent(name.trim()));
+            if (menu && name.trim() && !busy && !unavailable)
+              void load(menu.path + '/' + encodeURIComponent(name.trim()));
           }}
         >
           <label
-            >SESSION NAME <input
-              aria-label="Session name"
+            >{(menu.inputLabel || 'Session name').toUpperCase()}
+            <input
+              aria-label={menu.inputLabel || 'Session name'}
               bind:value={name}
-              maxlength="512"
+              maxlength={menu.inputLimit || 512}
               disabled={busy || unavailable}
             /></label
           >
           <button type="submit" disabled={busy || unavailable || !name.trim()}
-            >REVIEW RENAME</button
+            >REVIEW {menu.path === 'cd' ? 'DIRECTORY' : 'RENAME'}</button
           >
         </form>
       {:else if selected}
@@ -306,6 +313,8 @@
             TARGET // {session}.
             {#if menu?.path.startsWith('rename/')}Only this session's saved name
               changes.
+            {:else if menu?.path.startsWith('cd/')}Only this session’s directory
+              changes; project configuration is not reloaded.
             {:else}Changes affect subsequent turns of this session, not global
               defaults. Automatic quota thresholds may later supersede model
               settings.{/if}

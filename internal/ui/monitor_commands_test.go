@@ -327,3 +327,50 @@ func TestMonitorRenameEditorKeepsBackgroundUpdates(t *testing.T) {
 		}
 	})
 }
+
+// Directory input uses the same event-preserving editor as rename, with its own
+// label, length and confirmation notice. The ordinary composer draft survives.
+type directoryTestClient struct {
+	*commandTestClient
+	path string
+}
+
+func (f *directoryTestClient) SessionCommands(_ context.Context, _ string, path string) (codex.SessionCommandMenu, error) {
+	f.path = path
+	m := codex.SessionCommandMenu{Title: "/cd", Path: path, Revision: "directory-revision"}
+	if path == "cd" {
+		m.Input, m.InputLabel, m.InputLimit, m.Value = true, "Working directory", 1024, "/old"
+	} else {
+		m.Choices = []codex.SessionCommandChoice{{ID: "directory", Label: "Change working directory", Help: "New directory: /new  path 界", Action: true}}
+	}
+	return m, nil
+}
+func TestMonitorDirectoryEditorReviewAndConfirmation(t *testing.T) {
+	m, base := commandTestModel(t)
+	f := &directoryTestClient{commandTestClient: base}
+	m.fetcher = f
+	m.monitorPrompt.input.SetValue("unsent directory draft")
+	m, cmd, _ := m.openMonitorCommands("cd")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if m.monitorCommands.input.Value() != "/old" || m.monitorCommands.input.CharLimit != 1024 || !strings.Contains(ansi.Strip(m.render()), "WORKING DIRECTORY") {
+		t.Fatal("directory editor missing")
+	}
+	m.monitorCommands.input.SetValue("/new  path 界")
+	m, cmd, _ = m.reviewMonitorCommandInput()
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if f.path != "cd/"+url.PathEscape("/new  path 界") || !m.monitorCommands.detail || f.calls != 0 {
+		t.Fatal("directory not reviewed")
+	}
+	_, cmd, _ = m.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("Enter bypassed confirmation")
+	}
+	m, cmd, _ = m.confirmMonitorCommand()
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "unsent directory draft" || m.monitorPrompt.notice != "Working directory changed." {
+		t.Fatal("directory change lost draft or notice")
+	}
+}

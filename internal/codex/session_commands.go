@@ -20,14 +20,16 @@ type SessionCommandChoice struct {
 }
 
 type SessionCommandMenu struct {
-	Title    string                 `json:"title"`
-	Help     string                 `json:"help"`
-	Path     string                 `json:"path"`
-	Revision string                 `json:"revision"`
-	Multiple bool                   `json:"multiple,omitempty"`
-	Input    bool                   `json:"input,omitempty"`
-	Value    string                 `json:"value,omitempty"`
-	Choices  []SessionCommandChoice `json:"choices"`
+	Title      string                 `json:"title"`
+	Help       string                 `json:"help"`
+	Path       string                 `json:"path"`
+	Revision   string                 `json:"revision"`
+	Multiple   bool                   `json:"multiple,omitempty"`
+	Input      bool                   `json:"input,omitempty"`
+	InputLabel string                 `json:"inputLabel,omitempty"`
+	InputLimit int                    `json:"inputLimit,omitempty"`
+	Value      string                 `json:"value,omitempty"`
+	Choices    []SessionCommandChoice `json:"choices"`
 }
 
 type SessionCommandsClient interface {
