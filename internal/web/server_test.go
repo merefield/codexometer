@@ -9,10 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -277,7 +280,7 @@ func TestRunStopsCollectorsAndServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(buffer[:n]), "http://127.0.0.1:") || !strings.Contains(string(buffer[:n]), "#pair=") {
+	if !strings.Contains(string(buffer[:n]), "http://127.0.0.1:") || !strings.Contains(string(buffer[:n]), "#pair=") || strings.ContainsRune(string(buffer[:n]), '\x1b') {
 		t.Fatalf("unsafe/missing launch link: %s", buffer[:n])
 	}
 	cancel()
@@ -388,5 +391,35 @@ func TestSessionStatus(t *testing.T) {
 		if contextKind(kind) == "" {
 			t.Fatal(fmt.Sprint(kind))
 		}
+	}
+}
+
+func TestLaunchLinkPreservesCompletePairingURL(t *testing.T) {
+	url := "http://127.0.0.1:32123/#pair=ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	plain := launchLink(url, false)
+	if plain != url {
+		t.Fatal("plain output changed the pairing URL")
+	}
+	linked := launchLink(url, true)
+	if ansi.Strip(linked) != url {
+		t.Fatal("terminal output changed the visible pairing URL")
+	}
+	if !strings.HasPrefix(linked, ansi.SetHyperlink(url)+"\x1b[4m") ||
+		!strings.HasSuffix(linked, "\x1b[24m"+ansi.ResetHyperlink()) {
+		t.Fatal("missing full hyperlink target, underline, or terminal-state reset")
+	}
+}
+
+func TestTerminalOutputExcludesRedirectedWriters(t *testing.T) {
+	if terminalOutput(io.Discard) || terminalOutput(new(strings.Builder)) {
+		t.Fatal("non-terminal writer classified as a terminal")
+	}
+	file, err := os.CreateTemp(t.TempDir(), "launch-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if terminalOutput(file) {
+		t.Fatal("redirected file classified as a terminal")
 	}
 }

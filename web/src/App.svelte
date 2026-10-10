@@ -6,6 +6,8 @@
   import Sessions from './Sessions.svelte';
   import Usage from './Usage.svelte';
   import Missing from './Missing.svelte';
+  import BlockLogo from './BlockLogo.svelte';
+  import Startup from './Startup.svelte';
   import { preferences, savePreferences } from './preferences.svelte';
 
   const routes = {
@@ -21,6 +23,8 @@
     usage: /^\/usage\/?$/,
   };
   let theme = $state('hacker');
+  let starting = $state(true);
+  let brand = $state<HTMLAnchorElement>();
   const themes = ['hacker', 'rust', 'blue-steel', 'ultraviolet', 'nightshade'];
   $effect(() => {
     savePreferences();
@@ -50,10 +54,15 @@
   }
 </script>
 
-<div class="shell" data-theme={theme}>
-  <header>
+<div class="shell" data-theme={theme} data-starting={starting}>
+  <header inert={starting}>
     <div>
-      <a class="brand" href="#/quota/bars">CODEXOMETER</a>
+      <a
+        class="brand"
+        href="#/quota/bars"
+        aria-label="CODEXOMETER"
+        bind:this={brand}><BlockLogo /></a
+      >
       <p>Your quota. Your sessions. Your command centre.</p>
     </div>
     <div class="connection">
@@ -66,7 +75,7 @@
       >
     </div>
   </header>
-  <nav aria-label="Main navigation">
+  <nav aria-label="Main navigation" inert={starting}>
     {#each Object.entries(tabPaths) as [tab, pattern]}
       {@const current = pattern.test(router.location)}
       <a
@@ -76,13 +85,13 @@
       >
     {/each}
   </nav>
-  <main id="content">
+  <main id="content" inert={starting}>
     {#if live.error}<p class="notice" role="status">{live.error}</p>{/if}
     {#if live.data}<Router {routes} />{:else if !live.error}<p class="empty">
         Connecting to your local Codexometer…
       </p>{/if}
   </main>
-  <footer>
+  <footer inert={starting}>
     <span>v{live.data?.version || '…'} // LOCAL ONLY</span>
     <span
       >{live.data?.control
@@ -100,4 +109,8 @@
       ></label
     >
   </footer>
+  {#if starting}<Startup
+      target={brand}
+      onfinish={() => (starting = false)}
+    />{/if}
 </div>

@@ -13,10 +13,14 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -70,7 +74,8 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	wait := s.store.collect(ctx, source, refresh)
 	defer func() { cancel(); wait() }()
 	httpServer := newHTTPServer(ctx, s.handler())
-	fmt.Fprintf(output, "Experimental web interface // %s\nOpen this private, one-use link within 5 minutes:\nhttp://%s/#pair=%s\nKeep this terminal open. Ctrl+C stops the server. Do not share the link.\n", mode, s.host, s.pairSecret)
+	url := fmt.Sprintf("http://%s/#pair=%s", s.host, s.pairSecret)
+	fmt.Fprintf(output, "Experimental web interface // %s\nOpen this private, one-use link within 5 minutes:\n%s\nKeep this terminal open. Ctrl+C stops the server. Do not share the link.\n", mode, launchLink(url, terminalOutput(output)))
 	stop := context.AfterFunc(ctx, func() { _ = httpServer.Close() })
 	defer stop()
 	err = httpServer.Serve(listener)
@@ -79,6 +84,22 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		return nil
 	}
 	return err
+}
+
+// Keep pipes, files and non-terminal writers free of terminal control sequences.
+func terminalOutput(output io.Writer) bool {
+	file, ok := output.(interface{ Fd() uintptr })
+	return ok && os.Getenv("TERM") != "dumb" && term.IsTerminal(file.Fd())
+}
+
+// The target and visible text both retain the complete one-use pairing fragment.
+// Explicit OSC 8 metadata avoids relying on terminal URL detection (including
+// wrapped URLs). The URL is generated locally, never supplied by session text.
+func launchLink(url string, terminal bool) string {
+	if !terminal {
+		return url
+	}
+	return ansi.SetHyperlink(url) + "\x1b[4m" + url + "\x1b[24m" + ansi.ResetHyperlink()
 }
 
 func newHTTPServer(ctx context.Context, handler http.Handler) *http.Server {

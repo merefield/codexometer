@@ -27,6 +27,9 @@ func quotaAPIAccountingEqual(left, right codex.LiveUsageSnapshot) bool {
 		left.APIEqUnknownTierCalls == right.APIEqUnknownTierCalls &&
 		left.APIEqPricedCalls == right.APIEqPricedCalls &&
 		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls &&
+		left.APIEqMissingUsageCalls == right.APIEqMissingUsageCalls &&
+		left.APIEqInconsistentUsageCalls == right.APIEqInconsistentUsageCalls &&
+		left.APIEqAccountingAdjustments == right.APIEqAccountingAdjustments &&
 		left.APIEqPendingCalls == right.APIEqPendingCalls
 }
 
@@ -46,21 +49,26 @@ type quotaAPISample struct {
 }
 
 type quotaAPIAnchor struct {
-	usedPercent      int
-	resetAt          int64
-	costUSD          float64
-	premiumUSD       float64
-	unknownTierCalls int64
-	pricedCalls      int64
-	unpricedCalls    int64
-	restartReason    string
+	usedPercent            int
+	resetAt                int64
+	costUSD                float64
+	premiumUSD             float64
+	unknownTierCalls       int64
+	pricedCalls            int64
+	unpricedCalls          int64
+	missingUsageCalls      int64
+	inconsistentUsageCalls int64
+	accountingAdjustments  int64
+	restartReason          string
 }
 
 const (
 	quotaAPIRestartAccountChanged    = "ACCOUNT CHANGED"
 	quotaAPIRestartAccountingRebased = "LOCAL ACCOUNTING REBASED"
 	quotaAPIRestartCoverageGap       = "LOCAL COVERAGE GAP"
-	quotaAPIRestartUnpricedModel     = "UNPRICED MODEL MIX"
+	quotaAPIRestartUnpricedUsage     = "UNPRICED USAGE"
+	quotaAPIRestartMissingUsage      = "MISSING RESPONSE USAGE"
+	quotaAPIRestartInconsistentUsage = "INCONSISTENT RESPONSE USAGE"
 	quotaAPIRestartWindowChanged     = "WINDOW DEFINITION CHANGED"
 	quotaAPIRestartWindowReset       = "WINDOW RESET"
 )
@@ -113,6 +121,9 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 			resetAt:     optionalUnix(meter.Window.ResetsAt), costUSD: usage.APIEqUSD + usage.APIEqTierPremiumUSD,
 			premiumUSD: usage.APIEqTierPremiumUSD, unknownTierCalls: usage.APIEqUnknownTierCalls,
 			pricedCalls: usage.APIEqPricedCalls, unpricedCalls: usage.APIEqUnpricedCalls,
+			missingUsageCalls:      usage.APIEqMissingUsageCalls,
+			inconsistentUsageCalls: usage.APIEqInconsistentUsageCalls,
+			accountingAdjustments:  usage.APIEqAccountingAdjustments,
 		}
 		anchor, exists := m.quotaAPIAnchors[key]
 		if !exists {
@@ -134,7 +145,10 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		}
 		if current.costUSD < anchor.costUSD || current.pricedCalls < anchor.pricedCalls ||
 			current.unpricedCalls < anchor.unpricedCalls || current.premiumUSD < anchor.premiumUSD ||
-			current.unknownTierCalls < anchor.unknownTierCalls {
+			current.unknownTierCalls < anchor.unknownTierCalls ||
+			current.missingUsageCalls < anchor.missingUsageCalls ||
+			current.inconsistentUsageCalls < anchor.inconsistentUsageCalls ||
+			current.accountingAdjustments < anchor.accountingAdjustments {
 			current.restartReason = quotaAPIRestartAccountingRebased
 			m.quotaAPIAnchors[key] = current
 			m.quotaAPIIssues[key] = ""
@@ -149,7 +163,20 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 			m.quotaAPIAnchors[key] = anchor
 		}
 		if current.unpricedCalls > anchor.unpricedCalls {
-			current.restartReason = quotaAPIRestartUnpricedModel
+			current.restartReason = quotaAPIRestartUnpricedUsage
+			m.quotaAPIAnchors[key] = current
+			m.quotaAPIIssues[key] = ""
+			continue
+		}
+		switch {
+		case current.missingUsageCalls > anchor.missingUsageCalls:
+			current.restartReason = quotaAPIRestartMissingUsage
+		case current.inconsistentUsageCalls > anchor.inconsistentUsageCalls:
+			current.restartReason = quotaAPIRestartInconsistentUsage
+		case current.accountingAdjustments > anchor.accountingAdjustments:
+			current.restartReason = quotaAPIRestartAccountingRebased
+		}
+		if current.restartReason != "" {
 			m.quotaAPIAnchors[key] = current
 			m.quotaAPIIssues[key] = ""
 			continue
@@ -451,8 +478,12 @@ func shortQuotaAPIRestartReason(reason string) string {
 		return "REBASED"
 	case quotaAPIRestartCoverageGap:
 		return "COVERAGE GAP"
-	case quotaAPIRestartUnpricedModel:
+	case quotaAPIRestartUnpricedUsage:
 		return "UNPRICED"
+	case quotaAPIRestartMissingUsage:
+		return "USAGE MISSING"
+	case quotaAPIRestartInconsistentUsage:
+		return "USAGE INCONSISTENT"
 	case quotaAPIRestartWindowChanged:
 		return "WINDOW CHANGED"
 	case quotaAPIRestartWindowReset:

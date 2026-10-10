@@ -778,7 +778,16 @@ limits are one reason confidence never rises above Medium. Ordinary input, cache
 cache-write input, and output are priced separately; requests above the
 published 272,000-input-token threshold use the corresponding long-context
 rates where OpenAI publishes them. Unknown models or missing price classes fail
-closed as `UNPRICED MODEL MIX` rather than being guessed or treated as free.
+closed as `UNPRICED USAGE` rather than being guessed or treated as free.
+Codex's context-window bookkeeping updates are recognised only when the window
+and both complete, explicit zero-token-class breakdowns match its synthetic fill record.
+They rebase the local counter without adding response costs, token totals or
+model-call graph pulses. Quota learning restarts as `LOCAL ACCOUNTING REBASED`.
+Events with a missing or null cumulative total are ignored without replacing
+the current baseline, including inherited child history and historical scans.
+Missing input/output usage and inconsistent response/cumulative usage instead
+restart as `MISSING RESPONSE USAGE` or `INCONSISTENT RESPONSE USAGE`; no costs
+are guessed. Unknown model/tier or unavailable pricing remains `UNPRICED USAGE`.
 Core, Extended, and DigBench trials use ephemeral threads that intentionally do
 not appear in normal persisted session telemetry. While a subscription-funded
 benchmark suite is active, Quota views replace the numeric API-equivalent
@@ -831,7 +840,7 @@ used quota falls, the account or window definition changes, finalized counters
 regress, the quota moves five points without any matching priced local call, or
 an unknown/unpriced model occurs. The learning readout retains the reason, for
 example `RESTARTED: WINDOW RESET`, `WINDOW DEFINITION CHANGED`, `LOCAL
-ACCOUNTING REBASED`, `UNPRICED MODEL MIX`, or `LOCAL COVERAGE GAP`, while new
+ACCOUNTING REBASED`, `UNPRICED USAGE`, or `LOCAL COVERAGE GAP`, while new
 clean movement accumulates. It never silently returns to `0/5PP`. Even a valid
 estimate can still vary with reasoning effort, model mix, caching, prompt
 shape, and backend quota weighting, so compare ranges and sample counts rather
@@ -1590,7 +1599,11 @@ dismisses suggestions while retaining the draft and typing focus. Suggestions
 are fetched asynchronously and filtered locally. They also work in a selected
 wide terminal session row when space permits. Outside the full-detail composer,
 press `/` to open the full command browser. Use arrows and Enter to browse, **C** to confirm a
-setting change, Left to go back and Escape to return to the session. Buttons
+setting change, Left to go back and Escape to return to the session. Speed menus
+keep all options visible: Up/Down highlights a choice, **Enter REVIEW** stages it,
+and **C CONFIRM** applies it. The separate **CURRENT** marker identifies the
+existing speed. Model, reasoning and speed changes are provisional until C;
+reviewing or changing the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
 **/ COMMANDS**, with the same composer suggestion shortcuts.
 
@@ -1600,7 +1613,7 @@ are clickable. Writable web mode exposes the same catalogue through
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
-| Advertised speed commands, such as `/fast` | Names, IDs and descriptions come from the current model's service-tier catalogue; enable a tier or clear the explicit override. No speed names or tier IDs are assumed. |
+| Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down selects; **Enter REVIEW** provisionally selects the highlighted choice while keeping the list visible, then **C CONFIRM** applies it. Changing the highlight cancels the pending confirmation. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
@@ -2446,6 +2459,21 @@ deterministic PASS/FAIL verifier.
 
 ## Options
 
+The full-screen terminal UI and browser interface randomly choose one of three
+CODEXOMETER entrances:
+
+- The logo slides in from the right.
+- A dot blinks three times, then advances as the name is typed letter by letter.
+- Eleven random characters shuffle and resolve into the name in a random order.
+
+All three use the same full-width block lettering at the vertical centre, then
+shrink into the header before the dashboard appears. Data loads during the
+roughly two-to-three-second animation. Press any key or left-click to skip.
+The browser plays it once per page load, respects reduced-motion preferences,
+and uses the same block logo in its header. In the terminal, `q` or Ctrl+C quits
+immediately; inline mode and terminals smaller than 68 columns or eight rows
+open directly.
+
 ```text
 --codex PATH       path to the Codex CLI (default: codex)
 --check-auth       verify the current Codex login and exit
@@ -2608,7 +2636,9 @@ codexometer --web --web-port 8765
 
 1. Run one of these commands and keep that terminal open.
 2. Open the private `http://127.0.0.1:PORT/#pair=...` link printed in the terminal
-   within five minutes. The application does not automatically launch a browser.
+   within five minutes. Terminal output includes an underlined hyperlink; in
+   Ghostty on macOS, hold Cmd while clicking. Redirected output remains plain text.
+   The application does not automatically launch a browser.
 3. Pairing exchanges the one-use secret for a temporary browser capability and
    removes the secret from the visible URL. Do not share the original link.
 4. Browse **Quota**, **Sessions**, and **Usage**. Refresh and browser Back/Forward

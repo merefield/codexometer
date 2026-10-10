@@ -291,6 +291,9 @@ func TestRunResetWarningHours(t *testing.T) {
 func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 	return left.APIEqUSD == right.APIEqUSD && left.APIEqPricedCalls == right.APIEqPricedCalls &&
 		left.APIEqUnpricedCalls == right.APIEqUnpricedCalls &&
+		left.APIEqMissingUsageCalls == right.APIEqMissingUsageCalls &&
+		left.APIEqInconsistentUsageCalls == right.APIEqInconsistentUsageCalls &&
+		left.APIEqAccountingAdjustments == right.APIEqAccountingAdjustments &&
 		left.APIEqPendingCalls == right.APIEqPendingCalls
 }
 

@@ -17,7 +17,9 @@ func TestShortQuotaAPIRestartReasonsStayCanonical(t *testing.T) {
 		quotaAPIRestartAccountChanged:    "ACCOUNT",
 		quotaAPIRestartAccountingRebased: "REBASED",
 		quotaAPIRestartCoverageGap:       "COVERAGE GAP",
-		quotaAPIRestartUnpricedModel:     "UNPRICED",
+		quotaAPIRestartUnpricedUsage:     "UNPRICED",
+		quotaAPIRestartMissingUsage:      "USAGE MISSING",
+		quotaAPIRestartInconsistentUsage: "USAGE INCONSISTENT",
 		quotaAPIRestartWindowChanged:     "WINDOW CHANGED",
 		quotaAPIRestartWindowReset:       "RESET",
 		"FUTURE REASON":                  "FUTURE REASON",
@@ -72,7 +74,7 @@ func TestQuotaAPIEstimatorRequiresCleanPricedMovement(t *testing.T) {
 		t.Fatalf("unpriced interval produced evidence: %#v", model.quotaAPIEvidence)
 	}
 	line := model.quotaAPILine(apiEqSnapshot(25, reset).Meters()[0], 80)
-	if !strings.Contains(line, "UNPRICED MODEL MIX") {
+	if !strings.Contains(line, "UNPRICED USAGE") {
 		t.Fatalf("unpriced learning state = %q", line)
 	}
 
@@ -362,4 +364,72 @@ func apiEqSnapshot(used int, reset int64) codex.Snapshot {
 		LimitID: &limitID, PlanType: &plan,
 		Primary: &codex.Window{UsedPercent: used, WindowDurationMins: &duration, ResetsAt: &reset},
 	}}
+}
+
+func TestQuotaUsageIssuesRestartWithSpecificReasonsAndRecover(t *testing.T) {
+	for _, kind := range []string{"missing", "inconsistent", "adjusted", "unpriced"} {
+		t.Run(kind, func(t *testing.T) {
+			now := time.Now()
+			reset := now.Add(4 * time.Hour).Unix()
+			model := New(nil, time.Minute)
+			base := apiEqSnapshot(10, reset)
+			plan := "pro_500"
+			base.RateLimits.PlanType = &plan
+			model.observeQuotaAPIEq(base, codex.LiveUsageSnapshot{}, now)
+			issue := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}
+			reason := ""
+			switch kind {
+			case "missing":
+				issue.APIEqMissingUsageCalls = 1
+				reason = quotaAPIRestartMissingUsage
+			case "inconsistent":
+				issue.APIEqInconsistentUsageCalls = 1
+				reason = quotaAPIRestartInconsistentUsage
+			case "adjusted":
+				issue.APIEqAccountingAdjustments = 1
+				reason = quotaAPIRestartAccountingRebased
+			case "unpriced":
+				issue.APIEqUnpricedCalls = 1
+				reason = quotaAPIRestartUnpricedUsage
+			}
+			observe := func(percent int, usage codex.LiveUsageSnapshot) {
+				snap := apiEqSnapshot(percent, reset)
+				snap.RateLimits.PlanType = &plan
+				model.snapshot = snap
+				model.observeQuotaAPIEq(snap, usage, now.Add(time.Duration(percent)*time.Minute))
+			}
+			observe(15, issue)
+			if len(model.quotaAPIEvidence) != 0 || !strings.Contains(model.quotaAPILine(model.snapshot.Meters()[0], 120), reason) {
+				t.Fatal("unsafe learning or incorrect cause", model.quotaAPIEvidence, model.quotaAPIAnchors)
+			}
+			clean := issue
+			clean.APIEqUSD = 2
+			clean.APIEqPricedCalls = 2
+			observe(17, clean)
+			if !strings.Contains(model.quotaAPILine(model.snapshot.Meters()[0], 120), "2/5PP") {
+				t.Fatal("unchanged error counter kept restarting")
+			}
+			clean.APIEqUSD = 3
+			clean.APIEqPricedCalls = 3
+			observe(20, clean)
+			if len(model.quotaAPIEvidence) != 1 {
+				t.Fatal("clean learning did not resume", model.quotaAPIAnchors)
+			}
+		})
+	}
+}
+
+func TestQuotaAccountingBracketIncludesUsageIssuesAndAdjustments(t *testing.T) {
+	before := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}
+	for _, mutate := range []func(*codex.LiveUsageSnapshot){
+		func(s *codex.LiveUsageSnapshot) { s.APIEqMissingUsageCalls++ },
+		func(s *codex.LiveUsageSnapshot) { s.APIEqInconsistentUsageCalls++ },
+		func(s *codex.LiveUsageSnapshot) { s.APIEqAccountingAdjustments++ },
+	} {
+		after := before
+		mutate(&after)
+		if quotaAPIAccountingEqual(before, after) {
+			t.Fatal("changed usage accounting was accepted")
+		}
+	}
 }

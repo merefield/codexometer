@@ -17,12 +17,13 @@ type commandsFake struct {
 	lists                     int
 	listedPath, committedPath string
 	revision                  string
+	picker                    bool
 }
 
 func (f *commandsFake) SessionCommands(_ context.Context, _ string, path string) (codex.SessionCommandMenu, error) {
 	f.lists++
 	f.listedPath = path
-	return codex.SessionCommandMenu{Revision: f.revision, Choices: []codex.SessionCommandChoice{{ID: "choice", Label: "Medium", Help: "Dynamic help", Action: true}}}, nil
+	return codex.SessionCommandMenu{Revision: f.revision, Picker: f.picker, Choices: []codex.SessionCommandChoice{{ID: "choice", Label: "Medium", Help: "Dynamic help", Action: true}}}, nil
 }
 func (f *commandsFake) ExecuteSessionCommand(_ context.Context, id, path, revision, choice string) error {
 	if id != "parent" || revision != f.revision || choice != "choice" {
@@ -152,5 +153,27 @@ func TestCommandsRejectInvalidDecodedInputBeforeAdapter(t *testing.T) {
 		if w := actionCall(s, token, "commands", b); w.Code != 400 || f.lists != 0 || f.calls != 0 {
 			t.Fatalf("invalid path accepted: status %d lists %d calls %d", w.Code, f.lists, f.calls)
 		}
+	}
+}
+
+func TestSpeedPickerUsesBoundCommitAndReportsVerifiedSuccess(t *testing.T) {
+	s, _, token := controlServer(t)
+	f := &commandsFake{revision: "current", picker: true}
+	s.control.commands = f
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "prepare", Path: "fast", Revision: "current", Choice: "choice"}}
+	w := actionCall(s, token, "commands", b)
+	var prepared struct{ Confirmation string }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &prepared) != nil || prepared.Confirmation == "" || f.calls != 0 {
+		t.Fatal("prepare sent or lost the highlighted speed", w.Body)
+	}
+	b.Confirmation = prepared.Confirmation
+	b.Command = &commandRequest{Mode: "commit"}
+	w = actionCall(s, token, "commands", b)
+	var result struct{ Message string }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Message != "Session speed changed. Applies to subsequent turns." || f.calls != 1 {
+		t.Fatal("speed commit missing or success still pending", w.Body)
+	}
+	if w = actionCall(s, token, "commands", b); w.Code != 409 || f.calls != 1 {
+		t.Fatal("speed token could be replayed")
 	}
 }

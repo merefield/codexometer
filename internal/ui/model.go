@@ -41,6 +41,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	startup startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
 	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
@@ -428,6 +429,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
+		startup:           startupState{pending: true},
 		resetThreshold:    80,
 		resetWarningHours: 72,
 		fetcher:           fetcher,
@@ -460,6 +462,9 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 // buffer instead of Bubble Tea's alternate screen.
 func (m *Model) SetInline(inline bool) {
 	m.inline = inline
+	if inline {
+		m.startup = startupState{}
+	}
 }
 
 type initialViewMsg struct{}
@@ -469,6 +474,11 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateStartup(message); handled {
+		return next, cmd
+	} else {
+		m = next
+	}
 	if next, cmd, handled := m.updateMonitorHistory(message); handled {
 		return next, cmd
 	} else {
@@ -1044,6 +1054,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = message.Width
 		m.height = message.Height
 		m.prepareBenchmarkDetailTranscript()
+		return m, m.beginStartup(time.Now())
 	case accountHistoryMsg:
 		if message.sequence != m.history.sequence {
 			return m, nil
