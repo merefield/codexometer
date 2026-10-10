@@ -2446,7 +2446,8 @@ deterministic PASS/FAIL verifier.
 
 ## Options
 
-The full-screen terminal UI randomly chooses one of three CODEXOMETER entrances:
+The full-screen terminal UI and browser interface randomly choose one of three
+CODEXOMETER entrances:
 
 - The logo slides in from the right.
 - A dot blinks three times, then advances as the name is typed letter by letter.
@@ -2454,9 +2455,11 @@ The full-screen terminal UI randomly chooses one of three CODEXOMETER entrances:
 
 All three use the same full-width block lettering at the vertical centre, then
 shrink into the header before the dashboard appears. Data loads during the
-roughly two-to-three-second animation. Press any key or left-click to skip; `q`
-or Ctrl+C quits immediately. Inline mode and terminals smaller than 68 columns
-or eight rows open directly.
+roughly two-to-three-second animation. Press any key or left-click to skip.
+The browser plays it once per page load, respects reduced-motion preferences,
+and uses the same block logo in its header. In the terminal, `q` or Ctrl+C quits
+immediately; inline mode and terminals smaller than 68 columns or eight rows
+open directly.
 
 ```text
 --codex PATH       path to the Codex CLI (default: codex)

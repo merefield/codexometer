@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 
 // Keep the stream open so tests can distinguish fresh signals from disconnected
@@ -9,7 +10,10 @@ async function mockStream(page: Page, snapshot: object) {
   await page.addInitScript((snapshot) => {
     const original = window.fetch.bind(window);
     window.fetch = (input, init) => {
-      if (input === '/api/events')
+      if (input === '/api/events') {
+        document.documentElement.dataset.testStreams = String(
+          Number(document.documentElement.dataset.testStreams || 0) + 1,
+        );
         return Promise.resolve(
           new Response(
             new ReadableStream({
@@ -21,6 +25,11 @@ async function mockStream(page: Page, snapshot: object) {
                     ),
                   );
                 send(snapshot);
+                window.addEventListener(
+                  'test-disconnect',
+                  () => controller.error(new Error('Test stream closed')),
+                  { once: true },
+                );
                 window.addEventListener('test-snapshot', (event) =>
                   send((event as CustomEvent).detail),
                 );
@@ -29,6 +38,7 @@ async function mockStream(page: Page, snapshot: object) {
             { headers: { 'Content-Type': 'text/event-stream' } },
           ),
         );
+      }
       return original(input, init);
     };
   }, snapshot);
@@ -96,6 +106,9 @@ const test = base.extend<{
     }
   },
 });
+
+// Existing dashboard tests open directly; startup motion is exercised separately.
+test.use({ reducedMotion: 'reduce' });
 
 test.describe('quota profile reviews', () => {
   test.use({ controlMode: true, quotaMode: 'ask' });
@@ -2000,7 +2013,7 @@ test('pairing, all quota views, navigation and refresh', async ({
   await expect(page).toHaveURL(/#\/quota\/bars$/);
   await expect(page.getByRole('meter').first()).toBeVisible();
   await page.getByRole('link', { name: 'PIE', exact: true }).click();
-  await expect(page.locator('svg')).toHaveCount(2);
+  await expect(page.locator('main svg')).toHaveCount(2);
   await expect(
     page.getByRole('link', { name: 'ZONE', exact: true }),
   ).toHaveCount(0);
@@ -3555,4 +3568,292 @@ test('cwd shows the running directory without preparing a mutation', async ({
     panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
   ).toHaveCount(0);
   expect(modes.every((mode) => mode === 'list')).toBe(true);
+});
+
+test.describe('browser startup', () => {
+  test.use({ reducedMotion: 'no-preference', controlMode: true });
+
+  async function freezeStartup(page: Page, choice: number) {
+    await page.addInitScript((value) => {
+      Math.random = () => value;
+    }, choice);
+    const time = new Date('2026-10-10T12:00:00Z');
+    await page.clock.install({ time });
+    await page.clock.pauseAt(new Date(time.getTime() + 1000));
+  }
+
+  // Assert parity against the terminal source, rather than a second browser font.
+  const terminalRows = [
+    ...readFileSync(
+      resolve('../internal/ui/header_actions.go'),
+      'utf8',
+    ).matchAll(/"([█▀▄ ][█▀▄ ]+)"/g),
+  ]
+    .slice(0, 2)
+    .map((match) => [...match[1]]);
+  const expectedPixels: string[] = [];
+  terminalRows.forEach((line, row) =>
+    line.forEach((cell, col) => {
+      if (cell === '█' || cell === '▀')
+        expectedPixels.push(`${col},${row * 2}`);
+      if (cell === '█' || cell === '▄')
+        expectedPixels.push(`${col},${row * 2 + 1}`);
+    }),
+  );
+
+  for (const [variant, choice, duration] of [
+    ['slide', 0.1, 900],
+    ['typing', 0.4, 2070],
+    ['shuffle', 0.8, 1210],
+  ] as const) {
+    test(`${variant} uses the terminal font and docks while pairing loads`, async ({
+      page,
+      pairingURL,
+    }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await freezeStartup(page, choice);
+      await page.goto(pairingURL);
+      const intro = page.locator('.startup');
+      const wordmark = intro.locator('.wordmark');
+      await expect(intro).toHaveAttribute('data-entrance', variant);
+      await page.clock.runFor(32);
+      const large = (await wordmark.boundingBox())!;
+      expect(large.width).toBeCloseTo(1280, 0);
+      expect(large.y + large.height / 2).toBeCloseTo(360, 0);
+      if (variant === 'slide') expect(large.x).toBeGreaterThan(0);
+      else expect(large.x).toBeCloseTo(0, 0);
+      const initial = (await wordmark.getAttribute('data-text'))!;
+      expect(initial.length).toBe(11);
+      if (variant === 'typing') expect(initial.trim()).toBe('');
+      if (variant === 'shuffle') {
+        expect(initial).toMatch(/^[A-Z0-9]{11}$/);
+        [...initial].forEach((letter, index) =>
+          expect(letter).not.toBe('CODEXOMETER'[index]),
+        );
+      }
+      await expect(page.locator('.connection .lamp')).toHaveClass(/lit/);
+      await expect(page.locator('footer')).toContainText(
+        'Session control enabled',
+      );
+      await expect(page.locator('header')).toHaveAttribute('inert', '');
+      await expect(page.locator('main')).toBeHidden();
+      await page.clock.runFor(duration + 30 - 32);
+      await expect(wordmark).toHaveAttribute('data-text', 'CODEXOMETER');
+      const path = await wordmark.locator('path').getAttribute('d');
+      expect(
+        [...path!.matchAll(/M(\d+) (\d+)/g)]
+          .map((match) => `${match[1]},${match[2]}`)
+          .sort(),
+      ).toEqual([...expectedPixels].sort());
+      expect(await wordmark.locator('path').getAttribute('d')).toBe(
+        await page.locator('.brand path').getAttribute('d'),
+      );
+      const full = (await wordmark.boundingBox())!;
+      expect(full.x).toBeCloseTo(0, 0);
+      expect(full.width).toBeCloseTo(large.width, 0);
+      await page.clock.runFor(949);
+      const near = (await wordmark.boundingBox())!;
+      const target = (await page.locator('.brand').boundingBox())!;
+      // The last animation frame may be up to 16 ms before its exact endpoint.
+      expect(Math.abs(near.x - target.x)).toBeLessThan(2);
+      expect(Math.abs(near.y - target.y)).toBeLessThan(2);
+      expect(Math.abs(near.width - target.width)).toBeLessThan(2);
+      await page.clock.runFor(100);
+      await expect(intro).toHaveCount(0);
+      await expect(
+        page.getByRole('link', { name: 'CODEXOMETER', exact: true }),
+      ).toBeVisible();
+      await expect(page.locator('header')).not.toHaveAttribute('inert', '');
+      await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+      await expect(page.locator('.session-row')).toHaveCount(2);
+      await page
+        .getByRole('link', { name: 'CODEXOMETER', exact: true })
+        .click();
+      await expect(page).toHaveURL(/#\/quota\/bars$/);
+      await page.clock.runFor(4000);
+      await expect(intro).toHaveCount(0);
+      await page.reload();
+      await expect(intro).toHaveAttribute('data-entrance', variant);
+      expect(errors).toEqual([]);
+    });
+  }
+
+  test('typing blinks three times and advances its dot through the fixed slots', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.4);
+    await page.goto(pairingURL);
+    const wordmark = page.locator('.startup .wordmark');
+    let elapsed = 0;
+    for (const at of [16, 216, 376, 576, 736, 936]) {
+      await page.clock.runFor(at - elapsed);
+      elapsed = at;
+      await expect(wordmark).toHaveAttribute('data-text', ' '.repeat(11));
+      if ([16, 376, 736].includes(at))
+        await expect(wordmark).toHaveAttribute('data-cursor', '0');
+      else await expect(wordmark).not.toHaveAttribute('data-cursor');
+    }
+    for (let count = 1; count <= 11; count++) {
+      const at = 1096 + (count - 1) * 90;
+      await page.clock.runFor(at - elapsed);
+      elapsed = at;
+      await expect(wordmark).toHaveAttribute(
+        'data-text',
+        'CODEXOMETER'.slice(0, count).padEnd(11),
+      );
+      if (count < 11)
+        await expect(wordmark).toHaveAttribute('data-cursor', String(count));
+      else await expect(wordmark).not.toHaveAttribute('data-cursor');
+    }
+  });
+
+  test('shuffle resolves letters permanently in a random order', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.8);
+    await page.goto(pairingURL);
+    const wordmark = page.locator('.startup .wordmark');
+    let previous: number[] = [];
+    let elapsed = 0;
+    const order: number[] = [];
+    for (let count = 0; count <= 11; count++) {
+      const at = count * 110 + 32;
+      await page.clock.runFor(at - elapsed);
+      elapsed = at;
+      const text = (await wordmark.getAttribute('data-text'))!;
+      const locked = [...text].flatMap((letter, index) =>
+        letter === 'CODEXOMETER'[index] ? [index] : [],
+      );
+      expect(locked.length).toBe(count);
+      for (const index of previous) expect(locked).toContain(index);
+      order.push(...locked.filter((index) => !previous.includes(index)));
+      previous = locked;
+    }
+    expect(order).not.toEqual([...Array(11).keys()]);
+  });
+
+  test('resizing preserves the entrance and fits the final mobile header', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.8);
+    await page.goto(pairingURL);
+    await page.clock.runFor(600);
+    const intro = page.locator('.startup');
+    const wordmark = intro.locator('.wordmark');
+    const before = await wordmark.getAttribute('data-text');
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.clock.runFor(16);
+    await expect(intro).toHaveAttribute('data-entrance', 'shuffle');
+    await expect(wordmark).toHaveAttribute('data-text', before!);
+    const box = (await wordmark.boundingBox())!;
+    expect(box.width).toBeCloseTo(360, 0);
+    expect(box.y + box.height / 2).toBeCloseTo(320, 0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(360);
+    await page.clock.runFor(1700);
+    await expect(intro).toHaveCount(0);
+    await expect(
+      page.getByRole('link', { name: 'CODEXOMETER', exact: true }),
+    ).toBeInViewport();
+    await expect(page.getByLabel('Theme', { exact: true })).toBeInViewport();
+  });
+
+  for (const input of ['key', 'click'] as const) {
+    test(`${input} skips without forwarding an action to the dashboard`, async ({
+      page,
+      pairingURL,
+    }) => {
+      await freezeStartup(page, 0.4);
+      await page.goto(pairingURL);
+      await expect(page.locator('.startup')).toBeVisible();
+      await expect(page.locator('.connection .lamp')).toHaveClass(/lit/);
+      await page.evaluate(() => {
+        location.hash = '#/sessions';
+      });
+      await expect(page.locator('.session-row')).toHaveCount(2);
+      if (input === 'key') await page.keyboard.press('ArrowDown');
+      else await page.mouse.click(40, 30); // The hidden header link lies underneath.
+      await expect(page.locator('.startup')).toHaveCount(0);
+      await expect(page.locator('main')).toBeVisible();
+      await expect(page).toHaveURL(/#\/sessions$/);
+      await expect(page.locator('.session-row').first()).toHaveClass(
+        /selected/,
+      );
+      await page.clock.runFor(5000);
+      await expect(page.locator('.startup')).toHaveCount(0);
+    });
+  }
+
+  test('reduced motion opens directly and can also cancel an active intro', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.4);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(pairingURL);
+    await expect(page.locator('.startup')).toHaveCount(0);
+    await expect(
+      page.getByRole('link', { name: 'CODEXOMETER', exact: true }),
+    ).toBeVisible();
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect(page.locator('.startup')).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator('.startup')).toBeVisible();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(page.locator('.startup')).toHaveCount(0);
+  });
+
+  test('the intro and header use the saved theme and survive stream reconnection', async ({
+    page,
+    pairingURL,
+  }) => {
+    await freezeStartup(page, 0.4);
+    await page.addInitScript(() =>
+      localStorage.setItem('codexometer.web.theme', 'rust'),
+    );
+    const snapshot = {
+      version: 'startup-test',
+      meters: [],
+      credits: [],
+      sessions: [],
+    };
+    await mockStream(page, snapshot);
+    await page.goto(pairingURL);
+    await expect(page.locator('.shell')).toHaveAttribute('data-theme', 'rust');
+    const accent = await page
+      .locator('.brand')
+      .evaluate((element) => getComputedStyle(element).color);
+    expect(
+      await page
+        .locator('.startup')
+        .evaluate((element) => getComputedStyle(element).color),
+    ).toBe(accent);
+    await expect(page.locator('.connection .lamp')).toHaveClass(/lit/);
+    await page.evaluate(
+      (snapshot) =>
+        window.dispatchEvent(
+          new CustomEvent('test-snapshot', { detail: snapshot }),
+        ),
+      { ...snapshot, version: 'fresh-during-intro' },
+    );
+    await expect(page.locator('footer')).toContainText('fresh-during-intro');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('footer')).toBeVisible();
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event('test-disconnect')),
+    );
+    await expect(page.locator('.connection .lamp')).not.toHaveClass(/lit/);
+    await page.clock.runFor(2600);
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-test-streams',
+      '2',
+    );
+    await expect(page.locator('.connection .lamp')).toHaveClass(/lit/);
+    await expect(page.locator('.startup')).toHaveCount(0);
+  });
 });

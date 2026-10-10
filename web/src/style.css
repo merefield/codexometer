@@ -70,14 +70,20 @@ footer,
 header {
   margin-bottom: 10px;
 }
+.shell[data-starting='true'] > header,
+.shell[data-starting='true'] > nav,
+.shell[data-starting='true'] > main,
+.shell[data-starting='true'] > footer {
+  visibility: hidden;
+}
 .brand {
-  font-size: clamp(22px, 2.5vw, 32px);
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  display: block;
+  width: clamp(240px, 32vw, 405px);
+  max-width: calc(100vw - 40px);
   color: var(--accent);
   text-decoration: none;
-  text-shadow: 0 0 22px color-mix(in srgb, var(--accent) 20%, transparent);
 }
+
 header p {
   margin: 3px 0 0;
   color: var(--muted);
