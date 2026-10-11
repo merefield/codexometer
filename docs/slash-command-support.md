@@ -29,6 +29,8 @@ These are proposed priorities for Codexometer's session-monitoring/control role,
 
 Aliases on one row share the rating and implementation. Lifecycle commands share a thread-handoff foundation, so their costs should not be added as independent projects. P1 is a value/need ranking, not a claim that every P1 is a quick win. Work blocked on a foundation comes after that foundation even if it has the same priority.
 
+Local Codexometer support below was updated on **2026-10-11**; the upstream registry snapshot remains 0.162.1.
+
 ## Implemented and partial support
 
 | Command | Support | Priority | Complexity | Implementation and limits |
@@ -44,9 +46,15 @@ Aliases on one row share the rating and implementation. Lifecycle commands share
 | `/mcp` | Browse only | P2 | High | `mcpServerStatus/list` and tool help. No `/mcp login`, resource browser or arbitrary tool invocation. Related APIs exist but need dedicated authentication/execution UI. Proposed next increment: server-specific login/status and verbose inspection. Arbitrary tool execution remains a separate reviewed workflow. |
 | `/hooks` | Browse only | P3 | High | `hooks/list`. No editor/review for lifecycle-hook configuration or its command execution scope. Proposed next increment: a scope-aware hook configuration editor with preview and reload handling. |
 | `/experimental` | Browse only | P3 | Medium | `experimentalFeature/list`. Enablement changes process/configuration scope, rather than a single session; no mutation UI. Proposed next increment: review an advertised enablement change with its process/configuration scope and refresh/restart effects made clear. |
+| `/usage` | Local equivalent | Done | — | Opens the existing Codexometer usage-history view. Existing quota/reset views and their confirmation flows are retained. No account mutation is sent by the alias. |
+| `/copy` | Local equivalent | Done | — | Reuses the selected session’s Copy action and complete observed reply/activity payload. Missing or ineligible text gives feedback. Historical-fragment selection remains outside this increment. |
+| `/theme` | Local equivalent | Done | — | Terminal theme picker and browser’s existing theme selector; persists Codexometer display preferences. Native syntax-theme configuration is outside this scope. |
+| `/exit`, `/quit` | Local equivalents | Done | — | Terminal aliases reuse local Quit. Browser aliases leave full session detail for Sessions; the web server and Codex sessions remain running. |
 | `/statusline` | Local equivalent | Done | — | Codexometer's own footer picker; also available in read-only web mode. Does not edit the native CLI's status line. |
 | `/help` | Local catalogue | Done | — | Codexometer catalogue entry; absent from the upstream registry. |
 | Advertised speed aliases, e.g. `/fast` | Session adapter | Done | — | Show all live model-advertised speeds plus the default in one picker; Up/Down selects, Enter Review stages the choice, and C Confirm commits a verified session override. Global defaults remain out of scope. |
+
+The local `/usage`, `/copy`, `/theme`, `/exit`, `/quit` and `/statusline` entries are merged into the interface catalogue and do not become server RPCs. They work without a shared Codex daemon; browser full detail offers the local catalogue in read-only mode. Slash names are reserved against model-advertised speed aliases.
 
 `/help` is Codexometer's catalogue entry, absent from this upstream registry. Speed aliases such as `/fast` appear only when the current model advertises that tier; IDs are not guessed. They change session overrides rather than native persistent defaults.
 
@@ -77,7 +85,6 @@ These are adapter/workflow gaps. Where an API exists it is listed; this PR only 
 | `/approve` | P1 | High | `thread/approveGuardianDeniedAction` exists; needs exact targeting of a recent automatic-review denial. Ordinary approval buttons are a different action. Proposed next increment: identify the exact retained denied action, review its original scope, confirm the retry and track the result. A generic approval shortcut is insufficient. |
 | `/ps` | P1 | Medium | `thread/backgroundTerminals/list` exists; no list/detail adapter. Telemetry process/session views do not reproduce it. Proposed next increment: a read-only, session-scoped terminal list with command/state detail and refresh; foundation for /stop. |
 | `/stop`, `/clean` | P1 | Medium | `thread/backgroundTerminals/clean` exists; no session-scoped stop-all review and verification. Turn interruption is a different action. Proposed next increment: confirm and verify stop-all for the selected session, using the /ps inventory and leaving other sessions alone. |
-| `/usage` | P1 | Low | `account/usage/read`, rate-limit/reset-credit APIs exist. Usage/reset-token UI already exists; no slash alias opens it. Account reset credits are different from Sessions Zero. Proposed next increment: open the existing usage/reset views through a slash alias; reuse their current confirmation flow rather than adding new account mutations. |
 | `/status` | P1 | Medium | Settings/usage reads exist; detail/footer show related data, but no consolidated status slash view. Proposed next increment: a consolidated read-only view of running configuration, permission scope, directory and usage; live configuration adds work beyond a navigation alias. |
 | `/debug-config` | P2 | Medium | `config/read` with layers and `configRequirements/read` exist; no directory-aware configuration-source/requirements inspector. Proposed next increment: a read-only effective-layer/requirements inspector with bounded display and sensitive-value handling. |
 | `/daybreak` | P3 | Medium | `thread/metadata/update` can save Daybreak choice; no dedicated feature-aware toggle/state adapter. Do not invent an experimental flag ID. Proposed next increment: show availability/current choice and confirm the per-thread metadata update; it must not imply access is granted. |
@@ -99,7 +106,6 @@ These require Codexometer UX, not forwarding the command name to a server.
 | --- | --- | --- | --- |
 | `/agents` | P2 | High | Native agent command center has no adapter; linked-session grouping is not a matching management center. Proposed next increment: a dedicated agent state/management view with capability-aware controls and exact child/root routing. |
 | `/subagents` | P1 | Medium | Linked agents are visible in grouping; no slash picker switches their native CLI views. Proposed next increment: a linked-agent picker with separate child detail and preserved root/draft state; native-client switching is not implied. |
-| `/copy` | P1 | Low | Copy controls exist; no slash alias/picker for the last response or selected transcript parts. Proposed next increment: open the existing session-copy action from a slash alias; selection of arbitrary historical fragments can follow separately. |
 | `/export` | P2 | High | No Markdown export; needs complete paginated history plus a file/download destination. Proposed next increment: complete paginated transcript retrieval and Markdown export with bounded streaming/file/download handling; existing excerpts are insufficient. |
 | `/diff` | P2 | High | No repository diff browser with tracked/untracked handling and explicit repository context. Proposed next increment: a directory-aware tracked/untracked diff view with large/binary-file handling and no inferred repository scope. |
 | `/mention` | P2 | High | No structured file-mention picker or associated attachment/input metadata routing. Proposed next increment: file search/selection plus structured input metadata through review, send/steer and draft handling. |
@@ -109,11 +115,9 @@ These require Codexometer UX, not forwarding the command name to a server.
 | `/raw` | P3 | High | Native raw-scrollback toggle cannot control Codexometer's separate rendering; no equivalent local switch. Proposed next increment: a Codexometer-owned scrollback/copy-friendly rendering mode that preserves live input and state; it is not a server toggle. |
 | `/tui` | P3 | Medium | Chooses native CLI mode for its next launch; no corresponding Codexometer launch-mode picker. Proposed next increment: local next-launch mode preferences with explicit precedence over flags and terminal capability checks. |
 | `/title` | P3 | Medium | No local title-field picker or native title configuration editor. Proposed next increment: a local title-field picker with persistence and safe terminal/browser title updates, reusing statusline field selection. |
-| `/theme` | P2 | Low | Codexometer theme preferences exist; no slash entry reproduces the native syntax-highlighting picker. Proposed next increment: open Codexometer’s existing theme preferences; native syntax-theme parity is a separate, larger feature. |
 | `/pets`, `/pet` | Defer | High | Native terminal-pet picker has no counterpart here. Proposed scope if demanded: terminal/browser pet assets, animation/state and preference UI; cosmetic expansion outside core monitoring. |
 | `/keymap` | P3 | High | No shortcut-remapping editor; native keybindings belong to another interface. Proposed next increment: local remapping with composer/modal precedence, conflict checks and accurate help across all views. |
 | `/vim` | P3 | High | No Vim-mode composer. Proposed next increment: composer modes/editing with Unicode, paste, shortcuts, focus and review-modal interactions verified in both interfaces. |
-| `/exit`, `/quit` | P2 | Low | Existing local Quit controls exit Codexometer, without slash aliases. Native CLI exit/server shutdown has different scope. Proposed next increment: aliases for local Codexometer exit/leave behavior, clearly labelled; never treat them as shared-daemon shutdown or native CLI exit. |
 
 ## Debug entries and older documented names
 
@@ -128,12 +132,12 @@ These require Codexometer UX, not forwarding the command name to a server.
 
 ## Recommended delivery order
 
-1. **Small P1 additions:** `/usage` and `/copy` aliases, then `/status`, `/warnings` and `/ps` read-only views. They build on existing controls and improve visibility before adding more mutations.
+1. **P1 read-only additions:** `/ps`, `/status` and `/warnings` views. The Low-complexity `/usage` and `/copy` aliases are implemented. They build on existing controls and improve visibility before adding more mutations.
 2. **P1 session controls:** `/compact`, the linked-agent `/subagents` picker, and reviewed `/stop`/`clean` built on `/ps`. Add `/approve` as its own High-complexity workflow with exact denied-action targeting.
 3. **P1 lifecycle foundation:** `/new`, `/resume` and `/fork`, sharing subscription, selection, draft and history-handoff handling. Then pursue full `/cd` project-context parity; it depends on this foundation and remains Very high complexity.
-4. **P2 extensions:** inexpensive local `/theme` and `/exit`/`quit` aliases; `/plan` inline prompts, `/goal`, `/archive`, `/debug-config`, daemon diagnostics and reviewed `/init`; then `/review`, `/export`, `/diff`, `/mention`, skill invocation and MCP login/inspection. Put `/clear` after `/new`, agent management after linked-agent navigation, and `/worktree` after lifecycle/project-context support.
+4. **P2 extensions:** `/plan` inline prompts, `/goal`, `/archive`, `/debug-config`, daemon diagnostics and reviewed `/init`; then `/review`, `/export`, `/diff`, `/mention`, skill invocation and MCP login/inspection. Put `/clear` after `/new`, agent management after linked-agent navigation, and `/worktree` after lifecycle/project-context support.
 5. **P3/Defer:** optional global/account, import, installation, sandbox, daemon lifecycle, keymap and composer-mode work require explicit scope and demand. Treat daemon diagnostics as the smaller first step to its P2 workflow. Voice, IDE integration and pets should not displace core monitoring/control work. Exclude internal debug and retired/unregistered names.
 
-The next small PR should cover **`/usage`, `/copy`, `/status`, `/warnings` and `/ps`**. Subsequent PRs can add compaction and background-terminal stopping using those views. Full directory-context transitions need a separate design and PR covering project configuration/trust loading, conversation handoff and attached-client behavior.
+The next PR should cover **`/ps`**, a Medium-complexity read-only background-terminal inventory. Add **`/status`** and **`/warnings`** as separate read-only increments. The four Low-complexity families (`/usage`, `/copy`, `/theme`, `/exit`/`quit`) are now implemented. Subsequent PRs can add compaction and background-terminal stopping using those views. Full directory-context transitions need a separate design and PR covering project configuration/trust loading, conversation handoff and attached-client behavior.
 
 For future updates, compare both the next installed version's registry and generated protocol. Omission from the published list is not evidence that a command is unsupported.

@@ -8,14 +8,6 @@ import (
 	"github.com/merefield/codexometer/internal/statusline"
 )
 
-func localStatusLineChoice() codex.SessionCommandChoice {
-	return codex.SessionCommandChoice{ID: "local-statusline", Label: "/statusline", Help: "Choose multiple fields for Codexometer's detail footer. Saved display preferences only.", Next: "statusline"}
-}
-
-func localCommandsMenu() codex.SessionCommandMenu {
-	return codex.SessionCommandMenu{Title: "/ COMMANDS", Help: "Codex catalogue unavailable. Local display settings remain available.", Choices: []codex.SessionCommandChoice{localStatusLineChoice()}}
-}
-
 func (m Model) statusLineMenu() codex.SessionCommandMenu {
 	menu := codex.SessionCommandMenu{Title: "/statusline", Path: "statusline", Multiple: true, Help: "Choose fields for Codexometer's detail footer. Space/Enter toggles; C applies; Escape cancels. Left/Right reorders. This does not change Codex CLI configuration. Missing telemetry is omitted."}
 	selected := statusline.Normalize(m.monitorStatusLine)

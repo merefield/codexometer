@@ -364,6 +364,9 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 }
 
 func commandReserved(s string) bool {
+	if IsLocalSessionCommand(s) {
+		return true
+	}
 	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
 		if s == name {
 			return true

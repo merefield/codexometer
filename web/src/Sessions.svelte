@@ -12,6 +12,8 @@
   import SessionActions from './SessionActions.svelte';
   import StatusLine from './StatusLine.svelte';
   import SessionCopy from './SessionCopy.svelte';
+  import SessionCommands from './SessionCommands.svelte';
+  let copyControl: SessionCopy | undefined = $state();
   import FileDiff from './FileDiff.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
@@ -348,6 +350,7 @@
         {#if live.data?.control}
           {#key selected.id}<SessionActions
               session={selected.id}
+              oncopy={() => copyControl?.copy()}
               openScheduler={new URLSearchParams(router.querystring).get(
                 'schedule',
               ) === 'edit'}
@@ -358,7 +361,14 @@
                 nativeProtected = value;
               }}
             />{/key}
-        {:else}<p class="notice">Read only — reply or approve in Codex.</p>{/if}
+        {:else}<div>
+            <p class="notice">Read only — reply or approve in Codex.</p>
+            {#key selected.id}<SessionCommands
+                session={selected.id}
+                localOnly
+                oncopy={() => copyControl?.copy()}
+              />{/key}
+          </div>{/if}
       </div>
       {#each profiles.filter((p) => p.session === selected.id) as profile (profile.session)}
         <section id={'quota-profile-' + selected.id} class="profile-review">
@@ -377,6 +387,7 @@
         </section>
       {/each}
       {#if !profileFocused}{#key selected.id}<SessionCopy
+            bind:this={copyControl}
             session={selected}
             active
           />{/key}{/if}

@@ -79,6 +79,28 @@ type SessionCommandMenu struct {
 	Choices    []SessionCommandChoice `json:"choices"`
 }
 
+// LocalSessionCommands are owned by the interface and never become app-server RPCs.
+func LocalSessionCommands() []SessionCommandChoice {
+	return []SessionCommandChoice{
+		{ID: "local-statusline", Label: "/statusline", Help: "Choose fields for Codexometer’s detail footer. Saved display preferences only.", Next: "statusline"},
+		{ID: "local-usage", Label: "/usage", Help: "Open Codexometer’s usage history. Existing quota and reset views remain available.", Next: "usage"},
+		{ID: "local-copy", Label: "/copy", Help: "Copy the selected session’s observed reply or activity using Codexometer’s copy control.", Next: "copy"},
+		{ID: "local-theme", Label: "/theme", Help: "Choose a Codexometer display theme. Saved local display preferences only.", Next: "theme"},
+		{ID: "local-exit", Label: "/exit", Help: "Leave this Codexometer interface. Codex sessions continue running.", Next: "exit"},
+		{ID: "local-quit", Label: "/quit", Help: "Alias for /exit. Codex sessions continue running.", Next: "quit"},
+	}
+}
+
+func IsLocalSessionCommand(path string) bool {
+	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
+	for _, choice := range LocalSessionCommands() {
+		if choice.Next == path {
+			return true
+		}
+	}
+	return false
+}
+
 type SessionCommandsClient interface {
 	SessionCommands(context.Context, string, string) (SessionCommandMenu, error)
 	ExecuteSessionCommand(context.Context, string, string, string, string) error

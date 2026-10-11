@@ -121,7 +121,7 @@ func TestMonitorSuggestionPopupShrinksWithoutMovingComposer(t *testing.T) {
 		w, h := m.monitorPromptSize()
 		composerRows := m.monitorPromptRows(w, h)
 		initial, _ := m.monitorSuggestionPopup()
-		if initial.height != 5 { // three commands and a two-line border
+		if initial.height != len(m.suggestionChoices())+2 { // all commands and a two-line border
 			t.Fatalf("mode %d: popup height %d", mode, initial.height)
 		}
 		for _, step := range []struct {

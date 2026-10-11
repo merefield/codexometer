@@ -1,15 +1,20 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import { controlRequest, live } from './state.svelte';
-  import { statusLineUI } from './preferences.svelte';
+  import { statusLineUI, themeUI } from './preferences.svelte';
+  import { sessionCopyText } from './session-copy';
   let {
     session,
     query = '',
+    localOnly = false,
+    oncopy = () => {},
     onchange = () => {},
     oncomplete = (_text: string) => {},
   }: {
     session: string;
     query?: string;
+    localOnly?: boolean;
+    oncopy?: () => void | Promise<void>;
     onchange?: () => void;
     oncomplete?: (text: string) => void;
   } = $props();
@@ -33,6 +38,92 @@
     inputLabel?: string;
     inputLimit?: number;
     value?: string;
+  }
+  const localPaths = ['statusline', 'usage', 'copy', 'theme', 'exit', 'quit'];
+  function localChoices(): Choice[] {
+    return [
+      {
+        id: 'local-statusline',
+        label: '/statusline',
+        help: 'Choose fields for Codexometer’s detail footer.',
+        next: 'statusline',
+      },
+      {
+        id: 'local-usage',
+        label: '/usage',
+        help: 'Open Codexometer’s usage history. Quota and reset views remain available.',
+        next: 'usage',
+      },
+      {
+        id: 'local-copy',
+        label: '/copy',
+        help: 'Copy the selected session’s observed reply or activity with its Copy control.',
+        next: 'copy',
+      },
+      {
+        id: 'local-theme',
+        label: '/theme',
+        help: 'Open the existing Codexometer theme selector. Saved browser display preferences only.',
+        next: 'theme',
+      },
+      {
+        id: 'local-exit',
+        label: '/exit',
+        help: 'Leave session detail and return to Sessions. The local server remains running.',
+        next: 'exit',
+      },
+      {
+        id: 'local-quit',
+        label: '/quit',
+        help: 'Alias for /exit: return to Sessions. The local server remains running.',
+        next: 'quit',
+      },
+    ];
+  }
+  function localMenu(): Menu {
+    return {
+      title: '/ COMMANDS',
+      help: 'Local Codexometer commands remain available without session control.',
+      path: '',
+      revision: '',
+      choices: localChoices(),
+    };
+  }
+  function finishLocal() {
+    request++;
+    busy = false;
+    open = false;
+    dismissedQuery = query;
+    confirmation = '';
+    stagedChoice = '';
+    expires = 0;
+    history = [];
+    notice = '';
+    if (slash) onchange();
+    else oncomplete(query);
+  }
+  async function runLocal(path: string): Promise<boolean> {
+    if (!localPaths.includes(path)) return false;
+    if (
+      path === 'copy' &&
+      !sessionCopyText(live.data?.sessions.find((row) => row.id === session))
+    ) {
+      notice =
+        'No reply or activity text is available to copy for this session.';
+      return true;
+    }
+    if (path === 'copy') {
+      const operation = oncopy();
+      finishLocal();
+      await operation;
+    } else {
+      finishLocal();
+      if (path === 'usage') location.hash = '/usage';
+      else if (path === 'theme') themeUI.requests++;
+      else if (path === 'statusline') statusLineUI.open = true;
+      else location.hash = '/sessions';
+    }
+    return true;
   }
   let open = $state(false),
     busy = $state(false),
@@ -185,7 +276,7 @@
       !open ||
       (!browsing && !selected && !menu?.input) ||
       (!slash && !inside) ||
-      unavailable ||
+      (unavailable && !localOnly) ||
       event.isComposing ||
       event.ctrlKey ||
       event.metaKey ||
@@ -273,7 +364,7 @@
   }
 
   $effect(() => {
-    if (unavailable) {
+    if (unavailable && !localOnly) {
       request++;
       busy = false;
       confirmation = '';
@@ -287,7 +378,12 @@
     }
   });
   $effect(() => {
-    if (slash && !open && query !== dismissedQuery && !unavailable) {
+    if (
+      slash &&
+      !open &&
+      query !== dismissedQuery &&
+      (!unavailable || localOnly)
+    ) {
       open = true;
       void load('');
     }
@@ -302,6 +398,12 @@
     confirmation = '';
     expires = 0;
     notice = '';
+    if (localOnly) {
+      menu = localMenu();
+      selectedIndex = restore?.index ?? 0;
+      busy = false;
+      return;
+    }
     try {
       const result = await controlRequest<Menu>('commands', {
         session,
@@ -309,12 +411,12 @@
       });
       if (seq === request) {
         if (path === '' || path === 'help')
-          result.choices.push({
-            id: 'local-statusline',
-            label: '/statusline',
-            help: 'Choose multiple fields for Codexometer’s detail footer.',
-            next: 'statusline',
-          });
+          result.choices = [
+            ...result.choices.filter(
+              (o) => !localPaths.includes(o.label.replace(/^\//, '')),
+            ),
+            ...localChoices(),
+          ];
         menu = result;
         selectedIndex = restore
           ? Math.min(restore.index, Math.max(result.choices.length - 1, 0))
@@ -343,22 +445,10 @@
     } catch {
       if (seq === request) {
         notice = 'Command catalogue unavailable. Use Codex.';
-        if (path === '' || path === 'help')
-          menu = {
-            title: '/ COMMANDS',
-            help: 'Local display settings remain available.',
-            path: '',
-            revision: '',
-            choices: [
-              {
-                id: 'local-statusline',
-                label: '/statusline',
-                help: 'Choose multiple fields for Codexometer’s detail footer.',
-                next: 'statusline',
-              },
-            ],
-          };
-        else
+        if (path === '' || path === 'help') {
+          menu = localMenu();
+          notice = '';
+        } else
           menu = {
             title: '/' + path,
             help: '',
@@ -372,16 +462,12 @@
     }
   }
   async function choose(o: Choice) {
-    if (o.unavailable || busy || (notice && o.next !== 'statusline')) return;
+    if (o.unavailable || busy) return;
+    if (o.next && (await runLocal(o.next))) return;
+    if (notice) return;
     if (menu?.picker) {
       highlight(choices.findIndex((choice) => choice.id === o.id));
       optionList?.focus();
-      return;
-    }
-    if (o.next === 'statusline') {
-      statusLineUI.open = true;
-      open = false;
-      dismissedQuery = query;
       return;
     }
     if (o.next) {
@@ -482,7 +568,7 @@
       role={picking ? 'option' : undefined}
       aria-selected={picking ? selectedIndex === index : undefined}
       tabindex={picking ? -1 : undefined}
-      disabled={busy || unavailable}
+      disabled={busy || (unavailable && !localOnly)}
       title={o.help}
       aria-label={o.label +
         (picking && o.selected ? ' // CURRENT' : '') +
@@ -497,7 +583,7 @@
       }}
       ><span class="command-name">{o.label}</span><span class="command-tail"
         >{picking && o.selected ? ' // CURRENT' : ''}{availability(o)}</span
-      >{#if (slash && menu?.path === '') || picking}<span class="command-help"
+      >{#if menu?.path === '' || picking}<span class="command-help"
           >{o.help}</span
         >{/if}</button
     >{/each}
@@ -505,7 +591,7 @@
 
 <section aria-label="Session slash commands" class="slash-commands">
   <button
-    disabled={unavailable || busy}
+    disabled={(unavailable && !localOnly) || busy}
     onclick={() => {
       open = !open;
       dismissedQuery = open ? null : query;
@@ -551,7 +637,7 @@
               aria-label={menu.inputLabel || 'Session name'}
               bind:value={name}
               maxlength={menu.inputLimit || 512}
-              disabled={busy || unavailable}
+              disabled={busy || (unavailable && !localOnly)}
             /></label
           >
         </form>
@@ -633,19 +719,21 @@
             {#if reviewed}<button
                 data-command-confirm
                 onclick={commit}
-                disabled={busy || unavailable}>C CONFIRM CHANGE</button
+                disabled={busy || (unavailable && !localOnly)}
+                >C CONFIRM CHANGE</button
               >
             {:else}<button
                 onclick={() => {
                   if (currentChoice) void reviewChoice(currentChoice);
                 }}
-                disabled={busy || unavailable}>ENTER REVIEW</button
+                disabled={busy || (unavailable && !localOnly)}
+                >ENTER REVIEW</button
               >{/if}
           {:else if !selected && currentChoice && !currentChoice.unavailable}<button
               onclick={() => {
                 if (currentChoice) void choose(currentChoice);
               }}
-              disabled={busy || unavailable}
+              disabled={busy || (unavailable && !localOnly)}
               >ENTER {currentChoice.next ? 'OPEN' : 'HELP'}</button
             >{/if}
         {/if}

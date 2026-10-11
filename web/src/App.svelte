@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Router, { router } from 'svelte-spa-router';
   import { connect, live } from './state.svelte';
   import Quota from './Quota.svelte';
@@ -8,7 +8,7 @@
   import Missing from './Missing.svelte';
   import BlockLogo from './BlockLogo.svelte';
   import Startup from './Startup.svelte';
-  import { preferences, savePreferences } from './preferences.svelte';
+  import { preferences, savePreferences, themeUI } from './preferences.svelte';
 
   const routes = {
     '/': Quota,
@@ -24,6 +24,14 @@
   };
   let theme = $state('hacker');
   let starting = $state(true);
+  let themeControl: HTMLSelectElement | undefined = $state();
+  $effect(() => {
+    if (!themeUI.requests) return;
+    void tick().then(() => {
+      themeControl?.focus();
+      themeControl?.scrollIntoView({ block: 'nearest' });
+    });
+  });
   let brand = $state<HTMLAnchorElement>();
   const themes = ['hacker', 'rust', 'blue-steel', 'ultraviolet', 'nightshade'];
   $effect(() => {
@@ -101,6 +109,7 @@
     <label
       >THEME // <select
         aria-label="Theme"
+        bind:this={themeControl}
         bind:value={theme}
         onchange={changeTheme}
         >{#each themes as name}<option value={name}

@@ -1,17 +1,10 @@
 <script lang="ts">
   import type { Session } from './state.svelte';
+  import { sessionCopyText } from './session-copy';
   let { session, active = false }: { session: Session; active?: boolean } =
     $props();
-  let payload = $derived(
-    session.text ||
-      (session.contextKind === 'LAST ACTIVITY'
-        ? session.workingCommand || ''
-        : ''),
-  );
-  let available = $derived(
-    ['LAST REPLY', 'LAST ACTIVITY'].includes(session.contextKind) &&
-      !!payload.trim(),
-  );
+  let payload = $derived(sessionCopyText(session));
+  let available = $derived(!!payload);
   let busy = $state(false);
   let notice = $state('');
   let flashed = $state(false);
@@ -28,7 +21,7 @@
     session.status;
     notice = '';
   });
-  async function copy() {
+  export async function copy() {
     if (!available || busy) return;
     const text = payload;
     busy = true;

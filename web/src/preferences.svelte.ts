@@ -72,6 +72,7 @@ function read(): Preferences {
 }
 export const preferences = $state<Preferences>(read());
 export const statusLineUI = $state({ open: false });
+export const themeUI = $state({ requests: 0 });
 export function savePreferences() {
   const value = JSON.stringify(preferences);
   try {

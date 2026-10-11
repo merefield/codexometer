@@ -12,6 +12,7 @@
     suspended = false,
     openScheduler = false,
     onProtectedChange = (_protected: boolean) => {},
+    oncopy = () => {},
   }: {
     session: string;
     observedCommand?: string;
@@ -20,6 +21,7 @@
     suspended?: boolean;
     openScheduler?: boolean;
     onProtectedChange?: (protectedState: boolean) => void;
+    oncopy?: () => void | Promise<void>;
   } = $props();
   interface Offer {
     fileChanges?: FileDiffLine[];
@@ -631,6 +633,7 @@
               <SessionCommands
                 bind:this={commandBrowser}
                 {session}
+                {oncopy}
                 query={answers[0] || ''}
                 oncomplete={(text) => {
                   answers = [text];

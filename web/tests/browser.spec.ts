@@ -1349,7 +1349,7 @@ test('slash commands discover help and require a separate confirmation', async (
   const initialPopup = await popup.boundingBox();
   const initialComposer = await text.boundingBox();
   const initialOptions = await popup.locator('.command-options button').all();
-  expect(initialOptions).toHaveLength(2);
+  expect(initialOptions).toHaveLength(7);
   const firstOption = await initialOptions[0].boundingBox();
   const secondOption = await initialOptions[1].boundingBox();
   expect(secondOption!.y).toBeGreaterThanOrEqual(
@@ -4305,4 +4305,190 @@ test('blocked speed options explain availability and refresh without offering re
     panel.getByRole('button', { name: 'ENTER REVIEW', exact: true }),
   ).toBeEnabled();
   await expect(panel).not.toContainText('WAITING FOR IDLE');
+});
+
+for (const control of [false, true]) {
+  for (const command of ['usage', 'copy', 'theme', 'exit', 'quit']) {
+    test(`local /${command} uses existing controls (control=${control})`, async ({
+      page,
+      pairingURL,
+    }) => {
+      const payload =
+        'Observed reply\n' + 'offscreen reply\n'.repeat(80) + 'LAST LINE';
+      const commands: string[] = [];
+      const mutations: string[] = [];
+      if (control) {
+        const { calls } = await mockActions(page, 'prompt');
+        await page.route('**/api/control/commands', async (route) => {
+          const command = route.request().postDataJSON().command;
+          commands.push(command.mode);
+          expect(command.mode).toBe('list');
+          await route.fulfill({
+            json: {
+              title: '/ COMMANDS',
+              help: 'Live commands',
+              path: '',
+              revision: 'r',
+              choices: [],
+            },
+          });
+        });
+        page.on('request', (req) => {
+          if (/\/api\/control\/(prepare|commit)$/.test(req.url()))
+            mutations.push(req.url());
+        });
+        // Existing prompt/offer reads remain available; local aliases never submit them.
+        expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+      } else {
+        await mockStream(page, {
+          control: false,
+          version: 'test',
+          sessionsAt: new Date().toISOString(),
+          meters: [],
+          credits: [],
+          creditCount: 0,
+          usage: null,
+          sessions: [
+            {
+              id: 'parent',
+              directory: '/work',
+              tokens: 1,
+              agents: 0,
+              status: 'TURN COMPLETE',
+              contextKind: 'LAST REPLY',
+              text: payload,
+              command: '',
+              source: 'LOCAL',
+              activity: '',
+              samples: [],
+            },
+          ],
+        });
+        page.on('request', (req) => {
+          if (req.url().includes('/api/control/')) mutations.push(req.url());
+        });
+      }
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text: string) => {
+              (window as unknown as { copied: string }).copied = text;
+            },
+          },
+        });
+      });
+      await page.goto(pairingURL);
+      await page.evaluate(() => {
+        location.hash = '/sessions/parent';
+      });
+      const panel = page.getByRole('region', {
+        name: 'Session slash commands',
+      });
+      const text = page.getByRole('textbox', { name: 'Follow-up message' });
+      if (control) {
+        await text.fill('/' + command);
+        await expect(
+          panel.getByRole('button', {
+            name: '/' + command + ' →',
+            exact: true,
+          }),
+        ).toBeEnabled();
+        await text.press('Enter');
+      } else {
+        await panel
+          .getByRole('button', { name: '/ COMMANDS', exact: true })
+          .click();
+        await panel
+          .getByRole('button', { name: '/' + command + ' →', exact: true })
+          .click();
+      }
+      if (command === 'usage') await expect(page).toHaveURL(/#\/usage$/);
+      else if (command === 'exit' || command === 'quit') {
+        await expect(page).toHaveURL(/#\/sessions$/);
+        await expect(page.locator('.full-detail')).toHaveCount(0);
+      } else if (command === 'copy') {
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => (window as unknown as { copied: string }).copied,
+            ),
+          )
+          .toBe(control ? 'Synthetic test context' : payload);
+        await expect(page.locator('.session-copy')).toContainText('Copied.');
+        if (control) await expect(text).toHaveValue('');
+      } else {
+        const theme = page.getByLabel('Theme', { exact: true });
+        await expect(theme).toBeFocused();
+        if (control) await expect(text).toHaveValue('');
+        await theme.selectOption('rust');
+        await expect(page.locator('.shell')).toHaveAttribute(
+          'data-theme',
+          'rust',
+        );
+        await expect
+          .poll(() =>
+            page.evaluate(() => localStorage.getItem('codexometer.web.theme')),
+          )
+          .toBe('rust');
+        await page.reload();
+        await expect(page.locator('.shell')).toHaveAttribute(
+          'data-theme',
+          'rust',
+        );
+      }
+      expect(mutations).toEqual([]);
+      expect(commands.every((mode) => mode === 'list')).toBe(true);
+    });
+  }
+}
+
+test('local copy explains unavailable text and preserves its slash draft', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page, 'prompt');
+  await page.route('**/api/control/commands', (route) =>
+    route.fulfill({
+      json: {
+        title: '/ COMMANDS',
+        help: 'Commands',
+        path: '',
+        revision: 'r',
+        choices: [],
+      },
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.evaluate(
+    (detail) => {
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail }));
+      location.hash = '/sessions/parent';
+    },
+    {
+      ...snapshot,
+      sessions: snapshot.sessions.map((row) => ({
+        ...row,
+        text: '',
+        contextKind: 'LAST REPLY',
+      })),
+    },
+  );
+  const text = page.getByRole('textbox', { name: 'Follow-up message' });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await text.fill('/copy');
+  await expect(
+    panel.getByRole('button', { name: '/copy →', exact: true }),
+  ).toBeEnabled();
+  await text.press('Enter');
+  await expect(panel).toContainText(
+    'No reply or activity text is available to copy for this session.',
+  );
+  await expect(text).toHaveValue('/copy');
+  expect(
+    calls.filter((call) => ['prepare', 'commit'].includes(call.action)),
+  ).toHaveLength(0);
+  await panel.getByRole('button', { name: 'ESC CANCEL', exact: true }).click();
+  await expect(text).toBeFocused();
+  await expect(text).toHaveValue('/copy');
 });

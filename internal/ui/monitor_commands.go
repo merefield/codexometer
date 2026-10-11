@@ -49,20 +49,34 @@ func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 	p.until = time.Time{}
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
 	p.menu.Path = path
-	if strings.TrimPrefix(strings.TrimSpace(path), "/") == "statusline" {
+	if menu, local := m.localMonitorMenu(path); local {
+		p.input.Blur()
 		p.busy = false
 		p.detail = false
 		p.notice = ""
 		p.selected = 0
 		p.scroll = 0
 		p.request++
-		p.menu = m.statusLineMenu()
+		p.menu = menu
+		if path == "theme" {
+			p.selected = int(m.theme)
+		}
+		if p.restore != nil {
+			p.selected = min(p.restore.selected, max(len(menu.Choices)-1, 0))
+			p.restore = nil
+		}
 		return nil
 	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
 	if !ok {
 		if path == "" || path == "help" {
-			p.menu = localCommandsMenu()
+			p.menu = m.localCommandsMenu()
+			p.detail = false
+			p.scroll = 0
+			if p.restore != nil {
+				p.selected = min(p.restore.selected, len(p.menu.Choices)-1)
+				p.restore = nil
+			}
 			p.busy = false
 			p.notice = ""
 			return nil
@@ -139,7 +153,10 @@ func (m *Model) cancelMonitorCommands() tea.Cmd {
 
 func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
-	if _, ok := m.fetcher.(codex.SessionCommandsClient); !ok && path != "statusline" && path != "" && path != "help" {
+	if updated, cmd, local := m.runLocalMonitorCommand(path); local {
+		return updated, cmd, true
+	}
+	if _, ok := m.fetcher.(codex.SessionCommandsClient); !ok && !codex.IsLocalSessionCommand(path) && path != "" && path != "help" {
 		m.monitorPrompt.notice = "Slash commands require the shared app-server."
 		return m, nil, true
 	}
@@ -175,6 +192,9 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	if o.Next != "" {
+		if updated, cmd, local := m.runLocalMonitorCommand(o.Next); local {
+			return updated, cmd, true
+		}
 		cmd := m.navigateMonitorCommands(o.Next)
 		return m, cmd, true
 	}
@@ -307,7 +327,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 	for i := start; i < min(start+capacity, len(p.menu.Choices)); i++ {
 		o := p.menu.Choices[i]
 		label := o.Label
-		if p.menu.Picker && o.Selected {
+		if (p.menu.Picker || p.menu.Path == "theme") && o.Selected {
 			label += " // CURRENT"
 		}
 		if p.menu.Multiple {
@@ -316,14 +336,14 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 				mark = "[x] "
 			}
 			label = mark + label + " // " + o.Help
-		} else if o.Next != "" {
+		} else if o.Next != "" && o.Unavailable == "" && p.menu.Path != "theme" {
 			label += " →"
 		} else if o.Unavailable != "" {
 			label += " // UNAVAILABLE"
 			if strings.HasPrefix(o.Unavailable, "Waiting for idle.") {
 				label = strings.TrimSuffix(label, " // UNAVAILABLE") + " // WAITING FOR IDLE"
 			}
-		} else if !o.Action {
+		} else if !o.Action && o.Next == "" {
 			label += " // HELP"
 		}
 		rows = append(rows, commandDisplayRow{text: ansi.Truncate(label, w, "…"), choice: i, action: "choose"})
@@ -350,7 +370,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			rows = append(rows, commandDisplayRow{text: line, choice: -1})
 		}
 	}
-	if p.menu.Picker && len(rows) < capacity {
+	if (p.menu.Picker || p.menu.Path == "" || p.menu.Path == "help") && len(rows) < capacity {
 		if o, ok := m.commandChoice(); ok {
 			rows = append(rows, commandDisplayRow{choice: -1})
 			for _, line := range strings.Split(ansi.Hardwrap(o.Help, w, true), "\n") {
@@ -387,7 +407,11 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	}
 	if o, ok := m.commandChoice(); ok && !p.detail && !p.menu.Multiple && !p.busy && p.notice == "" && o.Unavailable == "" && !o.Action {
 		if o.Next != "" {
-			buttons = append(buttons, commandDisplayRow{text: "[ ENTER OPEN ]", action: "stage"})
+			label := "[ ENTER OPEN ]"
+			if p.menu.Path == "theme" {
+				label = "[ ENTER APPLY ]"
+			}
+			buttons = append(buttons, commandDisplayRow{text: label, action: "stage"})
 		} else {
 			buttons = append(buttons, commandDisplayRow{text: "[ ENTER HELP ]", action: "stage"})
 		}
@@ -473,7 +497,11 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			p.notice = ""
 			if r.err != nil {
 				if !r.applied && (r.path == "" || r.path == "help") {
-					p.menu = localCommandsMenu()
+					p.menu = m.localCommandsMenu()
+					if p.restore != nil {
+						p.selected = min(p.restore.selected, len(p.menu.Choices)-1)
+						p.restore = nil
+					}
 				} else {
 					p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
 				}
@@ -504,6 +532,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				return m, cmd, true
 			} else {
 				p.menu = r.menu
+				if p.menu.Path == "" || p.menu.Path == "help" {
+					p.menu = m.withLocalCommands(p.menu)
+				}
 				restore := p.restore
 				p.restore = nil
 				if restore != nil {
@@ -534,9 +565,6 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				if (strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")) && len(p.menu.Choices) == 1 {
 					p.detail = true
 					p.until = time.Now().Add(30 * time.Second)
-				}
-				if p.menu.Path == "" || p.menu.Path == "help" {
-					p.menu.Choices = append(p.menu.Choices, localStatusLineChoice())
 				}
 			}
 		}

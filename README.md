@@ -1590,7 +1590,10 @@ it again. Enter still submits rather than inserting a newline. This is a text
 editor, with the catalogue-backed slash-command subset described below. Secret answers retain a single-line
 masked password field.
 
-**Live slash commands (shared app-server):** type `/` in the ordinary composer
+**Slash commands:** local `/usage`, `/copy`, `/theme`, `/exit`/`quit` and
+`/statusline` work without a shared Codex daemon. Read-only browser full detail
+offers these through **/ COMMANDS**. Live session-setting commands require the
+shared app-server and writable browser control. Type `/` in the ordinary composer
 to see a vertical popup with supplied help. Typing `/mo` filters to matching commands;
 the popup shrinks as candidates drop out without moving the composer. Longer
 lists scroll within the available space (arrows or mouse wheel in the terminal).
@@ -1627,6 +1630,10 @@ are clickable. Writable web mode exposes the same catalogue through
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+| `/usage` | **Local:** open Codexometer’s existing usage history. Quota/reset views retain their existing controls and confirmation. |
+| `/copy` | **Local:** reuse the selected session’s Copy action, copying the full observed reply/activity text. Ineligible or missing text gives feedback. |
+| `/theme` | **Local:** choose and save a Codexometer display theme; terminal picker or existing browser theme selector. |
+| `/exit`, `/quit` | **Local:** quit the Codexometer terminal interface; in the browser, leave session detail for Sessions. Codex sessions and the browser server continue running. |
 | `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. Works without the shared daemon. |
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
