@@ -515,5 +515,18 @@
   "sending": "wird gesendet",
   "uncertain": "unklar",
   "sent": "gesendet",
-  "Could not open web link.": "Weblink konnte nicht geöffnet werden."
+  "Could not open web link.": "Weblink konnte nicht geöffnet werden.",
+  "UNAVAILABLE": "NICHT VERFÜGBAR",
+  "WAITING FOR IDLE": "WARTE AUF LEERLAUF",
+  "Waiting for idle. Refresh options when this turn finishes.": "Warte auf Leerlauf. Aktualisiere die Optionen, wenn dieser Durchgang beendet ist.",
+  "Refresh when this turn finishes.": "Aktualisiere nach Ende dieses Durchgangs.",
+  "[ ENTER REVIEW ]": "[ ENTER PRÜFEN ]",
+  "[ C APPLY ]": "[ C ANWENDEN ]",
+  "[ C CONFIRM ]": "[ C BESTÄTIGEN ]",
+  "[ ENTER OPEN ]": "[ ENTER ÖFFNEN ]",
+  "[ ENTER APPLY ]": "[ ENTER ANWENDEN ]",
+  "[ ENTER HELP ]": "[ ENTER HILFE ]",
+  "[ ← BACK ]": "[ ← ZURÜCK ]",
+  "[ F REFRESH ]": "[ F AKTUALISIEREN ]",
+  "[ ESC CANCEL ]": "[ ESC ABBRECHEN ]"
 }

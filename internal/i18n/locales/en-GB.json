@@ -515,5 +515,18 @@
   "sending": "sending",
   "uncertain": "uncertain",
   "sent": "sent",
-  "Could not open web link.": "Could not open web link."
+  "Could not open web link.": "Could not open web link.",
+  "UNAVAILABLE": "UNAVAILABLE",
+  "WAITING FOR IDLE": "WAITING FOR IDLE",
+  "Waiting for idle. Refresh options when this turn finishes.": "Waiting for idle. Refresh options when this turn finishes.",
+  "Refresh when this turn finishes.": "Refresh when this turn finishes.",
+  "[ ENTER REVIEW ]": "[ ENTER REVIEW ]",
+  "[ C APPLY ]": "[ C APPLY ]",
+  "[ C CONFIRM ]": "[ C CONFIRM ]",
+  "[ ENTER OPEN ]": "[ ENTER OPEN ]",
+  "[ ENTER APPLY ]": "[ ENTER APPLY ]",
+  "[ ENTER HELP ]": "[ ENTER HELP ]",
+  "[ ← BACK ]": "[ ← BACK ]",
+  "[ F REFRESH ]": "[ F REFRESH ]",
+  "[ ESC CANCEL ]": "[ ESC CANCEL ]"
 }

@@ -515,5 +515,18 @@
   "sending": "lähetetään",
   "uncertain": "epäselvä",
   "sent": "lähetetty",
-  "Could not open web link.": "Verkkolinkkiä ei voitu avata."
+  "Could not open web link.": "Verkkolinkkiä ei voitu avata.",
+  "UNAVAILABLE": "EI SAATAVILLA",
+  "WAITING FOR IDLE": "ODOTTAA JOUTOTILAA",
+  "Waiting for idle. Refresh options when this turn finishes.": "Odottaa joutotilaa. Päivitä vaihtoehdot tämän vuoron päätyttyä.",
+  "Refresh when this turn finishes.": "Päivitä tämän vuoron päätyttyä.",
+  "[ ENTER REVIEW ]": "[ ENTER TARKISTA ]",
+  "[ C APPLY ]": "[ C KÄYTÄ ]",
+  "[ C CONFIRM ]": "[ C VAHVISTA ]",
+  "[ ENTER OPEN ]": "[ ENTER AVAA ]",
+  "[ ENTER APPLY ]": "[ ENTER KÄYTÄ ]",
+  "[ ENTER HELP ]": "[ ENTER OHJE ]",
+  "[ ← BACK ]": "[ ← TAKAISIN ]",
+  "[ F REFRESH ]": "[ F PÄIVITÄ ]",
+  "[ ESC CANCEL ]": "[ ESC PERUUTA ]"
 }

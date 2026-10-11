@@ -515,5 +515,18 @@
   "sending": "enviando",
   "uncertain": "incierto",
   "sent": "enviado",
-  "Could not open web link.": "No se pudo abrir el enlace web."
+  "Could not open web link.": "No se pudo abrir el enlace web.",
+  "UNAVAILABLE": "NO DISPONIBLE",
+  "WAITING FOR IDLE": "ESPERANDO INACTIVIDAD",
+  "Waiting for idle. Refresh options when this turn finishes.": "Esperando inactividad. Actualiza las opciones cuando termine este turno.",
+  "Refresh when this turn finishes.": "Actualiza cuando termine este turno.",
+  "[ ENTER REVIEW ]": "[ ENTER REVISAR ]",
+  "[ C APPLY ]": "[ C APLICAR ]",
+  "[ C CONFIRM ]": "[ C CONFIRMAR ]",
+  "[ ENTER OPEN ]": "[ ENTER ABRIR ]",
+  "[ ENTER APPLY ]": "[ ENTER APLICAR ]",
+  "[ ENTER HELP ]": "[ ENTER AYUDA ]",
+  "[ ← BACK ]": "[ ← ATRÁS ]",
+  "[ F REFRESH ]": "[ F ACTUALIZAR ]",
+  "[ ESC CANCEL ]": "[ ESC CANCELAR ]"
 }

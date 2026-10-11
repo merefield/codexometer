@@ -515,5 +515,18 @@
   "sending": "sender",
   "uncertain": "uklart",
   "sent": "sendt",
-  "Could not open web link.": "Kunne ikke åbne weblinket."
+  "Could not open web link.": "Kunne ikke åbne weblinket.",
+  "UNAVAILABLE": "UTILGÆNGELIG",
+  "WAITING FOR IDLE": "VENTER PÅ TOMGANG",
+  "Waiting for idle. Refresh options when this turn finishes.": "Venter på tomgang. Opdater valgmulighederne, når denne tur er færdig.",
+  "Refresh when this turn finishes.": "Opdater, når denne tur er færdig.",
+  "[ ENTER REVIEW ]": "[ ENTER GENNEMGÅ ]",
+  "[ C APPLY ]": "[ C ANVEND ]",
+  "[ C CONFIRM ]": "[ C BEKRÆFT ]",
+  "[ ENTER OPEN ]": "[ ENTER ÅBN ]",
+  "[ ENTER APPLY ]": "[ ENTER ANVEND ]",
+  "[ ENTER HELP ]": "[ ENTER HJÆLP ]",
+  "[ ← BACK ]": "[ ← TILBAGE ]",
+  "[ F REFRESH ]": "[ F OPDATER ]",
+  "[ ESC CANCEL ]": "[ ESC ANNULLER ]"
 }

@@ -515,5 +515,18 @@
   "sending": "sender",
   "uncertain": "uklart",
   "sent": "sendt",
-  "Could not open web link.": "Kunne ikke åpne nettlenken."
+  "Could not open web link.": "Kunne ikke åpne nettlenken.",
+  "UNAVAILABLE": "UTILGJENGELIG",
+  "WAITING FOR IDLE": "VENTER PÅ HVILEMODUS",
+  "Waiting for idle. Refresh options when this turn finishes.": "Venter på hvilemodus. Oppdater alternativene når denne turen er ferdig.",
+  "Refresh when this turn finishes.": "Oppdater når denne turen er ferdig.",
+  "[ ENTER REVIEW ]": "[ ENTER GJENNOMGÅ ]",
+  "[ C APPLY ]": "[ C BRUK ]",
+  "[ C CONFIRM ]": "[ C BEKREFT ]",
+  "[ ENTER OPEN ]": "[ ENTER ÅPNE ]",
+  "[ ENTER APPLY ]": "[ ENTER BRUK ]",
+  "[ ENTER HELP ]": "[ ENTER HJELP ]",
+  "[ ← BACK ]": "[ ← TILBAKE ]",
+  "[ F REFRESH ]": "[ F OPPDATER ]",
+  "[ ESC CANCEL ]": "[ ESC AVBRYT ]"
 }

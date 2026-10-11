@@ -515,5 +515,18 @@
   "sending": "送信中",
   "uncertain": "不明",
   "sent": "送信済み",
-  "Could not open web link.": "ウェブリンクを開けませんでした。"
+  "Could not open web link.": "ウェブリンクを開けませんでした。",
+  "UNAVAILABLE": "利用不可",
+  "WAITING FOR IDLE": "待機状態を待っています",
+  "Waiting for idle. Refresh options when this turn finishes.": "待機状態を待っています。このターンが終了したら選択肢を更新してください。",
+  "Refresh when this turn finishes.": "このターンが終了したら更新してください。",
+  "[ ENTER REVIEW ]": "[ ENTER 確認 ]",
+  "[ C APPLY ]": "[ C 適用 ]",
+  "[ C CONFIRM ]": "[ C 確定 ]",
+  "[ ENTER OPEN ]": "[ ENTER 開く ]",
+  "[ ENTER APPLY ]": "[ ENTER 適用 ]",
+  "[ ENTER HELP ]": "[ ENTER ヘルプ ]",
+  "[ ← BACK ]": "[ ← 戻る ]",
+  "[ F REFRESH ]": "[ F 更新 ]",
+  "[ ESC CANCEL ]": "[ ESC キャンセル ]"
 }

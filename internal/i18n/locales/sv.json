@@ -515,5 +515,18 @@
   "sending": "skickar",
   "uncertain": "oklart",
   "sent": "skickat",
-  "Could not open web link.": "Kunde inte öppna webblänken."
+  "Could not open web link.": "Kunde inte öppna webblänken.",
+  "UNAVAILABLE": "INTE TILLGÄNGLIG",
+  "WAITING FOR IDLE": "VÄNTAR PÅ VILOLÄGE",
+  "Waiting for idle. Refresh options when this turn finishes.": "Väntar på viloläge. Uppdatera alternativen när denna tur är klar.",
+  "Refresh when this turn finishes.": "Uppdatera när denna tur är klar.",
+  "[ ENTER REVIEW ]": "[ ENTER GRANSKA ]",
+  "[ C APPLY ]": "[ C TILLÄMPA ]",
+  "[ C CONFIRM ]": "[ C BEKRÄFTA ]",
+  "[ ENTER OPEN ]": "[ ENTER ÖPPNA ]",
+  "[ ENTER APPLY ]": "[ ENTER TILLÄMPA ]",
+  "[ ENTER HELP ]": "[ ENTER HJÄLP ]",
+  "[ ← BACK ]": "[ ← TILLBAKA ]",
+  "[ F REFRESH ]": "[ F UPPDATERA ]",
+  "[ ESC CANCEL ]": "[ ESC AVBRYT ]"
 }

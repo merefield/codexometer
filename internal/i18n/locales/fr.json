@@ -515,5 +515,18 @@
   "sending": "envoi",
   "uncertain": "incertain",
   "sent": "envoyé",
-  "Could not open web link.": "Impossible d’ouvrir le lien web."
+  "Could not open web link.": "Impossible d’ouvrir le lien web.",
+  "UNAVAILABLE": "INDISPONIBLE",
+  "WAITING FOR IDLE": "EN ATTENTE DE REPOS",
+  "Waiting for idle. Refresh options when this turn finishes.": "En attente de repos. Actualisez les options à la fin de ce tour.",
+  "Refresh when this turn finishes.": "Actualisez à la fin de ce tour.",
+  "[ ENTER REVIEW ]": "[ ENTER VÉRIFIER ]",
+  "[ C APPLY ]": "[ C APPLIQUER ]",
+  "[ C CONFIRM ]": "[ C CONFIRMER ]",
+  "[ ENTER OPEN ]": "[ ENTER OUVRIR ]",
+  "[ ENTER APPLY ]": "[ ENTER APPLIQUER ]",
+  "[ ENTER HELP ]": "[ ENTER AIDE ]",
+  "[ ← BACK ]": "[ ← RETOUR ]",
+  "[ F REFRESH ]": "[ F ACTUALISER ]",
+  "[ ESC CANCEL ]": "[ ESC ANNULER ]"
 }

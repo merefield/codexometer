@@ -515,5 +515,18 @@
   "sending": "отправка",
   "uncertain": "неизвестно",
   "sent": "отправлено",
-  "Could not open web link.": "Не удалось открыть веб-ссылку."
+  "Could not open web link.": "Не удалось открыть веб-ссылку.",
+  "UNAVAILABLE": "НЕДОСТУПНО",
+  "WAITING FOR IDLE": "ОЖИДАНИЕ ПРОСТОЯ",
+  "Waiting for idle. Refresh options when this turn finishes.": "Ожидание простоя. Обновите варианты после завершения этого хода.",
+  "Refresh when this turn finishes.": "Обновите после завершения этого хода.",
+  "[ ENTER REVIEW ]": "[ ENTER ПРОВЕРИТЬ ]",
+  "[ C APPLY ]": "[ C ПРИМЕНИТЬ ]",
+  "[ C CONFIRM ]": "[ C ПОДТВЕРДИТЬ ]",
+  "[ ENTER OPEN ]": "[ ENTER ОТКРЫТЬ ]",
+  "[ ENTER APPLY ]": "[ ENTER ПРИМЕНИТЬ ]",
+  "[ ENTER HELP ]": "[ ENTER СПРАВКА ]",
+  "[ ← BACK ]": "[ ← НАЗАД ]",
+  "[ F REFRESH ]": "[ F ОБНОВИТЬ ]",
+  "[ ESC CANCEL ]": "[ ESC ОТМЕНА ]"
 }

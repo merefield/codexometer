@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/statusline"
 )
 
@@ -323,8 +324,24 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		return rows
 	}
-	start := max(p.selected-capacity+1, 0)
-	for i := start; i < min(start+capacity, len(p.menu.Choices)); i++ {
+	// Keep the selected choice and its recovery instructions visible, even
+	// when the option list would otherwise use every available row.
+	var reasonRows []string
+	if o, ok := m.commandChoice(); ok && o.Unavailable != "" {
+		reason := o.Unavailable
+		if reason == "Waiting for idle. Refresh options when this turn finishes." {
+			reason = i18n.Text("Waiting for idle. Refresh options when this turn finishes.")
+		}
+		reasonRows = strings.Split(ansi.Hardwrap(reason, w, true), "\n")
+		limit := max(capacity-1, 1)
+		if len(reasonRows) > limit && o.Unavailable == "Waiting for idle. Refresh options when this turn finishes." {
+			reasonRows = strings.Split(ansi.Hardwrap(i18n.Text("Refresh when this turn finishes."), w, true), "\n")
+		}
+		reasonRows = reasonRows[:min(len(reasonRows), limit)]
+	}
+	choiceCapacity := capacity - len(reasonRows)
+	start := max(p.selected-choiceCapacity+1, 0)
+	for i := start; i < min(start+choiceCapacity, len(p.menu.Choices)); i++ {
 		o := p.menu.Choices[i]
 		label := o.Label
 		if (p.menu.Picker || p.menu.Path == "theme") && o.Selected {
@@ -339,17 +356,21 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		} else if o.Next != "" && o.Unavailable == "" && p.menu.Path != "theme" {
 			label += " →"
 		} else if o.Unavailable != "" {
-			label += " // UNAVAILABLE"
 			if strings.HasPrefix(o.Unavailable, "Waiting for idle.") {
-				label = strings.TrimSuffix(label, " // UNAVAILABLE") + " // WAITING FOR IDLE"
+				label += " // " + i18n.Text("WAITING FOR IDLE")
+			} else {
+				label += " // " + i18n.Text("UNAVAILABLE")
 			}
 		} else if !o.Action && o.Next == "" {
 			label += " // HELP"
 		}
 		rows = append(rows, commandDisplayRow{text: ansi.Truncate(label, w, "…"), choice: i, action: "choose"})
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 && len(reasonRows) == 0 {
 		rows = append(rows, commandDisplayRow{text: "No available options. Use Codex for unsupported commands.", choice: -1})
+	}
+	for _, line := range reasonRows {
+		rows = append(rows, commandDisplayRow{text: line, choice: -1})
 	}
 	if p.menu.Picker {
 		if o, ok := m.commandChoice(); ok && p.reviewedChoice == o.ID {
@@ -362,14 +383,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			}
 		}
 	}
-	if o, ok := m.commandChoice(); ok && o.Unavailable != "" && len(rows) < capacity {
-		for _, line := range strings.Split(ansi.Hardwrap(o.Unavailable, w, true), "\n") {
-			if len(rows) >= capacity {
-				break
-			}
-			rows = append(rows, commandDisplayRow{text: line, choice: -1})
-		}
-	}
+
 	if (p.menu.Picker || p.menu.Path == "" || p.menu.Path == "help") && len(rows) < capacity {
 		if o, ok := m.commandChoice(); ok {
 			rows = append(rows, commandDisplayRow{choice: -1})
@@ -395,34 +409,34 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	p := m.monitorCommands
 	var buttons []commandDisplayRow
 	if p.menu.Input && !p.busy && p.notice == "" && strings.TrimSpace(p.input.Value()) != "" {
-		buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "review"})
+		buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER REVIEW ]"), action: "review"})
 	} else if p.menu.Multiple {
-		buttons = append(buttons, commandDisplayRow{text: "[ C APPLY ]", action: "confirm"})
+		buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ C APPLY ]"), action: "confirm"})
 	} else if o, ok := m.commandChoice(); ok && o.Action && !p.busy && p.notice == "" {
 		if (p.detail || (p.menu.Picker && p.reviewedChoice == o.ID)) && time.Now().Before(p.until) {
-			buttons = append(buttons, commandDisplayRow{text: "[ C CONFIRM ]", action: "confirm"})
+			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ C CONFIRM ]"), action: "confirm"})
 		} else {
-			buttons = append(buttons, commandDisplayRow{text: "[ ENTER REVIEW ]", action: "stage"})
+			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER REVIEW ]"), action: "stage"})
 		}
 	}
 	if o, ok := m.commandChoice(); ok && !p.detail && !p.menu.Multiple && !p.busy && p.notice == "" && o.Unavailable == "" && !o.Action {
 		if o.Next != "" {
-			label := "[ ENTER OPEN ]"
+			label := i18n.Text("[ ENTER OPEN ]")
 			if p.menu.Path == "theme" {
-				label = "[ ENTER APPLY ]"
+				label = i18n.Text("[ ENTER APPLY ]")
 			}
 			buttons = append(buttons, commandDisplayRow{text: label, action: "stage"})
 		} else {
-			buttons = append(buttons, commandDisplayRow{text: "[ ENTER HELP ]", action: "stage"})
+			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER HELP ]"), action: "stage"})
 		}
 	}
 	if m.monitorCommandsCanBack() {
-		buttons = append(buttons, commandDisplayRow{text: "[ ← BACK ]", action: "back"})
+		buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ← BACK ]"), action: "back"})
 	}
 	if o, ok := m.commandChoice(); !p.busy && (p.notice != "" || (ok && o.Unavailable != "")) {
-		buttons = append(buttons, commandDisplayRow{text: "[ F REFRESH ]", action: "refresh"})
+		buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ F REFRESH ]"), action: "refresh"})
 	}
-	buttons = append(buttons, commandDisplayRow{text: "[ ESC CANCEL ]", action: "close"})
+	buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ESC CANCEL ]"), action: "close"})
 	used := 0
 	for i, b := range buttons {
 		if used+ansi.StringWidth(b.text) > max(width-4, 0) {

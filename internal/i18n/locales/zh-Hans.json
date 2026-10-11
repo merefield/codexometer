@@ -515,5 +515,18 @@
   "sending": "发送中",
   "uncertain": "不确定",
   "sent": "已发送",
-  "Could not open web link.": "无法打开网页链接。"
+  "Could not open web link.": "无法打开网页链接。",
+  "UNAVAILABLE": "不可用",
+  "WAITING FOR IDLE": "等待空闲",
+  "Waiting for idle. Refresh options when this turn finishes.": "等待空闲。此轮结束后请刷新选项。",
+  "Refresh when this turn finishes.": "此轮结束后请刷新。",
+  "[ ENTER REVIEW ]": "[ ENTER 检查 ]",
+  "[ C APPLY ]": "[ C 应用 ]",
+  "[ C CONFIRM ]": "[ C 确认 ]",
+  "[ ENTER OPEN ]": "[ ENTER 打开 ]",
+  "[ ENTER APPLY ]": "[ ENTER 应用 ]",
+  "[ ENTER HELP ]": "[ ENTER 帮助 ]",
+  "[ ← BACK ]": "[ ← 返回 ]",
+  "[ F REFRESH ]": "[ F 刷新 ]",
+  "[ ESC CANCEL ]": "[ ESC 取消 ]"
 }

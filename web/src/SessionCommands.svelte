@@ -89,15 +89,18 @@
       choices: localChoices(),
     };
   }
+  function resetNavigation() {
+    confirmation = '';
+    stagedChoice = '';
+    expires = 0;
+    history = [];
+  }
   function finishLocal() {
     request++;
     busy = false;
     open = false;
     dismissedQuery = query;
-    confirmation = '';
-    stagedChoice = '';
-    expires = 0;
-    history = [];
+    resetNavigation();
     notice = '';
     if (slash) onchange();
     else oncomplete(query);
@@ -264,10 +267,7 @@
     busy = false;
     open = false;
     dismissedQuery = query;
-    confirmation = '';
-    stagedChoice = '';
-    expires = 0;
-    history = [];
+    resetNavigation();
     oncomplete(query);
   }
   export function handleKey(event: KeyboardEvent) {
@@ -367,8 +367,7 @@
     if (unavailable && !localOnly) {
       request++;
       busy = false;
-      confirmation = '';
-      stagedChoice = '';
+      resetNavigation();
       if (open) {
         open = false;
         dismissedQuery = query;
@@ -384,6 +383,7 @@
       query !== dismissedQuery &&
       (!unavailable || localOnly)
     ) {
+      resetNavigation();
       open = true;
       void load('');
     }
@@ -548,8 +548,7 @@
         open = false;
         menu = null;
         selected = null;
-        stagedChoice = '';
-        expires = 0;
+        resetNavigation();
         dismissedQuery = null;
         onchange();
       }

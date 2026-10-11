@@ -5,6 +5,8 @@ import (
 	"errors"
 	"image"
 	"net/url"
+	"os"
+	"os/exec"
 	"reflect"
 	"strconv"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type commandTestClient struct {
@@ -698,5 +701,70 @@ func TestMonitorBackUsesVisitedMenus(t *testing.T) {
 	cmd = m.backMonitorCommands()
 	if cmd == nil || m.monitorCommands.restore.path != "model" || len(m.monitorCommands.history) != 0 {
 		t.Fatal("Back did not return to visited model menu")
+	}
+}
+
+func TestMonitorBlockedReasonVisibleInShortPanels(t *testing.T) {
+	for _, size := range [][2]int{{80, 8}, {40, 8}, {24, 8}, {40, 6}} {
+		m, _ := speedCommandTestModel(t)
+		for i := range m.monitorCommands.menu.Choices {
+			m.monitorCommands.menu.Choices[i].Action = false
+			m.monitorCommands.menu.Choices[i].Unavailable = "Waiting for idle. Refresh options when this turn finishes."
+		}
+		rows := m.monitorCommandRows(size[0], size[1])
+		if len(rows) > size[1]-5 {
+			t.Fatal("rows exceed panel capacity", size, rows)
+		}
+		selected, recovery := false, false
+		for _, row := range rows {
+			selected = selected || row.choice == m.monitorCommands.selected
+			recovery = recovery || strings.Contains(row.text, "Refresh")
+		}
+		if !recovery || (size[1] > 6 && !selected) {
+			t.Fatal("selected option or recovery instruction hidden", size, rows)
+		}
+		view := ansi.Strip(m.renderMonitorCommands(size[0], size[1], paletteFor(m.theme)))
+		if !strings.Contains(view, "Refresh") {
+			t.Fatal("reserved reason clipped by renderer", size, view)
+		}
+	}
+}
+
+func TestMonitorCommandLocaleFeedback(t *testing.T) {
+	if os.Getenv("CODEXOMETER_COMMAND_LOCALE_HELPER") != "1" {
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, locale := range []string{"de", "ja", "fi"} {
+			cmd := exec.Command(exe, "-test.run=^TestMonitorCommandLocaleFeedback$", "-test.timeout=30s")
+			for _, env := range os.Environ() {
+				if !strings.HasPrefix(env, i18n.EnvironmentVariable+"=") && !strings.HasPrefix(env, "CODEXOMETER_COMMAND_LOCALE_HELPER=") {
+					cmd.Env = append(cmd.Env, env)
+				}
+			}
+			cmd.Env = append(cmd.Env, i18n.EnvironmentVariable+"="+locale, "CODEXOMETER_COMMAND_LOCALE_HELPER=1")
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("%s: %v\n%s", locale, err, output)
+			}
+		}
+		return
+	}
+	m, _ := speedCommandTestModel(t)
+	for i := range m.monitorCommands.menu.Choices {
+		m.monitorCommands.menu.Choices[i].Action = false
+		m.monitorCommands.menu.Choices[i].Unavailable = "Waiting for idle. Refresh options when this turn finishes."
+	}
+	view := ansi.Strip(m.renderMonitorCommands(300, 16, paletteFor(m.theme)))
+	for _, key := range []string{"WAITING FOR IDLE", "Waiting for idle. Refresh options when this turn finishes.", "[ F REFRESH ]", "[ ESC CANCEL ]"} {
+		if !strings.Contains(view, i18n.Text(key)) || strings.Contains(view, key) {
+			t.Fatal("fixed command feedback was not translated", key, view)
+		}
+	}
+	custom := "Unadvertised model. Consult the server-specific documentation."
+	m.monitorCommands.menu.Choices[m.monitorCommands.selected].Unavailable = custom
+	view = ansi.Strip(m.renderMonitorCommands(300, 16, paletteFor(m.theme)))
+	if !strings.Contains(view, custom) || !strings.Contains(view, i18n.Text("UNAVAILABLE")) {
+		t.Fatal("server-provided reason was altered or label untranslated", view)
 	}
 }

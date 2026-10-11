@@ -515,5 +515,18 @@
   "sending": "verzenden",
   "uncertain": "onzeker",
   "sent": "verzonden",
-  "Could not open web link.": "Kan de weblink niet openen."
+  "Could not open web link.": "Kan de weblink niet openen.",
+  "UNAVAILABLE": "NIET BESCHIKBAAR",
+  "WAITING FOR IDLE": "WACHT OP INACTIVITEIT",
+  "Waiting for idle. Refresh options when this turn finishes.": "Wacht tot de sessie inactief is. Vernieuw de opties wanneer deze beurt klaar is.",
+  "Refresh when this turn finishes.": "Vernieuw wanneer deze beurt klaar is.",
+  "[ ENTER REVIEW ]": "[ ENTER BEOORDELEN ]",
+  "[ C APPLY ]": "[ C TOEPASSEN ]",
+  "[ C CONFIRM ]": "[ C BEVESTIGEN ]",
+  "[ ENTER OPEN ]": "[ ENTER OPENEN ]",
+  "[ ENTER APPLY ]": "[ ENTER TOEPASSEN ]",
+  "[ ENTER HELP ]": "[ ENTER HELP ]",
+  "[ ← BACK ]": "[ ← TERUG ]",
+  "[ F REFRESH ]": "[ F VERNIEUWEN ]",
+  "[ ESC CANCEL ]": "[ ESC ANNULEREN ]"
 }

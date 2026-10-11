@@ -515,5 +515,18 @@
   "sending": "invio",
   "uncertain": "incerto",
   "sent": "inviato",
-  "Could not open web link.": "Impossibile aprire il collegamento web."
+  "Could not open web link.": "Impossibile aprire il collegamento web.",
+  "UNAVAILABLE": "NON DISPONIBILE",
+  "WAITING FOR IDLE": "ATTESA DI INATTIVITÀ",
+  "Waiting for idle. Refresh options when this turn finishes.": "In attesa di inattività. Aggiorna le opzioni al termine di questo turno.",
+  "Refresh when this turn finishes.": "Aggiorna al termine di questo turno.",
+  "[ ENTER REVIEW ]": "[ ENTER VERIFICA ]",
+  "[ C APPLY ]": "[ C APPLICA ]",
+  "[ C CONFIRM ]": "[ C CONFERMA ]",
+  "[ ENTER OPEN ]": "[ ENTER APRI ]",
+  "[ ENTER APPLY ]": "[ ENTER APPLICA ]",
+  "[ ENTER HELP ]": "[ ENTER AIUTO ]",
+  "[ ← BACK ]": "[ ← INDIETRO ]",
+  "[ F REFRESH ]": "[ F AGGIORNA ]",
+  "[ ESC CANCEL ]": "[ ESC ANNULLA ]"
 }

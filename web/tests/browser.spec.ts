@@ -4492,3 +4492,50 @@ test('local copy explains unavailable text and preserves its slash draft', async
   await expect(text).toBeFocused();
   await expect(text).toHaveValue('/copy');
 });
+
+for (const exit of ['commit', 'cancel', 'local'] as const) {
+  test(`new direct speed commands clear old navigation after ${exit}`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { calls } = await mockSpeedCommands(page);
+    const { panel, text, list } = await openSpeedCommands(page, pairingURL);
+    await list.press('Escape');
+    await text.fill('/');
+    await panel.getByRole('button', { name: '/fast →', exact: true }).click();
+    await expect(
+      panel.getByRole('button', { name: '← BACK', exact: true }),
+    ).toBeVisible();
+    if (exit === 'commit') {
+      await expect(list).toBeFocused();
+      await list.press('Enter');
+      await expect(
+        panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+      ).toBeEnabled();
+      await list.press('c');
+      await expect(text).toHaveValue('');
+      expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+    } else if (exit === 'cancel') {
+      await list.press('Escape');
+      expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+    } else {
+      await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+      await panel
+        .getByRole('button', { name: '/theme →', exact: true })
+        .click();
+      await expect(page.getByRole('combobox', { name: 'Theme' })).toBeFocused();
+    }
+    await expect(list).toHaveCount(0);
+    await text.fill('/fast');
+    await expect(
+      panel.getByRole('button', { name: '/fast →', exact: true }),
+    ).toBeEnabled();
+    await text.press('Enter');
+    await expect(list).toBeFocused();
+    await expect(
+      panel.getByRole('button', { name: '← BACK', exact: true }),
+    ).toHaveCount(0);
+    await list.press('ArrowLeft');
+    await expect(list.getByRole('option')).toHaveCount(3);
+  });
+}

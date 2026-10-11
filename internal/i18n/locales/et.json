@@ -515,5 +515,18 @@
   "sending": "saatmisel",
   "uncertain": "ebakindel",
   "sent": "saadetud",
-  "Could not open web link.": "Veebilinki ei saanud avada."
+  "Could not open web link.": "Veebilinki ei saanud avada.",
+  "UNAVAILABLE": "POLE SAADAVAL",
+  "WAITING FOR IDLE": "OOTAB JÕUDEOLEKUT",
+  "Waiting for idle. Refresh options when this turn finishes.": "Ootab jõudeolekut. Värskenda valikuid pärast selle vooru lõppu.",
+  "Refresh when this turn finishes.": "Värskenda pärast selle vooru lõppu.",
+  "[ ENTER REVIEW ]": "[ ENTER VAATA ÜLE ]",
+  "[ C APPLY ]": "[ C RAKENDA ]",
+  "[ C CONFIRM ]": "[ C KINNITA ]",
+  "[ ENTER OPEN ]": "[ ENTER AVA ]",
+  "[ ENTER APPLY ]": "[ ENTER RAKENDA ]",
+  "[ ENTER HELP ]": "[ ENTER ABI ]",
+  "[ ← BACK ]": "[ ← TAGASI ]",
+  "[ F REFRESH ]": "[ F VÄRSKENDA ]",
+  "[ ESC CANCEL ]": "[ ESC TÜHISTA ]"
 }

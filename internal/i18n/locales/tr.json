@@ -515,5 +515,18 @@
   "sending": "gönderiliyor",
   "uncertain": "belirsiz",
   "sent": "gönderildi",
-  "Could not open web link.": "Web bağlantısı açılamadı."
+  "Could not open web link.": "Web bağlantısı açılamadı.",
+  "UNAVAILABLE": "KULLANILAMIYOR",
+  "WAITING FOR IDLE": "BOŞTA KALMASI BEKLENİYOR",
+  "Waiting for idle. Refresh options when this turn finishes.": "Boşta kalması bekleniyor. Bu tur bittiğinde seçenekleri yenileyin.",
+  "Refresh when this turn finishes.": "Bu tur bittiğinde yenileyin.",
+  "[ ENTER REVIEW ]": "[ ENTER İNCELE ]",
+  "[ C APPLY ]": "[ C UYGULA ]",
+  "[ C CONFIRM ]": "[ C ONAYLA ]",
+  "[ ENTER OPEN ]": "[ ENTER AÇ ]",
+  "[ ENTER APPLY ]": "[ ENTER UYGULA ]",
+  "[ ENTER HELP ]": "[ ENTER YARDIM ]",
+  "[ ← BACK ]": "[ ← GERİ ]",
+  "[ F REFRESH ]": "[ F YENİLE ]",
+  "[ ESC CANCEL ]": "[ ESC İPTAL ]"
 }
