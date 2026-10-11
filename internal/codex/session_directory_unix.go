@@ -105,7 +105,7 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 	if t.Status.Type == "idle" {
 		choice.method, choice.params = "thread/settings/update", map[string]any{"threadId": t.ID, "cwd": target}
 	} else {
-		choice.Help += "\nAvailable when this session is idle."
+		choice.Unavailable = "Waiting for idle. Refresh options when this turn finishes."
 	}
 	m.Choices = append(m.Choices, choice)
 	return m, nil

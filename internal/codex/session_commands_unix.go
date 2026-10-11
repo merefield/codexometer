@@ -147,9 +147,11 @@ func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 			o.method = ""
 			o.params = nil
 			o.Help = "Complete safe help unavailable. Use Codex for this option."
+			o.Unavailable = o.Help
 		}
 		o.Label, o.Help = commandLabel(o.Label), commandText(o.Help)
-		o.ID = commandDigest([]any{o.Label, o.Help, o.Next, o.method, o.params})
+		o.Unavailable = commandText(o.Unavailable)
+		o.ID = commandDigest([]any{o.Label, o.Help, o.Next, o.Unavailable, o.method, o.params})
 		o.Action = o.method != ""
 		if !seen[o.ID] {
 			unique = append(unique, *o)
@@ -245,8 +247,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
 			if t.Status.Type != "idle" {
-				help += " — available when the session is idle"
-				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help})
+				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Waiting for idle. Refresh options when this turn finishes."})
 				return
 			}
 			m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, method: "thread/settings/update", params: params})

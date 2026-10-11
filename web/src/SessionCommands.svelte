@@ -20,6 +20,7 @@
     next?: string;
     action?: boolean;
     selected?: boolean;
+    unavailable?: string;
   }
   interface Menu {
     title: string;
@@ -49,6 +50,61 @@
   let commandPanel: HTMLDivElement | undefined = $state();
   let reviewPanel: HTMLDivElement | undefined = $state();
   let stagedChoice = $state('');
+  interface Level {
+    path: string;
+    index: number;
+    input: string;
+  }
+  let history = $state<Level[]>([]);
+  const inputReview = $derived(
+    menu?.path.startsWith('rename/') || menu?.path.startsWith('cd/'),
+  );
+  const canBack = $derived(
+    (!!selected && !inputReview) || !!stagedChoice || history.length > 0,
+  );
+  function availability(o: Choice) {
+    if (o.unavailable)
+      return o.unavailable.startsWith('Waiting for idle.')
+        ? ' // WAITING FOR IDLE'
+        : ' // UNAVAILABLE';
+    return o.next ? ' →' : !o.action ? ' // HELP' : '';
+  }
+  async function navigate(path: string) {
+    // A filtered slash suggestion opens the command directly, with no parent menu.
+    if (menu && !(suggesting && filter))
+      history = [
+        ...history,
+        { path: menu.path, index: selectedIndex, input: name },
+      ];
+    await load(path);
+  }
+  async function back() {
+    if (!canBack) return;
+    request++;
+    busy = false;
+    confirmation = '';
+    expires = 0;
+    notice = '';
+    if (stagedChoice) {
+      stagedChoice = '';
+      optionList?.focus();
+      return;
+    }
+    if (selected && !inputReview) {
+      selected = null;
+      await tick();
+      optionList?.focus();
+      return;
+    }
+    const level = history.at(-1);
+    if (!level) return;
+    history = history.slice(0, -1);
+    await load(level.path, level);
+  }
+  function reviewInput() {
+    if (menu && name.trim() && !busy && !unavailable)
+      void navigate(menu.path + '/' + encodeURIComponent(name.trim()));
+  }
   const listID = $props.id();
   const picking = $derived(open && !!menu?.picker && !selected);
   const browsing = $derived(open && !menu?.input && !selected);
@@ -69,6 +125,12 @@
     (menu?.choices || []).filter(
       (o) => !filter || o.label.toLowerCase().startsWith('/' + filter),
     ),
+  );
+  const currentChoice = $derived(selected || choices[selectedIndex]);
+  const reviewed = $derived(
+    !!confirmation &&
+      now < expires &&
+      (menu?.picker ? stagedChoice === currentChoice?.id : !!selected),
   );
   const stagedSpeed = $derived(
     choices.find((choice) => choice.id === stagedChoice),
@@ -114,14 +176,14 @@
     confirmation = '';
     stagedChoice = '';
     expires = 0;
+    history = [];
     oncomplete(query);
   }
   export function handleKey(event: KeyboardEvent) {
     const inside = !!commandPanel?.contains(event.target as Node);
     if (
       !open ||
-      menu?.input ||
-      (!browsing && !selected) ||
+      (!browsing && !selected && !menu?.input) ||
       (!slash && !inside) ||
       unavailable ||
       event.isComposing ||
@@ -130,11 +192,23 @@
       event.altKey
     )
       return;
+    if (menu?.input) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeCommands();
+      }
+      return; // Editing keys belong to the input.
+    }
+    const backKey = event.key === 'ArrowLeft';
+    const refreshKey = event.key.toLowerCase() === 'f';
     const confirmKey = event.key.toLowerCase() === 'c';
-    if (confirmKey && !inside) return; // Never consume composer typing.
+    if ((confirmKey || refreshKey || backKey) && !inside) return; // Never consume composer typing.
     if (
       !['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(event.key) &&
-      !confirmKey
+      !confirmKey &&
+      !refreshKey &&
+      !backKey
     )
       return;
     if (
@@ -159,11 +233,23 @@
       return;
     }
     if (busy || (event.repeat && confirmKey)) return;
+    if (backKey) {
+      if (canBack) void back();
+      return;
+    }
+    if (refreshKey) {
+      void load(menu?.path || '');
+      return;
+    }
     if (confirmKey) {
       if (selected?.action || (picking && stagedChoice)) void commit();
       return;
     }
-    if (selected) return; // Repeated Enter never confirms a reviewed change.
+    if (selected) {
+      if (event.key === 'Enter' && selected.action && !reviewed && !notice)
+        void reviewChoice(selected);
+      return; // Repeated Enter never confirms a reviewed change.
+    }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       highlight(
         Math.min(
@@ -206,8 +292,10 @@
       void load('');
     }
   });
-  async function load(path: string) {
+  async function load(path: string, restore?: Level) {
     const seq = ++request;
+    if (menu) menu = { ...menu, path };
+    if (restore) name = restore.input;
     busy = true;
     selected = null;
     stagedChoice = '';
@@ -228,14 +316,21 @@
             next: 'statusline',
           });
         menu = result;
-        selectedIndex = result.picker
-          ? Math.max(
-              result.choices.findIndex((choice) => choice.selected),
-              0,
-            )
-          : 0;
+        selectedIndex = restore
+          ? Math.min(restore.index, Math.max(result.choices.length - 1, 0))
+          : result.picker
+            ? Math.max(
+                result.choices.findIndex((choice) => choice.selected),
+                0,
+              )
+            : 0;
         if (result.picker) void tick().then(() => optionList?.focus());
-        name = result.value || '';
+        name = restore?.input ?? result.value ?? '';
+        if (restore)
+          void tick().then(() => {
+            if (result.input) commandPanel?.querySelector('input')?.focus();
+            else optionList?.focus();
+          });
         if (
           (result.path.startsWith('rename/') ||
             result.path.startsWith('cd/')) &&
@@ -263,12 +358,21 @@
               },
             ],
           };
+        else
+          menu = {
+            title: '/' + path,
+            help: '',
+            path,
+            revision: '',
+            choices: [],
+          };
       }
     } finally {
       if (seq === request) busy = false;
     }
   }
   async function choose(o: Choice) {
+    if (o.unavailable || busy || (notice && o.next !== 'statusline')) return;
     if (menu?.picker) {
       highlight(choices.findIndex((choice) => choice.id === o.id));
       optionList?.focus();
@@ -281,15 +385,17 @@
       return;
     }
     if (o.next) {
-      await load(o.next);
+      await navigate(o.next);
       return;
     }
     await reviewChoice(o);
   }
   async function reviewChoice(o: Choice) {
-    if (busy || unavailable || !menu) return;
-    if (menu.picker) stagedChoice = o.id;
-    else {
+    if (busy || unavailable || !menu || o.unavailable || notice) return;
+    if (menu.picker) {
+      if (reviewed && stagedChoice === o.id) return;
+      stagedChoice = o.id;
+    } else {
       selected = o;
       void tick().then(() => reviewPanel?.focus());
     }
@@ -380,7 +486,7 @@
       title={o.help}
       aria-label={o.label +
         (picking && o.selected ? ' // CURRENT' : '') +
-        (o.next ? ' →' : !o.action ? ' // HELP' : '')}
+        availability(o)}
       class:suggested={selectedIndex === index}
       onfocus={() => {
         if (!picking) highlight(index);
@@ -390,11 +496,7 @@
         void choose(o);
       }}
       ><span class="command-name">{o.label}</span><span class="command-tail"
-        >{picking && o.selected ? ' // CURRENT' : ''}{o.next
-          ? ' →'
-          : !o.action
-            ? ' // HELP'
-            : ''}</span
+        >{picking && o.selected ? ' // CURRENT' : ''}{availability(o)}</span
       >{#if (slash && menu?.path === '') || picking}<span class="command-help"
           >{o.help}</span
         >{/if}</button
@@ -408,7 +510,10 @@
       open = !open;
       dismissedQuery = open ? null : query;
       confirmation = '';
-      if (open) void load('');
+      if (open) {
+        history = [];
+        void load('');
+      } else closeCommands();
     }}
   >
     / COMMANDS
@@ -434,10 +539,10 @@
       {#if busy}<p role="status">Loading / sending…</p>{/if}
       {#if menu?.input}
         <form
+          id={`${listID}-input`}
           onsubmit={(event) => {
             event.preventDefault();
-            if (menu && name.trim() && !busy && !unavailable)
-              void load(menu.path + '/' + encodeURIComponent(name.trim()));
+            reviewInput();
           }}
         >
           <label
@@ -448,9 +553,6 @@
               maxlength={menu.inputLimit || 512}
               disabled={busy || unavailable}
             /></label
-          >
-          <button type="submit" disabled={busy || unavailable || !name.trim()}
-            >REVIEW {menu.path === 'cd' ? 'DIRECTORY' : 'RENAME'}</button
           >
         </form>
       {:else if selected}
@@ -468,31 +570,12 @@
                 name changes.
               {:else if menu?.path.startsWith('cd/')}Only this session’s
                 directory changes; project configuration is not reloaded.
-              {:else}No change sent yet. C confirms the selected setting. Model,
-                reasoning and speed settings can change token usage and cost.
-                Changes affect subsequent turns of this session, not global
-                defaults. Automatic quota thresholds may later supersede model
-                settings.{/if}
+              {:else}No change sent yet. Model, reasoning and speed settings can
+                change token usage and cost. Changes affect subsequent turns of
+                this session, not global defaults. Automatic quota thresholds
+                may later supersede model settings.{/if}
             </p>
-            <button
-              disabled={busy || unavailable || !confirmation || now >= expires}
-              data-command-confirm
-              onclick={commit}>C CONFIRM CHANGE</button
-            >
-            {#if confirmation && now >= expires}<p>
-                Confirmation expired. Reopen the option.
-              </p>{/if}
           {/if}
-          <button
-            disabled={busy}
-            onclick={() => {
-              request++;
-              busy = false;
-              selected = null;
-              confirmation = '';
-              void tick().then(() => optionList?.focus());
-            }}>BACK</button
-          >
         </div>
       {:else}
         {#if picking}
@@ -519,11 +602,9 @@
           </div>
         {/if}
         {#if picking}<p class="muted">{choices[selectedIndex]?.help}</p>
-          <p class="muted">
-            ↑/↓ select · Enter review · C confirm · Escape cancel
-          </p>
+
           {#if stagedSpeed}<p role="status">
-              REVIEW // {stagedSpeed.label}. No change sent yet; C confirms.
+              REVIEW // {stagedSpeed.label}. No change sent yet.
             </p>
             {#if confirmation && now >= expires}<p>
                 Review expired. Press Enter to review again.
@@ -533,43 +614,51 @@
         {#if !busy && !choices.length}<p>
             No available matching commands.
           </p>{/if}
-        {#if slash && menu?.path === ''}<p class="muted">
-            ↑/↓ select · Tab complete · Enter options · Escape dismiss
-          </p>{/if}
       {/if}
-      {#if !suggesting}
-        {#if picking}<button
-            onclick={() => {
-              const option = choices[selectedIndex];
-              if (option) void reviewChoice(option);
-            }}
-            disabled={busy ||
-              unavailable ||
-              !choices[selectedIndex]?.action ||
-              !!notice}>ENTER REVIEW</button
-          >
-          <button
-            data-command-confirm
-            onclick={commit}
-            disabled={busy ||
-              unavailable ||
-              !confirmation ||
-              stagedChoice !== choices[selectedIndex]?.id ||
-              now >= expires ||
-              !!notice}>C CONFIRM CHANGE</button
-          >
+      {#if currentChoice?.unavailable}<p role="status" class="availability">
+          {currentChoice.unavailable}
+        </p>{/if}
+      {#if confirmation && now >= expires && !picking}<p role="status">
+          Review expired. Review the option again.
+        </p>{/if}
+      <div class="command-actions" role="toolbar" aria-label="Command actions">
+        {#if !notice}
+          {#if menu?.input}<button
+              type="submit"
+              form={`${listID}-input`}
+              disabled={busy || unavailable || !name.trim()}
+              >ENTER REVIEW</button
+            >
+          {:else if currentChoice?.action && !currentChoice.unavailable}
+            {#if reviewed}<button
+                data-command-confirm
+                onclick={commit}
+                disabled={busy || unavailable}>C CONFIRM CHANGE</button
+              >
+            {:else}<button
+                onclick={() => {
+                  if (currentChoice) void reviewChoice(currentChoice);
+                }}
+                disabled={busy || unavailable}>ENTER REVIEW</button
+              >{/if}
+          {:else if !selected && currentChoice && !currentChoice.unavailable}<button
+              onclick={() => {
+                if (currentChoice) void choose(currentChoice);
+              }}
+              disabled={busy || unavailable}
+              >ENTER {currentChoice.next ? 'OPEN' : 'HELP'}</button
+            >{/if}
         {/if}
-        <button disabled={busy} onclick={() => load('')}>ALL COMMANDS</button>
-        <button disabled={busy} onclick={() => load(menu?.path || '')}
-          >REFRESH OPTIONS</button
-        >
-        {#if picking}<button
+        {#if canBack}<button disabled={busy} onclick={back}>← BACK</button>{/if}
+        {#if !suggesting}<button
             disabled={busy}
-            onclick={() => {
-              closeCommands();
-            }}>ESC CLOSE</button
+            onclick={() => load(menu?.path || '')}>F REFRESH OPTIONS</button
           >{/if}
-      {/if}
+        <button onclick={closeCommands}>ESC CANCEL</button>
+      </div>
+      {#if !menu?.input && !selected}<p class="navigation">
+          ↑/↓ select{suggesting ? ' · Tab complete' : ''}
+        </p>{/if}
     </div>
   {/if}
 </section>
@@ -627,8 +716,7 @@
     outline: none;
   }
   .command-options button.suggested .command-name {
-    background: var(--accent);
-    color: var(--bg);
+    color: var(--ink);
     font-weight: 700;
   }
   .command-options button:not(.suggested):hover .command-name {
@@ -651,7 +739,7 @@
     overflow: auto;
   }
   .command-options .suggested {
-    outline: 1px solid var(--accent);
+    outline: none;
   }
   .command-help {
     display: block;
@@ -661,6 +749,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.75;
+  }
+  .command-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+  }
+  .availability {
+    font-weight: 600;
+  }
+  .navigation {
+    font-size: 0.8em;
   }
   pre {
     white-space: pre-wrap;

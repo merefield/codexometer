@@ -96,7 +96,7 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 			label := ansi.Truncate(o.Label, popup.width-4, "…")
 			style := colors.dimmed().Background(colors.background)
 			if i == selected {
-				style = style.Foreground(colors.background).Background(colors.primary).Bold(true)
+				style = style.Foreground(colors.accent).Bold(true)
 			}
 			help := ansi.Truncate(" // "+strings.Join(strings.Fields(o.Help), " "), max(popup.width-4-ansi.StringWidth(label), 0), "…")
 			row := " " + style.Render(label) + colors.dimmed().Background(colors.background).Render(help) + " "

@@ -58,8 +58,10 @@ type SessionCommandChoice struct {
 	Next     string `json:"next,omitempty"`
 	Action   bool   `json:"action,omitempty"`
 	Selected bool   `json:"selected,omitempty"`
-	method   string
-	params   map[string]any
+	// Unavailable explains a blocked action; an empty reason with no Action is genuine browse-only help.
+	Unavailable string `json:"unavailable,omitempty"`
+	method      string
+	params      map[string]any
 }
 
 type SessionCommandMenu struct {

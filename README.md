@@ -1599,10 +1599,19 @@ dismisses suggestions while retaining the draft and typing focus. Suggestions
 are fetched asynchronously and filtered locally. They also work in a selected
 wide terminal session row when space permits. Outside the full-detail composer,
 press `/` to open the full command browser. Use arrows and Enter to browse, **C** to confirm a
-setting change, Left to go back and Escape to return to the session. Speed menus
+setting change. **Back** (Left) returns to the previous visited command screen;
+it appears only when there is a previous screen or a provisional review to undo.
+Opening `/fast` directly starts at its options, so it has no Back action until
+reviewing. **Cancel** (Escape) closes the entire menu and returns typing focus
+to the composer with the slash-command draft intact. Back from a rename or
+directory review restores the edited input. Speed menus
 keep all options visible: Up/Down highlights a choice, **Enter REVIEW** stages it,
 and **C CONFIRM** applies it. The separate **CURRENT** marker identifies the
-existing speed. Model, reasoning and speed changes are provisional until C;
+existing speed; the highlighted choice uses bright text without a reversed background.
+The action line shows only the current next step, Enter Review or C Confirm,
+without a second confirmation hint. Settings blocked during an active turn show
+**WAITING FOR IDLE**, with **F REFRESH** to read their availability again;
+**HELP** identifies genuine browse-only entries. Model, reasoning and speed changes are provisional until C;
 reviewing or changing the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
 **/ COMMANDS**, with the same composer suggestion shortcuts.

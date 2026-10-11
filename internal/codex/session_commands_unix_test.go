@@ -282,3 +282,32 @@ func TestSessionSpeedPickerDoesNotTreatQueuedWriteAsApplied(t *testing.T) {
 		t.Fatal("unconfirmed write was retried or changed running speed")
 	}
 }
+
+func TestSessionCommandAvailabilityDistinguishesBlockedSettingsFromHelp(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.mu.Lock()
+	f.commandStatus = "active"
+	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
+	f.mu.Unlock()
+	for _, path := range []string{"fast", "model/small"} {
+		menu, err := p.SessionCommands(context.Background(), "one", path)
+		if err != nil || len(menu.Choices) == 0 {
+			t.Fatal(menu, err)
+		}
+		for _, choice := range menu.Choices {
+			if choice.Action || !strings.HasPrefix(choice.Unavailable, "Waiting for idle.") {
+				t.Fatalf("blocked setting lacks reason: %+v", choice)
+			}
+			if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err == nil {
+				t.Fatal("executed unavailable option")
+			}
+		}
+	}
+	f.mu.Lock()
+	f.commandStatus = "idle"
+	f.mu.Unlock()
+	menu, err := p.SessionCommands(context.Background(), "one", "fast")
+	if err != nil || !menu.Choices[0].Action || menu.Choices[0].Unavailable != "" {
+		t.Fatal("refreshed idle setting remains blocked", menu, err)
+	}
+}

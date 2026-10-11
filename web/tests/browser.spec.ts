@@ -1380,7 +1380,7 @@ test('slash commands discover help and require a separate confirmation', async (
     clipped: true,
     sameLine: true,
   });
-  expect(helpStyle.helpBackground).not.toBe(helpStyle.commandBackground);
+  expect(helpStyle.helpBackground).toBe(helpStyle.commandBackground);
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: '/model →', exact: true }),
@@ -1427,7 +1427,7 @@ test('slash commands discover help and require a separate confirmation', async (
       color: getComputedStyle(node).color,
       background: getComputedStyle(node).backgroundColor,
     }));
-  expect(selectedStyle.background).not.toBe(unselectedStyle.background);
+  expect(selectedStyle.background).toBe(unselectedStyle.background);
   expect(selectedStyle.color).not.toBe(unselectedStyle.color);
   expect(Number(selectedStyle.weight)).toBeGreaterThanOrEqual(700);
   await text.press('ArrowDown');
@@ -1456,13 +1456,13 @@ test('slash commands discover help and require a separate confirmation', async (
   await expect(text).toHaveValue('');
   await expect(text).toBeFocused();
   await expect(
-    panel.getByRole('button', { name: 'BACK', exact: true }),
+    panel.getByRole('button', { name: '← BACK', exact: true }),
   ).toHaveCount(0);
   await expect(
     panel.getByRole('button', { name: 'Medium', exact: true }),
   ).toHaveCount(0);
   await expect(
-    panel.getByRole('button', { name: 'REFRESH OPTIONS', exact: true }),
+    panel.getByRole('button', { name: 'F REFRESH OPTIONS', exact: true }),
   ).toHaveCount(0);
   // Repeating the same command must reopen a fresh catalogue, not the old revision.
   await text.fill('/mod');
@@ -1490,11 +1490,11 @@ test('slash commands discover help and require a separate confirmation', async (
   await expect(panel).toContainText('Change unconfirmed');
   await expect(text).toHaveValue('/mod');
   await expect(
-    panel.getByRole('button', { name: 'BACK', exact: true }),
+    panel.getByRole('button', { name: '← BACK', exact: true }),
   ).toBeVisible();
   await expect(
     panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
 });
 
 for (const command of ['rename', 'cd']) {
@@ -1591,12 +1591,22 @@ for (const command of ['rename', 'cd']) {
       await input.fill(value);
       await panel
         .getByRole('button', {
-          name: command === 'cd' ? 'REVIEW DIRECTORY' : 'REVIEW RENAME',
+          name: 'ENTER REVIEW',
         })
         .click();
       await expect(
         panel.getByRole('heading', { name: 'Review ' + value }),
       ).toBeVisible();
+      await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+      await expect(input).toHaveValue(value);
+      await expect(input).toBeFocused();
+      await expect(
+        panel.getByRole('button', { name: '← BACK', exact: true }),
+      ).toHaveCount(0);
+      await input.press('Enter');
+      await expect(
+        panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+      ).toBeEnabled();
       expect(reviewed).toBe(value);
       expect(modes.filter((m) => m === 'commit')).toHaveLength(0);
       await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
@@ -1609,7 +1619,7 @@ for (const command of ['rename', 'cd']) {
   );
 }
 
-async function mockSpeedCommands(page: Page) {
+async function mockSpeedCommands(page: Page, idle = true) {
   await mockActions(page, 'prompt');
   const calls: { mode: string; path: string; choice?: string }[] = [];
   let reject = false;
@@ -1656,19 +1666,28 @@ async function mockSpeedCommands(page: Page) {
                       id: 'default',
                       label: 'Standard (default)',
                       help: 'Use the server default',
-                      action: true,
+                      action: idle,
+                      unavailable: idle
+                        ? undefined
+                        : 'Waiting for idle. Refresh options when this turn finishes.',
                     },
                     {
                       id: 'flex',
                       label: 'Fast',
                       help: 'Advertised faster tier',
-                      action: true,
+                      action: idle,
+                      unavailable: idle
+                        ? undefined
+                        : 'Waiting for idle. Refresh options when this turn finishes.',
                     },
                     {
                       id: 'priority',
                       label: 'Slow',
                       help: 'Advertised slower tier',
-                      action: true,
+                      action: idle,
+                      unavailable: idle
+                        ? undefined
+                        : 'Waiting for idle. Refresh options when this turn finishes.',
                       selected: true,
                     },
                   ],
@@ -1677,6 +1696,9 @@ async function mockSpeedCommands(page: Page) {
   });
   return {
     calls,
+    finishTurn: () => {
+      idle = true;
+    },
     rejectCommit: () => {
       reject = true;
     },
@@ -1725,7 +1747,7 @@ test('speed picker keeps choices visible while Enter reviews and C confirms', as
   expect(calls.every((c) => c.mode === 'list')).toBe(true);
   await expect(
     panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await list.press('Enter');
   await expect(panel).toContainText('REVIEW // Fast');
   await expect(list).toBeVisible();
@@ -1802,7 +1824,7 @@ test('changing a provisional speed cancels its confirmation', async ({
   await list.press('Enter');
   await expect(confirm).toBeEnabled();
   await list.press('ArrowUp');
-  await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveCount(0);
   await expect(panel).not.toContainText('REVIEW // Slow');
   await list.press('c');
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
@@ -1816,7 +1838,7 @@ test('changing a provisional speed cancels its confirmation', async ({
   await expect(list).toHaveCount(0);
   expect(
     calls.filter((c) => c.mode === 'prepare').map((c) => c.choice),
-  ).toEqual(['priority', 'flex', 'flex']);
+  ).toEqual(['priority', 'flex']);
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
 });
 
@@ -1835,7 +1857,7 @@ test('expired or cancelled speed reviews cannot commit', async ({
   await page.clock.setFixedTime(new Date(Date.now() + 60000));
   await list.press('c');
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
-  await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveCount(0);
   await expect(panel).toContainText('Review expired');
   await page.clock.setFixedTime(new Date(Date.now()));
   await list.press('Enter');
@@ -1846,7 +1868,7 @@ test('expired or cancelled speed reviews cannot commit', async ({
   await panel.getByRole('button', { name: '/ COMMANDS', exact: true }).click();
   await panel.getByRole('button', { name: '/fast →', exact: true }).click();
   await expect(list).toBeFocused();
-  await expect(confirm).toBeDisabled();
+  await expect(confirm).toHaveCount(0);
   await list.press('c');
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
 });
@@ -1869,7 +1891,7 @@ test('unconfirmed speed changes preserve the list and draft without retrying', a
   await expect(text).toHaveValue('/fast');
   await expect(
     panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await list.press('c');
   expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
 });
@@ -4203,4 +4225,84 @@ test.describe('browser startup', () => {
     await expect(page.locator('.connection .lamp')).toHaveClass(/lit/);
     await expect(page.locator('.startup')).toHaveCount(0);
   });
+});
+
+test('direct speed commands have no Back until review and Cancel restores the draft', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockSpeedCommands(page);
+  const { panel, list, text } = await openSpeedCommands(page, pairingURL);
+  const back = panel.getByRole('button', { name: '← BACK', exact: true });
+  await expect(back).toHaveCount(0);
+  await expect(
+    panel.locator('.muted').filter({ hasText: 'C confirm' }),
+  ).toHaveCount(0);
+  const before = calls.length;
+  await list.press('ArrowLeft');
+  expect(calls).toHaveLength(before);
+  await list.press('Enter');
+  await expect(back).toBeEnabled();
+  await list.press('ArrowLeft');
+  await expect(back).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toHaveCount(0);
+  await list.press('c');
+  expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(0);
+  await panel.getByRole('button', { name: 'ESC CANCEL', exact: true }).click();
+  await expect(list).toHaveCount(0);
+  await expect(text).toHaveValue('/fast');
+  await expect(text).toBeFocused();
+});
+
+test('command catalogue navigation has a real parent while direct commands do not', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockSpeedCommands(page);
+  const { panel, text, list } = await openSpeedCommands(page, pairingURL);
+  await list.press('Escape');
+  await text.fill('/');
+  await panel.getByRole('button', { name: '/fast →', exact: true }).click();
+  const back = panel.getByRole('button', { name: '← BACK', exact: true });
+  await expect(back).toBeVisible();
+  await back.click();
+  await expect(
+    panel.getByRole('button', { name: '/fast →', exact: true }),
+  ).toBeVisible();
+  await expect(back).toHaveCount(0);
+  await expect(text).toHaveValue('/');
+});
+
+test('blocked speed options explain availability and refresh without offering review or confirm', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls, finishTurn } = await mockSpeedCommands(page, false);
+  const { panel, list } = await openSpeedCommands(page, pairingURL);
+  await expect(list.getByRole('option').first()).toContainText(
+    'WAITING FOR IDLE',
+  );
+  await expect(panel).not.toContainText('// HELP');
+  await expect(panel).toContainText(
+    'Waiting for idle. Refresh options when this turn finishes.',
+  );
+  await expect(
+    panel.getByRole('button', { name: 'ENTER REVIEW', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toHaveCount(0);
+  await list.press('Enter');
+  await list.press('c');
+  expect(calls.every((c) => c.mode === 'list')).toBe(true);
+  finishTurn();
+  await panel
+    .getByRole('button', { name: 'F REFRESH OPTIONS', exact: true })
+    .click();
+  await expect(
+    panel.getByRole('button', { name: 'ENTER REVIEW', exact: true }),
+  ).toBeEnabled();
+  await expect(panel).not.toContainText('WAITING FOR IDLE');
 });

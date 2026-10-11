@@ -412,7 +412,7 @@ func TestMonitorSpeedPickerEnterReviewThenCConfirm(t *testing.T) {
 	m, f := speedCommandTestModel(t)
 	m.monitorPrompt.input.SetValue("/fast")
 	view := ansi.Strip(m.render())
-	for _, text := range []string{"Standard (default)", "Fast", "> Slow // CURRENT", "[ ENTER REVIEW ]", "Enter review", "C confirm"} {
+	for _, text := range []string{"Standard (default)", "Fast", "> Slow // CURRENT", "[ ENTER REVIEW ]"} {
 		if !strings.Contains(view, text) {
 			t.Fatalf("missing %q in %s", text, view)
 		}
@@ -509,7 +509,7 @@ func TestMonitorSlashSelectionUsesHighlightColors(t *testing.T) {
 		uv.NewStyledString(view).Draw(&cells, image.Rect(0, 0, m.width, m.height))
 		expected := uv.NewScreenBuffer(2, 1)
 		colors := paletteFor(m.theme)
-		uv.NewStyledString(colors.label().Foreground(colors.background).Background(colors.primary).Render("x")+colors.dimmed().Render("x")).Draw(&expected, image.Rect(0, 0, 2, 1))
+		uv.NewStyledString(colors.label().Foreground(colors.accent).Bold(true).Render("x")+colors.dimmed().Render("x")).Draw(&expected, image.Rect(0, 0, 2, 1))
 		for index, label := range []string{"Medium", "High"} {
 			x, y := renderedTextStart(t, m, label)
 			got := cells.CellAt(x, y).Style
@@ -517,9 +517,14 @@ func TestMonitorSlashSelectionUsesHighlightColors(t *testing.T) {
 			if index == selected {
 				want = expected.CellAt(0, 0).Style
 			}
-			if !reflect.DeepEqual(got.Fg, want.Fg) || (index == selected && !reflect.DeepEqual(got.Bg, want.Bg)) {
+			if !reflect.DeepEqual(got.Fg, want.Fg) {
 				t.Fatalf("%s did not use the appropriate selected/subdued colours", label)
 			}
+		}
+		mx, my := renderedTextStart(t, m, "Medium")
+		hx, hy := renderedTextStart(t, m, "High")
+		if !reflect.DeepEqual(cells.CellAt(mx, my).Style.Bg, cells.CellAt(hx, hy).Style.Bg) {
+			t.Fatal("selection added a background highlight")
 		}
 	}
 }
@@ -582,5 +587,116 @@ func TestMonitorModelReasoningEnterReviewBeforeC(t *testing.T) {
 	cmd()
 	if f.calls != 1 {
 		t.Fatal("incorrect mutation count")
+	}
+}
+
+func TestMonitorSpeedBackOnlyAfterReviewAndCancelRestoresComposer(t *testing.T) {
+	m, f := speedCommandTestModel(t)
+	m.monitorPrompt.session = m.monitorCommands.session
+	m.monitorPrompt.input.SetValue("/fast")
+	view := ansi.Strip(m.render())
+	if strings.Contains(view, "BACK") || strings.Contains(view, "C CONFIRM") || strings.Contains(view, "C confirm") {
+		t.Fatal("direct picker advertises unavailable actions", view)
+	}
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = next.(Model)
+	if cmd != nil || m.monitorCommands.menu.Path != "tier/flex" {
+		t.Fatal("Back invented an unvisited parent")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	if !strings.Contains(ansi.Strip(m.render()), "[ ← BACK ]") {
+		t.Fatal("review has no Back action")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = next.(Model)
+	if m.monitorCommands.reviewedChoice != "" || strings.Contains(ansi.Strip(m.render()), "BACK") {
+		t.Fatal("Back did not clear review")
+	}
+	_, cmd = m.Update(key('c'))
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("Back retained confirmation")
+	}
+	x, y := renderedTextStart(t, m, "[ ESC CANCEL ]")
+	next, _ = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	m = next.(Model)
+	if m.monitorCommands.open || m.monitorPrompt.input.Value() != "/fast" || !m.monitorPrompt.input.Focused() {
+		t.Fatal("Cancel lost composer draft or focus")
+	}
+}
+
+func TestMonitorUnavailableChoicesHaveReasonAndRefresh(t *testing.T) {
+	m, f := speedCommandTestModel(t)
+	for i := range m.monitorCommands.menu.Choices {
+		m.monitorCommands.menu.Choices[i].Action = false
+		m.monitorCommands.menu.Choices[i].Unavailable = "Waiting for idle. Refresh options when this turn finishes."
+	}
+	view := ansi.Strip(m.render())
+	for _, bad := range []string{"// HELP", "ENTER REVIEW", "C CONFIRM"} {
+		if strings.Contains(view, bad) {
+			t.Fatal("unavailable option advertises", bad, view)
+		}
+	}
+	if !strings.Contains(view, "WAITING FOR IDLE") || !strings.Contains(view, "[ F REFRESH ]") {
+		t.Fatal("missing availability feedback", view)
+	}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || f.calls != 0 {
+		t.Fatal("blocked option was reviewed")
+	}
+	next, cmd := m.Update(key('f'))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("refresh unavailable")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(ansi.Strip(m.render()), "[ ENTER REVIEW ]") {
+		t.Fatal("fresh available options retained blocked state")
+	}
+}
+
+func TestMonitorRenameBackPreservesEditedInput(t *testing.T) {
+	m, base := commandTestModel(t)
+	f := &renameTestClient{commandTestClient: base}
+	m.fetcher = f
+	m, cmd, _ := m.openMonitorCommands("rename")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	m.monitorCommands.input.SetValue("Edited / name 界")
+	m, cmd, _ = m.reviewMonitorCommandInput()
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("Back did not request the editor")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if !m.monitorCommands.menu.Input || m.monitorCommands.input.Value() != "Edited / name 界" || !m.monitorCommands.input.Focused() || strings.Contains(ansi.Strip(m.render()), "BACK") {
+		t.Fatal("Back lost input or invented a parent")
+	}
+}
+
+func TestMonitorBackUsesVisitedMenus(t *testing.T) {
+	m, _ := commandTestModel(t)
+	m.monitorCommands.menu.Path = "model"
+	m.monitorCommands.menu.Choices = []codex.SessionCommandChoice{{ID: "model", Label: "test", Next: "model/test"}}
+	m, cmd, _ := m.chooseMonitorCommand()
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(ansi.Strip(m.render()), "[ ← BACK ]") {
+		t.Fatal("nested choices lost Back")
+	}
+	m, _, _ = m.chooseMonitorCommand()
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = next.(Model)
+	if m.monitorCommands.detail || len(m.monitorCommands.history) != 1 {
+		t.Fatal("review Back skipped choices")
+	}
+	cmd = m.backMonitorCommands()
+	if cmd == nil || m.monitorCommands.restore.path != "model" || len(m.monitorCommands.history) != 0 {
+		t.Fatal("Back did not return to visited model menu")
 	}
 }

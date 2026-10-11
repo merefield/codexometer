@@ -190,8 +190,8 @@ func TestMonitorSuggestionHelpIsSubduedAndSingleLine(t *testing.T) {
 	uv.NewStyledString(view).Draw(&cells, image.Rect(0, 0, m.width, m.height))
 	command := cells.CellAt(popup.x+2, popup.y+1)
 	help := cells.CellAt(popup.x+2+len("/model // "), popup.y+1)
-	if reflect.DeepEqual(command.Style.Bg, help.Style.Bg) {
-		t.Fatal("help inherited the command highlight")
+	if !reflect.DeepEqual(command.Style.Bg, help.Style.Bg) || reflect.DeepEqual(command.Style.Fg, help.Style.Fg) {
+		t.Fatal("selection should change text brightness without reversing the background")
 	}
 	want := uv.NewScreenBuffer(1, 1)
 	uv.NewStyledString(colors.dimmed().Render("x")).Draw(&want, image.Rect(0, 0, 1, 1))
