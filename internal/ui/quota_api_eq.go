@@ -60,6 +60,7 @@ type quotaAPIAnchor struct {
 	inconsistentUsageCalls int64
 	accountingAdjustments  int64
 	restartReason          string
+	restartIssue           codex.APIEqDiagnostic
 }
 
 const (
@@ -144,7 +145,7 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 			continue
 		}
 		if current.costUSD < anchor.costUSD || current.pricedCalls < anchor.pricedCalls ||
-			current.unpricedCalls < anchor.unpricedCalls || current.premiumUSD < anchor.premiumUSD ||
+			current.unpricedCalls < anchor.unpricedCalls ||
 			current.unknownTierCalls < anchor.unknownTierCalls ||
 			current.missingUsageCalls < anchor.missingUsageCalls ||
 			current.inconsistentUsageCalls < anchor.inconsistentUsageCalls ||
@@ -164,6 +165,7 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		}
 		if current.unpricedCalls > anchor.unpricedCalls {
 			current.restartReason = quotaAPIRestartUnpricedUsage
+			current.restartIssue = latestIntervalDiagnostic(usage, codex.UsageIssueUnpriced, anchor.unpricedCalls)
 			m.quotaAPIAnchors[key] = current
 			m.quotaAPIIssues[key] = ""
 			continue
@@ -171,8 +173,10 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		switch {
 		case current.missingUsageCalls > anchor.missingUsageCalls:
 			current.restartReason = quotaAPIRestartMissingUsage
+			current.restartIssue = latestIntervalDiagnostic(usage, codex.UsageIssueMissing, anchor.missingUsageCalls)
 		case current.inconsistentUsageCalls > anchor.inconsistentUsageCalls:
 			current.restartReason = quotaAPIRestartInconsistentUsage
+			current.restartIssue = latestIntervalDiagnostic(usage, codex.UsageIssueInconsistent, anchor.inconsistentUsageCalls)
 		case current.accountingAdjustments > anchor.accountingAdjustments:
 			current.restartReason = quotaAPIRestartAccountingRebased
 		}
@@ -272,7 +276,7 @@ func validQuotaAPISamples(samples []quotaAPISample, now time.Time) []quotaAPISam
 			sample.DeltaPercent < quotaAPIMinimumDelta || !positiveFinite(sample.CapacityUSD) ||
 			!positiveFinite(sample.LowUSD) || !positiveFinite(sample.HighUSD) ||
 			math.IsNaN(sample.PremiumCapacityUSD) || math.IsInf(sample.PremiumCapacityUSD, 0) ||
-			sample.PremiumCapacityUSD < 0 || sample.PremiumCapacityUSD >= sample.CapacityUSD ||
+			sample.PremiumCapacityUSD >= sample.CapacityUSD ||
 			sample.LowUSD > sample.CapacityUSD || sample.CapacityUSD > sample.HighUSD {
 			continue
 		}
@@ -329,7 +333,7 @@ func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quo
 		highs = append(highs, sample.HighUSD)
 		centers = append(centers, sample.CapacityUSD)
 		standardCenters = append(standardCenters, sample.CapacityUSD-sample.PremiumCapacityUSD)
-		hasPremium = hasPremium || sample.PremiumCapacityUSD > 0
+		hasPremium = hasPremium || sample.PremiumCapacityUSD != 0
 		unknownTier = unknownTier || sample.UnknownTier
 		totalDelta += sample.DeltaPercent
 	}
@@ -514,4 +518,75 @@ func formatUSD(value float64) string {
 	default:
 		return fmt.Sprintf("$%.0f", value)
 	}
+}
+
+func latestIntervalDiagnostic(usage codex.LiveUsageSnapshot, kind codex.APIEqIssueKind, after int64) codex.APIEqDiagnostic {
+	for i := len(usage.APIEqDiagnostics) - 1; i >= 0; i-- {
+		issue := usage.APIEqDiagnostics[i]
+		if issue.Kind == kind && issue.Counter > after {
+			return issue
+		}
+	}
+	return codex.APIEqDiagnostic{}
+}
+
+func (m Model) quotaAPIDiagnostic() codex.APIEqDiagnostic {
+	if !m.meterView.isQuota() {
+		return codex.APIEqDiagnostic{}
+	}
+	for _, meter := range m.snapshot.Meters() {
+		if quotaAPIMeterEligible(m.snapshot, meter) {
+			if issue := m.quotaAPIAnchors[quotaAPIKey(m.snapshot, meter)].restartIssue; issue.Kind != "" {
+				return issue
+			}
+		}
+	}
+	return codex.APIEqDiagnostic{}
+}
+
+func (m Model) renderQuotaAPIDiagnostic(width int) string {
+	issue := m.quotaAPIDiagnostic()
+	if issue.Kind == "" {
+		return ""
+	}
+	c := paletteFor(m.theme)
+	text := codex.DiagnosticText(issue)
+	lines := strings.Split(ansi.Hardwrap(text, max(width-4, 1), true), "\n")
+	// A diagnostic must not push the footer off a short terminal. Preserve the
+	// reason first, with bounded metadata rows; the browser retains the full text.
+	height := m.height
+	if height == 0 {
+		height = 24
+	}
+	header := 3
+	if width < 64 {
+		header = 2
+	}
+	tabs := 2
+	if isQuotaGraph(m.meterView) {
+		tabs++
+	}
+	meters := len(m.snapshot.Meters())
+	columns := meterGridColumns(width, max(height-2, 1), meters, m.meterView)
+	minimumMeters := ((meters + columns - 1) / columns) * 3
+	available := height - 2 - header - 1 - tabs - 2 - minimumMeters - m.resetNoticeHeight(width)
+	if m.err != nil {
+		available -= 3
+	}
+	if available < 3 {
+		return ""
+	}
+	limit := min(max(height/3-2, 1), available-2)
+	if len(lines) > limit {
+		lines = lines[:limit]
+		lines[len(lines)-1] = ansi.Truncate(lines[len(lines)-1], max(width-5, 1), "") + "…"
+	}
+	return frame(width, "API-EQ ISSUE", c.label().Render(strings.Join(lines, "\n")), c.primary, c)
+}
+
+func (m Model) quotaAPIDiagnosticHeight(width int) int {
+	if view := m.renderQuotaAPIDiagnostic(width); view != "" {
+		return strings.Count(view, "\n") + 1
+	}
+	return 0
 }

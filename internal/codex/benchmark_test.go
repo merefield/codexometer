@@ -628,12 +628,8 @@ func TestBenchmarkTelemetryRejectsInconsistentStreams(t *testing.T) {
 			state.recordCumulative(valid)
 			state.recordCumulative(BenchmarkUsage{TotalTokens: 55, InputTokens: 50, OutputTokens: 5})
 		}, want: "regressed"},
-		{name: "raw mismatch", record: func(state *benchmarkTelemetry) {
-			state.recordRawResponse("response-1", &valid)
-			state.recordCumulative(BenchmarkUsage{TotalTokens: 120, InputTokens: 100, OutputTokens: 20})
-		}, want: "disagree"},
 		{name: "duplicate response", record: func(state *benchmarkTelemetry) {
-			state.recordRawResponse("response-1", nil)
+			state.recordRawResponse("response-1", &valid)
 			state.recordRawResponse("response-1", nil)
 		}, want: "duplicate"},
 		{name: "raw aggregate overflow", record: func(state *benchmarkTelemetry) {
@@ -654,15 +650,15 @@ func TestBenchmarkTelemetryRejectsInconsistentStreams(t *testing.T) {
 	}
 }
 
-func TestBenchmarkTelemetryFallsBackWhenRawUsageIsOmitted(t *testing.T) {
+func TestBenchmarkTelemetryRejectsIncompleteRawUsageEvenWithCumulativeSnapshot(t *testing.T) {
 	valid := BenchmarkUsage{TotalTokens: 110, InputTokens: 100, OutputTokens: 10}
 	state := newBenchmarkTelemetry()
 	state.recordRawResponse("response-1", nil)
 	state.recordCumulative(valid)
 	var result BenchmarkResult
 	state.apply(&result)
-	if !result.UsageObserved || !result.UsageKnown || result.UsageSource != BenchmarkUsageCumulative || result.Usage != valid || result.UsageIssue != "" {
-		t.Fatalf("valid cumulative fallback was not used: %#v", result)
+	if !result.UsageObserved || result.UsageKnown || result.UsageIssue != "raw response omitted usage" {
+		t.Fatalf("missing exact response usage was hidden by a context snapshot: %#v", result)
 	}
 }
 
@@ -1212,6 +1208,7 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 
 func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
 	want := map[string]apiPrice{
+		"gpt-5.2":       {input: 1.75, cached: 0.175, output: 14.00},
 		"gpt-6.1-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6-sol":     {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6-luna":    {input: 0.10, cached: 0.01, cacheWrite: 0.125, cacheWriteKnown: true, output: 0.50, longInput: 0.20, longCached: 0.02, longCacheWrite: 0.25, longOutput: 0.75, longKnown: true},
@@ -1371,5 +1368,31 @@ func TestFormatIntervalsAndReferenceMerge(t *testing.T) {
 	}
 	if input[0] != (interval{5, 7}) {
 		t.Fatal("reference merge mutated input")
+	}
+}
+
+func TestBenchmarkExactResponsesOverrideSyntheticSnapshotsAndRetainModels(t *testing.T) {
+	telemetry := newBenchmarkTelemetry()
+	first := BenchmarkUsage{InputTokens: 100, OutputTokens: 10, TotalTokens: 110}
+	second := BenchmarkUsage{InputTokens: 200, OutputTokens: 20, TotalTokens: 220}
+	telemetry.recordRawResponseForModel("one", &first, "gpt-6-astra")
+	telemetry.recordCumulative(BenchmarkUsage{TotalTokens: 128000}) // Context bookkeeping, not billable usage.
+	telemetry.recordRawResponseForModel("two", &second, "gpt-5.2")
+	telemetry.recordRawResponseForModel("two", &second, "gpt-5.2") // Identical transport replay.
+	result := BenchmarkResult{ActualModel: "gpt-5.2"}
+	applyBenchmarkMeasurements(&result, telemetry)
+	a, _, _ := EstimateStandardAPIEqCost("gpt-6-astra", first)
+	b, _, _ := EstimateStandardAPIEqCost("gpt-5.2", second)
+	if !result.CostKnown || !result.UsageKnown || result.Usage.TotalTokens != 330 || len(result.ResponseUsage) != 2 || math.Abs(result.CostUSD-a-b) > 1e-12 {
+		t.Fatal("exact usage depended on synthetic snapshots/final model", result)
+	}
+	applyBenchmarkMeasurements(&result, telemetry)
+	if math.Abs(result.CostUSD-a-b) > 1e-12 {
+		t.Fatal("repeated measurement added cost twice", result)
+	}
+	telemetry.recordRawResponse("two", &first)
+	applyBenchmarkMeasurements(&result, telemetry)
+	if result.UsageKnown || result.CostKnown || !strings.Contains(result.UsageIssue, "conflicting duplicate") {
+		t.Fatal("conflicting response ID was accepted", result)
 	}
 }

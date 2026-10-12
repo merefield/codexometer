@@ -433,3 +433,63 @@ func TestQuotaAccountingBracketIncludesUsageIssuesAndAdjustments(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaFlexDiscountLearnsWithoutFalseRebase(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(4 * time.Hour).Unix()
+	m := New(nil, time.Minute)
+	m.snapshot = apiEqSnapshot(10, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{}, now)
+	m.snapshot = apiEqSnapshot(15, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqTierPremiumUSD: -1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+	estimate, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0])
+	if !ok || !estimate.hasPremium || math.Abs(estimate.standardFull-40) > 1e-12 {
+		t.Fatal("discount mistaken for accounting regression", m.quotaAPIAnchors, estimate)
+	}
+	if !strings.Contains(m.quotaAPILine(m.snapshot.Meters()[0], 120), "TIER*") {
+		t.Fatal("discount lost requested-tier qualifier")
+	}
+}
+
+func TestQuotaFailureDiagnosticRetainsSourceAndRejectsOldAttribution(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(4 * time.Hour).Unix()
+	m := New(nil, time.Minute)
+	m.width, m.height = 100, 35
+	m.loading = false
+	m.snapshot = apiEqSnapshot(10, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUnpricedCalls: 1}, now)
+	m.snapshot = apiEqSnapshot(12, reset)
+	issue := codex.APIEqDiagnostic{Kind: codex.UsageIssueUnpriced, Counter: 2, SessionID: "child-agent", Model: "gpt-reserve", Tier: "fast", Effort: "xhigh", Source: "exact response", Reason: "no maintained standard API price for model gpt-reserve"}
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUnpricedCalls: 2, APIEqDiagnostics: []codex.APIEqDiagnostic{issue}}, now.Add(time.Minute))
+	view := ansi.Strip(m.render())
+	for _, want := range []string{"UNPRICED USAGE", "child-agent", "gpt-reserve", "fast", "xhigh", "exact response", "no maintained standard API price"} {
+		if !strings.Contains(view, want) {
+			t.Fatal("diagnostic omitted", want, view)
+		}
+	}
+	m.snapshot = apiEqSnapshot(13, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUnpricedCalls: 3, APIEqDiagnostics: []codex.APIEqDiagnostic{issue}}, now.Add(2*time.Minute))
+	if m.quotaAPIDiagnostic().Kind != "" {
+		t.Fatal("old diagnostic assigned to a new failure")
+	}
+}
+
+func TestQuotaDiagnosticPreservesFooterAcrossTerminalSizes(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(time.Hour).Unix()
+	for _, size := range [][2]int{{40, 16}, {80, 18}, {80, 24}, {120, 35}} {
+		m := New(nil, time.Minute)
+		m.width, m.height = size[0], size[1]
+		m.loading = false
+		m.snapshot = apiEqSnapshot(10, reset)
+		m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{}, now)
+		m.snapshot = apiEqSnapshot(12, reset)
+		issue := codex.APIEqDiagnostic{Kind: codex.UsageIssueUnpriced, Counter: 1, SessionID: "child", Model: "gpt-reserve", Tier: "fast", Source: "exact response", Reason: "no maintained standard API price for model gpt-reserve"}
+		m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUnpricedCalls: 1, APIEqDiagnostics: []codex.APIEqDiagnostic{issue}}, now.Add(time.Second))
+		view := ansi.Strip(m.render())
+		if strings.Count(view, "\n")+1 > size[1] {
+			t.Fatal("diagnostic pushed controls off screen", size, view)
+		}
+	}
+}

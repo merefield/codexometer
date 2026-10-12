@@ -57,6 +57,13 @@
   {#if live.data.quotaError}<p class="notice">
       Quota refresh failed. Values below are the last successful observation.
     </p>{/if}
+  {#if live.data.usageDiagnostic}<p
+      class="notice usage-diagnostic"
+      role="status"
+    >
+      Last usage accounting issue:
+      {live.data.usageDiagnostic}
+    </p>{/if}
   <p class="eyebrow">QUOTA // OBSERVED {date(live.data.quotaAt)}</p>
   {#if view === 'thresholds'}
     <Thresholds />
@@ -174,3 +181,10 @@
     scoring remain in the terminal for this first preview.
   </p>
 {/if}
+
+<style>
+  .usage-diagnostic {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -67,6 +67,9 @@ func (m Model) render() string {
 		if m.meterView.isQuota() && m.resetNotice != "" {
 			parts = append(parts, m.renderResetNotice(contentWidth))
 		}
+		if diagnostic := m.renderQuotaAPIDiagnostic(contentWidth); diagnostic != "" {
+			parts = append(parts, diagnostic)
+		}
 		meters := m.snapshot.Meters()
 		if m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds {
 			meters = m.quotaMetersWithInsights(contentWidth)

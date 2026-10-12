@@ -484,7 +484,7 @@ func (s *appServerSession) runDigBench(
 				Usage      *BenchmarkUsage `json:"usage"`
 			}
 			if json.Unmarshal(envelope.Params, &event) == nil && event.ThreadID == startedThread.Thread.ID && event.TurnID == startedTurn.Turn.ID {
-				telemetry.recordRawResponse(event.ResponseID, event.Usage)
+				telemetry.recordRawResponseForModel(event.ResponseID, event.Usage, result.ActualModel)
 			}
 		case "model/rerouted":
 			var event struct {
@@ -1008,6 +1008,7 @@ func digBenchFinalResponse(params json.RawMessage, threadID, turnID string, sens
 }
 
 func applyDigBenchMeasurements(result *DigBenchResult, telemetry *benchmarkTelemetry) {
+	result.CostUSD, result.CostKnown, result.CostIssue = 0, false, ""
 	var measurements BenchmarkResult
 	telemetry.apply(&measurements)
 	result.Usage = measurements.Usage
@@ -1026,7 +1027,11 @@ func applyDigBenchMeasurements(result *DigBenchResult, telemetry *benchmarkTelem
 	}
 	result.CostKnown = true
 	for _, response := range result.ResponseUsage {
-		cost, known, issue := estimateSingleResponseAPICostWithIssue(result.ActualModel, response.Usage)
+		model := response.Model
+		if model == "" {
+			model = result.ActualModel
+		}
+		cost, known, issue := estimateSingleResponseAPICostWithIssue(model, response.Usage)
 		if !known {
 			result.CostUSD, result.CostKnown, result.CostIssue = 0, false, issue
 			return

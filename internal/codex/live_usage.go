@@ -25,10 +25,11 @@ const (
 )
 
 // LiveUsageSnapshot is a process-local accounting view built from token-count
-// events appended to locally persisted Codex rollouts. Finalized API-equivalent
+// events or exact response records appended to local Codex rollouts. Finalized API-equivalent
 // totals increase monotonically; APIEqPendingCalls is an instantaneous count
 // kept separate until daemon model resolution or requested-model fallback.
-// APIEqUSD remains standard cost. Quota learning adds APIEqTierPremiumUSD;
+// APIEqUSD remains standard cost. Quota learning adds the signed requested-tier
+// adjustment in APIEqTierPremiumUSD (negative for Flex);
 // APIEqUnknownTierCalls identifies standard fallbacks with missing tier evidence.
 // Missing/inconsistent response usage has separate monotonic counters from
 // unavailable pricing. AccountingAdjustments counts recognised synthetic context
@@ -50,6 +51,7 @@ type LiveUsageSnapshot struct {
 	APIEqPendingCalls           int64
 	APIEqTierPremiumUSD         float64
 	APIEqUnknownTierCalls       int64
+	APIEqDiagnostics            []APIEqDiagnostic
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -100,6 +102,13 @@ type LiveModelCall struct {
 	APIEqKnown           bool
 	APIEqIssue           string
 	apiEqFinalized       bool
+	issueKind            APIEqIssueKind
+	SessionID            string
+	TurnID               string
+	ResponseID           string
+	Effort               string
+	UsageSource          string
+	ModelBasis           string
 	RequestedServiceTier string
 	APIEqTierPremiumUSD  float64
 }
@@ -140,6 +149,7 @@ type LiveUsageReader struct {
 	apiEqMissingUsageCalls      int64
 	apiEqInconsistentUsageCalls int64
 	apiEqAccountingAdjustments  int64
+	apiEqDiagnostics            []APIEqDiagnostic
 	lastActivity                time.Time
 	nextEventSequence           uint64
 	daemonObservationSequence   uint64
@@ -169,6 +179,10 @@ type rolloutCursor struct {
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
+	exactUsage                  bool
+	exactResponses              map[string]BenchmarkUsage
+	exactConflicts              map[string]bool
+	exactResponseOrder          []string
 }
 
 type pendingModelResolution struct {
@@ -177,6 +191,7 @@ type pendingModelResolution struct {
 	turnID          string
 	usage           BenchmarkUsage
 	cumulativeTotal int64
+	exact           bool
 }
 
 type sessionAttentionState int
@@ -204,6 +219,7 @@ type rolloutEvent struct {
 }
 
 type rolloutTokenUsage struct {
+	schemaIssue           string
 	InputTokens           *int64 `json:"input_tokens"`
 	CachedInputTokens     *int64 `json:"cached_input_tokens"`
 	CacheWriteInputTokens int64  `json:"cache_write_input_tokens"`
@@ -227,6 +243,7 @@ func (u rolloutTokenUsage) benchmarkUsage() BenchmarkUsage {
 		OutputTokens:          optionalRolloutTokens(u.OutputTokens),
 		ReasoningOutputTokens: optionalRolloutTokens(u.ReasoningOutputTokens),
 		TotalTokens:           optionalRolloutTokens(u.TotalTokens),
+		schemaIssue:           u.schemaIssue,
 	}
 }
 
@@ -422,6 +439,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		APIEqPendingCalls:           int64(len(r.pendingModelResolutions)),
 		APIEqTierPremiumUSD:         r.apiEqTierPremiumUSD,
 		APIEqUnknownTierCalls:       r.apiEqUnknownTierCalls,
+		APIEqDiagnostics:            append([]APIEqDiagnostic(nil), r.apiEqDiagnostics...),
 	}, nil
 }
 
@@ -547,7 +565,18 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		cursor.attention = attention
 		cursor.preview = latestSessionContext(path, cursor)
 	}
-	if !r.initialized || !rolloutCreatedAfter(path, r.startedAt) {
+	// A new rollout filename can be a reverted/replaced history of an existing
+	// thread, not a new thread. Its copied responses are a baseline, not spend.
+	existingThread := false
+	if r.initialized && cursor.threadID != "" {
+		for _, known := range r.files {
+			if known.threadID == cursor.threadID {
+				existingThread = true
+				break
+			}
+		}
+	}
+	if !r.initialized || existingThread || !rolloutCreatedAfter(path, r.startedAt) {
 		model, modelErr := latestRolloutModel(path, cursor)
 		if modelErr != nil {
 			return modelErr
@@ -563,7 +592,14 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return err
 		}
 		cursor.totalTokens = total
-		cursor.offset = info.Size()
+		baseline, err := restoreExactUsageBaseline(path, cursor, info.Size())
+		if err != nil {
+			return err
+		}
+		cursor.offset = baseline
+		if existingThread {
+			r.apiEqAccountingAdjustments++
+		}
 	}
 	r.files[path] = cursor
 	return nil
@@ -611,6 +647,11 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		}
 		cursor.attention = attention
 		cursor.preview = latestSessionContext(path, cursor)
+		baseline, err := restoreExactUsageBaseline(path, cursor, info.Size())
+		if err != nil {
+			return err
+		}
+		cursor.offset = baseline
 		return nil
 	}
 	if info.Size() == cursor.offset {
@@ -648,7 +689,17 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.attention = attention
 			}
+			if record, ok := exactUsageRecord(line); ok {
+				r.consumeExactUsage(cursor, record)
+			}
 			if record, ok := tokenUsageRecord(line); ok {
+				if cursor.exactUsage {
+					if tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
+						r.attachExactCheckpoint(cursor, record)
+					}
+					cursor.totalTokens = record.total
+					continue
+				}
 				if !tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 					// Legacy child rollouts copy the parent's cumulative token
 					// events. Preserve the latest inherited value as the child's
@@ -695,6 +746,10 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
 							OutputAvailable: record.outputKnown, Model: model,
 							RequestedServiceTier: cursor.currentServiceTier,
+							SessionID:            cursor.threadID, TurnID: cursor.currentTurnID, Effort: cursor.modelSettings.ReasoningEffort, UsageSource: "legacy token snapshot", ModelBasis: "requested",
+						}
+						if resolved {
+							call.ModelBasis = "live reroute"
 						}
 						if usageMatchesDelta && (!resolutionPending || resolved) {
 							r.finalizeCallPricing(&call, pricingUsage)
@@ -702,14 +757,19 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							call.apiEqFinalized = true
 							if !record.usageAvailable {
 								call.APIEqIssue = "missing response input/output usage"
+								call.issueKind = UsageIssueMissing
 								r.apiEqMissingUsageCalls++
 							} else {
+								call.issueKind = UsageIssueInconsistent
 								call.APIEqIssue = validateBenchmarkUsage(record.usage)
 								if call.APIEqIssue == "" {
 									call.APIEqIssue = "cumulative token increase does not match last response usage"
 								}
 								r.apiEqInconsistentUsageCalls++
 							}
+						}
+						if call.apiEqFinalized && call.APIEqIssue != "" {
+							r.rememberCallIssue(call)
 						}
 						cursor.modelCalls = appendBounded(cursor.modelCalls, call, telemetryHistoryMax)
 						if resolutionDeferred {
@@ -772,18 +832,30 @@ func (r *LiveUsageReader) reconcilePendingModelResolutions() {
 			// The response aged out before model resolution; the loss is a
 			// usage-coverage issue, not evidence of an unsupported model.
 			r.apiEqMissingUsageCalls++
+			source := "legacy token snapshot"
+			if pending.exact {
+				source = "exact response"
+			}
+			r.rememberCallIssue(LiveModelCall{SessionID: pending.threadID, TurnID: pending.turnID, UsageSource: source, issueKind: UsageIssueMissing, APIEqIssue: "response aged out before model resolution"})
 			continue
 		}
 		if call.apiEqFinalized {
 			continue
 		}
 		observation, ok := r.takeResolvedModelObservation(pending.threadID, pending.turnID, pending.usage, pending.cumulativeTotal)
+		if !ok && pending.exact && pending.cumulativeTotal < 0 {
+			observation, ok = r.takeUniqueExactModelObservation(pending.threadID, pending.turnID, pending.usage)
+		}
 		pricingUsage := pending.usage
 		if ok {
 			call.Model = observation.Model
+			call.ModelBasis = "live reroute"
 			pricingUsage = observation.Usage
 		}
 		r.finalizeCallPricing(call, pricingUsage)
+		if call.APIEqIssue != "" {
+			r.rememberCallIssue(*call)
+		}
 	}
 	r.pendingModelResolutions = nil
 }
@@ -978,7 +1050,7 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 	// Require every core token field in both breakdowns. Missing legacy
 	// telemetry must never be mistaken for Codex's synthetic full-context event.
 	zeroClasses := func(u rolloutTokenUsage) bool {
-		return u.InputTokens != nil && *u.InputTokens == 0 &&
+		return u.schemaIssue == "" && u.InputTokens != nil && *u.InputTokens == 0 &&
 			u.OutputTokens != nil && *u.OutputTokens == 0 &&
 			u.CachedInputTokens != nil && *u.CachedInputTokens == 0 &&
 			u.ReasoningOutputTokens != nil && *u.ReasoningOutputTokens == 0 &&
@@ -1249,7 +1321,10 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	byID := make(map[string]*rolloutCursor, len(r.files))
 	for _, cursor := range r.files {
 		if cursor.threadID != "" {
-			byID[cursor.threadID] = cursor
+			previous := byID[cursor.threadID]
+			if previous == nil || cursor.lastModified.After(previous.lastModified) {
+				byID[cursor.threadID] = cursor
+			}
 		}
 	}
 
@@ -1484,4 +1559,30 @@ func contextErr(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+func (u *rolloutTokenUsage) UnmarshalJSON(data []byte) error {
+	type wire rolloutTokenUsage
+	var value wire
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*u = rolloutTokenUsage(value)
+	var unknown []string
+	for key := range fields {
+		switch key {
+		case "input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens", "codex_rollout_budget_units":
+		default:
+			unknown = append(unknown, key)
+		}
+	}
+	sort.Strings(unknown)
+	if len(unknown) > 0 {
+		u.schemaIssue = "unknown usage fields: " + strings.Join(unknown, ", ")
+	}
+	return nil
 }

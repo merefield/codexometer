@@ -4539,3 +4539,50 @@ for (const exit of ['commit', 'cancel', 'local'] as const) {
     await expect(list.getByRole('option')).toHaveCount(3);
   });
 }
+
+test('Quota accounting diagnostics retain source details safely on narrow screens', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      usageDiagnostic:
+        'UNPRICED USAGE // no maintained standard API price for model gpt-reserve\nMODEL gpt-reserve (requested) // TIER fast // EFFORT xhigh\nSESSION child-agent // SOURCE exact response // RESPONSE response-one <script>window.injection=true</script>',
+    },
+  );
+  await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
+  const notice = page
+    .getByRole('status')
+    .filter({ hasText: 'Last usage accounting issue:' });
+  for (const detail of [
+    'UNPRICED USAGE',
+    'gpt-reserve',
+    'fast',
+    'xhigh',
+    'child-agent',
+    'exact response',
+    'response-one',
+  ])
+    await expect(notice).toContainText(detail);
+  await page.setViewportSize({ width: 375, height: 700 });
+  await expect(notice).toBeVisible();
+  expect(await notice.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  );
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { injection?: boolean }).injection,
+    ),
+  ).toBeUndefined();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(notice).toHaveCount(0);
+});

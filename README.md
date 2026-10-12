@@ -706,17 +706,17 @@ narrower question: “At published API text-token prices, roughly what
 would this observed mix of model work cost when mapped onto the movement in my
 quota meter?”
 
-#### Fast mode and service-tier uncertainty
+#### Service tiers and pricing uncertainty
 
 Codexometer prices each newly observed response separately. Standard token cost
-and the requested-tier premium are maintained independently; quota learning uses
+and the signed requested-tier adjustment are maintained independently; quota learning uses
 their sum. For example, $1 at standard prices plus a $1 Fast premium over **5
 percentage points** of quota movement implies roughly **$40 per 100%**, compared
 with **$20 at standard prices**. It never multiplies the observed quota percentage
 or applies today's `/fast` setting retroactively.
 
 - `TIER*` means the estimate includes a **requested**, not billing-confirmed,
-  Fast premium. The current Codex sources expose persisted
+  tier adjustment (a premium for Fast/Ultrafast or a discount for Flex). The current Codex sources expose persisted
   `thread_settings_applied` settings, but neither local token events nor the
   shared app-server's response-usage notifications expose the actual billed tier.
   Settings are kept per session and captured for each turn; an in-flight turn
@@ -736,13 +736,17 @@ or applies today's `/fast` setting retroactively.
   comparison** for the same sample windows. Narrower layouts omit that comparison.
 - A known default setting has no premium. An explicitly unsupported tier/model
   combination is unpriced and interrupts clean learning rather than silently
-  applying an invented multiplier. Standard benchmark rankings are unchanged.
+  applying an invented multiplier. Benchmark comparisons continue to use Standard rates.
 
-Fast pricing was updated on **30 September 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
+Tier pricing was reviewed on **12 October 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
 (Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
-legacy `priority` alias. The premium is applied after the existing per-response
-long-context and cache-read/cache-write calculations; reasoning output is not
-counted twice. Other models' Fast prices are not yet maintained. See the official
+legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices.
+**Flex** uses **½×** on the maintained GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
+GPT-5.2 fallback pricing and published short-context Fast rates for GPT-5.2,
+GPT-5.3 Codex, GPT-5.4/Mini and GPT-5.5 are also maintained; GPT-5.5 Fast is 2.5×.
+Other explicit model/tier combinations and unpublished long-context Fast rates
+remain unavailable. Adjustments follow per-response long-context and cache
+calculations; reasoning output is not counted twice. See the official
 [Astra pricing](https://developers.openai.com/api/docs/models/gpt-6-astra),
 [Codex speed guidance](https://learn.chatgpt.com/docs/agent-configuration/speed),
 and [API Fast-mode guide](https://developers.openai.com/api/docs/guides/fast-mode).
@@ -758,9 +762,21 @@ new evidence accumulates. Future improvement: consume the actual response
 `service_tier` if Codex exposes it with matching per-response token usage, then
 prefer that evidence to requested settings.
 
-Codexometer normally prices each newly completed local model call using the
-requested model durably recorded in its turn context. Current Codex rollout
-files do not persist transient model-reroute events, so a reroute cannot be
+Codexometer prefers Codex's durable **`token_usage_record`** entries for each
+newly completed response. Exact records are counted independently of cumulative
+context counters, with bounded response-ID deduplication; inherited parent
+records are excluded from a child's own usage. Startup establishes a historical
+baseline without charging past responses, using a bounded 4 MiB tail scan.
+An exact record switches that rollout to response accounting: subsequent
+`token_count` snapshots remain context/attribution baselines and never create
+another billable response. Older rollouts retain the legacy token-count reader. A replacement rollout for
+an existing thread establishes a new baseline rather than charging copied
+history again; session settings come from its newest observed rollout.
+
+The requested model remains the fallback when actual per-response model evidence
+is unavailable; durable usage records do not supply model or billed-tier fields.
+Diagnostics explicitly distinguish requested-model attribution from a matching
+live reroute. Current Codex rollout files do not persist transient model-reroute events, so a reroute cannot be
 reconstructed from that source alone. When Codexometer and the CLI share the
 managed daemon described above, Codexometer keeps a live subscription and
 matches reroute and token-usage events to rollout calls by thread ID, turn ID,
@@ -779,7 +795,7 @@ cache-write input, and output are priced separately; requests above the
 published 272,000-input-token threshold use the corresponding long-context
 rates where OpenAI publishes them. Unknown models or missing price classes fail
 closed as `UNPRICED USAGE` rather than being guessed or treated as free.
-Codex's context-window bookkeeping updates are recognised only when the window
+In the legacy reader, Codex's context-window bookkeeping updates are recognised only when the window
 and both complete, explicit zero-token-class breakdowns match its synthetic fill record.
 They rebase the local counter without adding response costs, token totals or
 model-call graph pulses. Quota learning restarts as `LOCAL ACCOUNTING REBASED`.
@@ -788,20 +804,32 @@ the current baseline, including inherited child history and historical scans.
 Missing input/output usage and inconsistent response/cumulative usage instead
 restart as `MISSING RESPONSE USAGE` or `INCONSISTENT RESPONSE USAGE`; no costs
 are guessed. Unknown model/tier or unavailable pricing remains `UNPRICED USAGE`.
+The terminal Quota view retains a bounded issue panel with the reason, originating
+session (including a child agent), model and its attribution basis, requested tier,
+effort, response/legacy/benchmark source, response ID and timestamp. The panel
+fits available terminal space; the browser Quota view shows the latest observed
+issue with wrapping. Diagnostics retain accounting metadata, not prompt/reply
+content, and are not persisted. A prior issue cannot be assigned to a later
+learning restart. Reserve (`gpt-reserve`), custom/preview and provider-specific
+model IDs stay unpriced where a price mapping is unverified; display aliases are
+not billing evidence.
 Core, Extended, and DigBench trials use ephemeral threads that intentionally do
 not appear in normal persisted session telemetry. While a subscription-funded
 benchmark suite is active, Quota views replace the numeric API-equivalent
 estimate with `SUBSCRIPTION BENCHMARK ACTIVE` instead of presenting partial
 accounting. When each trial finishes, its authoritative benchmark usage is
-folded into the same process-local accounting used for quota learning; missing
-or unpriceable benchmark usage fails closed and restarts the learning anchor.
+folded into the same process-local accounting used for quota learning; missing,
+inconsistent or unpriceable benchmark usage fails closed with separate reasons
+and restarts the learning anchor. Complete raw response usage takes precedence
+over cumulative/context snapshots, each response retains its observed/requested
+model, and identical notification replays do not duplicate costs.
 Benchmarks funded by `CODEXOMETER_BENCHMARK_API_KEY` are excluded because they
 do not consume the displayed subscription quota. Benchmark threads remain
 hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were last updated on **2026-09-30**.
+and were last reviewed on **2026-10-12**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced

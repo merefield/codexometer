@@ -105,6 +105,7 @@ export interface Threshold {
   remaining?: number;
 }
 export interface Snapshot {
+  usageDiagnostic?: string;
   statusLineFields?: {
     id: string;
     label: string;

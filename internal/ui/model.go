@@ -1224,7 +1224,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case benchmarkEventMsg:
 		if !message.ok {
 			if m.benchmarkActive != nil {
-				m.benchmarkQuotaAccounting.abandonActiveResult()
+				m.benchmarkQuotaAccounting.abandonActiveResult(*m.benchmarkActive)
 			}
 			if m.benchmarkState == benchmarkStopping {
 				m.benchmarkState = benchmarkStopped
@@ -1288,7 +1288,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if event.Done {
 			if m.benchmarkActive != nil && event.Result == nil {
-				m.benchmarkQuotaAccounting.abandonActiveResult()
+				m.benchmarkQuotaAccounting.abandonActiveResult(*m.benchmarkActive)
 			}
 			if event.Stopped {
 				m.benchmarkState = benchmarkStopped
@@ -1620,6 +1620,7 @@ func (m Model) dashboardLayout() dashboardGeometry {
 	const footerHeight = 2
 	extraHeight := 0
 	extraHeight += m.resetNoticeHeight(contentWidth)
+	extraHeight += m.quotaAPIDiagnosticHeight(contentWidth)
 	if m.err != nil && m.meterView != viewUsage {
 		extraHeight += framedErrorHeight
 	}

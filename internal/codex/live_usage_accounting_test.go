@@ -143,7 +143,7 @@ func TestResponseUsageProblemsAreSeparateFromUnknownPrices(t *testing.T) {
 			case "unknown-model":
 				event = turnContextLine(now, "gpt-6-astra-preview") + "\n" + event
 			case "unsupported-tier":
-				event = tierSettingsLine(now, `"flex"`) + "\n" + turnContextLine(now, "gpt-6-astra") + "\n" + event
+				event = tierSettingsLine(now, `"unadvertised-tier"`) + "\n" + turnContextLine(now, "gpt-6-astra") + "\n" + event
 			}
 			appendRollout(t, path, event+"\n")
 			usage, err := r.FetchTokenUsage(context.Background())

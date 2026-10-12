@@ -29,9 +29,9 @@ func TestRequestedTierPremium(t *testing.T) {
 		{" GPT-6-ASTRA-2026-09-01 ", " PRIORITY ", 3, true},
 		{"gpt-6-astra", "default", 0, true},
 		{"gpt-6-astra", "", 0, true},
-		{"gpt-6-astra", "flex", 0, false},
+		{"gpt-6-astra", "flex", -1.5, true},
 		{"gpt-6-astra-preview", "fast", 0, false},
-		{"gpt-5.4", "fast", 0, false},
+		{"gpt-5.4", "fast", 3, true},
 		{"unknown", "fast", 0, false},
 	} {
 		t.Run(test.model+test.tier, func(t *testing.T) {
@@ -203,6 +203,31 @@ func TestTierAccountingIsPerSession(t *testing.T) {
 		}
 		if (s.ModelCalls[0].APIEqTierPremiumUSD > 0) != (s.ID == "fast") {
 			t.Fatalf("tier leaked: %+v", s)
+		}
+	}
+}
+
+func TestVerifiedTierPricingForAstraAndFallbacks(t *testing.T) {
+	for _, input := range []int64{272000, 272001} {
+		u := BenchmarkUsage{InputTokens: input, CachedInputTokens: 1000, CacheWriteInputTokens: 2000, OutputTokens: 100, ReasoningOutputTokens: 80, TotalTokens: input + 100}
+		standard, _, _ := EstimateStandardAPIEqCost("gpt-6-astra", u)
+		for tier, factor := range map[string]float64{"default": 1, "fast": 2, "ultrafast": 6, "flex": 0.5} {
+			r := &LiveUsageReader{}
+			call := LiveModelCall{Model: "gpt-6-astra", RequestedServiceTier: tier}
+			r.finalizeCallPricing(&call, u)
+			if !call.APIEqKnown || r.apiEqUnknownCalls != 0 || math.Abs((r.apiEqUSD+r.apiEqTierPremiumUSD)-standard*factor) > 1e-12 {
+				t.Fatal("tier lost token classes or context boundary", input, tier, call)
+			}
+		}
+	}
+	u := BenchmarkUsage{InputTokens: 1000, CachedInputTokens: 100, OutputTokens: 100, TotalTokens: 1100}
+	cost, known, _ := EstimateStandardAPIEqCost("gpt-5.2-2025-12-11", u)
+	if !known || math.Abs(cost-(900*1.75+100*.175+100*14)/1e6) > 1e-12 {
+		t.Fatal("fallback snapshot not priced", cost, known)
+	}
+	for _, model := range []string{"gpt-reserve", "openai.gpt-6-astra", "gpt-6-astra-preview"} {
+		if _, known, _ := EstimateStandardAPIEqCost(model, u); known {
+			t.Fatal("unverified model/provider mapping guessed", model)
 		}
 	}
 }

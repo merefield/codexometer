@@ -106,6 +106,7 @@ type quotaThreshold struct {
 }
 
 type state struct {
+	UsageDiagnostic  string              `json:"usageDiagnostic,omitempty"`
 	StatusLineFields []statusline.Field  `json:"statusLineFields"`
 	Triggers         []triggerSummary    `json:"triggers,omitempty"`
 	Profiles         []profileReview     `json:"profiles,omitempty"`
@@ -274,6 +275,16 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 	s.state.SessionsError = err != nil
 	if err == nil {
 		s.state.SessionsAt = now
+		s.state.UsageDiagnostic = ""
+		if len(l.APIEqDiagnostics) > 0 {
+			latest := l.APIEqDiagnostics[0]
+			for _, issue := range l.APIEqDiagnostics[1:] {
+				if !issue.ObservedAt.Before(latest.ObservedAt) {
+					latest = issue
+				}
+			}
+			s.state.UsageDiagnostic = codex.DiagnosticText(latest)
+		}
 		if s.state.Control {
 			s.contexts = make(map[string]codex.SessionContext, len(l.Sessions))
 			s.directories = make(map[string]string, len(l.Sessions))
