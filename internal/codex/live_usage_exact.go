@@ -55,6 +55,8 @@ func (c *rolloutCursor) rememberExactResponse(id string, usage BenchmarkUsage) b
 
 // Establish the source and recent replay identities without counting history.
 // Bound startup IO independently of the file's potentially large transcript.
+// A truncated scan cannot prove the absence of older exact records. In that
+// case suppress legacy billing until an owned exact record establishes the mode.
 func restoreExactUsageBaseline(path string, cursor *rolloutCursor, baselineOffset int64) (int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -97,6 +99,7 @@ func restoreExactUsageBaseline(path string, cursor *rolloutCursor, baselineOffse
 			cursor.rememberExactResponse(id, usage)
 		}
 	}
+	cursor.exactUsageUncertain = start > 0 && !cursor.exactUsage
 	return end, nil
 }
 
@@ -105,6 +108,7 @@ func (r *LiveUsageReader) consumeExactUsage(cursor *rolloutCursor, record rollou
 		return
 	}
 	cursor.exactUsage = true
+	cursor.exactUsageUncertain = false
 	id := strings.TrimSpace(record.Payload.ResponseID)
 	usage := BenchmarkUsage{}
 	if record.Payload.Usage != nil {

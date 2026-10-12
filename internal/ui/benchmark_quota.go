@@ -88,61 +88,94 @@ func (a *benchmarkQuotaAccounting) observe(result codex.BenchmarkResult) {
 	}
 	a.accounted[key] = struct{}{}
 
-	cost, known, kind, reason := benchmarkQuotaCostDetail(result)
-	calls := int64(len(result.ResponseUsage))
-	if calls == 0 {
-		calls = 1
-	}
-	if known {
-		a.costUSD += cost
-		a.pricedCalls += calls
-		a.revision++
-		return
-	}
-	for i := int64(0); i < calls; i++ {
-		a.recordIssue(result, kind, reason)
+	cost, pricedCalls, issues := benchmarkQuotaCostDetail(result)
+	a.costUSD += cost
+	a.pricedCalls += pricedCalls
+	for _, issue := range issues {
+		if issue.response != nil {
+			a.recordIssue(result, issue.kind, issue.reason, *issue.response)
+		} else {
+			a.recordIssue(result, issue.kind, issue.reason)
+		}
 	}
 	a.revision++
 }
 
-func benchmarkQuotaCostDetail(result codex.BenchmarkResult) (float64, bool, codex.APIEqIssueKind, string) {
+type benchmarkQuotaIssue struct {
+	kind     codex.APIEqIssueKind
+	reason   string
+	response *codex.BenchmarkResponseUsage
+}
+
+func benchmarkQuotaCostDetail(result codex.BenchmarkResult) (float64, int64, []benchmarkQuotaIssue) {
+	aggregateIssue := func(kind codex.APIEqIssueKind, reason string) (float64, int64, []benchmarkQuotaIssue) {
+		return 0, 0, []benchmarkQuotaIssue{{kind: kind, reason: reason}}
+	}
 	if result.CostKnown {
 		if validBenchmarkQuotaCost(result.CostUSD) {
-			return result.CostUSD, true, "", ""
+			return result.CostUSD, int64(max(len(result.ResponseUsage), 1)), nil
 		}
-		return 0, false, codex.UsageIssueInconsistent, "benchmark returned an invalid measured cost"
+		return aggregateIssue(codex.UsageIssueInconsistent, "benchmark returned an invalid measured cost")
 	}
 	model := strings.TrimSpace(result.ActualModel)
 	if model == "" {
 		model = result.Model
 	}
+	var issues []benchmarkQuotaIssue
+	for i := range result.ResponseUsage {
+		response := &result.ResponseUsage[i]
+		if response.UsageIssue != "" {
+			issues = append(issues, benchmarkQuotaIssue{kind: benchmarkUsageIssueKind(response.UsageIssue), reason: response.UsageIssue, response: response})
+		} else if response.UsageMissing {
+			issues = append(issues, benchmarkQuotaIssue{kind: codex.UsageIssueMissing, reason: "raw response omitted usage", response: response})
+		}
+	}
+	if len(issues) > 0 {
+		return 0, 0, issues
+	}
 	if !result.UsageKnown {
 		if result.UsageIssue != "" {
-			kind := codex.UsageIssueInconsistent
-			if strings.Contains(result.UsageIssue, "omitted") || strings.Contains(result.UsageIssue, "not observed") {
-				kind = codex.UsageIssueMissing
-			}
-			return 0, false, kind, result.UsageIssue
+			return aggregateIssue(benchmarkUsageIssueKind(result.UsageIssue), result.UsageIssue)
 		}
-		return 0, false, codex.UsageIssueMissing, "benchmark omitted validated response usage"
+		return aggregateIssue(codex.UsageIssueMissing, "benchmark omitted validated response usage")
 	}
 	if result.UsageSource == codex.BenchmarkUsageRawResponses && len(result.ResponseUsage) > 0 {
 		var total float64
-		for _, response := range result.ResponseUsage {
+		var pricedCalls int64
+		for i := range result.ResponseUsage {
+			response := &result.ResponseUsage[i]
 			responseModel := response.Model
 			if responseModel == "" {
 				responseModel = model
 			}
-			cost, known, issue := codex.EstimateStandardAPIEqCost(responseModel, response.Usage)
+			cost, known, reason := codex.EstimateStandardAPIEqCost(responseModel, response.Usage)
 			if !known {
-				return 0, false, benchmarkCostIssueKind(issue), issue
+				issues = append(issues, benchmarkQuotaIssue{kind: benchmarkCostIssueKind(reason), reason: reason, response: response})
+				continue
 			}
 			total += cost
+			pricedCalls++
 		}
-		return total, validBenchmarkQuotaCost(total), codex.UsageIssueInconsistent, "benchmark cost total was not finite"
+		if !validBenchmarkQuotaCost(total) {
+			return aggregateIssue(codex.UsageIssueInconsistent, "benchmark cost total was not finite")
+		}
+		return total, pricedCalls, issues
 	}
-	cost, known, issue := codex.EstimateStandardAPIEqAggregateCost(model, result.Usage)
-	return cost, known && validBenchmarkQuotaCost(cost), benchmarkCostIssueKind(issue), issue
+	cost, known, reason := codex.EstimateStandardAPIEqAggregateCost(model, result.Usage)
+	if !known {
+		return aggregateIssue(benchmarkCostIssueKind(reason), reason)
+	}
+	if !validBenchmarkQuotaCost(cost) {
+		return aggregateIssue(codex.UsageIssueInconsistent, "benchmark cost total was not finite")
+	}
+	return cost, 1, nil
+}
+
+func benchmarkUsageIssueKind(reason string) codex.APIEqIssueKind {
+	if strings.Contains(reason, "omitted") || strings.Contains(reason, "not observed") {
+		return codex.UsageIssueMissing
+	}
+	return codex.UsageIssueInconsistent
 }
 
 func benchmarkCostIssueKind(reason string) codex.APIEqIssueKind {
@@ -152,7 +185,7 @@ func benchmarkCostIssueKind(reason string) codex.APIEqIssueKind {
 	return codex.UsageIssueUnpriced
 }
 
-func (a *benchmarkQuotaAccounting) recordIssue(result codex.BenchmarkResult, kind codex.APIEqIssueKind, reason string) {
+func (a *benchmarkQuotaAccounting) recordIssue(result codex.BenchmarkResult, kind codex.APIEqIssueKind, reason string, responses ...codex.BenchmarkResponseUsage) {
 	var counter int64
 	switch kind {
 	case codex.UsageIssueMissing:
@@ -171,17 +204,10 @@ func (a *benchmarkQuotaAccounting) recordIssue(result codex.BenchmarkResult, kin
 		model = result.Model
 	}
 	responseID := ""
-	if !result.CostKnown && result.UsageKnown && result.UsageSource == codex.BenchmarkUsageRawResponses {
-		for _, response := range result.ResponseUsage {
-			responseModel := response.Model
-			if responseModel == "" {
-				responseModel = model
-			}
-			if _, known, _ := codex.EstimateStandardAPIEqCost(responseModel, response.Usage); !known {
-				model = responseModel
-				responseID = response.ResponseID
-				break
-			}
+	if len(responses) > 0 {
+		responseID = responses[0].ResponseID
+		if responses[0].Model != "" {
+			model = responses[0].Model
 		}
 	}
 	a.diagnostics = append(a.diagnostics, codex.APIEqDiagnostic{Kind: kind, Counter: counter, ObservedAt: time.Now(), At: time.Now(), SessionID: "benchmark", Model: model, Effort: result.Effort, Source: "subscription benchmark", ResponseID: responseID, Reason: reason})

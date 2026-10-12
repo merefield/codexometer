@@ -239,3 +239,42 @@ func TestExactReplacementRolloutDoesNotBillCopiedThreadHistory(t *testing.T) {
 		t.Fatal("fresh replacement response was lost", next, err)
 	}
 }
+
+func TestExactUsageOlderThanStartupTailCannotEnableLegacyBilling(t *testing.T) {
+	for _, historicalExact := range []bool{false, true} {
+		_, path, now := astraUsageReader(t, 100)
+		u := BenchmarkUsage{InputTokens: 1000, OutputTokens: 100, TotalTokens: 1100}
+		if historicalExact {
+			appendRollout(t, path, exactLine(t, now, "astra-accounting", "t", "old", u)+"\n")
+		}
+		// The last owned exact response, if present, is outside the discovery
+		// window. An otherwise identical large legacy file is also uncertain.
+		padding := `{"type":"response_item","payload":"` + strings.Repeat("x", 4096) + `"}` + "\n"
+		appendRollout(t, path, strings.Repeat(padding, 1100))
+		home := strings.Split(path, string(filepath.Separator)+"sessions"+string(filepath.Separator))[0]
+		r, err := NewLiveUsageReader(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.statusProvider = nil
+		if _, err := r.FetchTokenUsage(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		checkpoint := richTokenCountLine(now, 1200, 1000, 0, 0, 100) + "\n"
+		appendRollout(t, path, checkpoint+checkpoint)
+		uncertain, err := r.FetchTokenUsage(context.Background())
+		if err != nil || uncertain.TotalTokens != 0 || uncertain.APIEqPricedCalls != 0 || uncertain.APIEqUSD != 0 || uncertain.APIEqMissingUsageCalls != 1 || len(uncertain.APIEqDiagnostics) != 1 || !strings.Contains(uncertain.APIEqDiagnostics[0].Reason, "without establishing response usage mode") {
+			t.Fatal("truncated baseline enabled legacy billing or hid uncertainty", historicalExact, uncertain, err)
+		}
+		appendRollout(t, path, richTokenCountLine(now, 2300, 1000, 0, 0, 100)+"\n")
+		continued, err := r.FetchTokenUsage(context.Background())
+		if err != nil || continued.APIEqMissingUsageCalls != 2 || continued.APIEqPricedCalls != 0 {
+			t.Fatal("ongoing uncertain usage failed to invalidate quota learning", continued, err)
+		}
+		appendRollout(t, path, exactLine(t, now, "astra-accounting", "t", "fresh", u)+"\n"+richTokenCountLine(now, 3400, 1000, 0, 0, 100)+"\n")
+		fresh, err := r.FetchTokenUsage(context.Background())
+		if err != nil || fresh.APIEqPricedCalls != 1 || fresh.TotalTokens != 1100 || fresh.APIEqMissingUsageCalls != 2 || r.files[path].exactUsageUncertain {
+			t.Fatal("exact record did not restore reliable accounting", fresh, err)
+		}
+	}
+}

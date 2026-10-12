@@ -1396,3 +1396,41 @@ func TestBenchmarkExactResponsesOverrideSyntheticSnapshotsAndRetainModels(t *tes
 		t.Fatal("conflicting response ID was accepted", result)
 	}
 }
+
+func TestBenchmarkRawMissingUsageRetainsAttribution(t *testing.T) {
+	telemetry := newBenchmarkTelemetry()
+	usage := BenchmarkUsage{InputTokens: 100, OutputTokens: 10, TotalTokens: 110}
+	telemetry.recordRawResponseForModel("missing", nil, "gpt-reserve")
+	telemetry.recordRawResponseForModel("missing", nil, "gpt-reserve")
+	telemetry.recordRawResponseForModel("later", &usage, "gpt-6-astra")
+	result := BenchmarkResult{ActualModel: "gpt-6-astra"}
+	applyBenchmarkMeasurements(&result, telemetry)
+	if result.UsageKnown || result.CostKnown || len(result.ResponseUsage) != 2 || result.UsageSource != BenchmarkUsageRawResponses {
+		t.Fatal("missing raw usage was priced or lost", result)
+	}
+	response := result.ResponseUsage[0]
+	if response.ResponseID != "missing" || response.Model != "gpt-reserve" || !response.UsageMissing || response.UsageIssue != "raw response omitted usage" {
+		t.Fatal("missing usage attribution lost", response)
+	}
+}
+
+func TestBenchmarkRawReplayRejectsModelConflicts(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		telemetry := newBenchmarkTelemetry()
+		usage := &BenchmarkUsage{InputTokens: 100, OutputTokens: 10, TotalTokens: 110}
+		if missing {
+			usage = nil
+		}
+		telemetry.recordRawResponseForModel("same-response", usage, "gpt-6-astra")
+		telemetry.recordRawResponseForModel("same-response", usage, "gpt-6-astra")
+		if len(telemetry.rawResponses) != 1 || telemetry.issue != "" {
+			t.Fatal("identical replay was not idempotent", telemetry)
+		}
+		telemetry.recordRawResponseForModel("same-response", usage, "gpt-5.2")
+		result := BenchmarkResult{ActualModel: "gpt-5.2"}
+		applyBenchmarkMeasurements(&result, telemetry)
+		if result.UsageKnown || result.CostKnown || (!strings.Contains(result.UsageIssue, "gpt-6-astra") || !strings.Contains(result.UsageIssue, "gpt-5.2") || !strings.Contains(result.UsageIssue, "conflicting duplicate")) || len(result.ResponseUsage) != 1 || result.ResponseUsage[0].UsageIssue != result.UsageIssue {
+			t.Fatal("conflicting model replay was silently retained", missing, result)
+		}
+	}
+}

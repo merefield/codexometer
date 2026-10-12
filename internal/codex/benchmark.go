@@ -111,10 +111,14 @@ func (c Client) BenchmarkBillingSource() BenchmarkBillingSource {
 
 // BenchmarkResponseUsage is the exact upstream usage for one Responses API
 // completion when the current Codex app-server exposes experimental raw events.
+// Missing or conflicting usage retains response identity for diagnostics;
+// UsageMissing distinguishes an omitted payload from valid all-zero usage.
 type BenchmarkResponseUsage struct {
-	ResponseID string
-	Model      string
-	Usage      BenchmarkUsage
+	ResponseID   string
+	Model        string
+	Usage        BenchmarkUsage
+	UsageMissing bool
+	UsageIssue   string
 }
 
 type BenchmarkInteractionKind string
@@ -1198,7 +1202,7 @@ type benchmarkTelemetry struct {
 	lastCumulative     BenchmarkUsage
 	hasLastCumulative  bool
 	rawResponses       []BenchmarkResponseUsage
-	rawIDs             map[string]struct{}
+	rawIDs             map[string]int
 	rawObserved        bool
 	rawMissingUsage    bool
 	issue              string
@@ -1206,7 +1210,7 @@ type benchmarkTelemetry struct {
 }
 
 func newBenchmarkTelemetry() *benchmarkTelemetry {
-	return &benchmarkTelemetry{rawIDs: make(map[string]struct{})}
+	return &benchmarkTelemetry{rawIDs: make(map[string]int)}
 }
 
 func (t *benchmarkTelemetry) recordCumulative(usage BenchmarkUsage) {
@@ -1223,42 +1227,54 @@ func (t *benchmarkTelemetry) recordCumulative(usage BenchmarkUsage) {
 }
 
 func (t *benchmarkTelemetry) recordRawResponse(responseID string, usage *BenchmarkUsage) {
+	t.recordRawResponseForModel(responseID, usage, "")
+}
+
+func (t *benchmarkTelemetry) recordRawResponseForModel(id string, usage *BenchmarkUsage, model string) {
 	t.rawObserved = true
-	if strings.TrimSpace(responseID) == "" {
-		t.setIssue("raw response usage omitted response id")
-		return
-	}
-	if _, duplicate := t.rawIDs[responseID]; duplicate {
-		for _, previous := range t.rawResponses {
-			if previous.ResponseID == responseID {
-				if usage != nil && previous.Usage == *usage {
-					return
-				}
-				t.setIssue("conflicting duplicate raw response usage: " + responseID)
-				return
-			}
-		}
-		if usage == nil {
-			return
-		} // Identical replay of an already missing usage payload.
-		t.setIssue("conflicting duplicate raw response usage: " + responseID)
-		return
-	}
-	t.rawIDs[responseID] = struct{}{}
+	response := BenchmarkResponseUsage{ResponseID: id, Model: model, UsageMissing: usage == nil}
 	if usage == nil {
-		t.rawMissingUsage = true
+		response.UsageIssue = "raw response omitted usage"
+	} else {
+		response.Usage = *usage
+		if issue := validateBenchmarkUsage(*usage); issue != "" {
+			response.UsageIssue = "invalid raw response usage: " + issue
+		}
+	}
+	if strings.TrimSpace(id) == "" {
+		response.UsageIssue = "raw response usage omitted response id"
+		t.setIssue(response.UsageIssue)
+		t.rawResponses = append(t.rawResponses, response)
 		return
 	}
-	if issue := validateBenchmarkUsage(*usage); issue != "" {
-		t.setIssue("invalid raw response usage: " + issue)
+	if index, duplicate := t.rawIDs[id]; duplicate {
+		previous := &t.rawResponses[index]
+		if previous.Model == model && previous.UsageMissing == response.UsageMissing && previous.Usage == response.Usage {
+			return
+		}
+		previous.UsageIssue = "conflicting duplicate raw response usage: " + id
+		if previous.Model != model {
+			previous.UsageIssue = fmt.Sprintf("conflicting duplicate raw response model: %q versus %q", previous.Model, model)
+		}
+		t.setIssue(previous.UsageIssue)
+		return
 	}
-	t.rawResponses = append(t.rawResponses, BenchmarkResponseUsage{ResponseID: responseID, Usage: *usage})
+	t.rawIDs[id] = len(t.rawResponses)
+	t.rawResponses = append(t.rawResponses, response)
+	if response.UsageMissing {
+		t.rawMissingUsage = true
+	} else if response.UsageIssue != "" {
+		t.setIssue(response.UsageIssue)
+	}
 }
 
 func (t *benchmarkTelemetry) apply(result *BenchmarkResult) {
 	result.UsageObserved = t.cumulativeObserved || t.rawObserved
 	result.UsageSource = BenchmarkUsageUnavailable
 	result.ResponseUsage = append([]BenchmarkResponseUsage(nil), t.rawResponses...)
+	if t.rawObserved {
+		result.UsageSource = BenchmarkUsageRawResponses
+	}
 	if t.issue != "" {
 		result.UsageIssue = t.issue
 		return
@@ -1722,12 +1738,4 @@ func pricedModelName(model string) string {
 		}
 	}
 	return ""
-}
-
-func (t *benchmarkTelemetry) recordRawResponseForModel(id string, usage *BenchmarkUsage, model string) {
-	before := len(t.rawResponses)
-	t.recordRawResponse(id, usage)
-	if len(t.rawResponses) > before {
-		t.rawResponses[len(t.rawResponses)-1].Model = model
-	}
 }

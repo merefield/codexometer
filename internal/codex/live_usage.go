@@ -180,6 +180,7 @@ type rolloutCursor struct {
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
 	exactUsage                  bool
+	exactUsageUncertain         bool
 	exactResponses              map[string]BenchmarkUsage
 	exactConflicts              map[string]bool
 	exactResponseOrder          []string
@@ -693,9 +694,13 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 				r.consumeExactUsage(cursor, record)
 			}
 			if record, ok := tokenUsageRecord(line); ok {
-				if cursor.exactUsage {
+				if cursor.exactUsage || cursor.exactUsageUncertain {
 					if tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 						r.attachExactCheckpoint(cursor, record)
+						if cursor.exactUsageUncertain && record.total != cursor.totalTokens {
+							r.apiEqMissingUsageCalls++
+							r.rememberCallIssue(LiveModelCall{At: record.at, SessionID: cursor.threadID, Model: cursor.currentModel, RequestedServiceTier: cursor.currentServiceTier, Effort: cursor.modelSettings.ReasoningEffort, UsageSource: "rollout mode discovery", issueKind: UsageIssueMissing, APIEqIssue: "historical scan exceeded 4 MiB without establishing response usage mode; context snapshots cannot be billed until an exact response record arrives"})
+						}
 					}
 					cursor.totalTokens = record.total
 					continue
