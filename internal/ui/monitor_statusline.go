@@ -72,7 +72,23 @@ func (m Model) monitorPriorityFields(s monitorSession) ([]string, map[string]boo
 	selected := make(map[string]bool)
 	var lines []string
 	for _, id := range statusline.Normalize(m.monitorStatusLine) {
-		if value := values[id]; value != "" {
+		value := values[id]
+		switch id {
+		case "model-with-reasoning":
+			var parts []string
+			for _, field := range []string{"model", "reasoning"} {
+				if values[field] != "" && !selected[field] {
+					parts = append(parts, values[field])
+					selected[field] = true
+				}
+			}
+			value = strings.Join(parts, " ")
+		case "model", "reasoning":
+			if selected[id] {
+				continue
+			}
+		}
+		if value != "" {
 			selected[id] = true
 			if id != "run-state" { // The essential state line is already first.
 				lines = append(lines, value)

@@ -117,6 +117,46 @@ func TestStatusLinePrioritisesPerSessionTelemetry(t *testing.T) {
 	}
 }
 
+func TestStatusLinePriorityDeduplicatesModelComponentsInOrder(t *testing.T) {
+	for _, tt := range []struct {
+		ids    []string
+		model  string
+		effort string
+		want   []string
+	}{
+		{[]string{"model-with-reasoning", "source", "model", "reasoning"}, "test-model", "high", []string{"test-model high", "LOCAL"}},
+		{[]string{"model", "source", "model-with-reasoning", "reasoning"}, "test-model", "high", []string{"test-model", "LOCAL", "high"}},
+		{[]string{"reasoning", "source", "model-with-reasoning", "model"}, "test-model", "high", []string{"high", "LOCAL", "test-model"}},
+		{[]string{"reasoning", "model", "model-with-reasoning"}, "test-model", "high", []string{"high", "test-model"}},
+		{[]string{"model-with-reasoning", "model", "reasoning"}, "test-model", "", []string{"test-model"}},
+		{[]string{"model-with-reasoning", "model", "reasoning"}, "", "high", []string{"high"}},
+		{[]string{"model", "model-with-reasoning", "reasoning"}, "", "high", []string{"high"}},
+		{[]string{"reasoning", "model-with-reasoning", "model"}, "test-model", "", []string{"test-model"}},
+		{[]string{"model-with-reasoning", "model", "reasoning"}, "", "", nil},
+	} {
+		t.Run(strings.Join(tt.ids, "/")+"/"+tt.model+"/"+tt.effort, func(t *testing.T) {
+			m := contextTestModel()
+			m.monitorSelectedID = "root-one"
+			m.monitorStatusLine = tt.ids
+			s := m.monitorSessionData[1]
+			s.modelSettings = codex.SessionModelSettings{Model: tt.model, ReasoningEffort: tt.effort}
+			lines, selected := m.monitorPriorityFields(s)
+			if !reflect.DeepEqual(lines, tt.want) {
+				t.Fatalf("priority fields = %q, want %q", lines, tt.want)
+			}
+			if tt.model != "" && !selected["model"] || tt.effort != "" && !selected["reasoning"] {
+				t.Fatal("rendered model components must suppress fallback duplication")
+			}
+			body := ansi.Strip(m.renderMonitorSessionMetrics(80, 16, s, "", paletteFor(m.theme)))
+			for _, value := range []string{tt.model, tt.effort} {
+				if value != "" && strings.Count(body, value) != 1 {
+					t.Fatalf("model component %q repeated in telemetry:\n%s", value, body)
+				}
+			}
+		})
+	}
+}
+
 func TestStatusLineFooterPreservesCopyGeometry(t *testing.T) {
 	for _, width := range []int{24, 60, 120, 180} {
 		m := completedCopyModel()
