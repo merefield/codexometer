@@ -166,6 +166,9 @@ func (m Model) renderMonitorSummary(width, height int, colors palette, navigatio
 	}
 	innerWidth := max(width-4, 1)
 	lines := m.monitorSummaryLines(innerWidth, max(height-3, 1), colors)
+	// Extremely short/narrow panes may not fit every category. Never let the
+	// summary enlarge its frame and push session controls outside the viewport.
+	lines = lines[:min(len(lines), max(height-2, 1))]
 	status := " // " + i18n.Format("ELAPSED %s  //  AVG TOK/MIN %s", formatElapsed(elapsed), formatTokens(m.monitorAverageRate))
 	if m.monitorError != "" {
 		status = " // " + terminalLabel(hint)

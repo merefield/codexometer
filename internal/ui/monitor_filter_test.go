@@ -17,14 +17,14 @@ import (
 func statusFilterTestModel() Model {
 	m := contextTestModel()
 	m.monitorSessionData = []monitorSession{
-		{id: "work", displayed: true, working: true},
-		{id: "approval", displayed: true, working: true, attention: codex.SessionAttentionApproval},
-		{id: "input", displayed: true, attention: codex.SessionAttentionInput},
-		{id: "check", displayed: true, attention: codex.SessionAttentionCheck},
-		{id: "complete", displayed: true, attention: codex.SessionAttentionComplete},
+		{id: "work", displayed: true, active: true, working: true},
+		{id: "approval", displayed: true, active: true, working: true, attention: codex.SessionAttentionApproval},
+		{id: "input", displayed: true, active: true, attention: codex.SessionAttentionInput},
+		{id: "check", displayed: true, active: true, attention: codex.SessionAttentionCheck},
+		{id: "complete", displayed: true, active: true, attention: codex.SessionAttentionComplete},
 		{id: "idle", displayed: true},
-		{id: "dismissed", displayed: true, working: true},
-		{id: "undisplayed", working: true},
+		{id: "dismissed", displayed: true, active: true, working: true},
+		{id: "undisplayed", active: true, working: true},
 	}
 	m.monitorDismissed = map[string]monitorSessionDismissal{"dismissed": {}}
 	m.monitorBaseline, m.monitorLatest = 100, 725
@@ -43,7 +43,7 @@ func filterKey(t *testing.T, m Model, code rune) Model {
 
 func TestMonitorStatusFilterCategoriesKeepGlobalTotals(t *testing.T) {
 	m := statusFilterTestModel()
-	want := [][]string{{"work", "approval", "input", "check", "complete", "idle"}, {"work"}, {"approval"}, {"input"}, {"check"}}
+	want := [][]string{{"work", "approval", "input", "check", "complete", "idle"}, {"work", "approval", "input", "complete"}, {"work"}, {"approval"}, {"input"}, {"check"}}
 	global := strings.Join(m.monitorSummaryLines(120, 2, paletteFor(m.theme)), "\n")
 	for filter := monitorFilterAll; filter < monitorFilterCount; filter++ {
 		m.setMonitorFilter(filter)
@@ -71,7 +71,7 @@ func TestMonitorStatusFilterKeyboardFocusAndDetailArrows(t *testing.T) {
 	if !m.monitorSummaryFocused || m.monitorSelectedID != "" {
 		t.Fatal("Up from the first session did not focus the status strip")
 	}
-	for filter := monitorFilterWorking; filter < monitorFilterCount; filter++ {
+	for filter := monitorFilterActive; filter < monitorFilterCount; filter++ {
 		m = filterKey(t, m, tea.KeyRight)
 		if m.monitorFilter != filter || !m.monitorSummaryFocused {
 			t.Fatalf("Right selected filter %d, want %d", m.monitorFilter, filter)
@@ -184,6 +184,54 @@ func TestMonitorStatusFilterEmptyAndLiveChanges(t *testing.T) {
 	}
 }
 
+func TestMonitorActiveFilterFollowsLatestObservation(t *testing.T) {
+	m := statusFilterTestModel()
+	m.setMonitorFilter(monitorFilterActive)
+	m = filterKey(t, m, tea.KeyDown)
+	if m.monitorSelectedID != "work" {
+		t.Fatal("Active did not include a working session")
+	}
+	now := time.Now()
+	for _, tc := range []struct {
+		active    bool
+		attention codex.SessionAttention
+		want      int
+	}{
+		{true, codex.SessionAttentionCheck, 0},
+		{true, codex.SessionAttentionComplete, 1},
+		{true, codex.SessionAttentionApproval, 1},
+		{true, codex.SessionAttentionInput, 1},
+		{false, codex.SessionAttentionNone, 0},
+		{true, codex.SessionAttentionNone, 1},
+	} {
+		m.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "work", Active: tc.active, Attention: tc.attention}}}, now)
+		if got := m.monitorListSessionCount(); got != tc.want {
+			t.Fatalf("active=%v attention=%v: got %d rows, want %d", tc.active, tc.attention, got, tc.want)
+		}
+	}
+	// Missing from a successful observation means inactive, not retained Active.
+	m.syncMonitorSessions(codex.LiveUsageSnapshot{}, now.Add(time.Second))
+	if m.monitorListSessionCount() != 0 || !m.monitorSummaryFocused || m.monitorSelectedID != "" {
+		t.Fatal("Active retained a missing session or its stale selection")
+	}
+}
+
+func TestMonitorSummaryAllCategoriesFitReservedHeight(t *testing.T) {
+	m := statusFilterTestModel()
+	for _, width := range []int{24, 32, 38, 39, 40, 54, 55, 64, 94, 95, 120, 180} {
+		height := monitorSummaryHeight(width)
+		lines := m.monitorSummaryLines(width-4, height-3, paletteFor(m.theme))
+		if len(lines) > height-3 || len(m.monitorFilterButtons(width, height)) != int(monitorFilterCount) {
+			t.Fatalf("width %d: missing category or summary overflow", width)
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > width-4 {
+				t.Fatalf("width %d: summary line overflow", width)
+			}
+		}
+	}
+}
+
 func TestMonitorStatusFilterPreservesDraftAndApprovalAccess(t *testing.T) {
 	m := contextTestModel()
 	m.setRowContext("root-one", contextWide)
@@ -284,12 +332,12 @@ func TestMonitorStatusFilterSelectedAndFocusedStyles(t *testing.T) {
 		m := statusFilterTestModel()
 		colors := paletteFor(theme)
 		m.setMonitorFilter(monitorFilterInput)
-		focused := m.monitorFilterTitleStyle(4, colors).Render("INPUT")
+		focused := m.monitorFilterTitleStyle(int(monitorFilterInput)+1, colors).Render("INPUT")
 		m.selectMonitorSession(1)
-		selected := m.monitorFilterTitleStyle(4, colors).Render("INPUT")
-		idle := m.monitorFilterTitleStyle(3, colors).Render("APPROVAL")
+		selected := m.monitorFilterTitleStyle(int(monitorFilterInput)+1, colors).Render("INPUT")
+		idle := m.monitorFilterTitleStyle(int(monitorFilterApproval)+1, colors).Render("APPROVAL")
 		m.monitorContextHover = monitorFilterAction(monitorFilterApproval)
-		hovered := m.monitorFilterTitleStyle(3, colors).Render("APPROVAL")
+		hovered := m.monitorFilterTitleStyle(int(monitorFilterApproval)+1, colors).Render("APPROVAL")
 		if focused == selected || selected == colors.dimmed().Render("INPUT") || hovered == idle {
 			t.Fatalf("theme %d does not distinguish active, focused and hovered filters", theme)
 		}

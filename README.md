@@ -1526,13 +1526,19 @@ Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost b
 Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
 detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons.
 Up from the first session focuses the summary categories; Left/Right then cycles
-**Sessions (all) → Working → Approval → Input → Check** and filters the rows.
+**Sessions (all) → Active → Working → Approval → Input → Check** and filters the rows.
 Click a category label or count to select it directly. The selected filter is
 underlined; keyboard focus and hover add a theme-coloured highlight. Down or
 Enter returns to the first matching session, where Left/Right changes detail
 again. Escape while the categories have focus clears the filter. Empty categories
 remain selectable and show an explicit no-results message. Filters update with
 live session states and are not persisted across launches.
+
+**Active** includes sessions identified as active by the latest observation,
+including working sessions and those waiting for input, approval or their next
+turn. It excludes inferred **CHECK SESSION** entries and retained inactive rows.
+**Working** is narrower: a currently processing turn. Active therefore overlaps
+the other categories; the counts are not separate parts to add together.
 
 The summary counts and token totals remain global, excluding dismissed sessions
 from state counts but retaining their measured tokens. Attention pills stay

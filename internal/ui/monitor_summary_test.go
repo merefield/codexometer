@@ -31,22 +31,22 @@ func TestMonitorSummaryCountersAndObservationState(t *testing.T) {
 	m.monitorSessionData[0].agentCount = 8
 	lines := m.monitorSummaryLines(120, 2, paletteFor(themeHacker))
 	values := strings.Fields(ansi.Strip(lines[1]))
-	if got := strings.Join(values, ","); got != "625,3,1,1,1,0" {
+	if got := strings.Join(values, ","); got != "625,3,3,1,1,1,0" {
 		t.Fatalf("counts %s", got)
 	}
 	m.monitorSessionData[2].attention = codex.SessionAttentionCheck
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,3,0,1,1,1" {
+	if strings.Join(values, ",") != "625,3,2,0,1,1,1" {
 		t.Fatal(values)
 	}
 	m.monitorDismissed = map[string]monitorSessionDismissal{"root-one": {}}
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,2,0,0,1,1" {
+	if strings.Join(values, ",") != "625,2,1,0,0,1,1" {
 		t.Fatal("dismissal changed historical tokens or retained visible count", values)
 	}
 	m.monitorError = "lost"
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,2,—,—,—,—" {
+	if strings.Join(values, ",") != "625,2,—,—,—,—,—" {
 		t.Fatal("stale live counts", values)
 	}
 	if len(m.monitorAttentionSessions()) != 0 {
@@ -73,14 +73,15 @@ func TestMonitorSummaryCountColours(t *testing.T) {
 				if i >= 2 {
 					style = colors.dimmed().Bold(true)
 					if state == "active" {
-						if i == 2 {
+						if i == 2 || i == 3 {
 							style = style.Foreground(colors.success)
 						} else {
 							style = style.Foreground(colors.warning)
 						}
 					}
 				}
-				cells = append(cells, style.Render(value+strings.Repeat(" ", 19-lipgloss.Width(value))))
+				_, cell := monitorSummaryColumns(120, 2)
+				cells = append(cells, style.Render(value+strings.Repeat(" ", cell-lipgloss.Width(value))))
 			}
 			if line != strings.Join(cells, " ") {
 				t.Fatalf("theme %d state %s: unexpected count colours", theme, state)
@@ -193,9 +194,9 @@ func TestMonitorAttentionTallPadding(t *testing.T) {
 
 func TestMonitorAttentionPaddingTracksSessionCount(t *testing.T) {
 	m := attentionTestModel()
-	// At this width, 42 available rows leave exactly 11 per session after
+	// At this width, 44 available rows leave exactly 11 per session after
 	// summary, navigation and padding; one fewer available row must not pad.
-	if m.monitorAttentionHasRoom(120, 41) || !m.monitorAttentionHasRoom(120, 42) {
+	if m.monitorAttentionHasRoom(120, 43) || !m.monitorAttentionHasRoom(120, 44) {
 		t.Fatal("padding did not respect per-session height threshold")
 	}
 	for _, full := range []bool{false, true} {
@@ -205,10 +206,10 @@ func TestMonitorAttentionPaddingTracksSessionCount(t *testing.T) {
 		}
 		rows := func() int {
 			if full {
-				_, rows, _ := n.monitorDetailHeader(120, 42)
+				_, rows, _ := n.monitorDetailHeader(120, 44)
 				return rows
 			}
-			return n.monitorArea(120, 42).attentionRows
+			return n.monitorArea(120, 44).attentionRows
 		}
 		if rows() != 3 {
 			t.Fatal("spacious rows did not get padding")

@@ -18,17 +18,20 @@ import (
 // from dismissed rows. State counts describe visible rows and never add agents
 // again: linked agents are already included in their parent session.
 func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
-	counts := [5]int{}
+	counts := [monitorFilterCount]int{}
 	for _, s := range m.monitorSessionData {
 		if !m.monitorSessionVisible(s) {
 			continue
 		}
 		counts[0]++
+		if monitorSessionRecentlyActive(s) {
+			counts[monitorFilterActive]++
+		}
 		if status := monitorSessionStatus(s); status != monitorFilterAll {
 			counts[status]++
 		}
 	}
-	labels := []string{"TOKENS", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK"}
+	labels := []string{"TOKENS", "SESSIONS", "ACTIVE", "WORKING", "APPROVAL", "INPUT", "CHECK"}
 	values := []string{formatTokens(m.monitorRecordedTokens())}
 	for i, n := range counts {
 		value := strconv.Itoa(n)
@@ -39,11 +42,11 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 	}
 	columns, cell := monitorSummaryColumns(width, rows)
 	var lines []string
-	for start := 0; start < 6; start += columns {
+	for start := 0; start < len(labels); start += columns {
 		var titles, numbers []string
-		for i := start; i < min(start+columns, 6); i++ {
+		for i := start; i < min(start+columns, len(labels)); i++ {
 			title := i18n.Text(labels[i])
-			if i == 5 {
+			if i == int(monitorFilterCheck)+1 {
 				title += "*"
 			} // inferred, never an authoritative input request
 			titles = append(titles, m.monitorFilterTitleStyle(i, colors).Render(ansi.Truncate(title, cell, "…")+strings.Repeat(" ", max(cell-lipgloss.Width(ansi.Truncate(title, cell, "…")), 0))))
@@ -51,7 +54,7 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 			if i >= 2 {
 				style = colors.dimmed().Bold(true)
 				if m.monitorState == monitorRunning && m.monitorError == "" && counts[i-1] > 0 {
-					if i == 2 {
+					if i-1 == int(monitorFilterActive) || i-1 == int(monitorFilterWorking) {
 						style = style.Foreground(colors.success)
 					} else {
 						style = style.Foreground(colors.warning)
@@ -447,10 +450,13 @@ func (m Model) monitorAttentionHasRoom(width, height int) bool {
 }
 
 func monitorSummaryHeight(width int) int {
-	if width < 48 {
+	if width < 39 {
+		return 11
+	}
+	if width < 55 {
 		return 9
 	}
-	if width < 82 {
+	if width < 95 {
 		return 7
 	}
 	return 5

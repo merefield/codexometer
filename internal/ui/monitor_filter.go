@@ -12,6 +12,7 @@ type monitorStatusFilter int
 
 const (
 	monitorFilterAll monitorStatusFilter = iota
+	monitorFilterActive
 	monitorFilterWorking
 	monitorFilterApproval
 	monitorFilterInput
@@ -36,7 +37,20 @@ func monitorSessionStatus(s monitorSession) monitorStatusFilter {
 }
 
 func (m Model) monitorSessionInList(s monitorSession) bool {
-	return m.monitorSessionVisible(s) && (m.monitorFilter == monitorFilterAll || monitorSessionStatus(s) == m.monitorFilter)
+	if !m.monitorSessionVisible(s) {
+		return false
+	}
+	if m.monitorFilter == monitorFilterActive {
+		return monitorSessionRecentlyActive(s)
+	}
+	return m.monitorFilter == monitorFilterAll || monitorSessionStatus(s) == m.monitorFilter
+}
+
+// Active is a broader, overlapping category, not another turn/attention state.
+// Use the existing live activity signal; a quiet fallback CHECK is not proof of
+// recent activity, even while its writer process remains open.
+func monitorSessionRecentlyActive(s monitorSession) bool {
+	return s.active && s.attention != codex.SessionAttentionCheck
 }
 
 func (m Model) monitorListSessionCount() int {
@@ -51,13 +65,17 @@ func (m Model) monitorListSessionCount() int {
 
 // Layout is shared by text rendering and hit testing, including wrapped rows.
 func monitorSummaryColumns(width, rows int) (columns, cell int) {
-	columns = 6
-	if width < 78 && rows >= 4 {
+	columns = int(monitorFilterCount) + 1 // Tokens plus the session categories.
+	if width < 91 && rows >= 4 {
+		columns = 4
+	}
+	if width < 51 && rows >= 6 {
 		columns = 3
 	}
-	if width < 44 && rows >= 6 {
+	if width < 35 && rows >= 8 {
 		columns = 2
 	}
+	columns = min(columns, max((width+1)/2, 1))
 	return columns, max((width-(columns-1))/columns, 1)
 }
 
@@ -69,7 +87,7 @@ func (m Model) monitorFilterButtons(width, height int) []monitorNavigationButton
 	inner, rows := max(width-4, 1), max(height-3, 1)
 	columns, cell := monitorSummaryColumns(inner, rows)
 	var buttons []monitorNavigationButton
-	for i := 1; i < 6; i++ { // Tokens is a measurement, not a session category.
+	for i := 1; i <= int(monitorFilterCount); i++ { // Tokens is not a session category.
 		x, y := 2+(i%columns)*(cell+1), 1+(i/columns)*2
 		if x+cell > width-2 || y >= height-1 {
 			continue
