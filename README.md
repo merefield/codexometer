@@ -1645,8 +1645,8 @@ Up/Down selects, Tab completes the name, Enter opens its options and Escape
 dismisses suggestions while retaining the draft and typing focus. Suggestions
 are fetched asynchronously and filtered locally. They also work in a selected
 wide terminal session row when space permits. Outside the full-detail composer,
-press `/` to open the full command browser. Use arrows and Enter to browse, **C** to confirm a
-setting change. **Back** (Left) returns to the previous visited command screen;
+press `/` to open the root command list. Use arrows and Enter to browse, **C** to confirm a
+setting change. **Back** (Left) returns to the previous visited command level;
 it appears only when there is a previous screen or a provisional review to undo.
 Opening `/fast` directly starts at its options, so it has no Back action until
 reviewing. **Cancel** (Escape) closes the entire menu and returns typing focus
@@ -1702,6 +1702,17 @@ are display preferences and do not modify Codex CLI configuration. Terminal
 footer text shortens to fit and leaves the Copy button in place. A blank row
 separates a visible terminal status line from the global footer; very short
 terminals omit the status line and gap to preserve the composer and controls.
+
+Terminal command menus now use the same bottom-anchored popup as slash-command
+suggestions: selecting a command replaces that list with its live options instead
+of replacing the conversation. The composer stays in place, including in a wide
+session row. **Up/Down** selects, **Enter** opens or reviews, **Left/Backspace**
+goes back, and **Escape** closes the popup while retaining the draft. Option help
+stays subdued on one line, shortened with an ellipsis when needed. Review and
+**C CONFIRM** remain separate for model, reasoning, speed, name and directory
+changes; shrinking the terminal cannot confirm a hidden control. Clicking back
+into the composer closes the popup and resumes typing. `/commands` also opens
+the root command list, including local commands without a shared daemon.
 
 Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of

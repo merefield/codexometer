@@ -75,6 +75,14 @@ func (m Model) suggestionChoices() []codex.SessionCommandChoice {
 }
 
 func (m Model) withMonitorSuggestions(view string, colors palette) string {
+	if m.monitorCommands.open {
+		popup := m.monitorCommandPopup()
+		if popup.height == 0 {
+			return view
+		}
+		box := m.renderMonitorCommands(popup.width, popup.height, colors)
+		return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
+	}
 	popup, start := m.monitorSuggestionPopup()
 	if popup.height == 0 {
 		return view
@@ -103,8 +111,7 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 			lines = append(lines, lipgloss.NewStyle().Background(colors.background).Width(popup.width-2).Render(row))
 		}
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colors.primary).
-		Background(colors.background).BorderBackground(colors.background).Width(popup.width).Render(strings.Join(lines, "\n"))
+	box := renderMonitorPopup("", strings.Join(lines, "\n"), popup.width, colors)
 	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
 }
 
@@ -196,9 +203,24 @@ func (m Model) monitorSuggestionPopup() (popup monitorRect, start int) {
 	if !m.suggestionsActive() || m.monitorSuggestions.session != m.monitorPrompt.session {
 		return
 	}
+	area := m.monitorComposerPopupArea()
+	choices := m.suggestionChoices()
+	count := min(max(len(choices), 1), max(area.height-3, 0))
+	if count == 0 {
+		return
+	}
+	width := min(area.width, 44)
+	for _, o := range choices {
+		width = min(area.width, max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4))
+	}
+	start = max(min(m.monitorSuggestions.selected, max(len(choices)-1, 0))-count+1, 0)
+	return monitorRect{x: area.x, y: area.y + area.height - count - 2, width: width, height: count + 2}, start
+}
+
+func (m Model) monitorComposerPopupArea() (area monitorRect) {
 	w, h := m.monitorPromptSize()
 	rows := m.monitorPromptRows(w, h)
-	if rows == 0 || w < 12 {
+	if w < 12 || h < 4 {
 		return
 	}
 	g := m.monitorDashboardLayout()
@@ -223,17 +245,7 @@ func (m Model) monitorSuggestionPopup() (popup monitorRect, start int) {
 		}
 	}
 	_, _, cy := monitorContextBodyLayout(h, rows)
-	choices := m.suggestionChoices()
-	count := min(max(len(choices), 1), max(cy-3, 0))
-	if count == 0 {
-		return
-	}
-	width := min(w-4, 44)
-	for _, o := range choices {
-		width = min(w-4, max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4))
-	}
-	start = max(min(m.monitorSuggestions.selected, max(len(choices)-1, 0))-count+1, 0)
-	return monitorRect{x: x, y: y + cy - count - 2, width: width, height: count + 2}, start
+	return monitorRect{x: x, y: y, width: w - 4, height: cy}
 }
 
 func (m Model) monitorSuggestionAt(x, y int) int {

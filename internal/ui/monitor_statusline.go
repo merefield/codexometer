@@ -98,7 +98,7 @@ func (m Model) monitorStatusLineText(width int, copyLabel string) string {
 }
 
 func (m Model) monitorStatusLineVisible(width int) bool {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || m.monitorCommands.open || m.monitorQueue.open {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || m.monitorQueue.open {
 		return false
 	}
 	return m.monitorStatusLineText(width, m.renderMonitorCopy(width, m.monitorContextDetail, paletteFor(m.theme))) != ""

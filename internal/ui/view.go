@@ -206,7 +206,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
-	if m.meterView == viewMonitor {
+	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused {
 		hint := i18n.Text("←/→ DETAIL")
 		if lipgloss.Width(status)+2+lipgloss.Width(hint) <= width {
 			status = joinRight(status, colors.dimmed().Render(hint), width)

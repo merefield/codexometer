@@ -181,13 +181,13 @@ func TestStatusLineReservesFooterGapOnlyWhenDisplayed(t *testing.T) {
 				m.setRowContext("root-one", contextWide)
 			}
 			g := m.dashboardLayout()
-			wantGap := (scenario == "shown" || scenario == "scheduler") && base.meterHeight >= 9
+			wantGap := (scenario == "shown" || scenario == "scheduler" || scenario == "commands") && base.meterHeight >= 9
 			if g.footerSpacer != wantGap || g.footerY != base.footerY {
 				t.Fatalf("%v %s: incorrect footer geometry: %+v", size, scenario, g)
 			}
-			// Modal editors have their own setup and rendering tests; the
-			// scheduler retains the status line to keep its composer anchored.
-			if scenario == "commands" || scenario == "scheduler" || scenario == "queue" {
+			// Editors have separate rendering tests. Command popups no longer
+			// replace detail or remove the status line and its footer gap.
+			if scenario == "scheduler" || scenario == "queue" {
 				continue
 			}
 			view := ansi.Strip(m.render())
