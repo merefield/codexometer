@@ -227,6 +227,8 @@ func (m Model) monitorSuggestionPopup() (popup monitorRect, start int) {
 
 func (m Model) monitorComposerPopupArea() (area monitorRect) {
 	w, h := m.monitorPromptSize()
+	// Zero composer rows still leave the detail body available to read-only
+	// command pickers; a live prompt offer is not required for local commands.
 	rows := m.monitorPromptRows(w, h)
 	if w < 12 || h < 4 {
 		return

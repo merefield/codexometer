@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,58 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
 )
+
+func TestMonitorCommandPopupReadOnlySession(t *testing.T) {
+	for _, mode := range []int{contextFull, contextWide} {
+		for _, size := range [][2]int{{80, 30}, {120, 40}, {180, 65}} {
+			t.Run(fmt.Sprintf("mode%d/%dx%d", mode, size[0], size[1]), func(t *testing.T) {
+				m := localCommandModel() // No fetcher or live prompt offer.
+				m.width, m.height = size[0], size[1]
+				m.monitorSessionData = m.monitorSessionData[:1]
+				m.setRowContext("root-one", mode)
+				w, h := m.monitorPromptSize()
+				if m.monitorPromptRows(w, h) != 0 {
+					t.Fatal("fixture must not have a composer")
+				}
+				if mode == contextFull {
+					next, _ := m.Update(key('/'))
+					m = next.(Model)
+				} else {
+					// The bare '/' shortcut is detail-only without a composer;
+					// also exercise the shared popup geometry in a wide row.
+					m, _, _ = m.openMonitorCommands("")
+				}
+				if !m.monitorCommands.open || m.monitorCommands.inline || m.monitorCommandPopup().height == 0 {
+					t.Fatal("read-only slash picker is not visible")
+				}
+				x, y := renderedTextStart(t, m, "/statusline")
+				if !m.monitorCommandPopup().contains(x, y) {
+					t.Fatal("read-only choice rendered outside its click surface")
+				}
+				next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+				m = next.(Model)
+				if m.monitorCommands.menu.Path != "statusline" {
+					t.Fatal("read-only choice click did not open the picker")
+				}
+				before := m.monitorCommands.menu.Choices[0].Selected
+				next, _ = m.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+				m = next.(Model)
+				if m.monitorCommands.menu.Choices[0].Selected == before {
+					t.Fatal("read-only checkbox keyboard navigation did not toggle")
+				}
+				x, y = renderedTextStart(t, m, "[ C APPLY ]")
+				next, _ = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+				m = next.(Model)
+				if m.monitorCommands.open || m.monitorStatusLine == nil {
+					t.Fatal("read-only Apply click did not save and close the picker")
+				}
+				if m.rowContextMode("root-one") != mode {
+					t.Fatal("read-only picker changed the session detail mode")
+				}
+			})
+		}
+	}
+}
 
 func TestMonitorCommandPopupPreservesContextComposerAndRowMode(t *testing.T) {
 	for _, mode := range []int{contextFull, contextWide} {
