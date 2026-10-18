@@ -549,7 +549,7 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 				}
 			}
 		}
-		text = ansi.Truncate(text, max(width-4, 1), "")
+		text = ansi.Truncate(text, max(width-4, 1), "…")
 		body[i] = style.Render(text)
 		if r.help != "" {
 			help := ansi.Truncate(" // "+strings.Join(strings.Fields(r.help), " "), max(width-4-ansi.StringWidth(text), 0), "…")

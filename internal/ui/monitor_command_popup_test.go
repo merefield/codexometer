@@ -142,3 +142,52 @@ func TestMonitorCommandPopupPreventsHiddenConfirmationAndSupportsLocalAlias(t *t
 		t.Fatal("list help consumed extra rows")
 	}
 }
+
+func TestMonitorCommandPopupWidthsFollowDetailMode(t *testing.T) {
+	for _, mode := range []int{contextFull, contextWide} {
+		for _, long := range []bool{false, true} {
+			m, _ := suggestionTestModel(t)
+			m.height = 65
+			m.monitorSessionData = m.monitorSessionData[:1]
+			m.setRowContext("root-one", mode)
+			m.monitorPrompt.input.Focus()
+			help := "Choose model"
+			if long {
+				help = strings.Repeat("Long help ", 100)
+			}
+			m.monitorSuggestions.menu.Choices = []codex.SessionCommandChoice{{ID: "model", Label: "/model", Help: help, Next: "model"}}
+			// Recalculate width on resize, without changing the selected command.
+			for _, width := range []int{240, 120, 80} {
+				m.width = width
+				area := m.monitorComposerPopupArea()
+				popup, _ := m.monitorSuggestionPopup()
+				want := area.width
+				if mode == contextFull {
+					want = min(ansi.StringWidth("/model // "+strings.Join(strings.Fields(help), " "))+4, area.width*66/100)
+				}
+				if popup.width != want || popup.y+popup.height != area.y+area.height {
+					t.Fatalf("mode %d width %d: popup %+v, want width %d", mode, width, popup, want)
+				}
+				if long && !strings.Contains(ansi.Strip(m.render()), "…") {
+					t.Fatal("long root help did not ellipsize")
+				}
+			}
+			m, cmd, _ := m.openMonitorCommands("model")
+			next, _ := m.Update(cmd())
+			m = next.(Model)
+			m.monitorCommands.menu.Choices[0].Help = help
+			for _, width := range []int{240, 120, 80} {
+				m.width = width
+				area := m.monitorComposerPopupArea()
+				popup := m.monitorCommandPopup()
+				if mode == contextWide && popup.width != area.width || mode == contextFull && popup.width > area.width*66/100 {
+					t.Fatalf("nested mode %d width %d: popup width %d, pane width %d", mode, width, popup.width, area.width)
+				}
+				box := m.renderMonitorCommands(popup.width, popup.height, paletteFor(m.theme))
+				if lipgloss.Width(box) != popup.width || long && !strings.Contains(ansi.Strip(box), "…") {
+					t.Fatal("nested menu overflowed or failed to ellipsize its help")
+				}
+			}
+		}
+	}
+}

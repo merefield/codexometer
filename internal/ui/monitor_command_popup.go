@@ -17,20 +17,8 @@ func (m Model) monitorCommandPopup() monitorRect {
 	if area.height < 5 {
 		return monitorRect{}
 	}
+	width := m.monitorCommandMenuWidth(area)
 	if m.monitorCommands.inline {
-		p := m.monitorCommands
-		// Match the original expanding list rather than allocating a dialog.
-		width := min(area.width, 44)
-		for _, i := range m.commandChoiceIndices() {
-			o := p.menu.Choices[i]
-			width = min(area.width, max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4))
-		}
-		// Keep confirmation and navigation controls discoverable on one row.
-		used := 2
-		for _, button := range m.commandFooter(area.width) {
-			used += ansi.StringWidth(button.text) + 2
-		}
-		width = min(area.width, max(width, used))
 		wanted := len(m.monitorCommandRows(width, area.height)) + 3
 		height := min(max(wanted, 4), area.height-1)
 		return monitorRect{x: area.x, y: area.y + area.height - height, width: width, height: height}
@@ -47,7 +35,48 @@ func (m Model) monitorCommandPopup() monitorRect {
 		wanted = 5
 	}
 	height := min(max(wanted, 4), area.height-1, max(area.height/2, 4))
-	return monitorRect{x: area.x, y: area.y + area.height - height, width: area.width, height: height}
+	return monitorRect{x: area.x, y: area.y + area.height - height, width: width, height: height}
+}
+
+func (m Model) monitorCommandMenuWidth(area monitorRect) int {
+	p := m.monitorCommands
+	width := 4
+	for _, i := range m.commandChoiceIndices() {
+		o := p.menu.Choices[i]
+		label := o.Label
+		if p.menu.Multiple {
+			label = "[x] " + label
+		} else if (p.menu.Picker || p.menu.Path == "theme") && o.Selected {
+			label += " // CURRENT"
+		} else if o.Next != "" {
+			label += " →"
+		}
+		width = max(width, ansi.StringWidth(label+" // "+strings.Join(strings.Fields(o.Help), " "))+4)
+	}
+	if p.menu.Input {
+		width = max(width, ansi.StringWidth(p.menu.InputLabel)+4, ansi.StringWidth(strings.Join(strings.Fields(p.menu.Help), " "))+4)
+	}
+	if p.busy {
+		width = max(width, ansi.StringWidth("Loading / sending…")+4)
+	}
+	if p.notice != "" {
+		width = max(width, ansi.StringWidth(strings.Join(strings.Fields(p.notice), " "))+4)
+	}
+	// Keep confirmation and navigation controls discoverable on one row.
+	used := 2
+	for _, button := range m.commandFooter(area.width) {
+		used += ansi.StringWidth(button.text) + 2
+	}
+	return m.monitorPopupWidth(area, max(width, used))
+}
+
+// A row menu uses its entire detail pane. Full-page menus fit their contents
+// up to 66% of the available composer width; rendering ellipsizes the excess.
+func (m Model) monitorPopupWidth(area monitorRect, wanted int) int {
+	if m.monitorContextDetail == "" {
+		return area.width
+	}
+	return min(wanted, max(area.width*66/100, 1))
 }
 
 func (m Model) commandContentRows(height int) int {

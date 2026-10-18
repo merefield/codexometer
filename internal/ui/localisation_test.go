@@ -72,6 +72,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_attention_surfaces", TestMonitorAttentionRenderedHitSurfaces)
 	t.Run("monitor_filter_surfaces", TestMonitorStatusFilterRenderedHitSurfaces)
 	t.Run("monitor_command_popup_surfaces", TestMonitorCommandPopupRenderedSurfaces)
+	t.Run("monitor_command_popup_widths", TestMonitorCommandPopupWidthsFollowDetailMode)
 	t.Run("monitor_command_inline", TestMonitorInlineCommandsFilterAndDrillFromComposer)
 	t.Run("monitor_command_checkboxes", TestMonitorInlineCheckboxesWholeListSpaceToggleEnterApply)
 	t.Run("monitor_command_checkbox_clicks", TestMonitorInlineCheckboxClickSurfaces)

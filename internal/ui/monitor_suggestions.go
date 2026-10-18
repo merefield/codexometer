@@ -90,13 +90,7 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 	choices := m.suggestionChoices()
 	var lines []string
 	if len(choices) == 0 {
-		text := "No matching slash commands."
-		if m.monitorSuggestions.busy {
-			text = "Loading slash commands…"
-		} else if m.monitorSuggestions.err {
-			text = "Command catalogue unavailable. Use Codex."
-		}
-		lines = append(lines, colors.dimmed().Render(ansi.Truncate(text, popup.width-4, "…")))
+		lines = append(lines, colors.dimmed().Render(ansi.Truncate(m.monitorSuggestionMessage(), popup.width-4, "…")))
 	} else {
 		selected := min(m.monitorSuggestions.selected, len(choices)-1)
 		for i := start; i < min(start+popup.height-2, len(choices)); i++ {
@@ -113,6 +107,16 @@ func (m Model) withMonitorSuggestions(view string, colors palette) string {
 	}
 	box := renderMonitorPopup("", strings.Join(lines, "\n"), popup.width, colors)
 	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(popup.x).Y(popup.y).Z(1)).Render()
+}
+
+func (m Model) monitorSuggestionMessage() string {
+	if m.monitorSuggestions.busy {
+		return "Loading slash commands…"
+	}
+	if m.monitorSuggestions.err {
+		return "Command catalogue unavailable. Use Codex."
+	}
+	return "No matching slash commands."
 }
 
 func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
@@ -209,10 +213,14 @@ func (m Model) monitorSuggestionPopup() (popup monitorRect, start int) {
 	if count == 0 {
 		return
 	}
-	width := min(area.width, 44)
+	width := 4
 	for _, o := range choices {
-		width = min(area.width, max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4))
+		width = max(width, ansi.StringWidth(o.Label+" // "+strings.Join(strings.Fields(o.Help), " "))+4)
 	}
+	if len(choices) == 0 {
+		width = ansi.StringWidth(m.monitorSuggestionMessage()) + 4
+	}
+	width = m.monitorPopupWidth(area, width)
 	start = max(min(m.monitorSuggestions.selected, max(len(choices)-1, 0))-count+1, 0)
 	return monitorRect{x: area.x, y: area.y + area.height - count - 2, width: width, height: count + 2}, start
 }
