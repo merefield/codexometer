@@ -196,6 +196,8 @@ type Model struct {
 	monitorSelectedID       string
 	monitorFilter           monitorStatusFilter
 	monitorSummaryFocused   bool
+	monitorAttentionFocused bool
+	monitorAttentionCursor  string
 	monitorDismissed        map[string]monitorSessionDismissal
 	monitorDismissHover     string
 	monitorDismissFlash     string
@@ -1338,6 +1340,7 @@ func (m Model) pressViewTab(view meterViewID) (tea.Model, tea.Cmd) {
 		m.monitorApprovalConfirm = ""
 	}
 	if view != viewMonitor {
+		m.clearMonitorHeaderFocus()
 		m.monitorDetailSent = detailSentState{}
 		m.stashMonitorDraft()
 		m.monitorPrompt = monitorPromptState{}
@@ -2900,10 +2903,12 @@ func (m *Model) selectMonitorSession(direction int) {
 		return
 	}
 	if direction < 0 && selected == 0 && m.monitorContextDetail == "" {
-		m.focusMonitorSummary()
+		if !m.focusMonitorAttention(false) {
+			m.focusMonitorSummary()
+		}
 		return
 	}
-	m.monitorSummaryFocused = false
+	m.clearMonitorHeaderFocus()
 	if selected < 0 {
 		if direction < 0 {
 			selected = len(visible) - 1

@@ -187,6 +187,7 @@ func (m *Model) settleMonitorApprovalOrder(now time.Time) {
 // Validate the action, not only the session ID; sibling pills must open
 // different documents and disarm each other's confirmation.
 func (m *Model) openMonitorAttention(action string) {
+	m.clearMonitorHeaderFocus()
 	if strings.HasPrefix(action, "attention-profile:") && (m.monitorPrompt.input.Focused() || m.monitorPrompt.busy) {
 		return
 	}
@@ -373,6 +374,9 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 			color = colors.primary
 		}
 		style := colors.label().Foreground(color).Bold(!completed[b.action])
+		if m.monitorAttentionFocused && m.monitorAttentionCursor == b.action {
+			style = style.Foreground(colors.background).Background(color).Bold(true).Underline(true)
+		}
 		if m.monitorContextHover == b.action {
 			style = style.Foreground(colors.background).Background(color)
 		}

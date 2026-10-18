@@ -65,6 +65,7 @@ func (m *Model) openSchedule() tea.Cmd {
 	if !m.hasSchedule(id) && (o.Token == "" || o.TurnID != "" || o.ThreadID != id || len(o.Questions) > 0) {
 		return nil
 	}
+	m.clearMonitorHeaderFocus()
 	m.showLiveMonitorHistory()
 	q := m.scheduleUI.queue
 	if q == nil {

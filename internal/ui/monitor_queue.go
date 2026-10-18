@@ -359,6 +359,7 @@ func (m *Model) openQueueItem(index int, remove bool) tea.Cmd {
 		return nil
 	}
 	q.item = item
+	m.clearMonitorHeaderFocus()
 	q.open = true
 	q.deleting = remove
 	q.focused = false

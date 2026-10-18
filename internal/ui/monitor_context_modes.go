@@ -107,7 +107,7 @@ func (m Model) contextTargetHidden() bool {
 }
 
 func (m *Model) setRowContext(id string, mode int) {
-	m.monitorSummaryFocused = false
+	m.clearMonitorHeaderFocus()
 	for _, s := range m.monitorSessionData {
 		if s.id == id && !m.monitorSessionInList(s) {
 			m.monitorFilter, m.monitorScroll = monitorFilterAll, 0

@@ -592,7 +592,7 @@ codexometer --codex /path/to/codex
 | `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace |
 | `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
-| `Left` / `Right` | In Sessions, cycle status filters while the summary has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
+| `Left` / `Right` | In Sessions, highlight attention pills or cycle status filters when that header area has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Sessions row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -602,8 +602,8 @@ codexometer --codex /path/to/codex
 | `Left` / `Right` | Page Usage history, or select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a session row or Benchmark row; Up from the first session focuses its summary filters, Down returns to the first match. Scroll Sessions full detail / open Benchmark detail (outside a focused editor) |
-| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions full detail, `Enter` focuses an available reply editor or submits its text |
+| `Up` / `Down` | Select a session row or scroll full detail. Up beyond the first row/top of detail moves through visible attention pills to summary filters; Down retraces that path. Select a Benchmark row or scroll its open detail. Focused editors retain their own arrows |
+| `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions, Enter opens a keyboard-highlighted attention pill. Otherwise in full detail, Enter focuses an available reply editor or submits its text |
 | `c` | Copy an eligible Sessions reply while its detail is shown, confirm an armed session approval, select Cumulative in Usage, or copy the Benchmark matrix/open run detail; types normally in a focused editor |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, session rows, or Benchmark results; scroll Sessions full detail / Benchmark detail (outside a focused editor) |
@@ -1525,12 +1525,22 @@ Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost b
 (graph or detail), and on the full-detail box. They mirror the cursor keys:
 Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
 detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons.
-Up from the first session focuses the summary categories; Left/Right then cycles
+Up beyond the first session (or the top of full-detail text) focuses the visible
+attention pills first. Left/Right highlights a pill without opening it; Enter
+opens its session detail or specific review. A further Up focuses the summary
+categories; Left/Right then cycles
 **Sessions (all) → Active → Working → Approval → Input → Check** and filters the rows.
 Click a category label or count to select it directly. The selected filter is
-underlined; keyboard focus and hover add a theme-coloured highlight. Down or
-Enter returns to the first matching session, where Left/Right changes detail
-again. Escape while the categories have focus clears the filter. Empty categories
+underlined; keyboard focus and hover add a theme-coloured highlight. Down retraces
+the path through pills to the session list or current full detail, skipping
+header levels that are not displayed. The currently open detail remains visible
+until a pill is opened or a filter is chosen. Pill keyboard focus is underlined
+and tracked by action identity, separately from the current-session marker;
+reordering cannot redirect Enter to another pill, and a vanished or hidden pill
+cannot be opened. Overflow's More pill is also keyboard accessible. Escape from
+the pills returns to the session/detail; Escape from summary filters clears the
+filter in the overview, or returns to the existing full detail without changing
+it. Composer and menu arrows keep their own behaviour. Empty categories
 remain selectable and show an explicit no-results message. Filters update with
 live session states and are not persisted across launches.
 

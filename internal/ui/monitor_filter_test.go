@@ -68,7 +68,11 @@ func TestMonitorStatusFilterKeyboardFocusAndDetailArrows(t *testing.T) {
 	m := statusFilterTestModel()
 	m.monitorSelectedID = "work"
 	m = filterKey(t, m, tea.KeyUp)
-	if !m.monitorSummaryFocused || m.monitorSelectedID != "" {
+	if !m.monitorAttentionFocused {
+		t.Fatal("Up from the first session did not focus the visible pills")
+	}
+	m = filterKey(t, m, tea.KeyUp)
+	if !m.monitorSummaryFocused || m.monitorSelectedID != "work" {
 		t.Fatal("Up from the first session did not focus the status strip")
 	}
 	for filter := monitorFilterActive; filter < monitorFilterCount; filter++ {
@@ -86,6 +90,7 @@ func TestMonitorStatusFilterKeyboardFocusAndDetailArrows(t *testing.T) {
 		t.Fatal("filter navigation did not wrap backwards")
 	}
 	m = filterKey(t, m, tea.KeyDown)
+	m = filterKey(t, m, tea.KeyDown) // Status strip -> pills -> matching rows.
 	if m.monitorSummaryFocused || m.monitorSelectedID != "check" {
 		t.Fatal("Down did not enter the first matching session")
 	}
@@ -95,14 +100,16 @@ func TestMonitorStatusFilterKeyboardFocusAndDetailArrows(t *testing.T) {
 		t.Fatal("Right no longer controls detail outside the status strip")
 	}
 	m = filterKey(t, m, tea.KeyUp)
-	if !m.monitorSummaryFocused || m.monitorContextExpanded != "" {
-		t.Fatal("returning to filters left a live detail control target")
+	m = filterKey(t, m, tea.KeyUp)
+	if !m.monitorSummaryFocused || m.monitorContextExpanded != "check" || m.monitorApprovalConfirm != "" {
+		t.Fatal("header navigation changed row presentation or left an armed approval")
 	}
 	m = filterKey(t, m, tea.KeyEscape)
 	if m.monitorFilter != monitorFilterAll || !m.monitorSummaryFocused {
 		t.Fatal("Escape did not clear the filter without quitting")
 	}
 	m = filterKey(t, m, tea.KeyEnter)
+	m = filterKey(t, m, tea.KeyDown)
 	if m.monitorSelectedID != "work" || m.monitorSummaryFocused {
 		t.Fatal("Enter did not return to the session list")
 	}
@@ -162,6 +169,7 @@ func TestMonitorStatusFilterEmptyAndLiveChanges(t *testing.T) {
 	m := statusFilterTestModel()
 	m.setMonitorFilter(monitorFilterWorking)
 	m = filterKey(t, m, tea.KeyDown)
+	m = filterKey(t, m, tea.KeyDown)
 	m.syncMonitorSessions(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{
 		{ID: "work", Active: true, Attention: codex.SessionAttentionComplete},
 	}}, time.Now())
@@ -169,8 +177,8 @@ func TestMonitorStatusFilterEmptyAndLiveChanges(t *testing.T) {
 		t.Fatal("a state transition retained a mismatched row or stale selection")
 	}
 	m = filterKey(t, m, tea.KeyDown)
-	if !m.monitorSummaryFocused {
-		t.Fatal("empty filter lost keyboard access to the categories")
+	if !m.monitorSummaryFocused && !m.monitorAttentionFocused {
+		t.Fatal("empty filter lost keyboard access to the header")
 	}
 	if !strings.Contains(ansi.Strip(m.renderMonitorSessions(100, 20, paletteFor(m.theme))), i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER")) {
 		t.Fatal("empty filter showed an unrelated aggregate graph")
@@ -187,6 +195,7 @@ func TestMonitorStatusFilterEmptyAndLiveChanges(t *testing.T) {
 func TestMonitorActiveFilterFollowsLatestObservation(t *testing.T) {
 	m := statusFilterTestModel()
 	m.setMonitorFilter(monitorFilterActive)
+	m = filterKey(t, m, tea.KeyDown)
 	m = filterKey(t, m, tea.KeyDown)
 	if m.monitorSelectedID != "work" {
 		t.Fatal("Active did not include a working session")

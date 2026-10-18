@@ -187,6 +187,7 @@ func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
 	if id == "" {
 		return m, nil, true
 	}
+	m.clearMonitorHeaderFocus()
 	var history []monitorCommandLevel
 	if path != "" && m.suggestionsActive() && m.monitorSuggestions.session == id {
 		for i, choice := range m.monitorSuggestions.menu.Choices {

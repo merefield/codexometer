@@ -136,6 +136,7 @@ func (m Model) monitorFilterTitleStyle(column int, colors palette) lipgloss.Styl
 }
 
 func (m *Model) focusMonitorSummary() {
+	m.clearMonitorHeaderFocus()
 	m.stashMonitorDraft()
 	m.monitorPrompt = monitorPromptState{}
 	m.monitorSelectedID, m.monitorContextExpanded = "", ""
@@ -155,8 +156,15 @@ func (m *Model) setMonitorFilter(filter monitorStatusFilter) {
 // Arrow navigation belongs to filters only while their strip owns focus.
 // Composer/menu handlers run first and retain their normal editing keys.
 func (m *Model) monitorFilterKey(key string) bool {
-	if !m.monitorSummaryFocused || m.monitorContextDetail != "" {
+	if m.monitorAttentionFocused {
+		return m.monitorAttentionKey(key)
+	}
+	if !m.monitorSummaryFocused {
 		return false
+	}
+	if visible, _ := m.visibleMonitorHeader(); !visible {
+		m.clearMonitorHeaderFocus()
+		return true
 	}
 	switch key {
 	case "left", "right":
@@ -166,16 +174,22 @@ func (m *Model) monitorFilterKey(key string) bool {
 		}
 		m.setMonitorFilter((m.monitorFilter + monitorStatusFilter(delta) + monitorFilterCount) % monitorFilterCount)
 	case "down", "enter":
-		m.selectMonitorSession(1)
+		if !m.focusMonitorAttention(true) {
+			m.returnFromMonitorHeader()
+		}
 	case "up":
 	case "esc":
-		m.setMonitorFilter(monitorFilterAll)
+		if m.monitorContextDetail != "" {
+			m.clearMonitorHeaderFocus()
+		} else {
+			m.setMonitorFilter(monitorFilterAll)
+		}
 	case "home":
 		m.setMonitorFilter(monitorFilterAll)
 	case "end":
 		m.setMonitorFilter(monitorFilterCheck)
 	default:
-		return false
+		return m.monitorHeaderBlocksAction(key)
 	}
 	return true
 }

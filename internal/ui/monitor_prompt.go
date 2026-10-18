@@ -201,6 +201,7 @@ func (m Model) monitorPromptSize() (int, int) {
 }
 
 func (m *Model) focusMonitorPrompt() tea.Cmd {
+	m.clearMonitorHeaderFocus()
 	m.showLiveMonitorHistory()
 	m.restoreMonitorDraft()
 	o := m.monitorPromptOffer()
