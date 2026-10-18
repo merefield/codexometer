@@ -1528,7 +1528,9 @@ detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection
 Up beyond the first session (or the top of full-detail text) focuses the visible
 attention pills first. Left/Right highlights a pill without opening it; Enter
 opens its session detail or specific review. The session list enters at the
-first visible pill; full detail prefers the pill for its current review.
+first visible pill; full detail targets the pill for its current review, skipping
+to the summary if that pill is no longer visible. Returning from the summary
+never substitutes another pill for a review or pager that has disappeared.
 A further Up focuses the summary
 categories; Left/Right then cycles
 **Sessions (all) → Active → Working → Approval → Input → Check** and filters the rows.

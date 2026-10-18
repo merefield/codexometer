@@ -166,6 +166,51 @@ func TestMonitorHeaderFocusTracksIdentityAndRejectsMissingPill(t *testing.T) {
 	}
 }
 
+func TestMonitorHeaderFocusDoesNotRestoreMissingIdentity(t *testing.T) {
+	for _, fromSummary := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fromSummary=%t", fromSummary), func(t *testing.T) {
+			m := headerFocusModel()
+			if fromSummary {
+				m = filterKey(t, m, tea.KeyUp)
+				m = filterKey(t, m, tea.KeyRight)
+				m = filterKey(t, m, tea.KeyUp)
+				m.monitorSessionData[1].attention = codex.SessionAttentionNone
+				m = filterKey(t, m, tea.KeyDown)
+			} else {
+				m.monitorSessionData[0].attention = codex.SessionAttentionNone
+				m = filterKey(t, m, tea.KeyUp)
+			}
+			if m.monitorAttentionFocused || m.monitorContextDetail != "root-one" {
+				t.Fatal("missing review silently retargeted focus to an unrelated pill")
+			}
+			m = filterKey(t, m, tea.KeyEnter)
+			if m.monitorAttentionFocused || m.monitorContextDetail != "root-one" {
+				t.Fatal("Enter after a missing review opened an unrelated session")
+			}
+		})
+	}
+}
+
+func TestMonitorHeaderFocusDoesNotRestoreDisappearedPager(t *testing.T) {
+	m := headerFocusModel()
+	m.width = 80
+	for i := range 12 {
+		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: fmt.Sprintf("extra-%d", i), displayed: true, attention: codex.SessionAttentionComplete})
+	}
+	m = filterKey(t, m, tea.KeyUp)
+	m = filterKey(t, m, tea.KeyEnd)
+	cursor := m.monitorAttentionCursor
+	if !strings.HasPrefix(cursor, "attention-next:") {
+		t.Fatal("fixture must highlight a pager")
+	}
+	m = filterKey(t, m, tea.KeyUp)
+	m.width = 1000 // All pills now fit; the highlighted pager is gone.
+	m = filterKey(t, m, tea.KeyDown)
+	if m.monitorAttentionFocused || m.monitorAttentionCursor != cursor || m.monitorContextDetail != "root-one" {
+		t.Fatal("missing pager silently selected the first pill")
+	}
+}
+
 func TestMonitorHeaderFocusDoesNotStealComposerOrApprovalKeys(t *testing.T) {
 	m, _ := promptTestModel()
 	m.height = 65

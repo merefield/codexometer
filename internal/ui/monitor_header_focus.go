@@ -30,25 +30,24 @@ func (m *Model) releaseMonitorHeaderControls() {
 
 func (m *Model) focusMonitorAttention(restore bool) bool {
 	_, buttons := m.visibleMonitorHeader()
-	if len(buttons) == 0 {
-		return false
-	}
 	action := m.selectedAttentionAction()
-	if restore && m.monitorAttentionCursor != "" {
+	if restore {
 		action = m.monitorAttentionCursor
 	}
-	// The overview enters at the first visible pill, independent of its row
-	// selection. Only full detail has a specific review's pill to prefer.
-	m.monitorAttentionCursor = buttons[0].action
+	// Only a new overview entry or explicit page navigation chooses the first
+	// pill. Restoring an identity must never retarget a vanished review/pager.
+	if action == "" && len(buttons) > 0 {
+		action = buttons[0].action
+	}
+	m.monitorAttentionCursor = action
 	for _, b := range buttons {
 		if b.action == action {
-			m.monitorAttentionCursor = action
-			break
+			m.releaseMonitorHeaderControls()
+			m.monitorSummaryFocused, m.monitorAttentionFocused = false, true
+			return true
 		}
 	}
-	m.releaseMonitorHeaderControls()
-	m.monitorSummaryFocused, m.monitorAttentionFocused = false, true
-	return true
+	return false
 }
 
 // Unlike choosing a filter, moving focus must not replace the detail being read.
@@ -126,7 +125,8 @@ func (m *Model) monitorAttentionKey(key string) bool {
 		m.clearMonitorHeaderFocus()
 		if page, ok := strings.CutPrefix(action, "attention-next:"); ok {
 			m.monitorAttentionPage, _ = strconv.Atoi(page)
-			m.focusMonitorAttention(false)
+			m.monitorAttentionCursor = ""
+			m.focusMonitorAttention(true)
 		} else {
 			m.openMonitorAttention(action)
 		}
