@@ -216,6 +216,28 @@ func TestMonitorActiveFilterFollowsLatestObservation(t *testing.T) {
 	}
 }
 
+func TestMonitorActiveSummaryOneReadySessionAndThreeChecks(t *testing.T) {
+	m := contextTestModel()
+	m.monitorSessionData = nil
+	old := time.Now().Add(-time.Hour)
+	usage := codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{
+		{ID: "ready", Active: true, LastActivity: old},
+		{ID: "check-1", Active: true, LastActivity: old, Attention: codex.SessionAttentionCheck},
+		{ID: "check-2", Active: true, LastActivity: old, Attention: codex.SessionAttentionCheck},
+		{ID: "check-3", Active: true, LastActivity: old, Attention: codex.SessionAttentionCheck},
+	}}
+	m.syncMonitorSessions(usage, time.Now())
+	lines := m.monitorSummaryLines(120, 2, paletteFor(m.theme))
+	if got := strings.Join(strings.Fields(ansi.Strip(lines[1])), ","); got != "0,4,1,0,0,0,3" {
+		t.Fatalf("unexpected summary: %s; want 4 sessions / 1 active / 3 check", got)
+	}
+	m.setMonitorFilter(monitorFilterActive)
+	rows, _, _ := m.monitorSessionPage(30)
+	if len(rows) != 1 || rows[0].id != "ready" {
+		t.Fatal("Active did not select the confirmed ready session", rows)
+	}
+}
+
 func TestMonitorSummaryAllCategoriesFitReservedHeight(t *testing.T) {
 	m := statusFilterTestModel()
 	for _, width := range []int{24, 32, 38, 39, 40, 54, 55, 64, 94, 95, 120, 180} {

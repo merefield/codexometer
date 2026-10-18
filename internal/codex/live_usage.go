@@ -1338,9 +1338,11 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	groupWorking := make(map[string]bool)
 	for _, cursor := range r.files {
 		quietFor := now.Sub(cursor.lastModified)
-		active := quietFor <= 5*time.Minute
 		_, writerActive := liveWriters[cursor.threadID]
 		exactStatus, exact := exactStatuses[cursor.threadID]
+		// A currently loaded, ready daemon thread is still active even without
+		// recent rollout writes. Do not confuse that with processing a turn.
+		active := quietFor <= 5*time.Minute || exact && exactStatus == sessionRuntimeIdle
 		exactWorking := exact && exactStatus == sessionRuntimeWorking
 		localWorking := !exact && writerActive && cursor.attention == sessionAttentionWorking
 		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, quietFor, exactStatus, exact)

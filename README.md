@@ -1537,6 +1537,10 @@ live session states and are not persisted across launches.
 **Active** includes sessions identified as active by the latest observation,
 including working sessions and those waiting for input, approval or their next
 turn. It excludes inferred **CHECK SESSION** entries and retained inactive rows.
+An app-server-confirmed loaded, idle/ready session remains Active even after
+five minutes without session-file updates; that confirmation is not carried
+forward if it disappears or the daemon disconnects. Without the daemon, the
+existing recent-activity and attention signals remain best-effort.
 **Working** is narrower: a currently processing turn. Active therefore overlaps
 the other categories; the counts are not separate parts to add together.
 
