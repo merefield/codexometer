@@ -19,7 +19,7 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 	if id == "" {
 		count, selected := 0, -1
 		for _, s := range m.monitorSessionData {
-			if m.monitorSessionVisible(s) {
+			if m.monitorSessionInList(s) {
 				if s.id == m.monitorSelectedID {
 					selected = count
 				}
@@ -30,7 +30,7 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 			return nil
 		}
 		buttons = []monitorNavigationButton{
-			{label: "[↑]", action: "session-up", enabled: count > 0 && selected != 0},
+			{label: "[↑]", action: "session-up", enabled: count > 0 && !m.monitorSummaryFocused},
 			{label: "[↓]", action: "session-down", enabled: count > 0 && (selected < 0 || selected < count-1)},
 			{label: m.monitorPrivacyLabel(width - 8), action: "privacy", enabled: true},
 		}

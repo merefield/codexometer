@@ -24,17 +24,8 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 			continue
 		}
 		counts[0]++
-		switch s.attention {
-		case codex.SessionAttentionApproval:
-			counts[2]++
-		case codex.SessionAttentionInput:
-			counts[3]++
-		case codex.SessionAttentionCheck:
-			counts[4]++
-		case codex.SessionAttentionNone:
-			if s.working {
-				counts[1]++
-			}
+		if status := monitorSessionStatus(s); status != monitorFilterAll {
+			counts[status]++
 		}
 	}
 	labels := []string{"TOKENS", "SESSIONS", "WORKING", "APPROVAL", "INPUT", "CHECK"}
@@ -46,14 +37,7 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 		}
 		values = append(values, value)
 	}
-	columns := 6
-	if width < 78 && rows >= 4 {
-		columns = 3
-	}
-	if width < 44 && rows >= 6 {
-		columns = 2
-	}
-	cell := max((width-(columns-1))/columns, 1)
+	columns, cell := monitorSummaryColumns(width, rows)
 	var lines []string
 	for start := 0; start < 6; start += columns {
 		var titles, numbers []string
@@ -62,7 +46,7 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 			if i == 5 {
 				title += "*"
 			} // inferred, never an authoritative input request
-			titles = append(titles, colors.dimmed().Render(ansi.Truncate(title, cell, "…")+strings.Repeat(" ", max(cell-lipgloss.Width(ansi.Truncate(title, cell, "…")), 0))))
+			titles = append(titles, m.monitorFilterTitleStyle(i, colors).Render(ansi.Truncate(title, cell, "…")+strings.Repeat(" ", max(cell-lipgloss.Width(ansi.Truncate(title, cell, "…")), 0))))
 			style := colors.label().Bold(true)
 			if i >= 2 {
 				style = colors.dimmed().Bold(true)
@@ -458,7 +442,7 @@ func (m Model) monitorDetailHeader(width, height int) (summary, rows int, button
 // Reserve overview padding only if every visible session would still receive
 // at least eleven rows, including its borders.
 func (m Model) monitorAttentionHasRoom(width, height int) bool {
-	count := m.visibleMonitorSessionCount()
+	count := m.monitorListSessionCount()
 	return count > 0 && (layoutMonitorArea(width, height).graphHeight-3)/count >= 11
 }
 

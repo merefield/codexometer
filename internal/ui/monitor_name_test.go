@@ -113,9 +113,9 @@ func TestNamedSessionDirectoryDoesNotDisplaceStatus(t *testing.T) {
 		if active {
 			want = "ACTIVE"
 		}
-		m := Model{}
+		m := Model{monitorState: monitorRunning}
 		short := ansi.Strip(m.renderMonitorSessionMetrics(64, 4, s, "", paletteFor(themeHacker)))
-		if !strings.Contains(short, want) || !strings.Contains(short, "TOKENS") || strings.Contains(short, s.workingDirectory) {
+		if !strings.Contains(short, want) || !strings.Contains(short, "0 tokens") || strings.Contains(short, s.workingDirectory) {
 			t.Fatalf("short row must retain tokens and %s before directory:\n%s", want, short)
 		}
 		tall := ansi.Strip(m.renderMonitorSessionMetrics(64, 8, s, "", paletteFor(themeHacker)))

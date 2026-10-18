@@ -194,6 +194,8 @@ type Model struct {
 	monitorCodexUp          bool
 	monitorCodexWorking     bool
 	monitorSelectedID       string
+	monitorFilter           monitorStatusFilter
+	monitorSummaryFocused   bool
 	monitorDismissed        map[string]monitorSessionDismissal
 	monitorDismissHover     string
 	monitorDismissFlash     string
@@ -643,6 +645,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.meterView == viewMonitor {
+			if m.monitorFilterKey(strings.ToLower(message.String())) {
+				return m, nil
+			}
 			if strings.EqualFold(message.String(), "o") {
 				if !message.IsRepeat && m.monitorContextDetail == "" && m.monitorCloseAllEnabled() {
 					return m.pressFooterButton(footerButtonMonitorCloseAll)
@@ -2585,6 +2590,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 }
 
 func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt time.Time) {
+	defer m.reconcileMonitorFilterSelection()
 	follow := false
 	if m.monitorContextDetail != "" {
 		if s, ok := m.contextDetailSession(); ok {
@@ -2699,7 +2705,7 @@ func (m *Model) dismissMonitorSession(id string) {
 		preview:      session.preview,
 	}
 	m.monitorSessions = m.visibleMonitorSessionCount()
-	maximumScroll := max(m.monitorSessions-m.monitorPageSize(), 0)
+	maximumScroll := max(m.monitorListSessionCount()-m.monitorPageSize(), 0)
 	m.monitorScroll = min(m.monitorScroll, maximumScroll)
 }
 
@@ -2708,7 +2714,7 @@ func (m *Model) dismissMonitorSession(id string) {
 func (m *Model) dismissAllMonitorSessions() {
 	m.stashMonitorDraft()
 	for _, session := range m.monitorSessionData {
-		if m.monitorSessionVisible(session) {
+		if m.monitorSessionInList(session) {
 			m.dismissMonitorSession(session.id)
 		}
 	}
@@ -2871,7 +2877,7 @@ func (m *Model) scrollMonitorPage(direction int) {
 }
 
 func (m *Model) scrollMonitorRows(rows int) {
-	maximum := max(m.visibleMonitorSessionCount()-m.monitorPageSize(), 0)
+	maximum := max(m.monitorListSessionCount()-m.monitorPageSize(), 0)
 	m.monitorScroll = min(max(m.monitorScroll+rows, 0), maximum)
 }
 
@@ -2880,7 +2886,7 @@ func (m *Model) selectMonitorSession(direction int) {
 	visible := make([]string, 0, len(m.monitorSessionData))
 	selected := -1
 	for _, session := range m.monitorSessionData {
-		if !m.monitorSessionVisible(session) {
+		if !m.monitorSessionInList(session) {
 			continue
 		}
 		if session.id == m.monitorSelectedID {
@@ -2890,8 +2896,14 @@ func (m *Model) selectMonitorSession(direction int) {
 	}
 	if len(visible) == 0 {
 		m.monitorSelectedID = ""
+		m.focusMonitorSummary()
 		return
 	}
+	if direction < 0 && selected == 0 && m.monitorContextDetail == "" {
+		m.focusMonitorSummary()
+		return
+	}
+	m.monitorSummaryFocused = false
 	if selected < 0 {
 		if direction < 0 {
 			selected = len(visible) - 1
@@ -2924,7 +2936,7 @@ func (m *Model) dismissSelectedMonitorSession() {
 	visible := make([]string, 0, len(m.monitorSessionData))
 	selected := -1
 	for _, session := range m.monitorSessionData {
-		if !m.monitorSessionVisible(session) {
+		if !m.monitorSessionInList(session) {
 			continue
 		}
 		if session.id == m.monitorSelectedID {

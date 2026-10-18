@@ -277,6 +277,7 @@ func TestMonitorAttributesObservedQuotaMovementByLocalTokenShare(t *testing.T) {
 	}
 	alpha := model.monitorSessionData[model.monitorSessionIndex("alpha")]
 	bravo := model.monitorSessionData[model.monitorSessionIndex("bravo")]
+	model.monitorStatusLine = []string{} // Exercise baseline/share fallback telemetry.
 	alphaView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, alpha, "", paletteFor(themeHacker)))
 	bravoView := ansi.Strip(model.renderMonitorSessionMetrics(52, 8, bravo, "", paletteFor(themeHacker)))
 	for view, wants := range map[string][]string{

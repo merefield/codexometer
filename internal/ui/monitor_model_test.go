@@ -11,6 +11,7 @@ import (
 
 func TestMonitorSessionModelMetadataPriority(t *testing.T) {
 	m := contextTestModel()
+	m.monitorStatusLine = []string{} // Legacy fallback without configured fields.
 	s := m.monitorSessionData[0]
 	s.modelSettings = codex.SessionModelSettings{Model: "gpt-6-astra", ReasoningEffort: "medium", ServiceTier: "priority"}
 	s.workingDirectory = "/work/projects"

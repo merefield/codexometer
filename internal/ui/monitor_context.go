@@ -393,6 +393,9 @@ func (m Model) monitorContextAt(x, y int) string {
 	if m.meterView != viewMonitor || m.loading && len(m.snapshot.Meters()) == 0 {
 		return ""
 	}
+	if hit := m.monitorFilterAt(x, y); hit != "" {
+		return hit
+	}
 	if hit := m.monitorAttentionAt(x, y); hit != "" {
 		return hit
 	}
@@ -517,6 +520,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 	_, click := msg.(tea.MouseClickMsg)
 	m.monitorContextHover = m.monitorContextAt(mouse.X, mouse.Y)
 	if click && mouse.Button == tea.MouseLeft && m.monitorContextHover != "" {
+		if m.activateMonitorFilter(m.monitorContextHover) {
+			return m, nil, true
+		}
 		if id, ok := strings.CutPrefix(m.monitorContextHover, "copy:"); ok {
 			next, cmd := m.activateMonitorCopy(id)
 			return next, cmd, true

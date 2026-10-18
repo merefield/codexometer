@@ -592,7 +592,7 @@ codexometer --codex /path/to/codex
 | `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace |
 | `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
-| `Left` / `Right` | In Sessions, less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
+| `Left` / `Right` | In Sessions, cycle status filters while the summary has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Arm, then confirm, Run All (Benchmark view only) |
 | `x` | Dismiss the selected Sessions row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
@@ -602,7 +602,7 @@ codexometer --codex /path/to/codex
 | `Left` / `Right` | Page Usage history, or select the previous or next benchmark suite |
 | `f` | Show all, passed, or failed benchmark results |
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
-| `Up` / `Down` | Select a session row or Benchmark row, or scroll Sessions full detail / open Benchmark detail (outside a focused editor) |
+| `Up` / `Down` | Select a session row or Benchmark row; Up from the first session focuses its summary filters, Down returns to the first match. Scroll Sessions full detail / open Benchmark detail (outside a focused editor) |
 | `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions full detail, `Enter` focuses an available reply editor or submits its text |
 | `c` | Copy an eligible Sessions reply while its detail is shown, confirm an armed session approval, select Cumulative in Usage, or copy the Benchmark matrix/open run detail; types normally in a focused editor |
 | `l` | Clear accumulated Benchmark results while no suite is running |
@@ -1290,13 +1290,14 @@ same short ID and session name (directory fallback when unnamed), shortening
 their labels as space tightens. Click a highlighted session status to open its
 full detail and any native approval/input request; this only navigates.
 
-Session rows prioritise the root session's latest observed model, reasoning effort
-and Fast setting directly below the token count, for example
-`gpt-6-astra medium fast`. These are observed selections from persisted turn contexts
+Terminal session rows keep the state first, then prioritise the fields selected
+through `/statusline` in their configured order, in bold. Defaults include the
+root session's latest observed model/reasoning, service tier, total tokens and
+directory. Model settings are observed selections from persisted turn contexts
 and settings events, not proof of the backend-resolved model or delivered speed.
 Changes appear once Codex records them; an unrecorded CLI selection cannot be seen.
 Child-agent settings never replace the root's selection. Missing fields are omitted;
-no `fast` suffix means Fast was not observed, not proof that it is off.
+missing speed information means the tier was not observed, not proof that Fast is off.
 
 The row no longer repeats the directory already shown in its border or the status
 already shown in its badge. Generic `ROOT` text and the extra file-activity age line
@@ -1523,8 +1524,23 @@ The old `i` and Enter detail-navigation shortcuts have been removed.
 Clickable **[←] [→]** buttons sit at the top-right of each row's rightmost box
 (graph or detail), and on the full-detail box. They mirror the cursor keys:
 Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
-detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons,
-disabled at the first/last visible session. Dismissed sessions are skipped.
+detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons.
+Up from the first session focuses the summary categories; Left/Right then cycles
+**Sessions (all) → Working → Approval → Input → Check** and filters the rows.
+Click a category label or count to select it directly. The selected filter is
+underlined; keyboard focus and hover add a theme-coloured highlight. Down or
+Enter returns to the first matching session, where Left/Right changes detail
+again. Escape while the categories have focus clears the filter. Empty categories
+remain selectable and show an explicit no-results message. Filters update with
+live session states and are not persisted across launches.
+
+The summary counts and token totals remain global, excluding dismissed sessions
+from state counts but retaining their measured tokens. Attention pills stay
+available across filters; opening an excluded session clears the filter to keep
+its row accessible. **Close All** only dismisses matching, non-dismissed sessions
+after confirmation; filtering never stops telemetry collection or changes the
+Zero baseline. Dismissed sessions are skipped, and Down is disabled at the last
+matching session.
 These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
 background half-click navigation still work. Hide/Show and Close retain priority.
@@ -1662,14 +1678,19 @@ are clickable. Writable web mode exposes the same catalogue through
 | `/copy` | **Local:** reuse the selected session’s Copy action, copying the full observed reply/activity text. Ineligible or missing text gives feedback. |
 | `/theme` | **Local:** choose and save a Codexometer display theme; terminal picker or existing browser theme selector. |
 | `/exit`, `/quit` | **Local:** quit the Codexometer terminal interface; in the browser, leave session detail for Sessions. Codex sessions and the browser server continue running. |
-| `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. Works without the shared daemon. |
+| `/statusline` | **Local Codexometer multi-select:** choose and reorder detail-footer fields with a live preview. In the terminal, the same selection also prioritises the values in each session's left-hand telemetry box. Works without the shared daemon. |
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
 the last line of full session detail on web. Its default fields are observed
 model/reasoning, speed, total session tokens (including linked agents) and
 directory. `/statusline` also offers model alone, reasoning alone, session name,
 full session ID, observed state, linked-agent count and context source. Missing
-values are omitted. This is Codexometer's supported field set; the Codex CLI's
+values are omitted. In terminal session rows, selected fields appear in the same
+order, in bold, below the essential state badge. Each row uses its own session's
+values, not those of the selected session. Lower-priority quota, activity and
+latency information uses any remaining rows; configured values are never replaced
+by pagination hints. An explicit empty selection restores the usual telemetry
+priorities while hiding the detail footer. This is Codexometer's supported field set; the Codex CLI's
 own client-side picker is not dynamically exposed by app-server.
 
 In the terminal, **Space/Enter** toggles a field, **Left/Right** changes its order,

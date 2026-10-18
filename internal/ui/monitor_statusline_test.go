@@ -11,6 +11,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 func TestStatusLineMultiSelectReorderCancelAndPersist(t *testing.T) {
@@ -60,6 +61,59 @@ func TestStatusLineMultiSelectReorderCancelAndPersist(t *testing.T) {
 	fresh.applyPreferences(store.preferences)
 	if !reflect.DeepEqual(fresh.monitorStatusLine, m.monitorStatusLine) {
 		t.Fatal("preference not restored")
+	}
+}
+
+func TestStatusLinePrioritisesPerSessionTelemetry(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		m := contextTestModel()
+		m.monitorSelectedID = "root-one"
+		m.monitorStatusLine = []string{"current-dir", "model-with-reasoning", "fast-mode", "used-tokens", "source", "agents", "run-state"}
+		s := m.monitorSessionData[1]
+		s.workingDirectory, s.name = "/work/bravo", "Bravo"
+		s.modelSettings = codex.SessionModelSettings{Model: "bravo-model", ReasoningEffort: "high", ServiceTier: "fast"}
+		s.latest, s.baseline, s.agentCount = 1200, 1100, 2
+		colors := paletteFor(theme)
+		out := m.renderMonitorSessionMetrics(80, 14, s, "", colors)
+		lines := strings.Split(ansi.Strip(out), "\n")
+		body := strings.Join(lines[1:len(lines)-1], "\n")
+		before := -1
+		for _, value := range []string{"/work/bravo", "bravo-model high", "fast", "1.2K tokens", "LOCAL", "2 agents"} {
+			at := strings.Index(body, value)
+			if at <= before {
+				t.Fatalf("configured order not respected for %q:\n%s", value, body)
+			}
+			before = at
+			if strings.Count(body, value) != 1 {
+				t.Fatalf("duplicate configured field %q", value)
+			}
+			for _, cells := range backgroundTestLines(out) {
+				var text strings.Builder
+				for _, cell := range cells {
+					text.WriteString(cell.Content)
+				}
+				if index := strings.Index(text.String(), value); index >= 0 {
+					column := ansi.StringWidth(text.String()[:index])
+					for _, cell := range cells[column : column+ansi.StringWidth(value)] {
+						if cell.Style.Attrs&uv.AttrBold == 0 {
+							t.Fatalf("configured value %q is not bold", value)
+						}
+					}
+				}
+			}
+		}
+		if strings.Count(body, i18n.Text("WORKING")) != 1 || strings.Contains(body, "100 TOKENS") {
+			t.Fatal("state or token field was repeated", body)
+		}
+		compact := ansi.Strip(m.renderMonitorSessionMetrics(40, 5, s, "ROWS 1-2/3", colors))
+		if !strings.Contains(compact, "/work/bravo") || !strings.Contains(compact, "bravo-model high") || !strings.Contains(strings.Split(compact, "\n")[4], "ROWS 1-2/3") {
+			t.Fatal("low-priority paging displaced configured fields", compact)
+		}
+		m.monitorStatusLine = []string{}
+		fallback := ansi.Strip(m.renderMonitorSessionMetrics(80, 8, s, "", colors))
+		if !strings.Contains(fallback, i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(100), float64(0))) || !strings.Contains(fallback, "bravo-model high fast") {
+			t.Fatal("empty selection did not retain ordinary telemetry", fallback)
+		}
 	}
 }
 

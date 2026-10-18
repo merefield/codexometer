@@ -8,7 +8,7 @@ import (
 func (m Model) visibleMonitorSessionIDs() []string {
 	var ids []string
 	for _, s := range m.monitorSessionData {
-		if m.monitorSessionVisible(s) {
+		if m.monitorSessionInList(s) {
 			ids = append(ids, s.id)
 		}
 	}

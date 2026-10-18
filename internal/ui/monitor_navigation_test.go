@@ -88,7 +88,7 @@ func TestMonitorSessionNavigationBoundaries(t *testing.T) {
 	}
 	m.monitorSelectedID = "root-one"
 	buttons := m.monitorNavigationButtons(100, "", false)
-	if buttons[0].enabled || !buttons[1].enabled {
+	if !buttons[0].enabled || !buttons[1].enabled {
 		t.Fatal("first-session state")
 	}
 	m.dismissMonitorSession("root-three")

@@ -22,7 +22,7 @@ func (m Model) initialMonitorContextTarget() string {
 	var first, newest string
 	var at time.Time
 	for _, s := range m.monitorSessionData {
-		if !m.monitorSessionVisible(s) {
+		if !m.monitorSessionInList(s) {
 			continue
 		}
 		if s.id == m.monitorSelectedID {
@@ -107,6 +107,13 @@ func (m Model) contextTargetHidden() bool {
 }
 
 func (m *Model) setRowContext(id string, mode int) {
+	m.monitorSummaryFocused = false
+	for _, s := range m.monitorSessionData {
+		if s.id == id && !m.monitorSessionInList(s) {
+			m.monitorFilter, m.monitorScroll = monitorFilterAll, 0
+			break
+		}
+	}
 	m.clearQuotaConfirmation()
 	m.monitorContextRows = maps.Clone(m.monitorContextRows)
 	if m.monitorContextRows == nil {
