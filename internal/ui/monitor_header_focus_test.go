@@ -19,6 +19,40 @@ func headerFocusModel() Model {
 	return m
 }
 
+func TestMonitorHeaderFocusOverviewEntersFirstPill(t *testing.T) {
+	for _, mode := range []int{contextGraph, contextSplit, contextWide} {
+		m := attentionTestModel()
+		m.height = 65
+		// Put an input-waiting session first in the list, while a different
+		// session's higher-priority approval remains first in the pill strip.
+		m.monitorSessionData[0], m.monitorSessionData[1] = m.monitorSessionData[1], m.monitorSessionData[0]
+		m.setRowContext("root-two", mode)
+		_, buttons := m.visibleMonitorHeader()
+		if len(buttons) < 2 || buttons[0].action != "attention:root-one" {
+			t.Fatal("fixture must have a different session's pill first")
+		}
+		m = filterKey(t, m, tea.KeyUp)
+		if !m.monitorAttentionFocused || m.monitorAttentionCursor != buttons[0].action || m.monitorSelectedID != "root-two" || m.monitorContextDetail != "" || m.rowContextMode("root-two") != mode {
+			t.Fatal("overview did not enter the first pill while preserving its row selection")
+		}
+		m = filterKey(t, m, tea.KeyRight)
+		m = filterKey(t, m, tea.KeyUp)
+		m = filterKey(t, m, tea.KeyDown)
+		if !m.monitorAttentionFocused || m.monitorAttentionCursor != "attention:root-two" {
+			t.Fatal("returning from summary did not retrace the pill selection")
+		}
+		m = filterKey(t, m, tea.KeyDown)
+		if m.monitorAttentionFocused || m.monitorSummaryFocused || m.monitorSelectedID != "root-two" || m.rowContextMode("root-two") != mode {
+			t.Fatal("Down did not return to the original overview row")
+		}
+		m = filterKey(t, m, tea.KeyUp)
+		m = filterKey(t, m, tea.KeyEnter)
+		if m.monitorContextDetail != "root-one" {
+			t.Fatal("Enter did not open the first visible pill's session")
+		}
+	}
+}
+
 func TestMonitorHeaderFocusDetailPillsSummaryAndBack(t *testing.T) {
 	m := headerFocusModel()
 	m.monitorContextScroll = 1

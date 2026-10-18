@@ -36,9 +36,9 @@ func (m *Model) focusMonitorAttention(restore bool) bool {
 	action := m.selectedAttentionAction()
 	if restore && m.monitorAttentionCursor != "" {
 		action = m.monitorAttentionCursor
-	} else if action == "" {
-		action = "attention:" + m.monitorContextTarget()
 	}
+	// The overview enters at the first visible pill, independent of its row
+	// selection. Only full detail has a specific review's pill to prefer.
 	m.monitorAttentionCursor = buttons[0].action
 	for _, b := range buttons {
 		if b.action == action {

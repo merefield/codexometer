@@ -1527,7 +1527,9 @@ Left is dimmed and inactive at graph-only; Right is dimmed and inactive at full
 detail. The **SESSION TOTALS** header also has **[↑] [↓]** session-selection buttons.
 Up beyond the first session (or the top of full-detail text) focuses the visible
 attention pills first. Left/Right highlights a pill without opening it; Enter
-opens its session detail or specific review. A further Up focuses the summary
+opens its session detail or specific review. The session list enters at the
+first visible pill; full detail prefers the pill for its current review.
+A further Up focuses the summary
 categories; Left/Right then cycles
 **Sessions (all) → Active → Working → Approval → Input → Check** and filters the rows.
 Click a category label or count to select it directly. The selected filter is
