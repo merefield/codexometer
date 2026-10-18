@@ -1673,9 +1673,9 @@ wide terminal session row when space permits. In terminal full detail, pressing
 available; read-only sessions retain a command picker for local display settings.
 Submenus stay in that same expanding list above the command line: type to filter
 the current level, Up/Down selects, Tab completes and Enter drills in or reviews.
-In a session-list detail pane, the list fills the available width. In full-screen
-detail, it fits its contents up to 66% of the available composer width; longer
-option labels and help are shortened with an ellipsis. Width updates on resize.
+In both session-list and full-screen detail, the list fits its contents, including
+previews and controls, up to the width of the surrounding detail pane. Text that
+still cannot fit is shortened with an ellipsis. Width updates on resize.
 **Alt+Left** or the **Back** button returns one level (Left/Backspace also works
 when the option filter is empty). **Escape** closes the list, retaining the draft
 and typing focus. Back from a rename or directory review restores the edited

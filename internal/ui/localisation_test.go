@@ -76,6 +76,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("monitor_header_focus_mouse", TestMonitorHeaderFocusMouseArrowsMirrorKeyboard)
 	t.Run("monitor_command_popup_surfaces", TestMonitorCommandPopupRenderedSurfaces)
 	t.Run("monitor_command_popup_widths", TestMonitorCommandPopupWidthsFollowDetailMode)
+	t.Run("monitor_command_popup_preview", TestMonitorCommandPopupFitsStatuslinePreview)
 	t.Run("monitor_command_inline", TestMonitorInlineCommandsFilterAndDrillFromComposer)
 	t.Run("monitor_command_checkboxes", TestMonitorInlineCheckboxesWholeListSpaceToggleEnterApply)
 	t.Run("monitor_command_checkbox_clicks", TestMonitorInlineCheckboxClickSurfaces)

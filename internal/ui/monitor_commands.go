@@ -524,6 +524,32 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	return buttons
 }
 
+func (m Model) monitorCommandHint() string {
+	p := m.monitorCommands
+	switch {
+	case p.menu.Input:
+		return ""
+	case p.detail:
+		return "↑/↓ scroll"
+	case p.menu.Multiple:
+		return "↑/↓ select • Space toggle • ←/→ order"
+	default:
+		return "↑/↓ select"
+	}
+}
+
+func (m Model) monitorCommandTitle() string {
+	p := m.monitorCommands
+	if p.inline {
+		return ""
+	}
+	identity := shortSessionID(p.session)
+	if s, ok := m.contextDetailSession(); ok {
+		identity = monitorSessionIdentity(s)
+	}
+	return fmt.Sprintf("%s // %s", p.menu.Title, identity)
+}
+
 func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 	p := m.monitorCommands
 	rows := m.monitorCommandRows(width, height)
@@ -566,31 +592,15 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 		footer = append(footer, style.Render(b.text))
 	}
 	if len(body) > 0 {
-		hint := "↑/↓ select"
-		if p.menu.Input {
-			hint = ""
-		} else if p.detail {
-			hint = "↑/↓ scroll"
-		} else if p.menu.Multiple {
-			hint = "↑/↓ select • Space toggle • ←/→ order"
-		}
 		if height >= 6 && !p.inline {
-			body[len(body)-2] = colors.label().Render(ansi.Truncate(hint, max(width-4, 1), ""))
+			body[len(body)-2] = colors.label().Render(ansi.Truncate(m.monitorCommandHint(), max(width-4, 1), ""))
 		}
 		body[len(body)-1] = strings.Join(footer, "  ")
-	}
-	identity := shortSessionID(p.session)
-	if s, ok := m.contextDetailSession(); ok {
-		identity = monitorSessionIdentity(s)
-	}
-	title := fmt.Sprintf("%s // %s", p.menu.Title, identity)
-	if p.inline {
-		title = ""
 	}
 	for i := range body {
 		body[i] = " " + body[i] + " "
 	}
-	return renderMonitorPopup(title, strings.Join(body, "\n"), width, colors)
+	return renderMonitorPopup(m.monitorCommandTitle(), strings.Join(body, "\n"), width, colors)
 }
 
 func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {

@@ -214,10 +214,7 @@ func TestMonitorCommandPopupWidthsFollowDetailMode(t *testing.T) {
 				m.width = width
 				area := m.monitorComposerPopupArea()
 				popup, _ := m.monitorSuggestionPopup()
-				want := area.width
-				if mode == contextFull {
-					want = min(ansi.StringWidth("/model // "+strings.Join(strings.Fields(help), " "))+4, area.width*66/100)
-				}
+				want := min(ansi.StringWidth("/model // "+strings.Join(strings.Fields(help), " "))+4, area.width)
 				if popup.width != want || popup.y+popup.height != area.y+area.height {
 					t.Fatalf("mode %d width %d: popup %+v, want width %d", mode, width, popup, want)
 				}
@@ -233,12 +230,50 @@ func TestMonitorCommandPopupWidthsFollowDetailMode(t *testing.T) {
 				m.width = width
 				area := m.monitorComposerPopupArea()
 				popup := m.monitorCommandPopup()
-				if mode == contextWide && popup.width != area.width || mode == contextFull && popup.width > area.width*66/100 {
+				if popup.width > area.width || long && popup.width != area.width {
 					t.Fatalf("nested mode %d width %d: popup width %d, pane width %d", mode, width, popup.width, area.width)
 				}
 				box := m.renderMonitorCommands(popup.width, popup.height, paletteFor(m.theme))
 				if lipgloss.Width(box) != popup.width || long && !strings.Contains(ansi.Strip(box), "…") {
 					t.Fatal("nested menu overflowed or failed to ellipsize its help")
+				}
+			}
+		}
+	}
+}
+
+func TestMonitorCommandPopupFitsStatuslinePreview(t *testing.T) {
+	for _, mode := range []int{contextFull, contextWide} {
+		for _, inline := range []bool{false, true} {
+			m := localCommandModel()
+			m.height = 65
+			m.monitorSessionData = m.monitorSessionData[:1]
+			m.monitorSessionData[0].name = strings.Repeat("session", 24)
+			m.setRowContext("root-one", mode)
+			m, _, _ = m.openMonitorCommands("statusline")
+			m.monitorCommands.inline = inline
+			m.monitorCommands.menu.Choices = []codex.SessionCommandChoice{{ID: "thread-name", Label: "Session name", Help: "Name", Selected: true}}
+			preview := "Preview // " + m.monitorSessionData[0].name
+			for _, width := range []int{360, 240, 120, 80} {
+				m.width = width
+				area := m.monitorComposerPopupArea()
+				popup := m.monitorCommandPopup()
+				want := min(ansi.StringWidth(preview)+4, area.width)
+				if popup.width < want || popup.width > area.width || inline && popup.width != want {
+					t.Fatalf("mode %d inline %t width %d: popup width %d, preview needs %d", mode, inline, width, popup.width, want)
+				}
+				box := m.renderMonitorCommands(popup.width, popup.height, paletteFor(m.theme))
+				if lipgloss.Width(box) != popup.width || lipgloss.Height(box) != popup.height {
+					t.Fatal("preview overflowed the popup bounds")
+				}
+				if ansi.StringWidth(preview)+4 <= area.width && !strings.Contains(ansi.Strip(box), preview) {
+					t.Fatal("preview shortened despite sufficient room in the parent pane")
+				}
+				x, y := renderedTextStart(t, m, i18n.Text(map[bool]string{true: "[ ENTER APPLY ]", false: "[ C APPLY ]"}[inline]))
+				next, _ := m.Update(tea.MouseMotionMsg{X: x, Y: y})
+				m = next.(Model)
+				if m.monitorCommands.footerHover != "confirm" {
+					t.Fatal("resized popup moved Apply away from its hover target")
 				}
 			}
 		}
