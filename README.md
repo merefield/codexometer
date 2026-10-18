@@ -1644,20 +1644,22 @@ lists scroll within the available space (arrows or mouse wheel in the terminal).
 Up/Down selects, Tab completes the name, Enter opens its options and Escape
 dismisses suggestions while retaining the draft and typing focus. Suggestions
 are fetched asynchronously and filtered locally. They also work in a selected
-wide terminal session row when space permits. Outside the full-detail composer,
-press `/` to open the root command list. Use arrows and Enter to browse, **C** to confirm a
-setting change. **Back** (Left) returns to the previous visited command level;
-it appears only when there is a previous screen or a provisional review to undo.
-Opening `/fast` directly starts at its options, so it has no Back action until
-reviewing. **Cancel** (Escape) closes the entire menu and returns typing focus
-to the composer with the slash-command draft intact. Back from a rename or
-directory review restores the edited input. Speed menus
-keep all options visible: Up/Down highlights a choice, **Enter REVIEW** stages it,
+wide terminal session row when space permits. In terminal full detail, pressing
+`/` also focuses the composer and starts this expansion when a composer is
+available; read-only sessions retain a command picker for local display settings.
+Submenus stay in that same expanding list above the command line: type to filter
+the current level, Up/Down selects, Tab completes and Enter drills in or reviews.
+**Alt+Left** or the **Back** button returns one level (Left/Backspace also works
+when the option filter is empty). **Escape** closes the list, retaining the draft
+and typing focus. Back from a rename or directory review restores the edited
+argument in the composer. Speed menus
+initially show all options: Up/Down highlights a choice, **Enter REVIEW** stages it,
 and **C CONFIRM** applies it. The separate **CURRENT** marker identifies the
 existing speed; the highlighted choice uses bright text without a reversed background.
 The action line shows only the current next step, Enter Review or C Confirm,
 without a second confirmation hint. Settings blocked during an active turn show
-**WAITING FOR IDLE**, with **F REFRESH** to read their availability again;
+**WAITING FOR IDLE**, with **Ctrl+R REFRESH** in the terminal composer
+(**F REFRESH** in the read-only picker) to read their availability again;
 **HELP** identifies genuine browse-only entries. Model, reasoning and speed changes are provisional until C;
 reviewing or changing the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
@@ -1703,16 +1705,15 @@ footer text shortens to fit and leaves the Copy button in place. A blank row
 separates a visible terminal status line from the global footer; very short
 terminals omit the status line and gap to preserve the composer and controls.
 
-Terminal command menus now use the same bottom-anchored popup as slash-command
-suggestions: selecting a command replaces that list with its live options instead
-of replacing the conversation. The composer stays in place, including in a wide
-session row. **Up/Down** selects, **Enter** opens or reviews, **Left/Backspace**
-goes back, and **Escape** closes the popup while retaining the draft. Option help
-stays subdued on one line, shortened with an ellipsis when needed. Review and
-**C CONFIRM** remain separate for model, reasoning, speed, name and directory
-changes; shrinking the terminal cannot confirm a hidden control. Clicking back
-into the composer closes the popup and resumes typing. `/commands` also opens
-the root command list, including local commands without a shared daemon.
+The terminal `/statusline` checkbox list uses the same composer expansion, but
+deliberately does not filter: **Up/Down** selects, **Space** toggles, **Left/Right**
+reorders and **Enter** applies the local display preferences. Escape discards
+unapplied changes. Other menu levels keep help subdued on one line, shortened
+with an ellipsis when needed. Model, reasoning, speed, name and directory changes
+still require separate review and **C CONFIRM**; shrinking the terminal cannot
+confirm a hidden control. The composer and conversation remain in place through
+all levels, including in a wide session row. `/commands` also opens the root
+list, including local commands without a shared daemon.
 
 Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of

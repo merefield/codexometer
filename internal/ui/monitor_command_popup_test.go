@@ -100,7 +100,7 @@ func TestMonitorCommandPopupRenderedSurfaces(t *testing.T) {
 	}
 }
 
-func TestMonitorCommandPopupOutsideComposerClickDismissesSafely(t *testing.T) {
+func TestMonitorCommandPopupComposerClickKeepsExpansion(t *testing.T) {
 	m, f := suggestionTestModel(t)
 	m.monitorPrompt.input.SetValue("/model")
 	m, cmd, _ := m.openMonitorCommands("model")
@@ -114,12 +114,12 @@ func TestMonitorCommandPopupOutsideComposerClickDismissesSafely(t *testing.T) {
 	}
 	next, _ = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 	m = next.(Model)
-	if m.monitorCommands.open || !m.monitorPrompt.input.Focused() || m.monitorPrompt.input.Value() != "/model" || f.calls != 0 {
-		t.Fatal("composer click did not close the popup and preserve its draft")
+	if !m.monitorCommands.open || !m.monitorPrompt.input.Focused() || m.monitorPrompt.input.Value() != "/model " || f.calls != 0 {
+		t.Fatal("composer click did not keep the expansion and typing focus")
 	}
 	next, _ = m.Update(key('c'))
-	if next.(Model).monitorPrompt.input.Value() != "/modelc" || f.calls != 0 {
-		t.Fatal("typing resumed as a hidden command confirmation")
+	if next.(Model).monitorPrompt.input.Value() != "/model c" || f.calls != 0 {
+		t.Fatal("typing into a submenu acted as a hidden command confirmation")
 	}
 }
 

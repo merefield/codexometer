@@ -144,12 +144,13 @@ func TestMonitorCommandsSuccessfulChangesDiscardOldCatalogues(t *testing.T) {
 	m.fetcher = f
 	for attempt := 0; attempt < 2; attempt++ {
 		var cmd tea.Cmd
+		m.focusMonitorPrompt()
+		m.monitorPrompt.input.SetValue("/model")
 		m, cmd, _ = m.openMonitorCommands("model/test")
 		m, _ = approvalEvent(m, cmd())
 		if m.monitorCommands.menu.Revision != strconv.Itoa(attempt) {
 			t.Fatal("reopened commands did not fetch a fresh revision")
 		}
-		m.monitorPrompt.input.SetValue("/model")
 		m.monitorSuggestions = monitorSuggestionState{active: true, busy: true, session: "root-one", request: 42, menu: m.monitorCommands.menu}
 		m, _, _ = m.chooseMonitorCommand()
 		m, cmd, _ = m.confirmMonitorCommand()
