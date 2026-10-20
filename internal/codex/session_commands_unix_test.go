@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -87,11 +88,17 @@ func TestCachedCommandClientRevalidatesWritesAndSettingsScope(t *testing.T) {
 	if _, err := c.SessionCommands(ctx, "one", "model/small"); err != nil {
 		t.Fatal(err)
 	}
-	p.mu.Lock()
-	p.settingsVersions["one"]++
-	p.mu.Unlock()
+	settings := json.RawMessage(`{"threadId":"one","threadSettings":{"model":"large","effort":"high","serviceTier":null}}`)
+	p.handleNotification("thread/settings/updated", settings)
 	if _, ok := c.CachedSessionCommands("one", "model/small"); ok {
 		t.Fatal("settings change did not invalidate cached options immediately")
+	}
+	if _, err := c.SessionCommands(ctx, "one", "model/small"); err != nil {
+		t.Fatal(err)
+	}
+	p.handleNotification("thread/settings/updated", settings)
+	if _, ok := c.CachedSessionCommands("one", "model/small"); !ok {
+		t.Fatal("repeated unchanged settings notification invalidated the cache")
 	}
 }
 

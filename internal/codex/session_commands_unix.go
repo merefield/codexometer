@@ -39,7 +39,9 @@ func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 	if path == "" || path == "help" {
 		status = sessionRuntimeUnknown // Root names/help survive ordinary turn transitions.
 	}
-	return commandDigest([]any{p.commandGeneration, status, p.settingsVersions[id], p.threadDirectories[id], p.threadSettings[id]})
+	// Resuming a thread can repeat its settings notification. Invalidate on
+	// effective values, not notification counters, so warming can settle.
+	return commandDigest([]any{p.commandGeneration, status, p.threadDirectories[id], p.threadSettings[id]})
 }
 
 func commandDigest(value any) string {
