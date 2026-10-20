@@ -29,6 +29,13 @@ type commandThread struct {
 	}
 }
 
+func (p *daemonStatusProvider) bumpCommandTransitionLocked(id string) {
+	if p.commandTransitions == nil {
+		p.commandTransitions = make(map[string]uint64)
+	}
+	p.commandTransitions[id]++
+}
+
 func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -36,12 +43,14 @@ func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 		return ""
 	}
 	status := p.statuses[id]
+	transition := p.commandTransitions[id]
 	if path == "" || path == "help" {
 		status = sessionRuntimeUnknown // Root names/help survive ordinary turn transitions.
+		transition = 0
 	}
 	// Resuming a thread can repeat its settings notification. Invalidate on
 	// effective values, not notification counters, so warming can settle.
-	return commandDigest([]any{p.commandGeneration, status, p.threadDirectories[id], p.threadSettings[id]})
+	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id]})
 }
 
 func commandDigest(value any) string {

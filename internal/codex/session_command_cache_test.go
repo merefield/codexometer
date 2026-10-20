@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,6 +17,7 @@ type menuCacheSource struct {
 	epoch   string
 	fail    bool
 	help    string
+	empty   bool
 	started chan string
 	release chan struct{}
 }
@@ -32,7 +34,7 @@ func (f *menuCacheSource) SessionCommands(ctx context.Context, id, path string) 
 		f.reads = map[string]int{}
 	}
 	f.reads[id+":"+path]++
-	fail, help, epoch := f.fail, f.help, f.epoch
+	fail, help, epoch, empty := f.fail, f.help, f.epoch, f.empty
 	f.mu.Unlock()
 	if f.started != nil {
 		f.started <- id + ":" + path
@@ -46,6 +48,9 @@ func (f *menuCacheSource) SessionCommands(ctx context.Context, id, path string) 
 	}
 	if fail {
 		return SessionCommandMenu{}, ErrSessionCommand
+	}
+	if empty {
+		return SessionCommandMenu{Path: path, Input: true, Choices: []SessionCommandChoice{}}, nil
 	}
 	return SessionCommandMenu{Path: path, Revision: epoch, Choices: []SessionCommandChoice{{
 		ID: "choice", Label: "Option", Help: help, Action: true,
@@ -90,6 +95,23 @@ func TestCommandCacheRetainsTreeAndIsolatesSessionsAndCopies(t *testing.T) {
 	loadMenu(t, c, "one", "//model")
 	if f.count("one", "//model") != 1 {
 		t.Fatal("cache changed the source semantics of a double-slash path")
+	}
+}
+
+func TestCommandCacheInputMenusKeepEmptyChoicesArray(t *testing.T) {
+	f := &menuCacheSource{epoch: "one", empty: true}
+	c := newSessionCommandCache(f)
+	for _, path := range []string{"rename", "cd"} {
+		for range 2 { // Initial response and Back to the cached input menu.
+			menu := loadMenu(t, c, "one", path)
+			encoded, err := json.Marshal(menu)
+			if err != nil || !menu.Input || !strings.Contains(string(encoded), `"choices":[]`) {
+				t.Fatalf("%s input menu lost its required JSON array: %s (%v)", path, encoded, err)
+			}
+		}
+		if f.count("one", path) != 1 {
+			t.Fatal("Back did not reuse the cached input menu")
+		}
 	}
 }
 
@@ -173,6 +195,85 @@ func TestCommandCacheRejectsInvalidatedInflightResult(t *testing.T) {
 				t.Fatal("invalidated in-flight result repopulated cache")
 			}
 		})
+	}
+}
+
+func TestCommandCacheOtherSessionChangesDoNotRejectPendingRead(t *testing.T) {
+	for _, change := range []string{"invalidate", "refresh", "observation"} {
+		t.Run(change, func(t *testing.T) {
+			f := &menuCacheSource{epoch: "one", started: make(chan string, 2), release: make(chan struct{})}
+			c := newSessionCommandCache(f)
+			usage := LiveUsageSnapshot{CodexUp: true, Sessions: []LiveUsageSession{{ID: "one"}, {ID: "two"}}}
+			c.observe(usage)
+			done := make(chan error, 1)
+			go func() { _, err := c.load(context.Background(), "one", "model", false); done <- err }()
+			<-f.started
+			var refreshed chan error
+			switch change {
+			case "refresh":
+				refreshed = make(chan error, 1)
+				go func() { _, err := c.load(context.Background(), "two", "model", true); refreshed <- err }()
+				<-f.started
+			case "observation":
+				usage.Sessions[1].Name = "Renamed"
+				c.observe(usage)
+			default:
+				c.invalidate("two")
+			}
+			close(f.release)
+			if err := <-done; err != nil {
+				t.Fatal("other session's change rejected this session's read", err)
+			}
+			if refreshed != nil {
+				if err := <-refreshed; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, ok := c.peek("one", "model"); !ok {
+				t.Fatal("other session's change discarded this session's result")
+			}
+		})
+	}
+}
+
+func TestCommandCacheWholeInvalidationRejectsPendingRead(t *testing.T) {
+	f := &menuCacheSource{epoch: "one", started: make(chan string, 1), release: make(chan struct{})}
+	c := newSessionCommandCache(f)
+	done := make(chan error, 1)
+	go func() { _, err := c.load(context.Background(), "one", "model", false); done <- err }()
+	<-f.started
+	c.invalidate("")
+	close(f.release)
+	if err := <-done; !errors.Is(err, ErrSessionCommand) {
+		t.Fatal("whole-cache invalidation accepted an old read", err)
+	}
+	if _, ok := c.peek("one", "model"); ok {
+		t.Fatal("old read repopulated the cleared cache")
+	}
+}
+
+func TestCommandCacheRefreshDoesNotJoinInvalidatedFlight(t *testing.T) {
+	f := &menuCacheSource{epoch: "one", started: make(chan string, 2), release: make(chan struct{})}
+	c := newSessionCommandCache(f)
+	old, fresh := make(chan error, 1), make(chan error, 1)
+	go func() { _, err := c.load(context.Background(), "one", "model", false); old <- err }()
+	<-f.started
+	go func() { _, err := c.load(context.Background(), "one", "model", true); fresh <- err }()
+	select {
+	case <-f.started:
+	case <-time.After(5 * time.Second):
+		close(f.release)
+		t.Fatal("refresh joined the invalidated read instead of starting a new one")
+	}
+	close(f.release)
+	if err := <-old; !errors.Is(err, ErrSessionCommand) {
+		t.Fatal("old read survived the session refresh", err)
+	}
+	if err := <-fresh; err != nil {
+		t.Fatal("fresh read was rejected", err)
+	}
+	if f.count("one", "model") != 2 {
+		t.Fatal("refresh did not make a new catalogue read")
 	}
 }
 

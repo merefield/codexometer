@@ -22,11 +22,12 @@ const (
 )
 
 type daemonStatusProvider struct {
-	commandGeneration uint64
-	queueRevision     uint64
-	queueCapabilities map[string]queueCapability
-	contexts          map[string]*daemonContextState
-	socketPath        string
+	commandGeneration  uint64
+	commandTransitions map[string]uint64
+	queueRevision      uint64
+	queueCapabilities  map[string]queueCapability
+	contexts           map[string]*daemonContextState
+	socketPath         string
 
 	mu                sync.Mutex
 	connection        *websocket.Conn
@@ -122,6 +123,11 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	p.mu.Lock()
 	p.lastStatusAt = time.Now()
 	p.statusThreads = stringStructSet(threadIDs)
+	for id, status := range statuses {
+		if p.statuses[id] != status {
+			p.bumpCommandTransitionLocked(id)
+		}
+	}
 	p.statuses = cloneRuntimeStatuses(statuses)
 	snapshot := p.statusSnapshotLocked(threadIDs)
 	p.mu.Unlock()
@@ -253,6 +259,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	}
 	p.connection = connection
 	p.commandGeneration++
+	p.commandTransitions = make(map[string]uint64)
 	p.pending = make(map[int64]chan daemonEnvelope)
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)
@@ -423,6 +430,16 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 }
 
 func (p *daemonStatusProvider) handleNotification(method string, params json.RawMessage) {
+	// Turn events catch complete cycles between status polls. The counter is
+	// monotonic for this session and connection, so an old scope cannot revive.
+	if method == "turn/started" || method == "turn/completed" || method == "turn/interrupted" {
+		var event struct{ ThreadID string }
+		if json.Unmarshal(params, &event) == nil && event.ThreadID != "" {
+			p.mu.Lock()
+			p.bumpCommandTransitionLocked(event.ThreadID)
+			p.mu.Unlock()
+		}
+	}
 	switch method {
 	case "thread/settings/updated":
 		var notification struct {
@@ -538,6 +555,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil
 	p.statuses = nil
+	p.commandTransitions = nil
 	p.threadSettings = nil
 	p.threadDirectories = nil
 	if p.settingsSignal != nil {

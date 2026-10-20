@@ -34,20 +34,23 @@ type commandMenuObservation struct {
 // A path-indexed tree of display metadata. Actions always go to the original
 // client, which validates a freshly read revision before sending any write.
 type sessionCommandCache struct {
-	mu           sync.Mutex
-	source       SessionCommandsClient
-	entries      map[commandMenuKey]commandMenuEntry
-	observations map[string]commandMenuObservation
-	generation   uint64
-	reads        singleflight.Group
-	workers      chan struct{}
-	warmers      chan struct{}
-	now          func() time.Time
+	mu             sync.Mutex
+	source         SessionCommandsClient
+	entries        map[commandMenuKey]commandMenuEntry
+	observations   map[string]commandMenuObservation
+	epoch          uint64
+	nextGeneration uint64
+	generations    map[string]uint64
+	reads          singleflight.Group
+	workers        chan struct{}
+	warmers        chan struct{}
+	now            func() time.Time
 }
 
 func newSessionCommandCache(source SessionCommandsClient) *sessionCommandCache {
 	return &sessionCommandCache{source: source, entries: make(map[commandMenuKey]commandMenuEntry),
-		workers: make(chan struct{}, 4), warmers: make(chan struct{}, 2), now: time.Now}
+		generations: make(map[string]uint64),
+		workers:     make(chan struct{}, 4), warmers: make(chan struct{}, 2), now: time.Now}
 }
 
 func commandMenuPath(path string) string {
@@ -68,7 +71,9 @@ func (c *sessionCommandCache) scope(id, path string) string {
 }
 
 func browsingCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
-	menu.Choices = append([]SessionCommandChoice(nil), menu.Choices...)
+	choices := make([]SessionCommandChoice, len(menu.Choices))
+	copy(choices, menu.Choices)
+	menu.Choices = choices // Required JSON array, including empty input menus.
 	for i := range menu.Choices {
 		menu.Choices[i].method, menu.Choices[i].params = "", nil
 	}
@@ -94,7 +99,12 @@ func (c *sessionCommandCache) peek(id, path string) (SessionCommandMenu, bool) {
 }
 
 func (c *sessionCommandCache) invalidateLocked(id string) {
-	c.generation++ // Also prevents reads started before invalidation repopulating it.
+	if id == "" {
+		c.epoch++
+		clear(c.generations)
+	} else {
+		delete(c.generations, id)
+	}
 	for key := range c.entries {
 		if id == "" || key.session == id {
 			delete(c.entries, key)
@@ -141,10 +151,17 @@ func (c *sessionCommandCache) load(ctx context.Context, id, path string, fresh b
 		return c.source.SessionCommands(ctx, id, originalPath)
 	}
 	c.mu.Lock()
-	generation := c.generation
+	generation := c.generations[id]
+	if generation == 0 {
+		// Unique stamps cannot be reused after removing a session's state.
+		c.nextGeneration++
+		generation = c.nextGeneration
+		c.generations[id] = generation
+	}
+	epoch := c.epoch
 	c.mu.Unlock()
 	key := commandMenuKey{id, path}
-	flight, _ := json.Marshal([]any{id, path, scope, generation})
+	flight, _ := json.Marshal([]any{id, path, scope, epoch, generation})
 	result := c.reads.DoChan(string(flight), func() (any, error) {
 		if !fresh {
 			if menu, hit := c.peek(id, path); hit {
@@ -187,7 +204,7 @@ func (c *sessionCommandCache) load(ctx context.Context, id, path string, fresh b
 		}
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		if c.generation != generation {
+		if c.epoch != epoch || c.generations[id] != generation {
 			return nil, ErrSessionCommand
 		}
 		for childPath, branch := range branches {

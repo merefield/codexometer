@@ -103,7 +103,7 @@ func TestCachedCommandClientRevalidatesWritesAndSettingsScope(t *testing.T) {
 }
 
 func TestCommandDiscoveryRetainsFetchedSubmenus(t *testing.T) {
-	p, _ := newQuotaDaemon(t)
+	p, fixture := newQuotaDaemon(t)
 	ctx := context.Background()
 	if _, ok := p.Fetch(ctx, []string{"one"}); !ok {
 		t.Fatal("daemon unavailable")
@@ -118,16 +118,65 @@ func TestCommandDiscoveryRetainsFetchedSubmenus(t *testing.T) {
 		if !ok || menu.Path != path || menu.Revision == "" || path == "model" && len(menu.Choices) != 1 {
 			t.Fatalf("discovery discarded the fetched %s submenu", path)
 		}
+		if menu.Input {
+			encoded, err := json.Marshal(menu)
+			if err != nil || !strings.Contains(string(encoded), `"choices":[]`) {
+				t.Fatalf("cached %s input menu must serialize choices as an array: %s (%v)", path, encoded, err)
+			}
+		}
 	}
-	// A running turn invalidates actionable leaves but preserves root names/help.
-	p.mu.Lock()
-	p.statuses["one"] = sessionRuntimeWorking
-	p.mu.Unlock()
+	// Do not peek while working: the original idle scope must not revive after
+	// a full idle -> working -> idle cycle within the cache lifetime.
+	for _, status := range []string{"active", "idle"} {
+		fixture.mu.Lock()
+		fixture.commandStatus = status
+		fixture.mu.Unlock()
+		p.mu.Lock()
+		p.lastStatusAt = time.Time{}
+		p.mu.Unlock()
+		if _, ok := p.Fetch(ctx, []string{"one"}); !ok {
+			t.Fatal("status refresh failed")
+		}
+	}
 	if _, ok := c.CachedSessionCommands("one", ""); !ok {
 		t.Fatal("turn transition discarded stable root suggestions")
 	}
 	if _, ok := c.CachedSessionCommands("one", "model"); ok {
-		t.Fatal("turn transition retained an idle submenu")
+		t.Fatal("complete turn cycle revived the pre-turn submenu")
+	}
+}
+
+type transitionMenuSource struct {
+	*menuCacheSource
+	provider *daemonStatusProvider
+}
+
+func (f *transitionMenuSource) sessionCommandScope(id, path string) string {
+	return f.provider.sessionCommandScope(id, path)
+}
+
+func TestCommandCacheRejectsReadSpanningTurnBetweenPolls(t *testing.T) {
+	p, _ := newQuotaDaemon(t)
+	if _, ok := p.Fetch(context.Background(), []string{"one"}); !ok {
+		t.Fatal("daemon unavailable")
+	}
+	f := &transitionMenuSource{menuCacheSource: &menuCacheSource{started: make(chan string, 1), release: make(chan struct{})}, provider: p}
+	c := newSessionCommandCache(f)
+	root := p.sessionCommandScope("one", "")
+	done := make(chan error, 1)
+	go func() { _, err := c.load(context.Background(), "one", "model", false); done <- err }()
+	<-f.started
+	p.handleNotification("turn/started", json.RawMessage(`{"threadId":"one","turn":{"id":"quick-turn"}}`))
+	p.handleNotification("turn/completed", json.RawMessage(`{"threadId":"one","turn":{"id":"quick-turn","status":"completed"}}`))
+	close(f.release)
+	if err := <-done; err != ErrSessionCommand {
+		t.Fatal("read spanning a complete turn was accepted", err)
+	}
+	if _, ok := c.peek("one", "model"); ok {
+		t.Fatal("read spanning a complete turn repopulated the cache")
+	}
+	if p.sessionCommandScope("one", "") != root {
+		t.Fatal("turn cycle invalidated stable root suggestions")
 	}
 }
 
