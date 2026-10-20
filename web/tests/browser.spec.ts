@@ -4298,9 +4298,15 @@ test('blocked speed options explain availability and refresh without offering re
   await list.press('c');
   expect(calls.every((c) => c.mode === 'list')).toBe(true);
   finishTurn();
+  const refreshed = page.waitForRequest((request) => {
+    if (!request.url().endsWith('/api/control/commands')) return false;
+    const body = request.postDataJSON();
+    return body.command?.mode === 'list' && body.command.refresh === true;
+  });
   await panel
     .getByRole('button', { name: 'F REFRESH OPTIONS', exact: true })
     .click();
+  await refreshed;
   await expect(
     panel.getByRole('button', { name: 'ENTER REVIEW', exact: true }),
   ).toBeEnabled();

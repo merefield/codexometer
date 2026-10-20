@@ -39,7 +39,11 @@ func (c Client) FetchTokenUsage(ctx context.Context) (LiveUsageSnapshot, error) 
 	if c.LiveUsage == nil {
 		return LiveUsageSnapshot{}, errors.New("local Codex session telemetry is not configured")
 	}
-	return c.LiveUsage.FetchTokenUsage(ctx)
+	usage, err := c.LiveUsage.FetchTokenUsage(ctx)
+	if err == nil {
+		c.warmSessionCommands(usage)
+	}
+	return usage, err
 }
 
 // FetchTokenUsageFresh forces complete local rollout discovery.
@@ -47,7 +51,11 @@ func (c Client) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSnapshot, er
 	if c.LiveUsage == nil {
 		return LiveUsageSnapshot{}, errors.New("local Codex session telemetry is not configured")
 	}
-	return c.LiveUsage.FetchTokenUsageFresh(ctx)
+	usage, err := c.LiveUsage.FetchTokenUsageFresh(ctx)
+	if err == nil {
+		c.warmSessionCommands(usage)
+	}
+	return usage, err
 }
 
 type rpcError struct {

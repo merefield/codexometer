@@ -1667,8 +1667,17 @@ the popup shrinks as candidates drop out without moving the composer. Longer
 lists scroll within the available space (arrows or mouse wheel in the terminal).
 Up/Down selects, Tab completes the name, Enter opens its options and Escape
 dismisses suggestions while retaining the draft and typing focus. Suggestions
-are fetched asynchronously and filtered locally. They also work in a selected
-wide terminal session row when space permits. In terminal full detail, pressing
+are filtered locally. Codexometer warms command catalogues in the background as
+connected sessions are discovered, retaining the submenus already fetched during
+discovery and any deeper levels visited afterwards in a
+bounded, in-memory tree shared by the terminal and web backends. Cached levels
+can be reused for up to two minutes; connection, directory, name and model-setting
+changes invalidate the affected metadata. The terminal opens warm menus immediately.
+Local display commands remain available while initial discovery is running.
+Explicit **Refresh** bypasses the cache, and applying a setting always validates
+fresh server state. Nothing is written to disk; restarting clears the cache.
+Suggestions also work in a selected wide terminal session row when space permits.
+In terminal full detail, pressing
 `/` also focuses the composer and starts this expansion when a composer is
 available; read-only sessions retain a command picker for local display settings.
 Submenus stay in that same expanding list above the command line: type to filter

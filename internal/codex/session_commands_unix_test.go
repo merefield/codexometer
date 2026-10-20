@@ -54,6 +54,76 @@ func TestSessionCommandsModelAndTier(t *testing.T) {
 	}
 }
 
+func TestCachedCommandClientRevalidatesWritesAndSettingsScope(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	ctx := context.Background()
+	if _, ok := p.Fetch(ctx, []string{"one"}); !ok {
+		t.Fatal("daemon unavailable")
+	}
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	menu, err := c.SessionCommands(ctx, "one", "model/small")
+	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action {
+		t.Fatal("missing model option", err)
+	}
+	if _, ok := c.CachedSessionCommands("one", "model/small"); !ok {
+		t.Fatal("menu did not enter the shared cache")
+	}
+	f.mu.Lock()
+	f.commandStatus = "active" // The cached menu still describes idle settings.
+	f.mu.Unlock()
+	if err := c.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err == nil {
+		t.Fatal("write trusted cached settings after a turn started")
+	}
+	f.mu.Lock()
+	writes := len(f.writes)
+	f.commandStatus = "idle"
+	f.mu.Unlock()
+	if writes != 0 {
+		t.Fatal("stale cached command mutated the session")
+	}
+	if _, ok := c.CachedSessionCommands("one", "model/small"); ok {
+		t.Fatal("attempted write retained its old catalogue")
+	}
+	if _, err := c.SessionCommands(ctx, "one", "model/small"); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	p.settingsVersions["one"]++
+	p.mu.Unlock()
+	if _, ok := c.CachedSessionCommands("one", "model/small"); ok {
+		t.Fatal("settings change did not invalidate cached options immediately")
+	}
+}
+
+func TestCommandDiscoveryRetainsFetchedSubmenus(t *testing.T) {
+	p, _ := newQuotaDaemon(t)
+	ctx := context.Background()
+	if _, ok := p.Fetch(ctx, []string{"one"}); !ok {
+		t.Fatal("daemon unavailable")
+	}
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	c.warmSessionCommands(LiveUsageSnapshot{CodexUp: true, Sessions: []LiveUsageSession{{ID: "one", Active: true}}})
+	if _, err := c.SessionCommands(ctx, "one", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"model", "rename", "cd"} {
+		menu, ok := c.CachedSessionCommands("one", path)
+		if !ok || menu.Path != path || menu.Revision == "" || path == "model" && len(menu.Choices) != 1 {
+			t.Fatalf("discovery discarded the fetched %s submenu", path)
+		}
+	}
+	// A running turn invalidates actionable leaves but preserves root names/help.
+	p.mu.Lock()
+	p.statuses["one"] = sessionRuntimeWorking
+	p.mu.Unlock()
+	if _, ok := c.CachedSessionCommands("one", ""); !ok {
+		t.Fatal("turn transition discarded stable root suggestions")
+	}
+	if _, ok := c.CachedSessionCommands("one", "model"); ok {
+		t.Fatal("turn transition retained an idle submenu")
+	}
+}
+
 func TestSessionCommandCataloguesAndSafeHelp(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	f.catalogues = map[string]map[string]any{

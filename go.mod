@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/gorilla/websocket v1.5.3
 	go.starlark.net v0.0.0-20260930220527-d7438c5a85ac
+	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 )
@@ -27,5 +28,4 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sync v0.23.0 // indirect
 )

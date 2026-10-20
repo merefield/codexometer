@@ -29,6 +29,19 @@ type commandThread struct {
 	}
 }
 
+func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.connection == nil {
+		return ""
+	}
+	status := p.statuses[id]
+	if path == "" || path == "help" {
+		status = sessionRuntimeUnknown // Root names/help survive ordinary turn transitions.
+	}
+	return commandDigest([]any{p.commandGeneration, status, p.settingsVersions[id], p.threadDirectories[id], p.threadSettings[id]})
+}
+
 func commandDigest(value any) string {
 	data, _ := json.Marshal(value)
 	return fmt.Sprintf("%x", sha256.Sum256(data))
@@ -107,6 +120,16 @@ func (p *daemonStatusProvider) commandModels(ctx context.Context) ([]commandMode
 }
 
 func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path string) (SessionCommandMenu, error) {
+	return p.sessionCommands(ctx, id, path, nil)
+}
+
+func (p *daemonStatusProvider) sessionCommandTree(ctx context.Context, id, path string) (SessionCommandMenu, map[string]commandMenuBranch, error) {
+	branches := make(map[string]commandMenuBranch)
+	menu, err := p.sessionCommands(ctx, id, path, func(path string, branch commandMenuBranch) { branches[path] = branch })
+	return menu, branches, err
+}
+
+func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path string, collect func(string, commandMenuBranch)) (SessionCommandMenu, error) {
 	if !ValidSessionCommandPath(path) {
 		return SessionCommandMenu{}, ErrSessionCommand
 	}
@@ -124,16 +147,20 @@ func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path str
 	if err != nil {
 		return SessionCommandMenu{}, err
 	}
-	menu, err := p.commandMenu(ctx, thread, path)
+	menu, err := p.commandMenu(ctx, thread, path, collect)
 	if err != nil {
 		return menu, err
 	}
+	return p.finalizeCommandMenu(thread, path, menu), nil
+}
+
+func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path string, menu SessionCommandMenu) SessionCommandMenu {
 	menu.Path = path
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
 	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, thread.Status.Type, thread.Name, menu.Revision})
-	return normalizeCommandMenu(menu), nil
+	return normalizeCommandMenu(menu)
 }
 
 func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
@@ -162,7 +189,7 @@ func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 	return menu
 }
 
-func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread, path string) (SessionCommandMenu, error) {
+func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread, path string, collect func(string, commandMenuBranch)) (SessionCommandMenu, error) {
 	m := SessionCommandMenu{Title: "/" + path, Help: "Live options from the shared Codex app-server.", Choices: []SessionCommandChoice{}}
 	parts := strings.Split(path, "/")
 	// Directory-scoped inventories must follow running settings after /cd,
@@ -182,16 +209,21 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	if path == "" || path == "help" {
 		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
 		menus := make([]SessionCommandMenu, len(families))
+		scopes := make([]string, len(families))
 		errs := make([]error, len(families))
 		var wg sync.WaitGroup
 		for i, family := range families {
+			scopes[i] = p.sessionCommandScope(t.ID, family)
 			wg.Add(1)
-			go func() { defer wg.Done(); menus[i], errs[i] = p.commandMenu(ctx, t, family) }()
+			go func() { defer wg.Done(); menus[i], errs[i] = p.commandMenu(ctx, t, family, nil) }()
 		}
 		wg.Wait()
 		for i, family := range families {
 			if errs[i] == nil && (len(menus[i].Choices) > 0 || menus[i].Input) {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: menus[i].Help, Next: family})
+				if collect != nil {
+					collect(family, commandMenuBranch{p.finalizeCommandMenu(t, family, menus[i]), scopes[i]})
+				}
 			}
 		}
 		if models, err := p.commandModels(ctx); err == nil {
@@ -458,13 +490,13 @@ func (p *daemonStatusProvider) commandCatalogue(ctx context.Context, t commandTh
 	m := SessionCommandMenu{Title: "/" + path, Help: "Browse-only catalogue from Codex. Select an entry to read its supplied help; use Codex to invoke or configure it.", Choices: []SessionCommandChoice{}}
 	method := map[string]string{"skills": "skills/list", "apps": "app/list", "mcp": "mcpServerStatus/list", "hooks": "hooks/list", "experimental": "experimentalFeature/list"}[path]
 	if method == "" { // Catalog tier aliases such as /fast, never assumed IDs.
-		root, err := p.commandMenu(ctx, t, "")
+		root, err := p.commandMenu(ctx, t, "", nil)
 		if err != nil {
 			return m, err
 		}
 		for _, o := range root.Choices {
 			if o.Label == "/"+path {
-				return p.commandMenu(ctx, t, o.Next)
+				return p.commandMenu(ctx, t, o.Next, nil)
 			}
 		}
 		return m, ErrSessionCommand

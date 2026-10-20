@@ -133,6 +133,8 @@ type LiveUsageReader struct {
 	SessionsRoot      string
 	WriterLocksRoot   string
 	statusProvider    sessionStatusProvider
+	commandMu         sync.Mutex
+	commandMenus      *sessionCommandCache
 
 	mu                          sync.Mutex
 	initialized                 bool

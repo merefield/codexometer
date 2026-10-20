@@ -16,11 +16,12 @@ type commandRequest struct {
 	Path     string `json:"path"`
 	Revision string `json:"revision,omitempty"`
 	Choice   string `json:"choice,omitempty"`
+	Refresh  bool   `json:"refresh,omitempty"`
 }
 
 func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body actionRequest) {
 	q := body.Command
-	if c.commands == nil || q == nil || body.Review != "" || body.Offer != "" || body.Choice != nil || len(body.Answers) != 0 || body.Schedule != nil || body.EditID != "" || body.SendID != "" || body.CancelID != "" || !codex.ValidSessionCommandPath(q.Path) || len(q.Revision) > 128 || len(q.Choice) > 128 || (q.Mode != "list" && q.Mode != "prepare" && q.Mode != "commit") {
+	if c.commands == nil || q == nil || body.Review != "" || body.Offer != "" || body.Choice != nil || len(body.Answers) != 0 || body.Schedule != nil || body.EditID != "" || body.SendID != "" || body.CancelID != "" || !codex.ValidSessionCommandPath(q.Path) || len(q.Revision) > 128 || len(q.Choice) > 128 || (q.Mode != "list" && q.Mode != "prepare" && q.Mode != "commit") || q.Refresh && q.Mode != "list" {
 		http.Error(w, "Commands unavailable", 400)
 		return
 	}
@@ -63,7 +64,11 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 		return
 	}
-	m, err := c.commands.SessionCommands(ctx, body.Session, q.Path)
+	read := c.commands.SessionCommands
+	if cache, ok := c.commands.(codex.CachedSessionCommandsClient); ok && (q.Refresh || q.Mode == "prepare") {
+		read = cache.SessionCommandsFresh
+	}
+	m, err := read(ctx, body.Session, q.Path)
 	if err != nil {
 		http.Error(w, "Command catalogue unavailable; use Codex", 409)
 		return

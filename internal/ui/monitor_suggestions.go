@@ -49,7 +49,13 @@ func (m *Model) syncMonitorSuggestions() tea.Cmd {
 		*s = monitorSuggestionState{active: true, session: m.monitorPrompt.session, request: s.request + 1, menu: m.localCommandsMenu()}
 		return nil
 	}
-	*s = monitorSuggestionState{active: true, busy: true, session: m.monitorPrompt.session, request: s.request + 1}
+	*s = monitorSuggestionState{active: true, busy: true, session: m.monitorPrompt.session, request: s.request + 1, menu: m.localCommandsMenu()}
+	if cache, ok := c.(codex.CachedSessionCommandsClient); ok {
+		if menu, hit := cache.CachedSessionCommands(s.session, ""); hit {
+			s.menu, s.busy = m.withLocalCommands(menu), false
+			return nil
+		}
+	}
 	id, seq := s.session, s.request
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
@@ -157,7 +163,7 @@ func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
 			s.selected = min(max(s.selected+d, 0), max(len(choices)-1, 0))
 			return m, nil, true
 		case "tab", "enter":
-			if s.busy {
+			if s.busy && (len(choices) == 0 || !codex.IsLocalSessionCommand(choices[min(s.selected, len(choices)-1)].Next)) {
 				return m, nil, true
 			}
 			if len(choices) == 0 {

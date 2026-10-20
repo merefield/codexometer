@@ -20,6 +20,42 @@ type commandsFake struct {
 	picker                    bool
 }
 
+type cachedCommandsFake struct {
+	*commandsFake
+	fresh int
+}
+
+func (f *cachedCommandsFake) CachedSessionCommands(string, string) (codex.SessionCommandMenu, bool) {
+	return codex.SessionCommandMenu{}, false
+}
+
+func (f *cachedCommandsFake) SessionCommandsFresh(ctx context.Context, id, path string) (codex.SessionCommandMenu, error) {
+	f.fresh++
+	return f.commandsFake.SessionCommands(ctx, id, path)
+}
+
+func TestCommandRefreshAndPreparationUseFreshCatalogue(t *testing.T) {
+	s, _, token := controlServer(t)
+	f := &cachedCommandsFake{commandsFake: &commandsFake{revision: "current"}}
+	s.control.commands = f
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "list", Path: "model"}}
+	if w := actionCall(s, token, "commands", b); w.Code != 200 || f.fresh != 0 {
+		t.Fatal("ordinary browsing did not use the cached client")
+	}
+	b.Command.Refresh = true
+	if w := actionCall(s, token, "commands", b); w.Code != 200 || f.fresh != 1 {
+		t.Fatal("explicit refresh did not bypass cache")
+	}
+	b.Command.Mode = "prepare"
+	if w := actionCall(s, token, "commands", b); w.Code != 400 {
+		t.Fatal("refresh flag accepted on a preparation request")
+	}
+	b.Command.Refresh, b.Command.Revision, b.Command.Choice = false, "current", "choice"
+	if w := actionCall(s, token, "commands", b); w.Code != 200 || f.fresh != 2 || f.calls != 0 {
+		t.Fatal("preparation did not freshly validate without writing")
+	}
+}
+
 func (f *commandsFake) SessionCommands(_ context.Context, _ string, path string) (codex.SessionCommandMenu, error) {
 	f.lists++
 	f.listedPath = path

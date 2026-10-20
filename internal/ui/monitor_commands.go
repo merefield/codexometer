@@ -47,7 +47,7 @@ type monitorCommandsResult struct {
 	err     error
 }
 
-func (m *Model) loadMonitorCommands(path string) tea.Cmd {
+func (m *Model) loadMonitorCommands(path string, fresh ...bool) tea.Cmd {
 	p := &m.monitorCommands
 	p.reviewedChoice = ""
 	p.until = time.Time{}
@@ -113,9 +113,24 @@ func (m *Model) loadMonitorCommands(path string) tea.Cmd {
 	p.hover = -1
 	p.request++
 	id, seq := p.session, p.request
+	force := len(fresh) > 0 && fresh[0]
+	cache, cached := c.(codex.CachedSessionCommandsClient)
+	if cached && !force {
+		if menu, hit := cache.CachedSessionCommands(id, path); hit {
+			// Use the same result handler for cached and asynchronously loaded
+			// menus, including restored drafts, selected options and input focus.
+			updated, cmd, _ := m.updateMonitorCommands(monitorCommandsResult{session: id, path: path, request: seq, menu: menu})
+			*m = updated
+			return cmd
+		}
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
+		if cached && force {
+			menu, err := cache.SessionCommandsFresh(ctx, id, path)
+			return monitorCommandsResult{session: id, path: path, request: seq, menu: menu, err: err}
+		}
 		menu, err := c.SessionCommands(ctx, id, path)
 		return monitorCommandsResult{session: id, path: path, request: seq, menu: menu, err: err}
 	}
@@ -795,7 +810,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			return m, cmd, true
 		case "f":
 			if !p.busy {
-				cmd := m.loadMonitorCommands(p.menu.Path)
+				cmd := m.loadMonitorCommands(p.menu.Path, true)
 				return m, cmd, true
 			}
 		case "/":
@@ -903,7 +918,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 							cmd := m.backMonitorCommands()
 							return m, cmd, true
 						case "refresh":
-							cmd := m.loadMonitorCommands(p.menu.Path)
+							cmd := m.loadMonitorCommands(p.menu.Path, true)
 							return m, cmd, true
 						case "close":
 							cmd := m.cancelMonitorCommands()

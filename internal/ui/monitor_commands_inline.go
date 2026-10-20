@@ -72,7 +72,7 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		case "ctrl+r":
 			if !p.busy {
 				p.restore = &monitorCommandLevel{selected: p.selected, input: p.input.Value(), draft: m.monitorPrompt.input.Value()}
-				cmd := m.loadMonitorCommands(p.menu.Path)
+				cmd := m.loadMonitorCommands(p.menu.Path, true)
 				return m, cmd, true
 			}
 			return m, nil, true

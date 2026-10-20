@@ -22,6 +22,7 @@ const (
 )
 
 type daemonStatusProvider struct {
+	commandGeneration uint64
 	queueRevision     uint64
 	queueCapabilities map[string]queueCapability
 	contexts          map[string]*daemonContextState
@@ -251,6 +252,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		return nil
 	}
 	p.connection = connection
+	p.commandGeneration++
 	p.pending = make(map[int64]chan daemonEnvelope)
 	p.subscribed = make(map[string]struct{})
 	p.reroutedTurns = make(map[daemonTurnKey]string)

@@ -106,6 +106,13 @@ type SessionCommandsClient interface {
 	ExecuteSessionCommand(context.Context, string, string, string, string) error
 }
 
+// Optional browsing fast path. Fresh reads and writes keep their existing
+// server-side revision checks; cached menus contain display metadata only.
+type CachedSessionCommandsClient interface {
+	CachedSessionCommands(string, string) (SessionCommandMenu, bool)
+	SessionCommandsFresh(context.Context, string, string) (SessionCommandMenu, error)
+}
+
 var ErrSessionCommand = errors.New("command unavailable or session/options changed; reopen the command menu")
 
 func IsSessionCommand(text string) bool {
@@ -128,13 +135,52 @@ func (c Client) commandClient() SessionCommandsClient {
 	return nil
 }
 func (c Client) SessionCommands(ctx context.Context, id, path string) (SessionCommandMenu, error) {
-	if p := c.commandClient(); p != nil {
-		return p.SessionCommands(ctx, id, path)
+	if cache := c.sessionCommandMenus(); cache != nil {
+		return cache.load(ctx, id, path, false)
 	}
 	return SessionCommandMenu{}, ErrSessionCommand
 }
+
+func (c Client) sessionCommandMenus() *sessionCommandCache {
+	source := c.commandClient()
+	if source == nil {
+		return nil
+	}
+	r := c.LiveUsage
+	r.commandMu.Lock()
+	defer r.commandMu.Unlock()
+	if r.commandMenus == nil {
+		r.commandMenus = newSessionCommandCache(source)
+	}
+	return r.commandMenus
+}
+
+func (c Client) CachedSessionCommands(id, path string) (SessionCommandMenu, bool) {
+	if cache := c.sessionCommandMenus(); cache != nil {
+		return cache.peek(id, path)
+	}
+	return SessionCommandMenu{}, false
+}
+
+func (c Client) SessionCommandsFresh(ctx context.Context, id, path string) (SessionCommandMenu, error) {
+	if cache := c.sessionCommandMenus(); cache != nil {
+		return cache.load(ctx, id, path, true)
+	}
+	return SessionCommandMenu{}, ErrSessionCommand
+}
+
+func (c Client) warmSessionCommands(usage LiveUsageSnapshot) {
+	if cache := c.sessionCommandMenus(); cache != nil {
+		cache.observe(usage)
+	}
+}
+
 func (c Client) ExecuteSessionCommand(ctx context.Context, id, path, revision, choice string) error {
 	if p := c.commandClient(); p != nil {
+		if cache := c.sessionCommandMenus(); cache != nil {
+			cache.invalidate(id)
+			defer cache.invalidate(id)
+		}
 		return p.ExecuteSessionCommand(ctx, id, path, revision, choice)
 	}
 	return ErrSessionCommand

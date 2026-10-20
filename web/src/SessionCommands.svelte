@@ -329,7 +329,7 @@
       return;
     }
     if (refreshKey) {
-      void load(menu?.path || '');
+      void load(menu?.path || '', undefined, true);
       return;
     }
     if (confirmKey) {
@@ -388,7 +388,7 @@
       void load('');
     }
   });
-  async function load(path: string, restore?: Level) {
+  async function load(path: string, restore?: Level, refresh = false) {
     const seq = ++request;
     if (menu) menu = { ...menu, path };
     if (restore) name = restore.input;
@@ -407,7 +407,7 @@
     try {
       const result = await controlRequest<Menu>('commands', {
         session,
-        command: { mode: 'list', path },
+        command: { mode: 'list', path, ...(refresh ? { refresh: true } : {}) },
       });
       if (seq === request) {
         if (path === '' || path === 'help')
@@ -739,7 +739,8 @@
         {#if canBack}<button disabled={busy} onclick={back}>← BACK</button>{/if}
         {#if !suggesting}<button
             disabled={busy}
-            onclick={() => load(menu?.path || '')}>F REFRESH OPTIONS</button
+            onclick={() => load(menu?.path || '', undefined, true)}
+            >F REFRESH OPTIONS</button
           >{/if}
         <button onclick={closeCommands}>ESC CANCEL</button>
       </div>
