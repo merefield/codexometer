@@ -1173,6 +1173,11 @@ The other top-level views are:
   minutes receives `CHECK SESSION`: a deliberately uncertain prompt that can
   also mean a long-running local tool. Subsequent activity from the root or any
   linked agent clears the uncertain group-level warning.
+  Activity detection uses recorded event timestamps and observed file-size
+  changes as well as modification times, since Windows can retain an old
+  modification time while a rollout writer remains open. Startup examines a
+  recent tail, extending through its overlapping JSONL record so large tool
+  results and reasoning items still establish activity without recounting tokens.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Sessions recording can remain as an
