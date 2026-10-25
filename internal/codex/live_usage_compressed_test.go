@@ -189,3 +189,65 @@ func TestCompressedDiscoveryWarningSurvivesEarlierPlainReadFailure(t *testing.T)
 		t.Fatal("earlier read failure suppressed compressed coverage warning", got.APIEqCoverageIssue, err)
 	}
 }
+
+func TestRewrittenCompressedRestorePreservesObservedActivity(t *testing.T) {
+	r, path, now := astraUsageReader(t, 100)
+	r.statusProvider = nil
+	usage := BenchmarkUsage{InputTokens: 1000, OutputTokens: 100, TotalTokens: 1100}
+	appendRollout(t, path, exactLine(t, now, "astra-accounting", "turn", "first", usage)+"\n"+turnTimingLine(now, 42)+"\n")
+	before, err := r.FetchTokenUsage(context.Background())
+	if err != nil || len(before.Sessions) != 1 || len(before.Sessions[0].ModelCalls) != 1 || len(before.Sessions[0].TurnTimings) != 1 {
+		t.Fatal("observed activity fixture missing", before, err)
+	}
+	observed := before.Sessions[0]
+	plain := compressTestRollout(t, path, true)
+	if _, err := r.FetchTokenUsageFresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rewritten := strings.ReplaceAll(string(plain), "first", "rewritten")
+	if err := os.WriteFile(path, []byte(rewritten), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rebased, err := r.FetchTokenUsageFresh(context.Background())
+	if err != nil || rebased.APIEqAccountingAdjustments != 1 || rebased.TotalTokens != before.TotalTokens || rebased.APIEqUSD != before.APIEqUSD || len(rebased.Sessions) != 1 {
+		t.Fatal("rewrite changed reader-wide accounting", rebased, err)
+	}
+	session := rebased.Sessions[0]
+	if session.TotalTokens != observed.TotalTokens || len(session.ModelCalls) != 1 || session.ModelCalls[0] != observed.ModelCalls[0] || len(session.TurnTimings) != 1 || session.TurnTimings[0] != observed.TurnTimings[0] {
+		t.Fatal("rewrite discarded observed session history", session)
+	}
+	appendRollout(t, path, exactLine(t, now, "astra-accounting", "turn", "fresh", usage)+"\n")
+	fresh, err := r.FetchTokenUsage(context.Background())
+	if err != nil || fresh.TotalTokens != 2200 || fresh.APIEqPricedCalls != 2 || fresh.Sessions[0].TotalTokens != 2200 || len(fresh.Sessions[0].ModelCalls) != 2 || len(fresh.Sessions[0].TurnTimings) != 1 {
+		t.Fatal("fresh response did not extend preserved history", fresh, err)
+	}
+}
+
+func TestReplacingRolloutWithDifferentThreadDoesNotInheritActivity(t *testing.T) {
+	r, path, now := astraUsageReader(t, 100)
+	r.statusProvider = nil
+	usage := BenchmarkUsage{InputTokens: 1000, OutputTokens: 100, TotalTokens: 1100}
+	appendRollout(t, path, exactLine(t, now, "astra-accounting", "turn", "first", usage)+"\n"+turnTimingLine(now, 42)+"\n")
+	if _, err := r.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.ReplaceAll(string(original), "astra-accounting", "different-thread")
+	if err := os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.addFile(path, info); err != nil {
+		t.Fatal(err)
+	}
+	cursor := r.files[path]
+	if cursor.threadID != "different-thread" || cursor.observedTokens != 0 || len(cursor.modelCalls) != 0 || len(cursor.turnTimings) != 0 {
+		t.Fatal("observed activity crossed thread identities", cursor)
+	}
+}

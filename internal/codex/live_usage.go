@@ -659,6 +659,11 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			r.apiEqAccountingAdjustments++
 		}
 	}
+	// Replacing this path changes the historical baseline, not the activity
+	// already observed by this process. Keep it only for the same thread.
+	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
+		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
+	}
 	r.files[path] = cursor
 	return nil
 }
