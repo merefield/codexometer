@@ -432,9 +432,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		if err := r.consume(path, cursor); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
-					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil && firstReadErr == nil {
+					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil {
 						r.discoveryCoverageIssue = "compressed rollout history could not be verified"
-						firstReadErr = compressedErr
+						if firstReadErr == nil {
+							firstReadErr = compressedErr
+						}
 					}
 					continue
 				}
@@ -563,9 +565,11 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 				return nil
 			}
 			if isCompressedRolloutFile(entry.Name()) {
-				if err := r.addCompressedFile(ctx, path, info); err != nil && firstFileErr == nil {
+				if err := r.addCompressedFile(ctx, path, info); err != nil {
 					r.discoveryCoverageIssue = "compressed rollout history could not be verified"
-					firstFileErr = err
+					if firstFileErr == nil {
+						firstFileErr = err
+					}
 				}
 				return nil
 			}

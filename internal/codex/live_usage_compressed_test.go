@@ -162,3 +162,30 @@ func TestCompressedRestorationChecksContextBeforeUnchangedTail(t *testing.T) {
 		t.Fatal("changed context trusted because suffix matched", got, err)
 	}
 }
+
+func TestCompressedDiscoveryWarningSurvivesEarlierPlainReadFailure(t *testing.T) {
+	r, _, _ := astraUsageReader(t, 100)
+	r.statusProvider = nil
+	// WalkDir visits the unreadable plain rollout before the corrupt compressed
+	// one. A third, healthy cursor keeps discovery usable rather than fatal.
+	denied := filepath.Join(r.SessionsRoot, "rollout-a.jsonl")
+	if err := os.WriteFile(denied, []byte("unreadable"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(denied, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(denied, 0600) })
+	if file, err := os.Open(denied); err == nil {
+		file.Close()
+		t.Skip("filesystem permits reading files with mode 000")
+	}
+	corrupt := filepath.Join(r.SessionsRoot, "rollout-z.jsonl.zst")
+	if err := os.WriteFile(corrupt, []byte("corrupt zstd"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.FetchTokenUsageFresh(context.Background())
+	if err != nil || !strings.Contains(got.APIEqCoverageIssue, "compressed rollout history") || len(r.files) != 1 {
+		t.Fatal("earlier read failure suppressed compressed coverage warning", got.APIEqCoverageIssue, err)
+	}
+}
