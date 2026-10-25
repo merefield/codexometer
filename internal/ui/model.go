@@ -216,6 +216,7 @@ type Model struct {
 	quotaAPIIssues         map[string]string
 	quotaAPIAccount        string
 	quotaAPITelemetryIssue string
+	quotaAPICoverageIssue  string
 }
 
 type fetchedMsg struct {
@@ -2284,6 +2285,8 @@ func (m Model) fetch() tea.Cmd {
 				message.usageErr = beforeErr
 			case afterErr != nil:
 				message.usageErr = afterErr
+			case after.APIEqCoverageIssue != "":
+				message.usage = after
 			case !quotaAPIAccountingEqual(before, after) || after.APIEqPendingCalls > 0:
 				message.usageErr = errQuotaObservationChanged
 			default:

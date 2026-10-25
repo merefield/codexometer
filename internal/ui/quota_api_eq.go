@@ -22,7 +22,8 @@ const (
 var errQuotaObservationChanged = fmt.Errorf("local accounting changed during quota read")
 
 func quotaAPIAccountingEqual(left, right codex.LiveUsageSnapshot) bool {
-	return left.APIEqUSD == right.APIEqUSD &&
+	return left.APIEqCoverageIssue == right.APIEqCoverageIssue &&
+		left.APIEqUSD == right.APIEqUSD &&
 		left.APIEqTierPremiumUSD == right.APIEqTierPremiumUSD &&
 		left.APIEqUnknownTierCalls == right.APIEqUnknownTierCalls &&
 		left.APIEqPricedCalls == right.APIEqPricedCalls &&
@@ -101,6 +102,16 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		m.quotaAPIIssues = make(map[string]string)
 	}
 	m.quotaAPIAccount = account
+	previousCoverage := m.quotaAPICoverageIssue
+	m.quotaAPICoverageIssue = usage.APIEqCoverageIssue
+	if previousCoverage != "" || usage.APIEqCoverageIssue != "" {
+		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
+		m.quotaAPIEvidence = nil
+		m.quotaAPIIssues = make(map[string]string)
+		if usage.APIEqCoverageIssue != "" {
+			return
+		}
+	}
 	if m.quotaAPIAnchors == nil {
 		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
 	}
@@ -312,6 +323,9 @@ func trimQuotaAPISamples(samples []quotaAPISample, key string) []quotaAPISample 
 }
 
 func (m Model) quotaAPIEstimate(snapshot codex.Snapshot, meter codex.Meter) (quotaAPIEstimate, bool) {
+	if m.quotaAPICoverageIssue != "" {
+		return quotaAPIEstimate{}, false
+	}
 	key := quotaAPIKey(snapshot, meter)
 	matching := make([]quotaAPISample, 0, quotaAPIMaxSamples)
 	for _, sample := range validQuotaAPISamples(m.quotaAPIEvidence, time.Now()) {
@@ -403,6 +417,9 @@ func (m Model) quotaMetersWithInsights(width int) []codex.Meter {
 func (m Model) quotaAPILine(meter codex.Meter, width int) (line string) {
 	if m.benchmarkQuotaAccounting.deferred() {
 		return m.benchmarkQuotaAccounting.deferredLabel(width)
+	}
+	if m.quotaAPICoverageIssue != "" {
+		return "API-EQ // " + i18n.Text(quotaAPIRestartCoverageGap)
 	}
 	if m.quotaAPITelemetryIssue != "" {
 		if width < 44 {
@@ -533,6 +550,9 @@ func latestIntervalDiagnostic(usage codex.LiveUsageSnapshot, kind codex.APIEqIss
 func (m Model) quotaAPIDiagnostic() codex.APIEqDiagnostic {
 	if !m.meterView.isQuota() {
 		return codex.APIEqDiagnostic{}
+	}
+	if m.quotaAPICoverageIssue != "" {
+		return codex.APIEqDiagnostic{Kind: codex.UsageIssueCoverage, Source: "usage coverage", Reason: m.quotaAPICoverageIssue}
 	}
 	for _, meter := range m.snapshot.Meters() {
 		if quotaAPIMeterEligible(m.snapshot, meter) {

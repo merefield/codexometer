@@ -41,6 +41,7 @@ type daemonStatusProvider struct {
 	lastStatusAt      time.Time
 	statusThreads     map[string]struct{}
 	statuses          map[string]sessionRuntimeStatus
+	usageCoverage     map[string]string
 	threadSettings    map[string]QuotaSession
 	threadDirectories map[string]string
 	settingsVersions  map[string]uint64
@@ -99,6 +100,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 	}
 
+	coverage := p.readUsageCoverage(ctx, threadIDs)
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		var result struct {
@@ -122,6 +124,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	}
 
 	p.mu.Lock()
+	p.usageCoverage = coverage
 	p.lastStatusAt = time.Now()
 	p.statusThreads = stringStructSet(threadIDs)
 	for id, status := range statuses {
@@ -162,7 +165,12 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	for threadID := range p.subscribed {
 		subscribed[threadID] = struct{}{}
 	}
+	coverage := make(map[string]string, len(p.usageCoverage))
+	for id, issue := range p.usageCoverage {
+		coverage[id] = issue
+	}
 	return sessionDaemonSnapshot{
+		UsageCoverage:      coverage,
 		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
 		WorkingDirectories: directories,
 		Statuses:           statuses,
@@ -577,6 +585,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.statuses = nil
 	p.commandTransitions = nil
 	p.threadSettings = nil
+	p.usageCoverage = nil
 	p.threadDirectories = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)

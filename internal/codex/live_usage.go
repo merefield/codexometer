@@ -52,6 +52,7 @@ type LiveUsageSnapshot struct {
 	APIEqTierPremiumUSD         float64
 	APIEqUnknownTierCalls       int64
 	APIEqDiagnostics            []APIEqDiagnostic
+	APIEqCoverageIssue          string
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -126,15 +127,18 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
-	sessionNames      map[string]string
-	nameIndexInfo     os.FileInfo
-	daemonContexts    map[string]SessionContext
-	daemonDirectories map[string]string
-	SessionsRoot      string
-	WriterLocksRoot   string
-	statusProvider    sessionStatusProvider
-	commandMu         sync.Mutex
-	commandMenus      *sessionCommandCache
+	knownUsageCoverage     map[string]string
+	localFeatureChecks     map[string]localFeatureCheck
+	discoveryCoverageIssue string
+	sessionNames           map[string]string
+	nameIndexInfo          os.FileInfo
+	daemonContexts         map[string]SessionContext
+	daemonDirectories      map[string]string
+	SessionsRoot           string
+	WriterLocksRoot        string
+	statusProvider         sessionStatusProvider
+	commandMu              sync.Mutex
+	commandMenus           *sessionCommandCache
 
 	mu                          sync.Mutex
 	initialized                 bool
@@ -381,6 +385,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	var daemonCoverage map[string]string
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
 	appServerUp := false
@@ -390,6 +395,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
+			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
@@ -426,6 +432,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			if errors.Is(err, os.ErrNotExist) {
 				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
 					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil && firstReadErr == nil {
+						r.discoveryCoverageIssue = "compressed rollout history could not be verified"
 						firstReadErr = compressedErr
 					}
 					continue
@@ -450,6 +457,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	for i := range sessions {
 		sessions[i].Name = r.sessionNames[sessions[i].ID]
 	}
+	coverageIssue := r.usageCoverage(ctx, sessions, daemonCoverage)
+	if firstReadErr != nil {
+		coverageIssue = "local response telemetry could not be completely read"
+	}
 	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
 		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
 	)
@@ -468,6 +479,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		APIEqTierPremiumUSD:         r.apiEqTierPremiumUSD,
 		APIEqUnknownTierCalls:       r.apiEqUnknownTierCalls,
 		APIEqDiagnostics:            append([]APIEqDiagnostic(nil), r.apiEqDiagnostics...),
+		APIEqCoverageIssue:          coverageIssue,
 	}, nil
 }
 
@@ -510,6 +522,9 @@ func (r *LiveUsageReader) initialize(ctx context.Context, now time.Time) error {
 }
 
 func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool) error {
+	if full {
+		r.discoveryCoverageIssue = ""
+	}
 	roots := []string{r.SessionsRoot}
 	if !full {
 		roots = roots[:0]
@@ -548,6 +563,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			}
 			if isCompressedRolloutFile(entry.Name()) {
 				if err := r.addCompressedFile(ctx, path, info); err != nil && firstFileErr == nil {
+					r.discoveryCoverageIssue = "compressed rollout history could not be verified"
 					firstFileErr = err
 				}
 				return nil
