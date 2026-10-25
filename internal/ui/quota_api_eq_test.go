@@ -493,3 +493,38 @@ func TestQuotaDiagnosticPreservesFooterAcrossTerminalSizes(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaAPICoverageGapDiscardsEvidenceAndRestartsCleanly(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(time.Hour).Unix()
+	m := New(nil, time.Minute)
+	m.snapshot = apiEqSnapshot(10, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{}, now)
+	m.snapshot = apiEqSnapshot(15, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+	if len(m.quotaAPIEvidence) != 1 {
+		t.Fatal("test failed to learn")
+	}
+	for _, used := range []int{20, 25} {
+		m.snapshot = apiEqSnapshot(used, reset)
+		m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqPricedCalls: 2, APIEqCoverageIssue: "SESSION child: background compaction usage is unobserved"}, now.Add(2*time.Minute))
+		if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || !strings.Contains(m.quotaAPILine(m.snapshot.Meters()[0], 100), "COVERAGE GAP") {
+			t.Fatal("incomplete interval learned or showed old estimates")
+		}
+		if _, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0]); ok {
+			t.Fatal("stale estimate remained usable")
+		}
+	}
+	// Recovery creates a fresh baseline; accumulated costs from the blocked
+	// interval cannot be attributed to the next clean quota movement.
+	m.snapshot = apiEqSnapshot(30, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 10, APIEqPricedCalls: 3}, now.Add(3*time.Minute))
+	if len(m.quotaAPIEvidence) != 0 {
+		t.Fatal("recovery learned across blocked interval")
+	}
+	m.snapshot = apiEqSnapshot(35, reset)
+	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 11, APIEqPricedCalls: 4}, now.Add(4*time.Minute))
+	if len(m.quotaAPIEvidence) != 1 || math.Abs(m.quotaAPIEvidence[0].CapacityUSD-20) > 1e-9 {
+		t.Fatal("clean recovery failed", m.quotaAPIEvidence)
+	}
+}

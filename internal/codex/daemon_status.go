@@ -18,6 +18,7 @@ type sessionStatusProvider interface {
 }
 
 type sessionDaemonSnapshot struct {
+	UsageCoverage      map[string]string
 	Contexts           map[string]SessionContext
 	WorkingDirectories map[string]string
 	Statuses           map[string]sessionRuntimeStatus

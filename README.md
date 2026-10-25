@@ -462,6 +462,12 @@ Set up the recommended arrangement as follows.
    reconstructed after the fact. No additional Codexometer option is required;
    it automatically probes the same default socket under `CODEX_HOME`.
 
+   Codexometer offers Codex's `zstd-stream-v1` WebSocket compression on that
+   connection. Compression is used only when the server acknowledges it;
+   older servers and servers with compression disabled continue using JSON
+   text. Encoder/decoder history is reset on every connection, with bounded
+   messages and strict compressed-message framing. No server setting is changed.
+
    If the latest Codexometer build is already running, leave it open: it retries
    the connection and discovers newly connected sessions automatically. Allow
    a refresh cycle. Restart it if you have replaced its binary or changed its
@@ -763,7 +769,8 @@ new evidence accumulates. Future improvement: consume the actual response
 prefer that evidence to requested settings.
 
 Codexometer prefers Codex's durable **`token_usage_record`** entries for each
-newly completed response. Exact records are counted independently of cumulative
+reported response, including usage that Codex persists for failed/incomplete
+requests. Exact records are counted independently of cumulative
 context counters, with bounded response-ID deduplication; inherited parent
 records are excluded from a child's own usage. Startup establishes a historical
 baseline without charging past responses, using a bounded 4 MiB tail scan.
@@ -772,6 +779,38 @@ An exact record switches that rollout to response accounting: subsequent
 another billable response. Older rollouts retain the legacy token-count reader. A replacement rollout for
 an existing thread establishes a new baseline rather than charging copied
 history again; session settings come from its newest observed rollout.
+
+Compressed `.jsonl.zst` histories are streamed into bounded in-memory baselines;
+no decompressed transcript copy is written to disk. Their decoded offsets and
+recent response identities are retained. When Codex restores a plain rollout,
+Codexometer verifies the entire historical prefix before consuming appended
+responses. Rewritten histories establish a fresh baseline. Source and decoded
+histories are each limited to 256 MiB per compressed file, with bounded decoder
+windows and record buffers; unreadable or oversized histories report incomplete
+coverage instead of silently qualifying quota-learning intervals.
+
+Codex 0.164.0's experimental background compaction can consume tokens without
+publishing the corresponding exact foreground response record. Codexometer
+checks the loaded thread's effective `async_compaction` and `token_budget`
+feature state through a read-only inventory. A potentially unobserved background
+path pauses API-EQ quota learning, clears prior capacity estimates, and displays
+an **INCOMPLETE COVERAGE** diagnostic in terminal/browser Quota. Child sessions
+are checked separately. Known risks survive a daemon disconnect; a verified
+recovery starts a fresh learning interval. Observed token/cost totals remain
+available and no missing response cost is invented.
+
+Without effective daemon feature state, relevant local configuration is checked
+read-only. Enabled flags, including flags in potentially selected profiles, are
+conservative coverage warnings rather than proof of the current runtime mode.
+This fallback cannot establish hidden CLI overrides, remote configuration or
+unobserved usage from another machine. Those existing observation limits remain;
+Codexometer does not change Codex's compaction configuration.
+
+Model, speed and permission changes are confirmed against the running thread
+rather than treating a queued settings acknowledgement as success. Verification
+uses resume without overrides, stays bound to the original connection, and does
+not retry mutations or block approval/event processing. Account changes refresh
+the model/options catalogue while retaining the observed conversation.
 
 The requested model remains the fallback when actual per-response model evidence
 is unavailable; durable usage records do not supply model or billed-tier fields.
@@ -3450,7 +3489,7 @@ virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation

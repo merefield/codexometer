@@ -285,6 +285,9 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.UsageDiagnostic = codex.DiagnosticText(latest)
 		}
+		if l.APIEqCoverageIssue != "" {
+			s.state.UsageDiagnostic = codex.DiagnosticText(codex.APIEqDiagnostic{Kind: codex.UsageIssueCoverage, Source: "usage coverage", Reason: l.APIEqCoverageIssue})
+		}
 		if s.state.Control {
 			s.contexts = make(map[string]codex.SessionContext, len(l.Sessions))
 			s.directories = make(map[string]string, len(l.Sessions))

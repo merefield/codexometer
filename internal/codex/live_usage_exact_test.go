@@ -278,3 +278,43 @@ func TestExactUsageOlderThanStartupTailCannotEnableLegacyBilling(t *testing.T) {
 		}
 	}
 }
+
+// Codex 0.163+ persists spending from incomplete Responses API requests even
+// when the turn fails. These records must not depend on a successful turn or
+// a matching (potentially recomputed) context counter.
+func TestExactIncompleteResponseSpendingSurvivesFailedTurn(t *testing.T) {
+	r, path, now := astraUsageReader(t, 100)
+	r.statusProvider = nil
+	usage := BenchmarkUsage{InputTokens: 1000, CachedInputTokens: 200, OutputTokens: 100, ReasoningOutputTokens: 80, TotalTokens: 1100}
+	response := exactLine(t, now, "astra-accounting", "failed-turn", "incomplete-response", usage) + "\n"
+	appendRollout(t, path, response+`{"type":"event_msg","payload":{"type":"error","message":"Incomplete response returned, reason: max_output_tokens"}}`+"\n"+richTokenCountLine(now, 123456, 1000, 200, 0, 100)+"\n")
+	failed, err := r.FetchTokenUsage(context.Background())
+	want, _, _ := EstimateStandardAPIEqCost("gpt-6-astra", usage)
+	if err != nil || failed.APIEqPricedCalls != 1 || failed.TotalTokens != 1100 || math.Abs(failed.APIEqUSD-want) > 1e-12 || failed.APIEqInconsistentUsageCalls != 0 {
+		t.Fatal("failed response spending was dropped or tied to context", failed, err)
+	}
+	// A reconnect replay and a retained-reasoning context correction are not
+	// additional spending, even though the context total moves backwards.
+	appendRollout(t, path, response+richTokenCountLine(now, 120000, 1000, 200, 0, 100)+"\n")
+	replayed, err := r.FetchTokenUsage(context.Background())
+	if err != nil || replayed.TotalTokens != failed.TotalTokens || replayed.APIEqUSD != failed.APIEqUSD || replayed.APIEqPricedCalls != 1 || replayed.APIEqAccountingAdjustments != 0 {
+		t.Fatal("failed response replay or context correction was billed twice", replayed, err)
+	}
+}
+
+func TestExactIncompleteResponseWithoutUsageRemainsMissing(t *testing.T) {
+	r, path, now := astraUsageReader(t, 100)
+	r.statusProvider = nil
+	line := exactLine(t, now, "astra-accounting", "failed-turn", "incomplete-response", BenchmarkUsage{})
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatal(err)
+	}
+	record["payload"].(map[string]any)["usage"] = nil
+	raw, _ := json.Marshal(record)
+	appendRollout(t, path, string(raw)+"\n"+richTokenCountLine(now, 1200, 1000, 0, 0, 100)+"\n")
+	got, err := r.FetchTokenUsage(context.Background())
+	if err != nil || got.APIEqMissingUsageCalls != 1 || got.APIEqPricedCalls != 0 || got.APIEqUnpricedCalls != 0 || got.TotalTokens != 0 || len(got.APIEqDiagnostics) != 1 || got.APIEqDiagnostics[0].ResponseID != "incomplete-response" {
+		t.Fatal("missing incomplete-response usage was guessed from context", got, err)
+	}
+}

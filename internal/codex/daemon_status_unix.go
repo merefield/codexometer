@@ -31,6 +31,7 @@ type daemonStatusProvider struct {
 
 	mu                sync.Mutex
 	connection        *websocket.Conn
+	wire              *daemonWire
 	nextRequestID     int64
 	pending           map[int64]chan daemonEnvelope
 	subscribed        map[string]struct{}
@@ -40,6 +41,7 @@ type daemonStatusProvider struct {
 	lastStatusAt      time.Time
 	statusThreads     map[string]struct{}
 	statuses          map[string]sessionRuntimeStatus
+	usageCoverage     map[string]string
 	threadSettings    map[string]QuotaSession
 	threadDirectories map[string]string
 	settingsVersions  map[string]uint64
@@ -98,6 +100,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 	}
 
+	coverage := p.readUsageCoverage(ctx, threadIDs)
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		var result struct {
@@ -121,6 +124,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	}
 
 	p.mu.Lock()
+	p.usageCoverage = coverage
 	p.lastStatusAt = time.Now()
 	p.statusThreads = stringStructSet(threadIDs)
 	for id, status := range statuses {
@@ -161,7 +165,12 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	for threadID := range p.subscribed {
 		subscribed[threadID] = struct{}{}
 	}
+	coverage := make(map[string]string, len(p.usageCoverage))
+	for id, issue := range p.usageCoverage {
+		coverage[id] = issue
+	}
 	return sessionDaemonSnapshot{
+		UsageCoverage:      coverage,
 		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
 		WorkingDirectories: directories,
 		Statuses:           statuses,
@@ -243,7 +252,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 			return (&net.Dialer{Timeout: daemonStatusTimeout}).DialContext(ctx, "unix", p.socketPath)
 		},
 	}
-	connection, response, err := dialer.DialContext(ctx, "ws://localhost/", http.Header{})
+	connection, response, err := dialer.DialContext(ctx, "ws://localhost/", http.Header{http.CanonicalHeaderKey(daemonCompressionHeader): []string{daemonCompressionProtocol}})
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
@@ -251,13 +260,19 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		return err
 	}
 
+	wire, err := newDaemonWire(connection, response.Header)
+	if err != nil {
+		_ = connection.Close()
+		return err
+	}
 	p.mu.Lock()
 	if p.connection != nil {
 		p.mu.Unlock()
-		_ = connection.Close()
+		wire.close()
 		return nil
 	}
 	p.connection = connection
+	p.wire = wire
 	p.commandGeneration++
 	p.commandTransitions = make(map[string]uint64)
 	p.pending = make(map[int64]chan daemonEnvelope)
@@ -268,7 +283,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
-	go p.readLoop(connection)
+	go p.readLoop(connection, wire)
 
 	var initialized struct {
 		UserAgent string `json:"userAgent"`
@@ -385,6 +400,13 @@ func (p *daemonStatusProvider) write(connection *websocket.Conn, value any) erro
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
+	p.mu.Lock()
+	wire := p.wire
+	current := p.connection
+	p.mu.Unlock()
+	if wire != nil && current == connection {
+		return wire.writeJSON(value)
+	}
 	return connection.WriteJSON(value)
 }
 
@@ -394,16 +416,24 @@ func (p *daemonStatusProvider) dropPending(id int64) {
 	p.mu.Unlock()
 }
 
-func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
+func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*daemonWire) {
+	wire := &daemonWire{conn: connection}
+	if len(wires) > 0 {
+		wire = wires[0]
+	}
 	for {
 		var envelope daemonEnvelope
-		if err := connection.ReadJSON(&envelope); err != nil {
+		if err := wire.readJSON(&envelope); err != nil {
 			p.disconnect(connection)
 			return
 		}
 		var responseID int64
 		if envelope.Method == "" && len(envelope.ID) > 0 && json.Unmarshal(envelope.ID, &responseID) == nil {
 			p.mu.Lock()
+			if p.connection != connection {
+				p.mu.Unlock()
+				return
+			}
 			response := p.pending[responseID]
 			delete(p.pending, responseID)
 			p.mu.Unlock()
@@ -416,6 +446,10 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
 			continue
 		}
 		p.mu.Lock()
+		if p.connection != connection {
+			p.mu.Unlock()
+			return
+		}
 		if envelope.Method == "thread/queue/changed" {
 			p.queueRevision++
 		}
@@ -441,6 +475,11 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		}
 	}
 	switch method {
+	case "account/updated":
+		p.mu.Lock()
+		p.commandGeneration++
+		p.lastStatusAt = time.Time{}
+		p.mu.Unlock()
 	case "thread/settings/updated":
 		var notification struct {
 			ThreadID       string `json:"threadId"`
@@ -541,6 +580,8 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 		return
 	}
 	current := p.connection
+	wire := p.wire
+	p.wire = nil
 	p.connection = nil
 	for id, response := range p.pending {
 		delete(p.pending, id)
@@ -557,13 +598,16 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.statuses = nil
 	p.commandTransitions = nil
 	p.threadSettings = nil
+	p.usageCoverage = nil
 	p.threadDirectories = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)
 		p.settingsSignal = nil
 	}
 	p.mu.Unlock()
-	if current != nil {
+	if wire != nil {
+		wire.close()
+	} else if current != nil {
 		_ = current.Close()
 	}
 }

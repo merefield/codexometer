@@ -52,6 +52,7 @@ type LiveUsageSnapshot struct {
 	APIEqTierPremiumUSD         float64
 	APIEqUnknownTierCalls       int64
 	APIEqDiagnostics            []APIEqDiagnostic
+	APIEqCoverageIssue          string
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -126,15 +127,18 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
-	sessionNames      map[string]string
-	nameIndexInfo     os.FileInfo
-	daemonContexts    map[string]SessionContext
-	daemonDirectories map[string]string
-	SessionsRoot      string
-	WriterLocksRoot   string
-	statusProvider    sessionStatusProvider
-	commandMu         sync.Mutex
-	commandMenus      *sessionCommandCache
+	knownUsageCoverage     map[string]string
+	localFeatureChecks     map[string]localFeatureCheck
+	discoveryCoverageIssue string
+	sessionNames           map[string]string
+	nameIndexInfo          os.FileInfo
+	daemonContexts         map[string]SessionContext
+	daemonDirectories      map[string]string
+	SessionsRoot           string
+	WriterLocksRoot        string
+	statusProvider         sessionStatusProvider
+	commandMu              sync.Mutex
+	commandMenus           *sessionCommandCache
 
 	mu                          sync.Mutex
 	initialized                 bool
@@ -181,6 +185,10 @@ type rolloutCursor struct {
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
+	compressed                  bool
+	compressedInfo              os.FileInfo
+	compressedTail              []byte
+	compressedDigest            [32]byte
 	exactUsage                  bool
 	exactUsageUncertain         bool
 	exactResponses              map[string]BenchmarkUsage
@@ -378,6 +386,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	var daemonCoverage map[string]string
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
 	appServerUp := false
@@ -387,6 +396,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
+			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
@@ -400,11 +410,36 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		if err := contextErr(ctx); err != nil {
 			return LiveUsageSnapshot{}, err
 		}
+		if cursor.compressed {
+			info, err := os.Stat(path)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err == nil {
+				err = r.restoreCompressedCursor(path, info, cursor)
+			}
+			if err != nil {
+				if firstReadErr == nil {
+					firstReadErr = err
+				}
+				continue
+			}
+			cursor = r.files[path]
+		}
 		if now.Sub(cursor.lastModified) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
+					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil {
+						r.discoveryCoverageIssue = "compressed rollout history could not be verified"
+						if firstReadErr == nil {
+							firstReadErr = compressedErr
+						}
+					}
+					continue
+				}
 				delete(r.files, path)
 				continue
 			}
@@ -425,6 +460,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	for i := range sessions {
 		sessions[i].Name = r.sessionNames[sessions[i].ID]
 	}
+	coverageIssue := r.usageCoverage(ctx, sessions, daemonCoverage)
+	if firstReadErr != nil {
+		coverageIssue = "local response telemetry could not be completely read"
+	}
 	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
 		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
 	)
@@ -443,6 +482,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		APIEqTierPremiumUSD:         r.apiEqTierPremiumUSD,
 		APIEqUnknownTierCalls:       r.apiEqUnknownTierCalls,
 		APIEqDiagnostics:            append([]APIEqDiagnostic(nil), r.apiEqDiagnostics...),
+		APIEqCoverageIssue:          coverageIssue,
 	}, nil
 }
 
@@ -485,6 +525,9 @@ func (r *LiveUsageReader) initialize(ctx context.Context, now time.Time) error {
 }
 
 func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool) error {
+	if full {
+		r.discoveryCoverageIssue = ""
+	}
 	roots := []string{r.SessionsRoot}
 	if !full {
 		roots = roots[:0]
@@ -511,7 +554,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			if err := contextErr(ctx); err != nil {
 				return err
 			}
-			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isRolloutFile(entry.Name()) {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || (!isRolloutFile(entry.Name()) && !isCompressedRolloutFile(entry.Name())) {
 				return nil
 			}
 			info, err := entry.Info()
@@ -521,7 +564,19 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 				}
 				return nil
 			}
+			if isCompressedRolloutFile(entry.Name()) {
+				if err := r.addCompressedFile(ctx, path, info); err != nil {
+					r.discoveryCoverageIssue = "compressed rollout history could not be verified"
+					if firstFileErr == nil {
+						firstFileErr = err
+					}
+				}
+				return nil
+			}
 			if cursor, exists := r.files[path]; exists {
+				if cursor.compressed {
+					return r.restoreCompressedCursor(path, info, cursor)
+				}
 				cursor.lastModified = info.ModTime()
 				return nil
 			}
@@ -603,6 +658,11 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		if existingThread {
 			r.apiEqAccountingAdjustments++
 		}
+	}
+	// Replacing this path changes the historical baseline, not the activity
+	// already observed by this process. Keep it only for the same thread.
+	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
+		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
 	}
 	r.files[path] = cursor
 	return nil
@@ -1236,27 +1296,8 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 	reader := bufio.NewReader(file)
 	for record := 0; record < 64; record++ {
 		line, readErr := reader.ReadBytes('\n')
-		if bytes.Contains(line, []byte(`"session_meta"`)) {
-			var event rolloutMetadataEvent
-			if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
-				var payload rolloutMetadataPayload
-				if json.Unmarshal(event.Payload, &payload) == nil {
-					parent, nonRoot := sessionSourceParent(payload.Source)
-					if payload.ParentThreadID != "" {
-						parent = payload.ParentThreadID
-						nonRoot = true
-					}
-					if payload.ThreadSource == "subagent" {
-						nonRoot = true
-					}
-					return rolloutMetadata{
-						ID: payload.ID, ParentThreadID: parent,
-						WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
-						StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
-						SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
-					}, nil
-				}
-			}
+		if metadata, ok := rolloutMetadataRecord(line); ok {
+			return metadata, nil
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
@@ -1266,6 +1307,32 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 		}
 	}
 	return rolloutMetadata{}, nil
+}
+
+func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
+	if bytes.Contains(line, []byte(`"session_meta"`)) {
+		var event rolloutMetadataEvent
+		if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
+			var payload rolloutMetadataPayload
+			if json.Unmarshal(event.Payload, &payload) == nil {
+				parent, nonRoot := sessionSourceParent(payload.Source)
+				if payload.ParentThreadID != "" {
+					parent = payload.ParentThreadID
+					nonRoot = true
+				}
+				if payload.ThreadSource == "subagent" {
+					nonRoot = true
+				}
+				return rolloutMetadata{
+					ID: payload.ID, ParentThreadID: parent,
+					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
+					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
+					SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
+				}, true
+			}
+		}
+	}
+	return rolloutMetadata{}, false
 }
 
 func sessionSourceParent(raw json.RawMessage) (string, bool) {
