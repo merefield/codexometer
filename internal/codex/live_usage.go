@@ -181,6 +181,9 @@ type rolloutCursor struct {
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
+	compressed                  bool
+	compressedInfo              os.FileInfo
+	compressedTail              []byte
 	exactUsage                  bool
 	exactUsageUncertain         bool
 	exactResponses              map[string]BenchmarkUsage
@@ -400,11 +403,33 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		if err := contextErr(ctx); err != nil {
 			return LiveUsageSnapshot{}, err
 		}
+		if cursor.compressed {
+			info, err := os.Stat(path)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err == nil {
+				err = r.restoreCompressedCursor(path, info, cursor)
+			}
+			if err != nil {
+				if firstReadErr == nil {
+					firstReadErr = err
+				}
+				continue
+			}
+			cursor = r.files[path]
+		}
 		if now.Sub(cursor.lastModified) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
+					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil && firstReadErr == nil {
+						firstReadErr = compressedErr
+					}
+					continue
+				}
 				delete(r.files, path)
 				continue
 			}
@@ -511,7 +536,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			if err := contextErr(ctx); err != nil {
 				return err
 			}
-			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isRolloutFile(entry.Name()) {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || (!isRolloutFile(entry.Name()) && !isCompressedRolloutFile(entry.Name())) {
 				return nil
 			}
 			info, err := entry.Info()
@@ -521,7 +546,16 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 				}
 				return nil
 			}
+			if isCompressedRolloutFile(entry.Name()) {
+				if err := r.addCompressedFile(ctx, path, info); err != nil && firstFileErr == nil {
+					firstFileErr = err
+				}
+				return nil
+			}
 			if cursor, exists := r.files[path]; exists {
+				if cursor.compressed {
+					return r.restoreCompressedCursor(path, info, cursor)
+				}
 				cursor.lastModified = info.ModTime()
 				return nil
 			}
@@ -1236,27 +1270,8 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 	reader := bufio.NewReader(file)
 	for record := 0; record < 64; record++ {
 		line, readErr := reader.ReadBytes('\n')
-		if bytes.Contains(line, []byte(`"session_meta"`)) {
-			var event rolloutMetadataEvent
-			if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
-				var payload rolloutMetadataPayload
-				if json.Unmarshal(event.Payload, &payload) == nil {
-					parent, nonRoot := sessionSourceParent(payload.Source)
-					if payload.ParentThreadID != "" {
-						parent = payload.ParentThreadID
-						nonRoot = true
-					}
-					if payload.ThreadSource == "subagent" {
-						nonRoot = true
-					}
-					return rolloutMetadata{
-						ID: payload.ID, ParentThreadID: parent,
-						WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
-						StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
-						SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
-					}, nil
-				}
-			}
+		if metadata, ok := rolloutMetadataRecord(line); ok {
+			return metadata, nil
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
@@ -1266,6 +1281,32 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 		}
 	}
 	return rolloutMetadata{}, nil
+}
+
+func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
+	if bytes.Contains(line, []byte(`"session_meta"`)) {
+		var event rolloutMetadataEvent
+		if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
+			var payload rolloutMetadataPayload
+			if json.Unmarshal(event.Payload, &payload) == nil {
+				parent, nonRoot := sessionSourceParent(payload.Source)
+				if payload.ParentThreadID != "" {
+					parent = payload.ParentThreadID
+					nonRoot = true
+				}
+				if payload.ThreadSource == "subagent" {
+					nonRoot = true
+				}
+				return rolloutMetadata{
+					ID: payload.ID, ParentThreadID: parent,
+					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
+					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
+					SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
+				}, true
+			}
+		}
+	}
+	return rolloutMetadata{}, false
 }
 
 func sessionSourceParent(raw json.RawMessage) (string, bool) {
