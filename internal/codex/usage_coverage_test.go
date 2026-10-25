@@ -69,3 +69,36 @@ func TestUsageCoverageRejectsUnreadableConfigurationAndPartialDiscovery(t *testi
 		t.Fatal("partial discovery hidden", got)
 	}
 }
+
+func TestUsageCoverageRetainsInactiveSessionRiskUntilVerifiedRecovery(t *testing.T) {
+	for _, child := range []bool{false, true} {
+		t.Run(map[bool]string{false: "root", true: "old folded child"}[child], func(t *testing.T) {
+			home := t.TempDir()
+			r := &LiveUsageReader{SessionsRoot: filepath.Join(home, "sessions")}
+			sessions := []LiveUsageSession{{ID: "root", WorkingDirectory: home, Active: true, TotalTokens: 1100}}
+			id := "root"
+			if child {
+				id = "child"
+				r.files = map[string]*rolloutCursor{"child": {threadID: id, parentThreadID: "root", workingDirectory: home, lastModified: time.Now().Add(-48 * time.Hour), observedTokens: 1100}}
+			}
+			if got := r.usageCoverage(context.Background(), sessions, map[string]string{id: asyncCompactionCoverage}); !strings.Contains(got, "background compaction") {
+				t.Fatal("known risk missing", got)
+			}
+			// An idle, previously observed row remains visible, but loses Active once
+			// daemon/writer signals disappear. That is not verified feature recovery.
+			sessions[0].Active = false
+			for range 2 {
+				got := r.usageCoverage(context.Background(), sessions, nil)
+				if !strings.Contains(got, id) || !strings.Contains(got, "background compaction") {
+					t.Fatal("inactive/disconnected row hid cached risk", got)
+				}
+			}
+			if got := r.usageCoverage(context.Background(), sessions, map[string]string{id: ""}); got != "" {
+				t.Fatal("verified recovery did not clear inactive risk", got)
+			}
+			if got := r.usageCoverage(context.Background(), sessions, nil); got != "" {
+				t.Fatal("recovered risk reappeared", got)
+			}
+		})
+	}
+}

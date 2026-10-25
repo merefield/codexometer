@@ -39,8 +39,9 @@ func (r *LiveUsageReader) usageCoverage(ctx context.Context, sessions []LiveUsag
 		seen[session.ID] = true
 	}
 	for _, cursor := range r.files {
-		if !seen[cursor.threadID] && cursor.threadID != "" && time.Since(cursor.lastModified) <= activeRolloutHorizon {
-			candidates = append(candidates, LiveUsageSession{ID: cursor.threadID, WorkingDirectory: cursor.workingDirectory, Active: true})
+		recent := time.Since(cursor.lastModified) <= activeRolloutHorizon
+		if !seen[cursor.threadID] && cursor.threadID != "" && (recent || r.knownUsageCoverage[cursor.threadID] != "") {
+			candidates = append(candidates, LiveUsageSession{ID: cursor.threadID, WorkingDirectory: cursor.workingDirectory, Active: recent})
 			seen[cursor.threadID] = true
 		}
 	}
@@ -50,12 +51,14 @@ func (r *LiveUsageReader) usageCoverage(ctx context.Context, sessions []LiveUsag
 		}
 	}
 	for _, session := range candidates {
-		if !session.Active {
-			continue
-		}
 		issue, verified := daemon[session.ID]
 		if !verified {
 			issue = r.knownUsageCoverage[session.ID]
+		}
+		// Missing writer/status signals after disconnect do not prove recovery.
+		// Keep known risks even when their retained session row becomes inactive.
+		if !session.Active && issue == "" {
+			continue
 		}
 		if issue == "" && !verified {
 			issue = r.localUsageCoverage(ctx, session.WorkingDirectory)
