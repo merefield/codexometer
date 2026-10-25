@@ -87,6 +87,18 @@ type quotaAPIEstimate struct {
 	unknownTier  bool
 }
 
+// A known coverage gap invalidates evidence even when another error or an
+// active benchmark prevents using the associated quota observation.
+func (m *Model) observeQuotaAPICoverage(issue string) {
+	previous := m.quotaAPICoverageIssue
+	m.quotaAPICoverageIssue = issue
+	if previous != "" || issue != "" {
+		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
+		m.quotaAPIEvidence = nil
+		m.quotaAPIIssues = make(map[string]string)
+	}
+}
+
 func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsageSnapshot, at time.Time) {
 	if at.IsZero() {
 		at = time.Now()
@@ -102,16 +114,11 @@ func (m *Model) observeQuotaAPIEq(snapshot codex.Snapshot, usage codex.LiveUsage
 		m.quotaAPIIssues = make(map[string]string)
 	}
 	m.quotaAPIAccount = account
-	previousCoverage := m.quotaAPICoverageIssue
-	m.quotaAPICoverageIssue = usage.APIEqCoverageIssue
-	if previousCoverage != "" || usage.APIEqCoverageIssue != "" {
-		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
-		m.quotaAPIEvidence = nil
-		m.quotaAPIIssues = make(map[string]string)
-		if usage.APIEqCoverageIssue != "" {
-			return
-		}
+	m.observeQuotaAPICoverage(usage.APIEqCoverageIssue)
+	if usage.APIEqCoverageIssue != "" {
+		return
 	}
+
 	if m.quotaAPIAnchors == nil {
 		m.quotaAPIAnchors = make(map[string]quotaAPIAnchor)
 	}
