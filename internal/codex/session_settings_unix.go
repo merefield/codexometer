@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/websocket"
 	"sort"
 	"strings"
 	"time"
@@ -145,12 +146,19 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 
 // The RPC acknowledgement means queued, not applied. Observe the actual
 // configured settings before calling an update successful.
-func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) (err error) {
+func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected QuotaSession, params map[string]any) error {
+	p.mu.Lock()
+	conn := p.connection
+	p.mu.Unlock()
+	return p.writeQuotaSettingsOn(ctx, conn, expected, params)
+}
+
+func (p *daemonStatusProvider) writeQuotaSettingsOn(ctx context.Context, conn *websocket.Conn, expected QuotaSession, params map[string]any) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	_, _, before, _ := p.observedQuotaSettings(expected.ID)
-	if err := p.request(ctx, "thread/settings/update", params, nil); err != nil {
+	if err := p.requestOn(ctx, conn, "thread/settings/update", params, nil); err != nil {
 		var rejection *daemonResponseError
 		if !errors.As(err, &rejection) {
 			return errors.Join(ErrQuotaProfileUncertain, err)
@@ -165,6 +173,12 @@ func (p *daemonStatusProvider) writeQuotaSettings(ctx context.Context, expected 
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for {
+		p.mu.Lock()
+		sameConnection := p.connection == conn
+		p.mu.Unlock()
+		if !sameConnection {
+			return errors.New("connection changed before settings were verified")
+		}
 		observed, changed, version, ok := p.observedQuotaSettings(expected.ID)
 		if ok && version > before && sameQuotaSettings(observed, expected) {
 			return nil

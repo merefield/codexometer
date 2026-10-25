@@ -478,16 +478,26 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 					}
 				}
 			}
-			if m.Picker {
+			if permission, ok := o.params["permissions"].(string); ok {
+				return p.writeVerifiedPermissions(ctx, conn, id, permission, o.params)
+			}
+			_, changingModel := o.params["model"]
+			if m.Picker || changingModel {
 				current, err := p.readQuotaSession(ctx, id)
 				if err != nil {
 					return err
+				}
+				if model, ok := o.params["model"].(string); ok {
+					current.Model = model
+				}
+				if effort, ok := o.params["effort"].(string); ok {
+					current.Effort = effort
 				}
 				current.Tier = nil
 				if tier, ok := o.params["serviceTier"].(string); ok {
 					current.Tier = &tier
 				}
-				return p.writeQuotaSettings(ctx, current, o.params)
+				return p.writeQuotaSettingsOn(ctx, conn, current, o.params)
 			}
 			return p.requestOn(ctx, conn, o.method, o.params, nil)
 		}
@@ -516,7 +526,7 @@ func (p *daemonStatusProvider) commandCatalogue(ctx context.Context, t commandTh
 	switch path {
 	case "skills", "hooks":
 		params["cwds"] = []string{t.Cwd}
-	case "apps", "mcp":
+	case "apps", "mcp", "experimental":
 		params["threadId"] = t.ID
 	}
 	rows, err := p.commandRows(ctx, method, params)

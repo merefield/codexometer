@@ -430,6 +430,10 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 		var responseID int64
 		if envelope.Method == "" && len(envelope.ID) > 0 && json.Unmarshal(envelope.ID, &responseID) == nil {
 			p.mu.Lock()
+			if p.connection != connection {
+				p.mu.Unlock()
+				return
+			}
 			response := p.pending[responseID]
 			delete(p.pending, responseID)
 			p.mu.Unlock()
@@ -442,6 +446,10 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 			continue
 		}
 		p.mu.Lock()
+		if p.connection != connection {
+			p.mu.Unlock()
+			return
+		}
 		if envelope.Method == "thread/queue/changed" {
 			p.queueRevision++
 		}
@@ -467,6 +475,11 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		}
 	}
 	switch method {
+	case "account/updated":
+		p.mu.Lock()
+		p.commandGeneration++
+		p.lastStatusAt = time.Time{}
+		p.mu.Unlock()
 	case "thread/settings/updated":
 		var notification struct {
 			ThreadID       string `json:"threadId"`

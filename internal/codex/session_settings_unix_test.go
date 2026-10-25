@@ -33,6 +33,8 @@ type quotaDaemonFixture struct {
 	cwds          map[string]string
 	ignoreCwd     bool
 	environments  []any
+	permissions   map[string]string
+	resumeReads   []map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -58,6 +60,10 @@ func TestQuotaEffortDefaultFallback(t *testing.T) {
 }
 
 func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
+	return newQuotaDaemonTransport(t, false)
+}
+
+func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvider, *quotaDaemonFixture) {
 	t.Helper()
 	fixture := &quotaDaemonFixture{sessions: map[string]QuotaSession{"one": {ID: "one", Model: "large", Effort: "high"}, "two": {ID: "two", Model: "large", Effort: "high"}}}
 	dir, err := os.MkdirTemp("", "cxq-")
@@ -75,18 +81,27 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 	}
 	upgrader := websocket.Upgrader{}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		headers := http.Header{}
+		if compressed {
+			headers.Set(daemonCompressionHeader, daemonCompressionProtocol)
+		}
+		conn, err := upgrader.Upgrade(w, r, headers)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		wire, err := newDaemonWire(conn, headers)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		defer wire.close()
 		for {
 			var req struct {
 				ID     *int64
 				Method string
 				Params map[string]any
 			}
-			if conn.ReadJSON(&req) != nil {
+			if wire.readJSON(&req) != nil {
 				return
 			}
 			if req.ID == nil {
@@ -109,13 +124,14 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				}
 				result["data"] = ids
 			case "thread/resume":
+				fixture.resumeReads = append(fixture.resumeReads, req.Params)
 				s, ok := fixture.sessions[id]
 				failure = !ok || fixture.fail == id
 				cwd := fixture.cwds[id]
 				if cwd == "" {
 					cwd = "/work"
 				}
-				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}}
+				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
 			case "thread/read":
 				status := fixture.commandStatus
 				if status == "" {
@@ -159,6 +175,12 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 					}
 				}
 				if !fixture.queued {
+					if permission, ok := req.Params["permissions"].(string); ok {
+						if fixture.permissions == nil {
+							fixture.permissions = make(map[string]string)
+						}
+						fixture.permissions[id] = permission
+					}
 					fixture.sessions[id] = desired
 				}
 				if fixture.notify {
@@ -193,10 +215,10 @@ func newQuotaDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {
 				delete(response, "result")
 				response["error"] = map[string]any{"code": -1, "message": "test failure"}
 			}
-			if conn.WriteJSON(response) != nil {
+			if wire.writeJSON(response) != nil {
 				return
 			}
-			if settingsNotification != nil && conn.WriteJSON(settingsNotification) != nil {
+			if settingsNotification != nil && wire.writeJSON(settingsNotification) != nil {
 				return
 			}
 		}
