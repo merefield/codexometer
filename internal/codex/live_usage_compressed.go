@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -50,12 +51,15 @@ func (r *LiveUsageReader) addCompressedFile(ctx context.Context, path string, in
 }
 
 func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInfo) (*rolloutCursor, error) {
+	if info.Size() > compressedHistoryLimit {
+		return nil, errors.New("compressed history exceeds 256 MiB source limit")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	decoder, err := zstd.NewReader(file, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(128<<20), zstd.WithDecoderMaxMemory(128<<20))
+	decoder, err := zstd.NewReader(io.LimitReader(file, compressedHistoryLimit+1), zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxWindow(128<<20), zstd.WithDecoderMaxMemory(128<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +67,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 	reader := bufio.NewReaderSize(io.LimitReader(decoder, compressedHistoryLimit+1), 64<<10)
 	cursor := &rolloutCursor{lastModified: info.ModTime(), compressed: true, compressedInfo: info}
 	var line, tail []byte
+	digest := sha256.New()
 	var decoded int64
 	oversized := false
 	for {
@@ -71,6 +76,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 		}
 		chunk, readErr := reader.ReadSlice('\n')
 		decoded += int64(len(chunk))
+		digest.Write(chunk)
 		if decoded > compressedHistoryLimit {
 			return nil, errors.New("decoded history exceeds 256 MiB baseline limit")
 		}
@@ -90,6 +96,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 		}
 		if len(chunk) > 0 && chunk[len(chunk)-1] == '\n' {
 			cursor.offset = decoded
+			copy(cursor.compressedDigest[:], digest.Sum(nil))
 			cursor.compressedTail = append(cursor.compressedTail[:0], tail...)
 			if !oversized {
 				baselineRolloutRecord(cursor, line)
@@ -156,8 +163,21 @@ func (r *LiveUsageReader) restoreCompressedCursor(path string, info os.FileInfo,
 	}
 	tail := make([]byte, len(cursor.compressedTail))
 	n, readErr := file.ReadAt(tail, cursor.offset-int64(len(tail)))
-	file.Close()
+	// The tail is a quick mismatch check; hash the entire bounded prefix before
+	// trusting its settings and offset. Reverts may change earlier context while
+	// retaining an identical tail and file length.
+	matches := false
 	if readErr == nil && n == len(tail) && bytes.Equal(tail, cursor.compressedTail) && info.Size() >= cursor.offset {
+		digest := sha256.New()
+		_, err = io.Copy(digest, io.NewSectionReader(file, 0, cursor.offset))
+		if err != nil {
+			file.Close()
+			return err
+		}
+		matches = bytes.Equal(digest.Sum(nil), cursor.compressedDigest[:])
+	}
+	file.Close()
+	if matches {
 		cursor.compressed = false
 		cursor.compressedInfo = nil
 		cursor.compressedTail = nil

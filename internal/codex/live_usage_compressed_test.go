@@ -133,3 +133,32 @@ func TestCorruptCompressedHistoryIsRejected(t *testing.T) {
 		t.Fatal("partial compressed baseline retained")
 	}
 }
+
+func TestCompressedRestorationChecksContextBeforeUnchangedTail(t *testing.T) {
+	_, path, now := astraUsageReader(t, 100)
+	// Put changed model context outside the suffix check, retaining byte length.
+	appendRollout(t, path, strings.Repeat(`{"type":"response_item","payload":"padding"}`+"\n", 200))
+	usage := BenchmarkUsage{InputTokens: 1000, OutputTokens: 100, TotalTokens: 1100}
+	appendRollout(t, path, exactLine(t, now, "astra-accounting", "turn", "old", usage)+"\n")
+	plain := compressTestRollout(t, path, true)
+	home := strings.Split(path, string(filepath.Separator)+"sessions"+string(filepath.Separator))[0]
+	r, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.statusProvider = nil
+	if _, err := r.FetchTokenUsage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.ReplaceAll(string(plain), "gpt-6-astra", "gpt-6.1-sol")
+	if len(changed) != len(plain) || changed == string(plain) {
+		t.Fatal("test did not preserve history size")
+	}
+	if err := os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.FetchTokenUsageFresh(context.Background())
+	if err != nil || got.APIEqAccountingAdjustments != 1 || got.APIEqPricedCalls != 0 || r.files[path].currentModel != "gpt-6.1-sol" {
+		t.Fatal("changed context trusted because suffix matched", got, err)
+	}
+}

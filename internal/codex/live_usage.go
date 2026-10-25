@@ -188,6 +188,7 @@ type rolloutCursor struct {
 	compressed                  bool
 	compressedInfo              os.FileInfo
 	compressedTail              []byte
+	compressedDigest            [32]byte
 	exactUsage                  bool
 	exactUsageUncertain         bool
 	exactResponses              map[string]BenchmarkUsage
