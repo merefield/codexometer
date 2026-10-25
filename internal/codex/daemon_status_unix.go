@@ -31,6 +31,7 @@ type daemonStatusProvider struct {
 
 	mu                sync.Mutex
 	connection        *websocket.Conn
+	wire              *daemonWire
 	nextRequestID     int64
 	pending           map[int64]chan daemonEnvelope
 	subscribed        map[string]struct{}
@@ -243,7 +244,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 			return (&net.Dialer{Timeout: daemonStatusTimeout}).DialContext(ctx, "unix", p.socketPath)
 		},
 	}
-	connection, response, err := dialer.DialContext(ctx, "ws://localhost/", http.Header{})
+	connection, response, err := dialer.DialContext(ctx, "ws://localhost/", http.Header{http.CanonicalHeaderKey(daemonCompressionHeader): []string{daemonCompressionProtocol}})
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
@@ -251,13 +252,19 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		return err
 	}
 
+	wire, err := newDaemonWire(connection, response.Header)
+	if err != nil {
+		_ = connection.Close()
+		return err
+	}
 	p.mu.Lock()
 	if p.connection != nil {
 		p.mu.Unlock()
-		_ = connection.Close()
+		wire.close()
 		return nil
 	}
 	p.connection = connection
+	p.wire = wire
 	p.commandGeneration++
 	p.commandTransitions = make(map[string]uint64)
 	p.pending = make(map[int64]chan daemonEnvelope)
@@ -268,7 +275,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
-	go p.readLoop(connection)
+	go p.readLoop(connection, wire)
 
 	var initialized struct {
 		UserAgent string `json:"userAgent"`
@@ -385,6 +392,13 @@ func (p *daemonStatusProvider) write(connection *websocket.Conn, value any) erro
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
+	p.mu.Lock()
+	wire := p.wire
+	current := p.connection
+	p.mu.Unlock()
+	if wire != nil && current == connection {
+		return wire.writeJSON(value)
+	}
 	return connection.WriteJSON(value)
 }
 
@@ -394,10 +408,14 @@ func (p *daemonStatusProvider) dropPending(id int64) {
 	p.mu.Unlock()
 }
 
-func (p *daemonStatusProvider) readLoop(connection *websocket.Conn) {
+func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*daemonWire) {
+	wire := &daemonWire{conn: connection}
+	if len(wires) > 0 {
+		wire = wires[0]
+	}
 	for {
 		var envelope daemonEnvelope
-		if err := connection.ReadJSON(&envelope); err != nil {
+		if err := wire.readJSON(&envelope); err != nil {
 			p.disconnect(connection)
 			return
 		}
@@ -541,6 +559,8 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 		return
 	}
 	current := p.connection
+	wire := p.wire
+	p.wire = nil
 	p.connection = nil
 	for id, response := range p.pending {
 		delete(p.pending, id)
@@ -563,7 +583,9 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 		p.settingsSignal = nil
 	}
 	p.mu.Unlock()
-	if current != nil {
+	if wire != nil {
+		wire.close()
+	} else if current != nil {
 		_ = current.Close()
 	}
 }
