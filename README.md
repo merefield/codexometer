@@ -3489,7 +3489,7 @@ virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation
