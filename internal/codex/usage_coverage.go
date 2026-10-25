@@ -61,7 +61,8 @@ func (r *LiveUsageReader) usageCoverage(ctx context.Context, sessions []LiveUsag
 			issue = r.localUsageCoverage(ctx, session.WorkingDirectory)
 		}
 		if issue != "" {
-			issues = append(issues, "SESSION "+string([]rune(SanitizeSessionContext(session.ID))[:min(12, len([]rune(SanitizeSessionContext(session.ID))))])+": "+issue)
+			id := []rune(SanitizeSessionContext(session.ID))
+			issues = append(issues, "SESSION "+string(id[:min(12, len(id))])+": "+issue)
 		}
 	}
 	if r.discoveryCoverageIssue != "" {
