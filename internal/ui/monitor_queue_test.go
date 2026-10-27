@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/schedule"
@@ -454,6 +455,101 @@ func TestQueueEditorButtonsAndKeyboardFocus(t *testing.T) {
 			m, _, _ = m.updateMonitorQueue(tea.KeyPressMsg(tea.Key{Code: 'x', Text: "x"}))
 			if c.changed != "" || m.monitorQueue.deleting {
 				t.Fatal("typing x deleted a message")
+			}
+		}
+	}
+}
+
+func TestQueueEditorExpandsForMultilineTextAndKeepsClickTargets(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		m, c := queueTestModel(inline)
+		text := "FIRST QUEUED LINE\nSECOND QUEUED LINE\nTHIRD QUEUED LINE\nLAST QUEUED LINE"
+		m.monitorQueue.items[0].Text = text
+		m.openQueueItem(0, false)
+		g := m.monitorDashboardLayout()
+		input, top := m.queueEditorLayout(g.contentWidth, g.meterHeight)
+		if input.Height() != 4 {
+			t.Fatalf("multiline editor height = %d, want 4", input.Height())
+		}
+		out := ansi.Strip(m.render())
+		for _, line := range strings.Split(text, "\n") {
+			if !strings.Contains(out, line) {
+				t.Fatal("queued line hidden instead of expanding", line)
+			}
+		}
+		// Tabbing to buttons must not collapse the textarea. Its newly exposed
+		// first row must remain clickable, not just the old one-line rectangle.
+		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		m = next.(Model)
+		x, y := renderedTextStart(t, m, "FIRST QUEUED LINE")
+		if y != g.meterY+top {
+			t.Fatal("textarea render and hit origin disagree", y, g.meterY+top)
+		}
+		next, _ = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+		if m.monitorQueue.editorFocus != 0 || !m.monitorQueue.input.Focused() {
+			t.Fatal("expanded editor row did not regain focus")
+		}
+		for _, b := range m.queueEditorButtons() {
+			x, y := renderedTextStart(t, m, b.text)
+			if x != b.x || y != b.y {
+				t.Fatal("editor expansion moved button away from hit target", b, x, y)
+			}
+		}
+		next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = next.(Model)
+		if cmd == nil {
+			t.Fatal("multiline edit cannot be saved")
+		}
+		m.Update(cmd())
+		if c.text != text {
+			t.Fatal("multiline edit lost text on save", c.text)
+		}
+	}
+}
+
+func TestQueueEditorGrowsAfterPasteAndShrinksAfterEditing(t *testing.T) {
+	m, _ := queueTestModel(false)
+	m.openQueueItem(0, false)
+	g := m.monitorDashboardLayout()
+	before, oldTop := m.queueEditorLayout(g.contentWidth, g.meterHeight)
+	next, _ := m.Update(tea.PasteMsg{Content: "\nPASTED SECOND LINE\nPASTED THIRD LINE"})
+	m = next.(Model)
+	after, newTop := m.queueEditorLayout(g.contentWidth, g.meterHeight)
+	if after.Height() != before.Height()+2 || newTop != oldTop-2 {
+		t.Fatal("pasted lines did not expand editor upwards", before.Height(), after.Height(), oldTop, newTop)
+	}
+	if !strings.Contains(ansi.Strip(m.render()), "PASTED SECOND LINE") {
+		t.Fatal("pasted lines not visible")
+	}
+	m.monitorQueue.input.SetValue("short")
+	input, top := m.queueEditorLayout(g.contentWidth, g.meterHeight)
+	if input.Height() != 1 || top != oldTop {
+		t.Fatal("shortening draft did not reclaim vertical space")
+	}
+}
+
+func TestQueueEditorReflowsOnResizeWithoutLosingDraft(t *testing.T) {
+	m, _ := queueTestModel(false)
+	text := strings.Repeat("A long queued instruction with 日本語 and wrapping. ", 40)
+	m.monitorQueue.items[0].Text = text
+	m.openQueueItem(0, false)
+	for _, size := range []struct{ width, height int }{{160, 55}, {70, 24}, {240, 60}, {80, 18}, {160, 55}} {
+		next, _ := m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+		m = next.(Model)
+		g := m.monitorDashboardLayout()
+		input, top := m.queueEditorLayout(g.contentWidth, g.meterHeight)
+		if input.Value() != text || input.Height() > max(g.meterHeight-6, 1) || top < 3 {
+			t.Fatal("resizing lost text or overlapped editor headings", size, input.Height(), top)
+		}
+		out := m.render()
+		if lipgloss.Width(out) > size.width || lipgloss.Height(out) > size.height {
+			t.Fatal("resized editor exceeds terminal dimensions", size)
+		}
+		for _, b := range m.queueEditorButtons() {
+			x, y := renderedTextStart(t, m, b.text)
+			if x != b.x || y != b.y {
+				t.Fatal("resized editor button missed its hit target", size, b, x, y)
 			}
 		}
 	}
