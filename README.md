@@ -744,16 +744,17 @@ or applies today's `/fast` setting retroactively.
   combination is unpriced and interrupts clean learning rather than silently
   applying an invented multiplier. Benchmark comparisons continue to use Standard rates.
 
-Tier pricing was reviewed on **12 October 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
+Tier pricing was reviewed on **27 October 2026**: **GPT-6.1 (Sol, Terra), GPT-6 (Astra, Sol, Luna) and GPT-5.6
 (Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
-legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices.
-**Flex** uses **½×** on the maintained GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
+legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices;
+GPT-6.1 Terra has no maintained Ultrafast rate.
+**Flex** uses **½×** on the maintained GPT-6.1/GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
 GPT-5.2 fallback pricing and published short-context Fast rates for GPT-5.2,
 GPT-5.3 Codex, GPT-5.4/Mini and GPT-5.5 are also maintained; GPT-5.5 Fast is 2.5×.
 Other explicit model/tier combinations and unpublished long-context Fast rates
 remain unavailable. Adjustments follow per-response long-context and cache
 calculations; reasoning output is not counted twice. See the official
-[Astra pricing](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[API pricing table](https://developers.openai.com/api/docs/pricing),
 [Codex speed guidance](https://learn.chatgpt.com/docs/agent-configuration/speed),
 and [API Fast-mode guide](https://developers.openai.com/api/docs/guides/fast-mode).
 The footer's standard-price retrieval date remains separate from this tier review.
