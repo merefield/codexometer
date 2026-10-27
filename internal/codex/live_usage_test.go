@@ -182,26 +182,26 @@ func TestFreshLiveUsageReadNoticesAResumedDormantSession(t *testing.T) {
 
 func TestLiveUsageReaderExpiresInactiveSessionCount(t *testing.T) {
 	home := t.TempDir()
-	now := time.Now()
+	now := time.Date(2026, time.October, 23, 9, 0, 0, 0, time.UTC)
 	path := testRolloutPath(t, home, now.Add(-time.Hour), "inactive")
 	writeRollout(t, path, tokenCountLine(now.Add(-time.Hour), 100)+"\n")
 	reader, err := NewLiveUsageReader(home)
 	if err != nil {
 		t.Fatal(err)
 	}
+	freezeRolloutTime(t, path, now)
+	reader.now = func() time.Time { return now }
 	if _, err := reader.FetchTokenUsage(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	appendRollout(t, path, tokenCountLine(now, 125)+"\n")
+	freezeRolloutTime(t, path, now)
 	usage, err := reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.SessionCount != 1 {
 		t.Fatalf("active session count = %#v, %v; want one", usage, err)
 	}
 
-	inactiveAt := now.Add(-6 * time.Minute)
-	if err := os.Chtimes(path, inactiveAt, inactiveAt); err != nil {
-		t.Fatal(err)
-	}
+	now = now.Add(6 * time.Minute)
 	usage, err = reader.FetchTokenUsage(context.Background())
 	if err != nil || usage.SessionCount != 0 {
 		t.Fatalf("inactive session count = %#v, %v; want zero", usage, err)

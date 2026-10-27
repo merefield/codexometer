@@ -129,6 +129,7 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
+	now                    func() time.Time
 	knownUsageCoverage     map[string]string
 	localFeatureChecks     map[string]localFeatureCheck
 	discoveryCoverageIssue string
@@ -173,6 +174,9 @@ type rolloutCursor struct {
 	totalTokens                 int64
 	observedTokens              int64
 	lastModified                time.Time
+	lastSize                    int64
+	lastEventAt                 time.Time
+	lastGrowthAt                time.Time
 	threadID                    string
 	parentThreadID              string
 	workingDirectory            string
@@ -379,7 +383,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		return LiveUsageSnapshot{}, err
 	}
 
-	now := time.Now()
+	now := r.activityNow()
 	if !r.initialized {
 		if err := r.initialize(ctx, now); err != nil {
 			return LiveUsageSnapshot{}, err
@@ -422,7 +426,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 				continue
 			}
 			if err == nil {
-				err = r.restoreCompressedCursor(path, info, cursor)
+				err = r.restoreCompressedCursor(ctx, path, info, cursor)
 			}
 			if err != nil {
 				if firstReadErr == nil {
@@ -432,7 +436,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			}
 			cursor = r.files[path]
 		}
-		if now.Sub(cursor.lastModified) > activeRolloutHorizon {
+		if now.Sub(cursor.activityTime()) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
@@ -508,7 +512,7 @@ func (r *LiveUsageReader) observedThreadIDs(now time.Time) []string {
 	seen := make(map[string]struct{}, len(r.files))
 	threadIDs := make([]string, 0, len(r.files))
 	for _, cursor := range r.files {
-		if cursor.threadID == "" || now.Sub(cursor.lastModified) > activeRolloutHorizon {
+		if cursor.threadID == "" || now.Sub(cursor.activityTime()) > activeRolloutHorizon {
 			continue
 		}
 		if _, ok := seen[cursor.threadID]; ok {
@@ -581,12 +585,12 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			}
 			if cursor, exists := r.files[path]; exists {
 				if cursor.compressed {
-					return r.restoreCompressedCursor(path, info, cursor)
+					return r.restoreCompressedCursor(ctx, path, info, cursor)
 				}
-				cursor.lastModified = info.ModTime()
+				cursor.observeFile(info, r.activityNow())
 				return nil
 			}
-			if err := r.addFile(path, info); err != nil {
+			if err := r.addFile(ctx, path, info); err != nil {
 				if firstFileErr == nil {
 					firstFileErr = err
 				}
@@ -607,19 +611,23 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 	return nil
 }
 
-func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
+func (r *LiveUsageReader) addFile(ctx context.Context, path string, info os.FileInfo) error {
 	metadata, err := readRolloutMetadata(path)
 	if err != nil {
 		return err
 	}
 	cursor := &rolloutCursor{
 		lastModified:                info.ModTime(),
+		lastSize:                    info.Size(),
 		threadID:                    metadata.ID,
 		parentThreadID:              metadata.ParentThreadID,
 		workingDirectory:            metadata.WorkingDirectory,
 		startedAt:                   metadata.StartedAt,
 		nonRoot:                     metadata.NonRoot,
 		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
+	}
+	if err := cursor.bootstrapActivity(ctx, path, info.Size(), r.activityNow()); err != nil {
+		return err
 	}
 	// Both bootstrap scans reject late failures from older turns. Establish
 	// their turn scope first, including when discovery finds a new rollout.
@@ -628,7 +636,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		return err
 	}
 	cursor.currentTurnID = turnID
-	if time.Since(info.ModTime()) <= activeRolloutHorizon {
+	if r.activityNow().Sub(cursor.activityTime()) <= activeRolloutHorizon {
 		attention, err := latestSessionAttention(path, cursor)
 		if err != nil {
 			return err
@@ -671,6 +679,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 	// already observed by this process. Keep it only for the same thread.
 	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
 		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
+		cursor.lastGrowthAt = previous.lastGrowthAt
 	}
 	r.files[path] = cursor
 	return nil
@@ -686,7 +695,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 	if err != nil {
 		return err
 	}
-	cursor.lastModified = info.ModTime()
+	cursor.observeFile(info, r.activityNow())
 	if info.Size() < cursor.offset {
 		total, latestErr := latestTokenTotal(path)
 		if latestErr != nil {
@@ -736,6 +745,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			cursor.offset += int64(len(line))
+			cursor.observeEvent(line, r.activityNow())
 			if settings, ordinal, at, ok := rolloutSessionSettingsRecord(line, cursor.modelSettings); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.modelSettings = settings
@@ -1420,7 +1430,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	for _, cursor := range r.files {
 		if cursor.threadID != "" {
 			previous := byID[cursor.threadID]
-			if previous == nil || cursor.lastModified.After(previous.lastModified) {
+			if previous == nil || cursor.activityTime().After(previous.activityTime()) {
 				byID[cursor.threadID] = cursor
 			}
 		}
@@ -1430,7 +1440,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	groupHasFreshActivity := make(map[string]bool)
 	groupWorking := make(map[string]bool)
 	for _, cursor := range r.files {
-		quietFor := now.Sub(cursor.lastModified)
+		quietFor := now.Sub(cursor.activityTime())
 		_, writerActive := liveWriters[cursor.threadID]
 		exactStatus, exact := exactStatuses[cursor.threadID]
 		// A currently loaded, ready daemon thread is still active even without
@@ -1500,8 +1510,8 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		// root is demonstrably active, even if a linked child was left quiet
 		// overnight. Definite input and approval signals still propagate.
 		groupHasFreshActivity[rootID] = groupHasFreshActivity[rootID] || quietFor < fallbackAttentionAfter || exactWorking
-		if cursor.lastModified.After(group.LastActivity) {
-			group.LastActivity = cursor.lastModified
+		if cursor.activityTime().After(group.LastActivity) {
+			group.LastActivity = cursor.activityTime()
 		}
 		if group.WorkingDirectory == "" {
 			group.WorkingDirectory = cursor.workingDirectory

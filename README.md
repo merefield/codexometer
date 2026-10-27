@@ -1216,6 +1216,16 @@ The other top-level views are:
   minutes receives `CHECK SESSION`: a deliberately uncertain prompt that can
   also mean a long-running local tool. Subsequent activity from the root or any
   linked agent clears the uncertain group-level warning.
+  Fallback activity detection uses owned event timestamps and observed file-size
+  changes as well as modification times, since Windows can retain an old
+  modification time while a rollout writer remains open. Plain and compressed
+  histories share these signals; identical restoration, unchanged polls and
+  repeated reads of an incomplete record do not invent new activity.
+  Startup examines the last 256 KiB, extending backward by at most 4 MiB to
+  include an overlapping record. Records larger than the existing 4 MiB baseline
+  limit, incomplete records, future timestamps and inherited parent events are
+  conservatively excluded from timestamp-based freshness; later complete records
+  are still checked. These cancellable, bounded activity scans do not recount tokens.
   Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
   badge for server-reported model capacity and **TURN FAILED** for other failures.
   The row, full detail and attention pill retain the observed error message;
