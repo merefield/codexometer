@@ -744,16 +744,17 @@ or applies today's `/fast` setting retroactively.
   combination is unpriced and interrupts clean learning rather than silently
   applying an invented multiplier. Benchmark comparisons continue to use Standard rates.
 
-Tier pricing was reviewed on **12 October 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
+Tier pricing was reviewed on **27 October 2026**: **GPT-6.1 (Sol, Terra), GPT-6 (Astra, Sol, Luna) and GPT-5.6
 (Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
-legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices.
-**Flex** uses **½×** on the maintained GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
+legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices;
+GPT-6.1 Terra has no maintained Ultrafast rate.
+**Flex** uses **½×** on the maintained GPT-6.1/GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
 GPT-5.2 fallback pricing and published short-context Fast rates for GPT-5.2,
 GPT-5.3 Codex, GPT-5.4/Mini and GPT-5.5 are also maintained; GPT-5.5 Fast is 2.5×.
 Other explicit model/tier combinations and unpublished long-context Fast rates
 remain unavailable. Adjustments follow per-response long-context and cache
 calculations; reasoning output is not counted twice. See the official
-[Astra pricing](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[API pricing table](https://developers.openai.com/api/docs/pricing),
 [Codex speed guidance](https://learn.chatgpt.com/docs/agent-configuration/speed),
 and [API Fast-mode guide](https://developers.openai.com/api/docs/guides/fast-mode).
 The footer's standard-price retrieval date remains separate from this tier review.
@@ -868,7 +869,7 @@ hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were last reviewed on **2026-10-12**.
+and were last reviewed on **2026-10-27**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -2525,24 +2526,44 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The compiled table was last updated from
-that page on **2026-09-30**; every pricing-bearing Quota or Benchmark footer
+that page on **2026-10-27**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
-The maintained price table covers GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Sol, GPT-5.6 Terra,
-GPT-5.6 Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex.
+The maintained table uses these standard USD rates per million tokens. All
+entries were checked against the official pricing page on the date above.
 
-The September additions use these standard USD rates per million tokens:
-
-| Model | Input | Cached input | Cache writes | Output |
+| Model | Input | Cached input | Cache writes (30 minutes) | Output |
 | --- | ---: | ---: | ---: | ---: |
+| GPT-6 Astra | $10.00 | $1.00 | $12.50 | $50.00 |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | $1.00 | $0.05 | $1.25 | $5.00 |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | $2.00 | $0.20 | $2.50 | $10.00 |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | $0.10 | $0.01 | $0.125 | $0.50 |
+| GPT-5.6 Sol | $4.00 | $0.40 | $5.00 | $20.00 |
+| GPT-5.6 Terra | $2.00 | $0.20 | $2.50 | $12.00 |
+| GPT-5.6 Luna | $0.20 | $0.02 | $0.25 | $1.20 |
+| GPT-5.5 | $5.00 | $0.50 | Not published | $30.00 |
+| GPT-5.4 | $2.50 | $0.25 | Not published | $15.00 |
+| GPT-5.4 Mini | $0.75 | $0.075 | Not published | $4.50 |
+| GPT-5.3 Codex | $1.75 | $0.175 | Not published | $14.00 |
+| GPT-5.2 | $1.75 | $0.175 | Not published | $14.00 |
 
-Above 272,000 input tokens per response, input and cache rates double and
-output rates multiply by 1.5 for the entire response. Requested Fast/priority
-pricing doubles the applicable rates in live estimates; benchmark API EQ
-continues to use standard pricing. Existing model prices are retained.
+For GPT-6, GPT-6.1, GPT-5.6, GPT-5.5 and GPT-5.4 (not Mini), above 272,000
+input tokens per response, input and cache rates double and output rates
+multiply by 1.5 for the entire response. Models without maintained long-context
+rates remain unpriced above that threshold. Requested Fast/priority pricing
+doubles the applicable rates in live estimates, except GPT-5.5's 2.5× rate;
+long-context Fast pricing for GPT-5.4 and GPT-5.5 remains unpriced. Published
+Flex rates are half Standard; Ultrafast is 6× Standard for GPT-6 Astra and
+GPT-6.1 Sol only. GPT-6.1 Terra has no maintained Ultrafast price, and the
+unpublished ID `gpt-6-terra` is not treated as an alias. Benchmark API EQ
+continues to use standard pricing.
+
+Cache-write estimates use the published 30-minute rates. The observed token
+breakdown does not identify retention duration; 12-hour cache writes cost more
+and are not separately accounted for. Existing model prices are unchanged by
+this update; GPT-5.6 Sol's promotional pricing is currently advertised through
+at least 21 November 2026.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
