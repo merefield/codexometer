@@ -1754,6 +1754,8 @@ The action line shows only the current next step, Enter Review or C Confirm,
 without a second confirmation hint. Settings blocked during an active turn show
 **WAITING FOR IDLE**, with **Ctrl+R REFRESH** in the terminal composer
 (**F REFRESH** in the read-only picker) to read their availability again;
+speed changes are available during a turn and are sent immediately after confirmation,
+without a local queue. They configure subsequent turns, not a request already in flight.
 **HELP** identifies genuine browse-only entries. Model, reasoning and speed changes are provisional until C;
 reviewing or changing the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
@@ -1834,9 +1836,12 @@ for the upstream catalogues.
 
 Renames require a loaded session and explicit confirmation within 30 seconds; a concurrent rename or reconnect invalidates the confirmation. The updated name appears on the next telemetry refresh.
 
-Codex session-setting changes require a loaded, idle session and explicit confirmation within
-30 seconds. The command and options are revalidated before sending; stale
-connections, pending approvals and changed options fail closed. A successful
+Codex session-setting changes require a loaded session and explicit confirmation within
+30 seconds. Speed-only changes can be sent while working or waiting for an approval;
+other settings still require idle and no pending approval. The command and options
+are revalidated before sending; stale connections and changed options fail closed.
+A normal turn start/completion does not invalidate a speed confirmation, but changed
+model, reasoning or speed settings do. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already
 used the setting. Successful confirmations close the menu and return focus to
 the composer with a success notice; reopening fetches fresh options. Failed

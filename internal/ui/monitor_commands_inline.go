@@ -5,7 +5,29 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/merefield/codexometer/internal/codex"
 )
+
+func (m Model) inlineCommandPrefix(path string) string {
+	if strings.HasPrefix(path, "tier/") {
+		if m.monitorCommands.menu.Path == path && m.monitorCommands.menu.Picker {
+			return m.monitorCommands.menu.Title + " "
+		}
+		for _, menu := range []codex.SessionCommandMenu{m.monitorCommands.menu, m.monitorSuggestions.menu} {
+			for _, choice := range menu.Choices {
+				if choice.Next == path && strings.HasPrefix(choice.Label, "/") {
+					return choice.Label + " "
+				}
+			}
+		}
+		return "/" // Keep internal paths hidden while fetching the public alias.
+	}
+	prefix := "/" + strings.ReplaceAll(path, "/", " ")
+	if path != "" {
+		prefix += " "
+	}
+	return prefix
+}
 
 // Submenus keep the slash draft in the real composer. Only the suffix after
 // the current command path filters options; no catalogue refetch is needed.

@@ -48,6 +48,48 @@ func inlineCommandModel(t *testing.T) (Model, *inlineCommandClient) {
 	return next.(Model), f
 }
 
+func TestMonitorInlineSpeedKeepsPublicAliasAndConfirmsWhileWorking(t *testing.T) {
+	for _, mode := range []int{contextFull, contextWide} {
+		for _, path := range []string{"fast", "tier/flex"} {
+			m, base := suggestionTestModel(t)
+			m.height = 65
+			m.monitorSessionData = m.monitorSessionData[:1]
+			m.monitorSessionData[0].working = true
+			m.setRowContext("root-one", mode)
+			m.focusMonitorPrompt()
+			m.monitorPrompt.input.SetValue("/fast")
+			m.monitorSuggestions.menu.Choices = []codex.SessionCommandChoice{{Label: "/fast", Next: "tier/flex"}}
+			f := &speedCommandTestClient{commandTestClient: base.commandTestClient}
+			m.fetcher = f
+			next, cmd, _ := m.openMonitorCommands(path)
+			m = next
+			if cmd == nil || m.monitorPrompt.input.Value() != "/fast " {
+				t.Fatal("internal speed path leaked while loading", path, m.monitorPrompt.input.Value())
+			}
+			updated, _ := m.Update(cmd())
+			m = updated.(Model)
+			if !m.monitorCommands.inline || m.monitorCommands.prefix != "/fast " || m.monitorPrompt.input.Value() != "/fast " || len(m.commandChoiceIndices()) != 3 {
+				t.Fatal("speed picker lost public alias or choices", m.monitorPrompt.input.Value())
+			}
+			updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = updated.(Model)
+			if cmd != nil || f.calls != 0 || m.monitorCommands.reviewedChoice == "" {
+				t.Fatal("Enter did not review without sending")
+			}
+			updated, cmd = m.Update(key('c'))
+			m = updated.(Model)
+			if cmd == nil || !m.monitorCommands.busy {
+				t.Fatal("working turn blocked confirmation")
+			}
+			updated, _ = m.Update(cmd())
+			m = updated.(Model)
+			if f.calls != 1 || m.monitorCommands.open || m.monitorPrompt.input.Value() != "" || !strings.Contains(m.monitorPrompt.notice, "subsequent turns") {
+				t.Fatal("speed confirmation did not complete", f.calls, m.monitorPrompt.notice)
+			}
+		}
+	}
+}
+
 func TestMonitorInlineCommandsFilterAndDrillFromComposer(t *testing.T) {
 	for _, mode := range []int{contextFull, contextWide} {
 		m, f := inlineCommandModel(t)
