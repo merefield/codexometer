@@ -20,7 +20,7 @@ func inlinePromptTestModel() (Model, *promptTestClient) {
 }
 
 func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
-	for _, width := range []int{80, 120, 200} {
+	for _, width := range []int{80, 120, 148, 200, 320} {
 		m, c := inlinePromptTestModel()
 		m.width = width
 		w, h := m.monitorPromptSize()

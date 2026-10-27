@@ -191,7 +191,7 @@ func TestFollowupRowsWithoutIndent(t *testing.T) {
 
 func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 	for _, inline := range []bool{false, true} {
-		for _, size := range [][2]int{{80, 32}, {120, 40}, {200, 55}} {
+		for _, size := range [][2]int{{80, 32}, {120, 40}, {148, 55}, {200, 55}, {320, 55}} {
 			m, _ := queueTestModel(inline)
 			m.width, m.height = size[0], size[1]
 			lines := strings.Split(ansi.Strip(m.render()), "\n")

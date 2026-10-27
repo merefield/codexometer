@@ -64,7 +64,7 @@ func warningRowLayout(m Model) (int, int, int) {
 }
 
 func TestMonitorApprovalWarningResponsiveClicks(t *testing.T) {
-	for _, width := range []int{40, 60, 80, 120, 200} {
+	for _, width := range []int{40, 60, 80, 120, 148, 200, 320} {
 		m := approvalTestModel()
 		m.width = width
 		m.setRowContext("root-one", contextWide)

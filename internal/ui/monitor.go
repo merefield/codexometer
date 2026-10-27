@@ -309,7 +309,9 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 		return 0, width, false
 	}
 	available := max(width-gap, 2)
-	metricsWidth := max(available/3, 1)
+	// Keep rows aligned and give spare space to context/graphs. All rendering
+	// and hit targets share this split, including the inline composer/menus.
+	metricsWidth := min(max(available/3, 1), 48)
 	return metricsWidth, max(available-metricsWidth, 1), true
 }
 

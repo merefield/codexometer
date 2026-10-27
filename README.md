@@ -214,6 +214,8 @@ includes the explicit backgrounds used for consistent terminal rendering.
   only the local measurement interval and does not use a quota-reset token.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
+  Terminal session telemetry boxes keep their proportional width on narrow
+  screens but cap at 48 columns, leaving extra width for detail and graphs.
 - Dismissible session rows that automatically return on fresh activity,
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies

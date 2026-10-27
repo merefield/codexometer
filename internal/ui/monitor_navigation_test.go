@@ -10,7 +10,7 @@ import (
 )
 
 func TestMonitorNavigationRenderedButtons(t *testing.T) {
-	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 30}, {120, 40}, {200, 50}} {
+	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 30}, {120, 40}, {148, 40}, {200, 50}, {320, 50}} {
 		for _, mode := range []int{contextGraph, contextSplit, contextWide, contextFull} {
 			m := contextTestModel()
 			m.width, m.height = size[0], size[1]

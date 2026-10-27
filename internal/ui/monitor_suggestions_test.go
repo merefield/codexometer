@@ -87,7 +87,7 @@ func TestMonitorSuggestionsEscapeAndSessionIsolation(t *testing.T) {
 
 func TestMonitorSuggestionsRenderedClicks(t *testing.T) {
 	for _, mode := range []int{contextFull, contextWide} {
-		for _, width := range []int{100, 180} {
+		for _, width := range []int{100, 148, 180, 320} {
 			m, f := suggestionTestModel(t)
 			m.width = width
 			m.height = 65
