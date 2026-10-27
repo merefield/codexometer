@@ -97,7 +97,6 @@ type monitorQueueState struct {
 	item                                          codex.SessionQueuedMessage
 	input                                         monitorEditor
 	notice                                        string
-	composerRows                                  int
 	editorFocus                                   int
 	drafts                                        map[string]queueEditDraft
 }
@@ -378,7 +377,7 @@ func (m *Model) openQueueItem(index int, remove bool) tea.Cmd {
 	delete(q.drafts, key)
 	m.setRowContext(q.session, contextFull)
 	g := m.monitorDashboardLayout()
-	q.composerRows = max(3, m.monitorPromptRows(g.contentWidth, g.meterHeight))
+	q.input, _ = m.queueEditorLayout(g.contentWidth, g.meterHeight)
 	m.monitorPrompt.input.Blur()
 	if remove {
 		return nil
@@ -478,7 +477,7 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	if q.open {
 		g := m.monitorDashboardLayout()
-		q.input.configure(g.contentWidth, max(q.composerRows, 3)+6)
+		q.input, _ = m.queueEditorLayout(g.contentWidth, g.meterHeight)
 		if mouse, ok := msg.(tea.MouseMsg); ok {
 			point := mouse.Mouse()
 			if m.editorNavigationAt(point.X, point.Y) && !q.busy {
@@ -564,7 +563,7 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 					q.input.Blur()
 					q.next = time.Time{}
 				}
-				_, _, editorY := monitorContextBodyLayout(g.meterHeight, min(max(q.composerRows, 3), max(g.meterHeight-5, 1)))
+				_, editorY := m.queueEditorLayout(g.contentWidth, g.meterHeight)
 				if q.hover == "" && !q.busy && !q.deleting && point.X >= 4 && point.X < g.contentWidth && point.Y >= g.meterY+editorY && point.Y < g.meterY+g.meterHeight-3 {
 					q.editorFocus = 0
 					return m, q.input.Focus(), true
@@ -679,14 +678,23 @@ func (m Model) changeQueueItem() (Model, tea.Cmd, bool) {
 	}, true
 }
 
+// Reserve the borders, two introductory lines, notice and buttons. Let the
+// textarea grow to fit its own content; oversized drafts scroll without loss.
+// Rendering and click testing must use the same content-dependent origin.
+func (m Model) queueEditorLayout(width, height int) (monitorEditor, int) {
+	input := m.monitorQueue.input
+	input.configure(width, height+2) // configure normally reserves eight rows; this pane needs six.
+	rows := min(input.Height()+2, max(height-4, 1))
+	_, _, y := monitorContextBodyLayout(height, rows)
+	return input, y
+}
+
 func (m Model) renderQueueEditor() string {
 	q := m.monitorQueue
 	colors := paletteFor(m.theme)
 	g := m.monitorDashboardLayout()
 	w, h := g.contentWidth, g.meterHeight
-	rows := min(max(q.composerRows, 3), max(h-5, 1))
-	_, _, editorY := monitorContextBodyLayout(h, rows)
-	q.input.configure(w, rows+6)
+	input, editorY := m.queueEditorLayout(w, h)
 	title := i18n.Text("EDIT QUEUED MESSAGE")
 	if q.deleting {
 		title = i18n.Text("DELETE QUEUED MESSAGE")
@@ -700,7 +708,7 @@ func (m Model) renderQueueEditor() string {
 	if len(lines) > 1 {
 		lines[1] = i18n.Text("Codex may start this message while you review it. Esc: cancel.")
 	}
-	body := q.input.View(colors)
+	body := input.View(colors)
 	if q.deleting {
 		body = ansi.Hardwrap(q.item.Text, max(w-4, 1), true)
 	}

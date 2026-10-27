@@ -95,7 +95,7 @@ Subtle animated dots in inline and full-screen detail indicate observed work, di
 
 On a shared-server session ready for input, the selected full-width detail row also offers a follow-up composer when there is room for the complete context. Click or press Enter to write, Enter to send, and Escape to leave the editor. Smaller panels and structured questions keep full-screen detail as the fallback.
 
-**Live command menus:** type `/` in the composer for a vertical popup with help that shrinks as you type: Up/Down selects, Tab completes, Enter opens options and Escape dismisses. Terminal and writable web mode discover model/reasoning options, advertised speed tiers, collaboration modes and allowed permission profiles. Session-setting changes require confirmation and an idle shared-server session. Skills, apps, MCP tools, hooks and experimental flags have browse-only catalogues; this is not every Codex CLI slash command. Unsupported catalogues stay hidden, and slash text is never silently sent as a prompt (`//` escapes a literal leading slash).
+**Live command menus:** type `/` in the composer for a vertical popup with help that shrinks as you type: Up/Down selects, Tab completes, Enter opens options and Escape dismisses. Terminal and writable web mode discover model/reasoning options, advertised speed tiers, collaboration modes and allowed permission profiles. Changes require confirmation and a loaded shared-server session. Speed changes can be sent immediately during a turn for subsequent turns; other settings require idle. Skills, apps, MCP tools, hooks and experimental flags have browse-only catalogues; this is not every Codex CLI slash command. Unsupported catalogues stay hidden, and slash text is never silently sent as a prompt (`//` escapes a literal leading slash).
 
 **Your own status line:** full session detail has a configurable footer for model/reasoning, speed, tokens and directory. `/statusline` offers checkboxes, ordering and a live preview; choose multiple fields or hide it entirely. The settings belong to Codexometer and persist as display preferences. Web's footer configuration also works in read-only mode.
 
@@ -114,6 +114,8 @@ Ordinary Codex CLI sessions work out of the box. For the best Sessions feedback,
 Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 168` for a week (handy for testing known later expiries). The default is 72 hours; `0` disables expiry warnings while retaining the consumption-based reset button.
 
 Expiry warnings are reminders to review, not instructions to reset immediately. Confirmation warns that unused allowance does not carry over or stack and that the weekly schedule changes. Missing or incomplete expiry information is explicitly flagged: no warning is not proof that nothing expires soon, and undisclosed credits may expire sooner.
+
+Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, or **TURN FAILED** with the observed explanation. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch.
 
 ## An experimental browser companion
 

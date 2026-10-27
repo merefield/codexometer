@@ -1,4 +1,8 @@
 {
+  "ERRORS": "エラー",
+  "MODEL BUSY": "モデル混雑",
+  "TURN FAILED": "ターン失敗",
+  "TURN ERROR": "ターンエラー",
   "PACE": "ペース",
   "ZONE": "ゾーン",
   "WINDOW START": "期間の開始",

@@ -170,7 +170,13 @@ func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path st
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
-	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, thread.Status.Type, thread.Name, menu.Revision})
+	status := thread.Status.Type
+	if menu.Picker {
+		// Speed overrides target future turns, so starting/completing a turn
+		// does not invalidate confirmation. Effective settings still do.
+		status = ""
+	}
+	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, status, thread.Name, menu.Revision})
 	return normalizeCommandMenu(menu)
 }
 
@@ -252,7 +258,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Changes target this session only and require confirmation. Model and permission settings are available only while idle. Catalogues marked browse-only do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Changes target this session only and require confirmation. Speed changes can be sent during a turn and apply to subsequent turns; other settings require idle. Catalogues marked browse-only do not execute tools or change global configuration."
 		return m, nil
 	}
 	if parts[0] == "cd" || parts[0] == "cwd" || parts[0] == "pwd" {
@@ -289,7 +295,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.Revision = commandDigest([]any{current, t.Cwd})
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
-			if t.Status.Type != "idle" {
+			if t.Status.Type != "idle" && parts[0] != "tier" {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Waiting for idle. Refresh options when this turn finishes."})
 				return
 			}
@@ -436,8 +442,10 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 	}
 	for _, o := range m.Choices {
 		if o.ID == choice && o.Action {
+			_, hasTier := o.params["serviceTier"]
+			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
 			p.mu.Lock()
-			valid := p.connection == conn && (o.method == "thread/name/set" || p.contexts[id] == nil || len(p.contexts[id].requests) == 0)
+			valid := p.connection == conn && (speedOnly || o.method == "thread/name/set" || p.contexts[id] == nil || len(p.contexts[id].requests) == 0)
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand

@@ -300,7 +300,7 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 }
 
 func monitorNeedsAttention(attention codex.SessionAttention) bool {
-	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck
+	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck || attention == codex.SessionAttentionError
 }
 
 func monitorSessionColumnWidths(width int) (int, int, bool) {
@@ -309,7 +309,9 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 		return 0, width, false
 	}
 	available := max(width-gap, 2)
-	metricsWidth := max(available/3, 1)
+	// Keep rows aligned and give spare space to context/graphs. All rendering
+	// and hit targets share this split, including the inline composer/menus.
+	metricsWidth := min(max(available/3, 1), 48)
 	return metricsWidth, max(available-metricsWidth, 1), true
 }
 
@@ -500,6 +502,8 @@ func monitorAttentionLabel(attention codex.SessionAttention) string {
 		return i18n.Text("APPROVAL NEEDED")
 	case codex.SessionAttentionCheck:
 		return i18n.Text("CHECK SESSION")
+	case codex.SessionAttentionError:
+		return i18n.Text("TURN FAILED")
 	default:
 		return i18n.Text("INPUT NEEDED")
 	}
@@ -513,6 +517,8 @@ func monitorAttentionStatus(attention codex.SessionAttention) string {
 		return i18n.Text("APPROVAL")
 	case codex.SessionAttentionCheck:
 		return i18n.Text("CHECK")
+	case codex.SessionAttentionError:
+		return i18n.Text("TURN FAILED")
 	default:
 		return i18n.Text("INPUT")
 	}

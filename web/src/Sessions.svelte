@@ -65,6 +65,9 @@
       : sessions[0]?.id,
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
+  function isFailure(session: Session) {
+    return ['MODEL BUSY', 'TURN FAILED'].includes(session.status);
+  }
   // Parent rows already include linked-agent usage. Sum each listed row once;
   // do not add agent counts or activity samples to its observed token counter.
   let totals = $derived([
@@ -74,15 +77,41 @@
       ['WORKING', 'WORKING'],
       ['AWAITING APPROVAL', 'APPROVAL NEEDED'],
       ['AWAITING INPUT', 'INPUT NEEDED'],
+      ['ERRORS', 'ERRORS'],
       ['CHECK · INFERRED', 'CHECK SESSION'],
     ].map(([label, status]) => [
       label,
-      stale ? '—' : number(sessions.filter((s) => s.status === status).length),
+      stale
+        ? '—'
+        : number(
+            sessions.filter((s) =>
+              status === 'ERRORS' ? isFailure(s) : s.status === status,
+            ).length,
+          ),
     ]),
   ]);
   let attention = $derived(
-    sessions.filter((s) =>
-      ['INPUT NEEDED', 'APPROVAL NEEDED', 'CHECK SESSION'].includes(s.status),
+    sessions
+      .filter(
+        (s) =>
+          ['INPUT NEEDED', 'APPROVAL NEEDED'].includes(s.status) ||
+          isFailure(s),
+      )
+      .sort((a, b) => attentionRank(a) - attentionRank(b)),
+  );
+  function attentionRank(s: Session) {
+    return s.status === 'APPROVAL NEEDED'
+      ? 0
+      : s.status === 'INPUT NEEDED'
+        ? 1
+        : 2;
+  }
+  let completed = $derived(
+    sessions.filter(
+      (s) =>
+        s.status === 'TURN COMPLETE' &&
+        !triggers.some((t) => t.session === s.id) &&
+        !profiles.some((p) => p.session === s.id && p.pending),
     ),
   );
 
@@ -151,6 +180,10 @@
       return 'Last observation only — refresh unavailable. Check Codex for current state.';
     if (session.status === 'CHECK SESSION')
       return 'INFERRED INACTIVITY — a quiet session, not a confirmed input or approval request. Local tools may still be running.';
+    if (isFailure(session))
+      return session.status === 'MODEL BUSY'
+        ? 'CONFIRMED TURN FAILURE — the selected model was at capacity. Choose another model with /model or retry later in Codex. This is not a quota-exhaustion signal.'
+        : 'CONFIRMED TURN FAILURE — inspect the error below before sending another prompt. No automatic retry or model change.';
     if (
       live.data?.control &&
       ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(session.status)
@@ -191,7 +224,7 @@
     <pre>{session.approvalContext}</pre>
     <hr />
   {/if}
-  {#if explanation(session) && (!full || stale || session.status === 'CHECK SESSION')}<p
+  {#if explanation(session) && (!full || stale || session.status === 'CHECK SESSION' || isFailure(session))}<p
       class="attention-note"
       class:inferred={session.status === 'CHECK SESSION'}
     >
@@ -245,7 +278,9 @@
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
 </div>
 <dl class="session-totals" aria-label="Session totals" class:stale>
-  {#each totals as [label, value]}<div>
+  {#each totals as [label, value]}<div
+      class:failed={label === 'ERRORS' && value !== '0' && value !== '—'}
+    >
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>{/each}
@@ -265,13 +300,15 @@
     verified quota and settings can be updated; previous outcome notices remain
     visible.
   </p>{/if}
-{#if (attention.length || profiles.some((p) => p.pending) || triggers.length) && !stale}<nav
+{#if (attention.length || completed.length || profiles.some((p) => p.pending) || triggers.length) && !stale}<nav
     class="attention-summary"
     aria-label="Sessions needing attention"
   >
     {#each attention as session}<a
         class="button"
-        class:approval={session.status === 'APPROVAL NEEDED'}
+        class:approval={session.status === 'APPROVAL NEEDED' ||
+          session.status === 'INPUT NEEDED' ||
+          isFailure(session)}
         href={'#/sessions/' + encodeURIComponent(session.id)}
         onclick={() => select(session.id)}
         >{session.status}
@@ -298,6 +335,13 @@
           profile.session}</a
       >
     {/each}
+    {#each completed as session}<a
+        class="button"
+        href={'#/sessions/' + encodeURIComponent(session.id)}
+        onclick={() => select(session.id)}
+        >TURN COMPLETE {Array.from(session.id).slice(-5).join('').toUpperCase()} //
+        {session.name || session.directory || session.id}</a
+      >{/each}
     {#each triggers as trigger}<a
         class="button"
         href={'#/sessions/' + encodeURIComponent(trigger.session)}
@@ -313,9 +357,10 @@
 {#if params.id}
   {#if selected}<section class="panel full-detail">
       <div class="detail-heading">
-        <h2>
+        <h2 class:failed={isFailure(selected) && !stale && !profileFocused}>
           <span
             class="lamp lit"
+            class:failed={isFailure(selected) && !stale}
             class:working={selected.status === 'WORKING' && !stale}
           ></span>{stale
             ? 'STALE'
@@ -431,11 +476,13 @@
         <h2>
           <a
             class="status-detail"
+            class:failed={isFailure(session) && !stale}
             href={'#/sessions/' + encodeURIComponent(session.id)}
             onclick={() => select(session.id)}
           >
             <span
               class="lamp lit"
+              class:failed={isFailure(session) && !stale}
               class:working={session.status === 'WORKING' && !stale}
             ></span>{stale ? 'STALE' : sessionStatus(session)}
           </a>
@@ -475,16 +522,18 @@
           href={'#/sessions/' + encodeURIComponent(session.id)}
           onclick={() => select(session.id)}>FULL DETAIL →</a
         >
-        {#if !stale && ['APPROVAL NEEDED', 'INPUT NEEDED', 'CHECK SESSION'].includes(session.status)}<p
+        {#if !stale && (['APPROVAL NEEDED', 'INPUT NEEDED', 'CHECK SESSION'].includes(session.status) || isFailure(session))}<p
             class="attention-note"
           >
             {session.status === 'CHECK SESSION'
               ? 'INFERRED INACTIVITY'
-              : live.data?.control
-                ? 'OPEN FULL DETAIL OR REPLY IN CODEX'
-                : session.status === 'APPROVAL NEEDED'
-                  ? 'APPROVE OR DECLINE IN CODEX'
-                  : 'REPLY IN CODEX'}
+              : isFailure(session)
+                ? 'OPEN DETAIL FOR THE TURN ERROR'
+                : live.data?.control
+                  ? 'OPEN FULL DETAIL OR REPLY IN CODEX'
+                  : session.status === 'APPROVAL NEEDED'
+                    ? 'APPROVE OR DECLINE IN CODEX'
+                    : 'REPLY IN CODEX'}
           </p>{/if}
       </div>
       {#if level > 0}<div class="panel context">
@@ -529,3 +578,13 @@
       Codexometer.
     </p>{/if}
 {/if}
+
+<style>
+  .failed {
+    color: var(--approval);
+  }
+  .lamp.failed {
+    background: var(--approval);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--approval) 40%, transparent);
+  }
+</style>

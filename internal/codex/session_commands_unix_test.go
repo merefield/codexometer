@@ -48,7 +48,7 @@ func TestSessionCommandsModelAndTier(t *testing.T) {
 	f.commandStatus = "active"
 	f.mu.Unlock()
 	if err = p.ExecuteSessionCommand(ctx, "one", m.Path, m.Revision, m.Choices[0].ID); err == nil {
-		t.Fatal("accepted action after turn started")
+		t.Fatal("accepted stale speed settings")
 	}
 	if _, err = p.SessionCommands(ctx, "closed", "model"); err == nil {
 		t.Fatal("opened unloaded session")
@@ -415,25 +415,81 @@ func TestSessionCommandAvailabilityDistinguishesBlockedSettingsFromHelp(t *testi
 	f.commandStatus = "active"
 	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
 	f.mu.Unlock()
-	for _, path := range []string{"fast", "model/small"} {
-		menu, err := p.SessionCommands(context.Background(), "one", path)
-		if err != nil || len(menu.Choices) == 0 {
-			t.Fatal(menu, err)
+	menu, err := p.SessionCommands(context.Background(), "one", "model/small")
+	if err != nil || len(menu.Choices) == 0 {
+		t.Fatal(menu, err)
+	}
+	for _, choice := range menu.Choices {
+		if choice.Action || !strings.HasPrefix(choice.Unavailable, "Waiting for idle.") {
+			t.Fatalf("blocked setting lacks reason: %+v", choice)
 		}
-		for _, choice := range menu.Choices {
-			if choice.Action || !strings.HasPrefix(choice.Unavailable, "Waiting for idle.") {
-				t.Fatalf("blocked setting lacks reason: %+v", choice)
-			}
-			if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err == nil {
-				t.Fatal("executed unavailable option")
-			}
+		if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err == nil {
+			t.Fatal("executed unavailable option")
 		}
 	}
 	f.mu.Lock()
 	f.commandStatus = "idle"
 	f.mu.Unlock()
-	menu, err := p.SessionCommands(context.Background(), "one", "fast")
+	menu, err = p.SessionCommands(context.Background(), "one", "fast")
 	if err != nil || !menu.Choices[0].Action || menu.Choices[0].Unavailable != "" {
 		t.Fatal("refreshed idle setting remains blocked", menu, err)
+	}
+}
+
+func TestSessionSpeedChangesDuringTurnsAndPendingApprovals(t *testing.T) {
+	for _, tc := range []struct{ before, after string }{{"idle", "active"}, {"active", "idle"}, {"active", "active"}, {"systemError", "systemError"}} {
+		t.Run(tc.before+"-"+tc.after, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			f.commandStatus = tc.before
+			f.notify = tc.before == "active" && tc.after == "active"
+			f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
+			ctx := context.Background()
+			menu, err := p.SessionCommands(ctx, "one", "fast")
+			if err != nil || !menu.Picker || len(menu.Choices) != 3 {
+				t.Fatal("speed menu unavailable", menu, err)
+			}
+			for _, choice := range menu.Choices {
+				if !choice.Action || choice.Unavailable != "" {
+					t.Fatal("speed option blocked during turn", choice)
+				}
+			}
+			f.mu.Lock()
+			f.commandStatus = tc.after
+			f.mu.Unlock()
+			p.mu.Lock()
+			p.contexts = map[string]*daemonContextState{"one": {requests: map[string]SessionContext{"approval": {Kind: SessionContextApproval}}}}
+			p.mu.Unlock()
+			if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[1].ID); err != nil {
+				t.Fatal("speed confirmation rejected after turn transition or pending approval", err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.writes) != 1 || len(f.writes[0]) != 2 || f.writes[0]["threadId"] != "one" || f.writes[0]["serviceTier"] != "flex" {
+				t.Fatal("expected one immediate, speed-only, session-scoped write", f.writes)
+			}
+			if f.sessions["one"].Model != "small" || f.sessions["one"].Effort != "medium" || f.sessions["two"].Tier != nil {
+				t.Fatal("speed write changed unrelated settings")
+			}
+		})
+	}
+}
+
+func TestActiveSessionSpeedUpdateStillRequiresVerification(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.commandStatus, f.queued = "active", true
+	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	menu, err := p.SessionCommands(ctx, "one", "fast")
+	if err != nil || !menu.Choices[1].Action {
+		t.Fatal("speed blocked", menu, err)
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[1].ID); err == nil {
+		t.Fatal("acknowledged but unverified speed update reported success")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.writes) != 1 || f.sessions["one"].Tier != nil {
+		t.Fatal("unverified update was retried or changed the stored speed", f.writes)
 	}
 }

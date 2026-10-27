@@ -140,6 +140,15 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 	}
 }
 
+func TestDaemonLateFailedCompletionCannotStopNewTurn(t *testing.T) {
+	p := &daemonStatusProvider{contexts: map[string]*daemonContextState{}, statuses: map[string]sessionRuntimeStatus{}}
+	p.promptLifecycleLocked("turn/started", json.RawMessage(`{"threadId":"root","turn":{"id":"new"}}`))
+	p.promptLifecycleLocked("turn/completed", json.RawMessage(`{"threadId":"root","turn":{"id":"old","status":"failed"}}`))
+	if p.statuses["root"] != sessionRuntimeWorking || p.contexts["root"].activeTurn != "new" {
+		t.Fatal("old completion stopped new turn")
+	}
+}
+
 func TestDaemonSuccessfulCompletionIsSeparateFromIdle(t *testing.T) {
 	for _, status := range []string{"completed", "interrupted", "failed", ""} {
 		t.Run(status, func(t *testing.T) {
@@ -154,6 +163,9 @@ func TestDaemonSuccessfulCompletionIsSeparateFromIdle(t *testing.T) {
 			want := sessionRuntimeIdle
 			if status == "completed" {
 				want = sessionRuntimeComplete
+			}
+			if status == "failed" {
+				want = sessionRuntimeFailed
 			}
 			if got := p.statusSnapshotLocked([]string{"root"}).Statuses["root"]; got != want {
 				t.Fatalf("completion %q: got %v want %v", status, got, want)

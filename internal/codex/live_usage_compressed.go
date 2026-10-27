@@ -135,7 +135,7 @@ func baselineRolloutRecord(c *rolloutCursor, line []byte) {
 	if turn, ordinal, at, ok := rolloutTurnIDRecord(line); ok && tokenRecordIsOwned(ordinal, c.subagentHistoryStartOrdinal, at, c.nonRoot, c.startedAt) {
 		c.currentTurnID = turn
 	}
-	if attention, ordinal, at, ok := sessionAttentionRecord(line); ok && tokenRecordIsOwned(ordinal, c.subagentHistoryStartOrdinal, at, c.nonRoot, c.startedAt) {
+	if attention, ordinal, at, ok := sessionAttentionRecord(line, c.currentTurnID); ok && tokenRecordIsOwned(ordinal, c.subagentHistoryStartOrdinal, at, c.nonRoot, c.startedAt) {
 		c.attention = attention
 	}
 	if preview, ok := rolloutContextRecord(line, c); ok {

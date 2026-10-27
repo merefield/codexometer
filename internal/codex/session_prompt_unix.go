@@ -25,6 +25,9 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 	if json.Unmarshal(raw, &event) != nil || event.ThreadID == "" {
 		return
 	}
+	if s := p.contexts[event.ThreadID]; s != nil && (method == "turn/completed" || method == "turn/interrupted") && !s.acceptTurn(event.Turn.ID) {
+		return
+	}
 	if method == "turn/started" {
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}

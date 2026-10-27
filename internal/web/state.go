@@ -371,6 +371,8 @@ func sessionStatus(s codex.LiveUsageSession) string {
 		return "APPROVAL NEEDED"
 	case codex.SessionAttentionCheck:
 		return "CHECK SESSION"
+	case codex.SessionAttentionError:
+		return codex.SessionFailureLabel(s.Context)
 	case codex.SessionAttentionComplete:
 		return "TURN COMPLETE"
 	}
@@ -385,6 +387,8 @@ func sessionStatus(s codex.LiveUsageSession) string {
 
 func contextKind(k codex.SessionContextKind) string {
 	switch k {
+	case codex.SessionContextFailure:
+		return "TURN ERROR"
 	case codex.SessionContextReply:
 		return "LAST REPLY"
 	case codex.SessionContextApproval:

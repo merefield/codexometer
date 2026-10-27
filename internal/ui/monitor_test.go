@@ -625,7 +625,7 @@ func TestDismissedMonitorSessionReturnsOnlyAfterRenewedActivity(t *testing.T) {
 }
 
 func TestMonitorSessionDismissControlRendersAndMatchesClickSurface(t *testing.T) {
-	for _, size := range []struct{ width, height int }{{40, 24}, {60, 24}, {100, 36}, {160, 45}} {
+	for _, size := range []struct{ width, height int }{{40, 24}, {60, 24}, {100, 36}, {148, 45}, {160, 45}, {320, 45}} {
 		model := Model{
 			snapshot: codex.DemoSnapshot(), width: size.width, height: size.height,
 			meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: time.Now(),
