@@ -218,7 +218,8 @@ includes the explicit backgrounds used for consistent terminal rendering.
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
   exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
-  open turn is definite `INPUT NEEDED`; an otherwise active session with no
+  open turn is `TURN COMPLETE`, not a request for input; an otherwise active
+  session with no
   rollout activity for three minutes is cautiously labelled `CHECK SESSION`.
   For a root with linked agents, fresh activity from any member suppresses that
   uncertain fallback; definite input or approval signals still propagate from
@@ -1168,7 +1169,7 @@ The other top-level views are:
   session. It automatically establishes a zero baseline across locally active
   Codex sessions when Codexometer starts. The **SESSION TOTALS** readout follows newly appended
   token telemetry in a compact summary strip: **TOKENS**, visible **SESSIONS**,
-  **WORKING**, **APPROVAL**, **INPUT**, and **CHECK*** counts. CHECK* means inferred
+  **ACTIVE**, **WORKING**, **APPROVAL**, **INPUT**, **ERRORS**, and **CHECK*** counts. CHECK* means inferred
   inactivity, not a confirmed request. Linked agents are already included in
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
@@ -1213,6 +1214,19 @@ The other top-level views are:
   minutes receives `CHECK SESSION`: a deliberately uncertain prompt that can
   also mean a long-running local tool. Subsequent activity from the root or any
   linked agent clears the uncertain group-level warning.
+  Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
+  badge for server-reported model capacity and **TURN FAILED** for other failures.
+  The row, full detail and attention pill retain the observed error message;
+  capacity is not interpreted as quota exhaustion. Both the shared app-server's
+  failed-turn/error events and local rollout error records are supported. Errors
+  that Codex is still automatically retrying remain **WORKING**, as do non-turn
+  failures such as a rejected steering attempt. A new turn on the affected
+  thread clears its prior failure;
+  stale events from older identified turns cannot fail the new one. Errors from
+  linked agents propagate to the parent row, below pending approvals and questions.
+  No prompt is automatically retried and no model is automatically switched.
+  **INPUT** is reserved for observed blocking questions/requests, not a completed
+  turn without a final reply. Normal completion remains **TURN COMPLETE**.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Sessions recording can remain as an
@@ -1590,7 +1604,8 @@ live session states and are not persisted across launches.
 
 **Active** includes sessions identified as active by the latest observation,
 including working sessions and those waiting for input, approval or their next
-turn. It excludes inferred **CHECK SESSION** entries and retained inactive rows.
+turn. It excludes confirmed failures, inferred **CHECK SESSION** entries and
+retained inactive rows.
 An app-server-confirmed loaded, idle/ready session remains Active even after
 five minutes without session-file updates; that confirmation is not carried
 forward if it disappears or the daemon disconnects. Without the daemon, the
@@ -1615,7 +1630,8 @@ Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
 An **attention strip** beneath the summary provides direct links to visible
-sessions, ordered **Approval → Input → Turn Complete**. Approval and input pills
+sessions, ordered **Approval → Input → Errors → quota-threshold reviews → Turn Complete → triggers**.
+Approval, input and error pills
 use the theme's warning colour; completed turns use a quieter, non-bold theme-primary
 colour to mean “your result is ready”, not “a reply is required”. Completion pills
 disappear when work resumes, the completion state clears or the session is dismissed.
@@ -2916,7 +2932,10 @@ available from the existing reader.
 - Attention links jump to the relevant session. Approval indicators remain
   outside scrollable reply text; available commands are separated from their
   justification. Missing commands are explicitly labelled, never reconstructed.
-- **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **CHECK SESSION**
+- **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **MODEL BUSY /
+  TURN FAILED** represent confirmed turn errors and appear in **ERRORS**, with
+  the observed explanation in detail. Retrying errors do not raise failure pills.
+  **CHECK SESSION**
   is labelled inferred inactivity and is not proof that a reply is required.
   **TURN COMPLETE** is informational. Disconnection or failed session refresh
   suppresses live attention indicators and marks the display stale.

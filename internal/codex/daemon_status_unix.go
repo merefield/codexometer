@@ -155,6 +155,9 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
 				status = sessionRuntimeComplete
 			}
+			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.latest.Kind == SessionContextFailure {
+				status = sessionRuntimeFailed
+			}
 			statuses[threadID] = status
 			if cwd := p.threadDirectories[threadID]; cwd != "" {
 				directories[threadID] = cwd

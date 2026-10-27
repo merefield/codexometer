@@ -1,4 +1,8 @@
 {
+  "ERRORS": "错误",
+  "MODEL BUSY": "模型繁忙",
+  "TURN FAILED": "轮次失败",
+  "TURN ERROR": "轮次错误",
   "PACE": "速率",
   "ZONE": "区域",
   "WINDOW START": "窗口开始",

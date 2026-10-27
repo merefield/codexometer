@@ -17,6 +17,7 @@ type daemonContextState struct {
 	ended                                           bool
 	streamItem, streamTurn, streamText, streamPhase string
 	activeTurn                                      string
+	finishedTurn                                    string
 	turnToken                                       string
 	activity                                        sessionActivityState
 	approvalsLimited                                bool
@@ -34,9 +35,12 @@ type contextCommandItem struct{ Command, CWD string }
 func daemonContextEvent(states map[string]*daemonContextState, method string, id, raw json.RawMessage, now time.Time) {
 	var p struct {
 		Turn struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
+			ID     string          `json:"id"`
+			Status string          `json:"status"`
+			Error  json.RawMessage `json:"error"`
 		} `json:"turn"`
+		Error                json.RawMessage   `json:"error"`
+		WillRetry            *bool             `json:"willRetry"`
 		TurnID               string            `json:"turnId"`
 		ItemID               string            `json:"itemId"`
 		Delta                string            `json:"delta"`
@@ -98,6 +102,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		delete(states, p.ThreadID)
 		return
 	case "turn/completed", "turn/interrupted":
+		if !state.acceptTurn(p.Turn.ID) {
+			return
+		}
+		state.finishedTurn = p.Turn.ID
 		// Keep the observed task alongside its reply until the next turn.
 		state.ended = true
 		state.userItems = nil
@@ -115,6 +123,25 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		}
 		state.activity = sessionActivityState{}
 		state.latest.Activity = SessionActivity{}
+		if method == "turn/completed" && p.Turn.Status == "failed" {
+			c.TurnID = p.Turn.ID
+			if len(p.Turn.Error) > 0 && string(p.Turn.Error) != "null" || state.latest.Kind != SessionContextFailure {
+				state.latest = sessionFailureContext(c, p.Turn.Error)
+			}
+		}
+		return
+	case "error":
+		if p.WillRetry == nil || *p.WillRetry || state.ended || state.activeTurn != "" && p.TurnID != state.activeTurn {
+			return
+		}
+		failure := sessionFailureContext(c, p.Error)
+		if !failureAffectsTurn(failure) {
+			return
+		}
+		state.latest = failure
+		state.ended, state.completed = true, false
+		state.streamItem, state.streamText = "", ""
+		clear(state.requests)
 		return
 	case "serverRequest/resolved":
 		delete(state.requests, string(p.RequestID))
@@ -355,6 +382,14 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	} else {
 		state.latest = c
 	}
+}
+
+func (s *daemonContextState) acceptTurn(id string) bool {
+	current := s.activeTurn
+	if current == "" {
+		current = s.finishedTurn
+	}
+	return id == "" || current == "" || id == current
 }
 
 func distinctApprovalContext(prose, reason string) string {

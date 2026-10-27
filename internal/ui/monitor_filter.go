@@ -16,6 +16,7 @@ const (
 	monitorFilterWorking
 	monitorFilterApproval
 	monitorFilterInput
+	monitorFilterErrors
 	monitorFilterCheck
 	monitorFilterCount
 )
@@ -28,6 +29,8 @@ func monitorSessionStatus(s monitorSession) monitorStatusFilter {
 		return monitorFilterInput
 	case codex.SessionAttentionCheck:
 		return monitorFilterCheck
+	case codex.SessionAttentionError:
+		return monitorFilterErrors
 	case codex.SessionAttentionNone:
 		if s.working {
 			return monitorFilterWorking
@@ -50,7 +53,7 @@ func (m Model) monitorSessionInList(s monitorSession) bool {
 // Use the existing live activity signal; a quiet fallback CHECK is not proof of
 // recent activity, even while its writer process remains open.
 func monitorSessionRecentlyActive(s monitorSession) bool {
-	return s.active && s.attention != codex.SessionAttentionCheck
+	return s.active && s.attention != codex.SessionAttentionCheck && s.attention != codex.SessionAttentionError
 }
 
 func (m Model) monitorListSessionCount() int {

@@ -300,7 +300,7 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 }
 
 func monitorNeedsAttention(attention codex.SessionAttention) bool {
-	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck
+	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck || attention == codex.SessionAttentionError
 }
 
 func monitorSessionColumnWidths(width int) (int, int, bool) {
@@ -500,6 +500,8 @@ func monitorAttentionLabel(attention codex.SessionAttention) string {
 		return i18n.Text("APPROVAL NEEDED")
 	case codex.SessionAttentionCheck:
 		return i18n.Text("CHECK SESSION")
+	case codex.SessionAttentionError:
+		return i18n.Text("TURN FAILED")
 	default:
 		return i18n.Text("INPUT NEEDED")
 	}
@@ -513,6 +515,8 @@ func monitorAttentionStatus(attention codex.SessionAttention) string {
 		return i18n.Text("APPROVAL")
 	case codex.SessionAttentionCheck:
 		return i18n.Text("CHECK")
+	case codex.SessionAttentionError:
+		return i18n.Text("TURN FAILED")
 	default:
 		return i18n.Text("INPUT")
 	}

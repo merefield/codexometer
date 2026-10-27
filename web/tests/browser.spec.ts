@@ -3502,6 +3502,93 @@ test('global detail controls cover more than 100 sessions and survive reload', a
   await expect(page.locator('.context')).toHaveCount(105);
 });
 
+test('session failures have a separate count, ordered pills, error detail and live recovery', async ({
+  page,
+  pairingURL,
+}) => {
+  const snapshot = {
+    version: 'test',
+    meters: [],
+    credits: [],
+    creditCount: 0,
+    usage: null,
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    sessions: [
+      'TURN COMPLETE',
+      'MODEL BUSY',
+      'INPUT NEEDED',
+      'APPROVAL NEEDED',
+      'TURN FAILED',
+      'CHECK SESSION',
+    ].map((status, index) => ({
+      id: 'failure-test-' + index,
+      name: 'Session ' + index,
+      directory: '/test/' + index,
+      tokens: 10,
+      agents: 0,
+      status,
+      contextKind: ['MODEL BUSY', 'TURN FAILED'].includes(status)
+        ? 'TURN ERROR'
+        : 'LAST REPLY',
+      text:
+        status === 'MODEL BUSY'
+          ? 'Selected model is at capacity. Please try a different model.'
+          : 'Observed context',
+      command: '',
+      source: 'LIVE',
+      activity: '',
+      samples: [],
+    })),
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const cell = page
+    .locator('.session-totals > div')
+    .filter({ has: page.locator('dt').filter({ hasText: /^ERRORS$/ }) });
+  await expect(cell.locator('dd')).toHaveText('2');
+  const pills = page
+    .getByRole('navigation', { name: 'Sessions needing attention' })
+    .getByRole('link');
+  await expect(pills).toHaveCount(5);
+  await expect(pills.nth(0)).toContainText('APPROVAL NEEDED');
+  await expect(pills.nth(1)).toContainText('INPUT NEEDED');
+  await expect(pills.nth(2)).toContainText('MODEL BUSY');
+  await expect(pills.nth(3)).toContainText('TURN FAILED');
+  await expect(pills.nth(4)).toContainText('TURN COMPLETE');
+  await pills.nth(2).click();
+  await expect(page.locator('.detail-context')).toContainText(
+    'Selected model is at capacity.',
+  );
+  await expect(page.locator('.detail-context')).toContainText(
+    'This is not a quota-exhaustion signal.',
+  );
+  await expect(page.locator('.detail-context h3').last()).toHaveText(
+    'TURN ERROR',
+  );
+  snapshot.sessions[1].status = 'WORKING';
+  snapshot.sessions[1].contextKind = 'LAST ACTIVITY';
+  snapshot.sessions[1].text = 'Trying a new turn';
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new CustomEvent('test-snapshot', { detail: snapshot }),
+      ),
+    snapshot,
+  );
+  await expect(cell.locator('dd')).toHaveText('1');
+  await expect(pills.filter({ hasText: 'MODEL BUSY' })).toHaveCount(0);
+  await expect(page.locator('.detail-context')).not.toContainText(
+    'Selected model is at capacity.',
+  );
+  await expect(page.locator('.detail-heading')).toContainText('WORKING');
+});
+
 test('session totals count parent usage once and update for live, stale and empty lists', async ({
   page,
   pairingURL,
@@ -3592,6 +3679,7 @@ test('session totals count parent usage once and update for live, stale and empt
     snapshot,
   );
   await expect(page.locator('.session-totals dd')).toHaveText([
+    '0',
     '0',
     '0',
     '0',
