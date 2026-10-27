@@ -1,4 +1,8 @@
 {
+  "ERRORS": "ОШИБКИ",
+  "MODEL BUSY": "МОДЕЛЬ ЗАНЯТА",
+  "TURN FAILED": "ХОД НЕ УДАЛСЯ",
+  "TURN ERROR": "ОШИБКА ХОДА",
   "PACE": "ТЕМП",
   "ZONE": "ЗОНА",
   "WINDOW START": "НАЧАЛО ОКНА",

@@ -214,11 +214,14 @@ includes the explicit backgrounds used for consistent terminal rendering.
   only the local measurement interval and does not use a quota-reset token.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
+  Terminal session telemetry boxes keep their proportional width on narrow
+  screens but cap at 48 columns, leaving extra width for detail and graphs.
 - Dismissible session rows that automatically return on fresh activity,
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
   exact `INPUT NEEDED` and `APPROVAL NEEDED` states. Without it, a completed
-  open turn is definite `INPUT NEEDED`; an otherwise active session with no
+  open turn is `TURN COMPLETE`, not a request for input; an otherwise active
+  session with no
   rollout activity for three minutes is cautiously labelled `CHECK SESSION`.
   For a root with linked agents, fresh activity from any member suppresses that
   uncertain fallback; definite input or approval signals still propagate from
@@ -461,6 +464,12 @@ Set up the recommended arrangement as follows.
    Starting it first matters because transient model-reroute events cannot be
    reconstructed after the fact. No additional Codexometer option is required;
    it automatically probes the same default socket under `CODEX_HOME`.
+
+   Codexometer offers Codex's `zstd-stream-v1` WebSocket compression on that
+   connection. Compression is used only when the server acknowledges it;
+   older servers and servers with compression disabled continue using JSON
+   text. Encoder/decoder history is reset on every connection, with bounded
+   messages and strict compressed-message framing. No server setting is changed.
 
    If the latest Codexometer build is already running, leave it open: it retries
    the connection and discovers newly connected sessions automatically. Allow
@@ -738,16 +747,17 @@ or applies today's `/fast` setting retroactively.
   combination is unpriced and interrupts clean learning rather than silently
   applying an invented multiplier. Benchmark comparisons continue to use Standard rates.
 
-Tier pricing was reviewed on **12 October 2026**: **GPT-6.1 Sol, GPT-6 (Astra, Sol, Luna) and GPT-5.6
+Tier pricing was reviewed on **27 October 2026**: **GPT-6.1 (Sol, Terra), GPT-6 (Astra, Sol, Luna) and GPT-5.6
 (Sol, Terra, Luna)** use **2× applicable standard API prices** for `fast` / the
-legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices.
-**Flex** uses **½×** on the maintained GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
+legacy `priority` alias. Astra and GPT-6.1 Sol **Ultrafast** use **6×** applicable standard API prices;
+GPT-6.1 Terra has no maintained Ultrafast rate.
+**Flex** uses **½×** on the maintained GPT-6.1/GPT-6/GPT-5.6 models, GPT-5.2 and GPT-5.5.
 GPT-5.2 fallback pricing and published short-context Fast rates for GPT-5.2,
 GPT-5.3 Codex, GPT-5.4/Mini and GPT-5.5 are also maintained; GPT-5.5 Fast is 2.5×.
 Other explicit model/tier combinations and unpublished long-context Fast rates
 remain unavailable. Adjustments follow per-response long-context and cache
 calculations; reasoning output is not counted twice. See the official
-[Astra pricing](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[API pricing table](https://developers.openai.com/api/docs/pricing),
 [Codex speed guidance](https://learn.chatgpt.com/docs/agent-configuration/speed),
 and [API Fast-mode guide](https://developers.openai.com/api/docs/guides/fast-mode).
 The footer's standard-price retrieval date remains separate from this tier review.
@@ -763,7 +773,8 @@ new evidence accumulates. Future improvement: consume the actual response
 prefer that evidence to requested settings.
 
 Codexometer prefers Codex's durable **`token_usage_record`** entries for each
-newly completed response. Exact records are counted independently of cumulative
+reported response, including usage that Codex persists for failed/incomplete
+requests. Exact records are counted independently of cumulative
 context counters, with bounded response-ID deduplication; inherited parent
 records are excluded from a child's own usage. Startup establishes a historical
 baseline without charging past responses, using a bounded 4 MiB tail scan.
@@ -772,6 +783,38 @@ An exact record switches that rollout to response accounting: subsequent
 another billable response. Older rollouts retain the legacy token-count reader. A replacement rollout for
 an existing thread establishes a new baseline rather than charging copied
 history again; session settings come from its newest observed rollout.
+
+Compressed `.jsonl.zst` histories are streamed into bounded in-memory baselines;
+no decompressed transcript copy is written to disk. Their decoded offsets and
+recent response identities are retained. When Codex restores a plain rollout,
+Codexometer verifies the entire historical prefix before consuming appended
+responses. Rewritten histories establish a fresh baseline. Source and decoded
+histories are each limited to 256 MiB per compressed file, with bounded decoder
+windows and record buffers; unreadable or oversized histories report incomplete
+coverage instead of silently qualifying quota-learning intervals.
+
+Codex 0.164.0's experimental background compaction can consume tokens without
+publishing the corresponding exact foreground response record. Codexometer
+checks the loaded thread's effective `async_compaction` and `token_budget`
+feature state through a read-only inventory. A potentially unobserved background
+path pauses API-EQ quota learning, clears prior capacity estimates, and displays
+an **INCOMPLETE COVERAGE** diagnostic in terminal/browser Quota. Child sessions
+are checked separately. Known risks survive a daemon disconnect; a verified
+recovery starts a fresh learning interval. Observed token/cost totals remain
+available and no missing response cost is invented.
+
+Without effective daemon feature state, relevant local configuration is checked
+read-only. Enabled flags, including flags in potentially selected profiles, are
+conservative coverage warnings rather than proof of the current runtime mode.
+This fallback cannot establish hidden CLI overrides, remote configuration or
+unobserved usage from another machine. Those existing observation limits remain;
+Codexometer does not change Codex's compaction configuration.
+
+Model, speed and permission changes are confirmed against the running thread
+rather than treating a queued settings acknowledgement as success. Verification
+uses resume without overrides, stays bound to the original connection, and does
+not retry mutations or block approval/event processing. Account changes refresh
+the model/options catalogue while retaining the observed conversation.
 
 The requested model remains the fallback when actual per-response model evidence
 is unavailable; durable usage records do not supply model or billed-tier fields.
@@ -829,7 +872,7 @@ hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were last reviewed on **2026-10-12**.
+and were last reviewed on **2026-10-27**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -1128,7 +1171,7 @@ The other top-level views are:
   session. It automatically establishes a zero baseline across locally active
   Codex sessions when Codexometer starts. The **SESSION TOTALS** readout follows newly appended
   token telemetry in a compact summary strip: **TOKENS**, visible **SESSIONS**,
-  **WORKING**, **APPROVAL**, **INPUT**, and **CHECK*** counts. CHECK* means inferred
+  **ACTIVE**, **WORKING**, **APPROVAL**, **INPUT**, **ERRORS**, and **CHECK*** counts. CHECK* means inferred
   inactivity, not a confirmed request. Linked agents are already included in
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
@@ -1178,6 +1221,19 @@ The other top-level views are:
   modification time while a rollout writer remains open. Startup examines a
   recent tail, extending through its overlapping JSONL record so large tool
   results and reasoning items still establish activity without recounting tokens.
+  Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
+  badge for server-reported model capacity and **TURN FAILED** for other failures.
+  The row, full detail and attention pill retain the observed error message;
+  capacity is not interpreted as quota exhaustion. Both the shared app-server's
+  failed-turn/error events and local rollout error records are supported. Errors
+  that Codex is still automatically retrying remain **WORKING**, as do non-turn
+  failures such as a rejected steering attempt. A new turn on the affected
+  thread clears its prior failure;
+  stale events from older identified turns cannot fail the new one. Errors from
+  linked agents propagate to the parent row, below pending approvals and questions.
+  No prompt is automatically retried and no model is automatically switched.
+  **INPUT** is reserved for observed blocking questions/requests, not a completed
+  turn without a final reply. Normal completion remains **TURN COMPLETE**.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
   releases its per-thread writer lock and clears every attention badge.
   A session already included in the current Sessions recording can remain as an
@@ -1555,7 +1611,8 @@ live session states and are not persisted across launches.
 
 **Active** includes sessions identified as active by the latest observation,
 including working sessions and those waiting for input, approval or their next
-turn. It excludes inferred **CHECK SESSION** entries and retained inactive rows.
+turn. It excludes confirmed failures, inferred **CHECK SESSION** entries and
+retained inactive rows.
 An app-server-confirmed loaded, idle/ready session remains Active even after
 five minutes without session-file updates; that confirmation is not carried
 forward if it disappears or the daemon disconnects. Without the daemon, the
@@ -1580,7 +1637,8 @@ Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
 An **attention strip** beneath the summary provides direct links to visible
-sessions, ordered **Approval → Input → Turn Complete**. Approval and input pills
+sessions, ordered **Approval → Input → Errors → quota-threshold reviews → Turn Complete → triggers**.
+Approval, input and error pills
 use the theme's warning colour; completed turns use a quieter, non-bold theme-primary
 colour to mean “your result is ready”, not “a reply is required”. Completion pills
 disappear when work resumes, the completion state clears or the session is dismissed.
@@ -1701,6 +1759,8 @@ The action line shows only the current next step, Enter Review or C Confirm,
 without a second confirmation hint. Settings blocked during an active turn show
 **WAITING FOR IDLE**, with **Ctrl+R REFRESH** in the terminal composer
 (**F REFRESH** in the read-only picker) to read their availability again;
+speed changes are available during a turn and are sent immediately after confirmation,
+without a local queue. They configure subsequent turns, not a request already in flight.
 **HELP** identifies genuine browse-only entries. Model, reasoning and speed changes are provisional until C;
 reviewing or changing the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
@@ -1781,9 +1841,12 @@ for the upstream catalogues.
 
 Renames require a loaded session and explicit confirmation within 30 seconds; a concurrent rename or reconnect invalidates the confirmation. The updated name appears on the next telemetry refresh.
 
-Codex session-setting changes require a loaded, idle session and explicit confirmation within
-30 seconds. The command and options are revalidated before sending; stale
-connections, pending approvals and changed options fail closed. A successful
+Codex session-setting changes require a loaded session and explicit confirmation within
+30 seconds. Speed-only changes can be sent while working or waiting for an approval;
+other settings still require idle and no pending approval. The command and options
+are revalidated before sending; stale connections and changed options fail closed.
+A normal turn start/completion does not invalidate a speed confirmation, but changed
+model, reasoning or speed settings do. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already
 used the setting. Successful confirmations close the menu and return focus to
 the composer with a success notice; reopening fetches fresh options. Failed
@@ -2491,24 +2554,44 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The compiled table was last updated from
-that page on **2026-09-30**; every pricing-bearing Quota or Benchmark footer
+that page on **2026-10-27**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
-The maintained price table covers GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Sol, GPT-5.6 Terra,
-GPT-5.6 Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex.
+The maintained table uses these standard USD rates per million tokens. All
+entries were checked against the official pricing page on the date above.
 
-The September additions use these standard USD rates per million tokens:
-
-| Model | Input | Cached input | Cache writes | Output |
+| Model | Input | Cached input | Cache writes (30 minutes) | Output |
 | --- | ---: | ---: | ---: | ---: |
+| GPT-6 Astra | $10.00 | $1.00 | $12.50 | $50.00 |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | $1.00 | $0.05 | $1.25 | $5.00 |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | $2.00 | $0.20 | $2.50 | $10.00 |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | $0.10 | $0.01 | $0.125 | $0.50 |
+| GPT-5.6 Sol | $4.00 | $0.40 | $5.00 | $20.00 |
+| GPT-5.6 Terra | $2.00 | $0.20 | $2.50 | $12.00 |
+| GPT-5.6 Luna | $0.20 | $0.02 | $0.25 | $1.20 |
+| GPT-5.5 | $5.00 | $0.50 | Not published | $30.00 |
+| GPT-5.4 | $2.50 | $0.25 | Not published | $15.00 |
+| GPT-5.4 Mini | $0.75 | $0.075 | Not published | $4.50 |
+| GPT-5.3 Codex | $1.75 | $0.175 | Not published | $14.00 |
+| GPT-5.2 | $1.75 | $0.175 | Not published | $14.00 |
 
-Above 272,000 input tokens per response, input and cache rates double and
-output rates multiply by 1.5 for the entire response. Requested Fast/priority
-pricing doubles the applicable rates in live estimates; benchmark API EQ
-continues to use standard pricing. Existing model prices are retained.
+For GPT-6, GPT-6.1, GPT-5.6, GPT-5.5 and GPT-5.4 (not Mini), above 272,000
+input tokens per response, input and cache rates double and output rates
+multiply by 1.5 for the entire response. Models without maintained long-context
+rates remain unpriced above that threshold. Requested Fast/priority pricing
+doubles the applicable rates in live estimates, except GPT-5.5's 2.5× rate;
+long-context Fast pricing for GPT-5.4 and GPT-5.5 remains unpriced. Published
+Flex rates are half Standard; Ultrafast is 6× Standard for GPT-6 Astra and
+GPT-6.1 Sol only. GPT-6.1 Terra has no maintained Ultrafast price, and the
+unpublished ID `gpt-6-terra` is not treated as an alias. Benchmark API EQ
+continues to use standard pricing.
+
+Cache-write estimates use the published 30-minute rates. The observed token
+breakdown does not identify retention duration; 12-hour cache writes cost more
+and are not separately accounted for. Existing model prices are unchanged by
+this update; GPT-5.6 Sol's promotional pricing is currently advertised through
+at least 21 November 2026.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
@@ -2861,7 +2944,10 @@ available from the existing reader.
 - Attention links jump to the relevant session. Approval indicators remain
   outside scrollable reply text; available commands are separated from their
   justification. Missing commands are explicitly labelled, never reconstructed.
-- **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **CHECK SESSION**
+- **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **MODEL BUSY /
+  TURN FAILED** represent confirmed turn errors and appear in **ERRORS**, with
+  the observed explanation in detail. Retrying errors do not raise failure pills.
+  **CHECK SESSION**
   is labelled inferred inactivity and is not proof that a reply is required.
   **TURN COMPLETE** is informational. Disconnection or failed session refresh
   suppresses live attention indicators and marks the display stale.
@@ -3455,7 +3541,7 @@ virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation

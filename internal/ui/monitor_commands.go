@@ -55,15 +55,12 @@ func (m *Model) loadMonitorCommands(path string, fresh ...bool) tea.Cmd {
 	if path == "commands" {
 		path = ""
 	}
-	p.menu.Path = path
 	if p.inline && !commandInputReview(path) {
-		p.prefix = "/" + strings.ReplaceAll(path, "/", " ")
-		if path != "" {
-			p.prefix += " "
-		}
+		p.prefix = m.inlineCommandPrefix(path)
 		m.monitorPrompt.input.SetValue(p.prefix)
 		m.monitorPrompt.input.CursorEnd()
 	}
+	p.menu.Path = path
 	if menu, local := m.localMonitorMenu(path); local {
 		if p.inline && path == "statusline" {
 			menu.Help = strings.Replace(menu.Help, "Space/Enter toggles; C applies", "Space toggles; Enter applies", 1)
@@ -665,6 +662,14 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 				return m, cmd, true
 			} else {
+				if p.inline && r.menu.Picker {
+					// The public alias is supplied by the catalogue, not its
+					// internal tier/<id> navigation path.
+					query := m.commandQuery()
+					p.prefix = r.menu.Title + " "
+					m.monitorPrompt.input.SetValue(p.prefix + query)
+					m.monitorPrompt.input.CursorEnd()
+				}
 				p.menu = r.menu
 				if p.menu.Path == "" || p.menu.Path == "help" {
 					p.menu = m.withLocalCommands(p.menu)

@@ -18,6 +18,12 @@ func TestRequestedTierPremium(t *testing.T) {
 		{"gpt-6-astra", "fast", 3, true},
 		{"gpt-6-sol", "fast", 3, true},
 		{"gpt-6.1-sol", "fast", 3, true},
+		{"gpt-6.1-terra", "fast", 3, true},
+		{" GPT-6.1-TERRA-2026-10-27 ", " PRIORITY ", 3, true},
+		{"gpt-6.1-terra", "flex", -1.5, true},
+		{"gpt-6.1-terra", "ultrafast", 0, false},
+		{"gpt-6.1-terra-preview", "fast", 0, false},
+		{"gpt-6-terra", "fast", 0, false},
 		{" GPT-6.1-SOL-2026-09-30 ", " PRIORITY ", 3, true},
 		{"gpt-6.1-sol-preview", "fast", 0, false},
 		{"gpt-6-luna", "priority", 3, true},
@@ -40,6 +46,37 @@ func TestRequestedTierPremium(t *testing.T) {
 				t.Fatalf("got %v, %v", premium, known)
 			}
 		})
+	}
+}
+
+func TestMaintainedTierMultipliersMatchPublishedRates(t *testing.T) {
+	// Reviewed against the Standard, Fast, Flex and Ultrafast tables on
+	// https://developers.openai.com/api/docs/pricing, 2026-10-27.
+	for _, test := range []struct {
+		model                 string
+		fast, flex, ultrafast float64
+	}{
+		{"gpt-6-astra", 2, 0.5, 6},
+		{"gpt-6.1-sol", 2, 0.5, 6},
+		{"gpt-6.1-terra", 2, 0.5, 0},
+		{"gpt-6-sol", 2, 0.5, 0},
+		{"gpt-6-luna", 2, 0.5, 0},
+		{"gpt-5.6-sol", 2, 0.5, 0},
+		{"gpt-5.6-terra", 2, 0.5, 0},
+		{"gpt-5.6-luna", 2, 0.5, 0},
+		{"gpt-5.5", 2.5, 0.5, 0},
+		{"gpt-5.4", 2, 0, 0},
+		{"gpt-5.4-mini", 2, 0, 0},
+		{"gpt-5.3-codex", 2, 0, 0},
+		{"gpt-5.2", 2, 0.5, 0},
+	} {
+		for tier, want := range map[string]float64{"standard": 1, "fast": test.fast, "priority": test.fast, "flex": test.flex, "ultrafast": test.ultrafast} {
+			got, known := requestedTierMultiplier(test.model, tier)
+			// Zero denotes a deliberately unmaintained combination, not free usage.
+			if known != (want > 0) || known && got != want {
+				t.Errorf("%s %s = %g, known %v; want %g", test.model, tier, got, known, want)
+			}
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 type APIEqIssueKind string
 
 const (
+	UsageIssueCoverage     APIEqIssueKind = "INCOMPLETE COVERAGE"
 	UsageIssueUnpriced     APIEqIssueKind = "UNPRICED USAGE"
 	UsageIssueMissing      APIEqIssueKind = "MISSING RESPONSE USAGE"
 	UsageIssueInconsistent APIEqIssueKind = "INCONSISTENT RESPONSE USAGE"
@@ -60,6 +61,9 @@ func DiagnosticText(issue APIEqDiagnostic) string {
 			return "unknown"
 		}
 		return value
+	}
+	if issue.Kind == UsageIssueCoverage {
+		return string(issue.Kind) + " // " + field(issue.Reason, 240) + "\nSOURCE " + field(issue.Source, 48)
 	}
 	basis := issue.ModelBasis
 	if basis == "" {

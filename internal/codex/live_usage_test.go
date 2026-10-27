@@ -518,8 +518,8 @@ func TestSessionAttentionFallbackChecksOnlyOpenQuietSessions(t *testing.T) {
 	if got := sessionAttention(sessionAttentionWorking, false, true, time.Hour, sessionRuntimeUnknown, false); got != SessionAttentionNone {
 		t.Fatalf("closed quiet session attention = %v; want none", got)
 	}
-	if got := sessionAttention(sessionAttentionIdle, true, true, 0, sessionRuntimeUnknown, false); got != SessionAttentionInput {
-		t.Fatalf("durably completed session attention = %v; want input", got)
+	if got := sessionAttention(sessionAttentionIdle, true, true, 0, sessionRuntimeUnknown, false); got != SessionAttentionComplete {
+		t.Fatalf("durably completed session attention = %v; want completion, not input", got)
 	}
 }
 

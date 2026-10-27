@@ -31,7 +31,7 @@ func (m Model) monitorSummaryLines(width, rows int, colors palette) []string {
 			counts[status]++
 		}
 	}
-	labels := []string{"TOKENS", "SESSIONS", "ACTIVE", "WORKING", "APPROVAL", "INPUT", "CHECK"}
+	labels := []string{"TOKENS", "SESSIONS", "ACTIVE", "WORKING", "APPROVAL", "INPUT", "ERRORS", "CHECK"}
 	values := []string{formatTokens(m.monitorRecordedTokens())}
 	for i, n := range counts {
 		value := strconv.Itoa(n)
@@ -87,11 +87,11 @@ func (item monitorAttentionItem) action() string {
 
 func (m *Model) monitorAttentionSessions() []monitorAttentionItem {
 	fresh := m.monitorState == monitorRunning && m.monitorError == ""
-	var groups [5][]monitorAttentionItem
+	var groups [6][]monitorAttentionItem
 	for _, s := range m.monitorSessionData {
 		scheduled := m.hasSchedule(s.id)
 		if scheduled {
-			groups[4] = append(groups[4], monitorAttentionItem{monitorSession: s, trigger: true})
+			groups[5] = append(groups[5], monitorAttentionItem{monitorSession: s, trigger: true})
 		}
 		if !fresh || !m.monitorSessionVisible(s) {
 			continue
@@ -103,14 +103,16 @@ func (m *Model) monitorAttentionSessions() []monitorAttentionItem {
 			groups[0] = append(groups[0], item)
 		case codex.SessionAttentionInput:
 			groups[1] = append(groups[1], item)
+		case codex.SessionAttentionError:
+			groups[2] = append(groups[2], item)
 		case codex.SessionAttentionComplete:
 			if !s.working && !profile && !scheduled {
-				groups[3] = append(groups[3], item)
+				groups[4] = append(groups[4], item)
 			}
 		}
 		if profile {
 			item.profile = true
-			groups[2] = append(groups[2], item)
+			groups[3] = append(groups[3], item)
 		}
 	}
 	var items []monitorAttentionItem
@@ -302,6 +304,9 @@ func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, r
 	for _, s := range sessions {
 		id := shortSessionID(s.id)
 		state := monitorAttentionStatus(s.attention)
+		if s.attention == codex.SessionAttentionError {
+			state = monitorSessionAttentionLabel(s.monitorSession)
+		}
 		if !s.profile && s.attention == codex.SessionAttentionApproval && s.preview.PendingApprovals > 1 {
 			state = i18n.Format("%s ×%d", state, s.preview.PendingApprovals)
 		}

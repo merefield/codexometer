@@ -23,3 +23,16 @@ func TestUsageDiagnosticProjectionIsBoundedSafeAndChoosesNewest(t *testing.T) {
 		t.Fatal("new source retained an old diagnostic")
 	}
 }
+
+func TestUsageCoverageDiagnosticOverridesStaleResponseFailures(t *testing.T) {
+	s := newStore()
+	now := time.Now()
+	s.live(codex.LiveUsageSnapshot{APIEqCoverageIssue: "SESSION child: background compaction usage is unobserved", APIEqDiagnostics: []codex.APIEqDiagnostic{{Kind: codex.UsageIssueUnpriced, Reason: "old failure"}}}, nil, now)
+	if !strings.Contains(s.state.UsageDiagnostic, "INCOMPLETE COVERAGE") || !strings.Contains(s.state.UsageDiagnostic, "child") || strings.Contains(s.state.UsageDiagnostic, "old failure") {
+		t.Fatal(s.state.UsageDiagnostic)
+	}
+	s.live(codex.LiveUsageSnapshot{}, nil, now)
+	if s.state.UsageDiagnostic != "" {
+		t.Fatal("coverage diagnostic did not clear")
+	}
+}

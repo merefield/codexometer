@@ -23,7 +23,7 @@ func TestMonitorCopySurfaces(t *testing.T) {
 	raw := "\x1b[31mReply\x1b[0m\x07\n" + strings.Repeat("reply line\n", 100) + "LAST OUTPUT LINE"
 	want := codex.SanitizeSessionContext(raw)
 	for _, mode := range []int{contextSplit, contextWide, contextFull} {
-		for _, width := range []int{80, 120, 180} {
+		for _, width := range []int{80, 120, 148, 180, 320} {
 			m := completedCopyModel()
 			m.monitorSessionData[0].preview.Text = raw
 			m.width = width

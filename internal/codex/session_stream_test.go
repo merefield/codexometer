@@ -107,3 +107,26 @@ func TestStreamingCommentaryKeepsCommandAndApprovalPriority(t *testing.T) {
 		t.Fatal("stream revived after interruption")
 	}
 }
+
+func TestSettingsNotificationsDoNotResolveOtherClientApprovals(t *testing.T) {
+	states := map[string]*daemonContextState{}
+	now := time.Now()
+	for _, thread := range []string{"one", "two"} {
+		raw := `{"threadId":"` + thread + `","turnId":"turn","itemId":"item","command":"go test","cwd":"/work"}`
+		daemonContextEvent(states, "item/commandExecution/requestApproval", json.RawMessage(`"same-id"`), json.RawMessage(raw), now)
+	}
+	daemonContextEvent(states, "thread/settings/updated", nil, json.RawMessage(`{"threadId":"one","threadSettings":{"model":"changed","effort":"high"}}`), now)
+	if len(states["one"].requests) != 1 || len(states["two"].requests) != 1 {
+		t.Fatal("settings discarded pending approvals")
+	}
+	daemonContextEvent(states, "serverRequest/resolved", nil, json.RawMessage(`{"threadId":"one","requestId":"same-id"}`), now)
+	if len(states["one"].requests) != 0 || len(states["two"].requests) != 1 {
+		t.Fatal("resolution crossed thread/client boundaries")
+	}
+	daemonContextEvent(states, "turn/started", nil, json.RawMessage(`{"threadId":"one","turn":{"id":"next"}}`), now)
+	daemonContextEvent(states, "item/started", nil, json.RawMessage(`{"threadId":"one","turnId":"next","item":{"type":"agentMessage","id":"reply","phase":"final_answer"}}`), now)
+	daemonContextEvent(states, "item/agentMessage/delta", nil, json.RawMessage(`{"threadId":"one","turnId":"next","itemId":"reply","delta":"Still updating"}`), now)
+	if states["one"].latest.Text != "Still updating" || len(states["two"].requests) != 1 {
+		t.Fatal("stream stalled after settings/approval resolution")
+	}
+}

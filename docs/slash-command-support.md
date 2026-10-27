@@ -52,7 +52,7 @@ Local Codexometer support below was updated on **2026-10-11**; the upstream regi
 | `/exit`, `/quit` | Local equivalents | Done | — | Terminal aliases reuse local Quit. Browser aliases leave full session detail for Sessions; the web server and Codex sessions remain running. |
 | `/statusline` | Local equivalent | Done | — | Codexometer's own footer picker; also available in read-only web mode. Does not edit the native CLI's status line. |
 | `/help` | Local catalogue | Done | — | Codexometer catalogue entry; absent from the upstream registry. |
-| Advertised speed aliases, e.g. `/fast` | Session adapter | Done | — | Show all live model-advertised speeds plus the default in one picker; Up/Down selects, Enter Review stages the choice, and C Confirm commits a verified session override. Global defaults remain out of scope. |
+| Advertised speed aliases, e.g. `/fast` | Session adapter | Done | — | Show all live model-advertised speeds plus the default in one picker; Up/Down selects, Enter Review stages the choice, and C Confirm sends a verified session override immediately, even during a turn or pending approval. Applies to subsequent turns, not an inference request already in flight; no local queue or global-default changes. The composer retains the public alias rather than the internal tier path. |
 
 The local `/usage`, `/copy`, `/theme`, `/exit`, `/quit` and `/statusline` entries are merged into the interface catalogue and do not become server RPCs. They work without a shared Codex daemon; browser full detail offers the local catalogue in read-only mode. Slash names are reserved against model-advertised speed aliases.
 

@@ -31,22 +31,22 @@ func TestMonitorSummaryCountersAndObservationState(t *testing.T) {
 	m.monitorSessionData[0].agentCount = 8
 	lines := m.monitorSummaryLines(120, 2, paletteFor(themeHacker))
 	values := strings.Fields(ansi.Strip(lines[1]))
-	if got := strings.Join(values, ","); got != "625,3,3,1,1,1,0" {
+	if got := strings.Join(values, ","); got != "625,3,3,1,1,1,0,0" {
 		t.Fatalf("counts %s", got)
 	}
 	m.monitorSessionData[2].attention = codex.SessionAttentionCheck
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,3,2,0,1,1,1" {
+	if strings.Join(values, ",") != "625,3,2,0,1,1,0,1" {
 		t.Fatal(values)
 	}
 	m.monitorDismissed = map[string]monitorSessionDismissal{"root-one": {}}
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,2,1,0,0,1,1" {
+	if strings.Join(values, ",") != "625,2,1,0,0,1,0,1" {
 		t.Fatal("dismissal changed historical tokens or retained visible count", values)
 	}
 	m.monitorError = "lost"
 	values = strings.Fields(ansi.Strip(m.monitorSummaryLines(120, 2, paletteFor(themeHacker))[1]))
-	if strings.Join(values, ",") != "625,2,—,—,—,—,—" {
+	if strings.Join(values, ",") != "625,2,—,—,—,—,—,—" {
 		t.Fatal("stale live counts", values)
 	}
 	if len(m.monitorAttentionSessions()) != 0 {
@@ -75,7 +75,7 @@ func TestMonitorSummaryCountColours(t *testing.T) {
 					if state == "active" {
 						if i == 2 || i == 3 {
 							style = style.Foreground(colors.success)
-						} else {
+						} else if i != int(monitorFilterErrors)+1 {
 							style = style.Foreground(colors.warning)
 						}
 					}

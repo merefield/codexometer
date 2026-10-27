@@ -13,6 +13,9 @@ import (
 )
 
 func monitorSessionAttentionLabel(s monitorSession) string {
+	if s.attention == codex.SessionAttentionError {
+		return i18n.Text(codex.SessionFailureLabel(s.preview))
+	}
 	return monitorAttentionLabel(s.attention)
 }
 
@@ -27,6 +30,8 @@ func contextTitle(c codex.SessionContext) string {
 		return i18n.Text("NO CONTEXT")
 	}
 	switch c.Kind {
+	case codex.SessionContextFailure:
+		return i18n.Text("TURN ERROR")
 	case codex.SessionContextReply:
 		if c.Streaming {
 			return i18n.Text("REPLY") + " // " + i18n.Text("STREAMING")

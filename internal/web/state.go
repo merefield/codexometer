@@ -285,6 +285,9 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.UsageDiagnostic = codex.DiagnosticText(latest)
 		}
+		if l.APIEqCoverageIssue != "" {
+			s.state.UsageDiagnostic = codex.DiagnosticText(codex.APIEqDiagnostic{Kind: codex.UsageIssueCoverage, Source: "usage coverage", Reason: l.APIEqCoverageIssue})
+		}
 		if s.state.Control {
 			s.contexts = make(map[string]codex.SessionContext, len(l.Sessions))
 			s.directories = make(map[string]string, len(l.Sessions))
@@ -368,6 +371,8 @@ func sessionStatus(s codex.LiveUsageSession) string {
 		return "APPROVAL NEEDED"
 	case codex.SessionAttentionCheck:
 		return "CHECK SESSION"
+	case codex.SessionAttentionError:
+		return codex.SessionFailureLabel(s.Context)
 	case codex.SessionAttentionComplete:
 		return "TURN COMPLETE"
 	}
@@ -382,6 +387,8 @@ func sessionStatus(s codex.LiveUsageSession) string {
 
 func contextKind(k codex.SessionContextKind) string {
 	switch k {
+	case codex.SessionContextFailure:
+		return "TURN ERROR"
 	case codex.SessionContextReply:
 		return "LAST REPLY"
 	case codex.SessionContextApproval:

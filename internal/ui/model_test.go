@@ -22,19 +22,28 @@ type stubFetcher struct {
 }
 
 type quotaBracketFetcher struct {
-	snapshot codex.Snapshot
-	usages   []codex.LiveUsageSnapshot
-	usageErr error
-	calls    []string
+	snapshot    codex.Snapshot
+	usages      []codex.LiveUsageSnapshot
+	usageErr    error
+	usageErrors []error
+	err         error
+	calls       []string
 }
 
 func (f *quotaBracketFetcher) Fetch(context.Context) (codex.Snapshot, error) {
 	f.calls = append(f.calls, "quota")
-	return f.snapshot, nil
+	return f.snapshot, f.err
 }
 
 func (f *quotaBracketFetcher) FetchTokenUsage(context.Context) (codex.LiveUsageSnapshot, error) {
 	f.calls = append(f.calls, "usage")
+	if len(f.usageErrors) > 0 {
+		err := f.usageErrors[0]
+		f.usageErrors = f.usageErrors[1:]
+		if err != nil {
+			return codex.LiveUsageSnapshot{}, err
+		}
+	}
 	if f.usageErr != nil {
 		return codex.LiveUsageSnapshot{}, f.usageErr
 	}
@@ -486,4 +495,98 @@ func footerButtonByID(model Model, id footerButtonID) (footerButton, bool) {
 		}
 	}
 	return footerButton{}, false
+}
+
+func TestQuotaFetchCoverageRecoveryCannotSpanUnobservedGap(t *testing.T) {
+	now := time.Now()
+	reset := now.Add(time.Hour).Unix()
+	clean := codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqPricedCalls: 2}
+	gap := clean
+	gap.APIEqCoverageIssue = "SESSION child: background compaction usage is unobserved"
+	for _, bracket := range []struct {
+		name          string
+		before, after codex.LiveUsageSnapshot
+	}{{"recovers during quota read", gap, clean}, {"appears during quota read", clean, gap}} {
+		t.Run(bracket.name, func(t *testing.T) {
+			f := &quotaBracketFetcher{snapshot: apiEqSnapshot(20, reset), usages: []codex.LiveUsageSnapshot{bracket.before, bracket.after}}
+			m := New(f, time.Minute)
+			m.observeQuotaAPIEq(apiEqSnapshot(10, reset), codex.LiveUsageSnapshot{}, now)
+			m.observeQuotaAPIEq(apiEqSnapshot(15, reset), codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+			if len(m.quotaAPIEvidence) != 1 {
+				t.Fatal("test did not establish an estimate")
+			}
+			message := m.fetch()().(fetchedMsg)
+			if message.usageErr != nil || message.usage.APIEqCoverageIssue == "" {
+				t.Fatal("quota bracket dropped a coverage gap", message.usageErr, message.usage)
+			}
+			updated, _ := m.Update(message)
+			m = updated.(Model)
+			if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || m.quotaAPICoverageIssue == "" {
+				t.Fatal("coverage gap retained previous evidence")
+			}
+			// A later clean bracket starts a new baseline even when the recovered
+			// totals already include substantial activity from the blocked interval.
+			recovered := codex.LiveUsageSnapshot{APIEqUSD: 10, APIEqPricedCalls: 3}
+			f.snapshot = apiEqSnapshot(25, reset)
+			f.usages = []codex.LiveUsageSnapshot{recovered, recovered}
+			updated, _ = m.Update(m.fetch()())
+			m = updated.(Model)
+			if len(m.quotaAPIEvidence) != 0 || m.quotaAPICoverageIssue != "" {
+				t.Fatal("recovery learned across the gap")
+			}
+			recovered.APIEqUSD++
+			recovered.APIEqPricedCalls++
+			f.snapshot = apiEqSnapshot(30, reset)
+			f.usages = []codex.LiveUsageSnapshot{recovered, recovered}
+			updated, _ = m.Update(m.fetch()())
+			m = updated.(Model)
+			if len(m.quotaAPIEvidence) != 1 || m.quotaAPIEvidence[0].CapacityUSD != 20 {
+				t.Fatal("next clean interval failed to learn independently", m.quotaAPIEvidence)
+			}
+		})
+	}
+}
+
+func TestQuotaCoverageInvalidationSurvivesObservationErrorsAndBenchmarkDeferral(t *testing.T) {
+	for _, scenario := range []string{"after telemetry fails", "before telemetry fails", "quota fails", "benchmark active"} {
+		t.Run(scenario, func(t *testing.T) {
+			now := time.Now()
+			reset := now.Add(time.Hour).Unix()
+			clean := codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqPricedCalls: 2}
+			gap := clean
+			gap.APIEqCoverageIssue = "known coverage gap"
+			unavailable := errors.New("observation unavailable")
+			f := &quotaBracketFetcher{snapshot: apiEqSnapshot(20, reset), usages: []codex.LiveUsageSnapshot{gap, clean}}
+			switch scenario {
+			case "after telemetry fails":
+				f.usageErrors = []error{nil, unavailable}
+			case "before telemetry fails":
+				f.usages = []codex.LiveUsageSnapshot{gap}
+				f.usageErrors = []error{unavailable, nil}
+			case "quota fails":
+				f.err = unavailable
+			}
+			m := New(f, time.Minute)
+			m.observeQuotaAPIEq(apiEqSnapshot(10, reset), codex.LiveUsageSnapshot{}, now)
+			m.observeQuotaAPIEq(apiEqSnapshot(15, reset), codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
+			if scenario == "benchmark active" {
+				m.benchmarkQuotaAccounting.active = true
+			}
+			message := m.fetch()().(fetchedMsg)
+			if message.usage.APIEqCoverageIssue == "" {
+				t.Fatal("gap was lost alongside another deferral")
+			}
+			if strings.Contains(scenario, "telemetry") && !errors.Is(message.usageErr, unavailable) {
+				t.Fatal("telemetry error was hidden", message.usageErr)
+			}
+			if scenario == "quota fails" && !errors.Is(message.err, unavailable) {
+				t.Fatal("quota error was hidden", message.err)
+			}
+			updated, _ := m.Update(message)
+			m = updated.(Model)
+			if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || m.quotaAPICoverageIssue == "" {
+				t.Fatal("deferred observation retained stale capacity evidence")
+			}
+		})
+	}
 }

@@ -1210,6 +1210,7 @@ func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
 	want := map[string]apiPrice{
 		"gpt-5.2":       {input: 1.75, cached: 0.175, output: 14.00},
 		"gpt-6.1-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
+		"gpt-6.1-terra": {input: 1.00, cached: 0.05, cacheWrite: 1.25, cacheWriteKnown: true, output: 5.00, longInput: 2.00, longCached: 0.10, longCacheWrite: 2.50, longOutput: 7.50, longKnown: true},
 		"gpt-6-sol":     {input: 2.00, cached: 0.20, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.40, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6-luna":    {input: 0.10, cached: 0.01, cacheWrite: 0.125, cacheWriteKnown: true, output: 0.50, longInput: 0.20, longCached: 0.02, longCacheWrite: 0.25, longOutput: 0.75, longKnown: true},
 		"gpt-6-astra":   {input: 10.00, cached: 1.00, cacheWrite: 12.50, cacheWriteKnown: true, output: 50.00, longInput: 20.00, longCached: 2.00, longCacheWrite: 25.00, longOutput: 75.00, longKnown: true},
@@ -1237,13 +1238,14 @@ func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
 	}
 }
 
-func TestGPT6SolLunaPricingBoundaries(t *testing.T) {
+func TestGPT6PricingBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		model                        string
 		input, cached, write, output float64
 	}{
 		{"gpt-6-sol", 2, 0.2, 2.5, 10},
 		{"gpt-6.1-sol", 2, 0.1, 2.5, 10},
+		{"gpt-6.1-terra", 1, 0.05, 1.25, 5},
 		{"gpt-6-luna", 0.1, 0.01, 0.125, 0.5},
 	} {
 		for _, input := range []int64{272000, 272001} {
@@ -1258,18 +1260,18 @@ func TestGPT6SolLunaPricingBoundaries(t *testing.T) {
 				if !known || issue != "" || math.Abs(got-want) > 1e-12 {
 					t.Fatalf("%s input %d: %g, %v, %s; want %g", model, input, got, known, issue, want)
 				}
-				for _, tier := range []string{"fast", "priority"} {
+				for tier, factor := range map[string]float64{"default": 1, "fast": 2, "priority": 2, "flex": 0.5} {
 					r := &LiveUsageReader{}
 					call := LiveModelCall{Model: model, RequestedServiceTier: tier}
 					r.finalizeCallPricing(&call, usage)
-					if !call.APIEqKnown || math.Abs(call.APIEqUSD+call.APIEqTierPremiumUSD-2*want) > 1e-12 {
-						t.Fatalf("%s %s input %d: incorrect Fast cost: %+v", model, tier, input, call)
+					if !call.APIEqKnown || math.Abs(call.APIEqUSD+call.APIEqTierPremiumUSD-factor*want) > 1e-12 {
+						t.Fatalf("%s %s input %d: incorrect tier cost: %+v", model, tier, input, call)
 					}
 				}
 			}
 		}
 	}
-	for _, model := range []string{"gpt-6-terra", "gpt-6-sol-preview", "gpt-6-luna-preview", "gpt-6.1-sol-preview", "gpt-6.1-astra", "gpt-6.1-luna"} {
+	for _, model := range []string{"gpt-6-terra", "gpt-6.1-terra-preview", "gpt-6.1-terra-2026-99-99", "gpt-6-sol-preview", "gpt-6-luna-preview", "gpt-6.1-sol-preview", "gpt-6.1-astra", "gpt-6.1-luna"} {
 		if _, known := priceForModel(model); known {
 			t.Fatalf("unpublished model %s was priced", model)
 		}

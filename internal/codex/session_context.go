@@ -20,11 +20,13 @@ const (
 	SessionContextReply
 	SessionContextQuestion
 	SessionContextApproval
+	SessionContextFailure
 )
 
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
+	FailureCode      string
 	CurrentTask      string
 	LatestGuidance   string
 	LatestGuidanceID string
@@ -129,9 +131,12 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 	}
 	priority := func(c SessionContext) int {
 		if c.Kind == SessionContextApproval {
-			return 3
+			return 4
 		}
 		if c.Kind == SessionContextQuestion {
+			return 3
+		}
+		if c.Kind == SessionContextFailure {
 			return 2
 		}
 		return 1
@@ -194,6 +199,10 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 		Timestamp time.Time `json:"timestamp"`
 		Ordinal   *uint64   `json:"ordinal"`
 		Payload   struct {
+			Error      json.RawMessage   `json:"error"`
+			Code       json.RawMessage   `json:"codex_error_info"`
+			WillRetry  *bool             `json:"will_retry"`
+			TurnID     string            `json:"turn_id"`
 			Type       string            `json:"type"`
 			Role       string            `json:"role"`
 			Phase      string            `json:"phase"`
@@ -214,8 +223,11 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 	if json.Unmarshal(line, &event) != nil || !tokenRecordIsOwned(event.Ordinal, cursor.subagentHistoryStartOrdinal, event.Timestamp, cursor.nonRoot, cursor.startedAt) {
 		return SessionContext{}, false
 	}
-	c := SessionContext{At: event.Timestamp, ThreadID: cursor.threadID, Source: "LOCAL"}
+	c := SessionContext{At: event.Timestamp, ThreadID: cursor.threadID, TurnID: event.Payload.TurnID, Source: "LOCAL"}
 	p := event.Payload
+	if (p.Type == "error" || p.Type == "task_complete" || p.Type == "turn_complete") && p.TurnID != "" && cursor.currentTurnID != "" && p.TurnID != cursor.currentTurnID {
+		return c, false
+	}
 	if event.Type == "response_item" && p.Type == "message" && p.Role == "assistant" {
 		if p.Phase != "commentary" && p.Phase != "final_answer" {
 			return c, false
@@ -236,10 +248,26 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 			return SessionContext{}, true
 		case "task_complete", "turn_complete":
 			cursor.activity = sessionActivityState{}
+			if len(p.Error) > 0 && string(p.Error) != "null" {
+				return sessionFailureContext(c, p.Error), true
+			}
+			if cursor.preview.Kind == SessionContextFailure && (p.TurnID == "" || cursor.preview.TurnID == "" || p.TurnID == cursor.preview.TurnID) {
+				return cursor.preview, true
+			}
 			c.Kind, c.Text = SessionContextReply, p.Last
 			if p.Last == "" && cursor.preview.Kind == SessionContextReply {
 				return cursor.preview, true
 			}
+		case "error":
+			if p.WillRetry != nil && *p.WillRetry {
+				return c, false
+			}
+			raw, _ := json.Marshal(struct {
+				Message string          `json:"message"`
+				Code    json.RawMessage `json:"codexErrorInfo"`
+			}{p.Message, p.Code})
+			failure := sessionFailureContext(c, raw)
+			return failure, failureAffectsTurn(failure)
 		case "agent_message":
 			c.Kind, c.Text = SessionContextActivity, p.Message
 			if p.Phase == "final_answer" {

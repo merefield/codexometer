@@ -52,6 +52,7 @@ type LiveUsageSnapshot struct {
 	APIEqTierPremiumUSD         float64
 	APIEqUnknownTierCalls       int64
 	APIEqDiagnostics            []APIEqDiagnostic
+	APIEqCoverageIssue          string
 }
 
 // LiveUsageSession is one independently started local Codex session. Token
@@ -79,6 +80,7 @@ type LiveUsageSession struct {
 // Input and approval are definite signals; Check is deliberately cautious and
 // means only that an open fallback-observed session has remained quiet.
 // Complete is informational: an observed completed turn, not an input request.
+// Error is a confirmed failed turn; it is never inferred from inactivity.
 type SessionAttention int
 
 const (
@@ -87,6 +89,7 @@ const (
 	SessionAttentionApproval
 	SessionAttentionCheck
 	SessionAttentionComplete
+	SessionAttentionError
 )
 
 // LiveModelCall is a small, content-free response-usage pulse. APIEqIssue retains
@@ -126,16 +129,19 @@ type LiveTurnTiming struct {
 // sessions. It also extracts bounded display-only replies and request context;
 // reasoning and arbitrary tool output are never retained.
 type LiveUsageReader struct {
-	now               func() time.Time
-	sessionNames      map[string]string
-	nameIndexInfo     os.FileInfo
-	daemonContexts    map[string]SessionContext
-	daemonDirectories map[string]string
-	SessionsRoot      string
-	WriterLocksRoot   string
-	statusProvider    sessionStatusProvider
-	commandMu         sync.Mutex
-	commandMenus      *sessionCommandCache
+	now                    func() time.Time
+	knownUsageCoverage     map[string]string
+	localFeatureChecks     map[string]localFeatureCheck
+	discoveryCoverageIssue string
+	sessionNames           map[string]string
+	nameIndexInfo          os.FileInfo
+	daemonContexts         map[string]SessionContext
+	daemonDirectories      map[string]string
+	SessionsRoot           string
+	WriterLocksRoot        string
+	statusProvider         sessionStatusProvider
+	commandMu              sync.Mutex
+	commandMenus           *sessionCommandCache
 
 	mu                          sync.Mutex
 	initialized                 bool
@@ -185,6 +191,10 @@ type rolloutCursor struct {
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
 	attention                   sessionAttentionState
+	compressed                  bool
+	compressedInfo              os.FileInfo
+	compressedTail              []byte
+	compressedDigest            [32]byte
 	exactUsage                  bool
 	exactUsageUncertain         bool
 	exactResponses              map[string]BenchmarkUsage
@@ -209,6 +219,7 @@ const (
 	sessionAttentionIdle
 	sessionAttentionInput
 	sessionAttentionApproval
+	sessionAttentionFailed
 )
 
 type rolloutEvent struct {
@@ -289,8 +300,11 @@ type rolloutAttentionEvent struct {
 	Ordinal   *uint64   `json:"ordinal"`
 	Type      string    `json:"type"`
 	Payload   struct {
-		Type       string `json:"type"`
-		IsBlocking *bool  `json:"isBlocking"`
+		Type       string          `json:"type"`
+		IsBlocking *bool           `json:"isBlocking"`
+		Error      json.RawMessage `json:"error"`
+		WillRetry  *bool           `json:"will_retry"`
+		TurnID     string          `json:"turn_id"`
 	} `json:"payload"`
 }
 
@@ -382,6 +396,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	}
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
+	var daemonCoverage map[string]string
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
 	appServerUp := false
@@ -391,6 +406,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
+			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
@@ -404,11 +420,36 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		if err := contextErr(ctx); err != nil {
 			return LiveUsageSnapshot{}, err
 		}
+		if cursor.compressed {
+			info, err := os.Stat(path)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err == nil {
+				err = r.restoreCompressedCursor(path, info, cursor)
+			}
+			if err != nil {
+				if firstReadErr == nil {
+					firstReadErr = err
+				}
+				continue
+			}
+			cursor = r.files[path]
+		}
 		if now.Sub(cursor.activityTime()) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
+					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil {
+						r.discoveryCoverageIssue = "compressed rollout history could not be verified"
+						if firstReadErr == nil {
+							firstReadErr = compressedErr
+						}
+					}
+					continue
+				}
 				delete(r.files, path)
 				continue
 			}
@@ -429,6 +470,10 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	for i := range sessions {
 		sessions[i].Name = r.sessionNames[sessions[i].ID]
 	}
+	coverageIssue := r.usageCoverage(ctx, sessions, daemonCoverage)
+	if firstReadErr != nil {
+		coverageIssue = "local response telemetry could not be completely read"
+	}
 	codexStatusKnown, codexUp, codexWorking := codexRuntimeHealth(
 		appServerUp, len(liveWriters) > 0, sessionWorking, writerLocksSupported,
 	)
@@ -447,6 +492,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 		APIEqTierPremiumUSD:         r.apiEqTierPremiumUSD,
 		APIEqUnknownTierCalls:       r.apiEqUnknownTierCalls,
 		APIEqDiagnostics:            append([]APIEqDiagnostic(nil), r.apiEqDiagnostics...),
+		APIEqCoverageIssue:          coverageIssue,
 	}, nil
 }
 
@@ -489,6 +535,9 @@ func (r *LiveUsageReader) initialize(ctx context.Context, now time.Time) error {
 }
 
 func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool) error {
+	if full {
+		r.discoveryCoverageIssue = ""
+	}
 	roots := []string{r.SessionsRoot}
 	if !full {
 		roots = roots[:0]
@@ -515,7 +564,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			if err := contextErr(ctx); err != nil {
 				return err
 			}
-			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !isRolloutFile(entry.Name()) {
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || (!isRolloutFile(entry.Name()) && !isCompressedRolloutFile(entry.Name())) {
 				return nil
 			}
 			info, err := entry.Info()
@@ -525,7 +574,19 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 				}
 				return nil
 			}
+			if isCompressedRolloutFile(entry.Name()) {
+				if err := r.addCompressedFile(ctx, path, info); err != nil {
+					r.discoveryCoverageIssue = "compressed rollout history could not be verified"
+					if firstFileErr == nil {
+						firstFileErr = err
+					}
+				}
+				return nil
+			}
 			if cursor, exists := r.files[path]; exists {
+				if cursor.compressed {
+					return r.restoreCompressedCursor(path, info, cursor)
+				}
 				cursor.observeFile(info, r.activityNow())
 				return nil
 			}
@@ -568,6 +629,13 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 	if err := cursor.bootstrapActivity(path, info.Size(), r.activityNow()); err != nil {
 		return err
 	}
+	// Both bootstrap scans reject late failures from older turns. Establish
+	// their turn scope first, including when discovery finds a new rollout.
+	turnID, err := latestRolloutTurnID(path, cursor)
+	if err != nil {
+		return err
+	}
+	cursor.currentTurnID = turnID
 	if r.activityNow().Sub(cursor.activityTime()) <= activeRolloutHorizon {
 		attention, err := latestSessionAttention(path, cursor)
 		if err != nil {
@@ -593,11 +661,6 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return modelErr
 		}
 		cursor.currentModel = model
-		turnID, turnErr := latestRolloutTurnID(path, cursor)
-		if turnErr != nil {
-			return turnErr
-		}
-		cursor.currentTurnID = turnID
 		total, err := latestTokenTotal(path)
 		if err != nil {
 			return err
@@ -611,6 +674,11 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		if existingThread {
 			r.apiEqAccountingAdjustments++
 		}
+	}
+	// Replacing this path changes the historical baseline, not the activity
+	// already observed by this process. Keep it only for the same thread.
+	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
+		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
 	}
 	r.files[path] = cursor
 	return nil
@@ -697,7 +765,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 				cursor.currentModel = model
 				cursor.currentServiceTier = cursor.nextServiceTier
 			}
-			if attention, ordinal, at, ok := sessionAttentionRecord(line); ok &&
+			if attention, ordinal, at, ok := sessionAttentionRecord(line, cursor.currentTurnID); ok &&
 				tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				cursor.attention = attention
 			}
@@ -937,7 +1005,7 @@ func latestSessionAttention(path string, cursor *rolloutCursor) (sessionAttentio
 			firstComplete = 0
 		}
 		for index := len(lines) - 1; index >= firstComplete; index-- {
-			attention, ordinal, at, ok := sessionAttentionRecord(lines[index])
+			attention, ordinal, at, ok := sessionAttentionRecord(lines[index], cursor.currentTurnID)
 			if ok && tokenRecordIsOwned(ordinal, cursor.subagentHistoryStartOrdinal, at, cursor.nonRoot, cursor.startedAt) {
 				return attention, nil
 			}
@@ -947,7 +1015,7 @@ func latestSessionAttention(path string, cursor *rolloutCursor) (sessionAttentio
 	return sessionAttentionUnknown, nil
 }
 
-func sessionAttentionRecord(line []byte) (sessionAttentionState, *uint64, time.Time, bool) {
+func sessionAttentionRecord(line []byte, currentTurnID string) (sessionAttentionState, *uint64, time.Time, bool) {
 	if !bytes.Contains(line, []byte(`"event_msg"`)) && !bytes.Contains(line, []byte(`"response_item"`)) {
 		return sessionAttentionUnknown, nil, time.Time{}, false
 	}
@@ -961,6 +1029,9 @@ func sessionAttentionRecord(line []byte) (sessionAttentionState, *uint64, time.T
 	if event.Type != "event_msg" {
 		return sessionAttentionUnknown, nil, time.Time{}, false
 	}
+	if (event.Payload.Type == "error" || event.Payload.Type == "task_complete" || event.Payload.Type == "turn_complete") && currentTurnID != "" && event.Payload.TurnID != "" && currentTurnID != event.Payload.TurnID {
+		return sessionAttentionUnknown, nil, time.Time{}, false
+	}
 	switch event.Payload.Type {
 	case "request_user_input":
 		if event.Payload.IsBlocking == nil || *event.Payload.IsBlocking {
@@ -969,7 +1040,20 @@ func sessionAttentionRecord(line []byte) (sessionAttentionState, *uint64, time.T
 	case "exec_approval_request", "apply_patch_approval_request", "request_permissions", "elicitation_request":
 		return sessionAttentionApproval, event.Ordinal, event.Timestamp, true
 	case "task_complete", "turn_complete":
+		if len(event.Payload.Error) > 0 && string(event.Payload.Error) != "null" {
+			return sessionAttentionFailed, event.Ordinal, event.Timestamp, true
+		}
 		return sessionAttentionIdle, event.Ordinal, event.Timestamp, true
+	case "error":
+		if event.Payload.WillRetry != nil && *event.Payload.WillRetry {
+			break
+		}
+		var raw struct {
+			Payload json.RawMessage `json:"payload"`
+		}
+		if json.Unmarshal(line, &raw) == nil && failureAffectsTurn(sessionFailureContext(SessionContext{}, raw.Payload)) {
+			return sessionAttentionFailed, event.Ordinal, event.Timestamp, true
+		}
 	case "task_started", "turn_started", "user_message", "exec_command_begin", "dynamic_tool_call_response":
 		return sessionAttentionWorking, event.Ordinal, event.Timestamp, true
 	}
@@ -1245,27 +1329,8 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 	reader := bufio.NewReader(file)
 	for record := 0; record < 64; record++ {
 		line, readErr := reader.ReadBytes('\n')
-		if bytes.Contains(line, []byte(`"session_meta"`)) {
-			var event rolloutMetadataEvent
-			if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
-				var payload rolloutMetadataPayload
-				if json.Unmarshal(event.Payload, &payload) == nil {
-					parent, nonRoot := sessionSourceParent(payload.Source)
-					if payload.ParentThreadID != "" {
-						parent = payload.ParentThreadID
-						nonRoot = true
-					}
-					if payload.ThreadSource == "subagent" {
-						nonRoot = true
-					}
-					return rolloutMetadata{
-						ID: payload.ID, ParentThreadID: parent,
-						WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
-						StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
-						SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
-					}, nil
-				}
-			}
+		if metadata, ok := rolloutMetadataRecord(line); ok {
+			return metadata, nil
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
@@ -1275,6 +1340,32 @@ func readRolloutMetadata(path string) (rolloutMetadata, error) {
 		}
 	}
 	return rolloutMetadata{}, nil
+}
+
+func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
+	if bytes.Contains(line, []byte(`"session_meta"`)) {
+		var event rolloutMetadataEvent
+		if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Type == "session_meta" {
+			var payload rolloutMetadataPayload
+			if json.Unmarshal(event.Payload, &payload) == nil {
+				parent, nonRoot := sessionSourceParent(payload.Source)
+				if payload.ParentThreadID != "" {
+					parent = payload.ParentThreadID
+					nonRoot = true
+				}
+				if payload.ThreadSource == "subagent" {
+					nonRoot = true
+				}
+				return rolloutMetadata{
+					ID: payload.ID, ParentThreadID: parent,
+					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
+					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
+					SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
+				}, true
+			}
+		}
+	}
+	return rolloutMetadata{}, false
 }
 
 func sessionSourceParent(raw json.RawMessage) (string, bool) {
@@ -1357,9 +1448,6 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		exactWorking := exact && exactStatus == sessionRuntimeWorking
 		localWorking := !exact && writerActive && cursor.attention == sessionAttentionWorking
 		attention := sessionAttention(cursor.attention, writerActive, writerLocksSupported, quietFor, exactStatus, exact)
-		if !exact && attention == SessionAttentionInput && cursor.attention == sessionAttentionIdle && cursor.preview.Kind == SessionContextReply {
-			attention = SessionAttentionComplete
-		}
 		if !active && !exactWorking && attention == SessionAttentionNone && cursor.observedTokens == 0 && len(cursor.modelCalls) == 0 && len(cursor.turnTimings) == 0 {
 			continue
 		}
@@ -1379,20 +1467,28 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		group.Active = group.Active || active || exactWorking || attention != SessionAttentionNone
 		group.Attention = mergeSessionAttention(group.Attention, attention)
 		preview := cursor.preview
+		if exact && (exactStatus == sessionRuntimeWorking || exactStatus == sessionRuntimeComplete) && preview.Kind == SessionContextFailure {
+			preview = SessionContext{}
+		}
 		if exact && preview.pending() {
 			preview = SessionContext{}
 		}
 		if live, ok := r.daemonContexts[cursor.threadID]; ok {
 			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
 				preview = live
-			} else if preview.Kind == SessionContextReply && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
+			} else if (preview.Kind == SessionContextReply || preview.Kind == SessionContextFailure) && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
 				// The local task_complete record can be newer than the live
-				// final message. Keep its reply, but retain observed prompt
+				// final message. Keep its reply/error, but retain observed prompt
 				// context only for the same positively identified turn.
 				preview.CurrentTask, preview.LatestGuidance = live.CurrentTask, live.LatestGuidance
 				preview.LatestGuidanceID = live.LatestGuidanceID
 				preview.TurnID = live.TurnID
 			}
+		}
+		if preview.Kind == SessionContextFailure && (!writerLocksSupported || writerActive || exact) && (!exact || exactStatus != sessionRuntimeWorking && exactStatus != sessionRuntimeComplete) {
+			attention = mergeSessionAttention(attention, SessionAttentionError)
+			group.Attention = mergeSessionAttention(group.Attention, attention)
+			localWorking = false
 		}
 		// A persisted request is not proof that it is still outstanding. Match
 		// it to current attention before displaying it as actionable context.
@@ -1476,6 +1572,8 @@ func sessionAttention(state sessionAttentionState, writerActive, writerLocksSupp
 			return SessionAttentionApproval
 		case sessionRuntimeInput:
 			return SessionAttentionInput
+		case sessionRuntimeFailed:
+			return SessionAttentionError
 		}
 		// A status supplied by the shared daemon is authoritative. In
 		// particular, an active thread without a waiting flag must not age into
@@ -1488,10 +1586,12 @@ func sessionAttention(state sessionAttentionState, writerActive, writerLocksSupp
 	switch state {
 	case sessionAttentionIdle:
 		if writerActive {
-			return SessionAttentionInput
+			return SessionAttentionComplete
 		}
 	case sessionAttentionInput:
 		return SessionAttentionInput
+	case sessionAttentionFailed:
+		return SessionAttentionError
 	case sessionAttentionApproval:
 		return SessionAttentionApproval
 	}
@@ -1511,8 +1611,10 @@ func mergeSessionAttention(current, next SessionAttention) SessionAttention {
 func sessionAttentionPriority(attention SessionAttention) int {
 	switch attention {
 	case SessionAttentionApproval:
-		return 4
+		return 5
 	case SessionAttentionInput:
+		return 4
+	case SessionAttentionError:
 		return 3
 	case SessionAttentionCheck:
 		return 2

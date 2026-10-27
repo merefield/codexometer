@@ -216,6 +216,7 @@ type Model struct {
 	quotaAPIIssues         map[string]string
 	quotaAPIAccount        string
 	quotaAPITelemetryIssue string
+	quotaAPICoverageIssue  string
 }
 
 type fetchedMsg struct {
@@ -1089,6 +1090,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		observedAt := message.at
 		if observedAt.IsZero() {
 			observedAt = time.Now()
+		}
+		if message.usage.APIEqCoverageIssue != "" {
+			m.observeQuotaAPICoverage(message.usage.APIEqCoverageIssue)
 		}
 		m.quotaGraphs.Observe(message.snapshot, message.err != nil, observedAt)
 		var quotaStepCommand tea.Cmd
@@ -2274,16 +2278,24 @@ func (m Model) fetch() tea.Cmd {
 		message := fetchedMsg{
 			resetRevision: m.resetRevision,
 			snapshot:      snapshot, err: err, at: time.Now(),
+			usage:                  codex.LiveUsageSnapshot{APIEqCoverageIssue: before.APIEqCoverageIssue},
 			benchmarkQuotaRevision: m.benchmarkQuotaAccounting.revision,
 		}
 		if err == nil && m.usageFetcher != nil {
 			after, afterErr := m.usageFetcher.FetchTokenUsage(context.Background())
 			after = m.benchmarkQuotaAccounting.combine(after)
+			if after.APIEqCoverageIssue != "" {
+				message.usage.APIEqCoverageIssue = after.APIEqCoverageIssue
+			}
+			coverageIssue := message.usage.APIEqCoverageIssue
 			switch {
 			case beforeErr != nil:
 				message.usageErr = beforeErr
 			case afterErr != nil:
 				message.usageErr = afterErr
+			case coverageIssue != "":
+				message.usage = after
+				message.usage.APIEqCoverageIssue = coverageIssue
 			case !quotaAPIAccountingEqual(before, after) || after.APIEqPendingCalls > 0:
 				message.usageErr = errQuotaObservationChanged
 			default:
