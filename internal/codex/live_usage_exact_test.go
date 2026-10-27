@@ -202,7 +202,7 @@ func TestExactDiscoveryDoesNotBaselineConcurrentAppendOrPartialRecord(t *testing
 			appendRollout(t, path, line)
 		}
 		delete(r.files, path)
-		if err := r.addFile(path, file); err != nil {
+		if err := r.addFile(context.Background(), path, file); err != nil {
 			t.Fatal(err)
 		}
 		got, err := r.FetchTokenUsage(context.Background())
@@ -226,7 +226,7 @@ func TestExactReplacementRolloutDoesNotBillCopiedThreadHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.addFile(replacement, info); err != nil {
+	if err := r.addFile(context.Background(), replacement, info); err != nil {
 		t.Fatal(err)
 	}
 	got, err := r.FetchTokenUsage(context.Background())

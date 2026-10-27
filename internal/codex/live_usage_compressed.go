@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -36,12 +37,13 @@ func (r *LiveUsageReader) addCompressedFile(ctx context.Context, path string, in
 	if old != nil && old.compressed && old.compressedInfo.Size() == info.Size() && old.compressedInfo.ModTime() == info.ModTime() {
 		return nil
 	}
-	cursor, err := compressedRolloutBaseline(ctx, path, info)
+	cursor, err := compressedRolloutBaseline(ctx, path, info, r.activityNow())
 	if err != nil {
 		return fmt.Errorf("read compressed rollout: %w", err)
 	}
 	if old != nil && old.threadID == cursor.threadID {
 		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = old.observedTokens, old.modelCalls, old.turnTimings
+		cursor.lastGrowthAt = old.lastGrowthAt
 		if old.offset != cursor.offset {
 			r.apiEqAccountingAdjustments++
 		}
@@ -50,7 +52,7 @@ func (r *LiveUsageReader) addCompressedFile(ctx context.Context, path string, in
 	return nil
 }
 
-func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInfo) (*rolloutCursor, error) {
+func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInfo, now time.Time) (*rolloutCursor, error) {
 	if info.Size() > compressedHistoryLimit {
 		return nil, errors.New("compressed history exceeds 256 MiB source limit")
 	}
@@ -100,6 +102,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 			cursor.compressedTail = append(cursor.compressedTail[:0], tail...)
 			if !oversized {
 				baselineRolloutRecord(cursor, line)
+				cursor.observeEvent(line, now)
 			}
 			line = line[:0]
 			oversized = false
@@ -112,6 +115,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 		}
 	}
 	cursor.exactUsageUncertain = cursor.exactUsageUncertain && !cursor.exactUsage
+	cursor.lastSize = decoded // logical JSONL bytes, including an incomplete tail, not archive size
 	if cursor.threadID == "" {
 		return nil, errors.New("compressed history omitted session metadata")
 	}
@@ -156,7 +160,7 @@ func baselineRolloutRecord(c *rolloutCursor, line []byte) {
 	}
 }
 
-func (r *LiveUsageReader) restoreCompressedCursor(path string, info os.FileInfo, cursor *rolloutCursor) error {
+func (r *LiveUsageReader) restoreCompressedCursor(ctx context.Context, path string, info os.FileInfo, cursor *rolloutCursor) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -169,7 +173,7 @@ func (r *LiveUsageReader) restoreCompressedCursor(path string, info os.FileInfo,
 	matches := false
 	if readErr == nil && n == len(tail) && bytes.Equal(tail, cursor.compressedTail) && info.Size() >= cursor.offset {
 		digest := sha256.New()
-		_, err = io.Copy(digest, io.NewSectionReader(file, 0, cursor.offset))
+		_, err = io.Copy(digest, rolloutContextReader{ctx, io.NewSectionReader(file, 0, cursor.offset)})
 		if err != nil {
 			file.Close()
 			return err
@@ -181,10 +185,10 @@ func (r *LiveUsageReader) restoreCompressedCursor(path string, info os.FileInfo,
 		cursor.compressed = false
 		cursor.compressedInfo = nil
 		cursor.compressedTail = nil
-		cursor.lastModified = info.ModTime()
+		cursor.observeFile(info, r.activityNow())
 		return nil
 	}
 	// A changed/truncated restoration cannot reuse an offset from different
 	// history. Existing-thread discovery rebases it rather than billing copies.
-	return r.addFile(path, info)
+	return r.addFile(ctx, path, info)
 }

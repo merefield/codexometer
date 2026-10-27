@@ -426,7 +426,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 				continue
 			}
 			if err == nil {
-				err = r.restoreCompressedCursor(path, info, cursor)
+				err = r.restoreCompressedCursor(ctx, path, info, cursor)
 			}
 			if err != nil {
 				if firstReadErr == nil {
@@ -585,12 +585,12 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 			}
 			if cursor, exists := r.files[path]; exists {
 				if cursor.compressed {
-					return r.restoreCompressedCursor(path, info, cursor)
+					return r.restoreCompressedCursor(ctx, path, info, cursor)
 				}
 				cursor.observeFile(info, r.activityNow())
 				return nil
 			}
-			if err := r.addFile(path, info); err != nil {
+			if err := r.addFile(ctx, path, info); err != nil {
 				if firstFileErr == nil {
 					firstFileErr = err
 				}
@@ -611,7 +611,7 @@ func (r *LiveUsageReader) discover(ctx context.Context, now time.Time, full bool
 	return nil
 }
 
-func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
+func (r *LiveUsageReader) addFile(ctx context.Context, path string, info os.FileInfo) error {
 	metadata, err := readRolloutMetadata(path)
 	if err != nil {
 		return err
@@ -626,7 +626,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		nonRoot:                     metadata.NonRoot,
 		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
 	}
-	if err := cursor.bootstrapActivity(path, info.Size(), r.activityNow()); err != nil {
+	if err := cursor.bootstrapActivity(ctx, path, info.Size(), r.activityNow()); err != nil {
 		return err
 	}
 	// Both bootstrap scans reject late failures from older turns. Establish
@@ -679,6 +679,7 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 	// already observed by this process. Keep it only for the same thread.
 	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
 		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
+		cursor.lastGrowthAt = previous.lastGrowthAt
 	}
 	r.files[path] = cursor
 	return nil

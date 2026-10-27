@@ -1,16 +1,30 @@
 package codex
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"time"
 )
 
-// Match the context bootstrap target. Extend through one overlapping record
-// when needed, so a large tool result or reasoning item is not discarded.
+// Match the context bootstrap target. Extend through an overlapping record up
+// to the existing 4 MiB baseline-record bound, never an unbounded history scan.
 const rolloutActivityTailBytes = 256 * 1024
+
+type rolloutContextReader struct {
+	ctx context.Context
+	io.Reader
+}
+
+func (r rolloutContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(p)
+}
 
 func (r *LiveUsageReader) activityNow() time.Time {
 	if r.now != nil {
@@ -59,45 +73,70 @@ func (c *rolloutCursor) observeEvent(line []byte, now time.Time) {
 // Existing records establish activity age, never new token usage. Ignore an
 // incomplete final record and future timestamps rather than keeping old logs
 // active indefinitely. Only headers are decoded; no content is retained.
-func (c *rolloutCursor) bootstrapActivity(path string, size int64, now time.Time) error {
+func (c *rolloutCursor) bootstrapActivity(ctx context.Context, path string, size int64, now time.Time) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	start := max(size-rolloutActivityTailBytes, 0)
-	start, err = rolloutActivityRecordStart(f, start)
+	start, partial, err := rolloutActivityRecordStart(ctx, f, start)
 	if err != nil {
 		return err
 	}
-	data, err := io.ReadAll(io.NewSectionReader(f, start, size-start))
-	if err != nil {
-		return err
+	reader := bufio.NewReaderSize(io.NewSectionReader(f, start, size-start), 64*1024)
+	var line []byte
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		chunk, readErr := reader.ReadSlice('\n')
+		if !partial && len(line)+len(chunk) <= rolloutBaselineLineLimit {
+			line = append(line, chunk...)
+		} else {
+			partial = true
+			line = nil
+		}
+		if len(chunk) > 0 && chunk[len(chunk)-1] == '\n' {
+			if !partial {
+				c.observeEvent(line, now)
+			}
+			line = line[:0]
+			partial = false
+		}
+		if readErr == bufio.ErrBufferFull {
+			continue
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return nil // An incomplete final record is not an event.
+			}
+			return readErr
+		}
 	}
-	lines := bytes.Split(data, []byte{'\n'})
-	for _, line := range lines[:max(len(lines)-1, 0)] {
-		c.observeEvent(line, now)
-	}
-	return nil
 }
 
 // Find the beginning of the record overlapping the target tail. Fixed chunks
 // avoid repeatedly copying a growing carry buffer. Read at most that record,
-// not earlier history; memory for decoding follows the existing JSONL reader's
-// largest-record behavior rather than imposing a truncating record limit.
-func rolloutActivityRecordStart(f *os.File, start int64) (int64, error) {
+// not earlier history. If the overlap exceeds the bound, skip that record
+// conservatively but still inspect complete records later in the tail.
+func rolloutActivityRecordStart(ctx context.Context, f *os.File, start int64) (int64, bool, error) {
 	const chunkBytes = 64 * 1024
 	buffer := make([]byte, chunkBytes)
-	for start > 0 {
-		size := min(start, int64(len(buffer)))
+	floor := max(start-rolloutBaselineLineLimit, 0)
+	for start > floor {
+		if err := ctx.Err(); err != nil {
+			return 0, false, err
+		}
+		size := min(start-floor, int64(len(buffer)))
 		start -= size
 		n, err := f.ReadAt(buffer[:size], start)
 		if err != nil && err != io.EOF {
-			return 0, err
+			return 0, false, err
 		}
 		if index := bytes.LastIndexByte(buffer[:n], '\n'); index >= 0 {
-			return start + int64(index) + 1, nil
+			return start + int64(index) + 1, false, nil
 		}
 	}
-	return 0, nil
+	return start, start > 0, nil
 }

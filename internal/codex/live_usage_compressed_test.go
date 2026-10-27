@@ -243,7 +243,7 @@ func TestReplacingRolloutWithDifferentThreadDoesNotInheritActivity(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.addFile(path, info); err != nil {
+	if err := r.addFile(context.Background(), path, info); err != nil {
 		t.Fatal(err)
 	}
 	cursor := r.files[path]

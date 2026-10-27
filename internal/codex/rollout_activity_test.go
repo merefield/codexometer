@@ -76,7 +76,7 @@ func TestRolloutActivityBootstrapKeepsRecordAtExactTailBoundary(t *testing.T) {
 	data := "{}\n" + recent + strings.Repeat(" ", rolloutActivityTailBytes-len(recent))
 	writeRollout(t, path, data)
 	c := &rolloutCursor{}
-	if err := c.bootstrapActivity(path, int64(len(data)), now); err != nil {
+	if err := c.bootstrapActivity(context.Background(), path, int64(len(data)), now); err != nil {
 		t.Fatal(err)
 	}
 	if !c.lastEventAt.Equal(now) {
@@ -95,7 +95,7 @@ func TestRolloutActivityBootstrapOversizedPartialRecord(t *testing.T) {
 	}
 	writeRollout(t, path, string(line))
 	c := &rolloutCursor{}
-	if err := c.bootstrapActivity(path, int64(len(line)), now); err != nil {
+	if err := c.bootstrapActivity(context.Background(), path, int64(len(line)), now); err != nil {
 		t.Fatal(err)
 	}
 	if !c.lastEventAt.IsZero() {
@@ -110,7 +110,7 @@ func TestRolloutActivityBootstrapRespectsOrdinalBoundary(t *testing.T) {
 	writeRollout(t, path, line)
 	boundary := uint64(10)
 	c := &rolloutCursor{nonRoot: true, subagentHistoryStartOrdinal: &boundary}
-	if err := c.bootstrapActivity(path, int64(len(line)), now); err != nil {
+	if err := c.bootstrapActivity(context.Background(), path, int64(len(line)), now); err != nil {
 		t.Fatal(err)
 	}
 	if !c.lastEventAt.IsZero() {
@@ -238,7 +238,7 @@ func TestRolloutActivityIgnoresFutureInheritedAndPartialEvents(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := &rolloutCursor{nonRoot: tc.child, startedAt: now}
-			if err := c.bootstrapActivity(path, info.Size(), now); err != nil {
+			if err := c.bootstrapActivity(context.Background(), path, info.Size(), now); err != nil {
 				t.Fatal(err)
 			}
 			if !c.lastEventAt.IsZero() {
