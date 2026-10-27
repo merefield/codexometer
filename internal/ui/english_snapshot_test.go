@@ -39,8 +39,8 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	// Baseline includes Pace graph controls, explicit panel/border
 	// backgrounds, Sessions Zero/Close All, the ACTIVE category and responsive
 	// summary filters; every theme, view and size
-	// remains covered. The displayed pricing review date is now 2026-10-12.
-	const want = "51ffe11ef44315386abd14364c7c64e2dd3c56ada230d21be539e2e29db88f48"
+	// remains covered. The displayed pricing review date is now 2026-10-27.
+	const want = "20af39ed4d2355a8cc183775b36d8d0ed4dc51a1284858a98c0011587a84a0ca"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

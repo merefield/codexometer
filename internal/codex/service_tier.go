@@ -8,9 +8,8 @@ import (
 )
 
 // FastAPIPricingRetrievedOn is separate from the standard-price review date.
-// Sources: https://developers.openai.com/api/docs/pricing and
-// https://learn.chatgpt.com/docs/agent-configuration/speed (GPT-5.6 API rates).
-const FastAPIPricingRetrievedOn = "2026-10-12"
+// Source: https://developers.openai.com/api/docs/pricing (Fast, Flex and Ultrafast).
+const FastAPIPricingRetrievedOn = "2026-10-27"
 
 // requestedTierPremium prices a single response's requested tier. It does not
 // claim that the backend delivered/billed that tier. Empty means unavailable,
@@ -29,7 +28,7 @@ func requestedTierMultiplier(model, tier string) (float64, bool) {
 		return 1, true
 	case "fast", "priority":
 		switch name {
-		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex":
+		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex":
 			return 2, true
 		case "gpt-5.5":
 			return 2.5, true
@@ -40,7 +39,7 @@ func requestedTierMultiplier(model, tier string) (float64, bool) {
 		}
 	case "flex":
 		switch name {
-		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.5":
+		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.5":
 			return 0.5, true
 		}
 	}

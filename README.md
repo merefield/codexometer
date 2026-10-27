@@ -868,7 +868,7 @@ hidden from Sessions; hiding presentation does not exclude their aggregate
 subscription impact from Quota views.
 The embedded rates come from the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
-and were last reviewed on **2026-10-12**.
+and were last reviewed on **2026-10-27**.
 Every Quota presentation repeats that retrieval date and a terminal hyperlink
 to the source in its footer when the terminal is wide enough, matching the
 Benchmark view and making stale compiled pricing conspicuous wherever a priced
@@ -2525,24 +2525,44 @@ release was built. Codexometer does not inherit or guess such a price. Pricing
 can change after a binary is released; consult the
 [official OpenAI API pricing page](https://developers.openai.com/api/docs/pricing)
 for current values. The compiled table was last updated from
-that page on **2026-09-30**; every pricing-bearing Quota or Benchmark footer
+that page on **2026-10-27**; every pricing-bearing Quota or Benchmark footer
 displays both the retrieval date and a terminal hyperlink to the source when
 space permits, so stale embedded pricing is visible while interpreting results.
-The maintained price table covers GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Sol, GPT-5.6 Terra,
-GPT-5.6 Luna, GPT-5.5, GPT-5.4, GPT-5.4 Mini, and GPT-5.3 Codex.
+The maintained table uses these standard USD rates per million tokens. All
+entries were checked against the official pricing page on the date above.
 
-The September additions use these standard USD rates per million tokens:
-
-| Model | Input | Cached input | Cache writes | Output |
+| Model | Input | Cached input | Cache writes (30 minutes) | Output |
 | --- | ---: | ---: | ---: | ---: |
+| GPT-6 Astra | $10.00 | $1.00 | $12.50 | $50.00 |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | $2.00 | $0.10 | $2.50 | $10.00 |
+| [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | $1.00 | $0.05 | $1.25 | $5.00 |
 | [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | $2.00 | $0.20 | $2.50 | $10.00 |
 | [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | $0.10 | $0.01 | $0.125 | $0.50 |
+| GPT-5.6 Sol | $4.00 | $0.40 | $5.00 | $20.00 |
+| GPT-5.6 Terra | $2.00 | $0.20 | $2.50 | $12.00 |
+| GPT-5.6 Luna | $0.20 | $0.02 | $0.25 | $1.20 |
+| GPT-5.5 | $5.00 | $0.50 | Not published | $30.00 |
+| GPT-5.4 | $2.50 | $0.25 | Not published | $15.00 |
+| GPT-5.4 Mini | $0.75 | $0.075 | Not published | $4.50 |
+| GPT-5.3 Codex | $1.75 | $0.175 | Not published | $14.00 |
+| GPT-5.2 | $1.75 | $0.175 | Not published | $14.00 |
 
-Above 272,000 input tokens per response, input and cache rates double and
-output rates multiply by 1.5 for the entire response. Requested Fast/priority
-pricing doubles the applicable rates in live estimates; benchmark API EQ
-continues to use standard pricing. Existing model prices are retained.
+For GPT-6, GPT-6.1, GPT-5.6, GPT-5.5 and GPT-5.4 (not Mini), above 272,000
+input tokens per response, input and cache rates double and output rates
+multiply by 1.5 for the entire response. Models without maintained long-context
+rates remain unpriced above that threshold. Requested Fast/priority pricing
+doubles the applicable rates in live estimates, except GPT-5.5's 2.5× rate;
+long-context Fast pricing for GPT-5.4 and GPT-5.5 remains unpriced. Published
+Flex rates are half Standard; Ultrafast is 6× Standard for GPT-6 Astra and
+GPT-6.1 Sol only. GPT-6.1 Terra has no maintained Ultrafast price, and the
+unpublished ID `gpt-6-terra` is not treated as an alias. Benchmark API EQ
+continues to use standard pricing.
+
+Cache-write estimates use the published 30-minute rates. The observed token
+breakdown does not identify retention duration; 12-hour cache writes cost more
+and are not separately accounted for. Existing model prices are unchanged by
+this update; GPT-5.6 Sol's promotional pricing is currently advertised through
+at least 21 November 2026.
 
 The figures are useful for comparing these particular observed trials, but
 they have important limitations:
