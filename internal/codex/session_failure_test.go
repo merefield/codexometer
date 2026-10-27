@@ -10,6 +10,56 @@ import (
 
 const busyMessage = "Selected model is at capacity. Please try a different model."
 
+func TestSessionFailureBootstrapIgnoresLateOlderTurnFailures(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		format := "plain"
+		if compressed {
+			format = "compressed"
+		}
+		for _, kind := range []string{"task_complete", "turn_complete", "error"} {
+			t.Run(format+"/"+kind, func(t *testing.T) {
+				home := t.TempDir()
+				path := testRolloutPath(t, home, time.Now(), "late-failure")
+				line := func(payload map[string]any) string {
+					return string(contextRecord(t, "event_msg", payload)) + "\n"
+				}
+				failure := map[string]any{"type": kind, "turn_id": "old"}
+				if kind == "error" {
+					failure["message"], failure["codex_error_info"] = busyMessage, "server_overloaded"
+				} else {
+					failure["error"] = map[string]string{"message": busyMessage, "codex_error_info": "server_overloaded"}
+				}
+				writeRollout(t, path, sessionMetaLine("s", `"cli"`, "/work", nil)+"\n"+
+					line(map[string]any{"type": "task_started", "turn_id": "old"})+
+					line(map[string]any{"type": "task_started", "turn_id": "new"})+
+					line(map[string]any{"type": "agent_message", "turn_id": "new", "message": "Current turn is running"})+
+					line(failure))
+				if compressed {
+					compressTestRollout(t, path, true)
+				}
+				r, err := NewLiveUsageReader(home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.statusProvider = nil
+				u, err := r.FetchTokenUsage(context.Background())
+				if err != nil || len(u.Sessions) != 1 {
+					t.Fatal("could not restore session", u, err)
+				}
+				session := u.Sessions[0]
+				if session.Attention == SessionAttentionError || session.Context.Kind != SessionContextActivity || session.Context.Text != "Current turn is running" || session.Context.TurnID != "new" {
+					t.Fatal("late old failure replaced current-turn status or context at startup", session)
+				}
+				for _, cursor := range r.files {
+					if cursor.currentTurnID != "new" || cursor.attention != sessionAttentionWorking {
+						t.Fatal("bootstrap restored the wrong turn state", cursor.currentTurnID, cursor.attention)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestSessionFailureReaderBootstrapAndRecovery(t *testing.T) {
 	for _, compressed := range []bool{false, true} {
 		home := t.TempDir()

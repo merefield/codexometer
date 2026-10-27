@@ -621,6 +621,13 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 		nonRoot:                     metadata.NonRoot,
 		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
 	}
+	// Both bootstrap scans reject late failures from older turns. Establish
+	// their turn scope first, including when discovery finds a new rollout.
+	turnID, err := latestRolloutTurnID(path, cursor)
+	if err != nil {
+		return err
+	}
+	cursor.currentTurnID = turnID
 	if time.Since(info.ModTime()) <= activeRolloutHorizon {
 		attention, err := latestSessionAttention(path, cursor)
 		if err != nil {
@@ -646,11 +653,6 @@ func (r *LiveUsageReader) addFile(path string, info os.FileInfo) error {
 			return modelErr
 		}
 		cursor.currentModel = model
-		turnID, turnErr := latestRolloutTurnID(path, cursor)
-		if turnErr != nil {
-			return turnErr
-		}
-		cursor.currentTurnID = turnID
 		total, err := latestTokenTotal(path)
 		if err != nil {
 			return err
