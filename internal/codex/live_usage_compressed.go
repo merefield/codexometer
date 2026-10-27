@@ -69,6 +69,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 	reader := bufio.NewReaderSize(io.LimitReader(decoder, compressedHistoryLimit+1), 64<<10)
 	cursor := &rolloutCursor{lastModified: info.ModTime(), compressed: true, compressedInfo: info}
 	var line, tail []byte
+	var activityTail rolloutActivityTail
 	digest := sha256.New()
 	var decoded int64
 	oversized := false
@@ -82,6 +83,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 		if decoded > compressedHistoryLimit {
 			return nil, errors.New("decoded history exceeds 256 MiB baseline limit")
 		}
+		activityTail.append(chunk)
 		tail = append(tail, chunk...)
 		if len(tail) > 4096 {
 			tail = append(tail[:0], tail[len(tail)-4096:]...)
@@ -102,7 +104,6 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 			cursor.compressedTail = append(cursor.compressedTail[:0], tail...)
 			if !oversized {
 				baselineRolloutRecord(cursor, line)
-				cursor.observeEvent(line, now)
 			}
 			line = line[:0]
 			oversized = false
@@ -118,6 +119,10 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 	cursor.lastSize = decoded // logical JSONL bytes, including an incomplete tail, not archive size
 	if cursor.threadID == "" {
 		return nil, errors.New("compressed history omitted session metadata")
+	}
+	size := int64(len(activityTail.data))
+	if err := cursor.observeActivityTail(ctx, &activityTail, size, decoded > size, now); err != nil {
+		return nil, err
 	}
 	return cursor, nil
 }

@@ -1,9 +1,11 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -193,5 +195,87 @@ func TestRebasedRolloutPreservesPreviouslyObservedGrowth(t *testing.T) {
 	}}
 	if err := r.addFile(context.Background(), path, info); err != nil || !r.files[path].lastGrowthAt.Equal(growth) {
 		t.Fatal("rebasing discarded real observed activity", r.files[path], err)
+	}
+}
+
+func TestCompressedActivityUsesSameBoundedTailAsPlainHistory(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	old := now.Add(-time.Hour)
+	// The fresh timestamp is outside even the permitted overlap. The full
+	// accounting pass still needs the token baseline from this older region.
+	filler := `{"timestamp":"` + old.Format(time.RFC3339) + `","type":"response_item","payload":{"type":"reasoning","text":"` +
+		strings.Repeat("x", 3*1024*1024) + `"}}` + "\n"
+	data := sessionMetaLine("growing", `"cli"`, "/work", nil) + "\n" +
+		attentionEventLine(now, "task_started", nil) + "\n" + tokenCountLine(now, 900) + "\n" + filler + filler
+	for _, compressed := range []bool{false, true} {
+		home := t.TempDir()
+		path := testRolloutPath(t, home, old, "growing")
+		writeRollout(t, path, data)
+		freezeRolloutTime(t, path, old)
+		if compressed {
+			compressTestRollout(t, path, true)
+			freezeRolloutTime(t, path+".zst", old)
+		}
+		r, err := NewLiveUsageReader(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.now = func() time.Time { return now }
+		r.statusProvider = stubSessionStatusProvider{unavailable: true}
+		u, err := r.FetchTokenUsage(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := r.files[path]
+		if !c.lastEventAt.Equal(old) || !c.activityTime().Equal(old) || u.SessionCount != 0 {
+			t.Fatal("out-of-window timestamp restored freshness", compressed, c.lastEventAt, c.activityTime(), u.SessionCount)
+		}
+		if c.totalTokens != 900 || u.TotalTokens != 0 {
+			t.Fatal("bounded activity scan changed the full accounting baseline", compressed, c.totalTokens, u.TotalTokens)
+		}
+	}
+}
+
+func TestRolloutActivityTailRetainsOnlyNewestBytesAcrossWraps(t *testing.T) {
+	limit := rolloutActivityTailBytes + rolloutBaselineLineLimit
+	data := make([]byte, 2*limit+1600)
+	for i := range data {
+		data[i] = byte((i*37 + i/251 + i/65521) % 251)
+	}
+	for _, chunks := range [][]int{{1, 65535, 123, limit, 17}, {limit + 10, 0, 33}, {limit - 1, 2, limit - 1, 100}} {
+		var tail rolloutActivityTail
+		used := 0
+		for _, n := range chunks {
+			tail.append(data[used : used+n])
+			used += n
+			if len(tail.data) != min(used, limit) {
+				t.Fatal("tail exceeded limit or dropped recent bytes", used, len(tail.data))
+			}
+			want := data[max(used-limit, 0):used]
+			got, err := io.ReadAll(io.NewSectionReader(&tail, 0, int64(len(tail.data))))
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatal("ring lost byte order", chunks, n, err)
+			}
+			// Match ReaderAt behaviour for reads that cross the physical wrap,
+			// end of data, and the EOF boundary, not just whole-window reads.
+			for _, offset := range []int64{0, int64(len(want) / 2), int64(len(want) - 1), int64(len(want))} {
+				got, expected := make([]byte, 73), make([]byte, 73)
+				n, err := tail.ReadAt(got, offset)
+				wn, werr := bytes.NewReader(want).ReadAt(expected, offset)
+				if n != wn || !errors.Is(err, werr) || !bytes.Equal(got, expected) {
+					t.Fatal("tail ReaderAt disagrees with ordered bytes", chunks, offset, n, wn, err, werr)
+				}
+			}
+		}
+	}
+}
+
+func TestClippedActivityTailCannotTrustItsInitialPartialRecord(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	old := now.Add(-time.Hour)
+	data := responseItemLine(now, "reasoning") + "\n" + responseItemLine(old, "reasoning") + "\n"
+	c := &rolloutCursor{}
+	if err := c.observeActivityTail(context.Background(), strings.NewReader(data), int64(len(data)), true, now); err != nil || !c.lastEventAt.Equal(old) {
+		t.Fatal("clipped prefix established freshness or hid later complete record", c.lastEventAt, err)
 	}
 }

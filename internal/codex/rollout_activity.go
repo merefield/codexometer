@@ -14,6 +14,53 @@ import (
 // to the existing 4 MiB baseline-record bound, never an unbounded history scan.
 const rolloutActivityTailBytes = 256 * 1024
 
+// Keep only the decoded activity window while the accounting scan traverses
+// compressed history. A ring avoids copying the whole window on every chunk.
+type rolloutActivityTail struct {
+	data []byte
+	next int
+}
+
+func (t *rolloutActivityTail) append(p []byte) {
+	const limit = rolloutActivityTailBytes + rolloutBaselineLineLimit
+	if len(p) >= limit {
+		t.data = append(t.data[:0], p[len(p)-limit:]...)
+		t.next = 0
+		return
+	}
+	if len(t.data) < limit {
+		n := min(limit-len(t.data), len(p))
+		t.data = append(t.data, p[:n]...)
+		p = p[n:]
+	}
+	if len(p) == 0 {
+		return
+	}
+	n := copy(t.data[t.next:], p)
+	copy(t.data, p[n:])
+	t.next = (t.next + len(p)) % limit
+}
+
+func (t *rolloutActivityTail) ReadAt(p []byte, offset int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if offset < 0 {
+		return 0, os.ErrInvalid
+	}
+	if offset >= int64(len(t.data)) {
+		return 0, io.EOF
+	}
+	n := min(len(p), len(t.data)-int(offset))
+	start := (t.next + int(offset)) % len(t.data)
+	first := copy(p[:n], t.data[start:])
+	copy(p[first:n], t.data[:n-first])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
 type rolloutContextReader struct {
 	ctx context.Context
 	io.Reader
@@ -79,12 +126,19 @@ func (c *rolloutCursor) bootstrapActivity(ctx context.Context, path string, size
 		return err
 	}
 	defer f.Close()
+	return c.observeActivityTail(ctx, f, size, false, now)
+}
+
+func (c *rolloutCursor) observeActivityTail(ctx context.Context, source io.ReaderAt, size int64, clipped bool, now time.Time) error {
 	start := max(size-rolloutActivityTailBytes, 0)
-	start, partial, err := rolloutActivityRecordStart(ctx, f, start)
+	start, partial, err := rolloutActivityRecordStart(ctx, source, start)
 	if err != nil {
 		return err
 	}
-	reader := bufio.NewReaderSize(io.NewSectionReader(f, start, size-start), 64*1024)
+	// A bounded decoded window may begin in the middle of a record. Never
+	// treat that clipped prefix as a complete event when no boundary was found.
+	partial = partial || clipped && start == 0
+	reader := bufio.NewReaderSize(io.NewSectionReader(source, start, size-start), 64*1024)
 	var line []byte
 	for {
 		if err := ctx.Err(); err != nil {
@@ -120,7 +174,7 @@ func (c *rolloutCursor) bootstrapActivity(ctx context.Context, path string, size
 // avoid repeatedly copying a growing carry buffer. Read at most that record,
 // not earlier history. If the overlap exceeds the bound, skip that record
 // conservatively but still inspect complete records later in the tail.
-func rolloutActivityRecordStart(ctx context.Context, f *os.File, start int64) (int64, bool, error) {
+func rolloutActivityRecordStart(ctx context.Context, source io.ReaderAt, start int64) (int64, bool, error) {
 	const chunkBytes = 64 * 1024
 	buffer := make([]byte, chunkBytes)
 	floor := max(start-rolloutBaselineLineLimit, 0)
@@ -130,7 +184,7 @@ func rolloutActivityRecordStart(ctx context.Context, f *os.File, start int64) (i
 		}
 		size := min(start-floor, int64(len(buffer)))
 		start -= size
-		n, err := f.ReadAt(buffer[:size], start)
+		n, err := source.ReadAt(buffer[:size], start)
 		if err != nil && err != io.EOF {
 			return 0, false, err
 		}
