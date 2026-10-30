@@ -27,6 +27,11 @@ func (p *daemonStatusProvider) commandHookRows(ctx context.Context, t commandThr
 			return nil, err
 		}
 	} else {
+		// A successful empty inventory is a valid thread result, not evidence
+		// of an unsupported selector. Never replace it with directory hooks.
+		if len(rows) == 0 {
+			return rows, nil
+		}
 		for _, raw := range rows {
 			var entry struct{ Cwd string }
 			if json.Unmarshal(raw, &entry) != nil || entry.Cwd == "" {

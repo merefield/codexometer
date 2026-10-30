@@ -1813,8 +1813,9 @@ writable mode. Browse-only entries do not execute tools or change configuration.
 On Codex 0.166.0, `/hooks` queries the selected loaded thread, including hooks
 from its execution environments, and identifies their environment when supplied.
 Older servers retain directory-based discovery. A real thread/permission/transport
-error is not silently replaced with a different inventory. Model/reasoning,
-permission and Plan changes remain guarded by the existing idle-state checks;
+error is not silently replaced with a different inventory, and a successful empty
+thread inventory remains empty rather than falling back to directory hooks.
+Model/reasoning, permission and Plan changes remain guarded by the existing idle-state checks;
 this compatibility update does not broaden write permissions.
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
@@ -2969,8 +2970,9 @@ available from the existing reader.
   outside scrollable reply text; available commands are separated from their
   justification. Missing commands are explicitly labelled, never reconstructed.
 - **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **MODEL BUSY /
-  TURN FAILED** represent confirmed turn errors and appear in **ERRORS**, with
-  the observed explanation in detail. Retrying errors do not raise failure pills.
+  MODEL UNAVAILABLE / CAPACITY RESTRICTED / TURN FAILED** represent confirmed turn
+  errors and appear in **ERRORS**, with the observed explanation in detail.
+  Retrying errors do not raise failure pills.
   **CHECK SESSION**
   is labelled inferred inactivity and is not proof that a reply is required.
   **TURN COMPLETE** is informational. Disconnection or failed session refresh

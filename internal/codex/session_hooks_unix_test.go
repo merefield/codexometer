@@ -9,7 +9,7 @@ import (
 )
 
 func TestSessionHooksUseThreadEnvironmentAndOlderServerFallback(t *testing.T) {
-	for _, mode := range []string{"thread", "ignored-selector", "rejected-selector", "real-thread-error"} {
+	for _, mode := range []string{"thread", "empty-inventory", "empty-thread-hooks", "ignored-selector", "rejected-selector", "real-thread-error"} {
 		t.Run(mode, func(t *testing.T) {
 			p, f := newQuotaDaemon(t)
 			row := func(cwd, key, environment string) map[string]any {
@@ -20,6 +20,10 @@ func TestSessionHooksUseThreadEnvironmentAndOlderServerFallback(t *testing.T) {
 			f.catalogues = map[string]map[string]any{"hooks/list": row("/work", "directory-hook", "")}
 			f.threadHooks = row("/work", "environment-hook", "remote-env")
 			switch mode {
+			case "empty-inventory":
+				f.threadHooks = map[string]any{"data": []any{}}
+			case "empty-thread-hooks":
+				f.threadHooks = map[string]any{"data": []any{map[string]any{"cwd": "/work", "hooks": []any{}}}}
 			case "ignored-selector":
 				f.threadHooks = row("/server-default-cwd", "wrong-hook", "")
 			case "rejected-selector":
@@ -31,6 +35,10 @@ func TestSessionHooksUseThreadEnvironmentAndOlderServerFallback(t *testing.T) {
 			if mode == "real-thread-error" {
 				if err == nil {
 					t.Fatal("hid a real thread failure behind directory discovery")
+				}
+			} else if strings.HasPrefix(mode, "empty-") {
+				if err != nil || len(m.Choices) != 0 {
+					t.Fatalf("successful empty thread inventory was replaced with directory hooks: %+v, %v", m, err)
 				}
 			} else {
 				want := "directory-hook"
@@ -47,7 +55,7 @@ func TestSessionHooksUseThreadEnvironmentAndOlderServerFallback(t *testing.T) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			wantReads := 2
-			if mode == "thread" || mode == "real-thread-error" {
+			if mode == "thread" || mode == "real-thread-error" || strings.HasPrefix(mode, "empty-") {
 				wantReads = 1
 			}
 			if len(f.hookReads) != wantReads || f.hookReads[0]["threadId"] != "one" || f.hookReads[0]["cwds"] != nil {

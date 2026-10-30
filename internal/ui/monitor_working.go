@@ -1,10 +1,11 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
-	"time"
 )
 
 func hasWorkingCommand(c codex.SessionContext) bool {
