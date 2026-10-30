@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/diagnostics"
 	"github.com/merefield/codexometer/internal/digbench"
 	"github.com/merefield/codexometer/internal/ui"
 	"github.com/merefield/codexometer/internal/version"
@@ -386,6 +387,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	var quotaSteps quotaStepFlags
 	var (
 		codexPath         = flags.String("codex", "codex", "path to the Codex CLI")
+		errorLog          = flags.String("error-log", "", "write bounded operational diagnostics to this file (off by default)")
+		verbose           = flags.Bool("verbose", false, "include diagnostic context in --error-log (never raw payloads)")
 		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
@@ -436,6 +439,22 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fmt.Fprintf(stderr, "codexometer: --reset-warning-hours must be between 0 and %d\n", ui.MaxResetWarningHours)
 		return 2
 	}
+	if *verbose && *errorLog == "" {
+		fmt.Fprintln(stderr, "codexometer: --verbose requires --error-log PATH")
+		return 2
+	}
+	closeLog, err := diagnostics.Install(*errorLog, *verbose)
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer: cannot open error log:", err)
+		return 1
+	}
+	defer func() {
+		if err := closeLog(); err != nil {
+			fmt.Fprintln(stderr, "codexometer: error log write/close failed:", err)
+		}
+	}()
+	diagnostics.Debug("application", "started", diagnostics.Fields{})
+	defer diagnostics.Debug("application", "stopped", diagnostics.Fields{})
 	// Capture credentials for the benchmark components, then remove them before
 	// any path that can launch Codex. This keeps auth checks and quota reads on
 	// the user's prevailing Codex login instead of leaking or implicitly using a
@@ -454,6 +473,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		snapshot, err := deps.checkAuth(context.Background(), *codexPath)
 		if err != nil {
 			fmt.Fprintln(stderr, "Codex auth check failed:", err)
+			diagnostics.Error("application", "auth check", err, diagnostics.Fields{})
 			return 1
 		}
 		fmt.Fprintf(stdout, "Codex auth OK // %d limit meter(s) online\n", len(snapshot.Meters()))
@@ -501,12 +521,15 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		client := codex.Client{Binary: *codexPath, QuotaSteps: quotaSteps}
 		if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 			client.LiveUsage = liveUsage
+		} else {
+			diagnostics.Error("local-rollouts", "initialise session reader", err, diagnostics.Fields{})
 		}
 		var source web.Source = client
 		if *demo {
 			source = &demoFetcher{quotaSteps: quotaSteps}
 		}
 		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl); err != nil {
+			diagnostics.Error("application", "web interface", err, diagnostics.Fields{})
 			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
 		}
@@ -527,6 +550,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames, QuotaSteps: quotaSteps}
 	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
 		client.LiveUsage = liveUsage
+	} else {
+		diagnostics.Error("local-rollouts", "initialise session reader", err, diagnostics.Fields{})
 	}
 	var fetcher ui.Fetcher = client
 	if *demo {
@@ -534,6 +559,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 
 	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours); err != nil {
+		diagnostics.Error("application", "terminal interface", err, diagnostics.Fields{})
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
 	}

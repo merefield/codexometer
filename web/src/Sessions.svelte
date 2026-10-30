@@ -66,7 +66,9 @@
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
   function isFailure(session: Session) {
-    return ['MODEL BUSY', 'TURN FAILED'].includes(session.status);
+    // Saved error text can outlive current attention (for example, after quit).
+    // Use the shared backend classification, not historical context or labels.
+    return session.status !== 'STALE' && session.failed === true;
   }
   // Parent rows already include linked-agent usage. Sum each listed row once;
   // do not add agent counts or activity samples to its observed token counter.
@@ -183,7 +185,11 @@
     if (isFailure(session))
       return session.status === 'MODEL BUSY'
         ? 'CONFIRMED TURN FAILURE — the selected model was at capacity. Choose another model with /model or retry later in Codex. This is not a quota-exhaustion signal.'
-        : 'CONFIRMED TURN FAILURE — inspect the error below before sending another prompt. No automatic retry or model change.';
+        : session.status === 'MODEL UNAVAILABLE'
+          ? 'CONFIRMED TURN FAILURE — the provider could not find the selected model. Choose an available model in Codex. No automatic retry or model change.'
+          : session.status === 'CAPACITY RESTRICTED'
+            ? 'CONFIRMED TURN FAILURE — capacity is unavailable on a policy-restricted route. This is not a quota-exhaustion signal. Check Codex for details; no automatic retry or policy change.'
+            : 'CONFIRMED TURN FAILURE — inspect the error below before sending another prompt. No automatic retry or model change.';
     if (
       live.data?.control &&
       ['APPROVAL NEEDED', 'INPUT NEEDED'].includes(session.status)
@@ -242,6 +248,8 @@
       COMMAND // {stale
         ? 'UNKNOWN'
         : (session.commandStatus || 'unknown').toUpperCase()}
+      {#if session.commandTiming}
+        // {session.commandTiming}{/if}
       {#if !stale && (session.runningCommands || 0) > (session.commandStatus === 'running' ? 1 : 0)}
         // +{(session.runningCommands || 0) -
           (session.commandStatus === 'running' ? 1 : 0)} RUNNING

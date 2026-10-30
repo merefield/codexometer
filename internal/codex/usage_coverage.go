@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
+	"github.com/merefield/codexometer/internal/diagnostics"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -61,7 +63,10 @@ func (r *LiveUsageReader) usageCoverage(ctx context.Context, sessions []LiveUsag
 			continue
 		}
 		if issue == "" && !verified {
-			issue = r.localUsageCoverage(ctx, session.WorkingDirectory)
+			diagnostics.Debug("usage coverage", "using local configuration fallback", diagnostics.Fields{Session: session.ID})
+			issue = r.localUsageCoverage(ctx, session.WorkingDirectory, session.ID)
+		} else if verified {
+			diagnostics.Debug("usage coverage", "using daemon feature result", diagnostics.Fields{Session: session.ID})
 		}
 		if issue != "" {
 			id := []rune(SanitizeSessionContext(session.ID))
@@ -78,7 +83,7 @@ func (r *LiveUsageReader) usageCoverage(ctx context.Context, sessions []LiveUsag
 	return issues[0]
 }
 
-func (r *LiveUsageReader) localUsageCoverage(ctx context.Context, cwd string) string {
+func (r *LiveUsageReader) localUsageCoverage(ctx context.Context, cwd, session string) string {
 	paths := []string{filepath.Join(filepath.Dir(r.SessionsRoot), "config.toml")}
 	if filepath.IsAbs(cwd) {
 		for dir := filepath.Clean(cwd); ; dir = filepath.Dir(dir) {
@@ -92,7 +97,7 @@ func (r *LiveUsageReader) localUsageCoverage(ctx context.Context, cwd string) st
 		if err := ctx.Err(); err != nil {
 			return "background usage configuration check interrupted"
 		}
-		enabled, issue := r.localAsyncCompaction(path)
+		enabled, issue := r.localAsyncCompaction(path, session)
 		if issue != "" {
 			return issue
 		}
@@ -103,12 +108,19 @@ func (r *LiveUsageReader) localUsageCoverage(ctx context.Context, cwd string) st
 	return ""
 }
 
-func (r *LiveUsageReader) localAsyncCompaction(path string) (bool, string) {
+func (r *LiveUsageReader) localAsyncCompaction(path, session string) (bool, string) {
+	fields := diagnostics.Fields{Path: path, Session: session}
 	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	// ENOTDIR means the optional file cannot exist: for example, a project's
+	// .codex entry is a regular file rather than a directory. This is absence,
+	// not unreadable configuration. Permission, I/O and symlink-loop failures
+	// still reach the error path below.
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		diagnostics.Debug("local-config", "configuration not present (normal)", fields)
 		return false, ""
 	}
 	if err != nil {
+		diagnostics.Error("local-config", "stat", err, fields)
 		return false, "background usage configuration could not be read"
 	}
 	if r.localFeatureChecks == nil {
@@ -119,22 +131,43 @@ func (r *LiveUsageReader) localAsyncCompaction(path string) (bool, string) {
 	}
 	file, err := os.Open(path)
 	if err != nil {
+		diagnostics.Error("local-config", "open", err, fields)
 		return false, "background usage configuration could not be read"
 	}
+	return r.readLocalAsyncCompaction(file, info, fields)
+}
+
+func (r *LiveUsageReader) readLocalAsyncCompaction(file io.ReadCloser, info os.FileInfo, fields diagnostics.Fields) (bool, string) {
 	data, err := io.ReadAll(io.LimitReader(file, 1<<20+1))
-	file.Close()
+	closeErr := file.Close()
+	if closeErr != nil {
+		diagnostics.Error("local-config", "close", closeErr, fields)
+	}
+	if err != nil {
+		diagnostics.Error("local-config", "read", err, fields)
+	}
+	// Transient filesystem failures must be retried, not cached as a valid
+	// configuration (or as a persistent failure for otherwise unchanged bytes).
+	if err != nil || closeErr != nil {
+		return false, "background usage configuration could not be verified"
+	}
 	check := localFeatureCheck{info: info}
 	var config map[string]any
-	if err != nil || len(data) > 1<<20 || toml.Unmarshal(data, &config) != nil {
+	if len(data) > 1<<20 {
+		diagnostics.Error("local-config", "configuration exceeds 1 MiB limit", nil, fields)
+		check.issue = "background usage configuration could not be verified"
+	} else if parseErr := toml.Unmarshal(data, &config); parseErr != nil {
+		diagnostics.Error("local-config", "parse TOML", parseErr, fields)
 		check.issue = "background usage configuration could not be verified"
 	} else {
 		check.enabled = hasAsyncCompaction(config)
+		diagnostics.Debug("local-config", "configuration checked", fields)
 	}
 	// Only active-session configuration is relevant; retain a bounded cache.
 	if len(r.localFeatureChecks) >= 256 {
 		clear(r.localFeatureChecks)
 	}
-	r.localFeatureChecks[path] = check
+	r.localFeatureChecks[fields.Path] = check
 	return check.enabled, check.issue
 }
 

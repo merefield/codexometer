@@ -14,17 +14,24 @@ import (
 
 // Opt-in integration check: no credentials, user configuration, model requests,
 // thread creation or shared daemon are used. CI otherwise uses wire fixtures.
-func TestNativeCodex164Compression(t *testing.T) {
-	if os.Getenv("CODEXOMETER_TEST_CODEX_164") != "1" {
-		t.Skip("set CODEXOMETER_TEST_CODEX_164=1 with Codex 0.164.0 installed")
+func TestNativeCodexCompression(t *testing.T) {
+	expected := os.Getenv("CODEXOMETER_TEST_CODEX_VERSION")
+	if expected == "" && os.Getenv("CODEXOMETER_TEST_CODEX_164") == "1" {
+		expected = "0.164.0" // Retain the existing baseline test invocation.
+	}
+	if expected == "" {
+		t.Skip("set CODEXOMETER_TEST_CODEX_VERSION=0.164.0 or 0.166.0 with that Codex installed")
+	}
+	if expected != "0.164.0" && expected != "0.166.0" {
+		t.Fatal("native compatibility target must be 0.164.0 or 0.166.0")
 	}
 	binary, err := exec.LookPath("codex")
 	if err != nil {
 		t.Fatal(err)
 	}
 	version, err := exec.Command(binary, "--version").Output()
-	if err != nil || strings.TrimSpace(string(version)) != "codex-cli 0.164.0" {
-		t.Fatal("expected Codex 0.164.0", string(version), err)
+	if err != nil || strings.TrimSpace(string(version)) != "codex-cli "+expected {
+		t.Fatal("expected Codex "+expected, string(version), err)
 	}
 	home, err := os.MkdirTemp("/tmp", "cxm-native-")
 	if err != nil {

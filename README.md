@@ -806,6 +806,11 @@ available and no missing response cost is invented.
 Without effective daemon feature state, relevant local configuration is checked
 read-only. Enabled flags, including flags in potentially selected profiles, are
 conservative coverage warnings rather than proof of the current runtime mode.
+Missing optional configs, including paths underneath a regular `.codex` file
+instead of a directory, are treated as absent rather than unreadable. Scanning
+continues to higher ancestors, and a real config added later is checked again.
+Permission/I/O errors, symlink loops and malformed existing configuration still
+produce a coverage warning; Codexometer does not delete or rewrite `.codex` entries.
 This fallback cannot establish hidden CLI overrides, remote configuration or
 unobserved usage from another machine. Those existing observation limits remain;
 Codexometer does not change Codex's compaction configuration.
@@ -1227,7 +1232,9 @@ The other top-level views are:
   conservatively excluded from timestamp-based freshness; later complete records
   are still checked. These cancellable, bounded activity scans do not recount tokens.
   Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
-  badge for server-reported model capacity and **TURN FAILED** for other failures.
+  badge for server-reported model capacity, **MODEL UNAVAILABLE** when the provider
+  cannot find the selected model, **CAPACITY RESTRICTED** for policy-restricted
+  capacity, and **TURN FAILED** for other failures.
   The row, full detail and attention pill retain the observed error message;
   capacity is not interpreted as quota exhaustion. Both the shared app-server's
   failed-turn/error events and local rollout error records are supported. Errors
@@ -1237,6 +1244,14 @@ The other top-level views are:
   stale events from older identified turns cannot fail the new one. Errors from
   linked agents propagate to the parent row, below pending approvals and questions.
   No prompt is automatically retried and no model is automatically switched.
+  With a shared app-server, working-command headings also show elapsed time or
+  completed duration when Codex supplies valid item lifecycle timestamps.
+  Codex 0.166.0's item fields and older notification-envelope fields are supported;
+  missing, future or inconsistent times do not produce a guessed duration.
+  Browser timers describe the last successful observation and freeze if the feed
+  becomes stale. These display-only times do not change freshness or API-EQ totals.
+  Experimental attached forks remain independent session rows rather than spawned
+  sub-agents; their inherited parent response records are not billed again.
   **INPUT** is reserved for observed blocking questions/requests, not a completed
   turn without a final reply. Normal completion remains **TURN COMPLETE**.
   Codexometer never guesses `APPROVAL NEEDED` from inactivity. Closing the CLI
@@ -1799,6 +1814,14 @@ writable mode. Browse-only entries do not execute tools or change configuration.
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+
+On Codex 0.166.0, `/hooks` queries the selected loaded thread, including hooks
+from its execution environments, and identifies their environment when supplied.
+Older servers retain directory-based discovery. A real thread/permission/transport
+error is not silently replaced with a different inventory, and a successful empty
+thread inventory remains empty rather than falling back to directory hooks.
+Model/reasoning, permission and Plan changes remain guarded by the existing idle-state checks;
+this compatibility update does not broaden write permissions.
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
 the last line of full session detail on web. Its default fields are observed
@@ -2696,6 +2719,8 @@ open directly.
 ```text
 --codex PATH       path to the Codex CLI (default: codex)
 --check-auth       verify the current Codex login and exit
+--error-log PATH   opt into bounded JSON operational diagnostics (off by default)
+--verbose          add diagnostic context to --error-log; never raw payloads
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --web              experimental read-only browser interface (loopback only)
@@ -2950,8 +2975,9 @@ available from the existing reader.
   outside scrollable reply text; available commands are separated from their
   justification. Missing commands are explicitly labelled, never reconstructed.
 - **INPUT NEEDED / APPROVAL NEEDED** represent observed signals; **MODEL BUSY /
-  TURN FAILED** represent confirmed turn errors and appear in **ERRORS**, with
-  the observed explanation in detail. Retrying errors do not raise failure pills.
+  MODEL UNAVAILABLE / CAPACITY RESTRICTED / TURN FAILED** represent confirmed turn
+  errors and appear in **ERRORS**, with the observed explanation in detail.
+  Retrying errors do not raise failure pills.
   **CHECK SESSION**
   is labelled inferred inactivity and is not proof that a reply is required.
   **TURN COMPLETE** is informational. Disconnection or failed session refresh
@@ -3391,6 +3417,47 @@ establishing a new baseline.
 
 ## Troubleshooting
 
+### Capture operational errors
+
+Logging is off by default. Enable it before reproducing an issue:
+
+```sh
+codexometer --error-log ./error.log
+codexometer --error-log ./error.log --verbose
+# The same switches work in browser mode:
+codexometer --web --error-log ./error.log --verbose
+```
+
+The standard Go structured logger writes JSON lines directly to the requested
+file, never over the terminal UI. Errors include timestamp, source, operation,
+safe error type/category and RPC code when available. Configuration-access
+failures include the exact attempted path, OS error (such as permission denied)
+and a short session identifier. Verbose mode additionally identifies whether
+coverage used effective daemon state or local configuration, missing optional
+files (normal), successful config checks and application start/stop.
+
+For `INCOMPLETE COVERAGE // SESSION …: background usage configuration could not
+be read`, find the corresponding `local-config` entry: `msg` identifies `stat`,
+`open` or `read`, and `path` / `error` identify the failing file and OS cause.
+Malformed TOML and oversized files receive separate operation labels without
+dumping their contents. Logging does not change the coverage guard or repair
+permissions, and cannot reconstruct errors that happened before it was enabled.
+
+The file appends until it would exceed **2 MiB**, then discards its older entries
+and continues with recent diagnostics; no backup files are created. Identical
+events are rate-limited to once a minute, with the suppressed-repeat count on
+the next occurrence. Use a separate path per running instance. The parent
+directory must exist; an explicitly requested unavailable log, symlink or
+non-regular target fails at startup. File permissions are restricted to `0600`
+where supported; on Windows, access also depends on the parent directory's ACL.
+Later log write/close errors are reported when the interface exits.
+
+Prompts, replies, config contents, credentials, pairing links, request/response
+bodies and arbitrary upstream error messages are not logged. Such errors retain
+their type/category and code, not their potentially sensitive text. Paths can
+still reveal usernames/project names: review logs before sharing them. `--verbose`
+requires `--error-log` and does not enable network access or browser writes.
+
 ### `Codex CLI not found`
 
 Confirm that `codex --version` works in the same shell. Otherwise use
@@ -3535,6 +3602,18 @@ locales, coverage instrumentation or race detection:
 go test -race -cover -timeout 10m -skip '^TestLocalisedScreens$' ./...
 go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
+
+An optional Unix integration check verifies the installed Codex against either
+the 0.164.0 baseline or 0.166.0, including negotiated compressed WebSocket RPC:
+
+```sh
+CODEXOMETER_TEST_CODEX_VERSION=0.166.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+```
+
+Use `0.164.0` when that version is on `PATH`; the existing
+`CODEXOMETER_TEST_CODEX_164=1` invocation is also retained. The check uses an empty
+temporary Codex home, no user credentials and no model requests. Normal CI uses
+hermetic protocol fixtures and does not require an installed Codex CLI.
 
 All 17 locale options run the complete localised-screen suite in isolated test
 subprocesses, with at most two locale workers active at once. Each child has a

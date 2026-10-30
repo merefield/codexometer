@@ -1,4 +1,6 @@
 {
+  "MODEL UNAVAILABLE": "モデル利用不可",
+  "CAPACITY RESTRICTED": "ポリシーによる容量制限",
   "ERRORS": "エラー",
   "MODEL BUSY": "モデル混雑",
   "TURN FAILED": "ターン失敗",

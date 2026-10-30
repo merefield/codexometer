@@ -34,12 +34,14 @@ type session struct {
 	Tokens          int64                `json:"tokens"`
 	Agents          int                  `json:"agents"`
 	Status          string               `json:"status"`
+	Failed          bool                 `json:"failed,omitempty"`
 	ContextKind     string               `json:"contextKind"`
 	Text            string               `json:"text"`
 	Command         string               `json:"command"`
 	WorkingCommand  string               `json:"workingCommand,omitempty"`
 	ApprovalContext string               `json:"approvalContext,omitempty"`
 	CommandStatus   string               `json:"commandStatus,omitempty"`
+	CommandTiming   string               `json:"commandTiming,omitempty"`
 	RunningCommands int                  `json:"runningCommands,omitempty"`
 	RunningLimited  bool                 `json:"runningLimited,omitempty"`
 	Source          string               `json:"source"`
@@ -336,8 +338,10 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
+				Failed:  row.Attention == codex.SessionAttentionError,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
+				CommandTiming:   activity.CommandTiming(now),
 				ApprovalContext: approvalContext,
 				FileChanges:     codex.FileDiffLines(row.Context.FileChanges),
 				CurrentTask:     codex.SanitizeSessionContext(row.Context.CurrentTask), LatestGuidance: codex.SanitizeSessionContext(row.Context.LatestGuidance), Streaming: row.Context.Streaming,
@@ -358,6 +362,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 		// Never keep an apparently authoritative approval/working status on failure.
 		for i := range s.state.Sessions {
 			s.state.Sessions[i].Status = "STALE"
+			s.state.Sessions[i].Failed = false
 		}
 	}
 	s.publish()

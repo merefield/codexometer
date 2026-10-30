@@ -532,12 +532,18 @@ func (p *daemonStatusProvider) commandCatalogue(ctx context.Context, t commandTh
 	}
 	params := map[string]any{}
 	switch path {
-	case "skills", "hooks":
+	case "skills":
 		params["cwds"] = []string{t.Cwd}
 	case "apps", "mcp", "experimental":
 		params["threadId"] = t.ID
 	}
-	rows, err := p.commandRows(ctx, method, params)
+	var rows []json.RawMessage
+	var err error
+	if path == "hooks" {
+		rows, err = p.commandHookRows(ctx, t)
+	} else {
+		rows, err = p.commandRows(ctx, method, params)
+	}
 	if err != nil {
 		return m, err
 	}
@@ -571,12 +577,17 @@ func (p *daemonStatusProvider) commandCatalogue(ctx context.Context, t commandTh
 				Cwd   string
 				Hooks []struct {
 					Key, EventName, StatusMessage, Command, Server, Tool, HandlerType string
+					EnvironmentID                                                     string
 					Enabled                                                           bool
 				}
 			}
 			if json.Unmarshal(raw, &entry) == nil && entry.Cwd == t.Cwd {
 				for _, h := range entry.Hooks {
-					add(h.Key, fmt.Sprintf("%s // %s // enabled=%t\n%s\n%s %s %s", h.EventName, h.HandlerType, h.Enabled, h.StatusMessage, h.Command, h.Server, h.Tool))
+					help := fmt.Sprintf("%s // %s // enabled=%t\n%s\n%s %s %s", h.EventName, h.HandlerType, h.Enabled, h.StatusMessage, h.Command, h.Server, h.Tool)
+					if h.EnvironmentID != "" {
+						help += "\nEnvironment: " + h.EnvironmentID
+					}
+					add(h.Key, help)
 				}
 			}
 		case "apps":

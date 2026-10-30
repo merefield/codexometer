@@ -8,14 +8,23 @@ import (
 // Failure labels are shared by both interfaces; backend messages remain bounded,
 // sanitised observations, never commands or permission to retry a write.
 func SessionFailureLabel(c SessionContext) string {
-	if c.FailureCode == "serverOverloaded" {
+	switch normalizedFailureCode(c.FailureCode) {
+	case "serveroverloaded":
 		return "MODEL BUSY"
+	case "modelnotfound":
+		return "MODEL UNAVAILABLE"
+	case "policycapacityunavailable":
+		return "CAPACITY RESTRICTED"
 	}
 	return "TURN FAILED"
 }
 
+func normalizedFailureCode(code string) string {
+	return strings.ToLower(strings.ReplaceAll(code, "_", ""))
+}
+
 func failureAffectsTurn(c SessionContext) bool {
-	switch strings.ToLower(strings.ReplaceAll(c.FailureCode, "_", "")) {
+	switch normalizedFailureCode(c.FailureCode) {
 	case "activeturnnotsteerable", "threadrollbackfailed":
 		return false
 	}
@@ -43,8 +52,13 @@ func sessionFailureContext(c SessionContext, raw json.RawMessage) SessionContext
 			}
 		}
 	}
-	if strings.EqualFold(strings.ReplaceAll(name, "_", ""), "serverOverloaded") {
+	switch normalizedFailureCode(name) {
+	case "serveroverloaded":
 		name = "serverOverloaded"
+	case "modelnotfound":
+		name = "modelNotFound"
+	case "policycapacityunavailable":
+		name = "policyCapacityUnavailable"
 	}
 	c.Kind, c.Streaming, c.Activity = SessionContextFailure, false, SessionActivity{}
 	c.FailureCode = SanitizeSessionContext(name)

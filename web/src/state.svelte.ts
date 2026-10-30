@@ -12,6 +12,7 @@ export interface Session {
   tokens: number;
   agents: number;
   status: string;
+  failed?: boolean;
   contextKind: string;
   text: string;
   command: string;
@@ -21,6 +22,7 @@ export interface Session {
   latestGuidance?: string;
   streaming?: boolean;
   commandStatus?: string;
+  commandTiming?: string;
   runningCommands?: number;
   runningLimited?: boolean;
   source: string;

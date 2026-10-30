@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/merefield/codexometer/internal/diagnostics"
 	"go.starlark.net/starlark"
 )
 
@@ -667,7 +668,21 @@ func (s *appServerSession) call(
 	method string,
 	params any,
 	onNotification func(string, json.RawMessage),
-) (json.RawMessage, error) {
+) (_ json.RawMessage, resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		fields := diagnostics.Fields{}
+		if values, ok := params.(map[string]any); ok {
+			fields.Session, _ = values["threadId"].(string)
+		}
+		var rpc *benchmarkMethodError
+		if errors.As(resultErr, &rpc) {
+			fields.Code = rpc.code
+		}
+		diagnostics.Error("benchmark-rpc", method, resultErr, fields)
+	}()
 	s.nextID++
 	id := s.nextID
 	request := map[string]any{"method": method, "id": id}
@@ -1410,7 +1425,12 @@ func fatalBenchmarkError(ctx context.Context, err error) error {
 	return err
 }
 
-func (s *appServerSession) readUntilNotification(ctx context.Context, accept func(string, json.RawMessage) bool) (json.RawMessage, error) {
+func (s *appServerSession) readUntilNotification(ctx context.Context, accept func(string, json.RawMessage) bool) (_ json.RawMessage, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			diagnostics.Error("benchmark-rpc", "read event stream", resultErr, diagnostics.Fields{})
+		}
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err

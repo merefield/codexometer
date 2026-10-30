@@ -232,7 +232,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		lines = expandedContextLines(width, withoutTask)
 	}
 	if hasWorkingCommand(s.preview) {
-		lines = workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
+		lines = m.workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
 	}
 	if len(lines) > textRows {
 		lines = lines[:textRows]
