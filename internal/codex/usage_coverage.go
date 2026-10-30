@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/merefield/codexometer/internal/diagnostics"
@@ -110,7 +111,11 @@ func (r *LiveUsageReader) localUsageCoverage(ctx context.Context, cwd, session s
 func (r *LiveUsageReader) localAsyncCompaction(path, session string) (bool, string) {
 	fields := diagnostics.Fields{Path: path, Session: session}
 	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	// ENOTDIR means the optional file cannot exist: for example, a project's
+	// .codex entry is a regular file rather than a directory. This is absence,
+	// not unreadable configuration. Permission, I/O and symlink-loop failures
+	// still reach the error path below.
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		diagnostics.Debug("local-config", "configuration not present (normal)", fields)
 		return false, ""
 	}

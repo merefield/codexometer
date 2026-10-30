@@ -102,3 +102,30 @@ func TestUsageCoverageNeverLogsConfigurationContents(t *testing.T) {
 		t.Fatal("unsafe or missing parse diagnostic", string(data))
 	}
 }
+
+func TestUsageCoverageNonDirectoryOptionalConfigIsDebugNotError(t *testing.T) {
+	home := t.TempDir()
+	marker, logPath := filepath.Join(home, ".codex"), filepath.Join(home, "error.log")
+	if err := os.WriteFile(marker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	close, err := diagnostics.Install(logPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { close() })
+	r := &LiveUsageReader{}
+	if enabled, issue := r.localAsyncCompaction(filepath.Join(marker, "config.toml"), "thread"); enabled || issue != "" {
+		t.Fatal("optional file under non-directory is not absent", enabled, issue)
+	}
+	if err := close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"level":"ERROR"`) || !strings.Contains(string(data), "configuration not present (normal)") {
+		t.Fatal("non-directory optional config still logged as a failure", string(data))
+	}
+}

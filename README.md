@@ -806,6 +806,11 @@ available and no missing response cost is invented.
 Without effective daemon feature state, relevant local configuration is checked
 read-only. Enabled flags, including flags in potentially selected profiles, are
 conservative coverage warnings rather than proof of the current runtime mode.
+Missing optional configs, including paths underneath a regular `.codex` file
+instead of a directory, are treated as absent rather than unreadable. Scanning
+continues to higher ancestors, and a real config added later is checked again.
+Permission/I/O errors, symlink loops and malformed existing configuration still
+produce a coverage warning; Codexometer does not delete or rewrite `.codex` entries.
 This fallback cannot establish hidden CLI overrides, remote configuration or
 unobserved usage from another machine. Those existing observation limits remain;
 Codexometer does not change Codex's compaction configuration.

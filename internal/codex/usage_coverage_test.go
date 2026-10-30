@@ -39,6 +39,91 @@ func TestUsageCoverageDetectsFileOnlyConfigurationAndPrefersEffectiveState(t *te
 	}
 }
 
+func TestUsageCoverageIgnoresNonDirectoryOptionalConfigAndKeepsScanning(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(map[bool]string{false: "working directory", true: "ancestor directory"}[nested], func(t *testing.T) {
+			home := t.TempDir()
+			project := filepath.Join(home, "workspace")
+			cwd := project
+			if nested {
+				cwd = filepath.Join(project, "nested")
+			}
+			if err := os.MkdirAll(cwd, 0700); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(project, ".codex")
+			if err := os.WriteFile(marker, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			r := &LiveUsageReader{SessionsRoot: filepath.Join(home, "sessions")}
+			sessions := []LiveUsageSession{{ID: "thread", WorkingDirectory: cwd, Active: true}}
+			if got := r.usageCoverage(context.Background(), sessions, nil); got != "" {
+				t.Fatal("a .codex file was mistaken for inaccessible optional configuration", got)
+			}
+			// A blocked path is absence, not permission to stop scanning: a real
+			// config in a higher ancestor must still qualify coverage.
+			ancestor := filepath.Join(home, ".codex")
+			if err := os.Mkdir(ancestor, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(ancestor, "config.toml"), []byte("[features]\nasync_compaction = true\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if got := r.usageCoverage(context.Background(), sessions, nil); !strings.Contains(got, "background compaction") {
+				t.Fatal("non-directory path hid a real ancestor configuration", got)
+			}
+		})
+	}
+}
+
+func TestUsageCoverageDoesNotCacheNonDirectoryOptionalConfig(t *testing.T) {
+	home := t.TempDir()
+	marker := filepath.Join(home, ".codex")
+	if err := os.WriteFile(marker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &LiveUsageReader{}
+	path := filepath.Join(marker, "config.toml")
+	if enabled, issue := r.localAsyncCompaction(path, "thread"); enabled || issue != "" {
+		t.Fatal("non-directory optional config should be absent", enabled, issue)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(marker, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[features]\nasync_compaction = true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, issue := r.localAsyncCompaction(path, "thread"); !enabled || issue != "" {
+		t.Fatal("real config added later was hidden by cached absence", enabled, issue)
+	}
+}
+
+func TestUsageCoveragePermissionDeniedConfigStillBlocks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("[features]\nasync_compaction = false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0600) })
+	file, err := os.Open(path)
+	if err == nil {
+		file.Close()
+		t.Skip("current user/OS can read despite mode bits; cannot exercise denied read")
+	}
+	if !os.IsPermission(err) {
+		t.Fatal("expected an actual permission failure", err)
+	}
+	r := &LiveUsageReader{}
+	if _, issue := r.localAsyncCompaction(path, "thread"); issue != "background usage configuration could not be read" {
+		t.Fatal("permission failure was incorrectly treated as optional absence", issue)
+	}
+}
+
 func TestUsageCoverageKeepsKnownRiskAcrossDisconnectAndIncludesChildren(t *testing.T) {
 	home := t.TempDir()
 	r := &LiveUsageReader{SessionsRoot: filepath.Join(home, "sessions"), files: map[string]*rolloutCursor{"child": {threadID: "child", workingDirectory: home, lastModified: time.Now()}}}
