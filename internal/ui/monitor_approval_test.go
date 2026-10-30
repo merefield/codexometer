@@ -75,6 +75,30 @@ func approvalTestModel() Model {
 	return m
 }
 
+func TestNoConfirmStillRequiresAnExplicitApprovalAndLiveCapability(t *testing.T) {
+	for _, stale := range []bool{false, true} {
+		m := approvalTestModel()
+		m.SetNoConfirm(true)
+		client := m.fetcher.(*approvalTestClient)
+		if stale {
+			client.token = "replacement"
+		}
+		n, cmd, _ := m.monitorApprovalAction("decision:0")
+		if (cmd != nil) == stale || n.monitorApprovalConfirm != "" {
+			t.Fatal("wrong live approval/confirmation handling", stale)
+		}
+		if cmd != nil {
+			if client.decision != "" {
+				t.Fatal("decision executed before explicit action dispatch")
+			}
+			cmd()
+			if client.decision != "accept" {
+				t.Fatal("chosen approval was not sent")
+			}
+		}
+	}
+}
+
 func TestMonitorApprovalRenderedTargets(t *testing.T) {
 	for _, width := range []int{40, 60, 80, 120, 180} {
 		for _, height := range []int{12, 24, 40} {

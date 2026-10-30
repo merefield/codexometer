@@ -42,8 +42,12 @@ type server struct {
 	control    *control
 }
 
+type Options struct {
+	NoConfirm bool
+}
+
 // Run binds IPv4 loopback only. Control must be explicitly enabled at launch.
-func Run(ctx context.Context, source Source, refresh time.Duration, port int, output io.Writer, writable bool) error {
+func Run(ctx context.Context, source Source, refresh time.Duration, port int, output io.Writer, writable bool, options ...Options) error {
 	if port < 0 || port > 65535 {
 		return fmt.Errorf("web port must be between 0 and 65535")
 	}
@@ -60,8 +64,14 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	if writable {
 		s.control = newControl(source, s.store)
 		s.store.state.Control = true
+		if len(options) > 0 {
+			s.store.state.NoConfirm = options[0].NoConfirm
+		}
 		s.store.publish()
 		mode = "SESSION CONTROL ENABLED — prompts, decisions and configured quota profiles enabled"
+		if s.store.state.NoConfirm {
+			mode += " // EXTRA CONFIRMATIONS OFF"
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

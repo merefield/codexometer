@@ -356,8 +356,8 @@ type dependencies struct {
 	checkAuth         func(context.Context, string) (codex.Snapshot, error)
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI           func(ui.Fetcher, time.Duration, bool, int, int) error
-	startWeb          func(web.Source, time.Duration, int, io.Writer, bool) error
+	startUI           func(ui.Fetcher, time.Duration, bool, int, int, bool) error
+	startWeb          func(web.Source, time.Duration, int, io.Writer, bool, bool) error
 }
 
 func defaultDependencies() dependencies {
@@ -373,10 +373,10 @@ func defaultDependencies() dependencies {
 			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
 		},
 		startUI: startUI,
-		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool) error {
+		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control, noConfirm bool) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
-			return web.Run(ctx, source, refresh, port, output, control)
+			return web.Run(ctx, source, refresh, port, output, control, web.Options{NoConfirm: noConfirm})
 		},
 	}
 }
@@ -389,6 +389,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		codexPath         = flags.String("codex", "codex", "path to the Codex CLI")
 		errorLog          = flags.String("error-log", "", "write bounded operational diagnostics to this file (off by default)")
 		verbose           = flags.Bool("verbose", false, "include diagnostic context in --error-log (never raw payloads)")
+		noConfirm         = flags.Bool("no-confirm", false, "skip Codexometer confirmation steps except quota resets (does not bypass Codex permissions)")
 		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
 		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
 		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
@@ -528,7 +529,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		if *demo {
 			source = &demoFetcher{quotaSteps: quotaSteps}
 		}
-		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl); err != nil {
+		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl, *noConfirm); err != nil {
 			diagnostics.Error("application", "web interface", err, diagnostics.Fields{})
 			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
@@ -558,7 +559,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		fetcher = &demoFetcher{quotaSteps: quotaSteps}
 	}
 
-	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours); err != nil {
+	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours, *noConfirm); err != nil {
 		diagnostics.Error("application", "terminal interface", err, diagnostics.Fields{})
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
@@ -675,7 +676,7 @@ func formatDigBenchResult(result codex.DigBenchResult) string {
 	return line
 }
 
-func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, resetWarningHours int) error {
+func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, resetWarningHours int, noConfirm bool) error {
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
@@ -683,6 +684,7 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 	model.SetInline(inline)
 	model.SetResetThreshold(resetThreshold)
 	model.SetResetWarningHours(resetWarningHours)
+	model.SetNoConfirm(noConfirm)
 	finalModel, runErr := tea.NewProgram(model, terminalProgramOptions(os.Environ(), appleTerminalSupportsTrueColor())...).Run()
 	if final, ok := finalModel.(ui.Model); ok {
 		final.CancelQuotaWork()

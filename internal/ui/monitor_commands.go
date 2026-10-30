@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/statusline"
 )
@@ -256,6 +257,9 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		cmd := m.navigateMonitorCommands(o.Next)
 		return m, cmd, true
 	}
+	if o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
+		return m.executeMonitorCommand(o)
+	}
 	if m.monitorCommands.menu.Picker {
 		p := &m.monitorCommands
 		if o.Action && p.notice == "" && (p.reviewedChoice != o.ID || time.Now().After(p.until)) {
@@ -309,6 +313,14 @@ func (m Model) confirmMonitorCommand() (Model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		// Keep Enter Review available so expiration uses the same recovery path.
+		return m, nil, true
+	}
+	return m.executeMonitorCommand(o)
+}
+
+func (m Model) executeMonitorCommand(o codex.SessionCommandChoice) (Model, tea.Cmd, bool) {
+	p := &m.monitorCommands
+	if !p.open || p.busy || p.notice != "" || !o.Action || o.Unavailable != "" || m.monitorCommandPopup().height < 4 {
 		return m, nil, true
 	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
@@ -490,7 +502,11 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	p := m.monitorCommands
 	var buttons []commandDisplayRow
 	if p.menu.Input && !p.busy && p.notice == "" && strings.TrimSpace(p.input.Value()) != "" {
-		buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER REVIEW ]"), action: "review"})
+		label := "[ ENTER REVIEW ]"
+		if p.menu.ReversibleInput || m.confirmations.NoConfirm {
+			label = "[ ENTER APPLY ]"
+		}
+		buttons = append(buttons, commandDisplayRow{text: i18n.Text(label), action: "review"})
 	} else if p.menu.Multiple {
 		label := "[ C APPLY ]"
 		if p.inline {
@@ -498,7 +514,9 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 		}
 		buttons = append(buttons, commandDisplayRow{text: i18n.Text(label), action: "confirm"})
 	} else if o, ok := m.commandChoice(); ok && o.Action && !p.busy && p.notice == "" {
-		if (p.detail || (p.menu.Picker && p.reviewedChoice == o.ID)) && time.Now().Before(p.until) {
+		if !m.confirmations.Required(confirmation.Command(o.Reversible)) {
+			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER APPLY ]"), action: "stage"})
+		} else if (p.detail || (p.menu.Picker && p.reviewedChoice == o.ID)) && time.Now().Before(p.until) {
 			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ C CONFIRM ]"), action: "confirm"})
 		} else {
 			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER REVIEW ]"), action: "stage"})
@@ -717,6 +735,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					return m, cmd, true
 				}
 				if (strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")) && len(p.menu.Choices) == 1 {
+					if o := p.menu.Choices[0]; o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
+						return m.executeMonitorCommand(o)
+					}
 					p.detail = true
 					p.until = time.Now().Add(30 * time.Second)
 				}
@@ -739,6 +760,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			return m.openMonitorCommands("")
 		}
 		return m, nil, false
+	}
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.IsRepeat && (key.String() == "enter" || key.String() == "right") {
+		return m, nil, true
 	}
 	if m.meterView != viewMonitor || m.monitorContextTarget() != p.session {
 		m.closeMonitorCommands()

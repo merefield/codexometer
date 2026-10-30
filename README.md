@@ -1772,17 +1772,19 @@ still cannot fit is shortened with an ellipsis. Width updates on resize.
 when the option filter is empty). **Escape** closes the list, retaining the draft
 and typing focus. Back from a rename or directory review restores the edited
 argument in the composer. Speed menus
-initially show all options: Up/Down highlights a choice, **Enter REVIEW** stages it,
-and **C CONFIRM** applies it. The separate **CURRENT** marker identifies the
+initially show all options: Up/Down highlights a choice, and **Enter APPLY** or
+clicking an option applies it. Highlighting alone never changes a setting.
+The separate **CURRENT** marker identifies the
 existing speed; the highlighted choice uses bright text without a reversed background.
-The action line shows only the current next step, Enter Review or C Confirm,
-without a second confirmation hint. Settings blocked during an active turn show
+The action line shows the current next step. Permission changes, directory changes
+and unknown actions retain **Enter REVIEW**, then **C CONFIRM**, by default.
+Settings blocked during an active turn show
 **WAITING FOR IDLE**, with **Ctrl+R REFRESH** in the terminal composer
 (**F REFRESH** in the read-only picker) to read their availability again;
-speed changes are available during a turn and are sent immediately after confirmation,
+speed changes are available during a turn and are sent on explicit selection,
 without a local queue. They configure subsequent turns, not a request already in flight.
-**HELP** identifies genuine browse-only entries. Model, reasoning and speed changes are provisional until C;
-reviewing or changing the highlight sends no settings update. Buttons
+**HELP** identifies genuine browse-only entries. Merely navigating or changing
+the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
 **/ COMMANDS**, with the same composer suggestion shortcuts.
 
@@ -1800,16 +1802,18 @@ read-only browser mode, except for the terminal-only `/commands` shortcut.
 
 **Connected-session commands — shared app-server required.** Availability depends
 on the installed server and session state; unsupported or empty catalogues are
-omitted. Changes require explicit confirmation and, in the browser, opt-in
-writable mode. Browse-only entries do not execute tools or change configuration.
+omitted. Changes require explicit selection and, in the browser, opt-in writable
+mode. Reversible session-local changes do not need a second confirmation;
+permission/directory changes and unknown actions remain guarded by default.
+Browse-only entries do not execute tools or change configuration.
 
 | Command family | Live options and behaviour |
 | --- | --- |
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
-| `/rename` | Edit the selected session’s saved name, review it and confirm. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
+| `/rename` | Edit the selected session’s saved name and apply it without a second confirmation. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
-| Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down selects; **Enter REVIEW** provisionally selects the highlighted choice while keeping the list visible, then **C CONFIRM** applies it. Changing the highlight cancels the pending confirmation. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
+| Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
@@ -1850,9 +1854,9 @@ The terminal `/statusline` checkbox list uses the same composer expansion, but
 deliberately does not filter: **Up/Down** selects, **Space** toggles, **Left/Right**
 reorders and **Enter** applies the local display preferences. Escape discards
 unapplied changes. Other menu levels keep help subdued on one line, shortened
-with an ellipsis when needed. Model, reasoning, speed, name and directory changes
-still require separate review and **C CONFIRM**; shrinking the terminal cannot
-confirm a hidden control. The composer and conversation remain in place through
+with an ellipsis when needed. Reversible settings use **Enter APPLY**; guarded
+changes keep separate review and **C CONFIRM** by default. Shrinking the terminal
+cannot activate a hidden control. The composer and conversation remain in place through
 all levels, including in a wide session row. `/commands` also opens the root
 list, including local commands without a shared daemon.
 
@@ -1867,10 +1871,11 @@ scope is process-wide rather than session-local. See the official
 [app-server API overview](https://learn.chatgpt.com/docs/app-server#api-overview)
 for the upstream catalogues.
 
-Renames require a loaded session and explicit confirmation within 30 seconds; a concurrent rename or reconnect invalidates the confirmation. The updated name appears on the next telemetry refresh.
+Renames require a loaded session and revalidated options; a concurrent rename or
+reconnect invalidates the old choice. The updated name appears on the next telemetry refresh.
 
-Codex session-setting changes require a loaded session and explicit confirmation within
-30 seconds. Speed-only changes can be sent while working or waiting for an approval;
+Codex session-setting changes require a loaded session. Guarded changes retain
+their separate confirmation with a 30-second expiry. Speed-only changes can be sent while working or waiting for an approval;
 other settings still require idle and no pending approval. The command and options
 are revalidated before sending; stale connections and changed options fail closed.
 A normal turn start/completion does not invalidate a speed confirmation, but changed
@@ -1881,6 +1886,41 @@ the composer with a success notice; reopening fetches fresh options. Failed
 confirmations retain the draft and error context. These changes do not modify global defaults, and automatic
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
+
+### Fewer confirmation steps
+
+By default, `/rename`, model/reasoning selection, advertised speed changes such as
+`/fast`, and `/plan` apply on explicit selection. They do not launch a prompt;
+settings affect subsequent turns and can be changed again. Model and speed choices
+can still affect quota consumption or API cost. `/cd`, `/permissions`, unknown
+commands and other guarded actions retain their existing confirmation steps.
+Local display commands and read-only inventories remain immediate or browse-only.
+
+To opt out of Codexometer's extra confirmation clicks for this launch:
+
+```sh
+codexometer --no-confirm
+codexometer --web --web-control --no-confirm
+```
+
+**Quota resets are the one exception: redeeming a reset always requires confirmation.**
+Elsewhere, this flag makes explicit actions single-step, including approvals and
+persistent grants, quota-profile decisions, sending browser prompts or schedules,
+scheduled Send now, native queue deletion, Close All dismissal and guarded benchmark
+launches. An accidental click can therefore authorise work, spend quota or change
+permissions: use it only when you want that trade-off. It never chooses an action
+for you or automatically approves an incoming request.
+
+The flag is not saved in preferences, does not enable web writes without
+`--web-control`, and is not forwarded to Codex. Codex's sandbox/approval rules,
+fresh-state checks, capability/revision validation and one-use/replay guards remain.
+The browser still uses server-side prepare/commit validation, but completes both
+phases after the one explicit action. Failed or uncertain writes are never retried
+automatically. Unless stated otherwise, confirmation instructions elsewhere in this
+README describe the default guarded behaviour.
+Recognised key-repeat events are ignored for command submission and approval
+shortcuts. Older terminals may not distinguish held-key repeats, so avoid holding
+action keys when using `--no-confirm`.
 
 **Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
 compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
@@ -2721,6 +2761,7 @@ open directly.
 --check-auth       verify the current Codex login and exit
 --error-log PATH   opt into bounded JSON operational diagnostics (off by default)
 --verbose          add diagnostic context to --error-log; never raw payloads
+--no-confirm       skip extra confirmation clicks, except quota-reset redemption
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --web              experimental read-only browser interface (loopback only)

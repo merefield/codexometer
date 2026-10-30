@@ -183,6 +183,9 @@ func (m Model) pressQuotaSession(id string, confirm bool) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.resetConfirmUntil = time.Time{}
+	if m.confirmations.NoConfirm {
+		return m.startQuotaUpdate(targets)
+	}
 	if !confirm {
 		m.quota.confirm = targets
 		m.quota.confirmStep = *m.quotaStepPending

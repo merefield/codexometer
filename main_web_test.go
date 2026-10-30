@@ -22,14 +22,14 @@ func TestLaunchModesAreIsolated(t *testing.T) {
 			t.Setenv("OPENAI_API_KEY", "private-key")
 			terminal, browser, discovery := 0, 0, 0
 			deps := dependencies{
-				startUI: func(_ ui.Fetcher, refresh time.Duration, inline bool, threshold, hours int) error {
+				startUI: func(_ ui.Fetcher, refresh time.Duration, inline bool, threshold, hours int, _ bool) error {
 					terminal++
 					if refresh != time.Minute || inline || threshold != 80 || hours != 72 {
 						t.Fatal("terminal defaults changed")
 					}
 					return nil
 				},
-				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool) error {
+				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool, _ bool) error {
 					browser++
 					if refresh != time.Minute || port != 54321 || control {
 						t.Fatal("web options missing")
@@ -76,7 +76,7 @@ func TestWebFlagsAndErrors(t *testing.T) {
 		}
 	}
 	var out, err bytes.Buffer
-	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer, _ bool) error {
+	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer, _ bool, _ bool) error {
 		if _, ok := source.(*demoFetcher); !ok {
 			t.Fatal("web demo not isolated")
 		}
@@ -94,7 +94,7 @@ func TestWebFlagsAndErrors(t *testing.T) {
 
 func TestWebControlExplicitOptIn(t *testing.T) {
 	var out, err bytes.Buffer
-	deps := dependencies{startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, control bool) error {
+	deps := dependencies{startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, control bool, _ bool) error {
 		if !control {
 			t.Fatal("explicit control flag lost")
 		}
@@ -102,5 +102,40 @@ func TestWebControlExplicitOptIn(t *testing.T) {
 	}}
 	if code := run([]string{"--web", "--web-control", "--demo"}, &out, &err, deps); code != 0 {
 		t.Fatalf("%d %s", code, &err)
+	}
+}
+
+func TestNoConfirmFlagIsLaunchScopedAndDoesNotEnableWebWrites(t *testing.T) {
+	for _, browser := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			seen := false
+			deps := dependencies{
+				startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _, _ int, noConfirm bool) error {
+					seen = true
+					if browser || noConfirm != enabled {
+						t.Fatal("wrong terminal policy")
+					}
+					return nil
+				},
+				startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, writable, noConfirm bool) error {
+					seen = true
+					if !browser || writable || noConfirm != enabled {
+						t.Fatal("no-confirm enabled web writes or lost policy")
+					}
+					return nil
+				},
+			}
+			args := []string{"--demo"}
+			if browser {
+				args = append(args, "--web")
+			}
+			if enabled {
+				args = append(args, "--no-confirm")
+			}
+			var out, stderr bytes.Buffer
+			if code := run(args, &out, &stderr, deps); code != 0 || !seen {
+				t.Fatal("confirmation flag did not reach launch", code, stderr.String())
+			}
+		}
 	}
 }

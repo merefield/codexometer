@@ -100,6 +100,30 @@ func TestCommandConfirmationIsBoundAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestNoConfirmDoesNotBypassServerCommandTickets(t *testing.T) {
+	s, _, token := controlServer(t)
+	s.store.state.NoConfirm = true
+	f := &commandsFake{revision: "current"}
+	s.control.commands = f
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "commit", Path: "model", Revision: "current", Choice: "choice"}}
+	if w := actionCall(s, token, "commands", b); w.Code != 409 || f.calls != 0 {
+		t.Fatal("single-click presentation bypassed the server preparation ticket")
+	}
+	b.Command.Mode = "prepare"
+	r := actionCall(s, token, "commands", b)
+	var prepared struct{ Confirmation string }
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &prepared) != nil || prepared.Confirmation == "" || f.calls != 0 {
+		t.Fatal("preparation wrote a command or failed", r.Code)
+	}
+	b.Command.Mode, b.Confirmation = "commit", prepared.Confirmation
+	if w := actionCall(s, token, "commands", b); w.Code != 200 || f.calls != 1 {
+		t.Fatal("prepared command could not commit")
+	}
+	if w := actionCall(s, token, "commands", b); w.Code != 409 || f.calls != 1 {
+		t.Fatal("no-confirm allowed a replay")
+	}
+}
+
 func TestCommandsRejectStaleAndMixedRequests(t *testing.T) {
 	s, _, token := controlServer(t)
 	f := &commandsFake{revision: "new"}
