@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/merefield/codexometer/internal/diagnostics"
 )
 
 const (
@@ -376,7 +378,12 @@ func (r *LiveUsageReader) FetchTokenUsageFresh(ctx context.Context) (LiveUsageSn
 	return r.fetchTokenUsage(ctx, true)
 }
 
-func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscovery bool) (LiveUsageSnapshot, error) {
+func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscovery bool) (_ LiveUsageSnapshot, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			diagnostics.Error("local-rollouts", "session telemetry refresh", resultErr, diagnostics.Fields{})
+		}
+	}()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := contextErr(ctx); err != nil {
@@ -429,6 +436,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 				err = r.restoreCompressedCursor(ctx, path, info, cursor)
 			}
 			if err != nil {
+				diagnostics.Error("local-rollouts", "restore compressed rollout", err, diagnostics.Fields{Path: path, Session: cursor.threadID})
 				if firstReadErr == nil {
 					firstReadErr = err
 				}
@@ -443,6 +451,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			if errors.Is(err, os.ErrNotExist) {
 				if info, compressedErr := os.Stat(path + ".zst"); compressedErr == nil {
 					if compressedErr = r.addCompressedFile(ctx, path+".zst", info); compressedErr != nil {
+						diagnostics.Error("local-rollouts", "read compressed rollout", compressedErr, diagnostics.Fields{Path: path + ".zst", Session: cursor.threadID})
 						r.discoveryCoverageIssue = "compressed rollout history could not be verified"
 						if firstReadErr == nil {
 							firstReadErr = compressedErr
@@ -456,6 +465,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			if firstReadErr == nil {
 				firstReadErr = err
 			}
+			diagnostics.Error("local-rollouts", "read rollout", err, diagnostics.Fields{Path: path, Session: cursor.threadID})
 			continue
 		}
 		readableFiles++

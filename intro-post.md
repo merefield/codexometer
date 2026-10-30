@@ -117,6 +117,8 @@ Expiry warnings are reminders to review, not instructions to reset immediately. 
 
 Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, **MODEL UNAVAILABLE** for a missing model, **CAPACITY RESTRICTED** for policy-restricted capacity, or **TURN FAILED** with the observed explanation. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch. Working-command headings can also show elapsed/completed time when the shared server supplies valid timestamps.
 
+Troubleshooting a gremlin? Opt into `--error-log ./error.log`, optionally with `--verbose`, in terminal or web mode. Bounded diagnostics capture actionable filesystem failures and safe operational context—not prompts, replies, credentials or raw API payloads. Paths can reveal project names, so review logs before sharing.
+
 ## An experimental browser companion
 
 Prefer a browser window? `codexometer --web` now offers an **experimental,

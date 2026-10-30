@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/merefield/codexometer/internal/diagnostics"
 )
 
 const (
@@ -72,6 +74,11 @@ func newSessionStatusProvider(codexHome string) sessionStatusProvider {
 
 func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (sessionDaemonSnapshot, bool) {
 	if err := p.ensureConnected(ctx); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			diagnostics.Debug("daemon", "not available; using local fallback", diagnostics.Fields{Path: p.socketPath})
+		} else {
+			diagnostics.Error("daemon", "connect", err, diagnostics.Fields{Path: p.socketPath})
+		}
 		return sessionDaemonSnapshot{}, false
 	}
 	if snapshot, ok := p.cachedStatusSnapshot(threadIDs, time.Now()); ok {
@@ -344,7 +351,24 @@ func (p *daemonStatusProvider) request(ctx context.Context, method string, param
 	return p.requestOn(ctx, connection, method, params, target)
 }
 
-func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {
+func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		fields := diagnostics.Fields{}
+		if values, ok := params.(map[string]any); ok {
+			fields.Session, _ = values["threadId"].(string)
+		}
+		var rpc *daemonResponseError
+		if errors.As(resultErr, &rpc) {
+			var wire struct{ Code int }
+			if json.Unmarshal([]byte(rpc.payload), &wire) == nil {
+				fields.Code = wire.Code
+			}
+		}
+		diagnostics.Error("daemon-rpc", method, resultErr, fields)
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

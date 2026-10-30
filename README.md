@@ -2713,6 +2713,8 @@ open directly.
 ```text
 --codex PATH       path to the Codex CLI (default: codex)
 --check-auth       verify the current Codex login and exit
+--error-log PATH   opt into bounded JSON operational diagnostics (off by default)
+--verbose          add diagnostic context to --error-log; never raw payloads
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --web              experimental read-only browser interface (loopback only)
@@ -3407,6 +3409,47 @@ Reset performs a fresh local read and clears the measurement and graphs before
 establishing a new baseline.
 
 ## Troubleshooting
+
+### Capture operational errors
+
+Logging is off by default. Enable it before reproducing an issue:
+
+```sh
+codexometer --error-log ./error.log
+codexometer --error-log ./error.log --verbose
+# The same switches work in browser mode:
+codexometer --web --error-log ./error.log --verbose
+```
+
+The standard Go structured logger writes JSON lines directly to the requested
+file, never over the terminal UI. Errors include timestamp, source, operation,
+safe error type/category and RPC code when available. Configuration-access
+failures include the exact attempted path, OS error (such as permission denied)
+and a short session identifier. Verbose mode additionally identifies whether
+coverage used effective daemon state or local configuration, missing optional
+files (normal), successful config checks and application start/stop.
+
+For `INCOMPLETE COVERAGE // SESSION …: background usage configuration could not
+be read`, find the corresponding `local-config` entry: `msg` identifies `stat`,
+`open` or `read`, and `path` / `error` identify the failing file and OS cause.
+Malformed TOML and oversized files receive separate operation labels without
+dumping their contents. Logging does not change the coverage guard or repair
+permissions, and cannot reconstruct errors that happened before it was enabled.
+
+The file appends until it would exceed **2 MiB**, then discards its older entries
+and continues with recent diagnostics; no backup files are created. Identical
+events are rate-limited to once a minute, with the suppressed-repeat count on
+the next occurrence. Use a separate path per running instance. The parent
+directory must exist; an explicitly requested unavailable log, symlink or
+non-regular target fails at startup. File permissions are restricted to `0600`
+where supported; on Windows, access also depends on the parent directory's ACL.
+Later log write/close errors are reported when the interface exits.
+
+Prompts, replies, config contents, credentials, pairing links, request/response
+bodies and arbitrary upstream error messages are not logged. Such errors retain
+their type/category and code, not their potentially sensitive text. Paths can
+still reveal usernames/project names: review logs before sharing them. `--verbose`
+requires `--error-log` and does not enable network access or browser writes.
 
 ### `Codex CLI not found`
 

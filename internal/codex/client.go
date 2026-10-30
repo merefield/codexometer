@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/merefield/codexometer/internal/diagnostics"
 )
 
 const requestTimeout = 15 * time.Second
@@ -96,7 +98,18 @@ func (c Client) ConsumeResetCredit(ctx context.Context, key, account, creditID s
 	return attempt.outcome, err
 }
 
-func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *AccountUsage) (Snapshot, error) {
+func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *AccountUsage) (_ Snapshot, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			operation := "quota refresh"
+			if reset != nil {
+				operation = "quota reset"
+			} else if history != nil {
+				operation = "usage refresh"
+			}
+			diagnostics.Error("app-server", operation, resultErr, diagnostics.Fields{})
+		}
+	}()
 	binary := c.Binary
 	if binary == "" {
 		binary = "codex"
@@ -282,6 +295,7 @@ func responseFor(decoder *json.Decoder, id int) (json.RawMessage, error) {
 			continue
 		}
 		if response.Error != nil {
+			diagnostics.Error("app-server-rpc", "request rejected", nil, diagnostics.Fields{Code: response.Error.Code})
 			return nil, fmt.Errorf("%s (RPC %d)", response.Error.Message, response.Error.Code)
 		}
 		return response.Result, nil

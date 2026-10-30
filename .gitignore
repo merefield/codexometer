@@ -1,4 +1,5 @@
 /codexometer
+/error.log
 /dist/
 /web/node_modules/
 /web/test-results/
