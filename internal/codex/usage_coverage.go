@@ -134,16 +134,26 @@ func (r *LiveUsageReader) localAsyncCompaction(path, session string) (bool, stri
 		diagnostics.Error("local-config", "open", err, fields)
 		return false, "background usage configuration could not be read"
 	}
+	return r.readLocalAsyncCompaction(file, info, fields)
+}
+
+func (r *LiveUsageReader) readLocalAsyncCompaction(file io.ReadCloser, info os.FileInfo, fields diagnostics.Fields) (bool, string) {
 	data, err := io.ReadAll(io.LimitReader(file, 1<<20+1))
-	if closeErr := file.Close(); closeErr != nil {
+	closeErr := file.Close()
+	if closeErr != nil {
 		diagnostics.Error("local-config", "close", closeErr, fields)
+	}
+	if err != nil {
+		diagnostics.Error("local-config", "read", err, fields)
+	}
+	// Transient filesystem failures must be retried, not cached as a valid
+	// configuration (or as a persistent failure for otherwise unchanged bytes).
+	if err != nil || closeErr != nil {
+		return false, "background usage configuration could not be verified"
 	}
 	check := localFeatureCheck{info: info}
 	var config map[string]any
-	if err != nil {
-		diagnostics.Error("local-config", "read", err, fields)
-		check.issue = "background usage configuration could not be verified"
-	} else if len(data) > 1<<20 {
+	if len(data) > 1<<20 {
 		diagnostics.Error("local-config", "configuration exceeds 1 MiB limit", nil, fields)
 		check.issue = "background usage configuration could not be verified"
 	} else if parseErr := toml.Unmarshal(data, &config); parseErr != nil {
@@ -157,7 +167,7 @@ func (r *LiveUsageReader) localAsyncCompaction(path, session string) (bool, stri
 	if len(r.localFeatureChecks) >= 256 {
 		clear(r.localFeatureChecks)
 	}
-	r.localFeatureChecks[path] = check
+	r.localFeatureChecks[fields.Path] = check
 	return check.enabled, check.issue
 }
 

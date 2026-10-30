@@ -1,14 +1,81 @@
 package codex
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/merefield/codexometer/internal/diagnostics"
 )
+
+type coverageReadCloser struct {
+	io.Reader
+	closeErr error
+	closed   bool
+}
+
+func (f *coverageReadCloser) Close() error {
+	f.closed = true
+	return f.closeErr
+}
+
+func TestUsageCoverageReadAndCloseFailuresAreLoggedAndRetried(t *testing.T) {
+	for _, failure := range []string{"read", "close", "read and close"} {
+		t.Run(failure, func(t *testing.T) {
+			dir := t.TempDir()
+			path, logPath := filepath.Join(dir, "config.toml"), filepath.Join(dir, "error.log")
+			const config = "[features]\nasync_compaction = true\n"
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			closeLog, err := diagnostics.Install(logPath, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { closeLog() })
+			file := &coverageReadCloser{Reader: strings.NewReader(config)}
+			if strings.Contains(failure, "read") {
+				file.Reader = iotest.ErrReader(os.ErrPermission)
+			}
+			if strings.Contains(failure, "close") {
+				file.closeErr = os.ErrPermission
+			}
+			r := &LiveUsageReader{localFeatureChecks: make(map[string]localFeatureCheck)}
+			enabled, issue := r.readLocalAsyncCompaction(file, info, diagnostics.Fields{Path: path, Session: "thread"})
+			if enabled || issue != "background usage configuration could not be verified" || !file.closed {
+				t.Fatal("filesystem failure did not block verification and close the file", enabled, issue, file.closed)
+			}
+			if len(r.localFeatureChecks) != 0 {
+				t.Fatal("failed filesystem operation was cached", r.localFeatureChecks)
+			}
+			if err := closeLog(); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, operation := range []string{"read", "close"} {
+				if strings.Contains(failure, operation) && !strings.Contains(string(data), `"msg":"`+operation+`"`) {
+					t.Fatal("filesystem failure was not logged", operation, string(data))
+				}
+			}
+			// Retry the same path and unchanged metadata after the transient
+			// failure. A successful read must now detect and cache the flag.
+			if enabled, issue := r.localAsyncCompaction(path, "thread"); !enabled || issue != "" || !r.localFeatureChecks[path].enabled {
+				t.Fatal("unchanged configuration was not successfully retried", enabled, issue)
+			}
+		})
+	}
+}
 
 func TestUsageCoverageLogsFilesystemCauseWithoutChangingTheGuard(t *testing.T) {
 	home := t.TempDir()
