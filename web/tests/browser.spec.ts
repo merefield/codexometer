@@ -600,9 +600,10 @@ test.describe('opt-in real server with simulated Codex actions', () => {
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
-async function mockActions(page: Page, kind = 'approval') {
+async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
   const snapshot = {
     control: true,
+    noConfirm,
     version: 'test',
     meters: [],
     credits: [],
@@ -1624,8 +1625,13 @@ for (const command of ['rename', 'cd']) {
   );
 }
 
-async function mockSpeedCommands(page: Page, idle = true) {
-  await mockActions(page, 'prompt');
+async function mockSpeedCommands(
+  page: Page,
+  idle = true,
+  reversible = false,
+  noConfirm = false,
+) {
+  await mockActions(page, 'prompt', noConfirm);
   const calls: { mode: string; path: string; choice?: string }[] = [];
   let reject = false;
   await page.route('**/api/control/commands', async (route) => {
@@ -1672,6 +1678,7 @@ async function mockSpeedCommands(page: Page, idle = true) {
                       label: 'Standard (default)',
                       help: 'Use the server default',
                       action: idle,
+                      reversible,
                       unavailable: idle
                         ? undefined
                         : 'Waiting for idle. Refresh options when this turn finishes.',
@@ -1681,6 +1688,7 @@ async function mockSpeedCommands(page: Page, idle = true) {
                       label: 'Fast',
                       help: 'Advertised faster tier',
                       action: idle,
+                      reversible,
                       unavailable: idle
                         ? undefined
                         : 'Waiting for idle. Refresh options when this turn finishes.',
@@ -1690,6 +1698,7 @@ async function mockSpeedCommands(page: Page, idle = true) {
                       label: 'Slow',
                       help: 'Advertised slower tier',
                       action: idle,
+                      reversible,
                       unavailable: idle
                         ? undefined
                         : 'Waiting for idle. Refresh options when this turn finishes.',
@@ -1729,6 +1738,125 @@ async function openSpeedCommands(page: Page, pairingURL: string) {
   await expect(list.getByRole('option')).toHaveCount(3);
   return { text, panel, list };
 }
+
+for (const noConfirm of [false, true]) {
+  test(`speed applies on explicit selection without an extra click (noConfirm=${noConfirm})`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { calls } = await mockSpeedCommands(
+      page,
+      true,
+      !noConfirm,
+      noConfirm,
+    );
+    const { text, list } = await openSpeedCommands(page, pairingURL);
+    expect(calls.filter((c) => c.mode !== 'list')).toHaveLength(0);
+    await list.getByRole('option', { name: 'Fast', exact: true }).click();
+    await expect(list).toHaveCount(0);
+    await expect(text).toHaveValue('');
+    await expect(text).toBeFocused();
+    expect(calls.filter((c) => c.mode === 'prepare')).toHaveLength(1);
+    expect(calls.filter((c) => c.mode === 'commit')).toHaveLength(1);
+    await expect(
+      page.getByRole('button', { name: 'C CONFIRM CHANGE' }),
+    ).toHaveCount(0);
+  });
+}
+
+for (const kind of ['approval', 'prompt']) {
+  test(`no-confirm ${kind} still needs explicit submission and both protected server phases`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { calls } = await mockActions(page, kind, true);
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const controls = page.getByRole('region', { name: 'Session controls' });
+    if (kind === 'approval') {
+      await controls
+        .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
+        .check();
+    } else {
+      await controls
+        .getByRole('textbox', { name: 'Follow-up message' })
+        .fill('Explicit test prompt');
+    }
+    expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+    await controls
+      .getByRole('button', {
+        name: kind === 'approval' ? 'SEND DECISION' : 'SEND',
+        exact: true,
+      })
+      .click();
+    await expect(controls).toContainText(
+      kind === 'approval' ? 'Decision sent.' : 'Text sent.',
+    );
+    expect(calls.filter((c) => c.action === 'prepare')).toHaveLength(1);
+    expect(calls.filter((c) => c.action === 'commit')).toHaveLength(1);
+    await expect(
+      controls.getByRole('button', { name: /^CONFIRM/ }),
+    ).toHaveCount(0);
+  });
+}
+
+test('no-confirm scheduled prompts remain an explicit validated action', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt', true);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  await controls
+    .getByRole('combobox', { name: 'Send', exact: true })
+    .selectOption('delay');
+  const apply = controls.getByRole('button', {
+    name: 'SET TRIGGER',
+    exact: true,
+  });
+  await expect(apply).toBeDisabled();
+  await controls
+    .getByRole('textbox', { name: 'Follow-up message' })
+    .fill('Continue later');
+  await controls
+    .getByRole('spinbutton', { name: 'Delay (minutes)' })
+    .fill('30');
+  expect(calls.filter((c) => c.action !== 'offer')).toHaveLength(0);
+  await apply.click();
+  await expect(controls).toContainText(
+    'Trigger set. Closing Codexometer cancels it.',
+  );
+  expect(calls.filter((c) => c.action === 'prepare')).toHaveLength(1);
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(1);
+});
+
+test('no-confirm failed preparation retains the draft without committing', async ({
+  page,
+  pairingURL,
+}) => {
+  const { calls } = await mockActions(page, 'prompt', true);
+  await page.route('**/api/control/prepare', (route) =>
+    route.fulfill({ status: 409, body: 'Offer changed' }),
+  );
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const controls = page.getByRole('region', { name: 'Session controls' });
+  const text = controls.getByRole('textbox', { name: 'Follow-up message' });
+  await text.fill('Keep this draft');
+  await controls.getByRole('button', { name: 'SEND', exact: true }).click();
+  await expect(controls).toContainText(
+    'Action rejected, expired or changed. Refresh and check Codex; nothing was retried.',
+  );
+  await expect(text).toHaveValue('Keep this draft');
+  expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+});
 
 test('speed picker keeps choices visible while Enter reviews and C confirms', async ({
   page,

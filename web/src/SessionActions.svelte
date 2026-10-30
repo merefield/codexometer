@@ -387,6 +387,8 @@
     } finally {
       busy = false;
     }
+    if (live.data?.noConfirm && confirmation && !controller.signal.aborted)
+      await commit();
   }
   async function commit() {
     if (!offer?.id || busy || suspended || followUpBlocked || !confirming)
@@ -693,7 +695,7 @@
           {/each}
         {/if}
       </fieldset>
-      {#if confirming}
+      {#if confirming && !live.data?.noConfirm}
         {#if scheduled}<p>TRIGGER // {triggerDescription}</p>{/if}
         <p class="notice">
           Check the target and {offer.kind === 'profile'
@@ -731,9 +733,19 @@
           disabled={busy || stale || !valid || !!scheduleError}
           >{busy
             ? 'SENDING…'
-            : editing
-              ? 'REVIEW CHANGES'
-              : 'REVIEW BEFORE SENDING'}</button
+            : live.data?.noConfirm
+              ? editing
+                ? 'SAVE CHANGES'
+                : offer.kind === 'approval' || offer.kind === 'profile'
+                  ? 'SEND DECISION'
+                  : offer.kind === 'prompt' &&
+                      !offer.questions?.length &&
+                      timing !== 'now'
+                    ? 'SET TRIGGER'
+                    : 'SEND'
+              : editing
+                ? 'REVIEW CHANGES'
+                : 'REVIEW BEFORE SENDING'}</button
         >
       {/if}
       {#if editing}<button

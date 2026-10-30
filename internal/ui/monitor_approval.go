@@ -273,7 +273,7 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 	if option.Kind == "" {
 		return m, nil, true
 	}
-	if option.GrantsPermission() && !m.approvalConfirmationActive(token, action) {
+	if option.GrantsPermission() && !m.confirmations.NoConfirm && !m.approvalConfirmationActive(token, action) {
 		m.monitorApprovalConfirm = token + "/" + action
 		m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
 		m.monitorApprovalNumberReleased = false

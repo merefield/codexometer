@@ -362,6 +362,11 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 							*p = monitorPromptState{session: p.session}
 							m.monitorApprovalConfirm = ""
 							m.monitorApprovalNumberReleased = false
+							if m.confirmations.NoConfirm {
+								// Losing composer focus must never reinterpret typing
+								// as an immediate grant, even with fewer UI prompts.
+								return m, nil, true
+							}
 							return m.updateMonitorApprovalKey(name)
 						}
 					}

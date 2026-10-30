@@ -197,6 +197,7 @@ func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 		o.Unavailable = commandText(o.Unavailable)
 		o.ID = commandDigest([]any{o.Label, o.Help, o.Next, o.Unavailable, o.method, o.params})
 		o.Action = o.method != ""
+		o.Reversible = reversibleSessionCommand(*o)
 		if !seen[o.ID] {
 			unique = append(unique, *o)
 			seen[o.ID] = true
@@ -204,6 +205,29 @@ func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 	}
 	menu.Choices = unique
 	return menu
+}
+
+func reversibleSessionCommand(o SessionCommandChoice) bool {
+	if !o.Action {
+		return false
+	}
+	switch o.method {
+	case "thread/name/set":
+		return len(o.params) == 2 && o.params["name"] != nil && o.params["threadId"] != nil
+	case "thread/settings/update":
+		changed := false
+		for key := range o.params {
+			switch key {
+			case "threadId":
+			case "model", "effort", "serviceTier", "collaborationMode":
+				changed = true
+			default:
+				return false
+			}
+		}
+		return changed && o.params["threadId"] != nil
+	}
+	return false
 }
 
 func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread, path string, collect func(string, commandMenuBranch)) (SessionCommandMenu, error) {
@@ -258,7 +282,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Changes target this session only and require confirmation. Speed changes can be sent during a turn and apply to subsequent turns; other settings require idle. Catalogues marked browse-only do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Speed changes can be sent during a turn and apply to subsequent turns; other settings require idle. Browse-only catalogues do not execute tools or change global configuration."
 		return m, nil
 	}
 	if parts[0] == "cd" || parts[0] == "cwd" || parts[0] == "pwd" {
@@ -266,9 +290,10 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	}
 	if parts[0] == "rename" {
 		m.Title = "/rename"
-		m.Help = "Rename this session in Codex. Enter a single-line name, then review and confirm the change. It does not send a prompt or change model settings."
+		m.Help = "Rename this session in Codex. Enter a single-line name and apply it. It does not send a prompt or change model settings."
 		if path == "rename" {
 			m.Input = true
+			m.ReversibleInput = true
 			m.InputLabel, m.InputLimit = "Session name", SessionRenameInputLimit
 			m.Value = commandLabel(t.Name)
 			return m, nil

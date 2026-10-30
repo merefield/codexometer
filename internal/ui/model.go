@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/version"
@@ -173,6 +174,7 @@ type Model struct {
 	benchmarkDetailCache     benchmarkDetailTranscriptCache
 	benchmarkQuotaAccounting benchmarkQuotaAccounting
 
+	confirmations           confirmation.Policy
 	monitorState            monitorState
 	monitorAutoStart        bool
 	monitorStartedAt        time.Time
@@ -1478,7 +1480,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonBenchmarkSelected:
 		if m.meterView == viewBenchmark && m.benchmarkCanRunSelected() {
 			tasks := m.benchmarkScopedTasks()
-			if m.benchmarkSelectedSuiteExternal() && !m.benchmarkSelectedArmed {
+			if m.benchmarkSelectedSuiteExternal() && !m.benchmarkSelectedArmed && !m.confirmations.NoConfirm {
 				m.benchmarkSelectedArmed = true
 				m.benchmarkConfirmSequence++
 				sequence := m.benchmarkConfirmSequence
@@ -1496,7 +1498,7 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			allCombinations = m.benchmarkCombinations
 		}
 		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkRunActive(), allCombinations, len(tasks)) {
-			if !m.benchmarkAllArmed {
+			if !m.benchmarkAllArmed && !m.confirmations.NoConfirm {
 				m.benchmarkAllArmed = true
 				m.benchmarkConfirmSequence++
 				sequence := m.benchmarkConfirmSequence

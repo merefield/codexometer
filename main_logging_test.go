@@ -18,8 +18,10 @@ func TestLoggingFlagsAndLaunchFailures(t *testing.T) {
 	for _, browser := range []bool{false, true} {
 		path := filepath.Join(t.TempDir(), "error.log")
 		deps := dependencies{
-			startUI: func(ui.Fetcher, time.Duration, bool, int, int) error { return errors.New("PRIVATE_UPSTREAM_BODY") },
-			startWeb: func(web.Source, time.Duration, int, io.Writer, bool) error {
+			startUI: func(ui.Fetcher, time.Duration, bool, int, int, bool) error {
+				return errors.New("PRIVATE_UPSTREAM_BODY")
+			},
+			startWeb: func(web.Source, time.Duration, int, io.Writer, bool, bool) error {
 				return errors.New("PRIVATE_UPSTREAM_BODY")
 			},
 		}

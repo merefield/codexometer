@@ -26,7 +26,7 @@ func (m *Model) clearMonitorCloseAllConfirmation() {
 }
 
 func (m *Model) requestMonitorCloseAll() {
-	if m.monitorCloseAllArmed() {
+	if m.confirmations.NoConfirm || m.monitorCloseAllArmed() {
 		m.dismissAllMonitorSessions()
 		return
 	}

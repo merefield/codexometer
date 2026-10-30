@@ -46,6 +46,72 @@ func commandTestModel(t *testing.T) (Model, *commandTestClient) {
 	n, _ := m.Update(cmd())
 	return n.(Model), f
 }
+
+func TestMonitorCommandsApplyReversibleChoicesWithoutExtraConfirmation(t *testing.T) {
+	for _, noConfirm := range []bool{false, true} {
+		for _, reversible := range []bool{false, true} {
+			m, f := commandTestModel(t)
+			m.SetNoConfirm(noConfirm)
+			m.monitorCommands.menu.Choices[0].Reversible = reversible
+			m.monitorPrompt.input.SetValue("keep draft")
+			next, cmd, _ := m.chooseMonitorCommand()
+			if direct := noConfirm || reversible; (cmd != nil) != direct {
+				t.Fatal("wrong confirmation policy", noConfirm, reversible)
+			}
+			if cmd != nil {
+				if _, duplicate, _ := next.chooseMonitorCommand(); duplicate != nil {
+					t.Fatal("busy action could be sent twice")
+				}
+				n, _ := next.Update(cmd())
+				next = n.(Model)
+				if f.calls != 1 || next.monitorCommands.open || next.monitorPrompt.input.Value() != "keep draft" {
+					t.Fatal("direct action did not close its stale menu and preserve draft")
+				}
+			}
+		}
+	}
+}
+
+func TestNoConfirmDoesNotApplyUnavailableOrHiddenCommands(t *testing.T) {
+	for _, blocked := range []string{"unavailable", "tiny", "busy", "notice", "closed"} {
+		m, f := commandTestModel(t)
+		m.SetNoConfirm(true)
+		switch blocked {
+		case "unavailable":
+			m.monitorCommands.menu.Choices[0].Unavailable = "Waiting for idle."
+		case "tiny":
+			m.height = 2
+		case "busy":
+			m.monitorCommands.busy = true
+		case "notice":
+			m.monitorCommands.notice = "Outcome uncertain; do not retry."
+		case "closed":
+			m.monitorCommands.open = false
+		}
+		if _, cmd, _ := m.chooseMonitorCommand(); cmd != nil || f.calls != 0 {
+			t.Fatal("confirmation flag bypassed availability", blocked)
+		}
+	}
+}
+
+func TestReversibleCommandClickSurfacesUseTheRenderedLayout(t *testing.T) {
+	for _, width := range []int{60, 120, 180} {
+		for _, label := range []string{"Medium", "[ ENTER APPLY ]"} {
+			m, f := commandTestModel(t)
+			m.width = width
+			m.monitorCommands.menu.Choices[0].Reversible = true
+			x, y := renderedTextStart(t, m, label)
+			n, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			if cmd == nil || !n.(Model).monitorCommands.busy || f.calls != 0 {
+				t.Fatal("reversible action missed its click target", width, label)
+			}
+			cmd()
+			if f.calls != 1 {
+				t.Fatal("click did not send exactly one command", width, label)
+			}
+		}
+	}
+}
 func TestMonitorCommandsConfirmationAndDraft(t *testing.T) {
 	m, f := commandTestModel(t)
 	m.monitorPrompt.input.SetValue("keep draft")

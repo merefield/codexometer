@@ -171,6 +171,9 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 			p.confirmToken = m.monitorPromptOffer().Token
 			p.confirmUntil = time.Now().Add(20 * time.Second)
 			p.notice = ""
+			if m.confirmations.NoConfirm {
+				return m.triggerAction("ctrl+y")
+			}
 		}
 	case "ctrl+y":
 		if p.confirmID != j.ID || !time.Now().Before(p.confirmUntil) || !m.triggerReady(j) || p.confirmToken != m.monitorPromptOffer().Token {

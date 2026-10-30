@@ -32,6 +32,20 @@ func resetModel() (Model, *resetFake) {
 	return m, f
 }
 
+func TestNoConfirmNeverBypassesQuotaResetConfirmation(t *testing.T) {
+	m, f := resetModel()
+	m.SetNoConfirm(true)
+	n, cmd := m.pressQuotaReset()
+	m = n.(Model)
+	if cmd != nil || len(f.keys) != 0 || m.resetConfirmUntil.IsZero() {
+		t.Fatal("--no-confirm bypassed the irreversible quota-reset confirmation")
+	}
+	_, cmd = m.pressQuotaReset()
+	if cmd == nil {
+		t.Fatal("explicit quota-reset confirmation stopped working")
+	}
+}
+
 func TestQuotaResetConfirmationAndRetry(t *testing.T) {
 	m, f := resetModel()
 	u, cmd := m.pressQuotaReset()

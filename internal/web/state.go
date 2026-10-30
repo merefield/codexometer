@@ -115,6 +115,7 @@ type state struct {
 	Thresholds       []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError     bool                `json:"profileError,omitempty"`
 	Control          bool                `json:"control"`
+	NoConfirm        bool                `json:"noConfirm,omitempty"`
 	Version          string              `json:"version"`
 	Meters           []meter             `json:"meters"`
 	Credits          []credit            `json:"credits"`

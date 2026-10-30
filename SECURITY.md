@@ -58,6 +58,20 @@ tests must cover confirmation, navigation/draft isolation, stale controls and te
 escaping. Prompt sending/approvals are the only web mutations; benchmarks and
 reset redemption still have no routes.
 
+Reversible session-local slash changes (name, model/reasoning, advertised speed,
+and collaboration mode) apply on explicit selection without a second UI click.
+Permissions, directories and unknown actions remain guarded by default.
+`--no-confirm` is a launch-only opt-out from other Codexometer confirmation clicks;
+quota-reset redemption remains guarded even with this option. It does not select
+approvals automatically, change Codex sandbox policies, enable read-only web
+control routes or bypass server-side preparation/commit, source freshness,
+revision, one-use capability or replay validation. Browser preparation and commit
+remain distinct protected requests even when one user action runs both phases.
+Never infer an action's risk from its display label: the shared adapter marks
+only an explicit allowlist of reversible RPC methods/fields. Unknown metadata
+requires confirmation by default. Test both policies, including unavailable
+actions, failed preparation, stale/replaced requests and the reset exception.
+
 Prepared bodies are limited to 64 KiB and each answer to 4,096 characters. At most
 one prepared action is retained for 30 seconds per server; replacement invalidates
 the previous confirmation. Drafts/answers are not logged or persisted. Secret

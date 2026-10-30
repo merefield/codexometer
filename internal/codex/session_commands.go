@@ -58,6 +58,9 @@ type SessionCommandChoice struct {
 	Next     string `json:"next,omitempty"`
 	Action   bool   `json:"action,omitempty"`
 	Selected bool   `json:"selected,omitempty"`
+	// Reversible is set only for an explicit allowlist of session-local settings.
+	// Unknown actions and permission changes retain confirmation by default.
+	Reversible bool `json:"reversible,omitempty"`
 	// Unavailable explains a blocked action; an empty reason with no Action is genuine browse-only help.
 	Unavailable string `json:"unavailable,omitempty"`
 	method      string
@@ -65,11 +68,12 @@ type SessionCommandChoice struct {
 }
 
 type SessionCommandMenu struct {
-	Title    string `json:"title"`
-	Help     string `json:"help"`
-	Path     string `json:"path"`
-	Revision string `json:"revision"`
-	Multiple bool   `json:"multiple,omitempty"`
+	ReversibleInput bool   `json:"reversibleInput,omitempty"`
+	Title           string `json:"title"`
+	Help            string `json:"help"`
+	Path            string `json:"path"`
+	Revision        string `json:"revision"`
+	Multiple        bool   `json:"multiple,omitempty"`
 	// Picker keeps choices visible; the highlighted option is applied explicitly.
 	Picker     bool                   `json:"picker,omitempty"`
 	Input      bool                   `json:"input,omitempty"`

@@ -126,6 +126,7 @@ export interface Snapshot {
   profileError?: boolean;
   thresholds?: Threshold[];
   control?: boolean;
+  noConfirm?: boolean;
   version: string;
   meters: Meter[];
   credits: Credit[];

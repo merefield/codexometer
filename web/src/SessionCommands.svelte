@@ -24,6 +24,7 @@
     help: string;
     next?: string;
     action?: boolean;
+    reversible?: boolean;
     selected?: boolean;
     unavailable?: string;
   }
@@ -34,6 +35,7 @@
     revision: string;
     choices: Choice[];
     input?: boolean;
+    reversibleInput?: boolean;
     picker?: boolean;
     inputLabel?: string;
     inputLimit?: number;
@@ -323,7 +325,7 @@
       closeCommands();
       return;
     }
-    if (busy || (event.repeat && confirmKey)) return;
+    if (busy || (event.repeat && (confirmKey || event.key === 'Enter'))) return;
     if (backKey) {
       if (canBack) void back();
       return;
@@ -467,7 +469,9 @@
     if (notice) return;
     if (menu?.picker) {
       highlight(choices.findIndex((choice) => choice.id === o.id));
-      optionList?.focus();
+      if (o.action && (o.reversible || live.data?.noConfirm))
+        await reviewChoice(o);
+      else optionList?.focus();
       return;
     }
     if (o.next) {
@@ -478,10 +482,11 @@
   }
   async function reviewChoice(o: Choice) {
     if (busy || unavailable || !menu || o.unavailable || notice) return;
+    const direct = o.action && (o.reversible || live.data?.noConfirm);
     if (menu.picker) {
       if (reviewed && stagedChoice === o.id) return;
       stagedChoice = o.id;
-    } else {
+    } else if (!direct) {
       selected = o;
       void tick().then(() => reviewPanel?.focus());
     }
@@ -521,6 +526,9 @@
     } finally {
       if (seq === request) busy = false;
     }
+    // The user already chose the exact option. Retain both server-side phases
+    // and their freshness/revision/replay checks without a redundant UI click.
+    if (direct && seq === request && confirmation) await commit();
   }
 
   async function commit() {
@@ -712,10 +720,12 @@
               type="submit"
               form={`${listID}-input`}
               disabled={busy || unavailable || !name.trim()}
-              >ENTER REVIEW</button
+              >{menu.reversibleInput || live.data?.noConfirm
+                ? 'ENTER APPLY'
+                : 'ENTER REVIEW'}</button
             >
           {:else if currentChoice?.action && !currentChoice.unavailable}
-            {#if reviewed}<button
+            {#if reviewed && !currentChoice.reversible && !live.data?.noConfirm}<button
                 data-command-confirm
                 onclick={commit}
                 disabled={busy || (unavailable && !localOnly)}
@@ -726,7 +736,9 @@
                   if (currentChoice) void reviewChoice(currentChoice);
                 }}
                 disabled={busy || (unavailable && !localOnly)}
-                >ENTER REVIEW</button
+                >{currentChoice.reversible || live.data?.noConfirm
+                  ? 'ENTER APPLY'
+                  : 'ENTER REVIEW'}</button
               >{/if}
           {:else if !selected && currentChoice && !currentChoice.unavailable}<button
               onclick={() => {

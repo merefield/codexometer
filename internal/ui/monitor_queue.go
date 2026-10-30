@@ -380,6 +380,11 @@ func (m *Model) openQueueItem(index int, remove bool) tea.Cmd {
 	q.input, _ = m.queueEditorLayout(g.contentWidth, g.meterHeight)
 	m.monitorPrompt.input.Blur()
 	if remove {
+		if m.confirmations.NoConfirm {
+			next, cmd, _ := m.changeQueueItem()
+			*m = next
+			return cmd
+		}
 		return nil
 	}
 	return q.input.Focus()
