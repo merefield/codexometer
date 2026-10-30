@@ -12,6 +12,7 @@ export interface Session {
   tokens: number;
   agents: number;
   status: string;
+  failed?: boolean;
   contextKind: string;
   text: string;
   command: string;

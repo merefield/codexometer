@@ -158,7 +158,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		lines[textRows-1] = ansi.Truncate(lines[textRows-1], max(inner-1, 0), "") + "…"
 	}
 	if hasWorkingCommand(s.preview) {
-		lines = workingContextLines(s.preview, inner, contentRows, true)
+		lines = m.workingContextLines(s.preview, inner, contentRows, true)
 	} else if contentRows > textRows {
 		lines = append(lines, terminalLabel(s.preview.Source)+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}

@@ -66,7 +66,9 @@
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
   function isFailure(session: Session) {
-    return session.status !== 'STALE' && session.contextKind === 'TURN ERROR';
+    // Saved error text can outlive current attention (for example, after quit).
+    // Use the shared backend classification, not historical context or labels.
+    return session.status !== 'STALE' && session.failed === true;
   }
   // Parent rows already include linked-agent usage. Sum each listed row once;
   // do not add agent counts or activity samples to its observed token counter.

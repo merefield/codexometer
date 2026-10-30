@@ -3532,6 +3532,9 @@ test('session failures have a separate count, ordered pills, error detail and li
       'MODEL UNAVAILABLE',
       'CAPACITY RESTRICTED',
       'CHECK SESSION',
+      'INACTIVE',
+      'IDLE',
+      'WORKING',
     ].map((status, index) => ({
       id: 'failure-test-' + index,
       name: 'Session ' + index,
@@ -3539,11 +3542,21 @@ test('session failures have a separate count, ordered pills, error detail and li
       tokens: 10,
       agents: 0,
       status,
+      failed: [
+        'MODEL BUSY',
+        'TURN FAILED',
+        'MODEL UNAVAILABLE',
+        'CAPACITY RESTRICTED',
+      ].includes(status),
       contextKind: [
         'MODEL BUSY',
         'TURN FAILED',
         'MODEL UNAVAILABLE',
         'CAPACITY RESTRICTED',
+        // Saved error context is still useful, but is not current attention.
+        'INACTIVE',
+        'IDLE',
+        'WORKING',
       ].includes(status)
         ? 'TURN ERROR'
         : 'LAST REPLY',
@@ -3594,6 +3607,7 @@ test('session failures have a separate count, ordered pills, error detail and li
     'TURN ERROR',
   );
   snapshot.sessions[1].status = 'WORKING';
+  snapshot.sessions[1].failed = false;
   snapshot.sessions[1].contextKind = 'LAST ACTIVITY';
   snapshot.sessions[1].text = 'Trying a new turn';
   await page.evaluate(
@@ -3609,6 +3623,15 @@ test('session failures have a separate count, ordered pills, error detail and li
     'Selected model is at capacity.',
   );
   await expect(page.locator('.detail-heading')).toContainText('WORKING');
+  // A closed session can retain its failed reply without becoming an alert.
+  await page.goto(pairingURL.split('#')[0] + '#/sessions/failure-test-8');
+  await expect(page.locator('.detail-context')).toContainText(
+    'Observed context',
+  );
+  await expect(page.locator('.detail-context')).not.toContainText(
+    'CONFIRMED TURN FAILURE',
+  );
+  await expect(page.locator('.detail-heading h2')).not.toHaveClass(/failed/);
 });
 
 test('session totals count parent usage once and update for live, stale and empty lists', async ({

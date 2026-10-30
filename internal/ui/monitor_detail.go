@@ -117,7 +117,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			section(i18n.Text("COMMENTARY"))
 			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "body", "")
 		}
-		section(workingCommandTitle(c.Activity))
+		section(m.workingCommandTitle(c.Activity))
 		prefix := "│ "
 		if width < 3 {
 			prefix = ""
