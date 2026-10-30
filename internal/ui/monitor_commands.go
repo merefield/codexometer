@@ -761,7 +761,10 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, false
 	}
-	if key, ok := msg.(tea.KeyPressMsg); ok && key.IsRepeat && (key.String() == "enter" || key.String() == "right") {
+	// Only suppress repeats that can submit/open a choice. Right still belongs
+	// to text editors (including inline filters) and local checkbox reordering.
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.IsRepeat && (key.String() == "enter" ||
+		key.String() == "right" && !p.inline && !p.menu.Input && !p.menu.Multiple) {
 		return m, nil, true
 	}
 	if m.meterView != viewMonitor || m.monitorContextTarget() != p.session {
@@ -924,6 +927,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 						p.reviewedChoice = ""
 					}
 					p.selected = p.hover
+					if o, ok := m.commandChoice(); ok && o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
+						return m.chooseMonitorCommand()
+					}
 					return m, nil, true
 				}
 				p.selected = p.hover
