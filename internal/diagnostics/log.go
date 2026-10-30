@@ -201,11 +201,19 @@ func openFile(path string) (*boundedFile, error) {
 		f.Close()
 		return nil, err
 	}
+	size := info.Size()
+	if size > maxBytes {
+		if err := f.Truncate(0); err != nil {
+			f.Close()
+			return nil, err
+		}
+		size = 0
+	}
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		f.Close()
 		return nil, err
 	}
-	return &boundedFile{File: f, size: info.Size(), limit: maxBytes}, nil
+	return &boundedFile{File: f, size: size, limit: maxBytes}, nil
 }
 
 func (f *boundedFile) Write(p []byte) (int, error) {

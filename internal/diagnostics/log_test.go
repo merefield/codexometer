@@ -3,6 +3,7 @@ package diagnostics
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -150,6 +151,64 @@ func TestLogAppendsAcrossRuns(t *testing.T) {
 	got := records(t, path)
 	if len(got) != 2 || got[0]["msg"] != "first run" || got[1]["msg"] != "second run" {
 		t.Fatal("log was overwritten instead of appended", got)
+	}
+}
+
+func TestInstallNormalizesExistingLogWithoutWritingRecords(t *testing.T) {
+	for _, size := range []int{maxBytes - 1, maxBytes, maxBytes + 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "error.log")
+			original := strings.Repeat("x", size)
+			if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+				t.Fatal(err)
+			}
+			close, err := Install(path, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { close() })
+			// No records are emitted: installation itself must enforce the cap.
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := original
+			if size > maxBytes {
+				want = ""
+			}
+			if string(got) != want {
+				t.Fatalf("installed log size = %d; want %d with original content preserved below the cap", len(got), len(want))
+			}
+			if err := close(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestNormalizedLogTracksSizeAndAppendsAtStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "error.log")
+	if err := os.WriteFile(path, make([]byte, maxBytes+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := openFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if f.size != 0 {
+		t.Fatal("oversized log retained stale tracked size", f.size)
+	}
+	const record = "{\"msg\":\"after normalization\"}\n"
+	if _, err := f.Write([]byte(record)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != record || f.size != int64(len(record)) {
+		t.Fatal("normalized log did not restart at byte zero", len(got), f.size)
 	}
 }
 
