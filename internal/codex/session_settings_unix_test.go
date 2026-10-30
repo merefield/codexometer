@@ -35,6 +35,9 @@ type quotaDaemonFixture struct {
 	environments  []any
 	permissions   map[string]string
 	resumeReads   []map[string]any
+	hookReads     []map[string]any
+	threadHooks   map[string]any
+	hookError     map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -110,6 +113,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			fixture.mu.Lock()
 			result := map[string]any{}
 			failure := false
+			var failureDetail map[string]any
 			var settingsNotification map[string]any
 			id, _ := req.Params["threadId"].(string)
 			switch req.Method {
@@ -199,6 +203,16 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					<-release
 					fixture.mu.Lock()
 				}
+			case "hooks/list":
+				fixture.hookReads = append(fixture.hookReads, req.Params)
+				result = fixture.catalogues["hooks/list"]
+				if id != "" {
+					if fixture.threadHooks != nil {
+						result = fixture.threadHooks
+					}
+					failureDetail = fixture.hookError
+					failure = failureDetail != nil
+				}
 			default:
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)
@@ -214,6 +228,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			if failure {
 				delete(response, "result")
 				response["error"] = map[string]any{"code": -1, "message": "test failure"}
+				if failureDetail != nil {
+					response["error"] = failureDetail
+				}
 			}
 			if wire.writeJSON(response) != nil {
 				return

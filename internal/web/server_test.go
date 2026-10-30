@@ -336,20 +336,24 @@ func TestDisplayProjectionAndAccountIsolation(t *testing.T) {
 
 func TestWorkingContextProjection(t *testing.T) {
 	s := newStore()
+	now := time.Now()
 	row := codex.LiveUsageSession{ID: "root", Working: true, Context: codex.SessionContext{
 		Kind: codex.SessionContextActivity, Text: "Explanation", Activity: codex.SessionActivity{
-			Prose: "Explanation", Command: "go test", CommandStatus: "running", RunningCommands: 2,
+			Prose: "Explanation", Command: "go test", CommandStatus: "running", RunningCommands: 2, CommandStartedAt: now.Add(-42 * time.Second),
 		},
 	}}
-	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
+	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, now)
 	got := s.state.Sessions[0]
 	if got.Text != "Explanation" || got.WorkingCommand != "go test" || got.CommandStatus != "running" || got.RunningCommands != 2 || got.Command != "" {
 		t.Fatal(got)
 	}
+	if got.CommandTiming != "42s" {
+		t.Fatal("recorded timer not projected", got)
+	}
 	for _, kind := range []codex.SessionContextKind{codex.SessionContextReply, codex.SessionContextApproval, codex.SessionContextQuestion} {
 		row.Context.Kind = kind
 		s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{row}}, nil, time.Now())
-		if s.state.Sessions[0].WorkingCommand != "" {
+		if s.state.Sessions[0].WorkingCommand != "" || s.state.Sessions[0].CommandTiming != "" {
 			t.Fatal("activity leaked into higher-priority context")
 		}
 	}

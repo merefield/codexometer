@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
+	"time"
 )
 
 func hasWorkingCommand(c codex.SessionContext) bool {
@@ -23,6 +24,9 @@ func workingCommandTitle(a codex.SessionActivity) string {
 		status = "DECLINED"
 	}
 	title := i18n.Text("COMMAND") + " // " + i18n.Text(status)
+	if timing := a.CommandTiming(time.Now()); timing != "" {
+		title += " // " + timing
+	}
 	extra := a.RunningCommands
 	if a.CommandStatus == "running" {
 		extra--

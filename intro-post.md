@@ -115,7 +115,7 @@ Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 
 
 Expiry warnings are reminders to review, not instructions to reset immediately. Confirmation warns that unused allowance does not carry over or stack and that the weekly schedule changes. Missing or incomplete expiry information is explicitly flagged: no warning is not proof that nothing expires soon, and undisclosed credits may expire sooner.
 
-Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, or **TURN FAILED** with the observed explanation. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch.
+Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, **MODEL UNAVAILABLE** for a missing model, **CAPACITY RESTRICTED** for policy-restricted capacity, or **TURN FAILED** with the observed explanation. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch. Working-command headings can also show elapsed/completed time when the shared server supplies valid timestamps.
 
 ## An experimental browser companion
 

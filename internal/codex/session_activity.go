@@ -1,5 +1,7 @@
 package codex
 
+import "time"
+
 // SessionActivity keeps prose separate from shell activity. It never contains
 // approval capabilities or command output; all display strings are bounded.
 type SessionActivity struct {
@@ -8,12 +10,34 @@ type SessionActivity struct {
 	CommandStatus   string
 	RunningCommands int
 	RunningLimited  bool
+	// Server-recorded item times, not observer arrival times. Missing means
+	// unknown; they neither refresh session freshness nor affect token accounting.
+	CommandStartedAt   time.Time
+	CommandCompletedAt time.Time
+}
+
+// CommandTiming reports elapsed or completed duration only with valid timing
+// evidence. Running timers use the caller's snapshot time, so stale web data
+// does not keep pretending that the command is still running.
+func (a SessionActivity) CommandTiming(now time.Time) string {
+	if a.CommandStartedAt.IsZero() || a.CommandStartedAt.After(now) {
+		return ""
+	}
+	end := a.CommandCompletedAt
+	if a.CommandStatus == "running" {
+		end = now
+	}
+	if end.IsZero() || end.Before(a.CommandStartedAt) || end.After(now) {
+		return ""
+	}
+	return end.Sub(a.CommandStartedAt).Truncate(time.Second).String()
 }
 
 type activityCommand struct {
-	text     string
-	status   string
-	sequence uint64
+	text               string
+	status             string
+	sequence           uint64
+	started, completed time.Time
 }
 
 type sessionActivityState struct {
@@ -26,6 +50,11 @@ type sessionActivityState struct {
 }
 
 func (s *sessionActivityState) command(id, text, status string, finished bool) {
+	s.commandTimed(id, text, status, finished, time.Time{}, time.Time{})
+}
+
+func (s *sessionActivityState) commandTimed(id, text, status string, finished bool, started, completed time.Time) {
+	previous := s.running[id]
 	text = SanitizeSessionContext(text)
 	if text == "" {
 		text = s.running[id].text
@@ -48,7 +77,16 @@ func (s *sessionActivityState) command(id, text, status string, finished bool) {
 			status = "unknown"
 		}
 	}
-	c := activityCommand{text: text, status: status, sequence: s.sequence}
+	if started.IsZero() {
+		started = previous.started
+	}
+	if !finished {
+		completed = time.Time{}
+	}
+	if !completed.IsZero() && !started.IsZero() && completed.Before(started) {
+		completed = time.Time{}
+	}
+	c := activityCommand{text: text, status: status, sequence: s.sequence, started: started, completed: completed}
 	s.last = c
 	if !finished && id != "" && status == "running" {
 		if s.running == nil {
@@ -73,7 +111,8 @@ func (s sessionActivityState) snapshot() SessionActivity {
 		}
 	}
 	return SessionActivity{Prose: s.prose, Command: command.text, CommandStatus: command.status,
-		RunningCommands: len(s.running), RunningLimited: s.limited}
+		RunningCommands: len(s.running), RunningLimited: s.limited,
+		CommandStartedAt: command.started, CommandCompletedAt: command.completed}
 }
 
 func (s sessionActivityState) context(c SessionContext) SessionContext {

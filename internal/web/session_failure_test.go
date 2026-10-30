@@ -14,4 +14,10 @@ func TestSessionFailurePresentation(t *testing.T) {
 	if sessionStatus(row) != "TURN FAILED" {
 		t.Fatal("generic failure mislabeled")
 	}
+	for code, want := range map[string]string{"modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED"} {
+		row.Context.FailureCode = code
+		if sessionStatus(row) != want || contextKind(row.Context.Kind) != "TURN ERROR" {
+			t.Fatal("new error lost shared failure classification", row)
+		}
+	}
 }

@@ -290,6 +290,7 @@ test('working detail preserves prose alongside command state', async ({
     activity: '',
     samples: [],
     workingCommand: 'go test ./...',
+    commandTiming: '',
     commandStatus: 'running',
     runningCommands: 2,
   };
@@ -356,6 +357,7 @@ test('working detail preserves prose alongside command state', async ({
     .toBe('go vet ./...');
   session.text = 'Checking the build <not markup>';
   session.commandStatus = 'completed';
+  session.commandTiming = '7s';
   session.runningCommands = 0;
   await page.evaluate(
     (detail) =>
@@ -363,7 +365,10 @@ test('working detail preserves prose alongside command state', async ({
     snapshot,
   );
   await expect(
-    page.getByRole('heading', { name: 'COMMAND // COMPLETED', exact: true }),
+    page.getByRole('heading', {
+      name: 'COMMAND // COMPLETED // 7s',
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(page.getByText(session.text, { exact: true })).toBeVisible();
   session.status = 'TURN COMPLETE';
@@ -3524,6 +3529,8 @@ test('session failures have a separate count, ordered pills, error detail and li
       'INPUT NEEDED',
       'APPROVAL NEEDED',
       'TURN FAILED',
+      'MODEL UNAVAILABLE',
+      'CAPACITY RESTRICTED',
       'CHECK SESSION',
     ].map((status, index) => ({
       id: 'failure-test-' + index,
@@ -3532,7 +3539,12 @@ test('session failures have a separate count, ordered pills, error detail and li
       tokens: 10,
       agents: 0,
       status,
-      contextKind: ['MODEL BUSY', 'TURN FAILED'].includes(status)
+      contextKind: [
+        'MODEL BUSY',
+        'TURN FAILED',
+        'MODEL UNAVAILABLE',
+        'CAPACITY RESTRICTED',
+      ].includes(status)
         ? 'TURN ERROR'
         : 'LAST REPLY',
       text:
@@ -3551,16 +3563,26 @@ test('session failures have a separate count, ordered pills, error detail and li
   const cell = page
     .locator('.session-totals > div')
     .filter({ has: page.locator('dt').filter({ hasText: /^ERRORS$/ }) });
-  await expect(cell.locator('dd')).toHaveText('2');
+  await expect(cell.locator('dd')).toHaveText('4');
   const pills = page
     .getByRole('navigation', { name: 'Sessions needing attention' })
     .getByRole('link');
-  await expect(pills).toHaveCount(5);
+  await expect(pills).toHaveCount(7);
   await expect(pills.nth(0)).toContainText('APPROVAL NEEDED');
   await expect(pills.nth(1)).toContainText('INPUT NEEDED');
   await expect(pills.nth(2)).toContainText('MODEL BUSY');
   await expect(pills.nth(3)).toContainText('TURN FAILED');
-  await expect(pills.nth(4)).toContainText('TURN COMPLETE');
+  await expect(pills.nth(4)).toContainText('MODEL UNAVAILABLE');
+  await expect(pills.nth(5)).toContainText('CAPACITY RESTRICTED');
+  await expect(pills.nth(6)).toContainText('TURN COMPLETE');
+  await pills.nth(4).click();
+  await expect(page.locator('.detail-context')).toContainText(
+    'provider could not find the selected model',
+  );
+  await pills.nth(5).click();
+  await expect(page.locator('.detail-context')).toContainText(
+    'policy-restricted route',
+  );
   await pills.nth(2).click();
   await expect(page.locator('.detail-context')).toContainText(
     'Selected model is at capacity.',
@@ -3581,7 +3603,7 @@ test('session failures have a separate count, ordered pills, error detail and li
       ),
     snapshot,
   );
-  await expect(cell.locator('dd')).toHaveText('1');
+  await expect(cell.locator('dd')).toHaveText('3');
   await expect(pills.filter({ hasText: 'MODEL BUSY' })).toHaveCount(0);
   await expect(page.locator('.detail-context')).not.toContainText(
     'Selected model is at capacity.',

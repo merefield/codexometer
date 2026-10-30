@@ -50,6 +50,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		RequestedPermissions json.RawMessage   `json:"permissions"`
 		Decisions            []json.RawMessage `json:"availableDecisions"`
 		ThreadID             string            `json:"threadId"`
+		StartedAtMS          *int64            `json:"startedAtMs"`
+		CompletedAtMS        *int64            `json:"completedAtMs"`
 		GrantRoot            string            `json:"grantRoot"`
 		Changes              json.RawMessage   `json:"changes"`
 		RequestID            json.RawMessage   `json:"requestId"`
@@ -63,15 +65,17 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			ID       string          `json:"id"`
-			CWD      string          `json:"cwd"`
-			Type     string          `json:"type"`
-			Text     string          `json:"text"`
-			Phase    string          `json:"phase"`
-			Command  string          `json:"command"`
-			Status   string          `json:"status"`
-			ExitCode *int            `json:"exitCode"`
-			Changes  json.RawMessage `json:"changes"`
+			ID            string          `json:"id"`
+			CWD           string          `json:"cwd"`
+			Type          string          `json:"type"`
+			Text          string          `json:"text"`
+			Phase         string          `json:"phase"`
+			Command       string          `json:"command"`
+			Status        string          `json:"status"`
+			ExitCode      *int            `json:"exitCode"`
+			Changes       json.RawMessage `json:"changes"`
+			StartedAtMS   *int64          `json:"startedAtMs"`
+			CompletedAtMS *int64          `json:"completedAtMs"`
 		} `json:"item"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.ThreadID == "" {
@@ -261,7 +265,9 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 					status = "completed"
 				}
 			}
-			state.activity.command(commandID, p.Item.Command, status, true)
+			state.activity.commandTimed(commandID, p.Item.Command, status, true,
+				itemLifecycleTime(p.Item.StartedAtMS, p.StartedAtMS, now),
+				itemLifecycleTime(p.Item.CompletedAtMS, p.CompletedAtMS, now))
 			if state.latest.Kind != SessionContextReply {
 				state.latest = state.activity.context(c)
 			}
@@ -311,7 +317,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		c.Kind, c.Text = SessionContextActivity, p.Item.Command
 		// The lifecycle event establishes this even on older payloads that
 		// omit status. Pending approvals still take presentation precedence.
-		state.activity.command(commandID, p.Item.Command, "inProgress", false)
+		state.activity.commandTimed(commandID, p.Item.Command, "inProgress", false,
+			itemLifecycleTime(p.Item.StartedAtMS, p.StartedAtMS, now), time.Time{})
 		c = state.activity.context(c)
 		if state.commands == nil {
 			state.commands = map[string]contextCommandItem{}
@@ -382,6 +389,23 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	} else {
 		state.latest = c
 	}
+}
+
+// New servers embed these fields on the item; old lifecycle notifications put
+// them on the envelope. A present invalid item value must not be hidden by a
+// contradictory envelope. Never trust zero/negative or future wall-clock times.
+func itemLifecycleTime(item, envelope *int64, now time.Time) time.Time {
+	if item == nil {
+		item = envelope
+	}
+	if item == nil || *item <= 0 {
+		return time.Time{}
+	}
+	at := time.UnixMilli(*item)
+	if at.After(now) {
+		return time.Time{}
+	}
+	return at
 }
 
 func (s *daemonContextState) acceptTurn(id string) bool {

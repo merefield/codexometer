@@ -1,4 +1,6 @@
 {
+  "MODEL UNAVAILABLE": "模型不可用",
+  "CAPACITY RESTRICTED": "容量受策略限制",
   "ERRORS": "错误",
   "MODEL BUSY": "模型繁忙",
   "TURN FAILED": "轮次失败",

@@ -40,6 +40,7 @@ type session struct {
 	WorkingCommand  string               `json:"workingCommand,omitempty"`
 	ApprovalContext string               `json:"approvalContext,omitempty"`
 	CommandStatus   string               `json:"commandStatus,omitempty"`
+	CommandTiming   string               `json:"commandTiming,omitempty"`
 	RunningCommands int                  `json:"runningCommands,omitempty"`
 	RunningLimited  bool                 `json:"runningLimited,omitempty"`
 	Source          string               `json:"source"`
@@ -338,6 +339,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Command: row.Context.CommandDetails.Command, Source: row.Context.Source, Activity: row.LastActivity,
 				WorkingCommand: activity.Command, CommandStatus: activity.CommandStatus,
+				CommandTiming:   activity.CommandTiming(now),
 				ApprovalContext: approvalContext,
 				FileChanges:     codex.FileDiffLines(row.Context.FileChanges),
 				CurrentTask:     codex.SanitizeSessionContext(row.Context.CurrentTask), LatestGuidance: codex.SanitizeSessionContext(row.Context.LatestGuidance), Streaming: row.Context.Streaming,

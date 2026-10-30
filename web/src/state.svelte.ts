@@ -21,6 +21,7 @@ export interface Session {
   latestGuidance?: string;
   streaming?: boolean;
   commandStatus?: string;
+  commandTiming?: string;
   runningCommands?: number;
   runningLimited?: boolean;
   source: string;

@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
@@ -57,5 +58,27 @@ func TestWorkingContextResponsive(t *testing.T) {
 	c.Kind = codex.SessionContextReply
 	if hasWorkingCommand(c) {
 		t.Fatal("working command overrides final reply")
+	}
+}
+
+func TestWorkingCommandRecordedDurationRemainsResponsive(t *testing.T) {
+	start := time.Now().Add(-time.Minute)
+	a := codex.SessionActivity{Command: "go test", CommandStatus: "completed", CommandStartedAt: start, CommandCompletedAt: start.Add(7 * time.Second)}
+	if got := workingCommandTitle(a); got != "COMMAND // COMPLETED // 7s" {
+		t.Fatal("recorded duration missing", got)
+	}
+	c := codex.SessionContext{Kind: codex.SessionContextActivity, Activity: a}
+	for _, width := range []int{1, 8, 20, 80} {
+		for _, compact := range []bool{false, true} {
+			lines := workingContextLines(c, width, 4, compact)
+			for _, line := range lines {
+				if ansi.StringWidth(line) > width {
+					t.Fatal("duration caused layout overflow", line)
+				}
+			}
+			if width == 80 && !strings.Contains(strings.Join(lines, "\n"), "COMPLETED // 7s") {
+				t.Fatal(lines)
+			}
+		}
 	}
 }
