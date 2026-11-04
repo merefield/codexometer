@@ -90,7 +90,7 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
 		case "esc":
-			cmd := m.cancelMonitorCommands()
+			cmd := m.escapeMonitorCommands()
 			return m, cmd, true
 		case "alt+left":
 			cmd := m.backMonitorCommands()

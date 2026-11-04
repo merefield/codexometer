@@ -38,6 +38,7 @@ type monitorCommandsState struct {
 	restore                 *monitorCommandLevel
 	inline                  bool
 	prefix                  string
+	escapeUntil             time.Time
 }
 type monitorCommandsResult struct {
 	session string
@@ -182,6 +183,12 @@ func (m *Model) cancelMonitorCommands() tea.Cmd {
 		return nil // Completed sessions can have display settings but no composer.
 	}
 	return m.monitorPrompt.input.Focus()
+}
+
+func (m *Model) escapeMonitorCommands() tea.Cmd {
+	cmd := m.cancelMonitorCommands()
+	m.monitorCommands.escapeUntil = time.Now().Add(monitorCommandEscapeQuietPeriod)
+	return cmd
 }
 
 func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
@@ -648,6 +655,9 @@ func (m Model) renderMonitorCommands(width, height int, colors palette) string {
 
 func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 	p := &m.monitorCommands
+	if m.consumeMonitorCommandEscape(msg) {
+		return m, nil, true
+	}
 	if r, ok := msg.(monitorCommandsResult); ok {
 		if p.open && p.session == r.session && p.request == r.request {
 			if m.meterView != viewMonitor || m.monitorContextTarget() != r.session {
@@ -804,7 +814,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
 			switch key.String() {
 			case "esc":
-				cmd := m.cancelMonitorCommands()
+				cmd := m.escapeMonitorCommands()
 				return m, cmd, true
 			case "enter":
 				return m.reviewMonitorCommandInput()
@@ -850,7 +860,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		switch key.String() {
 		case "esc":
-			cmd := m.cancelMonitorCommands()
+			cmd := m.escapeMonitorCommands()
 			return m, cmd, true
 		case "q", "ctrl+c", "tab", "shift+tab":
 			m.closeMonitorCommands()
