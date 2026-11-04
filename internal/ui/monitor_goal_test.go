@@ -20,12 +20,73 @@ func (f *goalUIClient) SessionCommands(_ context.Context, _ string, path string)
 		path = "goal/set/" + url.PathEscape(strings.TrimPrefix(path, "goal "))
 	}
 	menu := codex.SessionCommandMenu{Title: "/goal", Path: path, Revision: "goal-r"}
-	if codex.SessionCommandInputPath(path) {
+	if path == "goal" {
+		menu.Help = "PURSUING GOAL // 200 / 10000 TOKENS\nOBJECTIVE // Fix tests"
+		menu.Choices = []codex.SessionCommandChoice{
+			{ID: "edit", Label: "Edit objective", Next: "goal/edit"},
+			{ID: "budget", Label: "Token budget", Next: "goal/budget"},
+			{ID: "replace", Label: "Replace goal", Next: "goal/set"},
+		}
+	} else if codex.SessionCommandInputPath(path) {
 		menu.Input, menu.InputLimit, menu.Value = true, 4096, "Current objective"
 	} else if commandInputReview(path) {
 		menu.Choices = []codex.SessionCommandChoice{{ID: "goal-change", Label: "Apply goal", Action: true}}
 	}
 	return menu, nil
+}
+
+func TestMonitorGoalOverviewAndCompletedChoiceNavigation(t *testing.T) {
+	for _, mode := range []int{contextFull, contextWide} {
+		m, base := suggestionTestModel(t)
+		m.height = 65
+		m.monitorSessionData = m.monitorSessionData[:1]
+		m.setRowContext("root-one", mode)
+		m.fetcher = &goalUIClient{base.commandTestClient}
+		m.focusMonitorPrompt()
+		m.monitorPrompt.input.SetValue("/goal")
+		m, cmd, _ := m.openMonitorCommands("goal")
+		next, _ := m.Update(cmd())
+		m = next.(Model)
+		rows := m.monitorCommandRows(100, 12)
+		if len(rows) < 3 || rows[0].choice != -1 || rows[0].action != "" || rows[1].choice != -1 || rows[2].action != "choose" {
+			t.Fatal("overview became an option or displaced the choices", rows)
+		}
+		for _, height := range []int{4, 5, 6} {
+			rows := m.monitorCommandRows(40, height)
+			selectable := false
+			for _, row := range rows {
+				selectable = selectable || row.action == "choose"
+			}
+			if !selectable || len(rows) > m.commandContentRows(height) {
+				t.Fatal("compact summary hid every option or overflowed")
+			}
+		}
+		x, y := renderedTextStart(t, m, "PURSUING GOAL")
+		next, cmd = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(Model)
+		if cmd != nil || m.monitorCommands.menu.Path != "goal" {
+			t.Fatal("clicking the overview selected a command")
+		}
+		m.monitorCommands.selected = 2
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		m = next.(Model)
+		if m.monitorPrompt.input.Value() != "/goal Replace goal" {
+			t.Fatal("Tab failed to complete goal choice", m.monitorPrompt.input.Value(), m.monitorCommands.selected, m.monitorCommands.prefix)
+		}
+		next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = next.(Model)
+		if cmd == nil || m.monitorCommands.menu.Path != "goal/set" {
+			t.Fatal("completed menu label was treated as an objective", m.monitorCommands.menu.Path)
+		}
+		m, cmd, _ = m.openMonitorCommands("goal")
+		next, _ = m.Update(cmd())
+		m = next.(Model)
+		x, y = renderedTextStart(t, m, "Edit objective")
+		next, cmd = m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if cmd == nil || next.(Model).monitorCommands.menu.Path != "goal/edit" {
+			t.Fatal("overview rows displaced the Edit click target")
+		}
+	}
 }
 
 func TestMonitorGoalInputReviewRetainsNestedParent(t *testing.T) {

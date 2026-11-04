@@ -398,7 +398,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			} else if strings.HasPrefix(p.menu.Path, "cd/") {
 				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
 			} else if strings.HasPrefix(p.menu.Path, "goal/") {
-				text += "\nThis changes only the selected session's goal. Active goals may immediately start work and consume quota. Confirm only after reviewing the objective, state and budget."
+				text += "\nOnly this session's goal changes."
 			} else {
 				text += "\nNo change sent yet. Model, reasoning and speed settings can change token usage and cost."
 				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
@@ -414,6 +414,17 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		return rows
 	}
+	// The goal overview is information, not an option. Keep at least one
+	// selectable row on short terminals and elide long objectives to one line.
+	if p.menu.Path == "goal" && !p.detail {
+		for _, line := range strings.Split(p.menu.Help, "\n") {
+			if len(rows) >= min(2, capacity-1) {
+				break
+			}
+			rows = append(rows, commandDisplayRow{text: ansi.Truncate(line, w, "…"), choice: -1})
+		}
+	}
+	summaryRows := len(rows)
 	// Keep the selected choice and its recovery instructions visible, even
 	// when the option list would otherwise use every available row.
 	var reasonRows []string
@@ -429,7 +440,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		reasonRows = reasonRows[:min(len(reasonRows), limit)]
 	}
-	choiceCapacity := capacity - len(reasonRows)
+	choiceCapacity := capacity - len(reasonRows) - summaryRows
 	if (p.reviewedChoice != "" || p.inline && p.detail) && choiceCapacity > 1 {
 		choiceCapacity--
 	}
@@ -466,7 +477,7 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		}
 		rows = append(rows, commandDisplayRow{text: ansi.Truncate(label, w, "…"), help: o.Help, choice: i, action: "choose"})
 	}
-	if len(rows) == 0 && len(reasonRows) == 0 {
+	if len(rows) == summaryRows && len(reasonRows) == 0 {
 		text := "No available options. Use Codex for unsupported commands."
 		if p.inline && len(p.menu.Choices) > 0 {
 			text = "No matching slash commands."

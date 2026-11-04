@@ -1839,6 +1839,10 @@ come from Codex—not inactivity guesses—and do not replace WORKING, approvals
 TURN COMPLETE. Unavailable refreshes mark retained observations **GOAL STALE**.
 Use `/goal` for the objective and counters. Linked agents do not inherit their
 parent’s goal label, and goal observations are not persisted by Codexometer.
+The menu shows one compact overview: **Create goal** when empty, or **Edit
+objective** to preserve its state and **Replace goal** to start pursuing a new
+objective (retaining the budget). Current and proposed values stay separate in
+the confirmation review.
 
 Creating or resuming an active goal can start work immediately and consume quota,
 even while the session was idle; updating an active objective can guide a running

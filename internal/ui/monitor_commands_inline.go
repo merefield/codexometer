@@ -120,6 +120,9 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				return m, nil, true
 			}
 			if p.menu.Path == "goal" && !p.detail && m.commandQuery() != "" {
+				if choice, ok := m.commandChoice(); ok && strings.EqualFold(m.commandQuery(), choice.Label) {
+					return m.chooseMonitorCommand()
+				}
 				return m.openMonitorCommands("goal " + m.commandQuery())
 			}
 			if p.menu.Input {

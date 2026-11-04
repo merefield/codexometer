@@ -276,7 +276,11 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		wg.Wait()
 		for i, family := range families {
 			if errs[i] == nil && (len(menus[i].Choices) > 0 || menus[i].Input) {
-				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: menus[i].Help, Next: family})
+				help := menus[i].Help
+				if family == "goal" {
+					help = "View or change this session's goal and token budget."
+				}
+				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: help, Next: family})
 				if collect != nil {
 					collect(family, commandMenuBranch{p.finalizeCommandMenu(t, family, menus[i]), scopes[i]})
 				}

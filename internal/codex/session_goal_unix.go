@@ -161,9 +161,9 @@ func (p *daemonStatusProvider) goalNotificationLocked(method string, raw json.Ra
 
 func goalCommandSummary(goal *SessionGoal) string {
 	if goal == nil {
-		return "No goal is set for this session. Set an objective to let Codex pursue it across turns."
+		return "No goal set."
 	}
-	return fmt.Sprintf("%s\nObjective: %s\n%s", goal.Label(), SanitizeSessionContext(goal.Objective), goal.Usage())
+	return fmt.Sprintf("%s // %s\nOBJECTIVE // %s", goal.Label(), goal.Usage(), SanitizeSessionContext(strings.Join(strings.Fields(goal.Objective), " ")))
 }
 
 func goalCommandPath(path string) string {

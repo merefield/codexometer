@@ -73,6 +73,47 @@ func TestGoalCommandsLifecycleAndSessionScope(t *testing.T) {
 	}
 }
 
+func TestGoalMenuIsCompactAndDistinguishesCreateEditReplace(t *testing.T) {
+	p, f := goalFixture(t)
+	menu, err := p.SessionCommands(context.Background(), "one", "goal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(menu.Help, "Fix the flaky tests") != 1 || len(strings.Split(menu.Help, "\n")) != 2 {
+		t.Fatal("goal overview is repeated or not compact", menu.Help)
+	}
+	labels := map[string]string{}
+	for _, choice := range menu.Choices {
+		if choice.Next == "" || strings.Contains(choice.Help, "Fix the flaky tests") {
+			t.Fatal("overview repeated as a selectable choice", choice)
+		}
+		labels[choice.Label] = choice.Next
+	}
+	if labels["Edit objective"] != "goal/edit" || labels["Replace goal"] != "goal/set" || labels["Create goal"] != "" {
+		t.Fatal("existing goal has ambiguous create/edit choices", labels)
+	}
+	editor, err := p.SessionCommands(context.Background(), "one", "goal/edit")
+	if err != nil || editor.Value != "Fix the flaky tests" || strings.Contains(editor.Help, editor.Value) {
+		t.Fatal("editor repeated the objective outside the input", editor, err)
+	}
+	for _, path := range []string{"goal/pause", "goal/resume", "goal/clear", "goal/edit/New", "goal/budget/1000"} {
+		menu, err := p.SessionCommands(context.Background(), "one", path)
+		if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action || menu.Choices[0].Reversible || strings.Contains(menu.Choices[0].Help, "Fix the flaky tests") {
+			t.Fatal("shortened review duplicated current context or weakened confirmation", path, menu, err)
+		}
+		if path == "goal/resume" && !strings.Contains(menu.Choices[0].Help, "consume quota") {
+			t.Fatal("resume lost its quota warning")
+		}
+	}
+	f.mu.Lock()
+	delete(f.goals, "one")
+	f.mu.Unlock()
+	menu, err = p.SessionCommands(context.Background(), "one", "goal")
+	if err != nil || menu.Help != "No goal set." || len(menu.Choices) != 1 || menu.Choices[0].Label != "Create goal" {
+		t.Fatal("empty goal offered replace/edit or repeated instructions", menu, err)
+	}
+}
+
 func TestGoalReviewIgnoresProgressButRejectsSemanticDrift(t *testing.T) {
 	for _, drift := range []string{"progress", "objective", "status", "budget"} {
 		t.Run(drift, func(t *testing.T) {
@@ -220,7 +261,7 @@ func TestGoalMaximumObjectiveHasCompleteActionableReview(t *testing.T) {
 	p, _ := goalFixture(t)
 	objective := strings.Repeat("界", SessionGoalInputLimit)
 	menu, err := p.SessionCommands(context.Background(), "one", "goal/set/"+url.PathEscape(objective))
-	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action || !strings.Contains(menu.Help, objective) || !strings.Contains(menu.Choices[0].Help, objective) {
+	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action || strings.Contains(menu.Help, objective) || !strings.Contains(menu.Choices[0].Help, objective) {
 		t.Fatal("maximum objective was clipped or lost its guarded action", err)
 	}
 }

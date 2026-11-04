@@ -671,6 +671,14 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
   await mockActions(page, 'prompt');
   const writes: string[] = [];
   const objective = 'Finish work / without changing another session';
+  const labels: Record<string, string> = {
+    set: 'Replace goal',
+    edit: 'Edit objective',
+    budget: 'Token budget',
+    pause: 'Pause goal',
+    resume: 'Resume goal',
+    clear: 'Clear goal',
+  };
   let committed = '';
   await page.route('**/api/control/commands', async (route) => {
     const body = route.request().postDataJSON(),
@@ -708,11 +716,11 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
         title: '/goal',
         path: q.path,
         revision: 'goal',
-        help: 'PURSUING GOAL',
+        help: 'PURSUING GOAL // 200 / 10000 TOKENS\nOBJECTIVE // Old objective',
         choices: ['set', 'edit', 'budget', 'pause', 'resume', 'clear'].map(
           (name) => ({
             id: name,
-            label: name,
+            label: labels[name],
             next: 'goal/' + name,
             help: 'Session-specific goal change',
           }),
@@ -762,7 +770,19 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
   for (const name of ['set', 'edit', 'budget', 'pause', 'resume', 'clear']) {
     await text.fill('/goal');
     await panel.getByRole('button', { name: '/goal →', exact: true }).click();
-    await panel.getByRole('button', { name: name + ' →', exact: true }).click();
+    const summary = panel.getByRole('note', { name: 'Current goal' });
+    await expect(summary.locator('p')).toHaveCount(2);
+    await expect(summary).toContainText('200 / 10000 TOKENS');
+    await expect(
+      panel.getByRole('button', { name: /PURSUING GOAL/ }),
+    ).toHaveCount(0);
+    if (name === 'edit') {
+      await text.fill('/goal Edit objective');
+      await text.press('Enter');
+    } else
+      await panel
+        .getByRole('button', { name: labels[name] + ' →', exact: true })
+        .click();
     let path = 'goal/' + name;
     if (['set', 'edit', 'budget'].includes(name)) {
       const input = panel.getByRole('textbox', {

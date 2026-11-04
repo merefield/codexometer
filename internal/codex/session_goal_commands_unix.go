@@ -29,25 +29,25 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 		// action help/IDs stable while only token/time counters advance.
 		summary = fmt.Sprintf("%s\nObjective: %s\nTotal token budget: %s", goal.Label(), SanitizeSessionContext(goal.Objective), budget)
 	}
-	menu.Help = summary + "\nGoal changes affect only this session. Creating, editing or resuming an active goal can start work and consume quota. No automatic retries."
+	menu.Help = summary
 	if goal != nil && (!knownGoalStatus(goal.Status) || goal.Stale) {
 		return menu, errors.New("current goal state is unknown; refresh before changing it")
 	}
 	if path == "goal" {
-		if goal != nil {
-			menu.Choices = append(menu.Choices, SessionCommandChoice{Label: goal.Label(), Help: goalCommandSummary(goal)})
-		}
-		menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Set goal", Help: "Set an objective and activate pursuit. May start an idle turn. Existing token budget is retained; use Budget to change it.", Next: "goal/set"})
-		if goal != nil {
+		if goal == nil {
+			menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Create goal", Help: "Set an objective and start pursuit. May immediately consume quota.", Next: "goal/set"})
+		} else {
 			menu.Choices = append(menu.Choices,
-				SessionCommandChoice{Label: "Edit goal", Help: "Edit the objective. Paused/stalled states are retained; editing a completed or budget-limited goal reactivates it.", Next: "goal/edit"},
-				SessionCommandChoice{Label: "Token budget", Help: "Set a total goal-token budget, or unlimited. This is not an account quota limit.", Next: "goal/budget"})
+				SessionCommandChoice{Label: "Edit objective", Help: "Keep its state; completed/budget-limited goals restart.", Next: "goal/edit"},
+				SessionCommandChoice{Label: "Token budget", Help: "Total goal tokens, or unlimited. Not an account quota.", Next: "goal/budget"})
 			if goal.Status == "active" {
-				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Pause goal", Help: "Pause continued pursuit; does not interrupt a running turn.", Next: "goal/pause"})
+				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Pause goal", Help: "Stop pursuit after the current turn.", Next: "goal/pause"})
 			} else {
-				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Resume goal", Help: "Resume pursuit. May start work; server budget and usage limits still apply.", Next: "goal/resume"})
+				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Resume goal", Help: "Restart pursuit; may immediately consume quota.", Next: "goal/resume"})
 			}
-			menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Clear goal", Help: "Remove this session's goal. Does not delete the session or interrupt its current turn.", Next: "goal/clear"})
+			menu.Choices = append(menu.Choices,
+				SessionCommandChoice{Label: "Replace goal", Help: "Use a new objective and start pursuit; keep the budget.", Next: "goal/set"},
+				SessionCommandChoice{Label: "Clear goal", Help: "Remove the goal; keep the conversation and current turn.", Next: "goal/clear"})
 		}
 		return menu, nil
 	}
@@ -61,10 +61,19 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 		}
 		if !reviewing {
 			menu.Input, menu.InputLabel, menu.InputLimit = true, "Goal objective", SessionGoalInputLimit
+			menu.Help = "Create a goal; may start work immediately and consume quota."
+			if goal != nil {
+				menu.Help = "Replace the objective and start pursuit. Budget retained; may immediately consume quota."
+			}
 			if parent == "goal/edit" {
 				menu.Value = goal.Objective
+				menu.Help = "Edit the objective; retain its state and budget."
+				if goal.Status == "active" || goal.Status == "complete" || goal.Status == "budgetLimited" {
+					menu.Help = "Edit the objective; pursuit continues or restarts and may consume quota. Budget retained."
+				}
 			} else if parent == "goal/budget" {
 				menu.InputLabel, menu.InputLimit, menu.Value = "Token budget (or unlimited)", 32, "unlimited"
+				menu.Help = "Total goal tokens, not an account quota. Does not resume a stopped goal."
 				if goal.TokenBudget != nil {
 					menu.Value = strconv.FormatInt(*goal.TokenBudget, 10)
 				}
@@ -72,9 +81,10 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 			return menu, nil
 		}
 		params := map[string]any{"threadId": thread.ID, "origin": "user"}
-		label := "Apply goal objective"
+		label := "Create goal"
+		detail := ""
 		if parent == "goal/budget" {
-			label = "Apply goal token budget"
+			label = "Change token budget"
 			if strings.EqualFold(value, "unlimited") {
 				params["tokenBudget"] = nil
 			} else {
@@ -84,7 +94,7 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 				}
 				params["tokenBudget"] = budget
 			}
-			menu.Help += "\nNew total token budget: " + value + ". A stopped goal is not automatically resumed."
+			detail = "New total token budget: " + value + "\nDoes not resume a stopped goal."
 		} else {
 			if !utf8.ValidString(value) || utf8.RuneCountInString(value) > SessionGoalInputLimit || strings.TrimSpace(value) == "" || SanitizeSessionContext(value) != value {
 				return menu, errors.New("goal objective must be safe non-empty text within the input limit")
@@ -95,30 +105,43 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 				status = goal.Status
 			}
 			params["status"] = status
-			menu.Help += "\nRequested objective: " + value + "\nRequested status: " + status + ". Existing token budget is retained."
+			if goal != nil {
+				label = "Replace goal"
+			}
+			if parent == "goal/edit" {
+				label = "Edit objective"
+			}
+			budgetNote := "Budget retained."
+			if goal == nil {
+				budgetNote = "Budget: unlimited."
+			}
+			detail = "New objective: " + value + "\nResult: " + (&SessionGoal{Status: status}).Label() + ". " + budgetNote
+			if status == "active" {
+				detail += "\nMay start work immediately and consume quota."
+			}
 		}
-		menu.Choices = append(menu.Choices, SessionCommandChoice{Label: label, Help: menu.Help, method: "thread/goal/set", params: params})
+		menu.Choices = append(menu.Choices, SessionCommandChoice{Label: label, Help: detail, method: "thread/goal/set", params: params})
 		return menu, nil
 	}
 	if goal == nil {
 		return menu, errors.New("no goal is set for this session")
 	}
 	params := map[string]any{"threadId": thread.ID, "origin": "user"}
-	method, label := "thread/goal/set", ""
+	method, label, detail := "thread/goal/set", "", ""
 	switch path {
 	case "goal/pause":
 		label, params["status"] = "Pause goal", "paused"
-		menu.Help += "\nPausing stops continued pursuit, not an already-running turn."
+		detail = "Pause pursuit. The current turn continues."
 	case "goal/resume":
 		label, params["status"] = "Resume goal", "active"
-		menu.Help += "\nResuming may immediately start further turns and consume quota. Budget and account limits still apply."
+		detail = "Resume pursuit; may immediately consume quota. Existing limits still apply."
 	case "goal/clear":
 		label, method = "Clear goal", "thread/goal/clear"
-		menu.Help += "\nThis removes the goal, not the conversation. A running turn is not interrupted."
+		detail = "Remove the goal. The conversation and current turn are kept."
 	default:
 		return menu, ErrSessionCommand
 	}
-	menu.Choices = append(menu.Choices, SessionCommandChoice{Label: label, Help: menu.Help, method: method, params: params})
+	menu.Choices = append(menu.Choices, SessionCommandChoice{Label: label, Help: detail, method: method, params: params})
 	return menu, nil
 }
 

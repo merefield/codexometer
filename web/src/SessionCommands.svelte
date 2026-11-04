@@ -366,6 +366,18 @@
       (menu?.path === '' || menu?.path === 'goal') &&
       /^\/goal\s+\S/.test(query.trim())
     ) {
+      const option =
+        menu?.path === 'goal'
+          ? choices.find(
+              (choice) =>
+                query.trim().slice(6).trim().toLowerCase() ===
+                choice.label.toLowerCase(),
+            )
+          : undefined;
+      if (option) {
+        void choose(option);
+        return;
+      }
       void navigate(query.trim().slice(1));
       return;
     }
@@ -633,7 +645,13 @@
     >
       {#if !suggesting}
         <h3>{menu?.title || '/ COMMANDS'}</h3>
-        <p class="muted">{menu?.help || 'Loading live options…'}</p>
+        {#if menu?.path === 'goal'}
+          <div class="goal-summary" role="note" aria-label="Current goal">
+            {#each menu.help.split('\n') as line}<p title={line}>
+                {line}
+              </p>{/each}
+          </div>
+        {:else}<p class="muted">{menu?.help || 'Loading live options…'}</p>{/if}
       {/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       {#if busy}<p role="status">Loading / sending…</p>{/if}
@@ -671,8 +689,7 @@
               {:else if menu?.path.startsWith('cd/')}Only this session’s
                 directory changes; project configuration is not reloaded.
               {:else if menu?.path.startsWith('goal/')}Only this session's goal
-                changes. Active pursuit may immediately start further turns and
-                consume quota.
+                changes.
               {:else}No change sent yet. Model, reasoning and speed settings can
                 change token usage and cost. Changes affect subsequent turns of
                 this session, not global defaults. Automatic quota thresholds
@@ -793,6 +810,12 @@
   .command-popup p {
     margin: 0.3rem 0;
     font-size: 0.8em;
+  }
+  .goal-summary p {
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .command-options.vertical {
     display: flex;
