@@ -186,6 +186,79 @@ func TestRecoveryPreflightRejectsNewerNonReadyRuntime(t *testing.T) {
 	}
 }
 
+func TestInvalidatedRecoveryPreflightCanRecoverOnLaterReadyRuntime(t *testing.T) {
+	for _, runtime := range []string{"active", "notLoaded", "unknown"} {
+		for _, ready := range []string{"idle", "systemError"} {
+			t.Run(runtime+"/"+ready, func(t *testing.T) {
+				var p *daemonStatusProvider
+				var received <-chan daemonEnvelope
+				invalidated := false
+				p, received = promptProvider(t, ready, promptTestFault{beforeRead: func() {
+					if invalidated {
+						return
+					}
+					invalidated = true
+					p.mu.Lock()
+					defer p.mu.Unlock()
+					raw, _ := json.Marshal(map[string]any{"threadId": "root", "status": map[string]string{"type": runtime}})
+					p.promptLifecycleLocked("thread/status/changed", raw)
+				}})
+				p.statuses["root"] = sessionRuntimeFailed
+				old := p.SessionPrompt("root")
+				if err := p.SendSessionPrompt(context.Background(), old.Token, []string{"cancelled by runtime change"}); err == nil {
+					t.Fatal("invalidated preflight dispatched a prompt")
+				}
+				if read := <-received; read.Method != "thread/read" || len(received) != 0 || p.SessionPrompt("root").Token != "" {
+					t.Fatal("non-ready runtime did not block recovery")
+				}
+				raw, _ := json.Marshal(map[string]any{"threadId": "root", "status": map[string]string{"type": ready}})
+				p.promptLifecycleLocked("thread/status/changed", raw)
+				next := p.SessionPrompt("root")
+				if next.Token == "" || next.Token == old.Token {
+					t.Fatal("later ready state did not restore a fresh composer after invalidating preflight")
+				}
+				if err := p.SendSessionPrompt(context.Background(), old.Token, []string{"stale"}); err == nil {
+					t.Fatal("invalidated capability was reused")
+				}
+				if err := p.SendSessionPrompt(context.Background(), next.Token, []string{"explicit recovery"}); err != nil {
+					t.Fatal("fresh recovery composer could not send", err)
+				}
+				read, start := <-received, <-received
+				if read.Method != "thread/read" || start.Method != "turn/start" || len(received) != 0 {
+					t.Fatal("recovery did not dispatch exactly one explicitly requested turn")
+				}
+			})
+		}
+	}
+}
+
+func TestDispatchedRecoveryRemainsSpentAcrossRuntimeChanges(t *testing.T) {
+	for _, ready := range []string{"idle", "systemError"} {
+		t.Run(ready, func(t *testing.T) {
+			p, received := promptProvider(t, "systemError", promptTestFault{method: "turn/start"})
+			p.statuses["root"] = sessionRuntimeFailed
+			o := p.SessionPrompt("root")
+			if err := p.SendSessionPrompt(context.Background(), o.Token, []string{"uncertain dispatch"}); err == nil {
+				t.Fatal("test did not exercise a dispatched failure")
+			}
+			read, start := <-received, <-received
+			if read.Method != "thread/read" || start.Method != "turn/start" {
+				t.Fatal("test did not dispatch a mutation")
+			}
+			for _, kind := range []string{"active", "unknown", "notLoaded", ready} {
+				raw, _ := json.Marshal(map[string]any{"threadId": "root", "status": map[string]string{"type": kind}})
+				p.promptLifecycleLocked("thread/status/changed", raw)
+				if p.SessionPrompt("root").Token != "" {
+					t.Fatal("runtime notification revived an uncertain dispatched write", kind)
+				}
+			}
+			if len(received) != 0 {
+				t.Fatal("uncertain write was automatically retried")
+			}
+		})
+	}
+}
+
 func TestNonTerminalErrorsDoNotUnlockRecovery(t *testing.T) {
 	for _, tc := range []struct {
 		name, code, turn string

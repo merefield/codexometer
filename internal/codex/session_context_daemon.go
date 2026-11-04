@@ -24,6 +24,7 @@ type daemonContextState struct {
 	promptToken                                     string
 	promptSpent                                     bool
 	promptAttempt                                   string
+	promptDispatched                                bool
 	completed                                       bool
 	latest                                          SessionContext
 	requests                                        map[string]SessionContext
@@ -118,6 +119,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state.streamItem, state.streamText = "", ""
 		state.latest.Streaming = false
 		state.promptToken, state.promptSpent, state.promptAttempt = "", false, ""
+		state.promptDispatched = false
 		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
 		state.approvalsLimited = false
@@ -150,6 +152,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		// turn/completed follows. Do not carry its consumed editor into recovery.
 		// Offers still require a separately observed quiescent runtime status.
 		state.promptToken, state.promptSpent, state.promptAttempt, state.turnToken = "", false, "", ""
+		state.promptDispatched = false
 		clear(state.requests)
 		return
 	case "serverRequest/resolved":

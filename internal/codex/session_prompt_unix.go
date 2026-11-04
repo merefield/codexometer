@@ -63,7 +63,12 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 	p.statuses[event.ThreadID] = status
 	if !runtimeAcceptsFollowup(status) {
 		if s := p.contexts[event.ThreadID]; s != nil {
-			s.promptToken, s.promptAttempt = "", ""
+			s.promptToken = ""
+			// A runtime change cancels a reservation that has sent no mutation,
+			// but cannot make an uncertain dispatched write reusable.
+			if !s.promptDispatched {
+				s.promptSpent, s.promptAttempt = false, ""
+			}
 		}
 	}
 }
@@ -156,6 +161,7 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 		state.promptToken = ""
 		state.promptSpent = true
 		state.promptAttempt = token
+		state.promptDispatched = false
 		p.statuses[offer.ThreadID] = sessionRuntimeWorking
 	}
 	p.mu.Unlock()
@@ -196,11 +202,15 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 	p.mu.Lock()
 	unchanged := p.connection == connection && p.contexts[offer.ThreadID] == state &&
 		state.promptSpent && state.promptAttempt == token && len(state.requests) == 0
+	if unchanged {
+		// Commit the phase while holding the same lock as runtime invalidation.
+		// Once this boundary is crossed, status notifications cannot release it.
+		state.promptDispatched, dispatched = true, true
+	}
 	p.mu.Unlock()
 	if !unchanged {
 		return errors.New("session changed; reply in Codex")
 	}
-	dispatched = true // From here on an uncertain write must remain consumed.
 	return p.requestOn(ctx, connection, "turn/start", map[string]any{
 		"threadId": offer.ThreadID,
 		"input":    []any{map[string]any{"type": "text", "text": literalSessionText(answers[0])}},
