@@ -4,7 +4,7 @@ Audited on 2026-10-10 against **Codex CLI 0.162.1** (`rust-v0.162.1`), using its
 
 The tables cover all **63 registered command variants** and the three additional accepted aliases `/cwd`, `/pet` and `/clean`: **66 upstream command names** in total. Codexometer’s local `/help` entry and model-advertised speed aliases are outside that count. Platform, feature and debug-build filters affect actual visibility. The [published reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands) omits some commands in this registry and also lists older names. Codexometer has explicit adapters/local UI implementations; it does not send slash commands as model prompts. There is no generic server endpoint to discover or execute the CLI's slash commands.
 
-“Missing” below means no Codexometer slash adapter, **not** that the server lacks the capability. Live commands require a loaded session and shared app-server; browser control commands require writable mode. Windows' existing file-based monitoring path does not gain live server commands from this change.
+“Missing” below means no Codexometer slash adapter, **not** that the server lacks the capability. Live commands require a loaded session and shared app-server; browser control commands require writable mode. Windows' existing file-based monitoring path does not gain live server commands from this change. Goal support below was additionally checked against the current local Codex source and official app-server goal documentation on 2026-11-04; it does not imply a new audit of every registry entry.
 
 ## Priority and complexity scale
 
@@ -29,13 +29,14 @@ These are proposed priorities for Codexometer's session-monitoring/control role,
 
 Aliases on one row share the rating and implementation. Lifecycle commands share a thread-handoff foundation, so their costs should not be added as independent projects. P1 is a value/need ranking, not a claim that every P1 is a quick win. Work blocked on a foundation comes after that foundation even if it has the same priority.
 
-Local Codexometer support below was updated on **2026-10-11**; the upstream registry snapshot remains 0.162.1.
+Local Codexometer goal support below was updated on **2026-11-04**; the upstream registry snapshot remains 0.162.1.
 
 ## Implemented and partial support
 
 | Command | Support | Priority | Complexity | Implementation and limits |
 | --- | --- | --- | --- | --- |
 | `/rename` | Implemented | Done | — | Confirmed `thread/name/set`; works during active turns. |
+| `/goal` | Session adapter | Done | — | Session-scoped `thread/goal/get`, `set`, `clear`; native objective/edit/pause/resume/clear forms plus a token-budget editor. Fresh review/verification, default mutation confirmation, live goal notifications and stale-safe snapshot fallback shared by TUI/web. Goal state follows row statusline fields and precedes full-detail controls. Requires a goal-enabled shared app-server. |
 | `/cd <path>` | Implemented with narrower semantics | P1 | Very high | Confirmed `thread/settings/update`, sending only `threadId` and `cwd`. Requires idle/local session, empty queue, no pending approval and an existing directory. Resolves relative paths from the running session directory, expands `~`/`~/`, rechecks symlinks and verifies the result from running configuration. No write retries. See the semantics below. Proposed next increment: destination project-context reload with trust/permission validation and a verified conversation handoff. Reuse the lifecycle foundation below; native-client cooperation may still be necessary. |
 | `/pwd`, `/cwd` | Implemented aliases | Done | — | Read-only `thread/resume` **without overrides** reports the running directory, including during active turns. Captured `thread/read.cwd` metadata is not used as the answer. The session directory/footer also follows live directory reads and settings notifications. |
 | `/model` | Session adapter | Done | — | Live model/reasoning catalogue, confirmed while idle. Clears explicit speed override when selecting a model; does not reproduce native CLI persistence. Session-only scope is intentional; no global-default editor is proposed. |
@@ -66,7 +67,7 @@ Native `/cd` is a larger client workflow: destination project-configuration relo
 
 ## Missing commands with server capabilities or conversation workflows
 
-These are adapter/workflow gaps. Where an API exists it is listed; this PR only adds directory commands.
+These are adapter/workflow gaps. Where an API exists it is listed.
 
 | Command | Priority | Complexity | Mechanism / why missing |
 | --- | --- | --- | --- |
@@ -80,7 +81,6 @@ These are adapter/workflow gaps. Where an API exists it is listed; this PR only 
 | `/compact` | P1 | Medium | `thread/compact/start` exists; needs state checks and completion/error progress rather than reporting a queued operation as done. Proposed next increment: confirmed start plus completion/error tracking, keeping polling and approvals responsive throughout. |
 | `/recap` | P2 | High | Native summarization workflow has no adapter/progress UI; verify that workflow before choosing a server operation or prompt. Provisional estimate: first establish the native summarization semantics, then add a reviewed summary workflow without changing the source conversation unexpectedly. |
 | `/review` | P2 | High | `review/start` exists; no review-target picker, delivery mode or progress UI. Proposed next increment: target/delivery selection, confirmed start and a dedicated review-progress/result view. |
-| `/goal` | P2 | Medium | `thread/goal/get`, `set`, `clear` exist; no goal editor, budget/clear confirmation or goal state. Proposed next increment: read/edit/clear goal and budget with session targeting, confirmation and live state refresh. |
 | `/side`, `/btw` | P3 | High | Ephemeral forks need a temporary conversation/draft view, thread routing and cleanup. Proposed next increment: an isolated ephemeral conversation UI with separate drafts, lifecycle cleanup and source-thread return. |
 | `/approve` | P1 | High | `thread/approveGuardianDeniedAction` exists; needs exact targeting of a recent automatic-review denial. Ordinary approval buttons are a different action. Proposed next increment: identify the exact retained denied action, review its original scope, confirm the retry and track the result. A generic approval shortcut is insufficient. |
 | `/ps` | P1 | Medium | `thread/backgroundTerminals/list` exists; no list/detail adapter. Telemetry process/session views do not reproduce it. Proposed next increment: a read-only, session-scoped terminal list with command/state detail and refresh; foundation for /stop. |
@@ -135,7 +135,7 @@ These require Codexometer UX, not forwarding the command name to a server.
 1. **P1 read-only additions:** `/ps`, `/status` and `/warnings` views. The Low-complexity `/usage` and `/copy` aliases are implemented. They build on existing controls and improve visibility before adding more mutations.
 2. **P1 session controls:** `/compact`, the linked-agent `/subagents` picker, and reviewed `/stop`/`clean` built on `/ps`. Add `/approve` as its own High-complexity workflow with exact denied-action targeting.
 3. **P1 lifecycle foundation:** `/new`, `/resume` and `/fork`, sharing subscription, selection, draft and history-handoff handling. Then pursue full `/cd` project-context parity; it depends on this foundation and remains Very high complexity.
-4. **P2 extensions:** `/plan` inline prompts, `/goal`, `/archive`, `/debug-config`, daemon diagnostics and reviewed `/init`; then `/review`, `/export`, `/diff`, `/mention`, skill invocation and MCP login/inspection. Put `/clear` after `/new`, agent management after linked-agent navigation, and `/worktree` after lifecycle/project-context support.
+4. **P2 extensions:** `/plan` inline prompts, `/archive`, `/debug-config`, daemon diagnostics and reviewed `/init`; then `/review`, `/export`, `/diff`, `/mention`, skill invocation and MCP login/inspection. Put `/clear` after `/new`, agent management after linked-agent navigation, and `/worktree` after lifecycle/project-context support. `/goal` is now implemented.
 5. **P3/Defer:** optional global/account, import, installation, sandbox, daemon lifecycle, keymap and composer-mode work require explicit scope and demand. Treat daemon diagnostics as the smaller first step to its P2 workflow. Voice, IDE integration and pets should not displace core monitoring/control work. Exclude internal debug and retired/unregistered names.
 
 The next PR should cover **`/ps`**, a Medium-complexity read-only background-terminal inventory. Add **`/status`** and **`/warnings`** as separate read-only increments. The four Low-complexity families (`/usage`, `/copy`, `/theme`, `/exit`/`quit`) are now implemented. Subsequent PRs can add compaction and background-terminal stopping using those views. Full directory-context transitions need a separate design and PR covering project configuration/trust loading, conversation handoff and attached-client behavior.

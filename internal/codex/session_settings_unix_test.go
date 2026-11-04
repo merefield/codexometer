@@ -38,6 +38,15 @@ type quotaDaemonFixture struct {
 	hookReads     []map[string]any
 	threadHooks   map[string]any
 	hookError     map[string]any
+	goals         map[string]*SessionGoal
+	goalReads     int
+	goalWrites    []map[string]any
+	goalMethods   []string
+	ignoreGoal    bool
+	goalReadError map[string]any
+	goalReadHook  func()
+	goalNoReply   map[string]bool
+	threadReads   int
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -113,6 +122,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			fixture.mu.Lock()
 			result := map[string]any{}
 			failure := false
+			noReply := false
 			var failureDetail map[string]any
 			var settingsNotification map[string]any
 			id, _ := req.Params["threadId"].(string)
@@ -137,11 +147,61 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
 			case "thread/read":
+				fixture.threadReads++
 				status := fixture.commandStatus
 				if status == "" {
 					status = "idle"
 				}
 				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments}
+			case "thread/goal/get":
+				fixture.goalReads++
+				noReply = fixture.goalNoReply[id]
+				if fixture.goals == nil {
+					failure = true
+					failureDetail = map[string]any{"code": -32601, "message": "method unavailable"}
+				} else if fixture.goalReadError != nil {
+					failure, failureDetail = true, fixture.goalReadError
+				} else {
+					result["goal"] = fixture.goals[id].Clone()
+				}
+				if fixture.goalReadHook != nil {
+					fixture.goalReadHook()
+				}
+			case "thread/goal/set", "thread/goal/clear":
+				fixture.goalWrites = append(fixture.goalWrites, req.Params)
+				fixture.goalMethods = append(fixture.goalMethods, req.Method)
+				if fixture.goals == nil {
+					failure = true
+					break
+				}
+				goal := fixture.goals[id].Clone()
+				if req.Method == "thread/goal/clear" {
+					result["cleared"] = goal != nil
+					if !fixture.ignoreGoal {
+						delete(fixture.goals, id)
+					}
+					break
+				}
+				if goal == nil {
+					goal = &SessionGoal{ThreadID: id, Status: "active", CreatedAt: 100}
+				}
+				if !fixture.ignoreGoal {
+					if text, ok := req.Params["objective"].(string); ok {
+						goal.Objective = text
+					}
+					if status, ok := req.Params["status"].(string); ok {
+						goal.Status = status
+					}
+					if budget, exists := req.Params["tokenBudget"]; exists {
+						goal.TokenBudget = nil
+						if budget != nil {
+							n := int64(budget.(float64))
+							goal.TokenBudget = &n
+						}
+					}
+					fixture.goals[id] = goal
+				}
+				result["goal"] = fixture.goals[id].Clone()
 			case "thread/name/set":
 				fixture.nameWrites = append(fixture.nameWrites, req.Params)
 				failure = fixture.fail == "rename"
@@ -224,6 +284,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 			}
 			fixture.mu.Unlock()
+			if noReply {
+				continue // Keep serving other RPCs while this goal read stalls.
+			}
 			response := map[string]any{"id": *req.ID, "result": result}
 			if failure {
 				delete(response, "result")

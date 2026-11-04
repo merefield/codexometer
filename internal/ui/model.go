@@ -270,6 +270,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	goal             *codex.SessionGoal
 	name             string
 	averageRate      int64
 	modelSettings    codex.SessionModelSettings
@@ -2591,6 +2592,7 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
 			active: session.Active, working: session.Working, attention: session.Attention,
 			preview:   session.Context,
+			goal:      session.Goal.Clone(),
 			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
 			turnSequence: latestTurnTimingSequence(session.TurnTimings),
@@ -2626,6 +2628,10 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		}
 	}()
 	for index := range m.monitorSessionData {
+		if goal := m.monitorSessionData[index].goal.Clone(); goal != nil {
+			goal.Stale = true
+			m.monitorSessionData[index].goal = goal
+		}
 		m.monitorSessionData[index].active = false
 		m.monitorSessionData[index].working = false
 		m.monitorSessionData[index].attention = codex.SessionAttentionNone
@@ -2644,6 +2650,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
 				active: update.Active, working: update.Working, attention: update.Attention,
 				preview:      update.Context,
+				goal:         update.Goal.Clone(),
 				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
 			}
@@ -2664,6 +2671,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.attention = update.Attention
 		session.preview = update.Context
 		session.modelSettings = update.ModelSettings
+		session.goal = update.Goal.Clone()
 		session.name = update.Name
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0

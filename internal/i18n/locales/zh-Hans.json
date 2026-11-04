@@ -1,4 +1,13 @@
 {
+  "PURSUING GOAL": "正在推进目标",
+  "GOAL STALLED": "目标已停滞",
+  "GOAL PAUSED": "目标已暂停",
+  "GOAL USAGE LIMITED": "目标使用受限",
+  "GOAL BUDGET LIMITED": "目标预算已用尽",
+  "GOAL COMPLETE": "目标已完成",
+  "GOAL STALE": "目标信息已过期",
+  "GOAL STATUS UNKNOWN": "目标状态未知",
+  "Goal updated.": "目标已更新。",
   "MODEL UNAVAILABLE": "模型不可用",
   "CAPACITY RESTRICTED": "容量受策略限制",
   "ERRORS": "错误",

@@ -24,6 +24,9 @@ func (m Model) monitorCommandPopup() monitorRect {
 		return monitorRect{x: area.x, y: area.y + area.height - height, width: width, height: height}
 	}
 	wanted := len(m.monitorCommands.menu.Choices) + 5
+	if m.monitorCommands.menu.Path == "goal" {
+		wanted += 2 // Non-selectable state/objective overview.
+	}
 	if m.monitorCommands.menu.Multiple || m.monitorCommands.reviewedChoice != "" {
 		wanted++
 	}

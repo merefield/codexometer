@@ -9,6 +9,9 @@ import (
 )
 
 func (m Model) inlineCommandPrefix(path string) string {
+	if path == "goal/set" {
+		return "/goal "
+	}
 	if strings.HasPrefix(path, "tier/") {
 		if m.monitorCommands.menu.Path == path && m.monitorCommands.menu.Picker {
 			return m.monitorCommands.menu.Title + " "
@@ -51,7 +54,8 @@ func (m Model) commandChoiceIndices() []int {
 }
 
 func commandInputReview(path string) bool {
-	return strings.HasPrefix(path, "rename/") || strings.HasPrefix(path, "cd/")
+	_, _, ok := codex.SessionCommandInputValue(path)
+	return ok
 }
 
 func (m *Model) restoreCommandDraft() {
@@ -115,6 +119,12 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if p.busy || p.notice != "" {
 				return m, nil, true
 			}
+			if p.menu.Path == "goal" && !p.detail && m.commandQuery() != "" {
+				if choice, ok := m.commandChoice(); ok && strings.EqualFold(m.commandQuery(), choice.Label) {
+					return m.chooseMonitorCommand()
+				}
+				return m.openMonitorCommands("goal " + m.commandQuery())
+			}
 			if p.menu.Input {
 				return m.reviewMonitorCommandInput()
 			}
@@ -171,7 +181,7 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if commandInputReview(p.menu.Path) {
 				// Editing a reviewed name/path must obtain a new capability;
 				// never confirm the previous value behind an edited draft.
-				parent := strings.SplitN(p.menu.Path, "/", 2)[0]
+				parent, _, _ := codex.SessionCommandInputValue(p.menu.Path)
 				if n := len(p.history); n > 0 && p.history[n-1].path == parent {
 					p.history = append([]monitorCommandLevel(nil), p.history[:n-1]...)
 				}

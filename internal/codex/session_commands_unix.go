@@ -44,13 +44,21 @@ func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 	}
 	status := p.statuses[id]
 	transition := p.commandTransitions[id]
+	goalScope := ""
+	if path == "goal" || strings.HasPrefix(path, "goal/") || strings.HasPrefix(path, "goal ") {
+		goalScope = goalIdentity(p.goals[id].goal)
+		if path == "goal" {
+			goalScope = commandDigest(p.goals[id].goal)
+		}
+		status, transition = sessionRuntimeUnknown, 0
+	}
 	if path == "" || path == "help" {
 		status = sessionRuntimeUnknown // Root names/help survive ordinary turn transitions.
 		transition = 0
 	}
 	// Resuming a thread can repeat its settings notification. Invalidate on
 	// effective values, not notification counters, so warming can settle.
-	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id]})
+	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id], goalScope})
 }
 
 func commandDigest(value any) string {
@@ -148,6 +156,7 @@ func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path str
 	if name, ok := strings.CutPrefix(path, "rename "); ok {
 		path = "rename/" + url.PathEscape(strings.TrimSpace(name))
 	}
+	path = goalCommandPath(path)
 	if directory, ok := strings.CutPrefix(path, "cd "); ok {
 		path = "cd/" + url.PathEscape(strings.TrimSpace(directory))
 	}
@@ -171,7 +180,7 @@ func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path st
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
 	status := thread.Status.Type
-	if menu.Picker {
+	if menu.Picker || path == "goal" || strings.HasPrefix(path, "goal/") {
 		// Speed overrides target future turns, so starting/completing a turn
 		// does not invalidate confirmation. Effective settings still do.
 		status = ""
@@ -181,19 +190,25 @@ func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path st
 }
 
 func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
-	safeHelp := commandText(menu.Help) == strings.TrimSpace(menu.Help)
-	menu.Title, menu.Help = commandLabel(menu.Title), commandText(menu.Help)
+	helpText := commandText
+	if menu.Path == "goal" || strings.HasPrefix(menu.Path, "goal/") {
+		// A complete objective plus review instructions can exceed the ordinary
+		// telemetry excerpt budget. Never silently clip an actionable review.
+		helpText = func(s string) string { return strings.TrimSpace(SanitizeApprovalText(s)) }
+	}
+	safeHelp := helpText(menu.Help) == strings.TrimSpace(menu.Help)
+	menu.Title, menu.Help = commandLabel(menu.Title), helpText(menu.Help)
 	unique := make([]SessionCommandChoice, 0, len(menu.Choices))
 	seen := map[string]bool{}
 	for i := range menu.Choices {
 		o := &menu.Choices[i]
-		if o.method != "" && (!safeHelp || commandLabel(o.Label) != o.Label || commandText(o.Help) != strings.TrimSpace(o.Help)) {
+		if o.method != "" && (!safeHelp || commandLabel(o.Label) != o.Label || helpText(o.Help) != strings.TrimSpace(o.Help)) {
 			o.method = ""
 			o.params = nil
 			o.Help = "Complete safe help unavailable. Use Codex for this option."
 			o.Unavailable = o.Help
 		}
-		o.Label, o.Help = commandLabel(o.Label), commandText(o.Help)
+		o.Label, o.Help = commandLabel(o.Label), helpText(o.Help)
 		o.Unavailable = commandText(o.Unavailable)
 		o.ID = commandDigest([]any{o.Label, o.Help, o.Next, o.Unavailable, o.method, o.params})
 		o.Action = o.method != ""
@@ -248,7 +263,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	}
 
 	if path == "" || path == "help" {
-		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"}
+		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental", "goal"}
 		menus := make([]SessionCommandMenu, len(families))
 		scopes := make([]string, len(families))
 		errs := make([]error, len(families))
@@ -261,7 +276,11 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		wg.Wait()
 		for i, family := range families {
 			if errs[i] == nil && (len(menus[i].Choices) > 0 || menus[i].Input) {
-				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: menus[i].Help, Next: family})
+				help := menus[i].Help
+				if family == "goal" {
+					help = "View or change this session's goal and token budget."
+				}
+				m.Choices = append(m.Choices, SessionCommandChoice{Label: "/" + family, Help: help, Next: family})
 				if collect != nil {
 					collect(family, commandMenuBranch{p.finalizeCommandMenu(t, family, menus[i]), scopes[i]})
 				}
@@ -287,6 +306,9 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	}
 	if parts[0] == "cd" || parts[0] == "cwd" || parts[0] == "pwd" {
 		return p.commandDirectoryMenu(ctx, t, path)
+	}
+	if parts[0] == "goal" {
+		return p.commandGoalMenu(ctx, t, path)
 	}
 	if parts[0] == "rename" {
 		m.Title = "/rename"
@@ -441,7 +463,7 @@ func commandReserved(s string) bool {
 	if IsLocalSessionCommand(s) {
 		return true
 	}
-	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental"} {
+	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental", "goal"} {
 		if s == name {
 			return true
 		}
@@ -467,6 +489,9 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 	}
 	for _, o := range m.Choices {
 		if o.ID == choice && o.Action {
+			if strings.HasPrefix(o.method, "thread/goal/") {
+				return p.executeGoalCommand(ctx, conn, id, o)
+			}
 			_, hasTier := o.params["serviceTier"]
 			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
 			p.mu.Lock()

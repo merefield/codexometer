@@ -53,6 +53,9 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 	case "thread/closed":
 		delete(p.statuses, event.ThreadID)
 		delete(p.subscribed, event.ThreadID)
+		delete(p.goals, event.ThreadID)
+		delete(p.goalVersions, event.ThreadID)
+		p.goalGeneration++
 		return
 	default:
 		return

@@ -1,4 +1,13 @@
 {
+  "PURSUING GOAL": "ЦЕЛЬ ВЫПОЛНЯЕТСЯ",
+  "GOAL STALLED": "ЦЕЛЬ ЗАБЛОКИРОВАНА",
+  "GOAL PAUSED": "ЦЕЛЬ НА ПАУЗЕ",
+  "GOAL USAGE LIMITED": "ЛИМИТ ИСПОЛЬЗОВАНИЯ ЦЕЛИ",
+  "GOAL BUDGET LIMITED": "ЛИМИТ БЮДЖЕТА ЦЕЛИ",
+  "GOAL COMPLETE": "ЦЕЛЬ ДОСТИГНУТА",
+  "GOAL STALE": "ДАННЫЕ ЦЕЛИ УСТАРЕЛИ",
+  "GOAL STATUS UNKNOWN": "СТАТУС ЦЕЛИ НЕИЗВЕСТЕН",
+  "Goal updated.": "Цель обновлена.",
   "MODEL UNAVAILABLE": "МОДЕЛЬ НЕДОСТУПНА",
   "CAPACITY RESTRICTED": "ДОСТУП К МОЩНОСТИ ОГРАНИЧЕН",
   "ERRORS": "ОШИБКИ",

@@ -228,6 +228,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
 	title := m.monitorDetailTitle(width, colors)
 	copyLabel := m.renderMonitorCopy(width, m.monitorContextDetail, colors)
+	copyLabel = m.monitorGoalFooter(width, copyLabel, colors)
 	panel := frameSizedWithActions(width, rows, title, action, copyLabel, body, colors.primary, colors)
 	if m.dashboardLayout().footerSpacer {
 		return m.withMonitorStatusLine(panel, width, copyLabel, colors)

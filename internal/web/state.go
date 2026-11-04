@@ -23,6 +23,7 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	Goal            *goal                `json:"goal,omitempty"`
 	StatusLine      map[string]string    `json:"statusLine"`
 	FileChanges     []codex.FileDiffLine `json:"fileChanges,omitempty"`
 	CurrentTask     string               `json:"currentTask,omitempty"`
@@ -47,6 +48,25 @@ type session struct {
 	Source          string               `json:"source"`
 	Activity        time.Time            `json:"activity"`
 	Samples         []sample             `json:"samples"`
+}
+
+type goal struct {
+	Status          string `json:"status"`
+	Label           string `json:"label"`
+	Objective       string `json:"objective"`
+	TokenBudget     *int64 `json:"tokenBudget"`
+	TokensUsed      int64  `json:"tokensUsed"`
+	TimeUsedSeconds int64  `json:"timeUsedSeconds"`
+	Stale           bool   `json:"stale"`
+}
+
+func projectGoal(observed *codex.SessionGoal) *goal {
+	if observed == nil {
+		return nil
+	}
+	copy := observed.Clone()
+	return &goal{Status: codex.SanitizeSessionContext(copy.Status), Label: copy.Label(), Objective: codex.SanitizeSessionContext(copy.Objective),
+		TokenBudget: copy.TokenBudget, TokensUsed: copy.TokensUsed, TimeUsedSeconds: copy.TimeUsedSeconds, Stale: copy.Stale}
 }
 
 type sample struct {
@@ -336,7 +356,8 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				text = row.Context.CommandDetails.Justification
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
-				ID: row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				Goal: projectGoal(row.Goal),
+				ID:   row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Failed:  row.Attention == codex.SessionAttentionError,

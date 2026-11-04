@@ -117,7 +117,9 @@ func (m Model) monitorStatusLineVisible(width int) bool {
 	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || m.monitorQueue.open {
 		return false
 	}
-	return m.monitorStatusLineText(width, m.renderMonitorCopy(width, m.monitorContextDetail, paletteFor(m.theme))) != ""
+	colors := paletteFor(m.theme)
+	controls := m.monitorGoalFooter(width, m.renderMonitorCopy(width, m.monitorContextDetail, colors), colors)
+	return m.monitorStatusLineText(width, controls) != ""
 }
 
 // Write into the existing bottom border; dashboard geometry reserves a blank

@@ -152,9 +152,12 @@
     input: string;
   }
   let history = $state<Level[]>([]);
-  const inputReview = $derived(
-    menu?.path.startsWith('rename/') || menu?.path.startsWith('cd/'),
-  );
+  function isInputReview(path: string) {
+    return ['rename/', 'cd/', 'goal/set/', 'goal/edit/', 'goal/budget/'].some(
+      (prefix) => path.startsWith(prefix),
+    );
+  }
+  const inputReview = $derived(isInputReview(menu?.path || ''));
   const canBack = $derived(
     (!!selected && !inputReview) || !!stagedChoice || history.length > 0,
   );
@@ -358,6 +361,26 @@
         );
       return;
     }
+    if (
+      event.key === 'Enter' &&
+      (menu?.path === '' || menu?.path === 'goal') &&
+      /^\/goal\s+\S/.test(query.trim())
+    ) {
+      const option =
+        menu?.path === 'goal'
+          ? choices.find(
+              (choice) =>
+                query.trim().slice(6).trim().toLowerCase() ===
+                choice.label.toLowerCase(),
+            )
+          : undefined;
+      if (option) {
+        void choose(option);
+        return;
+      }
+      void navigate(query.trim().slice(1));
+      return;
+    }
     const option = choices[selectedIndex];
     if (!option) return;
     if (event.key === 'Tab') oncomplete(option.label);
@@ -435,11 +458,7 @@
             if (result.input) commandPanel?.querySelector('input')?.focus();
             else optionList?.focus();
           });
-        if (
-          (result.path.startsWith('rename/') ||
-            result.path.startsWith('cd/')) &&
-          result.choices.length === 1
-        ) {
+        if (isInputReview(result.path) && result.choices.length === 1) {
           busy = false; // The catalogue is ready before preparing its sole choice.
           void choose(result.choices[0]);
         }
@@ -626,7 +645,13 @@
     >
       {#if !suggesting}
         <h3>{menu?.title || '/ COMMANDS'}</h3>
-        <p class="muted">{menu?.help || 'Loading live options…'}</p>
+        {#if menu?.path === 'goal'}
+          <div class="goal-summary" role="note" aria-label="Current goal">
+            {#each menu.help.split('\n') as line}<p title={line}>
+                {line}
+              </p>{/each}
+          </div>
+        {:else}<p class="muted">{menu?.help || 'Loading live options…'}</p>{/if}
       {/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       {#if busy}<p role="status">Loading / sending…</p>{/if}
@@ -663,6 +688,8 @@
                 name changes.
               {:else if menu?.path.startsWith('cd/')}Only this session’s
                 directory changes; project configuration is not reloaded.
+              {:else if menu?.path.startsWith('goal/')}Only this session's goal
+                changes.
               {:else}No change sent yet. Model, reasoning and speed settings can
                 change token usage and cost. Changes affect subsequent turns of
                 this session, not global defaults. Automatic quota thresholds
@@ -783,6 +810,12 @@
   .command-popup p {
     margin: 0.3rem 0;
     font-size: 0.8em;
+  }
+  .goal-summary p {
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .command-options.vertical {
     display: flex;
