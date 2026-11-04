@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
@@ -42,5 +43,60 @@ func TestMonitorFailureSummaryFilterPillAndContext(t *testing.T) {
 				t.Fatal("detail omitted failure")
 			}
 		})
+	}
+}
+
+func TestMonitorFailureKeepsRecoveryComposerAndSlashCommands(t *testing.T) {
+	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed"} {
+		for _, mode := range []int{contextFull, contextWide} {
+			for _, text := range []string{"continue", "/model"} {
+				m, f := suggestionTestModel(t)
+				m.width, m.height = 160, 65
+				for i := range m.monitorSessionData {
+					s := &m.monitorSessionData[i]
+					if s.id == "root-one" {
+						s.attention, s.working = codex.SessionAttentionError, false
+						s.preview = codex.SessionContext{Kind: codex.SessionContextFailure, FailureCode: code, ThreadID: s.id, Text: "Failed turn explanation."}
+					}
+				}
+				m.setRowContext("root-one", mode)
+				w, h := m.monitorPromptSize()
+				if m.monitorPromptRows(w, h) == 0 || !strings.Contains(ansi.Strip(m.render()), "Failed turn explanation.") {
+					t.Fatal("failure hid the recovery composer or error context", code, mode)
+				}
+				m.focusMonitorPrompt()
+				m.monitorPrompt.input.SetValue(text)
+				next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				m = next.(Model)
+				if cmd == nil || len(f.answers) != 0 || f.calls != 0 {
+					t.Fatal("recovery was unavailable or wrote before explicit command execution", code, mode, text)
+				}
+				next, _ = m.Update(cmd())
+				m = next.(Model)
+				if text == "continue" {
+					if len(f.answers) != 1 || f.answers[0] != "continue" || f.calls != 0 {
+						t.Fatal("explicit retry was not sent as ordinary text")
+					}
+				} else if !m.monitorCommands.open || len(f.answers) != 0 || f.calls != 0 {
+					t.Fatal("/model did not open recovery choices without starting a turn")
+				}
+			}
+		}
+	}
+}
+
+func TestMonitorFailureWithoutPromptCapabilityStillAllowsCommandDiscovery(t *testing.T) {
+	m, f := commandTestModel(t)
+	m.closeMonitorCommands()
+	f.offer = codex.SessionPromptOffer{}
+	m.monitorSessionData[0].attention = codex.SessionAttentionError
+	m.monitorSessionData[0].preview.Kind = codex.SessionContextFailure
+	w, h := m.monitorPromptSize()
+	if m.monitorPromptRows(w, h) != 0 {
+		t.Fatal("error label alone invented a prompt capability")
+	}
+	next, cmd := m.Update(key('/'))
+	if !next.(Model).monitorCommands.open || cmd == nil || f.calls != 0 || len(f.answers) != 0 {
+		t.Fatal("missing prompt capability blocked independent slash discovery")
 	}
 }

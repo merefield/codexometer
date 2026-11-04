@@ -102,7 +102,7 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 	}
 	help := "Current directory: " + strconv.Quote(cwd) + "\nNew directory: " + strconv.Quote(target)
 	choice := SessionCommandChoice{Label: "Change working directory", Help: help}
-	if t.Status.Type == "idle" {
+	if threadAcceptsFollowup(t.Status.Type) {
 		choice.method, choice.params = "thread/settings/update", map[string]any{"threadId": t.ID, "cwd": target}
 	} else {
 		choice.Unavailable = "Waiting for idle. Refresh options when this turn finishes."

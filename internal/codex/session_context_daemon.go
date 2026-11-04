@@ -23,6 +23,7 @@ type daemonContextState struct {
 	approvalsLimited                                bool
 	promptToken                                     string
 	promptSpent                                     bool
+	promptAttempt                                   string
 	completed                                       bool
 	latest                                          SessionContext
 	requests                                        map[string]SessionContext
@@ -116,7 +117,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state.turnObserved = false
 		state.streamItem, state.streamText = "", ""
 		state.latest.Streaming = false
-		state.promptToken, state.promptSpent = "", false
+		state.promptToken, state.promptSpent, state.promptAttempt = "", false, ""
 		state.completed = method == "turn/completed" && p.Turn.Status == "completed"
 		clear(state.requests)
 		state.approvalsLimited = false
@@ -145,6 +146,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state.latest = failure
 		state.ended, state.completed = true, false
 		state.streamItem, state.streamText = "", ""
+		// A definitive non-retrying failure closes this attempt even when no
+		// turn/completed follows. Do not carry its consumed editor into recovery.
+		// Offers still require a separately observed quiescent runtime status.
+		state.promptToken, state.promptSpent, state.promptAttempt, state.turnToken = "", false, "", ""
 		clear(state.requests)
 		return
 	case "serverRequest/resolved":

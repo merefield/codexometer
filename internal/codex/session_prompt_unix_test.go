@@ -14,7 +14,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func promptProvider(t *testing.T, runtime string) (*daemonStatusProvider, <-chan daemonEnvelope) {
+type promptTestFault struct {
+	method     string
+	beforeRead func()
+}
+
+func promptProvider(t *testing.T, runtime string, faults ...promptTestFault) (*daemonStatusProvider, <-chan daemonEnvelope) {
 	t.Helper()
 	received := make(chan daemonEnvelope, 16)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,6 +36,15 @@ func promptProvider(t *testing.T, runtime string) (*daemonStatusProvider, <-chan
 			}
 			received <- e
 			if e.Method != "" {
+				if len(faults) > 0 && e.Method == "thread/read" && faults[0].beforeRead != nil {
+					faults[0].beforeRead()
+				}
+				if len(faults) > 0 && e.Method == faults[0].method {
+					if err := conn.WriteJSON(map[string]any{"id": e.ID, "error": map[string]any{"code": -32603, "message": "synthetic request failure"}}); err != nil {
+						return
+					}
+					continue
+				}
 				result := map[string]any{}
 				if e.Method == "thread/read" {
 					result = map[string]any{"thread": map[string]any{"status": map[string]any{"type": runtime}}}

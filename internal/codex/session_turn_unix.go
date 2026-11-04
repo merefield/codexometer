@@ -13,7 +13,7 @@ func (p *daemonStatusProvider) SessionTurn(thread string) SessionPromptOffer {
 	defer p.mu.Unlock()
 	s := p.contexts[thread]
 	_, subscribed := p.subscribed[thread]
-	if p.connection == nil || !subscribed || s == nil || s.activeTurn == "" || len(s.requests) != 0 || p.statuses[thread] != sessionRuntimeWorking {
+	if p.connection == nil || !subscribed || s == nil || s.ended || s.activeTurn == "" || len(s.requests) != 0 || p.statuses[thread] != sessionRuntimeWorking {
 		return SessionPromptOffer{}
 	}
 	if s.turnToken == "" {
@@ -39,7 +39,7 @@ func (p *daemonStatusProvider) SendSessionTurn(ctx context.Context, offer Sessio
 	p.mu.Lock()
 	s, connection := p.contexts[offer.ThreadID], p.connection
 	_, subscribed := p.subscribed[offer.ThreadID]
-	if connection == nil || !subscribed || s == nil || offer.Token == "" || offer.TurnID == "" || s.turnToken != offer.Token || s.activeTurn != offer.TurnID || len(s.requests) != 0 || p.statuses[offer.ThreadID] != sessionRuntimeWorking {
+	if connection == nil || !subscribed || s == nil || s.ended || offer.Token == "" || offer.TurnID == "" || s.turnToken != offer.Token || s.activeTurn != offer.TurnID || len(s.requests) != 0 || p.statuses[offer.ThreadID] != sessionRuntimeWorking {
 		p.mu.Unlock()
 		return errors.New("turn changed; review Codex before sending")
 	}

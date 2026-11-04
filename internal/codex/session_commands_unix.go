@@ -320,7 +320,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.Revision = commandDigest([]any{current, t.Cwd})
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
-			if t.Status.Type != "idle" && parts[0] != "tier" {
+			if !threadAcceptsFollowup(t.Status.Type) && parts[0] != "tier" {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Waiting for idle. Refresh options when this turn finishes."})
 				return
 			}

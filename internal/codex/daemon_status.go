@@ -44,6 +44,9 @@ func parseSessionRuntimeStatus(kind string, flags []string) sessionRuntimeStatus
 	if kind == "idle" {
 		return sessionRuntimeIdle
 	}
+	if kind == "systemError" {
+		return sessionRuntimeFailed
+	}
 	if kind != "active" {
 		return sessionRuntimeUnknown
 	}
@@ -57,4 +60,14 @@ func parseSessionRuntimeStatus(kind string, flags []string) sessionRuntimeStatus
 		}
 	}
 	return status
+}
+
+// Both states describe a loaded thread with no running turn. A failed turn
+// must remain recoverable without treating unknown/unloaded threads as idle.
+func runtimeAcceptsFollowup(status sessionRuntimeStatus) bool {
+	return status == sessionRuntimeIdle || status == sessionRuntimeFailed
+}
+
+func threadAcceptsFollowup(kind string) bool {
+	return runtimeAcceptsFollowup(parseSessionRuntimeStatus(kind, nil))
 }

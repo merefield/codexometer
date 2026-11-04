@@ -1244,6 +1244,15 @@ The other top-level views are:
   stale events from older identified turns cannot fail the new one. Errors from
   linked agents propagate to the parent row, below pending approvals and questions.
   No prompt is automatically retried and no model is automatically switched.
+  With a connected shared app-server, a stopped error state retains the follow-up
+  composer: type `continue` to try another turn, or use `/model` (and other
+  supported settings commands) to recover. This includes Codex's
+  [`systemError` runtime state](https://learn.chatgpt.com/docs/app-server#read-a-stored-thread-without-resuming);
+  it is not treated as a running turn. Recovery always checks the
+  live state before sending. Retrying turns, pending approvals/questions, unknown
+  or unloaded sessions, and uncertain writes keep their existing capability
+  guards. Local-only observations cannot grant control, and authentication,
+  network or quota problems may still require action in Codex or your account.
   With a shared app-server, working-command headings also show elapsed time or
   completed duration when Codex supplies valid item lifecycle timestamps.
   Codex 0.166.0's item fields and older notification-envelope fields are supported;
