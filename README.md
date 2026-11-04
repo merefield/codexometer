@@ -1898,6 +1898,13 @@ cannot activate a hidden control. The composer and conversation remain in place 
 all levels, including in a wide session row. `/commands` also opens the root
 list, including local commands without a shared daemon.
 
+In terminal command menus, **Escape** dismisses the command layer without leaving
+the selected session detail or discarding its composer draft. Recognised held-key
+repeats and rapid Escape bursts immediately after dismissal are absorbed instead
+of reaching the composer’s interrupt action or session-list navigation. Terminals
+without key-release reporting use a brief quiet period; another key, a click, or
+an observed Escape release restores ordinary navigation immediately.
+
 Codex does not expose a general slash-command discovery/execution API. These are
 explicit adapters to supported app-server catalogues, not a reproduction of
 every CLI command. Live options and help are discovered from the server and

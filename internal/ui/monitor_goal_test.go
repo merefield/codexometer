@@ -121,6 +121,125 @@ func TestMonitorGoalInputReviewRetainsNestedParent(t *testing.T) {
 	}
 }
 
+func TestMonitorGoalEscapeBurstStaysInSessionDetail(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		for _, path := range []string{"goal", "goal/edit", "goal/budget", "goal/edit/New%20objective"} {
+			for _, state := range []string{"ready", "loading", "error"} {
+				for _, repeat := range []bool{false, true} {
+					m, base := suggestionTestModel(t)
+					m.fetcher = &goalUIClient{base.commandTestClient}
+					m.monitorPrompt.input.SetValue("/goal")
+					if !inline {
+						m.monitorPrompt.input.Blur()
+					}
+					m, cmd, _ := m.openMonitorCommands(path)
+					if state != "loading" {
+						next, _ := m.Update(cmd())
+						m = next.(Model)
+					}
+					if state == "error" {
+						m.monitorCommands.notice = "Command unavailable."
+					}
+					draft := m.monitorPrompt.input.Value()
+					for i := range 4 {
+						next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape, IsRepeat: repeat && i > 0})
+						m = next.(Model)
+						if m.monitorContextDetail != "root-one" {
+							t.Fatalf("Escape burst left detail: path=%s inline=%t state=%s repeat=%t press=%d", path, inline, state, repeat, i+1)
+						}
+					}
+					if state == "loading" {
+						next, _ := m.Update(cmd())
+						m = next.(Model)
+					}
+					if base.calls != 0 || m.monitorCommands.open || m.monitorPrompt.input.Value() != draft {
+						t.Fatal("Escape submitted/reopened a goal action or lost the draft")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestMonitorCommandEscapeRestoresOrdinaryNavigation(t *testing.T) {
+	for _, resume := range []string{"release", "timeout", "typing", "paste", "click"} {
+		m, base := suggestionTestModel(t)
+		m.fetcher = &goalUIClient{base.commandTestClient}
+		m.monitorPrompt.input.SetValue("/goal")
+		m, cmd, _ := m.openMonitorCommands("goal/edit")
+		next, _ := m.Update(cmd())
+		m = next.(Model)
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m = next.(Model)
+		switch resume {
+		case "release":
+			next, _ = m.Update(tea.KeyReleaseMsg{Code: tea.KeyEscape})
+			m = next.(Model)
+		case "timeout":
+			m.monitorCommands.escapeUntil = time.Now().Add(-time.Second)
+		default:
+			var message tea.Msg = key('x')
+			if resume == "paste" {
+				message = tea.PasteMsg{Content: "new text"}
+			} else if resume == "click" {
+				message = tea.MouseClickMsg{X: -1, Y: -1, Button: tea.MouseLeft}
+			}
+			m.consumeMonitorCommandEscape(message)
+		}
+		m.monitorPrompt.input.Blur()
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m = next.(Model)
+		if m.monitorContextDetail != "" {
+			t.Fatal("ordinary Escape navigation remained blocked after", resume)
+		}
+	}
+}
+
+func TestMonitorGoalEscapeWithoutComposer(t *testing.T) {
+	m, base := suggestionTestModel(t)
+	m.fetcher = &goalUIClient{base.commandTestClient}
+	m.monitorPrompt.input.SetValue("/goal")
+	m.monitorPrompt.input.Blur()
+	m, cmd, _ := m.openMonitorCommands("goal/edit")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	m.monitorPrompt = monitorPromptState{}
+	for range 3 {
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m = next.(Model)
+		if m.monitorContextDetail != "root-one" {
+			t.Fatal("Escape dismissed detail when no composer could take focus")
+		}
+	}
+}
+
+func TestMonitorGoalEscapeDoesNotInterruptWorkingTurn(t *testing.T) {
+	m, c := turnTestModel()
+	m.fetcher = &goalUIClient{&commandTestClient{promptTestClient: c.promptTestClient}}
+	m.monitorPrompt.input.SetValue("/goal")
+	m, cmd, _ := m.openMonitorCommands("goal/edit")
+	next, _ := m.Update(cmd())
+	m = next.(Model)
+	m.fetcher = c
+	for i := range 3 {
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape, IsRepeat: i > 0})
+		m = next.(Model)
+		if m.monitorPrompt.busy || m.monitorContextDetail != "root-one" {
+			t.Fatal("dismissing a goal interrupted work or navigated away")
+		}
+	}
+	next, _ = m.Update(tea.KeyReleaseMsg{Code: tea.KeyEscape})
+	m = next.(Model)
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("deliberate working-composer Escape lost its interrupt action")
+	}
+	cmd()
+	if c.action != "interrupt" {
+		t.Fatal("fresh Escape did not restore the ordinary working-composer action", c.action)
+	}
+}
+
 func TestMonitorGoalFollowsConfiguredFields(t *testing.T) {
 	m := completedCopyModel()
 	m.monitorStatusLine = []string{"model-with-reasoning", "used-tokens"}
