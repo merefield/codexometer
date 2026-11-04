@@ -629,18 +629,28 @@ func (s *appServerSession) nextEnvelopeOrHeartbeat(ctx context.Context, heartbea
 	case <-s.done:
 		return benchmarkEnvelope{}, false, errors.New("Codex app-server session closed")
 	case err := <-s.readErrors:
-		select {
-		case envelope := <-s.envelopes:
-			return envelope, false, nil
-		default:
-		}
-		if errors.Is(err, io.EOF) {
-			return benchmarkEnvelope{}, false, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
-		}
-		return benchmarkEnvelope{}, false, err
+		return s.nextEnvelopeAfterReadError(err)
 	case envelope := <-s.envelopes:
 		return envelope, false, nil
 	}
+}
+
+func (s *appServerSession) nextEnvelopeAfterReadError(err error) (benchmarkEnvelope, bool, error) {
+	select {
+	case envelope := <-s.envelopes:
+		// Draining a final response must not consume the terminal signal:
+		// the next read still needs to observe EOF/the decoder failure.
+		select {
+		case s.readErrors <- err:
+		default:
+		}
+		return envelope, false, nil
+	default:
+	}
+	if errors.Is(err, io.EOF) {
+		return benchmarkEnvelope{}, false, fmt.Errorf("Codex app-server closed unexpectedly: %s", strings.TrimSpace(s.stderr.String()))
+	}
+	return benchmarkEnvelope{}, false, err
 }
 
 func (s *appServerSession) close() {

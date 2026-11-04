@@ -963,18 +963,50 @@ func TestStartAppServerUsesEphemeralIsolatedAPIKeyLogin(t *testing.T) {
 
 func TestAppServerReadLoopAndClose(t *testing.T) {
 	server, _ := newFakeBenchmarkServer()
+	t.Cleanup(server.close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	input := strings.NewReader("{\"method\":\"first\"}\n{\"method\":\"second\"}\n")
 	go server.readLoop(json.NewDecoder(input))
 	for _, want := range []string{"first", "second"} {
-		envelope, err := server.nextEnvelope(context.Background())
+		envelope, err := server.nextEnvelope(ctx)
 		if err != nil || envelope.Method != want {
 			t.Fatalf("decoded envelope = %#v, %v; want %s", envelope, err, want)
 		}
 	}
-	if _, err := server.nextEnvelope(context.Background()); err == nil || !strings.Contains(err.Error(), "closed unexpectedly") {
+	if _, err := server.nextEnvelope(ctx); err == nil || !strings.Contains(err.Error(), "closed unexpectedly") {
 		t.Fatalf("decoder terminal error = %v, want unexpected-close diagnostic", err)
 	}
 	server.close()
+}
+
+func TestAppServerRetainsReadErrorWhileDrainingBufferedMessages(t *testing.T) {
+	for _, terminal := range []error{io.EOF, errors.New("decoder failed")} {
+		t.Run(terminal.Error(), func(t *testing.T) {
+			server, _ := newFakeBenchmarkServer(benchmarkEnvelope{Method: "first"}, benchmarkEnvelope{Method: "second"})
+			t.Cleanup(server.close)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			// Reproduce the select race deterministically: a terminal error has
+			// just been received, but final decoded messages are also buffered.
+			first, heartbeat, err := server.nextEnvelopeAfterReadError(terminal)
+			if err != nil || heartbeat || first.Method != "first" {
+				t.Fatal("terminal error displaced the first buffered message", first, err)
+			}
+			second, err := server.nextEnvelope(ctx)
+			if err != nil || second.Method != "second" {
+				t.Fatal("terminal error displaced the second buffered message", second, err)
+			}
+			_, err = server.nextEnvelope(ctx)
+			if terminal == io.EOF {
+				if err == nil || !strings.Contains(err.Error(), "closed unexpectedly") {
+					t.Fatal("EOF diagnostic lost after draining messages", err)
+				}
+			} else if !errors.Is(err, terminal) {
+				t.Fatal("decoder error lost after draining messages", err)
+			}
+		})
+	}
 }
 
 func TestLockedBufferAndFatalErrorClassification(t *testing.T) {
