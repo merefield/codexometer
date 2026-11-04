@@ -61,9 +61,14 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 		p.statuses = map[string]sessionRuntimeStatus{}
 	}
 	p.statuses[event.ThreadID] = status
-	if status != sessionRuntimeIdle {
+	if !runtimeAcceptsFollowup(status) {
 		if s := p.contexts[event.ThreadID]; s != nil {
 			s.promptToken = ""
+			// A runtime change cancels a reservation that has sent no mutation,
+			// but cannot make an uncertain dispatched write reusable.
+			if !s.promptDispatched {
+				s.promptSpent, s.promptAttempt = false, ""
+			}
 		}
 	}
 }
@@ -88,7 +93,7 @@ func (p *daemonStatusProvider) SessionPrompt(thread string) SessionPromptOffer {
 			return inputOffer(c)
 		}
 	}
-	if p.statuses[thread] != sessionRuntimeIdle {
+	if !runtimeAcceptsFollowup(p.statuses[thread]) {
 		return SessionPromptOffer{}
 	}
 	if s == nil {
@@ -124,7 +129,7 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 			if _, ok := p.subscribed[thread]; !ok {
 				continue
 			}
-			if s.promptToken == token && len(s.requests) == 0 && p.statuses[thread] == sessionRuntimeIdle {
+			if s.promptToken == token && len(s.requests) == 0 && runtimeAcceptsFollowup(p.statuses[thread]) {
 				offer = SessionPromptOffer{Token: token, ThreadID: thread}
 				state = s
 				break
@@ -155,6 +160,8 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 	} else {
 		state.promptToken = ""
 		state.promptSpent = true
+		state.promptAttempt = token
+		state.promptDispatched = false
 		p.statuses[offer.ThreadID] = sessionRuntimeWorking
 	}
 	p.mu.Unlock()
@@ -165,6 +172,18 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 		}
 		return p.write(connection, map[string]any{"id": json.RawMessage(requestID), "result": map[string]any{"answers": mapped}})
 	}
+	dispatched := false
+	defer func() {
+		if !dispatched {
+			// No mutation was sent: a failed read-only preflight must not spend
+			// the editor forever. Fresh runtime observations still gate its return.
+			p.mu.Lock()
+			if p.connection == connection && p.contexts[offer.ThreadID] == state && state.promptAttempt == token {
+				state.promptSpent, state.promptAttempt = false, ""
+			}
+			p.mu.Unlock()
+		}
+	}()
 	// Recheck live runtime immediately before dispatch: idle telemetry may
 	// have aged while the user composed their prompt.
 	var read struct {
@@ -177,11 +196,17 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 	if err := p.requestOn(ctx, connection, "thread/read", map[string]any{"threadId": offer.ThreadID, "includeTurns": false}, &read); err != nil {
 		return err
 	}
-	if read.Thread.Status.Type != "idle" {
-		return errors.New("session is no longer idle; reply in Codex")
+	if !threadAcceptsFollowup(read.Thread.Status.Type) {
+		return errors.New("session is no longer ready for a follow-up; reply in Codex")
 	}
 	p.mu.Lock()
-	unchanged := p.connection == connection && p.contexts[offer.ThreadID] == state && len(state.requests) == 0
+	unchanged := p.connection == connection && p.contexts[offer.ThreadID] == state &&
+		state.promptSpent && state.promptAttempt == token && len(state.requests) == 0
+	if unchanged {
+		// Commit the phase while holding the same lock as runtime invalidation.
+		// Once this boundary is crossed, status notifications cannot release it.
+		state.promptDispatched, dispatched = true, true
+	}
 	p.mu.Unlock()
 	if !unchanged {
 		return errors.New("session changed; reply in Codex")

@@ -25,6 +25,34 @@ func TestSessionFailurePresentation(t *testing.T) {
 	}
 }
 
+func TestSessionFailureKeepsRecoveryActions(t *testing.T) {
+	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed"} {
+		t.Run(code, func(t *testing.T) {
+			s, f, token := controlServer(t)
+			s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextFailure, ThreadID: "parent", FailureCode: code, Text: "Failure explanation"}
+			f.prompt = codex.SessionPromptOffer{ThreadID: "parent", Token: "recovery"}
+			o := getOffer(t, s, token)
+			if o.Kind != "prompt" || o.Thread != "parent" || len(o.Questions) != 0 || f.calls != 0 {
+				t.Fatal("failed session lost its explicit recovery action or retried automatically")
+			}
+			commit := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, Answers: []string{"continue"}})
+			if w := actionCall(s, token, "commit", commit); w.Code != 200 || f.calls != 1 || len(f.answers) != 1 || f.answers[0] != "continue" {
+				t.Fatal("explicit browser recovery failed", w.Code)
+			}
+			if w := actionCall(s, token, "commit", commit); w.Code != 409 || f.calls != 1 {
+				t.Fatal("browser recovery permitted a replay")
+			}
+			// Slash discovery is independent of a consumed/absent prompt token.
+			commands := &commandsFake{revision: "recovery"}
+			s.control.commands = commands
+			body := actionRequest{Session: "parent", Command: &commandRequest{Mode: "list", Path: "model"}}
+			if w := actionCall(s, token, "commands", body); w.Code != 200 || commands.calls != 0 {
+				t.Fatal("failure blocked independent browser command discovery", w.Code)
+			}
+		})
+	}
+}
+
 func TestSessionFailureProjectionUsesCurrentAttentionNotSavedContext(t *testing.T) {
 	for _, tc := range []struct {
 		name, status string

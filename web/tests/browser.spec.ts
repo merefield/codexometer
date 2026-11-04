@@ -671,6 +671,65 @@ async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
   return { snapshot, offer, calls };
 }
 
+for (const status of [
+  'MODEL BUSY',
+  'MODEL UNAVAILABLE',
+  'CAPACITY RESTRICTED',
+  'TURN FAILED',
+]) {
+  test(`stopped error ${status} keeps the recovery composer and model discovery`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot, offer, calls } = await mockActions(page, 'prompt');
+    Object.assign(snapshot.sessions[0], {
+      status,
+      failed: true,
+      contextKind: 'TURN ERROR',
+      text: 'Failure explanation',
+    });
+    offer.thread = 'parent';
+    await page.route('**/api/control/commands', (route) =>
+      route.fulfill({
+        json: {
+          title: '/ COMMANDS',
+          path: '',
+          revision: 'recovery-options',
+          choices: [
+            {
+              id: 'model',
+              label: '/model',
+              help: 'Choose model and reasoning',
+              next: 'model',
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto(pairingURL);
+    await page.evaluate((detail) => {
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail }));
+      location.hash = '/sessions/parent';
+    }, snapshot);
+    const composer = page.getByRole('textbox', { name: 'Follow-up message' });
+    await expect(composer).toBeVisible();
+    await expect(page.locator('.detail-context')).toContainText(
+      'Failure explanation',
+    );
+    await composer.fill('continue');
+    await expect(composer).toHaveValue('continue');
+    await composer.fill('/model');
+    await expect(
+      page
+        .locator('.slash-commands')
+        .getByRole('button', { name: /^\/model\b/ }),
+    ).toBeVisible();
+    expect(
+      calls.filter((c) => c.action === 'prepare' || c.action === 'commit'),
+    ).toHaveLength(0);
+  });
+}
+
 test('file approval renders numbered red/green diff and requires confirmation', async ({
   page,
   pairingURL,
