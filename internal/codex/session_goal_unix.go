@@ -8,12 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
 
-const goalRefreshEvery = 30 * time.Second
+const (
+	goalRefreshEvery   = 30 * time.Second
+	goalRefreshBudget  = 500 * time.Millisecond
+	goalRefreshWorkers = 4
+)
 
 type goalObservation struct {
 	goal   *SessionGoal
@@ -104,33 +110,79 @@ func (p *daemonStatusProvider) readSessionGoal(ctx context.Context, id string) (
 }
 
 func (p *daemonStatusProvider) refreshSessionGoals(ctx context.Context, ids []string) {
-	for _, id := range ids {
-		p.mu.Lock()
-		observation, known := p.goals[id]
-		conn, version := p.connection, p.goalVersions[id]
-		_, subscribed := p.subscribed[id]
-		refresh := subscribed && !p.goalsUnsupported && (!known || time.Since(observation.at) >= goalRefreshEvery)
+	if ctx.Err() != nil {
+		return
+	}
+	type refresh struct {
+		id      string
+		at      time.Time
+		version uint64
+	}
+	p.mu.Lock()
+	conn, generation := p.connection, p.goalGeneration
+	if conn == nil || p.goalsUnsupported {
 		p.mu.Unlock()
-		if !refresh || ctx.Err() != nil {
-			continue
+		return
+	}
+	var due []refresh
+	for _, id := range ids {
+		observation, known := p.goals[id]
+		_, subscribed := p.subscribed[id]
+		if subscribed && (!known || time.Since(observation.at) >= goalRefreshEvery) {
+			due = append(due, refresh{id, observation.at, p.goalVersions[id]})
 		}
-		if _, err := p.readSessionGoal(ctx, id); err != nil {
-			p.mu.Lock()
-			// Back off failed reads too; preserve the last value as stale, never
-			// substitute "no goal" or claim pursuit after an unavailable read.
-			if current := p.goals[id]; p.connection == conn && p.goalVersions[id] == version && current.at == observation.at {
-				goal := current.goal.Clone()
-				if goal != nil {
-					goal.Stale = true
+	}
+	p.mu.Unlock()
+	if len(due) == 0 {
+		return
+	}
+	// Goal snapshots are optional telemetry: one shared budget, not a fresh
+	// timeout per session. Oldest/unattempted reads go first so a stalled batch
+	// cannot repeatedly starve the same sessions on later polls.
+	slices.SortStableFunc(due, func(a, b refresh) int { return a.at.Compare(b.at) })
+	ctx, cancel := context.WithTimeout(ctx, goalRefreshBudget)
+	defer cancel()
+	failed := func(job refresh, at time.Time) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		current := p.goals[job.id]
+		_, subscribed := p.subscribed[job.id]
+		if !subscribed || p.connection != conn || p.goalGeneration != generation || p.goalVersions[job.id] != job.version || current.at != job.at {
+			return // Never overwrite a newer observation, clear or reconnect.
+		}
+		goal := current.goal.Clone()
+		if goal != nil {
+			goal.Stale = true
+		}
+		p.observeGoalLocked(job.id, goal, at)
+		if observation, stored := p.goals[job.id]; stored {
+			observation.failed = true
+			p.goals[job.id] = observation
+		}
+	}
+	jobs := make(chan refresh, len(due))
+	for _, job := range due {
+		jobs <- job
+	}
+	close(jobs)
+	var workers sync.WaitGroup
+	for range min(goalRefreshWorkers, len(due)) {
+		workers.Go(func() {
+			for job := range jobs {
+				if ctx.Err() != nil {
+					return
 				}
-				p.observeGoalLocked(id, goal, time.Now())
-				if failed, stored := p.goals[id]; stored {
-					failed.failed = true
-					p.goals[id] = failed
+				if _, err := p.readSessionGoal(ctx, job.id); err != nil {
+					failed(job, time.Now()) // Back off attempted failures too.
 				}
 			}
-			p.mu.Unlock()
-		}
+		})
+	}
+	workers.Wait()
+	for _, job := range due {
+		// A deferred read is stale, not "no goal". Preserve its old timestamp
+		// so it stays ahead of attempted failures at the next refresh.
+		failed(job, job.at)
 	}
 }
 

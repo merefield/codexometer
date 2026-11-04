@@ -45,6 +45,8 @@ type quotaDaemonFixture struct {
 	ignoreGoal    bool
 	goalReadError map[string]any
 	goalReadHook  func()
+	goalNoReply   map[string]bool
+	threadReads   int
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -120,6 +122,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			fixture.mu.Lock()
 			result := map[string]any{}
 			failure := false
+			noReply := false
 			var failureDetail map[string]any
 			var settingsNotification map[string]any
 			id, _ := req.Params["threadId"].(string)
@@ -144,6 +147,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
 			case "thread/read":
+				fixture.threadReads++
 				status := fixture.commandStatus
 				if status == "" {
 					status = "idle"
@@ -151,6 +155,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments}
 			case "thread/goal/get":
 				fixture.goalReads++
+				noReply = fixture.goalNoReply[id]
 				if fixture.goals == nil {
 					failure = true
 					failureDetail = map[string]any{"code": -32601, "message": "method unavailable"}
@@ -279,6 +284,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 			}
 			fixture.mu.Unlock()
+			if noReply {
+				continue // Keep serving other RPCs while this goal read stalls.
+			}
 			response := map[string]any{"id": *req.ID, "result": result}
 			if failure {
 				delete(response, "result")

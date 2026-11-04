@@ -111,7 +111,6 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 	}
 
-	p.refreshSessionGoals(ctx, threadIDs)
 	coverage := p.readUsageCoverage(ctx, threadIDs)
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
@@ -145,6 +144,10 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 	}
 	p.statuses = cloneRuntimeStatuses(statuses)
+	p.mu.Unlock()
+
+	p.refreshSessionGoals(ctx, threadIDs)
+	p.mu.Lock()
 	snapshot := p.statusSnapshotLocked(threadIDs)
 	p.mu.Unlock()
 	return snapshot, true

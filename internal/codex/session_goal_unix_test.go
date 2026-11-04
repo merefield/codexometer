@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -246,7 +247,7 @@ func TestGoalConcurrentFailedObservationCannotVerifyChange(t *testing.T) {
 func TestGoalUnsupportedServerAndInvalidInputs(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	p.Fetch(context.Background(), []string{"one", "two"})
-	if f.goalReads != 1 || !p.goalsUnsupported || len(p.statusSnapshotLocked([]string{"one"}).Goals) != 0 {
+	if f.goalReads < 1 || f.goalReads > 2 || !p.goalsUnsupported || len(p.statusSnapshotLocked([]string{"one"}).Goals) != 0 {
 		t.Fatal("unsupported goal API was not gracefully suppressed", f.goalReads)
 	}
 	p, f = goalFixture(t)
@@ -263,5 +264,240 @@ func TestGoalMaximumObjectiveHasCompleteActionableReview(t *testing.T) {
 	menu, err := p.SessionCommands(context.Background(), "one", "goal/set/"+url.PathEscape(objective))
 	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action || strings.Contains(menu.Help, objective) || !strings.Contains(menu.Choices[0].Help, objective) {
 		t.Fatal("maximum objective was clipped or lost its guarded action", err)
+	}
+}
+
+func TestGoalRefreshSharesBudgetAcross256StalledSessions(t *testing.T) {
+	p, f := goalFixture(t)
+	ids := []string{"one", "two"}
+	for len(ids) < 256 {
+		ids = append(ids, fmt.Sprintf("stalled-%03d", len(ids)))
+	}
+	past := time.Now().Add(-time.Minute)
+	p.mu.Lock()
+	for _, id := range ids {
+		p.subscribed[id] = struct{}{}
+		p.observeGoalLocked(id, &SessionGoal{ThreadID: id, Status: "active", Objective: "Retain this objective"}, past)
+	}
+	p.mu.Unlock()
+	f.mu.Lock()
+	before := f.goalReads
+	f.goalNoReply = make(map[string]bool, len(ids))
+	for _, id := range ids {
+		f.goalNoReply[id] = true
+	}
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	started := time.Now()
+	p.refreshSessionGoals(ctx, ids)
+	if elapsed := time.Since(started); ctx.Err() != nil || elapsed > goalRefreshBudget+time.Second {
+		t.Fatalf("goal reads used per-session timeouts: elapsed %v, parent %v", elapsed, ctx.Err())
+	}
+	f.mu.Lock()
+	reads := f.goalReads - before
+	f.mu.Unlock()
+	if reads != goalRefreshWorkers {
+		t.Fatalf("stalled requests were not worker-bounded: got %d, want %d", reads, goalRefreshWorkers)
+	}
+	p.mu.Lock()
+	backedOff := 0
+	for _, id := range ids {
+		observation := p.goals[id]
+		if observation.goal == nil || observation.goal.Objective != "Retain this objective" || !observation.goal.Stale || !observation.failed {
+			t.Errorf("failed/deferred goal %s was dropped or claimed fresh", id)
+		}
+		if observation.at.After(past) {
+			backedOff++
+		}
+	}
+	pending := len(p.pending)
+	p.mu.Unlock()
+	if pending != 0 || backedOff != goalRefreshWorkers {
+		t.Fatal("worker requests leaked or deferred reads incorrectly backed off", pending, backedOff)
+	}
+	var status struct{ Thread struct{ ID string } }
+	if err := p.request(ctx, "thread/read", map[string]any{"threadId": "one"}, &status); err != nil || status.Thread.ID != "one" {
+		t.Fatal("stalled goal endpoint blocked ordinary telemetry", err)
+	}
+}
+
+func TestGoalRefreshReadsHealthyBatchAndSkipsFresh(t *testing.T) {
+	p, f := goalFixture(t)
+	var ids []string
+	f.mu.Lock()
+	before := f.goalReads
+	for i := range goalRefreshWorkers * 2 {
+		id := fmt.Sprintf("healthy-%d", i)
+		ids = append(ids, id)
+		f.goals[id] = &SessionGoal{ThreadID: id, Objective: id, Status: "paused"}
+	}
+	f.mu.Unlock()
+	p.mu.Lock()
+	for _, id := range ids {
+		p.subscribed[id] = struct{}{}
+	}
+	p.mu.Unlock()
+	p.refreshSessionGoals(context.Background(), ids)
+	p.mu.Lock()
+	for _, id := range ids {
+		goal := p.goals[id].goal
+		if goal == nil || goal.Stale || goal.Objective != id {
+			t.Errorf("worker pool lost healthy goal %s", id)
+		}
+	}
+	p.mu.Unlock()
+	p.refreshSessionGoals(context.Background(), ids)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if got := f.goalReads - before; got != len(ids) {
+		t.Fatal("healthy batch was duplicated or fresh observations were repolled", got)
+	}
+}
+
+func TestGoalRefreshCollectsCoreStatusBeforeOptionalGoals(t *testing.T) {
+	p, f := goalFixture(t)
+	p.mu.Lock()
+	p.lastStatusAt = time.Time{}
+	for id, observation := range p.goals {
+		observation.at = time.Now().Add(-time.Minute)
+		p.goals[id] = observation
+	}
+	p.mu.Unlock()
+	f.mu.Lock()
+	f.commandStatus = "active"
+	f.goalNoReply = map[string]bool{"one": true, "two": true}
+	f.threadReads = 0
+	coreBeforeGoals := true
+	f.goalReadHook = func() { coreBeforeGoals = coreBeforeGoals && f.threadReads == 2 }
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	snapshot, ok := p.Fetch(ctx, []string{"one", "two"})
+	if !ok || ctx.Err() != nil || snapshot.Statuses["one"] != sessionRuntimeWorking || snapshot.Statuses["two"] != sessionRuntimeWorking {
+		t.Fatal("optional goal failure delayed/lost core status", snapshot.Statuses, ctx.Err())
+	}
+	f.mu.Lock()
+	readFirst := coreBeforeGoals
+	f.mu.Unlock()
+	if !readFirst {
+		t.Fatal("optional goal reads preceded core runtime status")
+	}
+	for _, id := range []string{"one", "two"} {
+		if goal := snapshot.Goals[id]; goal == nil || !goal.Stale {
+			t.Fatal("stalled goal was lost or claimed fresh state", id)
+		}
+	}
+}
+
+func TestGoalRefreshKeepsNewerRuntimeSignals(t *testing.T) {
+	p, f := goalFixture(t)
+	p.mu.Lock()
+	p.lastStatusAt = time.Time{}
+	observation := p.goals["one"]
+	observation.at = time.Now().Add(-time.Minute)
+	p.goals["one"] = observation
+	p.mu.Unlock()
+	f.mu.Lock()
+	f.commandStatus = "active"
+	f.goalReadHook = func() {
+		// Same mutex/state updated by the daemon notification reader. This
+		// signal arrives after the core thread/read, during optional polling.
+		p.mu.Lock()
+		p.statuses["one"] = sessionRuntimeApproval
+		p.mu.Unlock()
+	}
+	f.mu.Unlock()
+	snapshot, ok := p.Fetch(context.Background(), []string{"one", "two"})
+	if !ok || snapshot.Statuses["one"] != sessionRuntimeApproval {
+		t.Fatal("older core read overwrote a runtime signal received during goal refresh")
+	}
+}
+
+func TestGoalRefreshDeferredReadsKeepTheirPlace(t *testing.T) {
+	p, f := goalFixture(t)
+	ids := []string{"stall-a", "stall-b", "stall-c", "stall-d", "healthy"}
+	past := time.Now().Add(-time.Minute)
+	p.mu.Lock()
+	for _, id := range ids {
+		p.subscribed[id] = struct{}{}
+		p.observeGoalLocked(id, &SessionGoal{ThreadID: id, Objective: "Old objective", Status: "active"}, past)
+	}
+	p.mu.Unlock()
+	f.mu.Lock()
+	f.goalNoReply = map[string]bool{}
+	for _, id := range ids[:goalRefreshWorkers] {
+		f.goalNoReply[id] = true
+	}
+	f.goals["healthy"] = &SessionGoal{ThreadID: "healthy", Objective: "Fresh objective", Status: "complete"}
+	f.mu.Unlock()
+	p.refreshSessionGoals(context.Background(), ids)
+	p.mu.Lock()
+	if observation := p.goals["healthy"]; observation.at != past || !observation.goal.Stale {
+		p.mu.Unlock()
+		t.Fatal("unattempted goal was backed off or claimed current")
+	}
+	// Simulate the attempted failures becoming due again before the whole
+	// backlog has been observed. The oldest/deferred session must go first.
+	for _, id := range ids[:goalRefreshWorkers] {
+		observation := p.goals[id]
+		observation.at = time.Now().Add(-goalRefreshEvery - time.Second)
+		p.goals[id] = observation
+	}
+	p.mu.Unlock()
+	p.refreshSessionGoals(context.Background(), ids)
+	p.mu.Lock()
+	goal := p.goals["healthy"].goal.Clone()
+	p.mu.Unlock()
+	if goal == nil || goal.Stale || goal.Objective != "Fresh objective" || goal.Status != "complete" {
+		t.Fatal("stalled sessions starved the oldest deferred read", goal)
+	}
+}
+
+func TestGoalRefreshHonoursCancellationAndDoesNotOverwriteStream(t *testing.T) {
+	for _, event := range []string{"cancel", "update", "clear", "close", "disconnect"} {
+		t.Run(event, func(t *testing.T) {
+			p, f := goalFixture(t)
+			p.mu.Lock()
+			observation := p.goals["one"]
+			observation.at = time.Now().Add(-time.Minute)
+			p.goals["one"] = observation
+			p.mu.Unlock()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			f.mu.Lock()
+			f.goalNoReply = map[string]bool{"one": true}
+			f.goalReadHook = func() {
+				if event == "disconnect" {
+					p.disconnect(nil)
+					return
+				}
+				p.mu.Lock()
+				defer p.mu.Unlock()
+				switch event {
+				case "cancel":
+					cancel()
+				case "update":
+					p.goalNotificationLocked("thread/goal/updated", json.RawMessage(`{"threadId":"one","goal":{"threadId":"one","objective":"Streamed objective","status":"complete"}}`))
+				case "clear":
+					p.goalNotificationLocked("thread/goal/cleared", json.RawMessage(`{"threadId":"one"}`))
+				case "close":
+					p.promptLifecycleLocked("thread/closed", json.RawMessage(`{"threadId":"one"}`))
+				}
+			}
+			f.mu.Unlock()
+			p.refreshSessionGoals(ctx, []string{"one"})
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			g := p.goals["one"].goal
+			if len(p.pending) != 0 {
+				t.Fatal("cancelled goal read leaked a pending request")
+			}
+			if event == "cancel" && (ctx.Err() != context.Canceled || g == nil || !g.Stale) ||
+				event == "update" && (g == nil || g.Stale || g.Objective != "Streamed objective") ||
+				(event == "clear" || event == "close" || event == "disconnect") && g != nil {
+				t.Fatal("deadline fallback overwrote a newer event", event, g)
+			}
+		})
 	}
 }
