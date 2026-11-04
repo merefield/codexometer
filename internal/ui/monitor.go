@@ -361,6 +361,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 			lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(field, innerWidth, "…")))
 		}
 	}
+	if goal := m.monitorGoalStatus(session, colors); goal != "" && len(lines) < bodyRows {
+		lines = append(lines, ansi.Truncate(goal, innerWidth, "…"))
+	}
 	appendPriority := func(value string) {
 		if value != "" && len(lines) < bodyRows {
 			lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(value, innerWidth, "")))

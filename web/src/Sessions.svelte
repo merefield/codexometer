@@ -11,6 +11,7 @@
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
   import StatusLine from './StatusLine.svelte';
+  import GoalStatus from './GoalStatus.svelte';
   import SessionCopy from './SessionCopy.svelte';
   import SessionCommands from './SessionCommands.svelte';
   let copyControl: SessionCopy | undefined = $state();
@@ -439,12 +440,25 @@
             >{/if}
         </section>
       {/each}
-      {#if !profileFocused}{#key selected.id}<SessionCopy
-            bind:this={copyControl}
-            session={selected}
-            active
-          />{/key}{/if}
-      {#key selected.id}<StatusLine session={selected} {stale} />{/key}
+      {#if selected.goal}
+        {#key selected.id}<StatusLine session={selected} {stale}>
+            {#snippet children()}
+              {#if !profileFocused}<SessionCopy
+                  bind:this={copyControl}
+                  session={selected}
+                  active
+                  compact
+                />{/if}
+            {/snippet}
+          </StatusLine>{/key}
+      {:else}
+        {#if !profileFocused}{#key selected.id}<SessionCopy
+              bind:this={copyControl}
+              session={selected}
+              active
+            />{/key}{/if}
+        {#key selected.id}<StatusLine session={selected} {stale} />{/key}
+      {/if}
     </section>{:else}<p class="empty">
       This session is no longer in the current observation. <a href="#/sessions"
         >Return to sessions</a
@@ -507,6 +521,7 @@
           </p>{/if}
         <p>{session.agents} LINKED AGENTS</p>
         <p class="muted">ACTIVE // {date(session.activity)}</p>
+        <GoalStatus goal={session.goal} {stale} />
         <div class="detail-controls">
           <button
             aria-label="Less detail"

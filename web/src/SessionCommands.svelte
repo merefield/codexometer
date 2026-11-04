@@ -152,9 +152,12 @@
     input: string;
   }
   let history = $state<Level[]>([]);
-  const inputReview = $derived(
-    menu?.path.startsWith('rename/') || menu?.path.startsWith('cd/'),
-  );
+  function isInputReview(path: string) {
+    return ['rename/', 'cd/', 'goal/set/', 'goal/edit/', 'goal/budget/'].some(
+      (prefix) => path.startsWith(prefix),
+    );
+  }
+  const inputReview = $derived(isInputReview(menu?.path || ''));
   const canBack = $derived(
     (!!selected && !inputReview) || !!stagedChoice || history.length > 0,
   );
@@ -358,6 +361,14 @@
         );
       return;
     }
+    if (
+      event.key === 'Enter' &&
+      (menu?.path === '' || menu?.path === 'goal') &&
+      /^\/goal\s+\S/.test(query.trim())
+    ) {
+      void navigate(query.trim().slice(1));
+      return;
+    }
     const option = choices[selectedIndex];
     if (!option) return;
     if (event.key === 'Tab') oncomplete(option.label);
@@ -435,11 +446,7 @@
             if (result.input) commandPanel?.querySelector('input')?.focus();
             else optionList?.focus();
           });
-        if (
-          (result.path.startsWith('rename/') ||
-            result.path.startsWith('cd/')) &&
-          result.choices.length === 1
-        ) {
+        if (isInputReview(result.path) && result.choices.length === 1) {
           busy = false; // The catalogue is ready before preparing its sole choice.
           void choose(result.choices[0]);
         }
@@ -663,6 +670,9 @@
                 name changes.
               {:else if menu?.path.startsWith('cd/')}Only this session’s
                 directory changes; project configuration is not reloaded.
+              {:else if menu?.path.startsWith('goal/')}Only this session's goal
+                changes. Active pursuit may immediately start further turns and
+                consume quota.
               {:else}No change sent yet. Model, reasoning and speed settings can
                 change token usage and cost. Changes affect subsequent turns of
                 this session, not global defaults. Automatic quota thresholds

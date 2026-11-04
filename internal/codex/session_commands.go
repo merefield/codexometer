@@ -12,7 +12,7 @@ const (
 	SessionRenameInputLimit    = 512
 	SessionDirectoryInputLimit = 1024
 	// One UTF-8 rune can take four bytes, each percent-encoded as three bytes.
-	SessionCommandPathLimit = len("rename/") + SessionDirectoryInputLimit*utf8.UTFMax*3
+	SessionCommandPathLimit = len("goal/edit/") + SessionGoalInputLimit*utf8.UTFMax*3
 )
 
 // ValidSessionCommandPath shares the encoded transport bound and decoded editor
@@ -23,12 +23,18 @@ func ValidSessionCommandPath(path string) bool {
 		return false
 	}
 	command := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if objective, direct := strings.CutPrefix(command, "goal "); direct {
+		return utf8.RuneCountInString(objective) <= SessionGoalInputLimit
+	}
 	for _, family := range []struct {
 		name  string
 		limit int
 	}{
 		{"rename", SessionRenameInputLimit},
 		{"cd", SessionDirectoryInputLimit},
+		{"goal/set", SessionGoalInputLimit},
+		{"goal/edit", SessionGoalInputLimit},
+		{"goal/budget", 32},
 	} {
 		value, encoded := strings.CutPrefix(command, family.name+"/")
 		if !encoded {

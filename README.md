@@ -1821,12 +1821,37 @@ Browse-only entries do not execute tools or change configuration.
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name and apply it without a second confirmation. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
+| `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. Mutations require confirmation by default. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+
+**Session goals:** a connected shared app-server with its goals feature enabled
+is required. Goal status appears directly below the configured statusline fields
+in session rows; full detail places it right-aligned on the bottom border before
+COPY and other controls, when space permits. Web shows the same per-session state
+below row metadata and in the detail footer. **PURSUING GOAL**, **GOAL STALLED**,
+**GOAL PAUSED**, **GOAL USAGE LIMITED**, **GOAL BUDGET LIMITED** and **GOAL COMPLETE**
+come from Codex—not inactivity guesses—and do not replace WORKING, approvals or
+TURN COMPLETE. Unavailable refreshes mark retained observations **GOAL STALE**.
+Use `/goal` for the objective and counters. Linked agents do not inherit their
+parent’s goal label, and goal observations are not persisted by Codexometer.
+
+Creating or resuming an active goal can start work immediately and consume quota,
+even while the session was idle; updating an active objective can guide a running
+turn. Editing a paused/stalled goal retains its state; editing a completed or
+budget-limited goal reactivates it, matching Codex CLI. Pause/clear stop continued
+pursuit but do not interrupt a turn already running. The budget is a **total
+goal-token budget**, not an account spending limit; omitted budgets are retained,
+and `unlimited` explicitly removes the goal budget. Codexometer accepts objectives
+up to 4,096 characters and positive budgets up to 9,007,199,254,740,991; Codex can
+impose further limits. Every mutation is session-scoped, freshly revalidated and
+verified after acknowledgment, with no automatic retry. `--no-confirm` also opts
+out of goal confirmations; read-only web mode never enables goal writes.
+Older/unsupported servers omit the live `/goal` family rather than simulating it.
 
 On Codex 0.166.0, `/hooks` queries the selected loaded thread, including hooks
 from its execution environments, and identifies their environment when supplied.
@@ -1934,7 +1959,7 @@ action keys when using `--no-confirm`.
 **Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
 compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
 and the reason for each missing adapter. Several missing commands already have
-server APIs (`/compact`, `/fork`, `/review`, `/goal`, `/ps`, `/stop`); they need
+server APIs (`/compact`, `/fork`, `/review`, `/ps`, `/stop`); they need
 Codexometer workflows. Native display commands need local UI implementations.
 The published reference is incomplete for this version and includes older names.
 

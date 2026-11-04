@@ -59,6 +59,9 @@ func commandMenuPath(path string) string {
 
 func cacheableCommandPath(path string) bool {
 	// Typed names and paths are short-lived reviews, not catalogue branches.
+	if _, _, input := SessionCommandInputValue(path); input || strings.HasPrefix(path, "goal ") {
+		return false
+	}
 	return ValidSessionCommandPath(path) && !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "rename/") &&
 		!strings.HasPrefix(path, "rename ") && !strings.HasPrefix(path, "cd/") && !strings.HasPrefix(path, "cd ")
 }

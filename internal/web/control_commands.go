@@ -60,6 +60,8 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 			message = "Session renamed."
 		} else if strings.HasPrefix(q.Path, "cd/") {
 			message = "Working directory changed."
+		} else if strings.HasPrefix(q.Path, "goal/") {
+			message = "Goal updated."
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 		return

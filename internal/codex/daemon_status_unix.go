@@ -29,6 +29,10 @@ type daemonStatusProvider struct {
 	queueRevision      uint64
 	queueCapabilities  map[string]queueCapability
 	contexts           map[string]*daemonContextState
+	goals              map[string]goalObservation
+	goalVersions       map[string]uint64
+	goalGeneration     uint64
+	goalsUnsupported   bool
 	socketPath         string
 
 	mu                sync.Mutex
@@ -107,6 +111,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 	}
 
+	p.refreshSessionGoals(ctx, threadIDs)
 	coverage := p.readUsageCoverage(ctx, threadIDs)
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
@@ -157,7 +162,13 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	directories := make(map[string]string, len(threadIDs))
+	goals := make(map[string]*SessionGoal)
 	for _, threadID := range threadIDs {
+		if _, subscribed := p.subscribed[threadID]; subscribed {
+			if goal := p.goals[threadID].goal; goal != nil {
+				goals[threadID] = goal.Clone()
+			}
+		}
 		if status, ok := p.statuses[threadID]; ok {
 			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
 				status = sessionRuntimeComplete
@@ -180,6 +191,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		coverage[id] = issue
 	}
 	return sessionDaemonSnapshot{
+		Goals:              goals,
 		UsageCoverage:      coverage,
 		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
 		WorkingDirectories: directories,
@@ -238,6 +250,9 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 		p.mu.Lock()
 		delete(p.subscribed, threadID)
 		delete(p.contexts, threadID)
+		delete(p.goals, threadID)
+		delete(p.goalVersions, threadID)
+		p.goalGeneration++
 		delete(p.threadDirectories, threadID)
 		for key := range p.reroutedTurns {
 			if key.threadID == threadID {
@@ -480,6 +495,7 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 		if envelope.Method == "thread/queue/changed" {
 			p.queueRevision++
 		}
+		p.goalNotificationLocked(envelope.Method, envelope.Params)
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
 		}
@@ -619,6 +635,10 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	}
 	p.subscribed = nil
 	p.contexts = nil
+	p.goals = nil
+	p.goalVersions = nil
+	p.goalsUnsupported = false
+	p.goalGeneration++
 	p.reroutedTurns = nil
 	p.lastStatusAt = time.Time{}
 	p.statusThreads = nil

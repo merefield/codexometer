@@ -1,8 +1,11 @@
 <script lang="ts">
   import type { Session } from './state.svelte';
   import { sessionCopyText } from './session-copy';
-  let { session, active = false }: { session: Session; active?: boolean } =
-    $props();
+  let {
+    session,
+    active = false,
+    compact = false,
+  }: { session: Session; active?: boolean; compact?: boolean } = $props();
   let payload = $derived(sessionCopyText(session));
   let available = $derived(!!payload);
   let busy = $state(false);
@@ -60,7 +63,7 @@
 <svelte:window onkeydown={keydown} />
 
 {#if available}
-  <div class="session-copy">
+  <div class="session-copy" class:compact>
     <span role="status">{notice}</span>
     <button
       class:flashed
@@ -80,6 +83,11 @@
     gap: 8px;
     margin-top: auto;
     padding-top: 6px;
+  }
+  .compact {
+    padding-top: 0;
+    margin-top: 0;
+    flex-shrink: 0;
   }
   span {
     font-size: 12px;

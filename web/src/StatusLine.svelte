@@ -1,12 +1,17 @@
 <script lang="ts">
   import { live, type Session } from './state.svelte';
+  import type { Snippet } from 'svelte';
+  import GoalStatus from './GoalStatus.svelte';
   import {
     preferences,
     savePreferences,
     statusLineUI,
   } from './preferences.svelte';
-  let { session, stale = false }: { session: Session; stale?: boolean } =
-    $props();
+  let {
+    session,
+    stale = false,
+    children,
+  }: { session: Session; stale?: boolean; children?: Snippet } = $props();
   let draft = $state<string[]>([]),
     opened = $state(false);
   let fields = $derived(live.data?.statusLineFields || []);
@@ -105,6 +110,10 @@
   >
     {text(preferences.statusLine)}
   </p>
+  <GoalStatus
+    goal={session.goal}
+    stale={stale || !live.connected || !!live.data?.sessionsError}
+  />
   <button
     class="configure"
     onclick={() => {
@@ -112,6 +121,7 @@
     }}
     aria-label="Configure status line">/statusline</button
   >
+  {@render children?.()}
 </div>
 
 <style>

@@ -598,6 +598,202 @@ test.describe('opt-in real server with simulated Codex actions', () => {
   });
 });
 
+test('read-only goals follow session metadata and precede full-detail copy', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const withGoals = {
+    ...snapshot,
+    control: false,
+    sessions: snapshot.sessions.map((session, index) => ({
+      ...session,
+      goal:
+        index === 0
+          ? {
+              status: 'active',
+              label: 'PURSUING GOAL',
+              objective: 'Finish synthetic work',
+              tokenBudget: 1000,
+              tokensUsed: 42,
+              timeUsedSeconds: 3,
+              stale: false,
+            }
+          : undefined,
+    })),
+  };
+  await mockStream(page, withGoals);
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions';
+  });
+  const goal = page.getByLabel('Goal status', { exact: true });
+  await expect(goal).toHaveText('PURSUING GOAL');
+  await expect(goal).toHaveCount(1);
+  const row = goal.locator('..');
+  expect((await goal.boundingBox())!.y).toBeGreaterThan(
+    (await row.getByText(/ACTIVE \/\//).boundingBox())!.y,
+  );
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const footer = page.locator('.status-line');
+  await expect(footer.getByLabel('Goal status', { exact: true })).toHaveText(
+    'PURSUING GOAL',
+  );
+  await expect(footer.getByRole('button', { name: 'Copy text' })).toBeVisible();
+  const g = (await goal.boundingBox())!,
+    c = (await footer
+      .getByRole('button', { name: 'Copy text' })
+      .boundingBox())!;
+  expect(g.x + g.width).toBeLessThanOrEqual(c.x);
+  for (const width of [420, 1200]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  withGoals.sessions[0].goal!.stale = true;
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    withGoals,
+  );
+  await expect(goal).toHaveText('GOAL STALE');
+});
+
+test('goal objective, budget and lifecycle commands retain explicit confirmation', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const writes: string[] = [];
+  const objective = 'Finish work / without changing another session';
+  let committed = '';
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON(),
+      q = body.command;
+    expect(body.session).toBe('parent');
+    let result: object;
+    if (q.mode === 'prepare') {
+      writes.push('prepare:' + q.path);
+      result = {
+        confirmation: 'goal-confirm',
+        expires: new Date(Date.now() + 30000).toISOString(),
+      };
+    } else if (q.mode === 'commit') {
+      expect(body.confirmation).toBe('goal-confirm');
+      committed = writes.at(-1)!.slice('prepare:'.length);
+      writes.push('commit:' + committed);
+      result = { message: 'Goal updated.' };
+    } else if (!q.path) {
+      result = {
+        title: '/ COMMANDS',
+        path: '',
+        revision: 'root',
+        help: 'Commands',
+        choices: [
+          {
+            id: 'goal',
+            label: '/goal',
+            next: 'goal',
+            help: 'Manage this session goal',
+          },
+        ],
+      };
+    } else if (q.path === 'goal') {
+      result = {
+        title: '/goal',
+        path: q.path,
+        revision: 'goal',
+        help: 'PURSUING GOAL',
+        choices: ['set', 'edit', 'budget', 'pause', 'resume', 'clear'].map(
+          (name) => ({
+            id: name,
+            label: name,
+            next: 'goal/' + name,
+            help: 'Session-specific goal change',
+          }),
+        ),
+      };
+    } else if (['goal/set', 'goal/edit', 'goal/budget'].includes(q.path)) {
+      result = {
+        title: '/goal',
+        path: q.path,
+        revision: 'goal',
+        help: 'Review before changing goal',
+        input: true,
+        inputLabel:
+          q.path === 'goal/budget'
+            ? 'Token budget (or unlimited)'
+            : 'Goal objective',
+        inputLimit: 4096,
+        value: q.path === 'goal/edit' ? 'Old objective' : '',
+        choices: [],
+      };
+    } else {
+      result = {
+        title: '/goal',
+        path: q.path,
+        revision: 'goal',
+        help: 'Changing active goals can start work and consume quota.',
+        choices: [
+          {
+            id: 'change',
+            label: 'Apply goal change',
+            help: 'Only the selected session changes.',
+            action: true,
+          },
+        ],
+      };
+    }
+    await route.fulfill({ json: result });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const text = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  for (const name of ['set', 'edit', 'budget', 'pause', 'resume', 'clear']) {
+    await text.fill('/goal');
+    await panel.getByRole('button', { name: '/goal →', exact: true }).click();
+    await panel.getByRole('button', { name: name + ' →', exact: true }).click();
+    let path = 'goal/' + name;
+    if (['set', 'edit', 'budget'].includes(name)) {
+      const input = panel.getByRole('textbox', {
+        name:
+          name === 'budget' ? 'Token budget (or unlimited)' : 'Goal objective',
+        exact: true,
+      });
+      if (name === 'edit') await expect(input).toHaveValue('Old objective');
+      const value = name === 'budget' ? '10000' : objective;
+      await input.fill(value);
+      await input.press('Enter');
+      path += '/' + encodeURIComponent(value);
+    } else
+      await panel
+        .getByRole('button', { name: 'Apply goal change', exact: true })
+        .click();
+    await expect(
+      panel.getByRole('button', { name: 'CONFIRM CHANGE' }),
+    ).toBeEnabled();
+    expect(writes.filter((w) => w.startsWith('commit:'))).toHaveLength(
+      ['set', 'edit', 'budget', 'pause', 'resume', 'clear'].indexOf(name),
+    );
+    await panel.getByRole('button', { name: 'CONFIRM CHANGE' }).click();
+    await expect(
+      panel.getByText('Goal updated.', { exact: true }),
+    ).toBeVisible();
+    await expect(text).toHaveValue('');
+    expect(committed).toBe(path);
+  }
+});
+
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
 async function mockActions(page: Page, kind = 'approval', noConfirm = false) {

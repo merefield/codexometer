@@ -143,7 +143,7 @@ func (m *Model) navigateMonitorCommands(path string) tea.Cmd {
 
 func (m Model) monitorCommandsCanBack() bool {
 	p := m.monitorCommands
-	inputReview := strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")
+	inputReview := commandInputReview(p.menu.Path)
 	return (p.detail && !inputReview) || p.reviewedChoice != "" || len(p.history) > 0
 }
 
@@ -155,7 +155,7 @@ func (m *Model) backMonitorCommands() tea.Cmd {
 		p.notice = ""
 		return nil
 	}
-	inputReview := strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")
+	inputReview := commandInputReview(p.menu.Path)
 	if p.detail && !inputReview {
 		p.detail = false
 		p.scroll = 0
@@ -397,6 +397,8 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 				text += "\nOnly this session's saved name changes. Confirm after reviewing the new name."
 			} else if strings.HasPrefix(p.menu.Path, "cd/") {
 				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
+			} else if strings.HasPrefix(p.menu.Path, "goal/") {
+				text += "\nThis changes only the selected session's goal. Active goals may immediately start work and consume quota. Confirm only after reviewing the objective, state and budget."
 			} else {
 				text += "\nNo change sent yet. Model, reasoning and speed settings can change token usage and cost."
 				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
@@ -677,6 +679,8 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					m.monitorPrompt.notice = "Session renamed."
 				} else if strings.HasPrefix(r.path, "cd/") {
 					m.monitorPrompt.notice = "Working directory changed."
+				} else if strings.HasPrefix(r.path, "goal/") {
+					m.monitorPrompt.notice = "Goal updated."
 				}
 				return m, cmd, true
 			} else {
@@ -689,6 +693,11 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					m.monitorPrompt.input.CursorEnd()
 				}
 				p.menu = r.menu
+				if parent, value, ok := codex.SessionCommandInputValue(p.menu.Path); ok && p.inline {
+					p.prefix = m.inlineCommandPrefix(parent)
+					m.monitorPrompt.input.SetValue(p.prefix + value)
+					m.monitorPrompt.input.CursorEnd()
+				}
 				if p.menu.Path == "" || p.menu.Path == "help" {
 					p.menu = m.withLocalCommands(p.menu)
 				}
@@ -734,7 +743,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					cmd := p.input.Focus()
 					return m, cmd, true
 				}
-				if (strings.HasPrefix(p.menu.Path, "rename/") || strings.HasPrefix(p.menu.Path, "cd/")) && len(p.menu.Choices) == 1 {
+				if commandInputReview(p.menu.Path) && len(p.menu.Choices) == 1 {
 					if o := p.menu.Choices[0]; o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
 						return m.executeMonitorCommand(o)
 					}
@@ -972,7 +981,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 func (m Model) reviewMonitorCommandInput() (Model, tea.Cmd, bool) {
 	p := &m.monitorCommands
-	if !p.menu.Input || (p.menu.Path != "rename" && p.menu.Path != "cd") || p.busy {
+	if !p.menu.Input || !codex.SessionCommandInputPath(p.menu.Path) || p.busy {
 		return m, nil, true
 	}
 	name := strings.TrimSpace(p.input.Value())

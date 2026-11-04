@@ -1,4 +1,13 @@
 {
+  "PURSUING GOAL": "目標を追求中",
+  "GOAL STALLED": "目標が停滞中",
+  "GOAL PAUSED": "目標を一時停止",
+  "GOAL USAGE LIMITED": "目標の使用上限",
+  "GOAL BUDGET LIMITED": "目標の予算上限",
+  "GOAL COMPLETE": "目標達成",
+  "GOAL STALE": "目標情報が古い",
+  "GOAL STATUS UNKNOWN": "目標の状態が不明",
+  "Goal updated.": "目標を更新しました。",
   "MODEL UNAVAILABLE": "モデル利用不可",
   "CAPACITY RESTRICTED": "ポリシーによる容量制限",
   "ERRORS": "エラー",

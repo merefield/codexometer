@@ -4,6 +4,7 @@ export interface Sample {
   tokens: number;
 }
 export interface Session {
+  goal?: SessionGoal;
   statusLine?: Record<string, string>;
   fileChanges?: FileDiffLine[];
   name?: string;
@@ -28,6 +29,15 @@ export interface Session {
   source: string;
   activity: string;
   samples: Sample[] | null;
+}
+export interface SessionGoal {
+  status: string;
+  label: string;
+  objective: string;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  stale: boolean;
 }
 export interface FileDiffLine {
   text: string;
