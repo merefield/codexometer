@@ -26,6 +26,12 @@ type triggerSummary struct {
 	Status  string `json:"status"`
 }
 
+type scheduledJob struct {
+	schedule.Job
+	CanSend       bool   `json:"canSend"`
+	WaitingReason string `json:"waitingReason"`
+}
+
 func (c *control) scheduleSnapshot() codex.Snapshot {
 	c.store.mu.Lock()
 	defer c.store.mu.Unlock()
@@ -76,12 +82,7 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 		c.publishSchedules()
 	}
 	w.Header().Set("Content-Type", "application/json")
-	type visibleJob struct {
-		schedule.Job
-		CanSend       bool   `json:"canSend"`
-		WaitingReason string `json:"waitingReason"`
-	}
-	jobs := []visibleJob{}
+	jobs := []scheduledJob{}
 	o, _ := c.offer(b.Session)
 	for _, j := range c.schedules.List(b.Session) {
 		_, ready := c.sendNowJob(b.Session, j.ID)
@@ -102,7 +103,7 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 		case canSend:
 			reason = "ready; awaiting dispatch"
 		}
-		jobs = append(jobs, visibleJob{j, canSend, reason})
+		jobs = append(jobs, scheduledJob{j, canSend, reason})
 	}
 	_ = json.NewEncoder(w).Encode(jobs)
 }

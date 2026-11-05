@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/quotaestimate"
 )
 
 func TestQuotaTierLearningKeepsDenominatorAndStandardComparison(t *testing.T) {
@@ -18,7 +19,7 @@ func TestQuotaTierLearningKeepsDenominatorAndStandardComparison(t *testing.T) {
 	m.snapshot = snapshot
 	m.observeQuotaAPIEq(snapshot, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqTierPremiumUSD: 1, APIEqPricedCalls: 1}, now)
 	e, ok := m.quotaAPIEstimate(snapshot, snapshot.Meters()[0])
-	if !ok || !e.hasPremium || e.unknownTier || e.standardFull != 20 || math.Abs(e.fullLow-200.0/6) > 1e-9 || e.fullHigh != 50 {
+	if !ok || !e.HasPremium || e.UnknownTier || e.StandardFull != 20 || math.Abs(e.FullLow-200.0/6) > 1e-9 || e.FullHigh != 50 {
 		t.Fatalf("estimate %+v", e)
 	}
 	line := m.quotaAPILine(snapshot.Meters()[0], 180)
@@ -43,12 +44,12 @@ func TestQuotaUnknownTierFallbackAndAtomicity(t *testing.T) {
 	base := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}
 	changed := base
 	changed.APIEqTierPremiumUSD = 1
-	if quotaAPIAccountingEqual(base, changed) {
+	if quotaestimate.AccountingEqual(base, changed) {
 		t.Fatal("premium change ignored")
 	}
 	changed = base
 	changed.APIEqUnknownTierCalls = 1
-	if quotaAPIAccountingEqual(base, changed) {
+	if quotaestimate.AccountingEqual(base, changed) {
 		t.Fatal("tier coverage ignored")
 	}
 	now := time.Now().Truncate(time.Second)

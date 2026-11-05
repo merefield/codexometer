@@ -33,8 +33,9 @@ type DailyUsageReport struct {
 }
 
 type UsageBreakdownDay struct {
-	Date  string  `json:"date"`
-	Total float64 `json:"total"`
+	Views map[string]UsageDistribution `json:"views,omitempty"`
+	Date  string                       `json:"date"`
+	Total float64                      `json:"total"`
 	// Each dimension is a different breakdown of the SAME total, not additive.
 	Groups map[string]map[string]float64 `json:"groups"`
 }
@@ -50,14 +51,15 @@ type PlanUsageReport struct {
 }
 
 type PlanUsagePeriod struct {
-	ID                 string               `json:"id"`
-	WindowMinutes      uint32               `json:"window_minutes"`
-	PlanType           string               `json:"plan_type"`
-	StartsAt           string               `json:"starts_at"`
-	EndsAt             string               `json:"ends_at"`
-	AccountingComplete bool                 `json:"accounting_complete"`
-	UsedBasisPoints    *float64             `json:"used_basis_points"`
-	Breakdowns         []PlanUsageBreakdown `json:"breakdowns"`
+	Views              map[string]UsageDistribution `json:"views,omitempty"`
+	ID                 string                       `json:"id"`
+	WindowMinutes      uint32                       `json:"window_minutes"`
+	PlanType           string                       `json:"plan_type"`
+	StartsAt           string                       `json:"starts_at"`
+	EndsAt             string                       `json:"ends_at"`
+	AccountingComplete bool                         `json:"accounting_complete"`
+	UsedBasisPoints    *float64                     `json:"used_basis_points"`
+	Breakdowns         []PlanUsageBreakdown         `json:"breakdowns"`
 }
 
 type PlanUsageBreakdown struct {

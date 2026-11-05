@@ -512,7 +512,7 @@ func TestQuotaFetchCoverageRecoveryCannotSpanUnobservedGap(t *testing.T) {
 			m := New(f, time.Minute)
 			m.observeQuotaAPIEq(apiEqSnapshot(10, reset), codex.LiveUsageSnapshot{}, now)
 			m.observeQuotaAPIEq(apiEqSnapshot(15, reset), codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
-			if len(m.quotaAPIEvidence) != 1 {
+			if len(m.quotaAPI.Evidence) != 1 {
 				t.Fatal("test did not establish an estimate")
 			}
 			message := m.fetch()().(fetchedMsg)
@@ -521,7 +521,7 @@ func TestQuotaFetchCoverageRecoveryCannotSpanUnobservedGap(t *testing.T) {
 			}
 			updated, _ := m.Update(message)
 			m = updated.(Model)
-			if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || m.quotaAPICoverageIssue == "" {
+			if len(m.quotaAPI.Evidence) != 0 || len(m.quotaAPI.Anchors) != 0 || m.quotaAPI.CoverageIssue == "" {
 				t.Fatal("coverage gap retained previous evidence")
 			}
 			// A later clean bracket starts a new baseline even when the recovered
@@ -531,7 +531,7 @@ func TestQuotaFetchCoverageRecoveryCannotSpanUnobservedGap(t *testing.T) {
 			f.usages = []codex.LiveUsageSnapshot{recovered, recovered}
 			updated, _ = m.Update(m.fetch()())
 			m = updated.(Model)
-			if len(m.quotaAPIEvidence) != 0 || m.quotaAPICoverageIssue != "" {
+			if len(m.quotaAPI.Evidence) != 0 || m.quotaAPI.CoverageIssue != "" {
 				t.Fatal("recovery learned across the gap")
 			}
 			recovered.APIEqUSD++
@@ -540,8 +540,8 @@ func TestQuotaFetchCoverageRecoveryCannotSpanUnobservedGap(t *testing.T) {
 			f.usages = []codex.LiveUsageSnapshot{recovered, recovered}
 			updated, _ = m.Update(m.fetch()())
 			m = updated.(Model)
-			if len(m.quotaAPIEvidence) != 1 || m.quotaAPIEvidence[0].CapacityUSD != 20 {
-				t.Fatal("next clean interval failed to learn independently", m.quotaAPIEvidence)
+			if len(m.quotaAPI.Evidence) != 1 || m.quotaAPI.Evidence[0].CapacityUSD != 20 {
+				t.Fatal("next clean interval failed to learn independently", m.quotaAPI.Evidence)
 			}
 		})
 	}
@@ -584,7 +584,7 @@ func TestQuotaCoverageInvalidationSurvivesObservationErrorsAndBenchmarkDeferral(
 			}
 			updated, _ := m.Update(message)
 			m = updated.(Model)
-			if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || m.quotaAPICoverageIssue == "" {
+			if len(m.quotaAPI.Evidence) != 0 || len(m.quotaAPI.Anchors) != 0 || m.quotaAPI.CoverageIssue == "" {
 				t.Fatal("deferred observation retained stale capacity evidence")
 			}
 		})

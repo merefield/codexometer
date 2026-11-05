@@ -25,7 +25,7 @@ func TestMonitorCloseAllDismissesOffScreenRowsAndPreservesMeasurement(t *testing
 	m := Model{snapshot: codex.DemoSnapshot(), width: 100, height: 24,
 		meterView: viewMonitor, monitorState: monitorRunning, monitorStartedAt: now,
 		monitorBaseline: 1200, monitorLatest: 1320,
-		monitorSamples: []monitorSample{{intervalTokens: 120}},
+		monitorSamples: []monitorSample{{Tokens: 120}},
 	}
 	m.startMonitorSessions(usage, now)
 	for i := range usage.Sessions {

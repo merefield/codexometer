@@ -104,7 +104,7 @@ func documentationScenes(version string) []documentationScene {
 			if (j+i*3)%11 < 3 {
 				value /= 5
 			}
-			s.samples = append(s.samples, monitorSample{at: now.Add(time.Duration(j-35) * 30 * time.Second), duration: 30 * time.Second, intervalTokens: value})
+			s.samples = append(s.samples, monitorSample{At: now.Add(time.Duration(j-35) * 30 * time.Second), Duration: 30 * time.Second, Tokens: value})
 		}
 		sessions.monitorLatest += s.latest
 		sessions.monitorSessionData = append(sessions.monitorSessionData, s)

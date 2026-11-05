@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SessionGoal } from './state.svelte';
-  let { goal, stale = false }: { goal?: SessionGoal; stale?: boolean } =
+  let { goal, stale = false }: { goal?: SessionGoal | null; stale?: boolean } =
     $props();
   const outdated = $derived(stale || !!goal?.stale);
 </script>

@@ -48,31 +48,14 @@ func Record(window, previous codex.Window, points []Point, now time.Time, gap bo
 	return points
 }
 
-type Key struct {
-	Limit string
-	Slot  int
-	Kind  codex.MeterKind
-}
+type Key = codex.MeterKey
 
 // Keys follows Meters' ordering without identifying windows by mutable labels.
 func Keys(snapshot codex.Snapshot) []Key {
 	meters := snapshot.Meters()
 	keys := make([]Key, len(meters))
-	slots := map[string]int{}
 	for i, meter := range meters {
-		key := Key{Limit: meter.LimitID, Kind: meter.Kind}
-		if meter.Kind == codex.MeterQuotaWindow {
-			bucket := snapshot.RateLimits
-			if len(snapshot.RateLimitsByLimitID) > 0 {
-				bucket = snapshot.RateLimitsByLimitID[meter.LimitID]
-			}
-			key.Slot = slots[meter.LimitID]
-			if bucket.Primary == nil {
-				key.Slot++
-			}
-			slots[meter.LimitID]++
-		}
-		keys[i] = key
+		keys[i] = meter.Key()
 	}
 	return keys
 }
@@ -96,10 +79,11 @@ func (h *History) Observe(snapshot codex.Snapshot, failed bool, at time.Time) {
 		h.Series = nil
 	}
 	h.Account = snapshot.AccountFingerprint
-	keys := Keys(snapshot)
-	next := make(map[Key]Series, len(keys))
-	for i, meter := range snapshot.Meters() {
-		old := h.Series[keys[i]]
+	meters := snapshot.Meters()
+	next := make(map[Key]Series, len(meters))
+	for _, meter := range meters {
+		key := meter.Key()
+		old := h.Series[key]
 		window := meter.Window
 		// Retain values, not pointers into a caller's mutable snapshot.
 		if window.WindowDurationMins != nil {
@@ -110,7 +94,7 @@ func (h *History) Observe(snapshot codex.Snapshot, failed bool, at time.Time) {
 			reset := *window.ResetsAt
 			window.ResetsAt = &reset
 		}
-		next[keys[i]] = Series{Window: window, Points: Record(window, old.Window, old.Points, at, h.gap)}
+		next[key] = Series{Window: window, Points: Record(window, old.Window, old.Points, at, h.gap)}
 	}
 	h.Series, h.gap = next, false
 }
@@ -228,7 +212,12 @@ func Project(mode Mode, window codex.Window, points []Point, now time.Time) (Tre
 	return Trend{Slope: slope, Intercept: intercept, Projected: used + slope*(100-elapsed), Start: start}, true
 }
 
-type Segment struct{ X1, Y1, X2, Y2 float64 }
+type Segment struct {
+	X1 float64 `json:"x1"`
+	Y1 float64 `json:"y1"`
+	X2 float64 `json:"x2"`
+	Y2 float64 `json:"y2"`
+}
 
 func (t Trend) Segment() (Segment, bool) {
 	slope, lower, upper := t.Slope, 0.0, 100.0
@@ -241,4 +230,36 @@ func (t Trend) Segment() (Segment, bool) {
 	y1, y2 := t.Intercept+slope*x1, t.Intercept+slope*x2
 	valid := x1 <= x2 && y1 >= lower-1e-9 && y1 <= upper+1e-9 && y2 >= lower-1e-9 && y2 <= upper+1e-9
 	return Segment{X1: x1, Y1: max(lower, min(upper, y1)), X2: x2, Y2: max(lower, min(upper, y2))}, valid
+}
+
+// Plot is a numeric snapshot for either renderer. In particular a browser must
+// not implement its own regression, coverage rules or clipping algorithm.
+type Plot struct {
+	Elapsed float64      `json:"elapsed"`
+	Known   bool         `json:"known"`
+	Modes   []Projection `json:"modes" ts:"nonnull"`
+}
+
+type Projection struct {
+	ID        string   `json:"id"`
+	Available bool     `json:"available"`
+	Projected float64  `json:"projected"`
+	Safe      bool     `json:"safe"`
+	Segment   *Segment `json:"segment,omitempty"`
+}
+
+func ProjectPlot(window codex.Window, points []Point, now time.Time) Plot {
+	elapsed, known := Elapsed(window, now)
+	plot := Plot{Elapsed: elapsed, Known: known, Modes: make([]Projection, 0, ModeCount)}
+	for mode := WindowStart; mode < ModeCount; mode++ {
+		p := Projection{ID: [...]string{"window", "halfHour", "hour", "day", "off"}[mode], Available: Available(mode, window, points, now)}
+		if trend, ok := Project(mode, window, points, now); ok {
+			p.Projected, p.Safe = trend.Projected, trend.Projected <= 100
+			if segment, visible := trend.Segment(); visible {
+				p.Segment = &segment
+			}
+		}
+		plot.Modes = append(plot.Modes, p)
+	}
+	return plot
 }

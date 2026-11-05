@@ -10,7 +10,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 )
 
-var reportDimensions = []string{"surface", "model", "feature", "task start"}
+var reportDimensions = codex.UsageDimensions()
 
 func usageReportValueStyle(colors palette, known bool, percent float64) lipgloss.Style {
 	if !known {
@@ -38,6 +38,7 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 	var rows []codex.UsageCategory
 	total := 0.0
 	knownEmpty := false
+	var distribution codex.UsageDistribution
 	if reports == nil {
 		lines = append(lines, dim("Account breakdowns unavailable. Token history remains available."))
 	} else if m.history.mode == 7 {
@@ -53,8 +54,8 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 				i := len(r.Days) - 1 - min(m.history.offset, len(r.Days)-1)
 				day := r.Days[i]
 				total = day.Total
-				rows = codex.UsageCategories(day.Groups, dimension)
-				knownEmpty = day.Total == 0 && day.Groups[dimension] != nil
+				distribution = codex.DailyUsageDistribution(day, dimension)
+				rows, knownEmpty = distribution.Rows, distribution.KnownEmpty
 				lines = append(lines, strong(fmt.Sprintf("%s // %.2f %s // %s", day.Date, total, unit, strings.ToUpper(dimension))))
 			} else {
 				lines = append(lines, dim("No daily buckets reported in the requested 30 days."))
@@ -91,25 +92,8 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 				if !p.AccountingComplete {
 					lines = append(lines, warn("PARTIAL ACCOUNTING // totals may still change"))
 				}
-				wireDimension := dimension
-				if dimension == "feature" {
-					wireDimension = "thread_source"
-				}
-				if dimension == "task start" {
-					wireDimension = "turn_trigger"
-				}
-				groups := map[string]map[string]float64{}
-				for _, b := range p.Breakdowns {
-					if b.Dimension == wireDimension {
-						if groups[dimension] == nil {
-							groups[dimension] = map[string]float64{}
-						}
-						for _, v := range b.Rows {
-							groups[dimension][v.Key] += v.BasisPoints / 100
-						}
-					}
-				}
-				rows = codex.UsageCategories(groups, dimension)
+				distribution = codex.WindowUsageDistribution(p, dimension)
+				rows = distribution.Rows
 				lines = append(lines, dim("BY "+strings.ToUpper(dimension)+" // historical allowance, not today's limit"))
 			} else {
 				lines = append(lines, dim("No quota windows reported."))
@@ -142,10 +126,7 @@ func (m Model) renderUsageReport(width, height int, colors palette, lines []stri
 	}
 	capacity := max(height-len(lines)-1, 0)
 	start := min(m.history.rowOffset, max(len(rows)-capacity, 0))
-	peak := total
-	for _, row := range rows {
-		peak = max(peak, row.Value)
-	}
+	peak := distribution.Peak
 	for index, row := range rows[start:min(start+capacity, len(rows))] {
 		name := ansi.Truncate(row.Name, nameWidth, "")
 		name += strings.Repeat(" ", max(nameWidth-ansi.StringWidth(name), 0))

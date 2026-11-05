@@ -69,28 +69,22 @@ func projectGoal(observed *codex.SessionGoal) *goal {
 		TokenBudget: copy.TokenBudget, TokensUsed: copy.TokensUsed, TimeUsedSeconds: copy.TimeUsedSeconds, Stale: copy.Stale}
 }
 
-type sample struct {
-	At     time.Time `json:"at"`
-	Tokens int64     `json:"tokens"`
-}
+type sample = codex.UsageSample
 
 type meter struct {
 	identity meterIdentity
-	Name     string      `json:"name"`
-	Used     int         `json:"used"`
-	Duration *int64      `json:"duration"`
-	Reset    *int64      `json:"reset"`
-	Details  string      `json:"details"`
-	Trail    []zonePoint `json:"trail"`
+	Name     string          `json:"name"`
+	Used     int             `json:"used"`
+	Duration *int64          `json:"duration"`
+	Reset    *int64          `json:"reset"`
+	Details  string          `json:"details"`
+	Trail    []zonePoint     `json:"trail"`
+	Plot     quotagraph.Plot `json:"plot"`
 }
 
 // Never use presentation labels as identity or expose the source limit IDs.
-// Window is the source slot (0 primary, 1 secondary), even when names coincide.
-type meterIdentity struct {
-	limitID string
-	window  int
-	kind    codex.MeterKind
-}
+// Slot is the source window (0 primary, 1 secondary), even when names coincide.
+type meterIdentity = codex.MeterKey
 
 type zonePoint = quotagraph.Point
 
@@ -137,10 +131,10 @@ type state struct {
 	Control          bool                `json:"control"`
 	NoConfirm        bool                `json:"noConfirm,omitempty"`
 	Version          string              `json:"version"`
-	Meters           []meter             `json:"meters"`
-	Credits          []credit            `json:"credits"`
+	Meters           []meter             `json:"meters" ts:"nonnull"`
+	Credits          []credit            `json:"credits" ts:"nonnull"`
 	CreditCount      int                 `json:"creditCount"`
-	Sessions         []session           `json:"sessions"`
+	Sessions         []session           `json:"sessions" ts:"nonnull"`
 	Usage            *codex.AccountUsage `json:"usage"`
 	QuotaAt          time.Time           `json:"quotaAt"`
 	SessionsAt       time.Time           `json:"sessionsAt"`
@@ -235,24 +229,11 @@ func (s *store) quota(q codex.Snapshot, err error, now time.Time) {
 		s.account = q.AccountFingerprint
 		s.state.QuotaAt = now
 		s.state.Meters = []meter{}
-		windows := map[string]int{}
 		for _, m := range q.Meters() {
 			item := meter{Name: m.Bucket + " // " + m.Name, Used: max(0, min(100, m.Window.UsedPercent)), Duration: m.Window.WindowDurationMins, Reset: m.Window.ResetsAt, Details: m.Details}
-			item.identity = meterIdentity{limitID: m.LimitID, kind: m.Kind}
-			if m.Kind == codex.MeterQuotaWindow {
-				bucket := q.RateLimits
-				if len(q.RateLimitsByLimitID) > 0 {
-					bucket = q.RateLimitsByLimitID[m.LimitID]
-				}
-				// Meters emits primary before secondary. Preserve the secondary
-				// slot when a previously present primary disappears.
-				item.identity.window = windows[m.LimitID]
-				if bucket.Primary == nil {
-					item.identity.window++
-				}
-				windows[m.LimitID]++
-			}
+			item.identity = m.Key()
 			item.Trail = observeZone(item, previous, now, gap)
+			item.Plot = quotagraph.ProjectPlot(m.Window, item.Trail, now)
 			s.state.Meters = append(s.state.Meters, item)
 		}
 		s.state.CreditCount = 0
@@ -275,6 +256,7 @@ func (s *store) usage(h codex.AccountUsage, err error, now time.Time) {
 	s.state.UsageError = err != nil
 	if err == nil {
 		s.history = h
+		s.history.Reports = codex.ProjectUsageReports(h.Reports)
 		s.history.FetchedAt = now
 	}
 	s.reconcileUsage()
@@ -327,17 +309,10 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			before, known := s.previous[row.ID]
 			if !known || row.TotalTokens < before {
 				s.previous[row.ID] = row.TotalTokens
+				before = row.TotalTokens
 			}
 			if tick {
-				delta := int64(0)
-				if known {
-					delta = max(0, row.TotalTokens-before)
-				}
-				points := append(s.samples[row.ID], sample{At: now, Tokens: delta})
-				if len(points) > 120 {
-					points = points[len(points)-120:]
-				}
-				s.samples[row.ID] = points
+				s.samples[row.ID] = codex.CaptureUsageSample(s.samples[row.ID], row.TotalTokens, before, now, now, 120)
 				s.previous[row.ID] = row.TotalTokens
 			}
 			text := row.Context.Text
@@ -391,25 +366,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 }
 
 func sessionStatus(s codex.LiveUsageSession) string {
-	switch s.Attention {
-	case codex.SessionAttentionInput:
-		return "INPUT NEEDED"
-	case codex.SessionAttentionApproval:
-		return "APPROVAL NEEDED"
-	case codex.SessionAttentionCheck:
-		return "CHECK SESSION"
-	case codex.SessionAttentionError:
-		return codex.SessionFailureLabel(s.Context)
-	case codex.SessionAttentionComplete:
-		return "TURN COMPLETE"
-	}
-	if s.Working {
-		return "WORKING"
-	}
-	if !s.Active {
-		return "INACTIVE"
-	}
-	return "IDLE"
+	return codex.SessionStatus(s.Active, s.Working, s.Attention, s.Context)
 }
 
 func contextKind(k codex.SessionContextKind) string {

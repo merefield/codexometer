@@ -2,7 +2,7 @@
   "version": "0.27.1",
   "synthetic": true,
   "sources": {
-    "internal/ui/documentation_screenshots_test.go": "4d7f8607c62e22dac4c70fc66927a3bddc91dd2d6dd15dab2c6039c16947dc67",
+    "internal/ui/documentation_screenshots_test.go": "015943f799500586ab1d77f25f056ee22f77b5d7a7110a5101450aeef2d57878",
     "web/scripts/screenshots.mjs": "fe8f5b91a037ff833ee646f999d0bd2eb17e8d8a6bd333d944e57eb68e54f680",
     "web/package-lock.json": "d303563499dd89b42c77cf5ad10df0a2325d77148a7c344d716ae580a8525eea",
     "tools/screenshots/fonts/DejaVuSansMono.ttf": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88",

@@ -3,23 +3,22 @@
   import { date } from './state.svelte';
   let {
     used,
-    elapsed,
+    elapsed: fallbackElapsed,
     trail = [],
-    duration,
+    plot,
   }: {
     used: number;
     elapsed: number;
-    trail?: Meter['trail'];
-    duration: number | null;
+    trail?: NonNullable<Meter['trail']>;
+    plot?: Meter['plot'];
   } = $props();
-  type TrailPoint = NonNullable<Meter['trail']>[number];
   type TrendMode = 'off' | 'halfHour' | 'hour' | 'day' | 'window';
   const gradient = $props.id();
   let showObservations = $state(false);
   let showTrace = $state(true);
   let trendMode = $state<TrendMode>('window');
   const ticks = [0, 25, 50, 75, 100];
-  const trendMinutes = { off: 0, halfHour: 30, hour: 60, day: 1440, window: 0 };
+  let elapsed = $derived(plot?.known ? plot.elapsed : fallbackElapsed);
   const minimum = 0;
   const range = 100;
   let width = $state(400);
@@ -61,69 +60,19 @@
       Date.parse(continuous.at(-1)!.at) - Date.parse(continuous[0].at),
     );
   });
-  function observedPeriod(span: number): boolean {
-    if (observedMilliseconds < span || continuous.length < 2) return false;
-    const cutoff = Date.parse(continuous.at(-1)!.at) - span;
-    return (
-      continuous.filter((point) => Date.parse(point.at) >= cutoff).length >= 2
-    );
-  }
-  let availability = $derived({
-    off: true,
-    halfHour: observedPeriod(30 * 60_000),
-    hour: observedPeriod(60 * 60_000),
-    day: observedPeriod(24 * 60 * 60_000),
-    window: Number.isFinite(elapsed) && elapsed > 0 && Number.isFinite(used),
-  });
+  let availability = $derived(
+    Object.fromEntries(
+      (plot?.modes || []).map((mode) => [mode.id, mode.available]),
+    ),
+  );
   $effect(() => {
     if (trendMode !== 'window' && !availability[trendMode])
       trendMode = 'window';
   });
-  function trendPoints(mode: TrendMode): TrailPoint[] {
-    if (mode === 'off' || !availability[mode]) return [];
-    const span = trendMinutes[mode] * 60_000;
-    const cutoff = Date.parse(continuous.at(-1)!.at) - span;
-    const start = continuous.findIndex(
-      (point) => Date.parse(point.at) >= cutoff,
-    );
-    if (start < 0) return [];
-    return continuous.slice(start);
-  }
-  function regressionSlope(points: TrailPoint[]): number | null {
-    if (points.length < 2) return null;
-    const xMean =
-      points.reduce((sum, point) => sum + point.elapsed, 0) / points.length;
-    const yMean =
-      points.reduce((sum, point) => sum + point.used, 0) / points.length;
-    let covariance = 0;
-    let variance = 0;
-    for (const point of points) {
-      covariance += (point.elapsed - xMean) * (point.used - yMean);
-      variance += (point.elapsed - xMean) ** 2;
-    }
-    return variance > 0 ? Math.max(0, covariance / variance) : null;
-  }
   let trend = $derived.by(() => {
-    const slope =
-      trendMode === 'window' && availability.window
-        ? used / elapsed
-        : regressionSlope(trendPoints(trendMode));
-    if (slope === null || !duration) return null;
-    const projected = used + slope * (100 - elapsed);
-    const intercept = trendMode === 'window' ? 0 : used - slope * elapsed;
-    const graphSlope = slope;
-    let x1 = Math.max(0, elapsed - (trendMinutes[trendMode] / duration) * 100);
-    if (trendMode === 'window') x1 = 0;
-    let x2 = 100;
-    if (graphSlope !== 0) {
-      const lower = (minimum - intercept) / graphSlope;
-      const upper = (minimum + range - intercept) / graphSlope;
-      x1 = Math.max(x1, Math.min(lower, upper));
-      x2 = Math.min(100, Math.max(lower, upper));
-    }
-    if (x1 > x2) return null;
-    const y1 = intercept + graphSlope * x1;
-    const y2 = intercept + graphSlope * x2;
+    const projection = plot?.modes.find((mode) => mode.id === trendMode);
+    if (!projection?.segment) return null;
+    const { x1, y1, x2, y2 } = projection.segment;
     const pixelLength = Math.hypot(
       ((x2 - x1) / 100) * plotWidth,
       ((y2 - y1) / range) * plotHeight,
@@ -136,8 +85,8 @@
     });
     return {
       path: `M${points.join(' L')}`,
-      projected,
-      safe: projected <= 100,
+      projected: projection.projected,
+      safe: projection.safe,
     };
   });
   let observedLabel = $derived.by(() => {

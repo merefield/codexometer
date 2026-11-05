@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/statusline"
 )
 
@@ -53,14 +54,7 @@ func (m Model) monitorStatusValues() map[string]string {
 // Both the detail footer and every telemetry box use the same per-session
 // values. Rendering an unselected row must never borrow the selected session.
 func (m Model) monitorStatusValuesFor(s monitorSession) map[string]string {
-	state := monitorSessionAttentionLabel(s)
-	if state == "" {
-		if s.working {
-			state = "WORKING"
-		} else {
-			state = "IDLE"
-		}
-	}
+	state := i18n.Text(codex.SessionStatus(s.active, s.working, s.attention, s.preview))
 	if m.monitorError != "" || m.monitorState != monitorRunning {
 		state = "STALE"
 	}

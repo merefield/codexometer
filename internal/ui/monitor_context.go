@@ -13,10 +13,7 @@ import (
 )
 
 func monitorSessionAttentionLabel(s monitorSession) string {
-	if s.attention == codex.SessionAttentionError {
-		return i18n.Text(codex.SessionFailureLabel(s.preview))
-	}
-	return monitorAttentionLabel(s.attention)
+	return i18n.Text(codex.SessionAttentionLabel(s.attention, s.preview))
 }
 
 func contextTitle(c codex.SessionContext) string {

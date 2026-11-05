@@ -2,3 +2,5 @@ node_modules
 test-results
 playwright-report
 package-lock.json
+src/contracts.generated.ts
+tests/projections.generated.json

@@ -53,7 +53,7 @@ func (m Model) monitorSessionInList(s monitorSession) bool {
 // Use the existing live activity signal; a quiet fallback CHECK is not proof of
 // recent activity, even while its writer process remains open.
 func monitorSessionRecentlyActive(s monitorSession) bool {
-	return s.active && s.attention != codex.SessionAttentionCheck && s.attention != codex.SessionAttentionError
+	return codex.SessionRecentlyActive(s.active, s.attention)
 }
 
 func (m Model) monitorListSessionCount() int {
