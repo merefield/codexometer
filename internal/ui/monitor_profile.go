@@ -170,19 +170,6 @@ func (m Model) renderSessionProfile(width, height int, s monitorSession, colors 
 	return frameSizedWithActions(width, max(height-2, 1), i18n.Text("QUOTA THRESHOLD"), navigation, "", strings.Join(body, "\n"), colors.primary, colors)
 }
 
-func profileButtonsAt(buttons []monitorApprovalButton, height, x, y int) string {
-	if len(buttons) == 0 {
-		return ""
-	}
-	_, _, cy := monitorContextBodyLayout(height, buttons[len(buttons)-1].y+1)
-	for _, b := range buttons {
-		if y == cy+b.y && x >= 2+b.x && x < 2+b.x+lipgloss.Width(b.label) {
-			return b.action
-		}
-	}
-	return ""
-}
-
 func (m Model) visibleProfileButtons() []monitorApprovalButton {
 	if m.meterView != viewMonitor || m.monitorPrompt.input.Focused() {
 		return nil

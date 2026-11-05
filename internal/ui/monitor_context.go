@@ -441,20 +441,12 @@ func (m Model) monitorContextAt(x, y int) string {
 			}
 		}
 		if s, ok := m.contextDetailSession(); ok {
-			if hit := profileButtonsAt(m.profileButtons(g.contentWidth, g.meterHeight, s), g.meterHeight, x, y); hit != "" {
+			if hit := monitorButtonAt(m.profileButtons(g.contentWidth, g.meterHeight, s), g.meterHeight, x, y); hit != "" {
 				return hit
 			}
 		}
-		buttons := m.monitorApprovalButtons(g.contentWidth, g.meterHeight)
-		controlRows := 0
-		if len(buttons) > 0 {
-			controlRows = buttons[len(buttons)-1].y + 1
-		}
-		_, _, controlY := monitorContextBodyLayout(g.meterHeight, controlRows)
-		for _, b := range buttons {
-			if y == controlY+b.y && x >= b.x+2 && x < b.x+2+lipgloss.Width(b.label) {
-				return b.action
-			}
+		if hit := monitorButtonAt(m.monitorApprovalButtons(g.contentWidth, g.meterHeight), g.meterHeight, x, y); hit != "" {
+			return hit
 		}
 		if r, ok := contextActionRect(g.contentWidth, 0, monitorDismissLabel); ok && r.contains(x, y) {
 			return "close"
@@ -498,7 +490,7 @@ func (m Model) monitorContextAt(x, y int) string {
 			if m.rowContextMode(s.id) == contextSplit {
 				_, cw, _ = m.contextColumns(a.width, s)
 			}
-			if hit := profileButtonsAt(m.profileButtons(cw, heights[i], s), heights[i], x-mw-1, y-rowY); hit != "" {
+			if hit := monitorButtonAt(m.profileButtons(cw, heights[i], s), heights[i], x-mw-1, y-rowY); hit != "" {
 				return hit
 			}
 		}

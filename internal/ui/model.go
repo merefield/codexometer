@@ -2864,8 +2864,7 @@ func (m *Model) scrollMonitorRows(rows int) {
 	m.monitorScroll = min(max(m.monitorScroll+rows, 0), maximum)
 }
 
-func (m *Model) selectMonitorSession(direction int) {
-	m.clearQuotaConfirmation()
+func (m *Model) monitorListSelection() ([]string, int) {
 	visible := make([]string, 0, len(m.monitorSessionData))
 	selected := -1
 	for _, session := range m.monitorSessionData {
@@ -2877,6 +2876,12 @@ func (m *Model) selectMonitorSession(direction int) {
 		}
 		visible = append(visible, session.id)
 	}
+	return visible, selected
+}
+
+func (m *Model) selectMonitorSession(direction int) {
+	m.clearQuotaConfirmation()
+	visible, selected := m.monitorListSelection()
 	if len(visible) == 0 {
 		m.monitorSelectedID = ""
 		m.focusMonitorSummary()
@@ -2918,17 +2923,7 @@ func (m *Model) selectMonitorSession(direction int) {
 }
 
 func (m *Model) dismissSelectedMonitorSession() {
-	visible := make([]string, 0, len(m.monitorSessionData))
-	selected := -1
-	for _, session := range m.monitorSessionData {
-		if !m.monitorSessionInList(session) {
-			continue
-		}
-		if session.id == m.monitorSelectedID {
-			selected = len(visible)
-		}
-		visible = append(visible, session.id)
-	}
+	visible, selected := m.monitorListSelection()
 	if selected < 0 {
 		m.monitorSelectedID = ""
 		return

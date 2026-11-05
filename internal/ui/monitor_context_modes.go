@@ -336,14 +336,8 @@ func (m Model) expandedContextAt(x, y int) string {
 					}
 				}
 			}
-			buttons := m.expandedApprovalButtons(cw, heights[i], s)
-			if len(buttons) > 0 {
-				_, _, cy := monitorContextBodyLayout(heights[i], buttons[len(buttons)-1].y+1)
-				for _, b := range buttons {
-					if y == cy+b.y && x >= 2+b.x && x < 2+b.x+lipgloss.Width(b.label) {
-						return b.action
-					}
-				}
+			if hit := monitorButtonAt(m.expandedApprovalButtons(cw, heights[i], s), heights[i], x, y); hit != "" {
+				return hit
 			}
 			return ""
 		}

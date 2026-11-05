@@ -55,3 +55,28 @@ func TestMonitorButtonRowsKeepApprovalAndProfileRenderers(t *testing.T) {
 		}
 	}
 }
+
+func TestMonitorButtonHitTestingUsesVisibleLabelsOnly(t *testing.T) {
+	if got := monitorButtonAt(nil, 8, 2, 4); got != "" {
+		t.Fatalf("empty controls exposed %q", got)
+	}
+	buttons := []monitorApprovalButton{
+		{action: "first", label: "\x1b[31m界\x1b[0m", x: 0, y: 0, slot: 6},
+		{action: "second", label: "B", x: 8, y: 0, slot: 9},
+		{action: "third", label: "YES", x: 0, y: 2, slot: 10},
+	}
+	for _, layout := range []struct{ height, controlY int }{{8, 4}, {30, 26}} {
+		for _, tc := range []struct {
+			x, row int
+			want   string
+		}{
+			{1, 0, ""}, {2, 0, "first"}, {3, 0, "first"}, {4, 0, ""}, {7, 0, ""},
+			{9, 0, ""}, {10, 0, "second"}, {11, 0, ""},
+			{2, -1, ""}, {2, 1, ""}, {2, 2, "third"}, {4, 2, "third"}, {5, 2, ""}, {2, 3, ""},
+		} {
+			if got := monitorButtonAt(buttons, layout.height, tc.x, layout.controlY+tc.row); got != tc.want {
+				t.Fatalf("height=%d at %d,%d: got %q, want %q", layout.height, tc.x, layout.controlY+tc.row, got, tc.want)
+			}
+		}
+	}
+}

@@ -247,6 +247,21 @@ func renderMonitorButtonRows(buttons []monitorApprovalButton, colors palette, re
 	return strings.Join(rows, "\n")
 }
 
+// monitorButtonAt uses frame-local coordinates and the same positioned labels
+// as rendering. Reserved confirmation-slot padding is deliberately not active.
+func monitorButtonAt(buttons []monitorApprovalButton, height, x, y int) string {
+	if len(buttons) == 0 {
+		return ""
+	}
+	_, _, controlY := monitorContextBodyLayout(height, buttons[len(buttons)-1].y+1)
+	for _, b := range buttons {
+		if y == controlY+b.y && x >= 2+b.x && x < 2+b.x+lipgloss.Width(b.label) {
+			return b.action
+		}
+	}
+	return ""
+}
+
 // Decision controls keep a solid fill even before hover, so they remain
 // discoverable independently of the terminal profile's default background.
 func (m Model) renderMonitorApprovalAction(action, label string, colors palette) string {
