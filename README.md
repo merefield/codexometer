@@ -3802,8 +3802,11 @@ npm --prefix tools/duplication run check
 ```
 
 The first measurement establishes the benchmark without arbitrary limits.
-Subsequent checks compare the actual PR base and the versioned baseline; a
-successful main build automatically commits tighter limits. CI artifacts contain
+Subsequent checks use the policy and baseline from the PR's main-branch base
+commit, with a fresh measurement of that same base. PRs must not edit the
+inherited baseline; successful main CI alone commits tighter limits. Ordinary
+application PRs use one authoritative comparison; tooling or policy changes get
+targeted compatibility/migration validation. CI artifacts contain
 metric deltas, both source locations and fragments for actionable refactoring.
 See [the duplication tooling guide](tools/duplication/README.md) for baseline
 bootstrap, trusted policy, report formats and required branch-rule setup.

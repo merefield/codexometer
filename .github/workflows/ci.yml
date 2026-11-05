@@ -28,7 +28,7 @@ jobs:
       - name: Checkout trusted comparison base
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
           path: base
           fetch-depth: 0
           persist-credentials: false
@@ -42,10 +42,12 @@ jobs:
           npm ci --prefix candidate/tools/duplication --ignore-scripts --no-audit --no-fund
           npm --prefix candidate/tools/duplication test
       - name: Measure and compare production duplication
+        id: duplication-policy
         shell: bash
         run: |
           policy_dir="$GITHUB_WORKSPACE/base/tools/duplication"
           if [[ -f "$policy_dir/policy.json" ]]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
             npm ci --prefix "$policy_dir" --ignore-scripts --no-audit --no-fund
           else
             # One-time bootstrap: the base branch has no duplication policy yet.
@@ -53,6 +55,12 @@ jobs:
           fi
           node "$policy_dir/check.mjs" --root "$GITHUB_WORKSPACE/candidate" \
             --base "$GITHUB_WORKSPACE/base" --output "$RUNNER_TEMP/duplication-report"
+      - name: Validate proposed checker and policy against main
+        if: steps.duplication-policy.outputs.trusted == 'true'
+        run: |
+          node "$GITHUB_WORKSPACE/base/tools/duplication/verify.mjs" \
+            --root "$GITHUB_WORKSPACE/candidate" --base "$GITHUB_WORKSPACE/base" \
+            --output "$RUNNER_TEMP/duplication-report"
       - name: Preserve actionable duplication reports
         if: always()
         uses: actions/upload-artifact@v7

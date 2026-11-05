@@ -75,14 +75,17 @@ rules, matching settings and thresholds.
    of those initial counts, provided the scanner and tooling tests succeed.
 2. After all ordinary CI jobs pass on `main`, **Update duplication baseline**
    measures again and commits the initial numerical baseline with provenance.
-3. Later PRs use the trusted base branch's checker and policy, not a candidate
-   version that could loosen its own gate. They compare against both the
-   committed ceiling and fresh measurements of the actual base, taking the
-   lower bound for each metric. A stale baseline therefore cannot hide a
-   regression. PRs cannot raise established limits or reset to bootstrap.
+3. Later PRs use the checker, policy and baseline from their main-branch base
+   commit, not the PR's copy. They compare against both that committed ceiling
+   and fresh measurements of the same base, taking the lower bound for each
+   metric. A delayed baseline update therefore cannot hide a regression. The
+   inherited baseline file must remain byte-for-byte unchanged in PRs; only
+   successful main CI writes it. Ordinary application PRs use this one
+   authoritative comparison, not a duplicate candidate run.
 4. After another successful main build, the main-only writer commits smaller
    limits if any improved. Equality leaves the baseline and provenance unchanged.
-   Missing, corrupt or incompatible established baselines fail closed.
+   Missing, corrupt or incompatible established baselines fail closed unless
+   an explicit policy migration has passed the old/new checks below.
 
 PR and fork jobs have read-only repository permissions. Only the main-only
 writer receives `contents: write`, waits for Go/web/duplication success, and
@@ -93,15 +96,51 @@ start another CI run.
 Repository administrators should require **Duplication ratchet** in branch
 rules and require an up-to-date branch (or equivalent merge-queue validation)
 to prevent merges that bypass the check. Adding a workflow alone does not enable
-branch protection. Actions must be allowed to write repository contents for
-automatic baseline commits; if branch rules prohibit that, use the measured
-`baseline.json` in the writer's artifact in a reviewed maintenance PR. Do not
-grant broad protection bypass just for this tool.
+branch protection. The PR comparison is pinned to its base SHA, not a moving
+`main` fetched halfway through the job. Push CI compares with the pre-push main
+commit. Actions and repository rules must permit the main-only writer's baseline
+commit; otherwise that job fails and preserves its measured artifact for
+diagnosis. Fix the repository configuration before rerunning it; do not edit a
+PR's baseline or grant broad protection bypass just to make the check green.
 
-Scanner/policy upgrades are explicit maintenance changes: an existing policy
-hash mismatch fails, rather than silently rebaselining under different rules.
-Review old/new measurements before deliberately migrating a baseline and policy
-together. Do not raise limits to make an ordinary feature PR green.
+## Checker and policy maintenance
+
+When maintained duplication tooling changes (runtime `.mjs`, policy, package or
+lock files), the trusted verifier also runs the candidate checker against the
+same source/base, using **main's scanner, policy and baseline**. Its metrics,
+limits and provenance must match the authoritative result. It also verifies
+that the candidate's installed scanner matches its declared version. This
+targeted compatibility check catches a broken/no-op/mismeasuring proposed
+checker before it becomes main's checker. Documentation/test-only changes do
+not trigger additional production scans.
+
+For an intentional scanner-version or policy change:
+
+1. Create a worktree at the exact main comparison SHA as shown above. Update the
+   candidate policy, package and lock as needed, but **do not edit the baseline**.
+2. Record an explicit migration with the exact old policy, new policy hash and a
+   meaningful reason:
+
+   ```sh
+   node tools/duplication/verify.mjs --prepare-migration \
+     --root "$PWD" --base /tmp/codexometer-duplication-base \
+     --reason "Explain the scanner or measurement-rule change"
+   ```
+
+3. Commit the resulting `tools/duplication/migration.json` with the tooling
+   changes. CI still gates production under main's **old** rules, verifies the
+   candidate checker under those rules, then separately compares head and base
+   under the **proposed new** rules/scanner. Both comparisons must pass. Preserve
+   compatibility with the previous checker CLI for this validation.
+4. Review both measurements in the summary/artifact. The old baseline remains
+   untouched throughout the PR. After merge and successful main CI, the writer
+   migrates it to measurements under the new policy. The migration record may
+   remain as provenance; it is ignored once the baseline matches the policy.
+
+A missing/mismatched migration record fails; it cannot silently reset an
+ordinary feature PR's ceiling. Do not raise limits to make an application
+change green. Any change to the CI machinery itself still needs code review;
+the duplication check is not a substitute for protecting workflow changes.
 
 ## Actionable output for humans and Codex
 
@@ -122,6 +161,9 @@ not a duplicate table. Local checks print the summary directly.
 - `*/<scan>/inputs.json` and `config.json`: exact source manifests and scanner
   settings, so exclusions and scope are inspectable.
 - `baseline.json`: the measured candidate, not permission to loosen a ceiling.
+- `verification.json`: whether targeted checker validation was needed, and which
+  tooling files changed. Tooling-maintenance PRs additionally include
+  `candidate-validation/` and, for policy changes, `proposed-policy/` reports.
 
 Paths in `result.json` resolve relative to the artifact root. Source locations
 inside clone pairs resolve relative to the repository root. Up to 20 GitHub error

@@ -48,6 +48,42 @@ export function validateBaseline(baseline, policy) {
   return baseline;
 }
 
+// A policy migration carries the exact old policy, not a replacement ceiling.
+// The trusted comparison job also checks this against the actual main base.
+export function validateMigration(migration, baseline, policy) {
+  if (
+    migration?.schemaVersion !== 1 ||
+    !migration.fromPolicy ||
+    migration.toPolicyHash !== policyHash(policy) ||
+    policyHash(migration.fromPolicy) === policyHash(policy) ||
+    typeof migration.reason !== "string" ||
+    !migration.reason.trim()
+  ) {
+    throw new Error(
+      "Policy changes require an explicit migration.json with the old policy, new policy hash and reason",
+    );
+  }
+  validateBaseline(baseline, migration.fromPolicy);
+  return migration;
+}
+
+export function comparisonMetrics(result) {
+  return {
+    toolVersion: result.toolVersion,
+    policyHash: result.policyHash,
+    sourceCommit: result.sourceCommit,
+    baseCommit: result.baseCommit,
+    bootstrap: result.bootstrap,
+    scans: result.scans.map(({ id, metrics, limits, regressions }) => ({
+      id,
+      metrics,
+      limits,
+      regressions,
+    })),
+    tests: result.tests.map(({ id, metrics }) => ({ id, metrics })),
+  };
+}
+
 export function limits(...ceilings) {
   return Object.fromEntries(
     metricNames.map((metric) => {

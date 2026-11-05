@@ -10,8 +10,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { markdown, run as check, sourceFiles } from "./check.mjs";
+import { changedTooling, prepareMigration, verify } from "./verify.mjs";
 import {
   commandData,
   commandProperty,
@@ -21,6 +23,7 @@ import {
   regressions,
   relativeClone,
   validateBaseline,
+  validateMigration,
 } from "./metrics.mjs";
 
 const policy = JSON.parse(
@@ -112,6 +115,26 @@ test("missing, corrupt and incompatible baselines fail rather than rebootstrap",
     policyHash(policy),
     policyHash({ ...policy, maxBytes: policy.maxBytes + 1 }),
   );
+});
+
+test("policy migrations preserve the old main ceiling and require exact provenance", () => {
+  const next = { ...policy, toolVersion: "5.4.3" };
+  const migration = {
+    schemaVersion: 1,
+    fromPolicy: policy,
+    toPolicyHash: policyHash(next),
+    reason: "Upgrade the pinned scanner",
+  };
+  assert.equal(validateMigration(migration, baseline(), next), migration);
+  for (const invalid of [
+    null,
+    { ...migration, reason: "  " },
+    { ...migration, toPolicyHash: "wrong" },
+    { ...migration, fromPolicy: next },
+    { ...migration, fromPolicy: { ...policy, maxBytes: 1 } },
+  ]) {
+    assert.throws(() => validateMigration(invalid, baseline(), next));
+  }
 });
 
 test("reports retain actionable paths, ranges and exact source payload", () => {
@@ -299,6 +322,13 @@ func score(values []int) int {
     JSON.stringify(policy),
   );
   const output = resolve(directory, "regression");
+  for (const repo of [base, root]) {
+    mkdirSync(resolve(repo, "tools/duplication"), { recursive: true });
+    writeFileSync(
+      resolve(repo, "tools/duplication/baseline.json"),
+      JSON.stringify(pending),
+    );
+  }
   assert.throws(
     () => run({ root, base, baselinePath: authority, output }),
     /Duplication regressed/,
@@ -373,6 +403,10 @@ func score(values []int) int {
 
   const established = baseline();
   writeFileSync(authority, JSON.stringify(established));
+  writeFileSync(
+    resolve(base, "tools/duplication/baseline.json"),
+    JSON.stringify(established),
+  );
   mkdirSync(resolve(root, "tools/duplication"), { recursive: true });
   writeFileSync(
     resolve(root, "tools/duplication/baseline.json"),
@@ -384,8 +418,9 @@ func score(values []int) int {
         root,
         baselinePath: authority,
         output: resolve(directory, "reset"),
+        base,
       }),
-    /cannot be reset/,
+    /owned by main/,
   );
   writeFileSync(
     resolve(root, "tools/duplication/baseline.json"),
@@ -400,8 +435,9 @@ func score(values []int) int {
         root,
         baselinePath: authority,
         output: resolve(directory, "raised"),
+        base,
       }),
-    /limits cannot be raised/,
+    /owned by main/,
   );
 
   // Exercise the actual main-only write path, not just the pure ratchet helper.
@@ -438,4 +474,123 @@ func score(values []int) int {
       (scan) => scan.clones === 0,
     ),
   );
+
+  // Real pre-merge validation: ordinary PRs do not rescan. Changes to the
+  // checker must agree with main, and policy upgrades pass both rule sets.
+  writeFileSync(resolve(root, "copy1.go"), code);
+  writeFileSync(authority, saved);
+  const actualTools = fileURLToPath(new URL(".", import.meta.url));
+  for (const repo of [base, root]) {
+    const tools = resolve(repo, "tools/duplication");
+    for (const file of [
+      "check.mjs",
+      "metrics.mjs",
+      "verify.mjs",
+      "policy.json",
+    ])
+      writeFileSync(
+        resolve(tools, file),
+        readFileSync(resolve(actualTools, file)),
+      );
+    writeFileSync(resolve(tools, "baseline.json"), saved);
+    symlinkSync(
+      resolve(actualTools, "node_modules"),
+      resolve(tools, "node_modules"),
+      "dir",
+    );
+    execFileSync("git", ["-C", repo, "add", "tools"]);
+  }
+  const trustedOutput = resolve(directory, "trusted");
+  const trusted = run({
+    root,
+    base,
+    baselinePath: authority,
+    output: trustedOutput,
+  });
+  const verifyOptions = {
+    root,
+    base,
+    output: trustedOutput,
+    authority: resolve(base, "tools/duplication"),
+    reportToGitHub: false,
+  };
+  assert.deepEqual(changedTooling(root, base), []);
+  verify(verifyOptions);
+  assert.equal(
+    JSON.parse(
+      readFileSync(resolve(trustedOutput, "verification.json"), "utf8"),
+    ).status,
+    "not-needed",
+  );
+
+  const checkerPath = resolve(root, "tools/duplication/check.mjs");
+  const honest = readFileSync(checkerPath, "utf8");
+  writeFileSync(
+    checkerPath,
+    honest + "\n// An implementation change needs validation.\n",
+  );
+  verify(verifyOptions);
+  assert.equal(
+    JSON.parse(
+      readFileSync(resolve(trustedOutput, "verification.json"), "utf8"),
+    ).status,
+    "passed",
+  );
+  writeFileSync(checkerPath, "process.exit(0);\n");
+  assert.throws(() => verify(verifyOptions), /did not produce a usable report/);
+  writeFileSync(
+    checkerPath,
+    honest.replace(
+      "metrics: metrics(report),",
+      "metrics: { clones: 0, duplicatedLines: 0, duplicatedTokens: 0 },",
+    ),
+  );
+  assert.throws(
+    () => verify(verifyOptions),
+    /disagrees with the trusted checker/,
+  );
+  writeFileSync(checkerPath, honest);
+
+  const nextPolicy = { ...policy, jscpd: { ...policy.jscpd, maxGapLines: 1 } };
+  const candidatePolicy = resolve(root, "tools/duplication/policy.json");
+  writeFileSync(candidatePolicy, JSON.stringify(nextPolicy));
+  assert.throws(() => verify(verifyOptions), /migration.json/);
+  prepareMigration({
+    root,
+    base,
+    reason: "Allow a one-line gap in clone matching",
+  });
+  const untouched = readFileSync(
+    resolve(root, "tools/duplication/baseline.json"),
+    "utf8",
+  );
+  verify(verifyOptions);
+  const proposed = JSON.parse(
+    readFileSync(resolve(trustedOutput, "proposed-policy/result.json"), "utf8"),
+  );
+  assert.equal(proposed.policyHash, policyHash(nextPolicy));
+  assert.equal(proposed.migration.fromPolicyHash, trusted.policyHash);
+  assert.ok(
+    proposed.scans.every(
+      (scan) => scan.regressions.length === 0 && scan.limits.clones !== null,
+    ),
+  );
+  assert.equal(
+    readFileSync(resolve(root, "tools/duplication/baseline.json"), "utf8"),
+    untouched,
+    "PR verification must not edit main-owned baseline",
+  );
+
+  // A successful main writer can then migrate the inherited baseline. No PR
+  // baseline edit or permanently failing hash mismatch is needed.
+  run({
+    root,
+    policy: candidatePolicy,
+    baselinePath: authority,
+    output: resolve(directory, "migrated-main"),
+    "update-baseline": true,
+  });
+  const migrated = JSON.parse(readFileSync(authority, "utf8"));
+  assert.equal(migrated.policyHash, policyHash(nextPolicy));
+  assert.equal(migrated.status, "established");
 });

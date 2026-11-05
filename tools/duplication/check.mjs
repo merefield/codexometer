@@ -21,6 +21,7 @@ import {
   regressions,
   relativeClone,
   validateBaseline,
+  validateMigration,
 } from "./metrics.mjs";
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -66,7 +67,12 @@ function scan(
   cohort,
   spec,
   artifactRoot,
-  { group = cohort, nativeBaseline, seed = false } = {},
+  {
+    group = cohort,
+    nativeBaseline,
+    seed = false,
+    scanner = resolve(directory, "node_modules/jscpd/run-jscpd.js"),
+  } = {},
 ) {
   const destination = resolve(artifactRoot, group, spec.id);
   mkdirSync(destination, { recursive: true });
@@ -79,7 +85,7 @@ function scan(
     files,
   });
   const args = [
-    resolve(directory, "node_modules/jscpd/run-jscpd.js"),
+    scanner,
     "--config",
     config,
     "--workers",
@@ -167,7 +173,9 @@ export function markdown(result) {
       .replaceAll("`", "&#96;")
       .replaceAll("\n", " ");
   return [
-    "## Duplication ratchet",
+    result.migration
+      ? "## Duplication ratchet — proposed policy"
+      : "## Duplication ratchet",
     result.bootstrap
       ? "Initial measurement: no historical limit applied. The first successful main build persists the baseline."
       : "Production must not increase clone counts, duplicated lines or duplicated tokens in any scan.",
@@ -210,37 +218,47 @@ export function run(options = {}) {
   const base = options.base ? realpathSync(resolve(options.base)) : null;
   const output = resolve(options.output || resolve(directory, "reports"));
   mkdirSync(output, { recursive: true });
-  const policy = read(resolve(directory, "policy.json"));
+  const policy = read(
+    resolve(options.policy || resolve(directory, "policy.json")),
+  );
   const baselinePath =
-    options.baselinePath || resolve(directory, "baseline.json");
-  const baseline = validateBaseline(read(baselinePath), policy);
-  const version = execFileSync(
-    process.execPath,
-    [resolve(directory, "node_modules/jscpd/run-jscpd.js"), "--version"],
-    { encoding: "utf8" },
-  ).trim();
+    options.baseline ||
+    options.baselinePath ||
+    resolve(directory, "baseline.json");
+  const baseline = read(baselinePath);
+  const migration =
+    baseline.status === "established" &&
+    baseline.policyHash !== policyHash(policy)
+      ? validateMigration(
+          read(resolve(root, "tools/duplication/migration.json")),
+          baseline,
+          policy,
+        )
+      : null;
+  if (!migration) validateBaseline(baseline, policy);
+  const scanner = resolve(
+    options.scanner || resolve(directory, "node_modules/jscpd/run-jscpd.js"),
+  );
+  const version = execFileSync(process.execPath, [scanner, "--version"], {
+    encoding: "utf8",
+  }).trim();
   if (version !== `jscpd ${policy.toolVersion}`)
     throw new Error(`Unexpected scanner version: ${version}`);
   const baseHasPolicy =
     base && existsSync(resolve(base, "tools/duplication/policy.json"));
   const bootstrap = baseline.status === "pending-bootstrap" && !baseHasPolicy;
-  const candidateBaselinePath = resolve(
-    root,
-    "tools/duplication/baseline.json",
-  );
-  let candidate = null;
-  if (baseline.status === "established") {
-    candidate = validateBaseline(read(candidateBaselinePath), policy);
-    if (candidate.status !== "established")
-      throw new Error(
-        "An established baseline cannot be reset to bootstrap in a PR",
-      );
-    for (const spec of policy.scans)
-      if (regressions(candidate.scans[spec.id], baseline.scans[spec.id]).length)
-        throw new Error(
-          "Baseline limits cannot be raised in a PR; rebase stale baselines",
-        );
+  if (
+    baseHasPolicy &&
+    !readFileSync(resolve(root, "tools/duplication/baseline.json")).equals(
+      readFileSync(resolve(base, "tools/duplication/baseline.json")),
+    )
+  ) {
+    throw new Error("The baseline is owned by main CI; PRs must not edit it");
   }
+  if (migration && !base && !options["update-baseline"])
+    throw new Error(
+      "A policy migration requires an actual main-base comparison",
+    );
   const sourceCommit = git(root, "rev-parse", "HEAD");
   const result = {
     schemaVersion: 1,
@@ -249,6 +267,13 @@ export function run(options = {}) {
     sourceCommit,
     baseCommit: base ? git(base, "rev-parse", "HEAD") : null,
     bootstrap,
+    migration: migration
+      ? {
+          fromPolicyHash: policyHash(migration.fromPolicy),
+          toPolicyHash: policyHash(policy),
+          reason: migration.reason,
+        }
+      : null,
     scans: [],
     tests: [],
   };
@@ -259,33 +284,32 @@ export function run(options = {}) {
           group: "base",
           nativeBaseline: native,
           seed: true,
+          scanner,
         })
       : null;
     const current = scan(root, policy, "production", spec, output, {
       nativeBaseline: base ? native : null,
+      scanner,
     });
     const ceiling =
-      baseline.status === "established" ? baseline.scans[spec.id] : null;
+      baseline.status === "established" && !migration
+        ? baseline.scans[spec.id]
+        : null;
     const baseMetrics = bootstrap ? null : previous?.metrics;
     result.scans.push({
       id: spec.id,
       ...current,
       ceiling,
       baseMetrics,
-      limits: limits(ceiling, baseMetrics, candidate?.scans[spec.id]),
-      regressions: regressions(
-        current.metrics,
-        ceiling,
-        baseMetrics,
-        candidate?.scans[spec.id],
-      ),
+      limits: limits(ceiling, baseMetrics),
+      regressions: regressions(current.metrics, ceiling, baseMetrics),
     });
   }
   for (const spec of policy.scans.filter((spec) => spec.minTokens === 50)) {
     if (sourceFiles(root, policy, "tests").length)
       result.tests.push({
         id: spec.id,
-        ...scan(root, policy, "tests", spec, output),
+        ...scan(root, policy, "tests", spec, output, { scanner }),
       });
   }
   const observed = Object.fromEntries(
@@ -303,10 +327,14 @@ export function run(options = {}) {
   });
   const summary = markdown(result);
   writeFileSync(resolve(output, "summary.md"), summary);
-  if (options.reportToGitHub !== false && process.env.GITHUB_STEP_SUMMARY)
+  if (
+    !options["no-summary"] &&
+    options.reportToGitHub !== false &&
+    process.env.GITHUB_STEP_SUMMARY
+  )
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   process.stdout.write(
-    process.env.GITHUB_ACTIONS
+    process.env.GITHUB_ACTIONS || options["no-summary"]
       ? `Duplication check ${failed ? "failed" : "passed"}; see the job summary and duplication-report artifact.\n`
       : summary + "\n",
   );
@@ -336,7 +364,12 @@ export function run(options = {}) {
   if (options["update-baseline"]) {
     if (base)
       throw new Error("Baseline updates are not allowed during PR comparisons");
-    const next = ratchet(baseline, observed, sourceCommit, policy);
+    const next = ratchet(
+      migration ? { schemaVersion: 1, status: "pending-bootstrap" } : baseline,
+      observed,
+      sourceCommit,
+      policy,
+    );
     if (next) write(baselinePath, next);
   }
   return result;
@@ -352,6 +385,10 @@ if (
         root: { type: "string" },
         base: { type: "string" },
         output: { type: "string" },
+        policy: { type: "string" },
+        baseline: { type: "string" },
+        scanner: { type: "string" },
+        "no-summary": { type: "boolean" },
         "update-baseline": { type: "boolean" },
       },
     });
