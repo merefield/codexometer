@@ -323,6 +323,53 @@ func score(values []int) int {
     clone.fragment.includes("score") || clone.fragment.includes("total"),
   );
   assert.ok(readFileSync(resolve(output, failed.report), "utf8"));
+  assert.match(failed.report, /^production\/[^/]+\/jscpd-report\.json$/);
+
+  // jscpd 5.4.2 annotates known clones; --baseline does not filter totals.
+  // Keep an existing clone in the base and compare full, unbaselined totals.
+  writeFileSync(resolve(base, "copy1.go"), code);
+  execFileSync("git", ["-C", base, "add", "copy1.go"]);
+  const unchanged = run({
+    root,
+    base,
+    baselinePath: authority,
+    output: resolve(directory, "known"),
+  });
+  for (const scan of unchanged.scans) {
+    const complete = initial.scans.find((previous) => previous.id === scan.id);
+    assert.deepEqual(scan.metrics, complete.metrics);
+    assert.equal(
+      scan.metrics.clones,
+      1,
+      "known clones must remain in absolute totals",
+    );
+    assert.equal(scan.clones.length, complete.clones.length);
+    assert.ok(scan.clones.every((clone) => clone.isNew === false));
+    const report = JSON.parse(
+      readFileSync(resolve(directory, "known", scan.report), "utf8"),
+    );
+    assert.deepEqual(metrics(report), complete.metrics);
+    assert.equal(report.duplicates.length, 1);
+  }
+  // A further clone is still detected despite the pre-existing baseline match.
+  writeFileSync(resolve(root, "copy2.go"), code);
+  execFileSync("git", ["-C", root, "add", "copy2.go"]);
+  const addedOutput = resolve(directory, "known-plus-new");
+  assert.throws(
+    () => run({ root, base, baselinePath: authority, output: addedOutput }),
+    /Duplication regressed/,
+  );
+  const added = JSON.parse(
+    readFileSync(resolve(addedOutput, "result.json"), "utf8"),
+  );
+  assert.ok(
+    added.scans.every(
+      (scan) =>
+        scan.metrics.clones > 1 && scan.clones.some((clone) => clone.isNew),
+    ),
+  );
+  // Restore the two-copy fixture without deleting a tracked file.
+  writeFileSync(resolve(root, "copy2.go"), "package fixture\n");
 
   const established = baseline();
   writeFileSync(authority, JSON.stringify(established));

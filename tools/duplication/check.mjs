@@ -60,8 +60,15 @@ export function sourceFiles(root, policy, cohort) {
   });
 }
 
-function scan(root, policy, cohort, spec, output, nativeBaseline, seed) {
-  const destination = resolve(output, spec.id);
+function scan(
+  root,
+  policy,
+  cohort,
+  spec,
+  artifactRoot,
+  { group = cohort, nativeBaseline, seed = false } = {},
+) {
+  const destination = resolve(artifactRoot, group, spec.id);
   mkdirSync(destination, { recursive: true });
   const files = sourceFiles(root, policy, cohort);
   if (!files.length) throw new Error(`No ${cohort} sources selected`);
@@ -108,7 +115,7 @@ function scan(root, policy, cohort, spec, output, nativeBaseline, seed) {
   write(path, report);
   return {
     metrics: metrics(report),
-    report: relative(dirname(output), path).replaceAll("\\", "/"),
+    report: relative(artifactRoot, path).replaceAll("\\", "/"),
     clones: report.duplicates,
   };
 }
@@ -248,25 +255,15 @@ export function run(options = {}) {
   for (const spec of policy.scans) {
     const native = resolve(output, `base-${spec.id}.json`);
     const previous = base
-      ? scan(
-          base,
-          policy,
-          "production",
-          spec,
-          resolve(output, "base"),
-          native,
-          true,
-        )
+      ? scan(base, policy, "production", spec, output, {
+          group: "base",
+          nativeBaseline: native,
+          seed: true,
+        })
       : null;
-    const current = scan(
-      root,
-      policy,
-      "production",
-      spec,
-      resolve(output, "production"),
-      base ? native : null,
-      false,
-    );
+    const current = scan(root, policy, "production", spec, output, {
+      nativeBaseline: base ? native : null,
+    });
     const ceiling =
       baseline.status === "established" ? baseline.scans[spec.id] : null;
     const baseMetrics = bootstrap ? null : previous?.metrics;
@@ -288,15 +285,7 @@ export function run(options = {}) {
     if (sourceFiles(root, policy, "tests").length)
       result.tests.push({
         id: spec.id,
-        ...scan(
-          root,
-          policy,
-          "tests",
-          spec,
-          resolve(output, "tests"),
-          null,
-          false,
-        ),
+        ...scan(root, policy, "tests", spec, output),
       });
   }
   const observed = Object.fromEntries(
