@@ -288,7 +288,7 @@ func normalizeDailyReport(wire dailyUsageWire, from, through string, now time.Ti
 			d.Groups[dimension][reportKey(key)] += value
 		}
 		if complete {
-			for _, dimension := range []string{"model", "surface", "feature", "task start"} {
+			for _, dimension := range UsageDimensions() {
 				d.Groups[dimension] = map[string]float64{}
 			}
 			for _, row := range day.Attribution {

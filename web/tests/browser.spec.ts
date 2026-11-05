@@ -2921,6 +2921,22 @@ test('usage breakdowns and allowance history preserve units, unknowns and read-o
   await expect(
     page.locator('.report-row').nth(1).locator('.report-fill'),
   ).toHaveCSS('background-image', /radial-gradient/);
+  expect(
+    await page
+      .getByLabel('Usage grouping')
+      .locator('option')
+      .evaluateAll((options) =>
+        options.map((option) => ({
+          value: (option as HTMLOptionElement).value,
+          label: option.textContent,
+        })),
+      ),
+  ).toEqual([
+    { value: 'surface', label: 'Surface' },
+    { value: 'model', label: 'Model' },
+    { value: 'feature', label: 'Feature' },
+    { value: 'task start', label: 'Task start' },
+  ]);
   await expect(page.locator('.report-head')).toHaveText('RELATIVE USAGE');
   await page.getByRole('button', { name: '← OLDER', exact: true }).click();
   await expect(page.locator('.report-row')).toContainText('older-model');
@@ -3001,42 +3017,58 @@ test('fractional Usage bars share the Go scale in read-only mode', async ({
   await expect(page.locator('.report-value').first()).toHaveText('0.05');
 });
 
-test('signed Usage corrections retain negative values without a filled bar', async ({
-  page,
-  pairingURL,
-}) => {
-  await mockStream(page, {
-    meters: [],
-    sessions: [],
-    quotaAt: '',
-    sessionsAt: '',
-    usageAt: '',
-    quotaError: false,
-    sessionsError: false,
-    usageError: false,
-    usage: {
-      summary: {},
-      dailyUsageBuckets: null,
-      reports: projections.correction,
-    },
-  });
-  await page.goto(pairingURL);
-  await page.getByRole('link', { name: 'USAGE', exact: true }).click();
-  await page
-    .getByRole('navigation', { name: 'Usage view' })
-    .getByRole('button', { name: 'Windows', exact: true })
-    .click();
-  await expect(
-    page.getByRole('heading', { name: '10080 MIN // pro // USED -0.25%' }),
-  ).toBeVisible();
-  await expect(page.locator('.report-row')).toHaveCount(1);
-  await expect(page.locator('.report-value')).toHaveText('-0.25%');
-  expect(
+for (const { name, report, value, width, near } of [
+  {
+    name: 'signed Usage corrections retain negative values without a filled bar',
+    report: 'correction',
+    value: '-0.25%',
+    width: '0%',
+    near: false,
+  },
+  {
+    name: 'historical Usage warnings render the Go classification at eighty percent',
+    report: 'warning',
+    value: '80%',
+    width: '100%',
+    near: true,
+  },
+]) {
+  test(name, async ({ page, pairingURL }) => {
+    await mockStream(page, {
+      meters: [],
+      sessions: [],
+      quotaAt: '',
+      sessionsAt: '',
+      usageAt: '',
+      quotaError: false,
+      sessionsError: false,
+      usageError: false,
+      usage: {
+        summary: {},
+        dailyUsageBuckets: null,
+        reports: projections[report],
+      },
+    });
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'USAGE', exact: true }).click();
     await page
-      .locator('.report-fill')
-      .evaluate((node) => (node as HTMLElement).style.width),
-  ).toBe('0%');
-});
+      .getByRole('navigation', { name: 'Usage view' })
+      .getByRole('button', { name: 'Windows', exact: true })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: `10080 MIN // pro // USED ${value}` }),
+    ).toBeVisible();
+    await expect(page.locator('.report-row')).toHaveCount(1);
+    await expect(page.locator('.report-value')).toHaveText(value);
+    await expect(page.locator('.quota-near')).toHaveCount(near ? 1 : 0);
+    await expect(page.locator('.quota-full')).toHaveCount(0);
+    expect(
+      await page
+        .locator('.report-fill')
+        .evaluate((node) => (node as HTMLElement).style.width),
+    ).toBe(width);
+  });
+}
 
 test('empty and all-zero graphs announce a zero peak without invalid heights', async ({
   page,

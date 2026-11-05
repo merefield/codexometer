@@ -58,7 +58,12 @@ func TestBrowserProjectionFixtures(t *testing.T) {
 	correctionPeriod.Breakdowns = []codex.PlanUsageBreakdown{{Dimension: "surface", Rows: []codex.PlanUsageValue{{Key: "cli", BasisPoints: -25}}}}
 	correctionPlan.Periods = []codex.PlanUsagePeriod{correctionPeriod}
 	correction := &codex.UsageReports{PlanStatus: "OPENAI", Plan: &correctionPlan}
-	data, err := json.MarshalIndent(map[string]any{"meters": meters, "reports": codex.ProjectUsageReports(reports), "fractional": codex.ProjectUsageReports(fractional), "correction": codex.ProjectUsageReports(correction)}, "", "  ")
+	warningPlan, warningPeriod := correctionPlan, correctionPeriod
+	warningPeriod.UsedBasisPoints = new(8000.0)
+	warningPeriod.Breakdowns = []codex.PlanUsageBreakdown{{Dimension: "surface", Rows: []codex.PlanUsageValue{{Key: "cli", BasisPoints: 8000}}}}
+	warningPlan.Periods = []codex.PlanUsagePeriod{warningPeriod}
+	warning := &codex.UsageReports{PlanStatus: "OPENAI", Plan: &warningPlan}
+	data, err := json.MarshalIndent(map[string]any{"meters": meters, "reports": codex.ProjectUsageReports(reports), "fractional": codex.ProjectUsageReports(fractional), "correction": codex.ProjectUsageReports(correction), "warning": codex.ProjectUsageReports(warning)}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}

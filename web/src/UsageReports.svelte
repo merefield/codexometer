@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { UsageReports } from './state.svelte';
   import { date } from './state.svelte';
+  import { usageDimensions } from './contracts.generated';
   let { reports, mode }: { reports?: UsageReports | null; mode: string } =
     $props();
-  let dimension = $state('surface');
+  let dimension = $state(usageDimensions[0]);
   let offset = $state(0);
   let daily = $derived(reports?.daily);
   let plan = $derived(reports?.plan);
@@ -21,6 +22,7 @@
   );
   let rows = $derived(distribution?.rows || []);
   let total = $derived(distribution?.total);
+  let level = $derived(distribution?.level || 'unknown');
   let peak = $derived(distribution?.peak || 1);
   const amount = (n: number | null | undefined) =>
     n == null
@@ -31,11 +33,11 @@
 <div class="controls">
   <label
     >GROUP <select aria-label="Usage grouping" bind:value={dimension}>
-      <option value="surface">Surface</option><option value="model"
-        >Model</option
-      ><option value="feature">Feature</option><option value="task start"
-        >Task start</option
-      >
+      {#each usageDimensions as item}
+        <option value={item}
+          >{item.charAt(0).toUpperCase() + item.slice(1)}</option
+        >
+      {/each}
     </select></label
   >
   <button
@@ -87,9 +89,9 @@
       <h3>
         {period.window_minutes} MIN // {period.plan_type} //
         <span
-          class:muted={total == null}
-          class:quota-near={total != null && total >= 80 && total < 100}
-          class:quota-full={total != null && total >= 100}
+          class:muted={level === 'unknown'}
+          class:quota-near={level === 'near'}
+          class:quota-full={level === 'full'}
           >USED {amount(total)}{total == null ? '' : '%'}</span
         >
       </h3>

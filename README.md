@@ -3715,9 +3715,11 @@ selection, measurement baseline and display preferences.
 terminal geometry, colours and translations. `internal/quotagraph` supplies
 coverage, regression, clipping and numeric Pace geometry to both interfaces.
 Browser Pace geometry is tied to the quota observation's timestamp, not a
-separately advancing browser clock; countdown labels still advance normally.
-Usage breakdown ordering, units and relative bar scales are projected in Go,
-including fractional totals and the distinction between missing and zero data.
+separately advancing browser clock; live reset timelines and countdown labels
+still advance normally. Quota health, reset gauges and graph geometry share
+elapsed-cycle calculations. Usage dimensions, historical warning thresholds,
+breakdown ordering, units and relative bar scales are owned in Go, including
+fractional totals and the distinction between missing and zero data.
 
 Browser types, the local slash-command catalogue and numerical browser fixtures
 are generated from the **browser-safe** Go contracts. Refresh them after a

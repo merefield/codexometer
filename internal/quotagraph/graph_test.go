@@ -13,6 +13,42 @@ func testWindow(now time.Time, used int) codex.Window {
 	return codex.Window{UsedPercent: used, WindowDurationMins: &duration, ResetsAt: &reset}
 }
 
+func TestElapsedFractionBoundaries(t *testing.T) {
+	reset := time.Unix(1800000000, 0)
+	w := codex.Window{WindowDurationMins: new(int64(300)), ResetsAt: new(reset.Unix())}
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+		want float64
+	}{
+		{"before start", reset.Add(-6 * time.Hour), 0},
+		{"at start", reset.Add(-5 * time.Hour), 0},
+		{"on twenty-percent pace", reset.Add(-4 * time.Hour), .2},
+		{"halfway", reset.Add(-150 * time.Minute), .5},
+		{"subsecond", reset.Add(-5*time.Hour + 500*time.Millisecond), .5 / 18000},
+		{"at reset", reset, 1},
+		{"after reset", reset.Add(time.Hour), 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fraction, known := ElapsedFraction(w, tc.now)
+			percent, percentKnown := Elapsed(w, tc.now)
+			if !known || !percentKnown || math.Abs(fraction-tc.want) > 1e-15 || percent != 100*fraction {
+				t.Fatalf("fraction=%v percent=%v known=%v/%v want=%v", fraction, percent, known, percentKnown, tc.want)
+			}
+		})
+	}
+	for _, invalid := range []codex.Window{
+		{}, {WindowDurationMins: new(int64(0)), ResetsAt: w.ResetsAt},
+		{WindowDurationMins: new(int64(-1)), ResetsAt: w.ResetsAt},
+		{WindowDurationMins: w.WindowDurationMins},
+		{WindowDurationMins: w.WindowDurationMins, ResetsAt: new(int64(0))},
+	} {
+		if value, known := ElapsedFraction(invalid, reset); known || value != 0 {
+			t.Fatalf("invalid reset metadata yielded progress: %v %v", value, known)
+		}
+	}
+}
+
 func TestWindowStartUsesSnapshotWithoutHistory(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	w := testWindow(now, 25)

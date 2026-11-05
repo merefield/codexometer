@@ -108,7 +108,9 @@ func browserContract() string {
 		out += definitions[name] + "\n"
 	}
 	commands, _ := json.MarshalIndent(codex.LocalSessionCommands(), "", "  ")
-	return out + "export const localCommands: CommandChoice[] = " + string(commands) + ";\n"
+	dimensions, _ := json.Marshal(codex.UsageDimensions())
+	return out + "export const localCommands: CommandChoice[] = " + string(commands) + ";\n\n" +
+		"export const usageDimensions: string[] = " + string(dimensions) + ";\n"
 }
 
 func TestBrowserContract(t *testing.T) {

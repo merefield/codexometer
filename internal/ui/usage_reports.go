@@ -13,17 +13,16 @@ import (
 var reportDimensions = codex.UsageDimensions()
 
 func usageReportValueStyle(colors palette, known bool, percent float64) lipgloss.Style {
-	if !known {
+	switch codex.UsageWarningLevel(known, percent) {
+	case "unknown":
 		return colors.dimmed()
+	case "full":
+		return colors.header().Foreground(colors.danger)
+	case "near":
+		return colors.header().Foreground(colors.warning)
+	default:
+		return colors.header()
 	}
-	style := colors.header()
-	if percent >= 100 {
-		return style.Foreground(colors.danger)
-	}
-	if percent >= 80 {
-		return style.Foreground(colors.warning)
-	}
-	return style
 }
 
 func (m Model) renderUsageReport(width, height int, colors palette, lines []string) string {

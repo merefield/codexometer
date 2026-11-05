@@ -6,6 +6,34 @@ import (
 	"time"
 )
 
+func TestUsageWarningLevelIsSharedWithPeriodProjections(t *testing.T) {
+	for _, tc := range []struct {
+		known bool
+		value float64
+		want  string
+	}{
+		{false, 100, "unknown"}, {true, -.25, "normal"}, {true, 0, "normal"},
+		{true, 79.99, "normal"}, {true, 80, "near"}, {true, 99.99, "near"},
+		{true, 100, "full"}, {true, 125, "full"},
+	} {
+		if got := UsageWarningLevel(tc.known, tc.value); got != tc.want {
+			t.Fatalf("known=%v value=%v level=%q want=%q", tc.known, tc.value, got, tc.want)
+		}
+		period := PlanUsagePeriod{}
+		if tc.known {
+			period.UsedBasisPoints = new(tc.value * 100)
+		}
+		for _, dimension := range UsageDimensions() {
+			if got := WindowUsageDistribution(period, dimension).Level; got != tc.want {
+				t.Fatalf("%s period level=%q want=%q", dimension, got, tc.want)
+			}
+		}
+	}
+	if d := DailyUsageDistribution(UsageBreakdownDay{Total: 125}, "surface"); d.Level != "" {
+		t.Fatal("daily relative units were classified as quota percentages", d)
+	}
+}
+
 func TestSessionStatusProjection(t *testing.T) {
 	for _, test := range []struct {
 		active, working bool

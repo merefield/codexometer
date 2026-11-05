@@ -292,6 +292,7 @@ export interface UsageDistribution {
   total: number | null;
   peak: number;
   knownEmpty: boolean;
+  level?: string;
 }
 
 export interface UsageReports {
@@ -339,3 +340,5 @@ export const localCommands: CommandChoice[] = [
     "next": "quit"
   }
 ];
+
+export const usageDimensions: string[] = ["surface","model","feature","task start"];

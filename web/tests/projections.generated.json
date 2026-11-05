@@ -15,13 +15,15 @@
               "rows": [],
               "total": -0.25,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "normal"
             },
             "model": {
               "rows": [],
               "total": -0.25,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "normal"
             },
             "surface": {
               "rows": [
@@ -32,13 +34,15 @@
               ],
               "total": -0.25,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "normal"
             },
             "task start": {
               "rows": [],
               "total": -0.25,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "normal"
             }
           },
           "id": "p1",
@@ -917,7 +921,8 @@
               "rows": [],
               "total": 125,
               "peak": 125,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "full"
             },
             "model": {
               "rows": [
@@ -932,19 +937,22 @@
               ],
               "total": 125,
               "peak": 125,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "full"
             },
             "surface": {
               "rows": [],
               "total": 125,
               "peak": 125,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "full"
             },
             "task start": {
               "rows": [],
               "total": 125,
               "peak": 125,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "full"
             }
           },
           "id": "p1",
@@ -976,25 +984,29 @@
               "rows": [],
               "total": null,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "unknown"
             },
             "model": {
               "rows": [],
               "total": null,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "unknown"
             },
             "surface": {
               "rows": [],
               "total": null,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "unknown"
             },
             "task start": {
               "rows": [],
               "total": null,
               "peak": 0,
-              "knownEmpty": false
+              "knownEmpty": false,
+              "level": "unknown"
             }
           },
           "id": "p2",
@@ -1009,6 +1021,76 @@
       ]
     },
     "dailyStatus": "OPENAI",
+    "planStatus": "OPENAI"
+  },
+  "warning": {
+    "daily": null,
+    "plan": {
+      "fetchedAt": "2026-10-03T12:00:00Z",
+      "data_as_of": "2026-10-03T11:00:00Z",
+      "coverage_start": "2026-09-26T00:00:00Z",
+      "coverage_complete": false,
+      "approximate": true,
+      "boundary_tolerance_seconds": 60,
+      "periods": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "model": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "surface": {
+              "rows": [
+                {
+                  "name": "cli",
+                  "value": 80
+                }
+              ],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "task start": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            }
+          },
+          "id": "p1",
+          "window_minutes": 10080,
+          "plan_type": "pro",
+          "starts_at": "2026-09-28T00:00:00Z",
+          "ends_at": "2026-10-05T00:00:00Z",
+          "accounting_complete": false,
+          "used_basis_points": 8000,
+          "breakdowns": [
+            {
+              "dimension": "surface",
+              "rows": [
+                {
+                  "key": "cli",
+                  "basis_points": 8000
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "dailyStatus": "",
     "planStatus": "OPENAI"
   }
 }

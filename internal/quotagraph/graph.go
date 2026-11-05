@@ -19,10 +19,20 @@ type Point struct {
 }
 
 func Elapsed(window codex.Window, now time.Time) (float64, bool) {
+	fraction, known := ElapsedFraction(window, now)
+	return 100 * fraction, known
+}
+
+// ElapsedFraction is shared by quota health, reset gauges and graph geometry.
+// Subtract timestamps before converting to floating point to retain subsecond
+// precision without cancellation against a large Unix timestamp.
+func ElapsedFraction(window codex.Window, now time.Time) (float64, bool) {
 	if window.WindowDurationMins == nil || *window.WindowDurationMins <= 0 || window.ResetsAt == nil || *window.ResetsAt <= 0 {
 		return 0, false
 	}
-	return max(0, min(100, 100*(1-(float64(*window.ResetsAt)-float64(now.UnixMilli())/1000)/(float64(*window.WindowDurationMins)*60)))), true
+	duration := float64(*window.WindowDurationMins) * 60
+	elapsed := duration - time.Unix(*window.ResetsAt, 0).Sub(now).Seconds()
+	return max(0, min(1, elapsed/duration)), true
 }
 
 func Record(window, previous codex.Window, points []Point, now time.Time, gap bool) []Point {

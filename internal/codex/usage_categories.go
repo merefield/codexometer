@@ -9,6 +9,21 @@ type UsageCategory struct {
 
 func UsageDimensions() []string { return []string{"surface", "model", "feature", "task start"} }
 
+// UsageWarningLevel classifies a historical quota percentage, not relative
+// daily usage units. Renderers choose colours, never their own thresholds.
+func UsageWarningLevel(known bool, percent float64) string {
+	switch {
+	case !known:
+		return "unknown"
+	case percent >= 100:
+		return "full"
+	case percent >= 80:
+		return "near"
+	default:
+		return "normal"
+	}
+}
+
 // UsageDistribution owns numeric scaling and ordering, never terminal/SVG
 // geometry. A fractional total remains fractional; zero alone needs a fallback.
 type UsageDistribution struct {
@@ -16,6 +31,7 @@ type UsageDistribution struct {
 	Total      *float64        `json:"total"`
 	Peak       float64         `json:"peak"`
 	KnownEmpty bool            `json:"knownEmpty"`
+	Level      string          `json:"level,omitempty"`
 }
 
 func usageDistribution(groups map[string]map[string]float64, dimension string, total *float64) UsageDistribution {
@@ -55,11 +71,14 @@ func WindowUsageDistribution(period PlanUsagePeriod, dimension string) UsageDist
 		}
 	}
 	var total *float64
+	value := 0.0
 	if period.UsedBasisPoints != nil {
-		value := *period.UsedBasisPoints / 100
+		value = *period.UsedBasisPoints / 100
 		total = &value
 	}
-	return usageDistribution(groups, dimension, total)
+	d := usageDistribution(groups, dimension, total)
+	d.Level = UsageWarningLevel(total != nil, value)
+	return d
 }
 
 // ProjectUsageReports copies the report containers and adds display-only
