@@ -1198,27 +1198,34 @@ func applyBenchmarkMeasurements(result *BenchmarkResult, telemetry *benchmarkTel
 	telemetry.apply(result)
 	if result.ToolUsed {
 		result.CostIssue = "tool use prohibited: " + result.ToolType
-	} else if result.UsageKnown {
-		if result.UsageSource == BenchmarkUsageRawResponses {
-			result.CostKnown = true
-			for _, response := range result.ResponseUsage {
-				model := response.Model
-				if model == "" {
-					model = result.ActualModel
-				}
-				cost, known, issue := estimateSingleResponseAPICostWithIssue(model, response.Usage)
-				if !known {
-					result.CostUSD, result.CostKnown, result.CostIssue = 0, false, issue
-					break
-				}
-				result.CostUSD += cost
-			}
-		} else {
-			result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
-		}
-	} else {
-		result.CostIssue = result.UsageIssue
+		return
 	}
+	result.CostUSD, result.CostKnown, result.CostIssue = benchmarkMeasurementCost(result.ActualModel, result)
+}
+
+// benchmarkMeasurementCost keeps per-response attribution and long-context
+// pricing identical for built-in benchmarks and DigBench. Run-specific tool
+// policies remain the caller's responsibility.
+func benchmarkMeasurementCost(model string, measurements *BenchmarkResult) (float64, bool, string) {
+	if !measurements.UsageKnown {
+		return 0, false, measurements.UsageIssue
+	}
+	if measurements.UsageSource != BenchmarkUsageRawResponses {
+		return estimateAPICostWithIssue(model, measurements.Usage)
+	}
+	var total float64
+	for _, response := range measurements.ResponseUsage {
+		responseModel := response.Model
+		if responseModel == "" {
+			responseModel = model
+		}
+		cost, known, issue := estimateSingleResponseAPICostWithIssue(responseModel, response.Usage)
+		if !known {
+			return 0, false, issue
+		}
+		total += cost
+	}
+	return total, true, ""
 }
 
 type benchmarkTelemetry struct {

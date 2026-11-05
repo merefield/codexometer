@@ -233,13 +233,16 @@ func (m Model) monitorApprovalControlRows(width, height int) int {
 }
 
 func (m Model) renderMonitorApprovalControls(width, height int, colors palette) string {
-	buttons := m.monitorApprovalButtons(width, height)
+	return renderMonitorButtonRows(m.monitorApprovalButtons(width, height), colors, m.renderMonitorApprovalAction)
+}
+
+func renderMonitorButtonRows(buttons []monitorApprovalButton, colors palette, render func(string, string, palette) string) string {
 	if len(buttons) == 0 {
 		return ""
 	}
 	rows := make([]string, buttons[len(buttons)-1].y+1)
 	for _, b := range buttons {
-		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + m.renderMonitorApprovalAction(b.action, b.label, colors)
+		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + render(b.action, b.label, colors)
 	}
 	return strings.Join(rows, "\n")
 }

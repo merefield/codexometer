@@ -1008,7 +1008,6 @@ func digBenchFinalResponse(params json.RawMessage, threadID, turnID string, sens
 }
 
 func applyDigBenchMeasurements(result *DigBenchResult, telemetry *benchmarkTelemetry) {
-	result.CostUSD, result.CostKnown, result.CostIssue = 0, false, ""
 	var measurements BenchmarkResult
 	telemetry.apply(&measurements)
 	result.Usage = measurements.Usage
@@ -1017,25 +1016,5 @@ func applyDigBenchMeasurements(result *DigBenchResult, telemetry *benchmarkTelem
 	result.UsageIssue = measurements.UsageIssue
 	result.UsageSource = measurements.UsageSource
 	result.ResponseUsage = measurements.ResponseUsage
-	if !result.UsageKnown {
-		result.CostIssue = result.UsageIssue
-		return
-	}
-	if result.UsageSource != BenchmarkUsageRawResponses {
-		result.CostUSD, result.CostKnown, result.CostIssue = estimateAPICostWithIssue(result.ActualModel, result.Usage)
-		return
-	}
-	result.CostKnown = true
-	for _, response := range result.ResponseUsage {
-		model := response.Model
-		if model == "" {
-			model = result.ActualModel
-		}
-		cost, known, issue := estimateSingleResponseAPICostWithIssue(model, response.Usage)
-		if !known {
-			result.CostUSD, result.CostKnown, result.CostIssue = 0, false, issue
-			return
-		}
-		result.CostUSD += cost
-	}
+	result.CostUSD, result.CostKnown, result.CostIssue = benchmarkMeasurementCost(result.ActualModel, &measurements)
 }
