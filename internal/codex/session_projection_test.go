@@ -92,3 +92,39 @@ func TestUsageSamplesShareBoundsAndElapsedIntervals(t *testing.T) {
 		t.Fatal("unbounded zero limit")
 	}
 }
+
+func TestUsageDistributionPreservesSignedCorrectionsWithNonNegativeScale(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		total *float64
+		rows  []PlanUsageValue
+		peak  float64
+	}{
+		{"negative only", new(-25.0), []PlanUsageValue{{Key: "cli", BasisPoints: -25}}, 0},
+		{"negative without total", nil, []PlanUsageValue{{Key: "cli", BasisPoints: -25}}, 0},
+		{"mixed corrections", new(-25.0), []PlanUsageValue{{Key: "cli", BasisPoints: 100}, {Key: "unknown", BasisPoints: -125}}, 1},
+		{"positive total", new(100.0), []PlanUsageValue{{Key: "cli", BasisPoints: -25}}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			period := PlanUsagePeriod{UsedBasisPoints: tc.total, Breakdowns: []PlanUsageBreakdown{{Dimension: "surface", Rows: tc.rows}}}
+			d := WindowUsageDistribution(period, "surface")
+			if d.Peak != tc.peak || d.KnownEmpty || len(d.Rows) != len(tc.rows) {
+				t.Fatalf("invalid correction scale: %+v", d)
+			}
+			if tc.total == nil && d.Total != nil || tc.total != nil && (d.Total == nil || *d.Total != *tc.total/100) {
+				t.Fatalf("signed or unknown total changed: %+v", d)
+			}
+			for _, raw := range tc.rows {
+				found := false
+				for _, row := range d.Rows {
+					if row.Name == raw.Key && row.Value == raw.BasisPoints/100 {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("signed row changed: %+v in %+v", raw, d.Rows)
+				}
+			}
+		})
+	}
+}

@@ -21,7 +21,7 @@ type UsageDistribution struct {
 func usageDistribution(groups map[string]map[string]float64, dimension string, total *float64) UsageDistribution {
 	d := UsageDistribution{Rows: UsageCategories(groups, dimension), Total: total}
 	if total != nil {
-		d.Peak = *total
+		d.Peak = max(0, *total)
 		d.KnownEmpty = *total == 0 && groups[dimension] != nil
 	}
 	for _, row := range d.Rows {

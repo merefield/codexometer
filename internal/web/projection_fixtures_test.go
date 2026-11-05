@@ -52,7 +52,13 @@ func TestBrowserProjectionFixtures(t *testing.T) {
 		{ID: "p2", WindowMinutes: 300, PlanType: "pro", StartsAt: "2026-09-27T00:00:00Z", EndsAt: "2026-09-27T05:00:00Z"},
 	}}}
 	fractional := &codex.UsageReports{Daily: &codex.DailyUsageReport{Units: "RELATIVE USAGE", Days: []codex.UsageBreakdownDay{{Date: "2026-10-02", Total: .1, Groups: map[string]map[string]float64{"surface": {"cli": .05, "desktop": .05}}}}}}
-	data, err := json.MarshalIndent(map[string]any{"meters": meters, "reports": codex.ProjectUsageReports(reports), "fractional": codex.ProjectUsageReports(fractional)}, "", "  ")
+	correctionPlan := *reports.Plan
+	correctionPeriod := correctionPlan.Periods[0]
+	correctionPeriod.UsedBasisPoints = new(-25.0)
+	correctionPeriod.Breakdowns = []codex.PlanUsageBreakdown{{Dimension: "surface", Rows: []codex.PlanUsageValue{{Key: "cli", BasisPoints: -25}}}}
+	correctionPlan.Periods = []codex.PlanUsagePeriod{correctionPeriod}
+	correction := &codex.UsageReports{PlanStatus: "OPENAI", Plan: &correctionPlan}
+	data, err := json.MarshalIndent(map[string]any{"meters": meters, "reports": codex.ProjectUsageReports(reports), "fractional": codex.ProjectUsageReports(fractional), "correction": codex.ProjectUsageReports(correction)}, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}

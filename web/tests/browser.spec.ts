@@ -3001,6 +3001,43 @@ test('fractional Usage bars share the Go scale in read-only mode', async ({
   await expect(page.locator('.report-value').first()).toHaveText('0.05');
 });
 
+test('signed Usage corrections retain negative values without a filled bar', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    meters: [],
+    sessions: [],
+    quotaAt: '',
+    sessionsAt: '',
+    usageAt: '',
+    quotaError: false,
+    sessionsError: false,
+    usageError: false,
+    usage: {
+      summary: {},
+      dailyUsageBuckets: null,
+      reports: projections.correction,
+    },
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'USAGE', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Usage view' })
+    .getByRole('button', { name: 'Windows', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: '10080 MIN // pro // USED -0.25%' }),
+  ).toBeVisible();
+  await expect(page.locator('.report-row')).toHaveCount(1);
+  await expect(page.locator('.report-value')).toHaveText('-0.25%');
+  expect(
+    await page
+      .locator('.report-fill')
+      .evaluate((node) => (node as HTMLElement).style.width),
+  ).toBe('0%');
+});
+
 test('empty and all-zero graphs announce a zero peak without invalid heights', async ({
   page,
   pairingURL,
