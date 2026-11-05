@@ -4,3 +4,5 @@
 /web/node_modules/
 /web/test-results/
 /web/playwright-report/
+/tools/duplication/node_modules/
+/tools/duplication/reports/

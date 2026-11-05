@@ -3788,6 +3788,26 @@ Codexometer uses:
 - Codex app-server JSON-RPC for authenticated quota data
 - Local Codex rollout `token_count` records for live Sessions telemetry
 
+### Duplication checks
+
+The standalone **Duplication ratchet** CI job uses pinned jscpd to keep production
+clone counts, duplicated lines and duplicated tokens equal or lower. It runs in
+parallel with Go/web tests; test-source duplication is reported but not gated.
+There are no LLM calls, embeddings, token charges or application dependencies.
+
+```sh
+npm ci --prefix tools/duplication --ignore-scripts
+npm --prefix tools/duplication test
+npm --prefix tools/duplication run check
+```
+
+The first measurement establishes the benchmark without arbitrary limits.
+Subsequent checks compare the actual PR base and the versioned baseline; a
+successful main build automatically commits tighter limits. CI artifacts contain
+metric deltas, both source locations and fragments for actionable refactoring.
+See [the duplication tooling guide](tools/duplication/README.md) for baseline
+bootstrap, trusted policy, report formats and required branch-rule setup.
+
 ## License
 
 Codexometer is available under the [MIT License](LICENSE).
