@@ -300,7 +300,7 @@ func (m Model) renderMonitorSessionRow(width, height int, session monitorSession
 }
 
 func monitorNeedsAttention(attention codex.SessionAttention) bool {
-	return attention == codex.SessionAttentionInput || attention == codex.SessionAttentionApproval || attention == codex.SessionAttentionCheck || attention == codex.SessionAttentionError
+	return codex.SessionNeedsAttention(attention)
 }
 
 func monitorSessionColumnWidths(width int) (int, int, bool) {
@@ -495,21 +495,6 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 		return badge.Render(ansi.Truncate(" "+ball+" "+badgeLabel+" ", width, ""))
 	}
 	return ""
-}
-
-func monitorAttentionLabel(attention codex.SessionAttention) string {
-	switch attention {
-	case codex.SessionAttentionComplete:
-		return i18n.Text("TURN COMPLETE")
-	case codex.SessionAttentionApproval:
-		return i18n.Text("APPROVAL NEEDED")
-	case codex.SessionAttentionCheck:
-		return i18n.Text("CHECK SESSION")
-	case codex.SessionAttentionError:
-		return i18n.Text("TURN FAILED")
-	default:
-		return i18n.Text("INPUT NEEDED")
-	}
 }
 
 func monitorAttentionStatus(attention codex.SessionAttention) string {
@@ -718,12 +703,12 @@ func (m Model) renderMonitorGraphWithAction(width, height int, samples []monitor
 	}
 	maximum := int64(0)
 	for _, sample := range samples {
-		maximum = max(maximum, sample.intervalTokens)
+		maximum = max(maximum, sample.Tokens)
 	}
 	yMax := niceTokenCeiling(maximum)
 	span := monitorSampleInterval
-	if len(samples) > 0 && samples[len(samples)-1].duration > 0 {
-		span = samples[len(samples)-1].duration
+	if len(samples) > 0 && samples[len(samples)-1].Duration > 0 {
+		span = samples[len(samples)-1].Duration
 	}
 	spanSeconds := max(int(math.Ceil(span.Seconds())), 1)
 	title := fmt.Sprintf("%d SEC %s // AUTO 0-%s", spanSeconds, heading, formatCompactTokens(yMax))
@@ -746,9 +731,9 @@ func (m Model) renderMonitorGraphWithAction(width, height int, samples []monitor
 		chartWidth := len(samples)*sampleWidth - 1
 		startX := innerWidth - chartWidth
 		for index, sample := range samples {
-			ratio := float64(sample.intervalTokens) / float64(yMax)
+			ratio := float64(sample.Tokens) / float64(yMax)
 			filledRows := int(math.Round(ratio * float64(plotHeight)))
-			if sample.intervalTokens > 0 {
+			if sample.Tokens > 0 {
 				filledRows = max(filledRows, 1)
 			}
 			filledRows = min(filledRows, plotHeight)

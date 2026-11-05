@@ -23,25 +23,10 @@
     onProtectedChange?: (protectedState: boolean) => void;
     oncopy?: () => void | Promise<void>;
   } = $props();
-  interface Offer {
-    fileChanges?: FileDiffLine[];
-    profile?: { threshold: number; current: string; proposed: string };
-    id: string;
-    session: string;
-    thread: string;
-    directory: string;
-    kind: string;
-    command: string;
-    choices: { label: string; detail: string; persistent: boolean }[] | null;
-    questions:
-      | {
-          text: string;
-          secret: boolean;
-          freeText: boolean;
-          options: string[] | null;
-        }[]
-      | null;
-  }
+  import type {
+    ActionOffer as Offer,
+    ScheduledJob as Job,
+  } from './contracts.generated';
   let offer = $state<Offer | null>(null);
   let answers = $state<string[]>([]);
   let choice = $state<number | null>(null);
@@ -62,16 +47,6 @@
   let dateTime = $state('');
   let scheduled = $state(false);
   let triggerDescription = $state('');
-  interface Job {
-    id: string;
-    session: string;
-    text: string;
-    trigger: string;
-    at: string;
-    status: string;
-    canSend?: boolean;
-    waitingReason?: string;
-  }
   let jobs = $state<Job[]>([]);
   let pending = $derived(jobs.find((j) => j.status !== 'sent'));
   let composer: HTMLTextAreaElement | undefined = $state();
@@ -96,7 +71,7 @@
     timing = job.trigger === 'quota' ? 'quota' : 'at';
     confirmation = '';
     sendNowID = '';
-    const d = new Date(job.at);
+    const d = new Date(job.at || 0);
     if (job.trigger !== 'quota')
       dateTime = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
         .toISOString()
@@ -224,12 +199,13 @@
       ? 'Choose a time within one year.'
       : '';
   });
-  function localTime(value: number | string) {
+  function localTime(value: number | string | undefined) {
+    if (value === undefined) return 'Not yet available';
     return new Date(value).toLocaleString([], { timeZoneName: 'short' });
   }
   function waitingText(job: Job) {
     if (job.status !== 'pending') return job.status;
-    if (job.trigger === 'at' && Date.parse(job.at) > now)
+    if (job.trigger === 'at' && job.at && Date.parse(job.at) > now)
       return 'Due in ' + Math.ceil((Date.parse(job.at) - now) / 60000) + ' min';
     const reason = stale
       ? 'waiting for a fresh connection'

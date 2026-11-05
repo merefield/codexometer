@@ -21,6 +21,8 @@ func TestWindowQuotaHealthUsesBurnPaceAgainstResetProgress(t *testing.T) {
 		want       quotaHealth
 	}{
 		{name: "clear with ample quota", used: 20, elapsedPct: 50, want: quotaHealthClear},
+		{name: "clear exactly on twenty-percent pace", used: 20, elapsedPct: 20, want: quotaHealthClear},
+		{name: "clear exactly on eighty-percent pace", used: 80, elapsedPct: 80, want: quotaHealthClear},
 		{name: "clear when low quota matches late reset", used: 90, elapsedPct: 95, want: quotaHealthClear},
 		{name: "watch when low quota is burning too quickly", used: 85, elapsedPct: 80, want: quotaHealthWatch},
 		{name: "near when projected exhaustion is much earlier than reset", used: 40, elapsedPct: 10, want: quotaHealthNear},

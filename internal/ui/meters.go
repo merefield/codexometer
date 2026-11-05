@@ -12,6 +12,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/quotagraph"
 )
 
 func usesMeterGrid(view meterViewID) bool {
@@ -285,14 +286,8 @@ func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now
 }
 
 func resetProgress(window codex.Window, now time.Time) (int, bool) {
-	if window.WindowDurationMins == nil || window.ResetsAt == nil || *window.WindowDurationMins <= 0 {
-		return 0, false
-	}
-	duration := time.Duration(*window.WindowDurationMins) * time.Minute
-	resetAt := time.Unix(*window.ResetsAt, 0)
-	startAt := resetAt.Add(-duration)
-	progress := int(math.Round(float64(now.Sub(startAt)) / float64(duration) * 100))
-	return min(max(progress, 0), 100), true
+	fraction, known := quotagraph.ElapsedFraction(window, now)
+	return int(math.Round(fraction * 100)), known
 }
 
 func meterColor(used int, colors palette) imagecolor.Color {

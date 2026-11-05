@@ -74,7 +74,7 @@ func TestZoneTrailBoundariesAndBound(t *testing.T) {
 		"reset":            func(m *meter) { r := reset + 100; m.Reset = &r },
 		"duration":         func(m *meter) { d := duration + 1; m.Duration = &d },
 		"counter decrease": func(m *meter) { m.Used = 9 },
-		"different window": func(m *meter) { m.identity.window = 1 },
+		"different window": func(m *meter) { m.identity.Slot = 1 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			next := m

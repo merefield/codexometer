@@ -3703,6 +3703,39 @@ OpenAI telemetry nor improves quota-estimation accuracy.
 
 ## Development
 
+### Shared logic and browser contracts
+
+Business rules belong in the Go core, not in a second renderer-specific
+implementation. Backend quota windows use `codex.Meter.Key()` (limit ID, kind
+and primary/secondary slot), never a mutable label. Session status and bounded
+counter samples also share Go projections; each interface retains its own
+selection, measurement baseline and display preferences.
+
+`internal/quotaestimate` owns process-local API-EQ learning independently of
+terminal geometry, colours and translations. `internal/quotagraph` supplies
+coverage, regression, clipping and numeric Pace geometry to both interfaces.
+Browser Pace geometry is tied to the quota observation's timestamp, not a
+separately advancing browser clock; live reset timelines and countdown labels
+still advance normally. Quota health, reset gauges and graph geometry share
+elapsed-cycle calculations. Usage dimensions, historical warning thresholds,
+breakdown ordering, units and relative bar scales are owned in Go, including
+fractional totals and the distinction between missing and zero data.
+
+Browser types, the local slash-command catalogue and numerical browser fixtures
+are generated from the **browser-safe** Go contracts. Refresh them after a
+contract or projector change:
+
+```sh
+make web-contracts
+```
+
+Ordinary Go tests check these generated files without rewriting them. Generate
+from the safe projections, never raw session/client structs containing approval
+capabilities or credentials. Chromium tests consume Go-produced numerical
+fixtures; they do not implement another version of the calculations. No new
+runtime dependency or framework is required. Terminal and SVG drawing remain
+separate, as do browser-only security checks and transport-specific lifecycles.
+
 Format, test, and vet the project:
 
 ```sh

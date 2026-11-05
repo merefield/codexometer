@@ -1,48 +1,29 @@
 <script lang="ts">
   import type { UsageReports } from './state.svelte';
   import { date } from './state.svelte';
-  let { reports, mode }: { reports?: UsageReports; mode: string } = $props();
-  let dimension = $state('surface');
+  import { usageDimensions } from './contracts.generated';
+  let { reports, mode }: { reports?: UsageReports | null; mode: string } =
+    $props();
+  let dimension = $state(usageDimensions[0]);
   let offset = $state(0);
   let daily = $derived(reports?.daily);
   let plan = $derived(reports?.plan);
   let count = $derived(
-    mode === 'breakdown' ? daily?.days.length || 0 : plan?.periods.length || 0,
+    mode === 'breakdown'
+      ? daily?.days?.length || 0
+      : plan?.periods?.length || 0,
   );
   let position = $derived(Math.min(offset, Math.max(0, count - 1)));
-  let day = $derived(daily?.days[(daily?.days.length || 0) - 1 - position]);
-  let period = $derived(plan?.periods[position]);
+  let day = $derived(daily?.days?.[(daily?.days?.length || 0) - 1 - position]);
+  let period = $derived(plan?.periods?.[position]);
   let unit = $derived(mode === 'breakdown' ? daily?.units || '' : '%');
-  let rows = $derived.by(() => {
-    let values: Record<string, number> = Object.create(null);
-    if (mode === 'breakdown') values = day?.groups[dimension] || {};
-    else {
-      const wireDimension =
-        dimension === 'feature'
-          ? 'thread_source'
-          : dimension === 'task start'
-            ? 'turn_trigger'
-            : dimension;
-      for (const group of period?.breakdowns || []) {
-        if (group.dimension !== wireDimension) continue;
-        for (const row of group.rows)
-          values[row.key] = (values[row.key] || 0) + row.basis_points / 100;
-      }
-    }
-    return Object.entries(values).sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-    );
-  });
-  let total = $derived(
-    mode === 'breakdown'
-      ? day?.total
-      : period?.used_basis_points == null
-        ? null
-        : period.used_basis_points / 100,
+  let distribution = $derived(
+    (mode === 'breakdown' ? day : period)?.views?.[dimension],
   );
-  let peak = $derived(
-    Math.max(1, total || 0, ...rows.map(([, value]) => value)),
-  );
+  let rows = $derived(distribution?.rows || []);
+  let total = $derived(distribution?.total);
+  let level = $derived(distribution?.level || 'unknown');
+  let peak = $derived(distribution?.peak || 1);
   const amount = (n: number | null | undefined) =>
     n == null
       ? 'UNKNOWN'
@@ -52,11 +33,11 @@
 <div class="controls">
   <label
     >GROUP <select aria-label="Usage grouping" bind:value={dimension}>
-      <option value="surface">Surface</option><option value="model"
-        >Model</option
-      ><option value="feature">Feature</option><option value="task start"
-        >Task start</option
-      >
+      {#each usageDimensions as item}
+        <option value={item}
+          >{item.charAt(0).toUpperCase() + item.slice(1)}</option
+        >
+      {/each}
     </select></label
   >
   <button
@@ -108,9 +89,9 @@
       <h3>
         {period.window_minutes} MIN // {period.plan_type} //
         <span
-          class:muted={total == null}
-          class:quota-near={total != null && total >= 80 && total < 100}
-          class:quota-full={total != null && total >= 100}
+          class:muted={level === 'unknown'}
+          class:quota-near={level === 'near'}
+          class:quota-full={level === 'full'}
           >USED {amount(total)}{total == null ? '' : '%'}</span
         >
       </h3>
@@ -136,7 +117,7 @@
           >{mode === 'breakdown' ? unit : 'QUOTA USED'}</span
         >
       </div>
-      {#each rows as [name, value], index}
+      {#each rows as { name, value }, index}
         <div
           class="report-row"
           class:unknown={name.trim().toLowerCase() === 'unknown'}
@@ -155,7 +136,7 @@
         </div>
       {/each}
     </div>
-  {:else if mode === 'breakdown' && day?.total === 0 && day?.groups[dimension] != null}
+  {:else if mode === 'breakdown' && distribution?.knownEmpty}
     <p class="empty">No usage reported for this day.</p>
   {:else if (daily && mode === 'breakdown') || (plan && mode === 'periods')}
     <p class="empty">

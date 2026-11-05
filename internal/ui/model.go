@@ -14,6 +14,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/quotaestimate"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/version"
 )
@@ -213,12 +214,8 @@ type Model struct {
 	monitorQuotaWindows     []monitorQuotaWindow
 	monitorQuotaError       string
 
-	quotaAPIAnchors        map[string]quotaAPIAnchor
-	quotaAPIEvidence       []quotaAPISample
-	quotaAPIIssues         map[string]string
-	quotaAPIAccount        string
+	quotaAPI               quotaestimate.State
 	quotaAPITelemetryIssue string
-	quotaAPICoverageIssue  string
 }
 
 type fetchedMsg struct {
@@ -252,11 +249,7 @@ const (
 	monitorFetchReset
 )
 
-type monitorSample struct {
-	at             time.Time
-	duration       time.Duration
-	intervalTokens int64
-}
+type monitorSample = codex.UsageSample
 
 type monitorSessionDismissal struct {
 	preview          codex.SessionContext
@@ -446,8 +439,6 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		loading:           true,
 		nextRefresh:       time.Now().Add(refreshEvery),
 		benchmarkRankMode: benchmarkRankBalanced,
-		quotaAPIAnchors:   make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:    make(map[string]string),
 		appVersion:        version.Current(),
 	}
 	if provider, ok := fetcher.(codex.QuotaStepPolicyProvider); ok {
@@ -2299,7 +2290,7 @@ func (m Model) fetch() tea.Cmd {
 			case coverageIssue != "":
 				message.usage = after
 				message.usage.APIEqCoverageIssue = coverageIssue
-			case !quotaAPIAccountingEqual(before, after) || after.APIEqPendingCalls > 0:
+			case !quotaestimate.AccountingEqual(before, after) || after.APIEqPendingCalls > 0:
 				message.usageErr = errQuotaObservationChanged
 			default:
 				message.usage = after
@@ -2534,6 +2525,7 @@ func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 			continue
 		}
 		window := &m.monitorQuotaWindows[index]
+		window.label = monitorQuotaLabel(meter)
 		if !sameOptionalInt64(window.latestReset, meter.Window.ResetsAt) || meter.Window.UsedPercent < window.latestUsed {
 			window.resetDetected = true
 		}
@@ -2549,11 +2541,7 @@ func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 }
 
 func monitorQuotaKey(meter codex.Meter) string {
-	duration := int64(-1)
-	if meter.Window.WindowDurationMins != nil {
-		duration = *meter.Window.WindowDurationMins
-	}
-	return meter.Bucket + "\x00" + meter.Name + "\x00" + fmt.Sprint(duration)
+	return meter.DefinitionKey()
 }
 
 func monitorQuotaLabel(meter codex.Meter) string {
@@ -2839,13 +2827,7 @@ func (m *Model) captureMonitorSamples(at time.Time) {
 	if at.IsZero() {
 		at = time.Now()
 	}
-	start := m.monitorStartedAt
-	if count := len(m.monitorSamples); count > 0 {
-		start = m.monitorSamples[count-1].at
-	}
-	duration := max(at.Sub(start), time.Duration(0))
-	delta := max(m.monitorLatest-m.monitorGraphStart, int64(0))
-	m.monitorSamples = appendMonitorSample(m.monitorSamples, monitorSample{at: at, duration: duration, intervalTokens: delta})
+	m.monitorSamples = codex.CaptureUsageSample(m.monitorSamples, m.monitorLatest, m.monitorGraphStart, m.monitorStartedAt, at, monitorSampleHistoryMax)
 	m.monitorGraphStart = m.monitorLatest
 
 	for index := range m.monitorSessionData {
@@ -2853,23 +2835,9 @@ func (m *Model) captureMonitorSamples(at time.Time) {
 		if !session.displayed {
 			continue
 		}
-		start := session.startedAt
-		if count := len(session.samples); count > 0 {
-			start = session.samples[count-1].at
-		}
-		duration := max(at.Sub(start), time.Duration(0))
-		delta := max(session.latest-session.graphStart, int64(0))
-		session.samples = appendMonitorSample(session.samples, monitorSample{at: at, duration: duration, intervalTokens: delta})
+		session.samples = codex.CaptureUsageSample(session.samples, session.latest, session.graphStart, session.startedAt, at, monitorSampleHistoryMax)
 		session.graphStart = session.latest
 	}
-}
-
-func appendMonitorSample(samples []monitorSample, sample monitorSample) []monitorSample {
-	if len(samples) >= monitorSampleHistoryMax {
-		copy(samples, samples[len(samples)-monitorSampleHistoryMax+1:])
-		samples = samples[:monitorSampleHistoryMax-1]
-	}
-	return append(samples, sample)
 }
 
 func (m *Model) monitorSessionIndex(id string) int {

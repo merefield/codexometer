@@ -19,6 +19,11 @@ type commandRequest struct {
 	Refresh  bool   `json:"refresh,omitempty"`
 }
 
+type commandMenu struct {
+	codex.SessionCommandMenu
+	InputReview bool `json:"inputReview,omitempty"`
+}
+
 func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body actionRequest) {
 	q := body.Command
 	if c.commands == nil || q == nil || body.Review != "" || body.Offer != "" || body.Choice != nil || len(body.Answers) != 0 || body.Schedule != nil || body.EditID != "" || body.SendID != "" || body.CancelID != "" || !codex.ValidSessionCommandPath(q.Path) || len(q.Revision) > 128 || len(q.Choice) > 128 || (q.Mode != "list" && q.Mode != "prepare" && q.Mode != "commit") || q.Refresh && q.Mode != "list" {
@@ -76,7 +81,8 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 		return
 	}
 	if q.Mode == "list" {
-		_ = json.NewEncoder(w).Encode(m)
+		_, _, review := codex.SessionCommandInputValue(m.Path)
+		_ = json.NewEncoder(w).Encode(commandMenu{m, review})
 		return
 	}
 	if m.Revision != q.Revision {

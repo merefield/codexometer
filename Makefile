@@ -1,4 +1,4 @@
-.PHONY: build test integration-test check fmt vet release-snapshot web-build web-test screenshots screenshots-check
+.PHONY: build test integration-test check fmt vet release-snapshot web-build web-test screenshots screenshots-check web-contracts
 
 # A tagged checkout gets the nearest semantic Git description. Repositories
 # without a reachable tag leave this empty so Go's embedded VCS revision and
@@ -42,3 +42,6 @@ screenshots:
 # No browser needed: compare current terminal cells, versions and image hashes.
 screenshots-check:
 	node web/scripts/screenshots.mjs --check
+
+web-contracts:
+	CODEXOMETER_WEB_GENERATE=1 go test ./internal/web -run '^TestBrowser(Contract|ProjectionFixtures)$$' -count=1

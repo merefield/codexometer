@@ -1,0 +1,1096 @@
+{
+  "correction": {
+    "daily": null,
+    "plan": {
+      "fetchedAt": "2026-10-03T12:00:00Z",
+      "data_as_of": "2026-10-03T11:00:00Z",
+      "coverage_start": "2026-09-26T00:00:00Z",
+      "coverage_complete": false,
+      "approximate": true,
+      "boundary_tolerance_seconds": 60,
+      "periods": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": -0.25,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "normal"
+            },
+            "model": {
+              "rows": [],
+              "total": -0.25,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "normal"
+            },
+            "surface": {
+              "rows": [
+                {
+                  "name": "cli",
+                  "value": -0.25
+                }
+              ],
+              "total": -0.25,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "normal"
+            },
+            "task start": {
+              "rows": [],
+              "total": -0.25,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "normal"
+            }
+          },
+          "id": "p1",
+          "window_minutes": 10080,
+          "plan_type": "pro",
+          "starts_at": "2026-09-28T00:00:00Z",
+          "ends_at": "2026-10-05T00:00:00Z",
+          "accounting_complete": false,
+          "used_basis_points": -25,
+          "breakdowns": [
+            {
+              "dimension": "surface",
+              "rows": [
+                {
+                  "key": "cli",
+                  "basis_points": -25
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "dailyStatus": "",
+    "planStatus": "OPENAI"
+  },
+  "fractional": {
+    "daily": {
+      "units": "RELATIVE USAGE",
+      "from": "",
+      "through": "",
+      "fetchedAt": "0001-01-01T00:00:00Z",
+      "days": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 0.1,
+              "peak": 0.1,
+              "knownEmpty": false
+            },
+            "model": {
+              "rows": [],
+              "total": 0.1,
+              "peak": 0.1,
+              "knownEmpty": false
+            },
+            "surface": {
+              "rows": [
+                {
+                  "name": "cli",
+                  "value": 0.05
+                },
+                {
+                  "name": "desktop",
+                  "value": 0.05
+                }
+              ],
+              "total": 0.1,
+              "peak": 0.1,
+              "knownEmpty": false
+            },
+            "task start": {
+              "rows": [],
+              "total": 0.1,
+              "peak": 0.1,
+              "knownEmpty": false
+            }
+          },
+          "date": "2026-10-02",
+          "total": 0.1,
+          "groups": {
+            "surface": {
+              "cli": 0.05,
+              "desktop": 0.05
+            }
+          }
+        }
+      ]
+    },
+    "plan": null,
+    "dailyStatus": "",
+    "planStatus": ""
+  },
+  "meters": {
+    "boundary": {
+      "name": "boundary",
+      "used": 50,
+      "duration": 10080,
+      "reset": 1789430400,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 50,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 100,
+            "safe": true,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 100,
+              "y2": 100
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "end": {
+      "name": "end",
+      "used": 100,
+      "duration": 100,
+      "reset": 1789125000,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 100,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 100,
+            "safe": true,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 100,
+              "y2": 100
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "fast": {
+      "name": "fast",
+      "used": 75,
+      "duration": 100,
+      "reset": 1789132500,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 25,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 300,
+            "safe": false,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 33.333333333333336,
+              "y2": 100
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "overFlat": {
+      "name": "overFlat",
+      "used": 80,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": [
+        {
+          "at": "2026-09-11T11:30:00Z",
+          "elapsed": 56.845238095238095,
+          "used": 80,
+          "break": false
+        },
+        {
+          "at": "2026-09-11T12:00:00Z",
+          "elapsed": 57.142857142857146,
+          "used": 80,
+          "break": false
+        }
+      ],
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 140,
+            "safe": false,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 71.42857142857142,
+              "y2": 99.99999999999999
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": true,
+            "projected": 80,
+            "safe": true,
+            "segment": {
+              "x1": 56.84523809523809,
+              "y1": 80,
+              "x2": 100,
+              "y2": 80
+            }
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "overRise": {
+      "name": "overRise",
+      "used": 80,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": [
+        {
+          "at": "2026-09-11T11:30:00Z",
+          "elapsed": 56.845238095238095,
+          "used": 79,
+          "break": false
+        },
+        {
+          "at": "2026-09-11T12:00:00Z",
+          "elapsed": 57.142857142857146,
+          "used": 80,
+          "break": false
+        }
+      ],
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 140,
+            "safe": false,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 71.42857142857142,
+              "y2": 99.99999999999999
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": true,
+            "projected": 223.99999999999838,
+            "safe": false,
+            "segment": {
+              "x1": 56.84523809523809,
+              "y1": 79,
+              "x2": 63.09523809523815,
+              "y2": 100
+            }
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "overWindow": {
+      "name": "overWindow",
+      "used": 80,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": [
+        {
+          "at": "2026-09-11T12:00:00Z",
+          "elapsed": 57.142857142857146,
+          "used": 80,
+          "break": false
+        }
+      ],
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 140,
+            "safe": false,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 71.42857142857142,
+              "y2": 99.99999999999999
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "start": {
+      "name": "start",
+      "used": 0,
+      "duration": 100,
+      "reset": 1789135500,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 0,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "unknown": {
+      "name": "unknown",
+      "used": 40,
+      "duration": null,
+      "reset": null,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 0,
+        "known": false,
+        "modes": [
+          {
+            "id": "window",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "weeklyEmpty": {
+      "name": "weeklyEmpty",
+      "used": 40,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 70,
+            "safe": true,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 100,
+              "y2": 70
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "weeklyStart": {
+      "name": "weeklyStart",
+      "used": 0,
+      "duration": 10080,
+      "reset": 1789732800,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 0,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "weeklyTrace": {
+      "name": "weeklyTrace",
+      "used": 40,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": [
+        {
+          "at": "2026-09-10T11:00:00Z",
+          "elapsed": 42,
+          "used": 20,
+          "break": false
+        },
+        {
+          "at": "2026-09-10T12:00:00Z",
+          "elapsed": 42.6,
+          "used": 21,
+          "break": false
+        },
+        {
+          "at": "2026-09-11T11:00:00Z",
+          "elapsed": 56.5,
+          "used": 38,
+          "break": false
+        },
+        {
+          "at": "2026-09-11T11:45:00Z",
+          "elapsed": 56.95,
+          "used": 39,
+          "break": false
+        },
+        {
+          "at": "2026-09-11T12:00:00Z",
+          "elapsed": 57.1,
+          "used": 40,
+          "break": false
+        }
+      ],
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 70,
+            "safe": true,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 100,
+              "y2": 70
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": true,
+            "projected": 325.7142857142884,
+            "safe": false,
+            "segment": {
+              "x1": 56.84523809523809,
+              "y1": 38.015873015872955,
+              "x2": 66.14285714285705,
+              "y2": 100
+            }
+          },
+          {
+            "id": "hour",
+            "available": true,
+            "projected": 171.86813186813131,
+            "safe": false,
+            "segment": {
+              "x1": 56.547619047619044,
+              "y1": 38.16849816849819,
+              "x2": 76.64285714285722,
+              "y2": 100
+            }
+          },
+          {
+            "id": "day",
+            "available": true,
+            "projected": 94.23473967289829,
+            "safe": true,
+            "segment": {
+              "x1": 42.857142857142854,
+              "y1": 21.921753442367248,
+              "x2": 100,
+              "y2": 94.23473967289829
+            }
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    },
+    "weeklyZero": {
+      "name": "weeklyZero",
+      "used": 0,
+      "duration": 10080,
+      "reset": 1789387200,
+      "details": "",
+      "trail": null,
+      "plot": {
+        "elapsed": 57.14285714285714,
+        "known": true,
+        "modes": [
+          {
+            "id": "window",
+            "available": true,
+            "projected": 0,
+            "safe": true,
+            "segment": {
+              "x1": 0,
+              "y1": 0,
+              "x2": 100,
+              "y2": 0
+            }
+          },
+          {
+            "id": "halfHour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "hour",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "day",
+            "available": false,
+            "projected": 0,
+            "safe": false
+          },
+          {
+            "id": "off",
+            "available": true,
+            "projected": 0,
+            "safe": false
+          }
+        ]
+      }
+    }
+  },
+  "reports": {
+    "daily": {
+      "units": "RELATIVE USAGE",
+      "from": "2026-09-04",
+      "through": "2026-10-03",
+      "fetchedAt": "2026-10-03T12:00:00Z",
+      "days": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 2,
+              "peak": 2,
+              "knownEmpty": false
+            },
+            "model": {
+              "rows": [
+                {
+                  "name": "older-model",
+                  "value": 2
+                }
+              ],
+              "total": 2,
+              "peak": 2,
+              "knownEmpty": false
+            },
+            "surface": {
+              "rows": [],
+              "total": 2,
+              "peak": 2,
+              "knownEmpty": false
+            },
+            "task start": {
+              "rows": [],
+              "total": 2,
+              "peak": 2,
+              "knownEmpty": false
+            }
+          },
+          "date": "2026-10-01",
+          "total": 2,
+          "groups": {
+            "model": {
+              "older-model": 2
+            }
+          }
+        },
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 4,
+              "peak": 4,
+              "knownEmpty": false
+            },
+            "model": {
+              "rows": [
+                {
+                  "name": "gpt-6.1-sol",
+                  "value": 2.5
+                },
+                {
+                  "name": "gpt-6-luna",
+                  "value": 1.5
+                }
+              ],
+              "total": 4,
+              "peak": 4,
+              "knownEmpty": false
+            },
+            "surface": {
+              "rows": [
+                {
+                  "name": "cli",
+                  "value": 4
+                }
+              ],
+              "total": 4,
+              "peak": 4,
+              "knownEmpty": false
+            },
+            "task start": {
+              "rows": [],
+              "total": 4,
+              "peak": 4,
+              "knownEmpty": false
+            }
+          },
+          "date": "2026-10-02",
+          "total": 4,
+          "groups": {
+            "model": {
+              "gpt-6-luna": 1.5,
+              "gpt-6.1-sol": 2.5
+            },
+            "surface": {
+              "cli": 4
+            }
+          }
+        }
+      ]
+    },
+    "plan": {
+      "fetchedAt": "2026-10-03T12:00:00Z",
+      "data_as_of": "2026-10-03T11:00:00Z",
+      "coverage_start": "2026-09-26T00:00:00Z",
+      "coverage_complete": false,
+      "approximate": true,
+      "boundary_tolerance_seconds": 60,
+      "periods": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 125,
+              "peak": 125,
+              "knownEmpty": false,
+              "level": "full"
+            },
+            "model": {
+              "rows": [
+                {
+                  "name": "gpt-6.1-sol",
+                  "value": 120
+                },
+                {
+                  "name": "unknown",
+                  "value": 5
+                }
+              ],
+              "total": 125,
+              "peak": 125,
+              "knownEmpty": false,
+              "level": "full"
+            },
+            "surface": {
+              "rows": [],
+              "total": 125,
+              "peak": 125,
+              "knownEmpty": false,
+              "level": "full"
+            },
+            "task start": {
+              "rows": [],
+              "total": 125,
+              "peak": 125,
+              "knownEmpty": false,
+              "level": "full"
+            }
+          },
+          "id": "p1",
+          "window_minutes": 10080,
+          "plan_type": "pro",
+          "starts_at": "2026-09-28T00:00:00Z",
+          "ends_at": "2026-10-05T00:00:00Z",
+          "accounting_complete": false,
+          "used_basis_points": 12500,
+          "breakdowns": [
+            {
+              "dimension": "model",
+              "rows": [
+                {
+                  "key": "gpt-6.1-sol",
+                  "basis_points": 12000
+                },
+                {
+                  "key": "unknown",
+                  "basis_points": 500
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": null,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "unknown"
+            },
+            "model": {
+              "rows": [],
+              "total": null,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "unknown"
+            },
+            "surface": {
+              "rows": [],
+              "total": null,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "unknown"
+            },
+            "task start": {
+              "rows": [],
+              "total": null,
+              "peak": 0,
+              "knownEmpty": false,
+              "level": "unknown"
+            }
+          },
+          "id": "p2",
+          "window_minutes": 300,
+          "plan_type": "pro",
+          "starts_at": "2026-09-27T00:00:00Z",
+          "ends_at": "2026-09-27T05:00:00Z",
+          "accounting_complete": false,
+          "used_basis_points": null,
+          "breakdowns": null
+        }
+      ]
+    },
+    "dailyStatus": "OPENAI",
+    "planStatus": "OPENAI"
+  },
+  "warning": {
+    "daily": null,
+    "plan": {
+      "fetchedAt": "2026-10-03T12:00:00Z",
+      "data_as_of": "2026-10-03T11:00:00Z",
+      "coverage_start": "2026-09-26T00:00:00Z",
+      "coverage_complete": false,
+      "approximate": true,
+      "boundary_tolerance_seconds": 60,
+      "periods": [
+        {
+          "views": {
+            "feature": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "model": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "surface": {
+              "rows": [
+                {
+                  "name": "cli",
+                  "value": 80
+                }
+              ],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            },
+            "task start": {
+              "rows": [],
+              "total": 80,
+              "peak": 80,
+              "knownEmpty": false,
+              "level": "near"
+            }
+          },
+          "id": "p1",
+          "window_minutes": 10080,
+          "plan_type": "pro",
+          "starts_at": "2026-09-28T00:00:00Z",
+          "ends_at": "2026-10-05T00:00:00Z",
+          "accounting_complete": false,
+          "used_basis_points": 8000,
+          "breakdowns": [
+            {
+              "dimension": "surface",
+              "rows": [
+                {
+                  "key": "cli",
+                  "basis_points": 8000
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "dailyStatus": "",
+    "planStatus": "OPENAI"
+  }
+}

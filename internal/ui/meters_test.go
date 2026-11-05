@@ -138,6 +138,8 @@ func TestResetProgressUsesWindowStartAndClamps(t *testing.T) {
 	}{
 		{"before start", reset.Add(-2 * time.Hour), 0},
 		{"halfway", reset.Add(-30 * time.Minute), 50},
+		{"round half up", reset.Add(-30*time.Minute - 18*time.Second), 50},
+		{"below rounding boundary", reset.Add(-30*time.Minute - 19*time.Second), 49},
 		{"at reset", reset, 100},
 		{"after reset", reset.Add(time.Hour), 100},
 	}

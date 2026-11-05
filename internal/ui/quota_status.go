@@ -11,6 +11,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/quotagraph"
 )
 
 type quotaHealth int
@@ -116,18 +117,11 @@ func windowQuotaHealth(window codex.Window, now time.Time) quotaHealth {
 	if used >= 100 {
 		return quotaHealthExhausted
 	}
-	if window.WindowDurationMins == nil || window.ResetsAt == nil || *window.WindowDurationMins <= 0 {
+	elapsed, known := quotagraph.ElapsedFraction(window, now)
+	if !known || elapsed <= 0 || elapsed >= 1 || used == 0 {
 		return quotaHealthWithoutPace(used)
 	}
 
-	duration := time.Duration(*window.WindowDurationMins) * time.Minute
-	resetAt := time.Unix(*window.ResetsAt, 0)
-	elapsedDuration := now.Sub(resetAt.Add(-duration))
-	if elapsedDuration <= 0 || elapsedDuration >= duration || used == 0 {
-		return quotaHealthWithoutPace(used)
-	}
-
-	elapsed := float64(elapsedDuration) / float64(duration)
 	usedFraction := float64(used) / 100
 	if usedFraction <= elapsed {
 		return quotaHealthClear

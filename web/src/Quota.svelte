@@ -27,6 +27,7 @@
     return () => clearInterval(timer);
   });
   function elapsed(m: Meter): number | null {
+    // Unlike observed Pace geometry, reset timelines advance on the live clock.
     if (!m.duration || m.duration <= 0 || !m.reset) return null;
     return Math.max(
       0,
@@ -135,7 +136,7 @@
                   used={meter.used}
                   elapsed={cycle}
                   trail={meter.trail || []}
-                  duration={meter.duration}
+                  plot={meter.plot}
                 />
               {:else}<p class="empty">
                   Cycle duration or reset date unavailable — position cannot be

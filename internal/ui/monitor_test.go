@@ -49,7 +49,7 @@ func TestMonitorAutoStartAndResetLifecycle(t *testing.T) {
 		usage: usageWithTokens(1_250), at: startedAt.Add(30*time.Second + 100*time.Millisecond),
 	})
 	model = updated.(Model)
-	if len(model.monitorSamples) != 1 || model.monitorSamples[0].intervalTokens != 250 {
+	if len(model.monitorSamples) != 1 || model.monitorSamples[0].Tokens != 250 {
 		t.Fatalf("30-second graph bucket was not recorded: %#v", model.monitorSamples)
 	}
 
@@ -148,7 +148,7 @@ func TestMonitorTracksRootSessionsAndSamplesEveryGraphOnOneTick(t *testing.T) {
 	if len(model.monitorSessionData[0].samples) != 1 || len(model.monitorSessionData[1].samples) != 1 {
 		t.Fatalf("session graphs were not sampled together: %#v", model.monitorSessionData)
 	}
-	if model.monitorSessionData[0].samples[0].intervalTokens != 60 || model.monitorSessionData[1].samples[0].intervalTokens != 40 {
+	if model.monitorSessionData[0].samples[0].Tokens != 60 || model.monitorSessionData[1].samples[0].Tokens != 40 {
 		t.Fatalf("per-root sample deltas were not isolated: %#v", model.monitorSessionData)
 	}
 }
@@ -400,7 +400,7 @@ func TestMonitorAddsANewlyDetectedRootWithoutLosingItsFirstUsage(t *testing.T) {
 		t.Fatalf("new root elapsed time = %s; want its own 500ms lifetime", got)
 	}
 	model.captureMonitorSamples(startedAt.Add(time.Second))
-	if sample := model.monitorSessionData[index].samples[0]; sample.duration != 500*time.Millisecond || sample.intervalTokens != 40 {
+	if sample := model.monitorSessionData[index].samples[0]; sample.Duration != 500*time.Millisecond || sample.Tokens != 40 {
 		t.Fatalf("new root partial first sample = %#v; want 500ms and 40 tokens", sample)
 	}
 }
@@ -429,7 +429,7 @@ func TestMonitorWaitsForAFreshBoundaryReadWhenOrdinaryFetchIsInFlight(t *testing
 		kind: monitorFetchBoundary, sequence: 6, usage: usageWithTokens(125), at: startedAt.Add(30*time.Second + 2*time.Millisecond),
 	})
 	model = updated.(Model)
-	if len(model.monitorSamples) != 1 || model.monitorSamples[0].intervalTokens != 125 || model.monitorBoundaryDue {
+	if len(model.monitorSamples) != 1 || model.monitorSamples[0].Tokens != 125 || model.monitorBoundaryDue {
 		t.Fatalf("fresh boundary result did not close the bucket: %#v", model.monitorSamples)
 	}
 }
@@ -472,8 +472,8 @@ func TestMonitorRendersOneMetricsAndGraphPairPerRootSession(t *testing.T) {
 	model := Model{
 		monitorState: monitorRunning, monitorStartedAt: time.Now().Add(-time.Minute),
 		monitorSessionData: []monitorSession{
-			{id: "019d-alpha-a1b2c", workingDirectory: "/work/alpha", latest: 150, agentCount: 2, active: true, displayed: true, samples: []monitorSample{{intervalTokens: 50}}},
-			{id: "019d-bravo-d4e5f", workingDirectory: "/work/bravo", latest: 75, active: true, displayed: true, samples: []monitorSample{{intervalTokens: 25}}},
+			{id: "019d-alpha-a1b2c", workingDirectory: "/work/alpha", latest: 150, agentCount: 2, active: true, displayed: true, samples: []monitorSample{{Tokens: 50}}},
+			{id: "019d-bravo-d4e5f", workingDirectory: "/work/bravo", latest: 75, active: true, displayed: true, samples: []monitorSample{{Tokens: 25}}},
 		},
 	}
 	view := ansi.Strip(model.renderMonitorSessions(116, 24, paletteFor(themeHacker)))
@@ -489,10 +489,10 @@ func TestMonitorRendersOneMetricsAndGraphPairPerRootSession(t *testing.T) {
 
 func TestMonitorSessionRowsStayInsideResponsiveRectangle(t *testing.T) {
 	sessions := []monitorSession{
-		{id: "root-a", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 10}}},
-		{id: "root-b", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 20}}},
-		{id: "root-c", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 30}}},
-		{id: "root-d", active: true, displayed: true, samples: []monitorSample{{intervalTokens: 40}}},
+		{id: "root-a", active: true, displayed: true, samples: []monitorSample{{Tokens: 10}}},
+		{id: "root-b", active: true, displayed: true, samples: []monitorSample{{Tokens: 20}}},
+		{id: "root-c", active: true, displayed: true, samples: []monitorSample{{Tokens: 30}}},
+		{id: "root-d", active: true, displayed: true, samples: []monitorSample{{Tokens: 40}}},
 	}
 	for _, size := range []struct{ width, height int }{{20, 6}, {40, 9}, {80, 12}, {116, 24}} {
 		model := Model{monitorState: monitorRunning, monitorSessionData: sessions}
@@ -757,7 +757,7 @@ func TestMonitorViewIsResponsiveAndGraphAutoScales(t *testing.T) {
 			meterView: viewMonitor, monitorState: monitorRunning,
 			monitorBaseline: 1_000, monitorLatest: 7_250,
 			monitorStartedAt: time.Now().Add(-time.Minute),
-			monitorSamples:   []monitorSample{{intervalTokens: 250}, {intervalTokens: 6_000}},
+			monitorSamples:   []monitorSample{{Tokens: 250}, {Tokens: 6_000}},
 		}
 		output := model.render()
 		plain := ansi.Strip(output)
@@ -937,14 +937,14 @@ func TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes(t *testing.T) {
 }
 
 func TestMonitorGraphIntroducesBarsOnRightAndScrollsThemLeft(t *testing.T) {
-	model := Model{monitorState: monitorRunning, monitorSamples: []monitorSample{{intervalTokens: 10}}}
+	model := Model{monitorState: monitorRunning, monitorSamples: []monitorSample{{Tokens: 10}}}
 	first := ansi.Strip(model.renderMonitorGraph(40, 10, paletteFor(themeHacker)))
 	firstX := graphRightmostBar(first)
 	if firstX < 0 {
 		t.Fatalf("first graph has no bar:\n%s", first)
 	}
 
-	model.monitorSamples = append(model.monitorSamples, monitorSample{intervalTokens: 10})
+	model.monitorSamples = append(model.monitorSamples, monitorSample{Tokens: 10})
 	second := ansi.Strip(model.renderMonitorGraph(40, 10, paletteFor(themeHacker)))
 	line := graphBarLine(second)
 	if !strings.Contains(line, "█ █") || graphRightmostBar(second) != firstX {
@@ -955,7 +955,7 @@ func TestMonitorGraphIntroducesBarsOnRightAndScrollsThemLeft(t *testing.T) {
 func TestMonitorGraphUsesVerticalGranularBars(t *testing.T) {
 	model := Model{
 		monitorState:   monitorRunning,
-		monitorSamples: []monitorSample{{intervalTokens: 25}, {intervalTokens: 100}},
+		monitorSamples: []monitorSample{{Tokens: 25}, {Tokens: 100}},
 	}
 	graph := ansi.Strip(model.renderMonitorGraph(40, 12, paletteFor(themeHacker)))
 	if strings.Count(graph, "█") <= len(model.monitorSamples) {
@@ -1006,14 +1006,14 @@ func TestMonitorPollingAdaptsToSessionActivity(t *testing.T) {
 func TestMonitorSampleHistoryIsBounded(t *testing.T) {
 	samples := make([]monitorSample, monitorSampleHistoryMax)
 	for index := range samples {
-		samples[index].intervalTokens = int64(index)
+		samples[index].Tokens = int64(index)
 	}
-	samples = appendMonitorSample(samples, monitorSample{intervalTokens: 9_999})
+	samples = codex.AppendUsageSample(samples, monitorSample{Tokens: 9_999}, monitorSampleHistoryMax)
 	if len(samples) != monitorSampleHistoryMax {
 		t.Fatalf("bounded history length = %d, want %d", len(samples), monitorSampleHistoryMax)
 	}
-	if samples[0].intervalTokens != 1 || samples[len(samples)-1].intervalTokens != 9_999 {
-		t.Fatalf("bounded history retained wrong range: first=%d last=%d", samples[0].intervalTokens, samples[len(samples)-1].intervalTokens)
+	if samples[0].Tokens != 1 || samples[len(samples)-1].Tokens != 9_999 {
+		t.Fatalf("bounded history retained wrong range: first=%d last=%d", samples[0].Tokens, samples[len(samples)-1].Tokens)
 	}
 }
 

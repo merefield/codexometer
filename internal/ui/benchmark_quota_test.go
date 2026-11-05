@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/quotaestimate"
 )
 
 func TestSubscriptionBenchmarkAccountingDefersAndIncludesFinalCost(t *testing.T) {
 	now := time.Now()
 	reset := now.Add(7 * 24 * time.Hour).Unix()
 	model := Model{
-		snapshot:        apiEqSnapshot(10, reset),
-		quotaAPIAnchors: make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:  make(map[string]string),
-		quotaAPIAccount: "account-a",
+		snapshot: apiEqSnapshot(10, reset),
+
+		quotaAPI: quotaestimate.State{Account: "account-a"},
 		benchmarkQuotaAccounting: benchmarkQuotaAccounting{
 			billingSource: codex.BenchmarkBillingSubscription,
 		},
@@ -45,7 +45,7 @@ func TestSubscriptionBenchmarkAccountingDefersAndIncludesFinalCost(t *testing.T)
 	model.snapshot = advanced
 	model.observeQuotaAPIEq(advanced, accounting, now.Add(time.Minute))
 	estimate, ok := model.quotaAPIEstimate(advanced, advanced.Meters()[0])
-	if !ok || math.Abs(estimate.fullLow-140.0*100/6) > 1e-9 || math.Abs(estimate.fullHigh-140.0*100/4) > 1e-9 {
+	if !ok || math.Abs(estimate.FullLow-140.0*100/6) > 1e-9 || math.Abs(estimate.FullHigh-140.0*100/4) > 1e-9 {
 		t.Fatalf("benchmark-inclusive estimate = %#v, %v", estimate, ok)
 	}
 }
@@ -167,10 +167,9 @@ func TestBenchmarkQuotaAccountingSettlesOnlyAfterStableRefresh(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(10, now.Add(time.Hour).Unix())
 	model := Model{
-		usageFetcher:    stubLiveFetcher{},
-		snapshot:        snapshot,
-		quotaAPIAnchors: make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:  make(map[string]string),
+		usageFetcher: stubLiveFetcher{},
+		snapshot:     snapshot,
+
 		benchmarkQuotaAccounting: benchmarkQuotaAccounting{
 			billingSource: codex.BenchmarkBillingSubscription,
 			settling:      true,
@@ -209,10 +208,9 @@ func TestStaleQuotaFetchCannotSettleNewBenchmarkAccounting(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(15, now.Add(time.Hour).Unix())
 	model := Model{
-		usageFetcher:    stubLiveFetcher{},
-		snapshot:        snapshot,
-		quotaAPIAnchors: make(map[string]quotaAPIAnchor),
-		quotaAPIIssues:  make(map[string]string),
+		usageFetcher: stubLiveFetcher{},
+		snapshot:     snapshot,
+
 		benchmarkQuotaAccounting: benchmarkQuotaAccounting{
 			billingSource: codex.BenchmarkBillingSubscription,
 			revision:      2,
@@ -228,9 +226,9 @@ func TestStaleQuotaFetchCannotSettleNewBenchmarkAccounting(t *testing.T) {
 		benchmarkQuotaRevision: 1,
 	})
 	deferred := updated.(Model)
-	if !deferred.benchmarkQuotaAccounting.deferred() || deferred.quotaAPITelemetryIssue != "OBSERVATION DEFERRED" || len(deferred.quotaAPIEvidence) != 0 {
+	if !deferred.benchmarkQuotaAccounting.deferred() || deferred.quotaAPITelemetryIssue != "OBSERVATION DEFERRED" || len(deferred.quotaAPI.Evidence) != 0 {
 		t.Fatalf("stale fetch changed benchmark quota learning: accounting=%#v issue=%q evidence=%#v",
-			deferred.benchmarkQuotaAccounting, deferred.quotaAPITelemetryIssue, deferred.quotaAPIEvidence)
+			deferred.benchmarkQuotaAccounting, deferred.quotaAPITelemetryIssue, deferred.quotaAPI.Evidence)
 	}
 }
 

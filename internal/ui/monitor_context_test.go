@@ -16,7 +16,7 @@ import (
 func contextTestModel() Model {
 	m := Model{width: 120, height: 40, meterView: viewMonitor, snapshot: codex.DemoSnapshot(), monitorState: monitorRunning}
 	for _, id := range []string{"root-one", "root-two", "root-three"} {
-		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: id, active: true, displayed: true, preview: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Finished updating the documentation.\n次の手順を選んでください。", ThreadID: id, Source: "LOCAL", At: time.Now()}, samples: []monitorSample{{intervalTokens: 100}}})
+		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: id, active: true, displayed: true, preview: codex.SessionContext{Kind: codex.SessionContextReply, Text: "Finished updating the documentation.\n次の手順を選んでください。", ThreadID: id, Source: "LOCAL", At: time.Now()}, samples: []monitorSample{{Tokens: 100}}})
 	}
 	for i := range m.monitorSessionData {
 		m.monitorSessionData[i].working = true

@@ -18,69 +18,21 @@
     onchange?: () => void;
     oncomplete?: (text: string) => void;
   } = $props();
-  interface Choice {
-    id: string;
-    label: string;
-    help: string;
-    next?: string;
-    action?: boolean;
-    reversible?: boolean;
-    selected?: boolean;
-    unavailable?: string;
-  }
-  interface Menu {
-    title: string;
-    help: string;
-    path: string;
-    revision: string;
-    choices: Choice[];
-    input?: boolean;
-    reversibleInput?: boolean;
-    picker?: boolean;
-    inputLabel?: string;
-    inputLimit?: number;
-    value?: string;
-  }
-  const localPaths = ['statusline', 'usage', 'copy', 'theme', 'exit', 'quit'];
+  import {
+    localCommands,
+    type CommandChoice as Choice,
+    type CommandMenu as Menu,
+  } from './contracts.generated';
+  const localPaths = localCommands.map((choice) => choice.next);
   function localChoices(): Choice[] {
-    return [
-      {
-        id: 'local-statusline',
-        label: '/statusline',
-        help: 'Choose fields for Codexometer’s detail footer.',
-        next: 'statusline',
-      },
-      {
-        id: 'local-usage',
-        label: '/usage',
-        help: 'Open Codexometer’s usage history. Quota and reset views remain available.',
-        next: 'usage',
-      },
-      {
-        id: 'local-copy',
-        label: '/copy',
-        help: 'Copy the selected session’s observed reply or activity with its Copy control.',
-        next: 'copy',
-      },
-      {
-        id: 'local-theme',
-        label: '/theme',
-        help: 'Open the existing Codexometer theme selector. Saved browser display preferences only.',
-        next: 'theme',
-      },
-      {
-        id: 'local-exit',
-        label: '/exit',
-        help: 'Leave session detail and return to Sessions. The local server remains running.',
-        next: 'exit',
-      },
-      {
-        id: 'local-quit',
-        label: '/quit',
-        help: 'Alias for /exit: return to Sessions. The local server remains running.',
-        next: 'quit',
-      },
-    ];
+    return localCommands.map((choice) =>
+      ['exit', 'quit'].includes(choice.next || '')
+        ? {
+            ...choice,
+            help: 'Return to Sessions. The local server and Codex sessions remain running.',
+          }
+        : { ...choice },
+    );
   }
   function localMenu(): Menu {
     return {
@@ -152,12 +104,7 @@
     input: string;
   }
   let history = $state<Level[]>([]);
-  function isInputReview(path: string) {
-    return ['rename/', 'cd/', 'goal/set/', 'goal/edit/', 'goal/budget/'].some(
-      (prefix) => path.startsWith(prefix),
-    );
-  }
-  const inputReview = $derived(isInputReview(menu?.path || ''));
+  const inputReview = $derived(!!menu?.inputReview);
   const canBack = $derived(
     (!!selected && !inputReview) || !!stagedChoice || history.length > 0,
   );
@@ -435,6 +382,7 @@
         command: { mode: 'list', path, ...(refresh ? { refresh: true } : {}) },
       });
       if (seq === request) {
+        result.choices ||= [];
         if (path === '' || path === 'help')
           result.choices = [
             ...result.choices.filter(
@@ -458,7 +406,7 @@
             if (result.input) commandPanel?.querySelector('input')?.focus();
             else optionList?.focus();
           });
-        if (isInputReview(result.path) && result.choices.length === 1) {
+        if (result.inputReview && result.choices.length === 1) {
           busy = false; // The catalogue is ready before preparing its sole choice.
           void choose(result.choices[0]);
         }

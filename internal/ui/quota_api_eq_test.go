@@ -10,20 +10,21 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/quotaestimate"
 )
 
 func TestShortQuotaAPIRestartReasonsStayCanonical(t *testing.T) {
 	for reason, want := range map[string]string{
-		quotaAPIRestartAccountChanged:    "ACCOUNT",
-		quotaAPIRestartAccountingRebased: "REBASED",
-		quotaAPIRestartCoverageGap:       "COVERAGE GAP",
-		quotaAPIRestartUnpricedUsage:     "UNPRICED",
-		quotaAPIRestartMissingUsage:      "USAGE MISSING",
-		quotaAPIRestartInconsistentUsage: "USAGE INCONSISTENT",
-		quotaAPIRestartWindowChanged:     "WINDOW CHANGED",
-		quotaAPIRestartWindowReset:       "RESET",
-		"FUTURE REASON":                  "FUTURE REASON",
-		"":                               "",
+		quotaestimate.RestartAccountChanged:    "ACCOUNT",
+		quotaestimate.RestartAccountingRebased: "REBASED",
+		quotaestimate.RestartCoverageGap:       "COVERAGE GAP",
+		quotaestimate.RestartUnpricedUsage:     "UNPRICED",
+		quotaestimate.RestartMissingUsage:      "USAGE MISSING",
+		quotaestimate.RestartInconsistentUsage: "USAGE INCONSISTENT",
+		quotaestimate.RestartWindowChanged:     "WINDOW CHANGED",
+		quotaestimate.RestartWindowReset:       "RESET",
+		"FUTURE REASON":                        "FUTURE REASON",
+		"":                                     "",
 	} {
 		if got := shortQuotaAPIRestartReason(reason); got != want {
 			t.Errorf("reason %q: got %q, want canonical %q", reason, got, want)
@@ -43,17 +44,17 @@ func TestQuotaAPIEstimatorLearnsRangeAndCurrentSpend(t *testing.T) {
 	model.observeQuotaAPIEq(snapshot, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
 	meter := snapshot.Meters()[0]
 	estimate, ok := model.quotaAPIEstimate(snapshot, meter)
-	if !ok || estimate.samples != 1 || estimate.confidence != "LOW" {
+	if !ok || estimate.Samples != 1 || estimate.Confidence != "LOW" {
 		t.Fatalf("estimate = %#v, %v", estimate, ok)
 	}
-	if math.Abs(estimate.fullLow-100.0/6) > 1e-9 || math.Abs(estimate.fullHigh-25) > 1e-9 ||
-		math.Abs(estimate.currentLow-2.5) > 1e-9 || math.Abs(estimate.currentHigh-3.75) > 1e-9 {
+	if math.Abs(estimate.FullLow-100.0/6) > 1e-9 || math.Abs(estimate.FullHigh-25) > 1e-9 ||
+		math.Abs(estimate.CurrentLow-2.5) > 1e-9 || math.Abs(estimate.CurrentHigh-3.75) > 1e-9 {
 		t.Fatalf("estimate range = %#v", estimate)
 	}
 	line := model.quotaAPILine(meter, 100)
 	want := i18n.Format("OBSERVED API-EQ // SPEND ~%s // 100%% ~%s // %s · N=%d",
-		formatAPIRange(estimate.currentLow, estimate.currentHigh),
-		formatAPIRange(estimate.fullLow, estimate.fullHigh),
+		formatAPIRange(estimate.CurrentLow, estimate.CurrentHigh),
+		formatAPIRange(estimate.FullLow, estimate.FullHigh),
 		i18n.Text("LOW"), 1)
 	if line != want {
 		t.Fatalf("estimate line = %q", line)
@@ -70,8 +71,8 @@ func TestQuotaAPIEstimatorRequiresCleanPricedMovement(t *testing.T) {
 	model.observeQuotaAPIEq(apiEqSnapshot(25, reset), codex.LiveUsageSnapshot{
 		APIEqUSD: 1, APIEqPricedCalls: 1, APIEqUnpricedCalls: 1,
 	}, now.Add(time.Minute))
-	if len(model.quotaAPIEvidence) != 0 {
-		t.Fatalf("unpriced interval produced evidence: %#v", model.quotaAPIEvidence)
+	if len(model.quotaAPI.Evidence) != 0 {
+		t.Fatalf("unpriced interval produced evidence: %#v", model.quotaAPI.Evidence)
 	}
 	line := model.quotaAPILine(apiEqSnapshot(25, reset).Meters()[0], 80)
 	if !strings.Contains(line, "UNPRICED USAGE") {
@@ -82,8 +83,8 @@ func TestQuotaAPIEstimatorRequiresCleanPricedMovement(t *testing.T) {
 	model.observeQuotaAPIEq(apiEqSnapshot(30, reset), codex.LiveUsageSnapshot{
 		APIEqUSD: 1, APIEqPricedCalls: 1, APIEqUnpricedCalls: 1,
 	}, now.Add(2*time.Minute))
-	if len(model.quotaAPIEvidence) != 0 || !strings.Contains(model.quotaAPILine(apiEqSnapshot(30, reset).Meters()[0], 80), "LOCAL COVERAGE GAP") {
-		t.Fatalf("quota-only movement was not rejected: evidence=%#v issues=%#v", model.quotaAPIEvidence, model.quotaAPIIssues)
+	if len(model.quotaAPI.Evidence) != 0 || !strings.Contains(model.quotaAPILine(apiEqSnapshot(30, reset).Meters()[0], 80), "LOCAL COVERAGE GAP") {
+		t.Fatalf("quota-only movement was not rejected: evidence=%#v", model.quotaAPI.Evidence)
 	}
 }
 
@@ -104,7 +105,7 @@ func TestQuotaAPIEstimatorResetsAnchorAndCapsConfidence(t *testing.T) {
 		}, now.Add(time.Duration(index+1)*time.Minute))
 	}
 	estimate, ok := model.quotaAPIEstimate(apiEqSnapshot(used, reset), apiEqSnapshot(used, reset).Meters()[0])
-	if !ok || estimate.samples != 3 || estimate.confidence != "MED" {
+	if !ok || estimate.Samples != 3 || estimate.Confidence != "MED" {
 		t.Fatalf("multi-sample estimate = %#v, %v", estimate, ok)
 	}
 
@@ -112,8 +113,8 @@ func TestQuotaAPIEstimatorResetsAnchorAndCapsConfidence(t *testing.T) {
 	model.observeQuotaAPIEq(apiEqSnapshot(1, newReset), codex.LiveUsageSnapshot{
 		APIEqUSD: cost, APIEqPricedCalls: calls,
 	}, now.Add(4*time.Minute))
-	key := quotaAPIKey(apiEqSnapshot(1, newReset), apiEqSnapshot(1, newReset).Meters()[0])
-	if anchor := model.quotaAPIAnchors[key]; anchor.usedPercent != 1 || anchor.resetAt != newReset {
+	key := quotaestimate.Key(apiEqSnapshot(1, newReset), apiEqSnapshot(1, newReset).Meters()[0])
+	if anchor := model.quotaAPI.Anchors[key]; anchor.UsedPercent != 1 || anchor.ResetAt != newReset {
 		t.Fatalf("reset anchor = %#v", anchor)
 	}
 }
@@ -130,9 +131,9 @@ func TestQuotaAPIEstimatorPreservesProgressAcrossUpcomingResetTimeRevisionAndIna
 	usage := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}
 	model.snapshot = advanced
 	model.observeQuotaAPIEq(advanced, usage, now.Add(2*time.Hour))
-	key := quotaAPIKey(advanced, advanced.Meters()[0])
-	anchor := model.quotaAPIAnchors[key]
-	if anchor.usedPercent != 10 || anchor.resetAt != reset || anchor.restartReason != "" {
+	key := quotaestimate.Key(advanced, advanced.Meters()[0])
+	anchor := model.quotaAPI.Anchors[key]
+	if anchor.UsedPercent != 10 || anchor.ResetAt != reset || anchor.RestartReason != "" {
 		t.Fatalf("benign reset-time revision moved anchor = %#v", anchor)
 	}
 	if line := model.quotaAPILine(advanced.Meters()[0], 100); !strings.Contains(line, "2/5PP CLEAN MOVEMENT") || strings.Contains(line, "RESTARTED") {
@@ -155,10 +156,10 @@ func TestQuotaAPIEstimatorRestartsWhenPreviousResetBoundaryPassed(t *testing.T) 
 	rolled := apiEqSnapshot(10, reset+int64((7*24*time.Hour).Seconds()))
 	model.snapshot = rolled
 	model.observeQuotaAPIEq(rolled, codex.LiveUsageSnapshot{}, now.Add(2*time.Minute))
-	key := quotaAPIKey(rolled, rolled.Meters()[0])
-	anchor := model.quotaAPIAnchors[key]
-	if anchor.usedPercent != 10 || anchor.resetAt != *rolled.Meters()[0].Window.ResetsAt ||
-		anchor.restartReason != quotaAPIRestartWindowReset {
+	key := quotaestimate.Key(rolled, rolled.Meters()[0])
+	anchor := model.quotaAPI.Anchors[key]
+	if anchor.UsedPercent != 10 || anchor.ResetAt != *rolled.Meters()[0].Window.ResetsAt ||
+		anchor.RestartReason != quotaestimate.RestartWindowReset {
 		t.Fatalf("rolled-window anchor = %#v", anchor)
 	}
 	if line := model.quotaAPILine(rolled.Meters()[0], 100); !strings.Contains(line, "RESTARTED: WINDOW RESET") {
@@ -207,17 +208,17 @@ func TestQuotaAPIEstimatorExplainsWindowDefinitionChange(t *testing.T) {
 func TestQuotaAPIEstimatorKeepsDivergentSamplesAtLowConfidence(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
-	key := quotaAPIKey(snapshot, snapshot.Meters()[0])
+	key := quotaestimate.Key(snapshot, snapshot.Meters()[0])
 	model := New(nil, time.Minute)
 	for index, capacity := range []float64{1, 100, 10_000} {
-		model.quotaAPIEvidence = append(model.quotaAPIEvidence, quotaAPISample{
+		model.quotaAPI.Evidence = append(model.quotaAPI.Evidence, quotaestimate.Sample{
 			Key: key, CapacityUSD: capacity, LowUSD: capacity * 5 / 6, HighUSD: capacity * 5 / 4,
 			DeltaPercent: 5, ObservedAtUnix: now.Add(time.Duration(index) * time.Minute).Unix(),
 			PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 		})
 	}
 	estimate, ok := model.quotaAPIEstimate(snapshot, snapshot.Meters()[0])
-	if !ok || estimate.confidence != "LOW" {
+	if !ok || estimate.Confidence != "LOW" {
 		t.Fatalf("divergent estimate = %#v, %v; want LOW", estimate, ok)
 	}
 }
@@ -253,8 +254,8 @@ func TestQuotaAPIEstimatorRestrictsAdditionalLimitsAndIsolatesAccounts(t *testin
 	advanced.RateLimitsByLimitID["spark"] = sparkLimit
 	model.snapshot = advanced
 	model.observeQuotaAPIEq(advanced, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
-	if len(model.quotaAPIEvidence) != 1 || model.quotaAPIEvidence[0].Key != quotaAPIKey(advanced, advanced.Meters()[0]) {
-		t.Fatalf("additional limit received evidence: %#v", model.quotaAPIEvidence)
+	if len(model.quotaAPI.Evidence) != 1 || model.quotaAPI.Evidence[0].Key != quotaestimate.Key(advanced, advanced.Meters()[0]) {
+		t.Fatalf("additional limit received evidence: %#v", model.quotaAPI.Evidence)
 	}
 	view := strings.Join([]string{model.quotaAPILine(advanced.Meters()[0], 80), model.quotaMetersWithInsights(100)[1].Details}, "\n")
 	if !strings.Contains(view, "100%") || !strings.Contains(view, "LIMIT ATTRIBUTION UNKNOWN") {
@@ -267,8 +268,8 @@ func TestQuotaAPIEstimatorRestrictsAdditionalLimitsAndIsolatesAccounts(t *testin
 		t.Fatal("evidence crossed account fingerprints")
 	}
 	model.observeQuotaAPIEq(otherAccount, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(2*time.Minute))
-	if len(model.quotaAPIEvidence) != 0 || len(model.quotaAPIAnchors) != 1 || model.quotaAPIAccount != "account-b" {
-		t.Fatalf("account switch retained prior observations: account=%q anchors=%#v evidence=%#v", model.quotaAPIAccount, model.quotaAPIAnchors, model.quotaAPIEvidence)
+	if len(model.quotaAPI.Evidence) != 0 || len(model.quotaAPI.Anchors) != 1 || model.quotaAPI.Account != "account-b" {
+		t.Fatalf("account switch retained prior observations: account=%q anchors=%#v evidence=%#v", model.quotaAPI.Account, model.quotaAPI.Anchors, model.quotaAPI.Evidence)
 	}
 
 	unknownAccount := apiEqSnapshot(20, reset)
@@ -276,25 +277,25 @@ func TestQuotaAPIEstimatorRestrictsAdditionalLimitsAndIsolatesAccounts(t *testin
 	unknownModel := New(nil, time.Minute)
 	unknownModel.snapshot = unknownAccount
 	unknownModel.observeQuotaAPIEq(unknownAccount, codex.LiveUsageSnapshot{}, now)
-	if len(unknownModel.quotaAPIAnchors) != 0 ||
+	if len(unknownModel.quotaAPI.Anchors) != 0 ||
 		!strings.Contains(unknownModel.quotaMetersWithInsights(100)[0].Details, "ACCOUNT ATTRIBUTION UNKNOWN") {
-		t.Fatalf("unknown account was not fail-closed: anchors=%#v meters=%#v", unknownModel.quotaAPIAnchors, unknownModel.quotaMetersWithInsights(100))
+		t.Fatalf("unknown account was not fail-closed: anchors=%#v meters=%#v", unknownModel.quotaAPI.Anchors, unknownModel.quotaMetersWithInsights(100))
 	}
 }
 
 func TestQuotaAPIAccountingBracketRequiresStableCounters(t *testing.T) {
 	left := codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 2, APIEqUnpricedCalls: 3}
-	if !quotaAPIAccountingEqual(left, left) {
+	if !quotaestimate.AccountingEqual(left, left) {
 		t.Fatal("identical accounting was unstable")
 	}
 	right := left
 	right.APIEqPricedCalls++
-	if quotaAPIAccountingEqual(left, right) {
+	if quotaestimate.AccountingEqual(left, right) {
 		t.Fatal("changed accounting was accepted")
 	}
 	right = left
 	right.APIEqPendingCalls++
-	if quotaAPIAccountingEqual(left, right) {
+	if quotaestimate.AccountingEqual(left, right) {
 		t.Fatal("pending accounting was accepted")
 	}
 }
@@ -302,10 +303,10 @@ func TestQuotaAPIAccountingBracketRequiresStableCounters(t *testing.T) {
 func TestQuotaAPITelemetryIssueTakesPrecedenceOverOldEstimate(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
-	key := quotaAPIKey(snapshot, snapshot.Meters()[0])
+	key := quotaestimate.Key(snapshot, snapshot.Meters()[0])
 	model := New(nil, time.Minute)
 	model.snapshot = snapshot
-	model.quotaAPIEvidence = []quotaAPISample{{
+	model.quotaAPI.Evidence = []quotaestimate.Sample{{
 		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 5,
 		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
@@ -318,12 +319,12 @@ func TestQuotaAPITelemetryIssueTakesPrecedenceOverOldEstimate(t *testing.T) {
 
 func TestQuotaAPIEvidenceRejectsStaleAndDifferentPricing(t *testing.T) {
 	now := time.Now()
-	valid := quotaAPISample{Key: "pro|codex|300", CapacityUSD: 10, LowUSD: 9, HighUSD: 11, DeltaPercent: 5, ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn}
+	valid := quotaestimate.Sample{Key: "pro|codex|300", CapacityUSD: 10, LowUSD: 9, HighUSD: 11, DeltaPercent: 5, ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn}
 	stale := valid
-	stale.ObservedAtUnix = now.Add(-quotaAPIMaxAge - time.Hour).Unix()
+	stale.ObservedAtUnix = now.Add(-quotaestimate.MaxAge - time.Hour).Unix()
 	oldPrice := valid
 	oldPrice.PricingRetrievedOn = "2020-01-01"
-	if got := validQuotaAPISamples([]quotaAPISample{stale, oldPrice, valid}, now); len(got) != 1 || got[0] != valid {
+	if got := quotaestimate.ValidSamples([]quotaestimate.Sample{stale, oldPrice, valid}, now); len(got) != 1 || got[0] != valid {
 		t.Fatalf("valid samples = %#v", got)
 	}
 }
@@ -331,12 +332,12 @@ func TestQuotaAPIEvidenceRejectsStaleAndDifferentPricing(t *testing.T) {
 func TestEveryQuotaViewDisplaysResponsiveAPIEqReadout(t *testing.T) {
 	now := time.Now()
 	snapshot := apiEqSnapshot(25, now.Add(4*time.Hour).Unix())
-	key := quotaAPIKey(snapshot, snapshot.Meters()[0])
+	key := quotaestimate.Key(snapshot, snapshot.Meters()[0])
 	model := New(stubFetcher{snapshot: snapshot}, time.Minute)
 	model.loading = false
 	model.snapshot = snapshot
 	model.width, model.height = 120, 44
-	model.quotaAPIEvidence = []quotaAPISample{{
+	model.quotaAPI.Evidence = []quotaestimate.Sample{{
 		Key: key, CapacityUSD: 20, LowUSD: 18, HighUSD: 22, DeltaPercent: 10,
 		ObservedAtUnix: now.Unix(), PricingRetrievedOn: codex.StandardAPIPricingRetrievedOn,
 	}}
@@ -381,16 +382,16 @@ func TestQuotaUsageIssuesRestartWithSpecificReasonsAndRecover(t *testing.T) {
 			switch kind {
 			case "missing":
 				issue.APIEqMissingUsageCalls = 1
-				reason = quotaAPIRestartMissingUsage
+				reason = quotaestimate.RestartMissingUsage
 			case "inconsistent":
 				issue.APIEqInconsistentUsageCalls = 1
-				reason = quotaAPIRestartInconsistentUsage
+				reason = quotaestimate.RestartInconsistentUsage
 			case "adjusted":
 				issue.APIEqAccountingAdjustments = 1
-				reason = quotaAPIRestartAccountingRebased
+				reason = quotaestimate.RestartAccountingRebased
 			case "unpriced":
 				issue.APIEqUnpricedCalls = 1
-				reason = quotaAPIRestartUnpricedUsage
+				reason = quotaestimate.RestartUnpricedUsage
 			}
 			observe := func(percent int, usage codex.LiveUsageSnapshot) {
 				snap := apiEqSnapshot(percent, reset)
@@ -399,8 +400,8 @@ func TestQuotaUsageIssuesRestartWithSpecificReasonsAndRecover(t *testing.T) {
 				model.observeQuotaAPIEq(snap, usage, now.Add(time.Duration(percent)*time.Minute))
 			}
 			observe(15, issue)
-			if len(model.quotaAPIEvidence) != 0 || !strings.Contains(model.quotaAPILine(model.snapshot.Meters()[0], 120), reason) {
-				t.Fatal("unsafe learning or incorrect cause", model.quotaAPIEvidence, model.quotaAPIAnchors)
+			if len(model.quotaAPI.Evidence) != 0 || !strings.Contains(model.quotaAPILine(model.snapshot.Meters()[0], 120), reason) {
+				t.Fatal("unsafe learning or incorrect cause", model.quotaAPI.Evidence, model.quotaAPI.Anchors)
 			}
 			clean := issue
 			clean.APIEqUSD = 2
@@ -412,8 +413,8 @@ func TestQuotaUsageIssuesRestartWithSpecificReasonsAndRecover(t *testing.T) {
 			clean.APIEqUSD = 3
 			clean.APIEqPricedCalls = 3
 			observe(20, clean)
-			if len(model.quotaAPIEvidence) != 1 {
-				t.Fatal("clean learning did not resume", model.quotaAPIAnchors)
+			if len(model.quotaAPI.Evidence) != 1 {
+				t.Fatal("clean learning did not resume", model.quotaAPI.Anchors)
 			}
 		})
 	}
@@ -428,7 +429,7 @@ func TestQuotaAccountingBracketIncludesUsageIssuesAndAdjustments(t *testing.T) {
 	} {
 		after := before
 		mutate(&after)
-		if quotaAPIAccountingEqual(before, after) {
+		if quotaestimate.AccountingEqual(before, after) {
 			t.Fatal("changed usage accounting was accepted")
 		}
 	}
@@ -443,8 +444,8 @@ func TestQuotaFlexDiscountLearnsWithoutFalseRebase(t *testing.T) {
 	m.snapshot = apiEqSnapshot(15, reset)
 	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqTierPremiumUSD: -1, APIEqPricedCalls: 1}, now.Add(time.Minute))
 	estimate, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0])
-	if !ok || !estimate.hasPremium || math.Abs(estimate.standardFull-40) > 1e-12 {
-		t.Fatal("discount mistaken for accounting regression", m.quotaAPIAnchors, estimate)
+	if !ok || !estimate.HasPremium || math.Abs(estimate.StandardFull-40) > 1e-12 {
+		t.Fatal("discount mistaken for accounting regression", m.quotaAPI.Anchors, estimate)
 	}
 	if !strings.Contains(m.quotaAPILine(m.snapshot.Meters()[0], 120), "TIER*") {
 		t.Fatal("discount lost requested-tier qualifier")
@@ -502,13 +503,13 @@ func TestQuotaAPICoverageGapDiscardsEvidenceAndRestartsCleanly(t *testing.T) {
 	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{}, now)
 	m.snapshot = apiEqSnapshot(15, reset)
 	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 1, APIEqPricedCalls: 1}, now.Add(time.Minute))
-	if len(m.quotaAPIEvidence) != 1 {
+	if len(m.quotaAPI.Evidence) != 1 {
 		t.Fatal("test failed to learn")
 	}
 	for _, used := range []int{20, 25} {
 		m.snapshot = apiEqSnapshot(used, reset)
 		m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 2, APIEqPricedCalls: 2, APIEqCoverageIssue: "SESSION child: background compaction usage is unobserved"}, now.Add(2*time.Minute))
-		if len(m.quotaAPIEvidence) != 0 || len(m.quotaAPIAnchors) != 0 || !strings.Contains(m.quotaAPILine(m.snapshot.Meters()[0], 100), "COVERAGE GAP") {
+		if len(m.quotaAPI.Evidence) != 0 || len(m.quotaAPI.Anchors) != 0 || !strings.Contains(m.quotaAPILine(m.snapshot.Meters()[0], 100), "COVERAGE GAP") {
 			t.Fatal("incomplete interval learned or showed old estimates")
 		}
 		if _, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0]); ok {
@@ -519,12 +520,12 @@ func TestQuotaAPICoverageGapDiscardsEvidenceAndRestartsCleanly(t *testing.T) {
 	// interval cannot be attributed to the next clean quota movement.
 	m.snapshot = apiEqSnapshot(30, reset)
 	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 10, APIEqPricedCalls: 3}, now.Add(3*time.Minute))
-	if len(m.quotaAPIEvidence) != 0 {
+	if len(m.quotaAPI.Evidence) != 0 {
 		t.Fatal("recovery learned across blocked interval")
 	}
 	m.snapshot = apiEqSnapshot(35, reset)
 	m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: 11, APIEqPricedCalls: 4}, now.Add(4*time.Minute))
-	if len(m.quotaAPIEvidence) != 1 || math.Abs(m.quotaAPIEvidence[0].CapacityUSD-20) > 1e-9 {
-		t.Fatal("clean recovery failed", m.quotaAPIEvidence)
+	if len(m.quotaAPI.Evidence) != 1 || math.Abs(m.quotaAPI.Evidence[0].CapacityUSD-20) > 1e-9 {
+		t.Fatal("clean recovery failed", m.quotaAPI.Evidence)
 	}
 }

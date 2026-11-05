@@ -1,7 +1,6 @@
 package schedule
 
 import (
-	"fmt"
 	"github.com/merefield/codexometer/internal/codex"
 	"slices"
 	"time"
@@ -10,7 +9,7 @@ import (
 func WindowKeys(s codex.Snapshot) []string {
 	var keys []string
 	for _, m := range s.Meters() {
-		keys = append(keys, fmt.Sprintf("%s/%d/%s", m.LimitID, m.Kind, m.Name))
+		keys = append(keys, m.DefinitionKey())
 	}
 	return keys
 }

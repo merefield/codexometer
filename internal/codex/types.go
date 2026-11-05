@@ -110,6 +110,28 @@ type Meter struct {
 	Window  Window
 	Kind    MeterKind
 	Details string
+	Slot    int // Backend slot: primary=0, secondary=1; never a display label.
+}
+
+// MeterKey identifies a backend allowance independently of labels, consumption
+// or reset timestamps. Features may add account/plan/cycle boundaries to it.
+type MeterKey struct {
+	Limit string
+	Slot  int
+	Kind  MeterKind
+}
+
+func (m Meter) Key() MeterKey     { return MeterKey{Limit: m.LimitID, Slot: m.Slot, Kind: m.Kind} }
+func (k MeterKey) String() string { return fmt.Sprintf("%s/%d/%d", k.Limit, k.Kind, k.Slot) }
+
+// DefinitionKey also distinguishes a changed allowance duration, but not the
+// reset timestamp: a scheduled quota-recovery follow-up must survive a reset.
+func (m Meter) DefinitionKey() string {
+	duration := int64(-1)
+	if m.Window.WindowDurationMins != nil {
+		duration = *m.Window.WindowDurationMins
+	}
+	return fmt.Sprintf("%s/%d", m.Key(), duration)
 }
 
 type MeterKind int
@@ -151,7 +173,7 @@ func (s Snapshot) Meters() []Meter {
 			meters = append(meters, Meter{Bucket: name, LimitID: key, Name: windowName(*bucket.Primary), Window: *bucket.Primary})
 		}
 		if bucket.Secondary != nil {
-			meters = append(meters, Meter{Bucket: name, LimitID: key, Name: windowName(*bucket.Secondary), Window: *bucket.Secondary})
+			meters = append(meters, Meter{Bucket: name, LimitID: key, Name: windowName(*bucket.Secondary), Window: *bucket.Secondary, Slot: 1})
 		}
 		if bucket.IndividualLimit != nil {
 			limit := bucket.IndividualLimit

@@ -169,7 +169,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 			m.observeQuotaAPIEq(m.snapshot, codex.LiveUsageSnapshot{APIEqUSD: float64(step), APIEqPricedCalls: int64(step)}, now.Add(time.Duration(step)*time.Minute))
 		}
 		estimate, ok := m.quotaAPIEstimate(m.snapshot, m.snapshot.Meters()[0])
-		if !ok || estimate.confidence != "MED" {
+		if !ok || estimate.Confidence != "MED" {
 			t.Fatalf("expected canonical medium confidence, got %+v", estimate)
 		}
 		line := m.quotaAPILine(m.snapshot.Meters()[0], 80)
