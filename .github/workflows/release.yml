@@ -60,6 +60,12 @@ jobs:
           printf 'sha=%s\n' "$(git rev-parse "$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
           printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Verify release screenshot version and integrity
+        run: node web/scripts/screenshots.mjs --check-manifest
+
   test:
     name: Test ${{ matrix.os }}
     needs: validate

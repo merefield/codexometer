@@ -1,2 +1,4 @@
 # Bundler output may contain significant trailing whitespace in template literals.
 internal/web/dist/** linguist-generated=true -whitespace
+assets/screenshots/** linguist-generated=true
+tools/screenshots/fonts/*.ttf linguist-vendored=true

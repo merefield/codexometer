@@ -39,6 +39,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser regression tests
         run: make web-test
+      - name: Verify README terminal screenshots
+        run: make screenshots-check
 
   test:
     name: Go ${{ matrix.os }}

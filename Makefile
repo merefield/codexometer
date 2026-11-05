@@ -1,4 +1,4 @@
-.PHONY: build test integration-test check fmt vet release-snapshot web-build web-test
+.PHONY: build test integration-test check fmt vet release-snapshot web-build web-test screenshots screenshots-check
 
 # A tagged checkout gets the nearest semantic Git description. Repositories
 # without a reachable tag leave this empty so Go's embedded VCS revision and
@@ -34,3 +34,11 @@ web-build:
 web-test: web-build
 	$(MAKE) build
 	cd web && npm test
+
+# Real TUI renders, synthetic data; Chromium is only a PNG rasteriser.
+screenshots:
+	node web/scripts/screenshots.mjs
+
+# No browser needed: compare current terminal cells, versions and image hashes.
+screenshots-check:
+	node web/scripts/screenshots.mjs --check

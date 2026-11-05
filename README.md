@@ -17,15 +17,10 @@ follow-ups to idle sessions. Quota views, account usage history and optional
 model benchmarks round out the dashboard. Ordinary CLI sessions retain
 best-effort local monitoring; interactive controls require live server support.
 
-```text
-█▀▀ █▀█ █▀▄ █▀▀ ▀▄▀ █▀█ █▀▄▀█ █▀▀ ▀█▀ █▀▀ █▀█
-█▄▄ █▄█ █▄▀ ██▄ █ █ █▄█ █ ▀ █ ██▄  █  ██▄ █▀▄
-◉ QUOTA TELEMETRY CONSOLE · VERSION <CURRENT>
-```
+![Codexometer Sessions command centre in Hacker: session totals, approval navigation, three named sessions and activity graphs](assets/screenshots/sessions.png)
 
-![Codexometer Hacker theme showing quota and reset-cycle gauges](assets/codexometer.png)
-
-_Hacker theme showing Codex and GPT-5.3-Codex-Spark quota windows._
+_Your sessions, mission control. Real terminal rendering with synthetic demonstration data;
+all README screenshots are refreshed for each release. [Screenshot workflow](tools/screenshots/README.md)._
 
 Codexometer refreshes quota once a minute by default. Passive quota monitoring
 and the Usage history tab are read-only and do not start model turns. Sessions
@@ -957,6 +952,10 @@ The default remains the original green hacker-terminal presentation.
 
 ## Views and quota presentations
 
+![Quota Bars in Hacker, showing short-term and weekly quota beside aligned reset-cycle gauges](assets/screenshots/quota.png)
+
+_Synthetic quota data; the gauges and controls are rendered by the real TUI._
+
 The top-level tabs are **Quota**, **Sessions**, **Usage**, and **Benchmark**. Within Quota,
 choose one of these five views with its sub-tab or `v`:
 
@@ -973,6 +972,15 @@ choose one of these five views with its sub-tab or `v`:
 5. **Resets** — available reset credits, grant dates, expiry dates and backend
    descriptions. Expiring credits appear first, non-expiring credits last.
    Scroll with Up/Down or Page Up/Page Down when necessary.
+
+<details>
+<summary>See Pace in Nightshade</summary>
+
+![Quota Pace in Nightshade, with current consumption, safety reference and projected trends for two windows](assets/screenshots/pace.png)
+
+_Synthetic quota data: the short-term window is above steady pace; the weekly window is just below it._
+
+</details>
 
 Pace uses terminal-cell backgrounds and densely plotted, continuous
 Braille strokes for traces, trends and the safety reference. The
@@ -1043,6 +1051,10 @@ Reset-credit expiry is separate from the
 automatic quota-window reset date.
 
 ### Usage: account history and breakdowns
+
+![Usage Daily in Hacker, with account summary metrics and a year of activity shown as a heatmap](assets/screenshots/usage.png)
+
+_Synthetic account history; brighter cells indicate more token activity._
 
 **Usage** is a read-only companion to Codex CLI's `/usage` command. It fetches
 `account/usage/read` through a short-lived local Codex app-server using your
@@ -1431,6 +1443,10 @@ These operations are not atomic, so unrelated account activity during the short
 boundary read remains another source of uncertainty.
 
 #### Session context previews
+
+![Full session approval detail in Blue Steel, showing preceding commentary, justification, command, working directory and approval choices](assets/screenshots/approval.png)
+
+_Synthetic approval, never executed. Live controls require a connected shared app-server._
 
 Previews are visible by default in the split presentation: the space to the
 right of session metrics is shared roughly equally between detail and the token
@@ -2433,6 +2449,10 @@ completed games.
 
 ### Deterministic benchmark
 
+![Benchmark result matrix in Rust, with ranking modes, pass and fail outcomes, elapsed time, tokens and API-equivalent cost](assets/screenshots/benchmark.png)
+
+_Illustrative results only: these numbers are synthetic, not measured model performance or price comparisons._
+
 The Benchmark tab groups its built-in deterministic challenges into two
 always-available suites: **CODEXOMETER CORE** contains the original Easy and
 Moderate set, while **CODEXOMETER EXTENDED** contains the later Hard set. The
@@ -3117,6 +3137,15 @@ history is hidden unless its account matches the current successful quota read.
 
 ### Scheduled session follow-ups (experimental)
 
+<details>
+<summary>See the in-pane scheduler in Ultraviolet</summary>
+
+![Scheduled follow-up form in Ultraviolet, with trigger selection, a two-hour-thirty-minute delay and the composer anchored below](assets/screenshots/scheduler.png)
+
+_Synthetic draft; no scheduled job is submitted._
+
+</details>
+
 In **Sessions → full detail**, use **Ctrl+S** (or click **Schedule** on the
 composer's key-hint line) to schedule a follow-up for an idle shared app-server session.
 Ordinary composers omit a redundant heading; the box title identifies the
@@ -3429,6 +3458,14 @@ That local snapshot requires GoReleaser. Publishing is deliberately confined to
 the `Release` GitHub Actions workflow: a semantic `v*` tag must resolve to a
 commit reachable from `main`, pass the full Linux/macOS/Windows test matrix, and
 remain unchanged between validation and publication.
+
+Before tagging **every release**, update `internal/version/VERSION`, run
+`make screenshots`, visually check the hero and feature images, and commit the
+refreshed `assets/screenshots/` alongside the version bump. CI checks that the
+images still match the current TUI; release validation also rejects a stale
+version, changed capture tooling or modified images. See the
+[repeatable screenshot workflow](tools/screenshots/README.md) for one-time setup
+and the release checklist. The captures need no Codex login or model calls.
 
 ## Versioning
 
