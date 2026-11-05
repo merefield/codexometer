@@ -135,14 +135,7 @@ func (m Model) profileButtons(width, height int, s monitorSession) []monitorAppr
 }
 
 func (m Model) renderProfileControls(buttons []monitorApprovalButton, colors palette) string {
-	if len(buttons) == 0 {
-		return ""
-	}
-	rows := make([]string, buttons[len(buttons)-1].y+1)
-	for _, b := range buttons {
-		rows[b.y] += strings.Repeat(" ", max(b.x-lipgloss.Width(rows[b.y]), 0)) + m.renderContextAction(b.action, b.label, colors)
-	}
-	return strings.Join(rows, "\n")
+	return renderMonitorButtonRows(buttons, colors, m.renderContextAction)
 }
 
 func (m Model) renderSessionProfile(width, height int, s monitorSession, colors palette) string {

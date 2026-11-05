@@ -1765,27 +1765,11 @@ func (m Model) startBenchmark(tasks []codex.BenchmarkTaskID, scope codex.Benchma
 	if len(tasks) == 1 && tasks[0] == codex.BenchmarkDigBench {
 		m.benchmarkTotal = combinations * len(scope.Games)
 	}
-	m.benchmarkCompleted = 0
-	m.benchmarkCurrentModel = ""
-	m.benchmarkCurrentEffort = ""
-	m.benchmarkCurrentTask = ""
-	m.benchmarkError = ""
-	m.benchmarkScroll = 0
-	m.benchmarkActive = nil
-	m.benchmarkActiveSince = time.Time{}
-	m.benchmarkSelectedRun = ""
-	m.benchmarkHoveredRun = ""
-	m.benchmarkRunHovered = false
-	m.benchmarkDetail = nil
-	m.benchmarkDetailActive = false
-	m.benchmarkDetailScroll = 0
-	m.benchmarkDetailCache = benchmarkDetailTranscriptCache{}
+	m.resetBenchmarkPresentation()
 	m.benchmarkScopeOpen = false
 	m.benchmarkScopeKeyboard = false
 	m.benchmarkState = benchmarkRunning
 	m.benchmarkQuotaAccounting.start()
-	m.benchmarkAllArmed = false
-	m.benchmarkSelectedArmed = false
 	ctx, cancel := context.WithCancel(context.Background())
 	m.benchmarkCancel = cancel
 	events := make(chan codex.BenchmarkEvent, 2)
@@ -1800,6 +1784,12 @@ func (m *Model) clearBenchmarkResults() {
 	m.benchmarkRunResults = nil
 	m.benchmarkRunIndexes = nil
 	m.benchmarkTotal = 0
+	m.resetBenchmarkPresentation()
+}
+
+// resetBenchmarkPresentation clears transient run/detail state without
+// changing results, scope, filters or the caller's run lifecycle.
+func (m *Model) resetBenchmarkPresentation() {
 	m.benchmarkCompleted = 0
 	m.benchmarkCurrentModel = ""
 	m.benchmarkCurrentEffort = ""
