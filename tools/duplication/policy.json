@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "5.4.2",
+  "production": ["\\.go$", "^web/src/.*\\.(ts|js|svelte|css)$"],
+  "tests": ["_test\\.go$", "^web/tests/.*\\.(ts|js)$"],
+  "exclude": ["(^|/)(vendor|dist|node_modules)/", "\\.generated\\."],
+  "maxBytes": 10485760,
+  "jscpd": {
+    "mode": "weak",
+    "format": ["go", "typescript", "javascript", "svelte", "css"],
+    "noGitignore": true,
+    "followSymlinks": false,
+    "maxSize": "10mb",
+    "maxGapLines": 0,
+    "ignoreCase": false,
+    "ignoreIdentifiers": false,
+    "ignoreLiterals": false,
+    "semantic": false,
+    "threshold": 100,
+    "reporters": ["json"]
+  },
+  "scans": [
+    { "id": "exact-50", "minTokens": 50, "minLines": 5, "renamed": false },
+    { "id": "renamed-50", "minTokens": 50, "minLines": 5, "renamed": true },
+    { "id": "exact-100", "minTokens": 100, "minLines": 10, "renamed": false },
+    { "id": "renamed-100", "minTokens": 100, "minLines": 10, "renamed": true }
+  ]
+}
