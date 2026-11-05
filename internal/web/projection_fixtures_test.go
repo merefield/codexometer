@@ -2,11 +2,16 @@ package web
 
 import (
 	"encoding/json"
-	"github.com/merefield/codexometer/internal/codex"
-	"github.com/merefield/codexometer/internal/quotagraph"
+	"fmt"
+	"math"
 	"os"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/quotagraph"
 )
 
 // These checked-in browser fixtures are produced by the very Go projectors
@@ -59,7 +64,100 @@ func TestBrowserProjectionFixtures(t *testing.T) {
 		}
 	}
 	got, err := os.ReadFile(path)
-	if err != nil || string(got) != string(data) {
-		t.Fatal("browser numerical fixtures are stale; run make web-contracts", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal(got, &actual); err != nil {
+		t.Fatal("invalid browser numerical fixtures", err)
+	}
+	if err := json.Unmarshal(data, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareProjectionValues(actual, expected, "$"); err != nil {
+		t.Fatal("browser numerical fixtures are stale; run make web-contracts:", err)
+	}
+}
+
+// Fused multiply-add on ARM64 and FMA-capable amd64 can change the final bits
+// of graph coordinates. Compare JSON structure exactly, allowing only rounding
+// noise in numbers; never change production maths to make fixture bytes agree.
+func compareProjectionValues(got, want any, path string) error {
+	switch expected := want.(type) {
+	case float64:
+		if actual, ok := got.(float64); ok {
+			tolerance := (16 * 0x1p-52) * max(1, math.Abs(expected))
+			if math.Abs(actual-expected) <= tolerance {
+				return nil
+			}
+		}
+	case map[string]any:
+		if actual, ok := got.(map[string]any); ok && len(actual) == len(expected) {
+			keys := make([]string, 0, len(expected))
+			for key := range expected {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				value, present := actual[key]
+				if !present {
+					return fmt.Errorf("%s.%s: missing field", path, key)
+				}
+				if err := compareProjectionValues(value, expected[key], path+"."+key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case []any:
+		if actual, ok := got.([]any); ok && len(actual) == len(expected) {
+			for i := range expected {
+				if err := compareProjectionValues(actual[i], expected[i], fmt.Sprintf("%s[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	default:
+		if reflect.DeepEqual(got, want) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: got %v, want %v", path, got, want)
+}
+
+func TestProjectionFixtureComparison(t *testing.T) {
+	for _, tc := range []struct {
+		name, got, want string
+		equal           bool
+	}{
+		{"FMA roundoff", `{"segment":{"y1":79.00000000000001,"y2":99.99999999999999}}`, `{"segment":{"y1":79,"y2":100}}`, true},
+		{"regression roundoff", `{"y":38.015873015872984}`, `{"y":38.015873015872955}`, true},
+		{"coordinate change", `{"y":79.00000001}`, `{"y":79}`, false},
+		{"small value change", `{"total":0.05000001}`, `{"total":0.05}`, false},
+		{"zero changed", `{"y":0.00000001}`, `{"y":0}`, false},
+		{"window change", `{"duration":10081}`, `{"duration":10080}`, false},
+		{"safety changed", `{"safe":false}`, `{"safe":true}`, false},
+		{"label changed", `{"name":"new"}`, `{"name":"old"}`, false},
+		{"missing field", `{}`, `{"segment":null}`, false},
+		{"different field", `{"other":null}`, `{"segment":null}`, false},
+		{"extra field", `{"segment":null,"other":null}`, `{"segment":null}`, false},
+		{"missing row", `[]`, `[1]`, false},
+		{"row order", `[1,2]`, `[2,1]`, false},
+		{"missing versus empty", `null`, `[]`, false},
+		{"number versus string", `"79"`, `79`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got, want any
+			if err := json.Unmarshal([]byte(tc.got), &got); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tc.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			if err := compareProjectionValues(got, want, "$"); (err == nil) != tc.equal {
+				t.Fatalf("equal=%v: %v", tc.equal, err)
+			}
+		})
 	}
 }
