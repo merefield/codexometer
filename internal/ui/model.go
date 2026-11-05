@@ -2525,6 +2525,7 @@ func (m *Model) syncMonitorQuotaSnapshot(snapshot codex.Snapshot) {
 			continue
 		}
 		window := &m.monitorQuotaWindows[index]
+		window.label = monitorQuotaLabel(meter)
 		if !sameOptionalInt64(window.latestReset, meter.Window.ResetsAt) || meter.Window.UsedPercent < window.latestUsed {
 			window.resetDetected = true
 		}
