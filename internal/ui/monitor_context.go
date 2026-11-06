@@ -37,6 +37,9 @@ func contextTitle(c codex.SessionContext) string {
 	case codex.SessionContextQuestion:
 		return i18n.Text("QUESTION")
 	case codex.SessionContextApproval:
+		if c.RequiredHumanApproval {
+			return i18n.Text("HUMAN APPROVAL REQUIRED")
+		}
 		return i18n.Text("APPROVAL REQUEST")
 	default:
 		return i18n.Text("LAST ACTIVITY")

@@ -131,6 +131,9 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails
+		if c.RequiredHumanApproval {
+			appendText(i18n.Text("Managed policy requires approval each time."), "warning", "")
+		}
 		if strings.TrimSpace(d.Justification) != "" {
 			section(i18n.Text("JUSTIFICATION"))
 			appendText(sanitize(d.Justification), "body", "")

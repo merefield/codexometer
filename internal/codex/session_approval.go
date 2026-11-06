@@ -29,3 +29,13 @@ func (c Client) RespondSessionApproval(ctx context.Context, token, decision stri
 	}
 	return errors.New("approval unavailable; respond in Codex")
 }
+
+// SetSessionHumanApprovalSupport is configured by interactive adapters before
+// observation starts. Passive clients must not claim they can present a decision.
+func (c Client) SetSessionHumanApprovalSupport(enabled bool) {
+	if c.LiveUsage != nil {
+		if p, ok := c.LiveUsage.statusProvider.(interface{ setHumanApprovalSupport(bool) }); ok {
+			p.setHumanApprovalSupport(enabled)
+		}
+	}
+}

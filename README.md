@@ -2100,6 +2100,15 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**Managed human approvals (Codex 0.167+):** a managed command policy can require
+fresh approval each time, even when ordinary approvals have been saved or
+reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE**,
+**DECLINE**, and **REJECT & STOP TURN**, with a **HUMAN APPROVAL REQUIRED** label.
+Session-wide and persistent grants cannot satisfy these checkpoints. `--no-confirm`
+can remove the extra confirmation step, but every request still needs an explicit
+human action. Passive observation and read-only web mode do not advertise support
+for answering these checkpoints; use a capable native Codex client there.
+
 **File-change approvals (shared app-server only):** proposed additions, deletions
 and updates are shown as scrollable patches, with file paths, rename destinations,
 old/new line numbers and green additions/red removals. An overall `+N / −N`

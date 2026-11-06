@@ -24,6 +24,7 @@ const (
 )
 
 type daemonStatusProvider struct {
+	humanApprovals     bool
 	commandGeneration  uint64
 	commandTransitions map[string]uint64
 	queueRevision      uint64
@@ -300,6 +301,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		return nil
 	}
 	p.connection = connection
+	humanApprovals := p.humanApprovals
 	p.wire = wire
 	p.commandGeneration++
 	p.commandTransitions = make(map[string]uint64)
@@ -318,7 +320,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	}
 	if err := p.request(ctx, "initialize", map[string]any{
 		"clientInfo":   codexometerClientInfo(),
-		"capabilities": map[string]any{"experimentalApi": true},
+		"capabilities": map[string]any{"experimentalApi": true, "requiredHumanApproval": humanApprovals},
 	}, &initialized); err != nil {
 		p.disconnect(connection)
 		return err
@@ -665,3 +667,14 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 type daemonResponseError struct{ payload string }
 
 func (e *daemonResponseError) Error() string { return e.payload }
+
+func (p *daemonStatusProvider) setHumanApprovalSupport(enabled bool) {
+	p.mu.Lock()
+	changed := p.humanApprovals != enabled
+	p.humanApprovals = enabled
+	connection := p.connection
+	p.mu.Unlock()
+	if changed && connection != nil {
+		p.disconnect(connection)
+	}
+}

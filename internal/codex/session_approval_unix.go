@@ -44,7 +44,7 @@ func (p *daemonStatusProvider) RespondSessionApproval(ctx context.Context, token
 	}
 	var wire string
 	for _, option := range s.requests[id].ApprovalOptions {
-		if option.Kind != "" && option.Value == decision {
+		if option.Kind != "" && option.Value == decision && (!s.requests[id].RequiredHumanApproval || oneTimeApproval(option.Kind)) {
 			wire = option.Wire
 			break
 		}

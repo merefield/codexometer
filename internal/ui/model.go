@@ -426,6 +426,10 @@ var quotaFooterButtonDefinitions = []footerButton{
 }
 
 func New(fetcher Fetcher, refreshEvery time.Duration) Model {
+	if client, ok := fetcher.(interface{ SetSessionHumanApprovalSupport(bool) }); ok {
+		client.SetSessionHumanApprovalSupport(true)
+	}
+
 	if refreshEvery <= 0 {
 		refreshEvery = time.Minute
 	}

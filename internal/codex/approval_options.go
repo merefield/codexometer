@@ -10,6 +10,10 @@ import (
 // Value selects an advertised option; Wire is the validated server payload.
 type ApprovalOption struct{ Kind, Value, Wire, Detail string }
 
+func oneTimeApproval(kind string) bool {
+	return kind == "accept" || kind == "decline" || kind == "cancel"
+}
+
 func (o ApprovalOption) GrantsPermission() bool {
 	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment"
 }

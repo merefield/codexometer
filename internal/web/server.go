@@ -60,6 +60,9 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
 		s.store.configureThresholds(policy.QuotaStepPolicy())
 	}
+	if client, ok := source.(interface{ SetSessionHumanApprovalSupport(bool) }); ok {
+		client.SetSessionHumanApprovalSupport(writable)
+	}
 	mode := "READ ONLY"
 	if writable {
 		s.control = newControl(source, s.store)

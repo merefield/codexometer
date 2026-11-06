@@ -17,36 +17,37 @@ import (
 )
 
 type quotaDaemonFixture struct {
-	mu            sync.Mutex
-	sessions      map[string]QuotaSession
-	writes        []map[string]any
-	fail          string
-	queued        bool
-	notify        bool
-	started       chan struct{}
-	release       chan struct{}
-	commandStatus string
-	catalogues    map[string]map[string]any
-	historyReads  []map[string]any
-	names         map[string]string
-	nameWrites    []map[string]any
-	cwds          map[string]string
-	ignoreCwd     bool
-	environments  []any
-	permissions   map[string]string
-	resumeReads   []map[string]any
-	hookReads     []map[string]any
-	threadHooks   map[string]any
-	hookError     map[string]any
-	goals         map[string]*SessionGoal
-	goalReads     int
-	goalWrites    []map[string]any
-	goalMethods   []string
-	ignoreGoal    bool
-	goalReadError map[string]any
-	goalReadHook  func()
-	goalNoReply   map[string]bool
-	threadReads   int
+	initializeParams map[string]any
+	mu               sync.Mutex
+	sessions         map[string]QuotaSession
+	writes           []map[string]any
+	fail             string
+	queued           bool
+	notify           bool
+	started          chan struct{}
+	release          chan struct{}
+	commandStatus    string
+	catalogues       map[string]map[string]any
+	historyReads     []map[string]any
+	names            map[string]string
+	nameWrites       []map[string]any
+	cwds             map[string]string
+	ignoreCwd        bool
+	environments     []any
+	permissions      map[string]string
+	resumeReads      []map[string]any
+	hookReads        []map[string]any
+	threadHooks      map[string]any
+	hookError        map[string]any
+	goals            map[string]*SessionGoal
+	goalReads        int
+	goalWrites       []map[string]any
+	goalMethods      []string
+	ignoreGoal       bool
+	goalReadError    map[string]any
+	goalReadHook     func()
+	goalNoReply      map[string]bool
+	threadReads      int
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -128,6 +129,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			id, _ := req.Params["threadId"].(string)
 			switch req.Method {
 			case "initialize":
+				fixture.initializeParams = req.Params
 				result["userAgent"] = "test"
 			case "model/list":
 				result["data"] = []any{map[string]any{"model": "small", "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium"}}, "serviceTiers": []any{map[string]any{"id": "flex", "name": "Fast"}, map[string]any{"id": "priority", "name": "Slow"}}}}
