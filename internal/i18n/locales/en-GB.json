@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER HELP ]",
   "[ ← BACK ]": "[ ← BACK ]",
   "[ F REFRESH ]": "[ F REFRESH ]",
-  "[ ESC CANCEL ]": "[ ESC CANCEL ]"
+  "[ ESC CANCEL ]": "[ ESC CANCEL ]",
+  "HUMAN APPROVAL REQUIRED": "HUMAN APPROVAL REQUIRED",
+  "Managed policy requires approval each time.": "Managed policy requires approval each time."
 }

@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER AYUDA ]",
   "[ ← BACK ]": "[ ← ATRÁS ]",
   "[ F REFRESH ]": "[ F ACTUALIZAR ]",
-  "[ ESC CANCEL ]": "[ ESC CANCELAR ]"
+  "[ ESC CANCEL ]": "[ ESC CANCELAR ]",
+  "HUMAN APPROVAL REQUIRED": "APROBACIÓN HUMANA OBLIGATORIA",
+  "Managed policy requires approval each time.": "La política administrada exige aprobación cada vez."
 }

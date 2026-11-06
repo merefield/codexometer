@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER 帮助 ]",
   "[ ← BACK ]": "[ ← 返回 ]",
   "[ F REFRESH ]": "[ F 刷新 ]",
-  "[ ESC CANCEL ]": "[ ESC 取消 ]"
+  "[ ESC CANCEL ]": "[ ESC 取消 ]",
+  "HUMAN APPROVAL REQUIRED": "需要人工批准",
+  "Managed policy requires approval each time.": "受管策略要求每次都进行批准。"
 }

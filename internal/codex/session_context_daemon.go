@@ -164,10 +164,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		var command string
 		commandValid := len(p.Command) == 0 || string(p.Command) == "null" || json.Unmarshal(p.Command, &command) == nil
 		previous := state.commands[p.TurnID+"/"+p.ItemID]
-		if command == "" {
+		if command == "" && kind != "humanCommand" {
 			command = previous.Command
 		}
-		if p.CWD == "" {
+		if p.CWD == "" && kind != "humanCommand" {
 			p.CWD = previous.CWD
 		}
 		c.Kind = SessionContextApproval
@@ -214,7 +214,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "missing-command"
 		case p.CWD == "":
 			c.ApprovalBlocked = "missing-directory"
-		case p.TurnID == "" || p.ItemID == "":
+		case p.TurnID == "" || p.ItemID == "" || state.ended || state.activeTurn != "" && p.TurnID != state.activeTurn:
 			c.ApprovalBlocked = "missing-identity"
 		case !allowed:
 			c.ApprovalBlocked = "decisions"

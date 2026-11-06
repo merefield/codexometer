@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER YARDIM ]",
   "[ ← BACK ]": "[ ← GERİ ]",
   "[ F REFRESH ]": "[ F YENİLE ]",
-  "[ ESC CANCEL ]": "[ ESC İPTAL ]"
+  "[ ESC CANCEL ]": "[ ESC İPTAL ]",
+  "HUMAN APPROVAL REQUIRED": "İNSAN ONAYI GEREKLİ",
+  "Managed policy requires approval each time.": "Yönetilen ilke her seferinde onay gerektirir."
 }

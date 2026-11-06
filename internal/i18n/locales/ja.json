@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER ヘルプ ]",
   "[ ← BACK ]": "[ ← 戻る ]",
   "[ F REFRESH ]": "[ F 更新 ]",
-  "[ ESC CANCEL ]": "[ ESC キャンセル ]"
+  "[ ESC CANCEL ]": "[ ESC キャンセル ]",
+  "HUMAN APPROVAL REQUIRED": "人による承認が必要",
+  "Managed policy requires approval each time.": "管理ポリシーにより、毎回承認が必要です。"
 }

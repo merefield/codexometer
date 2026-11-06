@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER HJELP ]",
   "[ ← BACK ]": "[ ← TILBAKE ]",
   "[ F REFRESH ]": "[ F OPPDATER ]",
-  "[ ESC CANCEL ]": "[ ESC AVBRYT ]"
+  "[ ESC CANCEL ]": "[ ESC AVBRYT ]",
+  "HUMAN APPROVAL REQUIRED": "MENNESKELIG GODKJENNING KREVES",
+  "Managed policy requires approval each time.": "Den administrerte policyen krever godkjenning hver gang."
 }

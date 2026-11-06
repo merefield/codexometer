@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER OHJE ]",
   "[ ← BACK ]": "[ ← TAKAISIN ]",
   "[ F REFRESH ]": "[ F PÄIVITÄ ]",
-  "[ ESC CANCEL ]": "[ ESC PERUUTA ]"
+  "[ ESC CANCEL ]": "[ ESC PERUUTA ]",
+  "HUMAN APPROVAL REQUIRED": "IHMISEN HYVÄKSYNTÄ VAADITAAN",
+  "Managed policy requires approval each time.": "Hallittu käytäntö edellyttää hyväksyntää joka kerta."
 }

@@ -42,3 +42,23 @@ func TestHumanApprovalRequiresFreshOneTimeDecision(t *testing.T) {
 		t.Fatal("checkpoint with only reusable choices became actionable")
 	}
 }
+
+func TestHumanCheckpointRequiresOwnCommandAndCurrentTurn(t *testing.T) {
+	for _, fields := range []map[string]any{{"kind": "humanCommand"}, {"kind": "humanCommand", "command": "git push"}, {"kind": "humanCommand", "cwd": "/work"}} {
+		_, c := approvalFixture(t, fields)
+		if c.ApprovalToken != "" {
+			t.Fatal("checkpoint inherited another execution's details", c)
+		}
+	}
+	for _, ended := range []bool{false, true} {
+		states := map[string]*daemonContextState{"root": {activeTurn: "current", ended: ended, requests: map[string]SessionContext{}}}
+		turn := "old"
+		if ended {
+			turn = "current"
+		}
+		daemonContextEvent(states, "item/commandExecution/requestApproval", rawJSON("human"), rawJSON(map[string]any{"threadId": "root", "turnId": turn, "itemId": "item", "kind": "humanCommand", "command": "git push", "cwd": "/work"}), time.Now())
+		if c := states["root"].requests[`"human"`]; c.ApprovalToken != "" {
+			t.Fatal("checkpoint from inactive turn became actionable", c)
+		}
+	}
+}

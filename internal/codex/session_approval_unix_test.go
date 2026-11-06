@@ -56,7 +56,7 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 			t.Fatal("file capability reused")
 		}
 	}
-	p.contexts, c = approvalFixture(t, map[string]any{"kind": "humanCommand", "availableDecisions": []string{"accept", "acceptForSession"}})
+	p.contexts, c = approvalFixture(t, map[string]any{"kind": "humanCommand", "command": "git push", "cwd": "/work", "availableDecisions": []string{"accept", "acceptForSession"}})
 	// Defend at the response boundary even if a caller hands us a malformed option snapshot.
 	human := p.contexts["root"].requests[`"req"`]
 	human.ApprovalOptions[1] = ApprovalOption{Kind: "acceptForSession", Value: "acceptForSession", Wire: `"acceptForSession"`}
