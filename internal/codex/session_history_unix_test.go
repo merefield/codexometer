@@ -47,3 +47,15 @@ func TestSessionHistoryBoundedReadOnlyCompletedTurns(t *testing.T) {
 		t.Fatal("unavailable provider reported success")
 	}
 }
+
+func TestCodex167HistoryIgnoresEvictedCommentaryButKeepsFinalReply(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{"thread/turns/list": {"data": []any{map[string]any{"id": "turn", "status": "completed", "items": []any{
+		map[string]any{"id": "old", "type": "agentMessage", "phase": "commentary", "text": ""},
+		map[string]any{"id": "new", "type": "agentMessage", "phase": "final_answer", "text": "Final answer remains available"},
+	}}}}}
+	turns, err := p.SessionHistory(context.Background(), "one")
+	if err != nil || len(turns) != 1 || turns[0].Text != "Final answer remains available" || turns[0].ItemID != "new" {
+		t.Fatal("evicted commentary hid completed answer", turns, err)
+	}
+}
