@@ -23,16 +23,17 @@ import (
 // binds the browser's selection to the exact source request without disclosing
 // Codex tokens. One pending confirmation bounds memory (including secret input).
 type control struct {
-	commands  codex.SessionCommandsClient
-	schedules *schedule.Queue
-	profiles  *profileControl
-	mu        sync.Mutex
-	store     *store
-	approvals codex.SessionApprovalClient
-	prompts   codex.SessionPromptClient
-	key       string
-	pending   *preparedAction
-	expiry    *time.Timer
+	readReceipts codex.SessionReadStateClient
+	commands     codex.SessionCommandsClient
+	schedules    *schedule.Queue
+	profiles     *profileControl
+	mu           sync.Mutex
+	store        *store
+	approvals    codex.SessionApprovalClient
+	prompts      codex.SessionPromptClient
+	key          string
+	pending      *preparedAction
+	expiry       *time.Timer
 }
 
 type actionChoice struct {
@@ -73,17 +74,18 @@ type offeredAction struct {
 }
 
 type actionRequest struct {
-	Command      *commandRequest `json:"command,omitempty"`
-	EditID       string          `json:"editId,omitempty"`
-	SendID       string          `json:"sendId,omitempty"`
-	Schedule     *scheduleRule   `json:"schedule,omitempty"`
-	CancelID     string          `json:"cancelId,omitempty"`
-	Review       string          `json:"review,omitempty"`
-	Session      string          `json:"session"`
-	Offer        string          `json:"offer"`
-	Choice       *int            `json:"choice,omitempty"`
-	Answers      []string        `json:"answers,omitempty"`
-	Confirmation string          `json:"confirmation,omitempty"`
+	Read         *resultReadRequest `json:"read,omitempty"`
+	Command      *commandRequest    `json:"command,omitempty"`
+	EditID       string             `json:"editId,omitempty"`
+	SendID       string             `json:"sendId,omitempty"`
+	Schedule     *scheduleRule      `json:"schedule,omitempty"`
+	CancelID     string             `json:"cancelId,omitempty"`
+	Review       string             `json:"review,omitempty"`
+	Session      string             `json:"session"`
+	Offer        string             `json:"offer"`
+	Choice       *int               `json:"choice,omitempty"`
+	Answers      []string           `json:"answers,omitempty"`
+	Confirmation string             `json:"confirmation,omitempty"`
 }
 
 type preparedAction struct {
@@ -98,6 +100,7 @@ func newControl(source Source, store *store) *control {
 	c.approvals, _ = source.(codex.SessionApprovalClient)
 	c.prompts, _ = source.(codex.SessionPromptClient)
 	c.commands, _ = source.(codex.SessionCommandsClient)
+	c.readReceipts, _ = source.(codex.SessionReadStateClient)
 	c.profiles = newProfileControl(source)
 	return c
 }
@@ -226,18 +229,24 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 			http.Error(w, "Invalid request", 400)
 			return
 		}
-		if action == "commands" {
-			c.handleCommands(w, r, body)
-			return
-		}
-		if body.Command != nil {
+		if body.Read != nil && action != "read" || body.Command != nil && action != "commands" {
 			http.Error(w, "Invalid request", 400)
 			return
 		}
-		if action == "schedules" {
-			c.handleSchedules(w, r, body)
+		var specialized func(http.ResponseWriter, *http.Request, actionRequest)
+		switch action {
+		case "read":
+			specialized = c.handleReadResult
+		case "commands":
+			specialized = c.handleCommands
+		case "schedules":
+			specialized = c.handleSchedules
+		}
+		if specialized != nil {
+			specialized(w, r, body)
 			return
 		}
+
 		c.mu.Lock()
 		if c.pending != nil && !time.Now().Before(c.pending.until) {
 			c.pending = nil

@@ -293,12 +293,16 @@ func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
 		if s.id == id && (s.preview.Text != "" || s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" || s.preview.Kind == codex.SessionContextApproval || m.hasSessionProfile(s) || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
 			m.setRowContext(id, contextFull)
+			m.monitorReadIntent = id
 			return
 		}
 	}
 }
 
 func (m *Model) scrollMonitorContext(delta int) {
+	if delta != 0 {
+		m.monitorReadIntent = m.monitorContextDetail
+	}
 	m.monitorContextScroll = min(max(m.monitorContextScroll+delta, 0), m.monitorContextScrollLimit())
 }
 

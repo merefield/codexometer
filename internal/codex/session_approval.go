@@ -14,28 +14,20 @@ type SessionApprovalClient interface {
 }
 
 func (c Client) SessionApprovalPending(token string) bool {
-	if c.LiveUsage == nil {
-		return false
-	}
-	p, ok := c.LiveUsage.statusProvider.(SessionApprovalClient)
+	p, ok := sessionCapability[SessionApprovalClient](c)
 	return ok && p.SessionApprovalPending(token)
 }
 
 func (c Client) RespondSessionApproval(ctx context.Context, token, decision string) error {
-	if c.LiveUsage != nil {
-		if p, ok := c.LiveUsage.statusProvider.(SessionApprovalClient); ok {
-			return p.RespondSessionApproval(ctx, token, decision)
-		}
+	if p, ok := sessionCapability[SessionApprovalClient](c); ok {
+		return p.RespondSessionApproval(ctx, token, decision)
 	}
 	return errors.New("approval unavailable; respond in Codex")
 }
 
-// SetSessionHumanApprovalSupport is configured by interactive adapters before
-// observation starts. Passive clients must not claim they can present a decision.
+// Passive clients must not claim they can present a human decision.
 func (c Client) SetSessionHumanApprovalSupport(enabled bool) {
-	if c.LiveUsage != nil {
-		if p, ok := c.LiveUsage.statusProvider.(interface{ setHumanApprovalSupport(bool) }); ok {
-			p.setHumanApprovalSupport(enabled)
-		}
+	if p, ok := sessionCapability[interface{ setHumanApprovalSupport(bool) }](c); ok {
+		p.setHumanApprovalSupport(enabled)
 	}
 }

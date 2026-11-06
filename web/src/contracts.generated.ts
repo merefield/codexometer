@@ -194,6 +194,10 @@ export interface Segment {
 }
 
 export interface Session {
+  readStateKnown?: boolean;
+  unread?: boolean;
+  readRevision?: string;
+  replyTurn?: string;
   requiredHumanApproval?: boolean;
   goal?: SessionGoal | null;
   statusLine: Record<string, string>;

@@ -485,6 +485,9 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 			badgeColor = paletteFor(m.theme).primary
 		}
 		badge := lipgloss.NewStyle().Bold(true).Foreground(colors.background).Background(badgeColor)
+		if session.attention == codex.SessionAttentionComplete && session.readState.Known() && !session.readState.Unread && !trigger {
+			badge = colors.dimmed()
+		}
 		if m.monitorContextHover == "badge:"+session.id || (m.sessionTriggerStatus(session) && m.monitorContextHover == "attention-trigger:"+session.id) {
 			badge = badge.Underline(true)
 		}

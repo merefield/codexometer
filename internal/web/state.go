@@ -23,6 +23,10 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	ReadStateKnown        bool                 `json:"readStateKnown,omitempty"`
+	Unread                bool                 `json:"unread,omitempty"`
+	ReadRevision          string               `json:"readRevision,omitempty"`
+	ReplyTurn             string               `json:"replyTurn,omitempty"`
 	RequiredHumanApproval bool                 `json:"requiredHumanApproval,omitempty"`
 	Goal                  *goal                `json:"goal,omitempty"`
 	StatusLine            map[string]string    `json:"statusLine"`
@@ -335,6 +339,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				}
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
+				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
 				Goal: projectGoal(row.Goal),
 				ID:   row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
@@ -416,4 +421,12 @@ func (s *store) collect(ctx context.Context, source Source, refresh time.Duratio
 	poll(2*time.Second, func(ctx context.Context) { l, e := source.FetchTokenUsage(ctx); s.live(l, e, time.Now()) })
 	poll(5*time.Minute, func(ctx context.Context) { h, e := source.FetchAccountUsage(ctx); s.usage(h, e, time.Now()) })
 	return wg.Wait
+}
+
+func sessionReplyTurn(row codex.LiveUsageSession) string {
+	c := row.Context
+	if c.Kind == codex.SessionContextReply && !c.Streaming && c.ThreadID == row.ID && c.Text != "" {
+		return c.TurnID
+	}
+	return ""
 }

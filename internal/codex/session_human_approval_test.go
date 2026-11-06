@@ -37,7 +37,7 @@ func TestHumanApprovalRequiresFreshOneTimeDecision(t *testing.T) {
 	if len(states["root"].requests) != 0 {
 		t.Fatal("resolved checkpoint still pending")
 	}
-	_, invalid := approvalFixture(t, map[string]any{"kind": "humanCommand", "availableDecisions": []string{"acceptForSession"}})
+	_, invalid := approvalFixture(t, map[string]any{"kind": "humanCommand", "command": "git push", "cwd": "/work", "availableDecisions": []string{"acceptForSession"}})
 	if invalid.ApprovalToken != "" {
 		t.Fatal("checkpoint with only reusable choices became actionable")
 	}

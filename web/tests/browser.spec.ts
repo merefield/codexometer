@@ -5149,3 +5149,149 @@ test('Quota accounting diagnostics retain source details safely on narrow screen
   );
   await expect(notice).toHaveCount(0);
 });
+
+test('unread completion is acknowledged by opening partial detail, not by selection or refresh', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'v1',
+        replyTurn: 't1',
+      },
+    ],
+  };
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  const row = page.locator('.session-row').first();
+  await expect(row).toContainText('TURN COMPLETE');
+  await row
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await expect.poll(() => reads.length).toBe(0);
+  await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  await expect.poll(() => reads.length).toBe(1);
+  expect(reads[0]).toEqual({
+    session: 'parent',
+    read: { turn: 't1', revision: 'v1' },
+  });
+  const reviewed = {
+    ...unread,
+    sessions: [
+      { ...unread.sessions[0], unread: false, readRevision: 'v1-read' },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    reviewed,
+  );
+  await expect(row.locator('.status-detail')).toHaveClass(/reviewed/);
+  await expect(page.locator('.attention-summary')).toHaveCount(0);
+});
+
+test('a result arriving in open detail waits for interaction and read-only web never acknowledges', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(page.locator('.detail-context')).toBeVisible();
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        text: 'New result while already open',
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'v2',
+        replyTurn: 't2',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(page.locator('.detail-context')).toContainText(
+    'New result while already open',
+  );
+  expect(reads).toHaveLength(0);
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+  const readOnly = {
+    ...unread,
+    control: false,
+    sessions: [{ ...unread.sessions[0], readRevision: 'v3', replyTurn: 't3' }],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    readOnly,
+  );
+  await expect(
+    page.getByText('Read only — reply or approve in Codex.'),
+  ).toBeVisible();
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  expect(reads).toHaveLength(1);
+});
+
+test('managed human approval explains the policy and offers only one-time choices', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer } = await mockActions(page);
+  await page.route('**/api/control/offer', (route) =>
+    route.fulfill({
+      json: {
+        ...offer,
+        requiredHumanApproval: true,
+        choices: [
+          { label: 'APPROVE ONCE', detail: '', persistent: false },
+          { label: 'DECLINE', detail: '', persistent: false },
+          { label: 'REJECT & STOP TURN', detail: '', persistent: false },
+        ],
+      },
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'HUMAN APPROVAL REQUIRED' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Managed policy requires approval each time.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: 'ALLOW FOR SESSION', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+});

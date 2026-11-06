@@ -1600,6 +1600,22 @@ same action on that session. The presentations are:
    not full command-output logs, and run asynchronously at most every five
    seconds while full detail is visible.
 
+**Unread completed results (shared app-server):** when Codex supplies durable
+read state, **TURN COMPLETE** remains highlighted and its completion pill stays
+visible until the result is reviewed. Deliberately opening partial or full Detail,
+or scrolling within its displayed result pane, acknowledges the latest completed
+reply. The completion status remains visible in subdued styling afterward.
+Rendering a preview, selecting a row, restoring a layout or receiving a new result
+in an already-open pane does not acknowledge it. An older history page cannot
+acknowledge a newer result; changed receipts require a fresh review action.
+
+These receipts are saved by Codex and shared with supported native Codex views,
+so reviewed results remain reviewed across restarts. Codexometer does not save a
+second read-state database. Read-only web mode displays receipts without changing
+them; `--web-control` enables acknowledgement. When durable receipts are unavailable,
+existing completion behaviour remains. Linked-agent previews do not acknowledge
+the root's result, and approval/question/error controls keep priority.
+
 Whenever visible **LAST REPLY** or **LAST ACTIVITY** text is available, its box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
 Click it to copy a snapshot of that session's observed text, including offscreen text,

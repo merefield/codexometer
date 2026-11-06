@@ -62,23 +62,13 @@ func (m Model) monitorCopyAt(x, y int) string {
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		return hit(m.monitorContextDetail, 0, 0, g.contentWidth, g.meterHeight)
 	}
-	a := m.monitorArea(g.contentWidth, g.meterHeight)
-	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
-	mw, cw, _ := monitorSessionColumnWidths(a.width)
-	y0 := a.topHeight + a.gap - 1
-	for i, s := range sessions {
-		width := cw
-		mode := m.rowContextMode(s.id)
-		if mode == contextSplit {
-			_, width, _ = m.contextColumns(a.width, s)
+	for _, pane := range m.monitorPartialContextPanes() {
+		r := pane.frame
+		if action := hit(pane.session.id, r.x, r.y, r.width, r.height); action != "" {
+			return action
 		}
-		if mode == contextSplit || mode == contextWide {
-			if action := hit(s.id, mw+1, y0, width, heights[i]); action != "" {
-				return action
-			}
-		}
-		y0 += heights[i]
 	}
+
 	return ""
 }
 

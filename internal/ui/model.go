@@ -60,6 +60,8 @@ type Model struct {
 	monitorContextExpanded              string
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
+	monitorReadIntent                   string
+	monitorReadBusy                     bool
 	monitorHistory                      map[string]monitorTurnHistory
 	monitorHistorySequence              uint64
 	monitorAttentionPage                int
@@ -263,6 +265,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	readState        codex.SessionReadState
 	goal             *codex.SessionGoal
 	name             string
 	averageRate      int64
@@ -476,7 +479,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.fetch(), secondTick(), refreshTick(m.refreshEvery), func() tea.Msg { return initialViewMsg{} })
 }
 
-func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.updateStartup(message); handled {
 		return next, cmd
 	} else {
@@ -2566,19 +2569,17 @@ func (m *Model) startMonitorSessions(usage codex.LiveUsageSnapshot, observedAt t
 	m.monitorSessionData = nil
 	m.monitorDismissed = nil
 	for _, session := range usage.Sessions {
-		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
+		row := monitorSession{
 			id: session.ID, workingDirectory: session.WorkingDirectory,
-			name: session.Name, modelSettings: session.ModelSettings,
 			baseline: session.TotalTokens, latest: session.TotalTokens, graphStart: session.TotalTokens,
 			startedAt:    observedAt,
 			lastActivity: session.LastActivity, agentCount: session.AgentCount,
-			active: session.Active, working: session.Working, attention: session.Attention,
-			preview:   session.Context,
-			goal:      session.Goal.Clone(),
 			displayed: session.Active, unattributed: session.Unattributed,
 			callSequence: latestModelCallSequence(session.ModelCalls),
 			turnSequence: latestTurnTimingSequence(session.TurnTimings),
-		})
+		}
+		applyMonitorSessionObservation(&row, session)
+		m.monitorSessionData = append(m.monitorSessionData, row)
 	}
 	if len(m.monitorSessionData) == 0 && usage.SessionCount > 0 {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{
@@ -2627,15 +2628,12 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 			}
 			created := monitorSession{
 				id: update.ID, workingDirectory: update.WorkingDirectory,
-				name: update.Name, modelSettings: update.ModelSettings,
 				latest: update.TotalTokens, graphStart: 0, startedAt: startedAt,
 				lastActivity: update.LastActivity, agentCount: update.AgentCount,
-				active: update.Active, working: update.Working, attention: update.Attention,
-				preview:      update.Context,
-				goal:         update.Goal.Clone(),
 				displayed:    update.Active || update.TotalTokens > 0 || len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0,
 				unattributed: update.Unattributed,
 			}
+			applyMonitorSessionObservation(&created, update)
 			applyMonitorSessionTelemetry(&created, update, m.monitorStartedAt)
 			m.monitorSessionData = append(m.monitorSessionData, created)
 			continue
@@ -2648,13 +2646,7 @@ func (m *Model) syncMonitorSessions(usage codex.LiveUsageSnapshot, observedAt ti
 		session.latest = update.TotalTokens
 		session.lastActivity = update.LastActivity
 		session.agentCount = max(session.agentCount, update.AgentCount)
-		session.active = update.Active
-		session.working = update.Working
-		session.attention = update.Attention
-		session.preview = update.Context
-		session.modelSettings = update.ModelSettings
-		session.goal = update.Goal.Clone()
-		session.name = update.Name
+		applyMonitorSessionObservation(session, update)
 		session.displayed = session.displayed || update.Active || update.TotalTokens > session.baseline ||
 			len(update.ModelCalls) > 0 || len(update.TurnTimings) > 0
 		if update.WorkingDirectory != "" {
@@ -2949,4 +2941,15 @@ func secondTick() tea.Cmd {
 
 func refreshTick(after time.Duration) tea.Cmd {
 	return tea.Tick(after, func(now time.Time) tea.Msg { return refreshMsg(now) })
+}
+
+func applyMonitorSessionObservation(row *monitorSession, observed codex.LiveUsageSession) {
+	row.name = observed.Name
+	row.modelSettings = observed.ModelSettings
+	row.preview = observed.Context
+	row.goal = observed.Goal.Clone()
+	row.readState = observed.ReadState
+	row.active = observed.Active
+	row.working = observed.Working
+	row.attention = observed.Attention
 }

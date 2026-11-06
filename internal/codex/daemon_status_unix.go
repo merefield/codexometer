@@ -24,6 +24,8 @@ const (
 )
 
 type daemonStatusProvider struct {
+	readStates         map[string]readStateObservation
+	readStateVersion   uint64
 	humanApprovals     bool
 	commandGeneration  uint64
 	commandTransitions map[string]uint64
@@ -115,8 +117,12 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	coverage := p.readUsageCoverage(ctx, threadIDs)
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
+		p.mu.Lock()
+		connection, readVersion := p.connection, p.readStates[threadID].version
+		p.mu.Unlock()
 		var result struct {
-			Thread struct {
+			ReadState *wireReadState `json:"readState"`
+			Thread    struct {
 				ID     string `json:"id"`
 				Status struct {
 					Type        string   `json:"type"`
@@ -129,6 +135,11 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}, &result); err != nil {
 			continue
 		}
+		p.mu.Lock()
+		if p.connection == connection && p.readStates[threadID].version == readVersion && result.Thread.ID == threadID {
+			p.observeReadStateLocked(threadID, result.ReadState.snapshot())
+		}
+		p.mu.Unlock()
 		status := parseSessionRuntimeStatus(result.Thread.Status.Type, result.Thread.Status.ActiveFlags)
 		if status != sessionRuntimeUnknown {
 			statuses[threadID] = status
@@ -136,6 +147,12 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	}
 
 	p.mu.Lock()
+	wanted := stringStructSet(threadIDs)
+	for id := range p.readStates {
+		if _, keep := wanted[id]; !keep {
+			delete(p.readStates, id)
+		}
+	}
 	p.usageCoverage = coverage
 	p.lastStatusAt = time.Now()
 	p.statusThreads = stringStructSet(threadIDs)
@@ -167,6 +184,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	directories := make(map[string]string, len(threadIDs))
 	goals := make(map[string]*SessionGoal)
+	readStates := make(map[string]SessionReadState)
 	for _, threadID := range threadIDs {
 		if _, subscribed := p.subscribed[threadID]; subscribed {
 			if goal := p.goals[threadID].goal; goal != nil {
@@ -174,6 +192,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 			}
 		}
 		if status, ok := p.statuses[threadID]; ok {
+			readStates[threadID] = p.readStates[threadID].state
 			if state := p.contexts[threadID]; status == sessionRuntimeIdle && state != nil && state.completed {
 				status = sessionRuntimeComplete
 			}
@@ -195,6 +214,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		coverage[id] = issue
 	}
 	return sessionDaemonSnapshot{
+		ReadStates:         readStates,
 		Goals:              goals,
 		UsageCoverage:      coverage,
 		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
@@ -307,6 +327,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.commandTransitions = make(map[string]uint64)
 	p.pending = make(map[int64]chan daemonEnvelope)
 	p.subscribed = make(map[string]struct{})
+	p.readStates = make(map[string]readStateObservation)
 	p.reroutedTurns = make(map[daemonTurnKey]string)
 	p.threadSettings = make(map[string]QuotaSession)
 	p.threadDirectories = make(map[string]string)
@@ -501,6 +522,7 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 			p.queueRevision++
 		}
 		p.goalNotificationLocked(envelope.Method, envelope.Params)
+		p.readStateNotificationLocked(envelope.Method, envelope.Params)
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
 		}

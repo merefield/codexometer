@@ -106,7 +106,7 @@ func (m *Model) monitorAttentionSessions() []monitorAttentionItem {
 		case codex.SessionAttentionError:
 			groups[2] = append(groups[2], item)
 		case codex.SessionAttentionComplete:
-			if !s.working && !profile && !scheduled {
+			if !s.working && !profile && !scheduled && (!s.readState.Known() || s.readState.Unread) {
 				groups[4] = append(groups[4], item)
 			}
 		}
@@ -196,6 +196,9 @@ func (m *Model) openMonitorAttention(action string) {
 	for _, item := range m.monitorAttentionSessions() {
 		if item.action() != action {
 			continue
+		}
+		if !item.profile && !item.trigger {
+			m.monitorReadIntent = item.id
 		}
 		review := "context"
 		if item.profile {

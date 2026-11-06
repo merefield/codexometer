@@ -145,6 +145,7 @@ func (m *Model) moveMonitorHistory(delta int) {
 		h.selected = &c
 	}
 	m.saveMonitorHistory(id, h)
+	m.monitorReadIntent = id
 	m.monitorContextScroll = 0
 	m.monitorPrompt.input.Blur()
 	m.monitorApprovalConfirm = ""
