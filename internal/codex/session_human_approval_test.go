@@ -62,3 +62,15 @@ func TestHumanCheckpointRequiresOwnCommandAndCurrentTurn(t *testing.T) {
 		}
 	}
 }
+
+// Background executions retain their originating turn even when a later turn
+// services the request. The live request capability still binds the response.
+func TestOrdinaryApprovalFromBackgroundTurnRemainsActionable(t *testing.T) {
+	for _, ended := range []bool{false, true} {
+		states := map[string]*daemonContextState{"root": {activeTurn: "servicing", ended: ended, requests: map[string]SessionContext{}}}
+		daemonContextEvent(states, "item/commandExecution/requestApproval", rawJSON("background"), rawJSON(map[string]any{"threadId": "root", "turnId": "origin", "itemId": "item", "kind": "command", "command": "git push", "cwd": "/work", "availableDecisions": []string{"accept", "decline"}}), time.Now())
+		if c := states["root"].requests[`"background"`]; c.ApprovalToken == "" || c.ApprovalBlocked != "" {
+			t.Fatal("ordinary background approval became unavailable", c)
+		}
+	}
+}
