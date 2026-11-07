@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/diagnostics"
 	"github.com/merefield/codexometer/internal/digbench"
 	"github.com/merefield/codexometer/internal/ui"
@@ -356,8 +357,8 @@ type dependencies struct {
 	checkAuth         func(context.Context, string) (codex.Snapshot, error)
 	listDigBenchGames func(context.Context, string) ([]string, error)
 	runDigBench       func(context.Context, string, string, string, codex.DigBenchOptions) (codex.DigBenchResult, error)
-	startUI           func(ui.Fetcher, time.Duration, bool, int, int, bool) error
-	startWeb          func(web.Source, time.Duration, int, io.Writer, bool, bool) error
+	startUI           func(ui.Fetcher, time.Duration, bool, int, int, confirmation.Mode) error
+	startWeb          func(web.Source, time.Duration, int, io.Writer, bool, confirmation.Mode) error
 }
 
 func defaultDependencies() dependencies {
@@ -373,10 +374,10 @@ func defaultDependencies() dependencies {
 			return (codex.Client{Binary: binary, BenchmarkAPIKey: apiKey}).RunDigBench(ctx, digbench.Client{Token: token}, options)
 		},
 		startUI: startUI,
-		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control, noConfirm bool) error {
+		startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool, mode confirmation.Mode) error {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer cancel()
-			return web.Run(ctx, source, refresh, port, output, control, web.Options{NoConfirm: noConfirm})
+			return web.Run(ctx, source, refresh, port, output, control, web.Options{ConfirmationMode: mode})
 		},
 	}
 }
@@ -386,24 +387,24 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	flags.SetOutput(stderr)
 	var quotaSteps quotaStepFlags
 	var (
-		codexPath         = flags.String("codex", "codex", "path to the Codex CLI")
-		errorLog          = flags.String("error-log", "", "write bounded operational diagnostics to this file (off by default)")
-		verbose           = flags.Bool("verbose", false, "include diagnostic context in --error-log (never raw payloads)")
-		noConfirm         = flags.Bool("no-confirm", false, "skip Codexometer confirmation steps except quota resets (does not bypass Codex permissions)")
-		refresh           = flags.Duration("refresh", time.Minute, "quota refresh interval")
-		demo              = flags.Bool("demo", false, "show the UI with simulated quota data")
-		inline            = flags.Bool("inline", false, "render inline instead of using the alternate screen")
-		webMode           = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
-		webControl        = flags.Bool("web-control", false, "enable experimental browser session approvals, prompts and configured quota profiles (requires --web)")
-		webPort           = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
-		resetThreshold    = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
-		resetWarningHours = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
-		checkAuth         = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
-		digBenchGame      = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
-		digBenchModel     = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
-		digBenchEffort    = flags.String("digbench-effort", "high", "reasoning effort for --digbench-game")
-		digBenchTimeout   = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
-		printVersion      bool
+		codexPath          = flags.String("codex", "codex", "path to the Codex CLI")
+		errorLog           = flags.String("error-log", "", "write bounded operational diagnostics to this file (off by default)")
+		verbose            = flags.Bool("verbose", false, "include diagnostic context in --error-log (never raw payloads)")
+		confirmationOption = flags.String("confirmation", "balanced", "confirmation policy: balanced, none or require (quota resets always require confirmation)")
+		refresh            = flags.Duration("refresh", time.Minute, "quota refresh interval")
+		demo               = flags.Bool("demo", false, "show the UI with simulated quota data")
+		inline             = flags.Bool("inline", false, "render inline instead of using the alternate screen")
+		webMode            = flags.Bool("web", false, "serve the experimental read-only browser interface on loopback")
+		webControl         = flags.Bool("web-control", false, "enable experimental browser session approvals, prompts and configured quota profiles (requires --web)")
+		webPort            = flags.Int("web-port", 0, "local web port (0 chooses an available port; requires --web)")
+		resetThreshold     = flags.Int("reset-threshold", 80, "show reset at this quota consumption (0-100; also shown for expiring credits)")
+		resetWarningHours  = flags.Int("reset-warning-hours", 72, "warn this many hours before a reset credit expires (0 disables expiry warnings)")
+		checkAuth          = flags.Bool("check-auth", false, "verify access to the current Codex login and exit")
+		digBenchGame       = flags.String("digbench-game", "", "run one experimental DigBench game and exit")
+		digBenchModel      = flags.String("digbench-model", "gpt-5.6-sol", "Codex model for --digbench-game")
+		digBenchEffort     = flags.String("digbench-effort", "high", "reasoning effort for --digbench-game")
+		digBenchTimeout    = flags.Duration("digbench-timeout", codex.DefaultDigBenchTimeout, "hard limit for --digbench-game")
+		printVersion       bool
 	)
 	flags.Var(&quotaSteps, "quota-step-down", "set PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]] per session (repeatable; default ask; empty SPEED preserves speed)")
 	flags.BoolVar(&printVersion, "version", false, "print the version and exit")
@@ -415,6 +416,11 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if printVersion {
 		fmt.Fprintln(stdout, "codexometer "+version.Current())
 		return 0
+	}
+	mode, err := confirmation.Parse(*confirmationOption)
+	if err != nil {
+		fmt.Fprintln(stderr, "codexometer:", err)
+		return 2
 	}
 	if *webPort < 0 || *webPort > 65535 || (*webPort != 0 && !*webMode) {
 		fmt.Fprintln(stderr, "codexometer: --web-port must be between 0 and 65535 and requires --web")
@@ -520,16 +526,12 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	if *webMode {
 		// Web mode deliberately gets no benchmark credentials or discovery calls.
 		client := codex.Client{Binary: *codexPath, QuotaSteps: quotaSteps}
-		if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
-			client.LiveUsage = liveUsage
-		} else {
-			diagnostics.Error("local-rollouts", "initialise session reader", err, diagnostics.Fields{})
-		}
+		client = withLiveUsage(client)
 		var source web.Source = client
 		if *demo {
 			source = &demoFetcher{quotaSteps: quotaSteps}
 		}
-		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl, *noConfirm); err != nil {
+		if err := deps.startWeb(source, *refresh, *webPort, stdout, *webControl, mode); err != nil {
 			diagnostics.Error("application", "web interface", err, diagnostics.Fields{})
 			fmt.Fprintln(stderr, "codexometer:", err)
 			return 1
@@ -549,17 +551,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	digBenchGames = normalizeDigBenchGames(digBenchGames)
 	client := codex.Client{Binary: *codexPath, BenchmarkAPIKey: benchmarkAPIKey, DigBenchToken: digBenchToken, DigBenchGames: digBenchGames, QuotaSteps: quotaSteps}
-	if liveUsage, err := codex.NewLiveUsageReader(""); err == nil {
-		client.LiveUsage = liveUsage
-	} else {
-		diagnostics.Error("local-rollouts", "initialise session reader", err, diagnostics.Fields{})
-	}
+	client = withLiveUsage(client)
 	var fetcher ui.Fetcher = client
 	if *demo {
 		fetcher = &demoFetcher{quotaSteps: quotaSteps}
 	}
 
-	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours, *noConfirm); err != nil {
+	if err := deps.startUI(fetcher, *refresh, *inline, *resetThreshold, *resetWarningHours, mode); err != nil {
 		diagnostics.Error("application", "terminal interface", err, diagnostics.Fields{})
 		fmt.Fprintln(stderr, "codexometer:", err)
 		return 1
@@ -676,7 +674,7 @@ func formatDigBenchResult(result codex.DigBenchResult) string {
 	return line
 }
 
-func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, resetWarningHours int, noConfirm bool) error {
+func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, resetWarningHours int, mode confirmation.Mode) error {
 	model := ui.New(fetcher, refresh)
 	if store, storeErr := ui.NewDefaultPreferenceStore(); storeErr == nil {
 		model = ui.NewWithPreferences(fetcher, refresh, store)
@@ -684,7 +682,7 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 	model.SetInline(inline)
 	model.SetResetThreshold(resetThreshold)
 	model.SetResetWarningHours(resetWarningHours)
-	model.SetNoConfirm(noConfirm)
+	model.SetConfirmationMode(mode)
 	finalModel, runErr := tea.NewProgram(model, terminalProgramOptions(os.Environ(), appleTerminalSupportsTrueColor())...).Run()
 	if final, ok := finalModel.(ui.Model); ok {
 		final.CancelQuotaWork()
@@ -693,4 +691,14 @@ func startUI(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThresh
 		controller.CloseQuotaProfiles()
 	}
 	return runErr
+}
+
+func withLiveUsage(client codex.Client) codex.Client {
+	reader, err := codex.NewLiveUsageReader("")
+	if err != nil {
+		diagnostics.Error("local-rollouts", "initialise session reader", err, diagnostics.Fields{})
+	} else {
+		client.LiveUsage = reader
+	}
+	return client
 }

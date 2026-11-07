@@ -12,6 +12,7 @@ func TestAdvertisedApprovalChoices(t *testing.T) {
 		kinds []string
 	}{
 		{`["accept","cancel"]`, []string{"accept", "cancel"}},
+		{`["acceptForSession","decline","accept","cancel"]`, []string{"accept", "acceptForSession", "decline", "cancel"}},
 		{`["cancel"]`, []string{"cancel"}},
 		{`["acceptForSession","decline"]`, []string{"acceptForSession", "decline"}},
 		{`null`, []string{"accept", "cancel"}},

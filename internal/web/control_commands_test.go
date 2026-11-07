@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 type commandsFake struct {
@@ -100,9 +101,9 @@ func TestCommandConfirmationIsBoundAndSingleUse(t *testing.T) {
 	}
 }
 
-func TestNoConfirmDoesNotBypassServerCommandTickets(t *testing.T) {
+func TestConfirmationNoneDoesNotBypassServerCommandTickets(t *testing.T) {
 	s, _, token := controlServer(t)
-	s.store.state.NoConfirm = true
+	s.store.state.ConfirmationMode = confirmation.None
 	f := &commandsFake{revision: "current"}
 	s.control.commands = f
 	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "commit", Path: "model", Revision: "current", Choice: "choice"}}

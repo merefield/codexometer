@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requiresConfirmation } from './confirmation';
   import { onMount, tick } from 'svelte';
   import SessionCommands from './SessionCommands.svelte';
   import FileDiff from './FileDiff.svelte';
@@ -42,6 +43,8 @@
   let editID = $state('');
   let openedScheduler = $state(false);
   let sendNowID = $state('');
+  let deleteReview = $state('');
+  let deleteUntil = $state(0);
   let timing = $state('now');
   let delay = $state(60);
   let dateTime = $state('');
@@ -116,6 +119,15 @@
     }
   }
   async function cancelJob(id: string) {
+    if (
+      requiresConfirmation(live.data?.confirmationMode, true) &&
+      (deleteReview !== id || now >= deleteUntil)
+    ) {
+      deleteReview = id;
+      deleteUntil = now + 30000;
+      return;
+    }
+    deleteReview = '';
     try {
       jobs = await controlRequest<Job[]>(
         'schedules',
@@ -156,6 +168,21 @@
   );
   let command = $derived(actionableCommand ? offer!.command : observedCommand);
   let confirming = $derived(!!confirmation && now < expires && !stale);
+  let needsReview = $derived(
+    requiresConfirmation(
+      live.data?.confirmationMode,
+      offer?.kind === 'approval'
+        ? choice !== null && !offer.choices?.[choice]?.persistent
+        : offer?.kind === 'profile'
+          ? choice === 1
+          : offer?.kind === 'prompt' &&
+              !sendNowID &&
+              !editing &&
+              (offer.questions?.length || timing === 'now')
+            ? true
+            : false,
+    ),
+  );
   let questions = $derived(
     offer?.questions?.length
       ? offer.questions
@@ -363,7 +390,7 @@
     } finally {
       busy = false;
     }
-    if (live.data?.noConfirm && confirmation && !controller.signal.aborted)
+    if (!needsReview && confirmation && !controller.signal.aborted)
       await commit();
   }
   async function commit() {
@@ -445,8 +472,16 @@
       >
       <button
         disabled={busy || job.status === 'sending'}
-        onclick={() => cancelJob(job.id)}>DELETE TRIGGER</button
+        onclick={() => cancelJob(job.id)}
+        >{deleteReview === job.id && now < deleteUntil
+          ? 'CONFIRM DELETE TRIGGER'
+          : 'DELETE TRIGGER'}</button
       >
+      {#if deleteReview === job.id && now < deleteUntil}<button
+          onclick={() => {
+            deleteReview = '';
+          }}>CANCEL</button
+        >{/if}
       {#if confirming && sendNowID === job.id}
         <p>
           Send this saved prompt now? This starts Codex work and consumes quota.
@@ -675,7 +710,7 @@
           {/each}
         {/if}
       </fieldset>
-      {#if confirming && !live.data?.noConfirm}
+      {#if confirming && needsReview}
         {#if scheduled}<p>TRIGGER // {triggerDescription}</p>{/if}
         <p class="notice">
           Check the target and {offer.kind === 'profile'
@@ -713,7 +748,7 @@
           disabled={busy || stale || !valid || !!scheduleError}
           >{busy
             ? 'SENDING…'
-            : live.data?.noConfirm
+            : !needsReview
               ? editing
                 ? 'SAVE CHANGES'
                 : offer.kind === 'approval' || offer.kind === 'profile'

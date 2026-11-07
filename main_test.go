@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/ui"
 	"github.com/merefield/codexometer/internal/version"
 )
@@ -189,7 +190,7 @@ func TestResetThresholdOption(t *testing.T) {
 		t.Run(test.value, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			called := false
-			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, threshold, _ int, _ bool) error {
+			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, threshold, _ int, _ confirmation.Mode) error {
 				called = true
 				if threshold != test.want {
 					t.Fatalf("threshold %d, want %d", threshold, test.want)
@@ -214,7 +215,7 @@ func TestRunStartsDemoWithSelectedOptions(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	called := false
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, warningHours int, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, refresh time.Duration, inline bool, resetThreshold, warningHours int, _ confirmation.Mode) error {
 			called = true
 			if refresh != 30*time.Second || !inline || resetThreshold != 35 || warningHours != 72 {
 				t.Fatalf("refresh=%s inline=%v", refresh, inline)
@@ -267,7 +268,7 @@ func TestRunResetWarningHours(t *testing.T) {
 		t.Run(test.value, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			called := false
-			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _ int, hours int, _ bool) error {
+			deps := dependencies{startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _ int, hours int, _ confirmation.Mode) error {
 				called = true
 				if hours != test.want {
 					t.Fatalf("got %d hours, want %d", hours, test.want)
@@ -300,7 +301,9 @@ func sameDemoAccounting(left, right codex.LiveUsageSnapshot) bool {
 func TestRunReportsUIError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(ui.Fetcher, time.Duration, bool, int, int, bool) error { return errors.New("terminal unavailable") },
+		startUI: func(ui.Fetcher, time.Duration, bool, int, int, confirmation.Mode) error {
+			return errors.New("terminal unavailable")
+		},
 	}
 	code := run(nil, &stdout, &stderr, deps)
 	if code != 1 || !strings.Contains(stderr.String(), "terminal unavailable") {
@@ -391,7 +394,7 @@ func TestRunPassesOpenAIAPIKeyToUIBenchmarks(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
 	var stdout, stderr bytes.Buffer
 	deps := dependencies{
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int, _ confirmation.Mode) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.BenchmarkAPIKey != "openai-secret" {
 				t.Fatalf("benchmark API key was not attached to Codex client")
@@ -417,7 +420,7 @@ func TestRunPassesDigBenchTokenToUIWithoutLeavingItInEnvironment(t *testing.T) {
 			}
 			return []string{"P-2", "P-1", "P-2"}, nil
 		},
-		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int, _ bool) error {
+		startUI: func(fetcher ui.Fetcher, _ time.Duration, _ bool, _, _ int, _ confirmation.Mode) error {
 			client, ok := fetcher.(codex.Client)
 			if !ok || client.DigBenchToken != "digbench-secret" {
 				t.Fatalf("DigBench token was not attached to Codex client")

@@ -523,7 +523,7 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 	var buttons []commandDisplayRow
 	if p.menu.Input && !p.busy && p.notice == "" && strings.TrimSpace(p.input.Value()) != "" {
 		label := "[ ENTER REVIEW ]"
-		if p.menu.ReversibleInput || m.confirmations.NoConfirm {
+		if !m.confirmations.Required(confirmation.Command(p.menu.ReversibleInput)) {
 			label = "[ ENTER APPLY ]"
 		}
 		buttons = append(buttons, commandDisplayRow{text: i18n.Text(label), action: "review"})

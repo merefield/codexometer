@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/merefield/codexometer/internal/confirmation"
 	"slices"
 	"time"
 )
@@ -26,7 +27,7 @@ func (m *Model) clearMonitorCloseAllConfirmation() {
 }
 
 func (m *Model) requestMonitorCloseAll() {
-	if m.confirmations.NoConfirm || m.monitorCloseAllArmed() {
+	if !m.confirmations.Required(confirmation.Narrow) || m.monitorCloseAllArmed() {
 		m.dismissAllMonitorSessions()
 		return
 	}

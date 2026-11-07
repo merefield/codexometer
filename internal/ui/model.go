@@ -178,6 +178,7 @@ type Model struct {
 	benchmarkQuotaAccounting benchmarkQuotaAccounting
 
 	confirmations           confirmation.Policy
+	actionReview            *monitorActionReview
 	monitorState            monitorState
 	monitorAutoStart        bool
 	monitorStartedAt        time.Time
@@ -480,25 +481,17 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
-	if next, cmd, handled := m.updateStartup(message); handled {
-		return next, cmd
-	} else {
+	// Priority handlers run before editor updates; each carries the resulting
+	// immutable model forward even when it does not consume the message.
+	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
+		Model.updateStartup, Model.updateActionReview, Model.updateMonitorHistory,
+		Model.updateMonitorSuggestions, Model.updateMonitorCommands,
+	} {
+		next, cmd, handled := update(m, message)
 		m = next
-	}
-	if next, cmd, handled := m.updateMonitorHistory(message); handled {
-		return next, cmd
-	} else {
-		m = next
-	}
-	if next, cmd, handled := m.updateMonitorSuggestions(message); handled {
-		return next, cmd
-	} else {
-		m = next
-	}
-	if next, cmd, handled := m.updateMonitorCommands(message); handled {
-		return next, cmd
-	} else {
-		m = next
+		if handled {
+			return m, cmd
+		}
 	}
 	colors := paletteFor(m.theme)
 	m.monitorPrompt.input.style(colors)
@@ -1479,11 +1472,9 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonBenchmarkSelected:
 		if m.meterView == viewBenchmark && m.benchmarkCanRunSelected() {
 			tasks := m.benchmarkScopedTasks()
-			if m.benchmarkSelectedSuiteExternal() && !m.benchmarkSelectedArmed && !m.confirmations.NoConfirm {
-				m.benchmarkSelectedArmed = true
-				m.benchmarkConfirmSequence++
-				sequence := m.benchmarkConfirmSequence
-				return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
+			if !m.benchmarkSelectedArmed && m.confirmations.Required(confirmation.Command(!m.benchmarkSelectedSuiteExternal())) {
+				cmd := m.armBenchmarkLaunch(false)
+				return m, cmd
 			}
 			m.benchmarkSelectedArmed = false
 			m.benchmarkAllArmed = false
@@ -1497,11 +1488,9 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 			allCombinations = m.benchmarkCombinations
 		}
 		if m.meterView == viewBenchmark && benchmarkRunAllAvailable(m.benchmarkRunActive(), allCombinations, len(tasks)) {
-			if !m.benchmarkAllArmed && !m.confirmations.NoConfirm {
-				m.benchmarkAllArmed = true
-				m.benchmarkConfirmSequence++
-				sequence := m.benchmarkConfirmSequence
-				return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
+			if !m.benchmarkAllArmed && m.confirmations.Required(confirmation.Guarded) {
+				cmd := m.armBenchmarkLaunch(true)
+				return m, cmd
 			}
 			m.benchmarkAllArmed = false
 			return m.startBenchmark(tasks, allScope, true)

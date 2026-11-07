@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -66,6 +67,7 @@ func (c *approvalTestClient) RespondSessionApproval(_ context.Context, token, de
 
 func approvalTestModel() Model {
 	m := contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.fetcher = &approvalTestClient{token: "live"}
 	m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Text: "Command: git push\nDirectory: /work", Source: "LIVE", ApprovalToken: "live"}
 	m.monitorSessionData[0].preview.ApprovalOptions = [8]codex.ApprovalOption{
@@ -75,10 +77,10 @@ func approvalTestModel() Model {
 	return m
 }
 
-func TestNoConfirmStillRequiresAnExplicitApprovalAndLiveCapability(t *testing.T) {
+func TestConfirmationNoneStillRequiresAnExplicitApprovalAndLiveCapability(t *testing.T) {
 	for _, stale := range []bool{false, true} {
 		m := approvalTestModel()
-		m.SetNoConfirm(true)
+		m.SetConfirmationMode(confirmation.None)
 		client := m.fetcher.(*approvalTestClient)
 		if stale {
 			client.token = "replacement"
@@ -139,7 +141,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 						}
 						updated, cmd := m.Update(tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft}))
 						u := updated.(Model)
-						if option.GrantsPermission() && !(confirmed && i == 0) {
+						if m.confirmations.Required(confirmation.Approval(option.Kind)) && !(confirmed && i == 0) {
 							if cmd != nil || u.monitorApprovalConfirm != "live/"+action {
 								t.Fatal("first click must only confirm")
 							}
@@ -214,6 +216,7 @@ func TestMonitorApprovalNumberSelectsCConfirms(t *testing.T) {
 	}
 	for _, index := range []int{1, 2} {
 		m := approvalTestModel()
+		m.SetConfirmationMode(confirmation.Balanced)
 		m, cmd, _ := m.updateMonitorContextKey(strconv.Itoa(index + 1))
 		if cmd == nil || !m.monitorApprovalBusy {
 			t.Fatal("negative decision shortcut did not match its button")

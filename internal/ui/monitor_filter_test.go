@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -287,6 +288,7 @@ func TestMonitorStatusFilterPreservesDraftAndApprovalAccess(t *testing.T) {
 
 func TestMonitorStatusFilterCloseAllAndPagingAreScoped(t *testing.T) {
 	m := statusFilterTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	for i := range 12 {
 		m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: fmt.Sprint("work-", i), displayed: true, working: true})
 	}

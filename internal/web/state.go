@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
 	"github.com/merefield/codexometer/internal/version"
@@ -134,7 +135,7 @@ type state struct {
 	Thresholds       []quotaThreshold    `json:"thresholds,omitempty"`
 	ProfileError     bool                `json:"profileError,omitempty"`
 	Control          bool                `json:"control"`
-	NoConfirm        bool                `json:"noConfirm,omitempty"`
+	ConfirmationMode confirmation.Mode   `json:"confirmationMode"`
 	Version          string              `json:"version"`
 	Meters           []meter             `json:"meters" ts:"nonnull"`
 	Credits          []credit            `json:"credits" ts:"nonnull"`
@@ -169,7 +170,7 @@ type store struct {
 }
 
 func newStore() *store {
-	s := &store{state: state{StatusLineFields: statusline.Fields(), Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
+	s := &store{state: state{ConfirmationMode: confirmation.Balanced, StatusLineFields: statusline.Fields(), Version: version.Current(), Meters: []meter{}, Credits: []credit{}, Sessions: []session{}}, previous: map[string]int64{}, samples: map[string][]sample{}, changed: make(chan struct{})}
 	s.publish()
 	return s
 }

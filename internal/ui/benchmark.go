@@ -1,6 +1,7 @@
 package ui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"fmt"
 	"math"
 	"slices"
@@ -2070,4 +2071,16 @@ func (m Model) benchmarkRunAt(x, y int) (benchmarkTableRow, bool) {
 		return benchmarkTableRow{}, false
 	}
 	return rows[index], true
+}
+
+// Both launch controls bind their review to the current confirmation sequence.
+func (m *Model) armBenchmarkLaunch(all bool) tea.Cmd {
+	if all {
+		m.benchmarkAllArmed = true
+	} else {
+		m.benchmarkSelectedArmed = true
+	}
+	m.benchmarkConfirmSequence++
+	sequence := m.benchmarkConfirmSequence
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return benchmarkConfirmExpiredMsg{sequence: sequence} })
 }

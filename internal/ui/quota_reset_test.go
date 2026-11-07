@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 type resetFake struct {
@@ -32,13 +33,13 @@ func resetModel() (Model, *resetFake) {
 	return m, f
 }
 
-func TestNoConfirmNeverBypassesQuotaResetConfirmation(t *testing.T) {
+func TestConfirmationNoneNeverBypassesQuotaResetConfirmation(t *testing.T) {
 	m, f := resetModel()
-	m.SetNoConfirm(true)
+	m.SetConfirmationMode(confirmation.None)
 	n, cmd := m.pressQuotaReset()
 	m = n.(Model)
 	if cmd != nil || len(f.keys) != 0 || m.resetConfirmUntil.IsZero() {
-		t.Fatal("--no-confirm bypassed the irreversible quota-reset confirmation")
+		t.Fatal("--confirmation none bypassed the irreversible quota-reset confirmation")
 	}
 	_, cmd = m.pressQuotaReset()
 	if cmd == nil {

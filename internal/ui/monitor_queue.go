@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/schedule"
 )
@@ -380,7 +381,7 @@ func (m *Model) openQueueItem(index int, remove bool) tea.Cmd {
 	q.input, _ = m.queueEditorLayout(g.contentWidth, g.meterHeight)
 	m.monitorPrompt.input.Blur()
 	if remove {
-		if m.confirmations.NoConfirm {
+		if !m.confirmations.Required(confirmation.Guarded) {
 			next, cmd, _ := m.changeQueueItem()
 			*m = next
 			return cmd
@@ -672,6 +673,9 @@ func (m Model) changeQueueItem() (Model, tea.Cmd, bool) {
 	g := m.monitorDashboardLayout()
 	if g.contentWidth < 40 || g.meterHeight < 7 {
 		q.notice = i18n.Text("Enlarge the terminal before confirming.")
+		return m, nil, true
+	}
+	if !q.deleting && m.reviewMonitorAction("queue-edit", i18n.Text("EDIT QUEUED MESSAGE"), text, []any{q.session, q.item, text}) {
 		return m, nil, true
 	}
 	q.busy = true

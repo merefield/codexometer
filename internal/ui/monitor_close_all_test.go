@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -27,6 +28,7 @@ func TestMonitorCloseAllDismissesOffScreenRowsAndPreservesMeasurement(t *testing
 		monitorBaseline: 1200, monitorLatest: 1320,
 		monitorSamples: []monitorSample{{Tokens: 120}},
 	}
+	m.SetConfirmationMode(confirmation.Require)
 	m.startMonitorSessions(usage, now)
 	for i := range usage.Sessions {
 		usage.Sessions[i].TotalTokens = 110
@@ -113,6 +115,7 @@ func TestMonitorCloseAllRenderedControlAndEmptyList(t *testing.T) {
 func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 	for _, k := range []tea.KeyPressMsg{key('z'), key('Z')} {
 		m := contextTestModel()
+		m.SetConfirmationMode(confirmation.Require)
 		next, cmd := m.Update(k)
 		m = next.(Model)
 		if cmd == nil || m.monitorState != monitorResetting || m.flashedButton != footerButtonMonitorReset || m.visibleMonitorSessionCount() != 3 {
@@ -121,6 +124,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 	}
 	for _, k := range []tea.KeyPressMsg{key('s'), key('S')} {
 		m := contextTestModel()
+		m.SetConfirmationMode(confirmation.Require)
 		next, cmd := m.Update(k)
 		m = next.(Model)
 		if cmd != nil || m.monitorState != monitorRunning || m.flashedButton != footerButtonNone {
@@ -129,6 +133,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 	}
 	for _, k := range []tea.KeyPressMsg{key('o'), key('O')} {
 		m := contextTestModel()
+		m.SetConfirmationMode(confirmation.Require)
 		next, cmd := m.Update(k)
 		m = next.(Model)
 		if cmd == nil || !m.monitorCloseAllArmed() || m.visibleMonitorSessionCount() != 3 {
@@ -141,6 +146,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 		}
 	}
 	m := contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.monitorSelectedID = "root-one"
 	next, _ := m.Update(key('x'))
 	m = next.(Model)
@@ -148,6 +154,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 		t.Fatal("plain x no longer closes only the selected row")
 	}
 	m = contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.requestMonitorCloseAll()
 	repeated := key('o')
 	repeated.IsRepeat = true
@@ -157,6 +164,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 		t.Fatal("repeated O confirmed Close All")
 	}
 	m = contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.meterView = viewBars
 	for _, k := range []tea.KeyPressMsg{key('z'), key('o')} {
 		next, cmd = m.Update(k)
@@ -169,6 +177,7 @@ func TestMonitorControlsHaveDistinctScopedShortcuts(t *testing.T) {
 
 func TestMonitorControlShortcutsTypeNormallyInComposer(t *testing.T) {
 	m, _ := inlinePromptTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m, _ = promptKey(m, tea.KeyEnter, "")
 	if !m.monitorPrompt.input.Focused() {
 		t.Fatal("inline composer did not focus")
@@ -185,6 +194,7 @@ func TestMonitorControlShortcutsTypeNormallyInComposer(t *testing.T) {
 func TestMonitorCompactControlsKeepShortcutHints(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{40, 16}, {80, 24}, {120, 40}} {
 		m := contextTestModel()
+		m.SetConfirmationMode(confirmation.Require)
 		m.width, m.height = size.w, size.h
 		g := m.monitorDashboardLayout()
 		a := m.monitorArea(g.contentWidth, g.meterHeight)
@@ -211,6 +221,7 @@ func TestMonitorCompactControlsKeepShortcutHints(t *testing.T) {
 
 func TestMonitorCloseAllConfirmationCancelExpiryAndChangedRows(t *testing.T) {
 	m := contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.requestMonitorCloseAll()
 	next, cmd := m.Update(specialKey(tea.KeyEscape))
 	m = next.(Model)
@@ -236,6 +247,7 @@ func TestMonitorCloseAllConfirmationCancelExpiryAndChangedRows(t *testing.T) {
 		t.Fatal("Zero retained the armed Close All")
 	}
 	m = contextTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m.requestMonitorCloseAll()
 	next, _ = m.pressViewTab(viewBars)
 	m = next.(Model)
@@ -246,6 +258,7 @@ func TestMonitorCloseAllConfirmationCancelExpiryAndChangedRows(t *testing.T) {
 
 func TestMonitorCloseAllArmingShowsConfirmationAndReleasesTypingFocus(t *testing.T) {
 	m, _ := inlinePromptTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	m, _ = promptKey(m, tea.KeyEnter, "")
 	m.monitorPrompt.input.SetValue("draft")
 	m.requestMonitorCloseAll()

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/schedule"
 )
@@ -159,6 +160,9 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 	case "esc":
 		p.confirmID = ""
 	case "ctrl+d":
+		if m.reviewMonitorAction("trigger-delete", i18n.Text("TRIGGER SET"), j.Text, j) {
+			return nil
+		}
 		if err := p.queue.Cancel(j.Session, j.ID); err != nil {
 			p.notice = err.Error()
 		} else {
@@ -171,7 +175,7 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 			p.confirmToken = m.monitorPromptOffer().Token
 			p.confirmUntil = time.Now().Add(20 * time.Second)
 			p.notice = ""
-			if m.confirmations.NoConfirm {
+			if !m.confirmations.Required(confirmation.Guarded) {
 				return m.triggerAction("ctrl+y")
 			}
 		}

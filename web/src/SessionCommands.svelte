@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requiresConfirmation } from './confirmation';
   import { onDestroy, tick } from 'svelte';
   import { controlRequest, live } from './state.svelte';
   import { statusLineUI, themeUI } from './preferences.svelte';
@@ -436,7 +437,10 @@
     if (notice) return;
     if (menu?.picker) {
       highlight(choices.findIndex((choice) => choice.id === o.id));
-      if (o.action && (o.reversible || live.data?.noConfirm))
+      if (
+        o.action &&
+        !requiresConfirmation(live.data?.confirmationMode, !!o.reversible)
+      )
         await reviewChoice(o);
       else optionList?.focus();
       return;
@@ -449,7 +453,9 @@
   }
   async function reviewChoice(o: Choice) {
     if (busy || unavailable || !menu || o.unavailable || notice) return;
-    const direct = o.action && (o.reversible || live.data?.noConfirm);
+    const direct =
+      o.action &&
+      !requiresConfirmation(live.data?.confirmationMode, !!o.reversible);
     if (menu.picker) {
       if (reviewed && stagedChoice === o.id) return;
       stagedChoice = o.id;
@@ -695,12 +701,15 @@
               type="submit"
               form={`${listID}-input`}
               disabled={busy || unavailable || !name.trim()}
-              >{menu.reversibleInput || live.data?.noConfirm
+              >{!requiresConfirmation(
+                live.data?.confirmationMode,
+                !!menu.reversibleInput,
+              )
                 ? 'ENTER APPLY'
                 : 'ENTER REVIEW'}</button
             >
           {:else if currentChoice?.action && !currentChoice.unavailable}
-            {#if reviewed && !currentChoice.reversible && !live.data?.noConfirm}<button
+            {#if reviewed && requiresConfirmation(live.data?.confirmationMode, !!currentChoice.reversible)}<button
                 data-command-confirm
                 onclick={commit}
                 disabled={busy || (unavailable && !localOnly)}
@@ -711,7 +720,10 @@
                   if (currentChoice) void reviewChoice(currentChoice);
                 }}
                 disabled={busy || (unavailable && !localOnly)}
-                >{currentChoice.reversible || live.data?.noConfirm
+                >{!requiresConfirmation(
+                  live.data?.confirmationMode,
+                  !!currentChoice.reversible,
+                )
                   ? 'ENTER APPLY'
                   : 'ENTER REVIEW'}</button
               >{/if}

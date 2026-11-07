@@ -373,7 +373,7 @@ telemetry on macOS, Linux, and WSL:
   the cautious `CHECK SESSION` inactivity fallback.
 - **Command approval details and controls** — supported live requests show the
   command, directory and reason in the Sessions tab's full detail page, with
-  buttons matching Codex's offered decisions, with confirmation for grants. Incomplete or
+  buttons matching Codex's offered decisions, with confirmation for broader grants. Incomplete or
   unsupported requests still need answering in Codex.
 - **Resolved-model API equivalents** — live model-reroute and response-usage
   events let Codexometer price a positively matched call using the model that
@@ -569,7 +569,7 @@ context from assistant messages and input/approval requests. Resolved requests
 and new turns clear stale pending context. Observation alone never starts a turn
 or answers a question. Explicit actions in Sessions can submit follow-up turns
 to idle sessions, answer supported blocking questions, and send selected command
-decisions (with confirmation for permission grants). Drafts stay in memory;
+decisions (with confirmation for broader permission grants). Drafts stay in memory;
 submitted text enters Codex's normal session history and follow-ups consume
 model usage. Nothing is sent automatically; see the Sessions controls below.
 Without a shared daemon, previews use
@@ -593,7 +593,7 @@ codexometer --codex /path/to/codex
 | `v` | Cycle views within Quota or Usage |
 | `z` | Zero the Sessions baseline |
 | `s` | Open Benchmark Scope (Benchmark view only) |
-| `o` | Arm Close All in the Sessions overview; press again to confirm, or `Esc` to cancel |
+| `o` | Close All session rows; strict confirmation mode adds a second press, with `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace |
 | `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, highlight attention pills or cycle status filters when that header area has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
@@ -1291,10 +1291,10 @@ The other top-level views are:
   closes the selected row. Close All applies the same dismissal and automatic
   return behavior to all rows. On narrow terminals its label becomes `[××]`
   with `(O)` below it; Zero shows `0` with `(Z)`.
-  Close All requires confirmation: click or press `o` once to arm it, then click
-  or press `o` again within five seconds to confirm. `Esc` cancels. A change
-  to the visible rows requires a fresh confirmation; switching views or Zero
-  cancels an armed action.
+  Close All is immediate by default. With `--confirmation require`, click or
+  press `o` once to arm it, then again within five seconds to confirm. `Esc`
+  cancels. Changed visible rows require fresh confirmation; switching views
+  or Zero cancels an armed action.
   Close All is disabled when no rows are visible.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows.
@@ -1885,7 +1885,7 @@ goal-token budget**, not an account spending limit; omitted budgets are retained
 and `unlimited` explicitly removes the goal budget. Codexometer accepts objectives
 up to 4,096 characters and positive budgets up to 9,007,199,254,740,991; Codex can
 impose further limits. Every mutation is session-scoped, freshly revalidated and
-verified after acknowledgment, with no automatic retry. `--no-confirm` also opts
+verified after acknowledgment, with no automatic retry. `--confirmation none` also opts
 out of goal confirmations; read-only web mode never enables goal writes.
 Older/unsupported servers omit the live `/goal` family rather than simulating it.
 
@@ -1964,40 +1964,45 @@ confirmations retain the draft and error context. These changes do not modify gl
 quota thresholds may later supersede model settings. Uncertain requests are
 not retried automatically. Read-only web mode offers no command-control endpoint.
 
-### Fewer confirmation steps
+### Confirmation policy
 
-By default, `/rename`, model/reasoning selection, advertised speed changes such as
-`/fast`, and `/plan` apply on explicit selection. They do not launch a prompt;
-settings affect subsequent turns and can be changed again. Model and speed choices
-can still affect quota consumption or API cost. `/cd`, `/permissions`, unknown
-commands and other guarded actions retain their existing confirmation steps.
-Local display commands and read-only inventories remain immediate or browse-only.
+Codexometer uses a balanced confirmation policy by default. Explicit one-time
+approvals, replies, ordinary queue edits, Close All, `/rename`, model/reasoning
+selection, advertised speed changes such as `/fast`, and `/plan` apply immediately.
+They still require an explicit action and a fresh, valid session capability.
 
-To opt out of Codexometer's extra confirmation clicks for this launch:
+Broader permission grants, `/permissions`, `/cd`, quota-profile changes, native
+queue deletion, scheduled follow-ups and Send now, and broad/external benchmark
+launches keep their review steps. Terminal schedule forms retain their explicit
+Confirm Schedule / Save Changes action. Settings affect subsequent work; model
+and speed choices can affect quota consumption or API cost.
+
+| Setting | Behaviour |
+|---|---|
+| Omitted | Balanced default: confirm higher-impact actions. |
+| `--confirmation none` | Skip extra confirmations, except quota-reset redemption. |
+| `--confirmation require` | Confirm every substantive action; navigation and viewing stay immediate. |
 
 ```sh
-codexometer --no-confirm
-codexometer --web --web-control --no-confirm
+codexometer --confirmation none
+codexometer --web --web-control --confirmation require
 ```
 
-**Quota resets are the one exception: redeeming a reset always requires confirmation.**
-Elsewhere, this flag makes explicit actions single-step, including approvals and
-persistent grants, quota-profile decisions, sending browser prompts or schedules,
-scheduled Send now, native queue deletion, Close All dismissal and guarded benchmark
-launches. An accidental click can therefore authorise work, spend quota or change
-permissions: use it only when you want that trade-off. It never chooses an action
-for you or automatically approves an incoming request.
+**Quota-reset redemption always requires confirmation, in every mode.** Strict
+mode also reviews ordinary terminal replies, active-turn steer/queue/interrupt
+actions, queued-message edits and trigger deletion. Reviews bind the exact target,
+payload and live capability, expire, and can be cancelled without discarding the
+draft. Secret answers remain masked during review. Approve Once is listed first
+when Codex advertises it; reusable grants are never invented or substituted.
 
-The flag is not saved in preferences, does not enable web writes without
-`--web-control`, and is not forwarded to Codex. Codex's sandbox/approval rules,
-fresh-state checks, capability/revision validation and one-use/replay guards remain.
-The browser still uses server-side prepare/commit validation, but completes both
-phases after the one explicit action. Failed or uncertain writes are never retried
-automatically. Unless stated otherwise, confirmation instructions elsewhere in this
-README describe the default guarded behaviour.
-Recognised key-repeat events are ignored for command submission and approval
-shortcuts. Older terminals may not distinguish held-key repeats, so avoid holding
-action keys when using `--no-confirm`.
+The policy is launch-scoped, is not saved in preferences, does not enable browser
+writes without `--web-control`, and is not forwarded to Codex. It never selects an
+action or automatically approves an incoming request. Codex permissions, fresh
+state checks, one-use capabilities and replay guards remain active. The browser
+retains server-side prepare/commit validation even when one explicit click completes
+both phases. Failed or uncertain writes are never automatically retried.
+Recognised key-repeat events cannot submit or confirm actions. The old opt-out
+flag has been removed; use `--confirmation none` instead.
 
 **Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
 compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
@@ -2120,9 +2125,9 @@ or incomplete requests retain their original bounded text.
 fresh approval each time, even when ordinary approvals have been saved or
 reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE**,
 **DECLINE**, and **REJECT & STOP TURN**, with a **HUMAN APPROVAL REQUIRED** label.
-Session-wide and persistent grants cannot satisfy these checkpoints. `--no-confirm`
-can remove the extra confirmation step, but every request still needs an explicit
-human action. Passive observation and read-only web mode do not advertise support
+Session-wide and persistent grants cannot satisfy these checkpoints. One-time
+decisions are immediate by default; `--confirmation require` adds a review step.
+Every request still needs an explicit human action. Passive observation and read-only web mode do not advertise support
 for answering these checkpoints; use a capable native Codex client there.
 
 **File-change approvals (shared app-server only):** proposed additions, deletions
@@ -2131,7 +2136,8 @@ old/new line numbers and green additions/red removals. An overall `+N / −N`
 summary counts added and removed source lines across all proposed files (not
 wrapped display rows or patch headers). Full detail retains the
 preceding commentary and justification. The terminal and writable web interface
-offer **APPROVE ONCE** (with confirmation), **DECLINE**, and **REJECT & STOP TURN**.
+offer **APPROVE ONCE**, **DECLINE**, and **REJECT & STOP TURN**. These decisions
+are immediate by default and reviewed with `--confirmation require`.
 Read-only web mode can display the patch but cannot answer it. Inline terminal
 buttons appear only when the entire proposed patch fits; otherwise open full detail.
 
@@ -2146,9 +2152,11 @@ or persistent permission grants.
 When the approval event omits the command or
 directory, Codexometer associates it with the preceding command item from the
 same thread, turn and item. A complete ordinary command request offers clickable
-buttons matching the supported decisions Codex actually offers, in its order:
+buttons matching the supported decisions Codex actually offers, with Approve Once
+first when available and the remaining choices in their offered order:
 
-- **APPROVE ONCE** grants this command after **CONFIRM APPROVAL**.
+- **APPROVE ONCE** grants this command immediately by default. Strict mode adds
+  **CONFIRM APPROVAL**.
 - **ALLOW FOR SESSION** grants session-scoped approval after **CONFIRM SESSION
   GRANT**; future prompts covered by Codex's session approval cache may run
   without asking again.
@@ -2168,18 +2176,20 @@ decision absent from the request can be submitted. For older servers omitting
 the decision list, only the legacy Accept/Cancel pair is offered.
 
 Closing the detail page cancels an unsubmitted confirmation. Each visible
-approval button has a numbered shortcut (`1`–`8`, following the offered order).
-A grant shortcut selects the choice. For **APPROVE ONCE**, terminals supporting
+approval button has a numbered shortcut (`1`–`8`, following the displayed order).
+One-time approvals, decline and reject/stop act immediately by default. Broader
+grants first select their confirmation. In strict mode, **APPROVE ONCE** on terminals supporting
 key-release events through the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
 allow the same number again after releasing it (`1`, release,
 `1` for the first option). The confirmation button displays that number; held-key
 repeats cannot confirm. `C` remains an alternative, whether selected by keyboard
 or mouse. Terminals without key-release support retain the displayed `C`
-confirmation. Session-wide and persistent grants always require `C` or clicking
+confirmation. When a confirmation is required, session-wide and persistent grants
+require `C` or clicking
 the confirmation button, not repeating their number. Armed confirmations expire
 after five seconds and are cancelled by changing the target or leaving its view;
-a new request requires a new confirmation. Decline
-and reject/stop shortcuts act immediately, just like their buttons. Only one
+a new request requires a new confirmation. Strict mode also confirms decline
+and reject/stop decisions. Only one
 session—the expanded row or full-detail target—can display approval controls
 at a time. Hidden, clipped and compact controls have no active shortcuts, and
 typing in the reply editor never triggers approval shortcuts.
@@ -2851,7 +2861,7 @@ open directly.
 --check-auth       verify the current Codex login and exit
 --error-log PATH   opt into bounded JSON operational diagnostics (off by default)
 --verbose          add diagnostic context to --error-log; never raw payloads
---no-confirm       skip extra confirmation clicks, except quota-reset redemption
+--confirmation MODE  balanced (default), none, or require; quota resets always confirmed
 --demo             preview simulated quota, Sessions, Usage, and benchmark data
 --inline           render inline instead of using the alternate screen
 --web              experimental read-only browser interface (loopback only)
@@ -3302,9 +3312,11 @@ there is no separate read-only pairing link on a control-enabled server.
    directory and exact command. Select one of the actual supported decisions,
    answer the input questions, or write a follow-up. Session-wide and persistent
    prefix grants are explicitly marked and show the supplied prefix details.
-5. Click **REVIEW BEFORE SENDING**, then the separate **CONFIRM** button within
-   30 seconds. Cancel returns to editing; Enter in a text area inserts a newline,
-   never submits. All decisions, including declines, use this two-step browser flow.
+5. Use the displayed send/decision button. Actions requiring review show
+   **REVIEW BEFORE SENDING**, then a separate **CONFIRM** button with a 30-second
+   expiry. Cancel returns to editing; Enter in a text area inserts a newline,
+   never submits. `--confirmation require` adds this review to every substantive
+   decision, including one-time approvals, ordinary replies and declines.
 
 The server binds preparation to the exact session, source request, chosen option
 and answers. Confirmation rechecks the offer against current reader/provider

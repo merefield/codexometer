@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -119,6 +120,9 @@ func approvalShortcutLabel(kind string, confirm bool, index int) string {
 	if label == "" {
 		return ""
 	}
+	if confirm && (kind == "decline" || kind == "cancel") {
+		return i18n.Text("[ C CONFIRM ]") + " " + label
+	}
 	shortcut := strconv.Itoa(index + 1)
 	if confirm {
 		shortcut = "C"
@@ -152,7 +156,10 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 			continue
 		}
 		label := m.approvalButtonLabel(option.Kind, false, i)
-		slot := max(lipgloss.Width(label), lipgloss.Width(m.approvalButtonLabel(option.Kind, true, i)))
+		slot := lipgloss.Width(label)
+		if m.confirmations.Required(confirmation.Approval(option.Kind)) {
+			slot = max(slot, lipgloss.Width(m.approvalButtonLabel(option.Kind, true, i)))
+		}
 		if slot > width-4 || label == "" {
 			return nil
 		}
@@ -291,7 +298,7 @@ func (m Model) monitorApprovalAction(action string) (Model, tea.Cmd, bool) {
 	if option.Kind == "" {
 		return m, nil, true
 	}
-	if option.GrantsPermission() && !m.confirmations.NoConfirm && !m.approvalConfirmationActive(token, action) {
+	if m.confirmations.Required(confirmation.Approval(option.Kind)) && !m.approvalConfirmationActive(token, action) {
 		m.monitorApprovalConfirm = token + "/" + action
 		m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
 		m.monitorApprovalNumberReleased = false

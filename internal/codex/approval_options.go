@@ -84,5 +84,13 @@ func commandApprovalOptions(raw []json.RawMessage) ([8]ApprovalOption, string) {
 	if len(raw) > 16 {
 		names = append(names, "…")
 	}
+	// Present the one-command grant first when it was actually advertised.
+	for i, option := range out {
+		if option.Kind == "accept" {
+			copy(out[1:i+1], out[:i])
+			out[0] = option
+			break
+		}
+	}
 	return out, strings.Join(names, ", ")
 }
