@@ -1,6 +1,6 @@
 # Codexometer: your retro Codex session command centre
 
-[Codexometer](https://github.com/merefield/codexometer) is a retro terminal dashboard and **session command centre** for [Codex](https://github.com/openai/codex). Keep it beside your working sessions to see who's busy, who needs attention, and how much quota you have left. With a shared local app-server, Sessions also lets you answer supported questions, review and confirm command approvals, and send follow-ups—all from one place. Quota, token-usage history and model benchmarks remain a tab away.
+[Codexometer](https://github.com/merefield/codexometer) is a retro terminal dashboard and **session command centre** for [Codex](https://github.com/openai/codex). Keep it beside your working sessions to see who's busy, who needs attention, and how much quota you have left. With a shared local app-server, Sessions also lets you answer questions, respond to supported command and file-change approvals, and send follow-ups—all from one place. Quota, token-usage history and model benchmarks remain a tab away.
 
 ![codexometer|690x454](upload://xcWugpZYodk0zuFVYsDzluTemtf.png)
 
@@ -13,6 +13,7 @@ It is useful when you want to:
 - keep quota and reset timing visible without interrupting your current task;
 - see whether local Codex sessions are active, waiting for input, or awaiting approval;
 - answer supported questions, approve commands deliberately, and send follow-ups from one session command centre;
+- keep track of completed replies that still need reviewing, with shared read state where Codex supports it;
 - understand locally observed token activity and API-equivalent cost;
 - explore up to a year of account token history, peak days, and activity streaks;
 - compare available models and reasoning levels on the same checked tasks; or
@@ -24,19 +25,19 @@ The interface runs locally in a terminal, with clickable and hover-highlighted c
 
 The interface has four main tabs:
 
-- **Quota** — switch between Bars, Pace, Zone, Pie, and Fuel Tank presentations. Compare consumption directly with elapsed reset-cycle time, see countdowns and reset dates, and get a pace-aware health signal. Zone and Pace graphs in both terminal and browser trace observed history and project consumption trends, showing either total consumption or distance from safety. The terminal uses Braille lines and dark colour bands; the browser uses smoother SVG with directional arrows. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
-- **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The wider **SESSION TOTALS** readout keeps a clickable Reset beside it. Page through sessions and dismiss finished rows with `[×]` without closing them: fresh activity brings them back.
-- **Usage** — explore OpenAI account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. New **Breakdown** and **Windows** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. History is fetched directly from OpenAI on each run, with no local usage ledger. Unavailable data and approximate periods are labelled rather than guessed.
+- **Quota** — switch between Bars, Pace, Pie, Fuel Tank and Resets, plus Thresholds when quota step-down profiles are configured. See countdowns, reset dates and a pace-aware health signal. The Pace graph plots consumption against elapsed reset-window time, with a diagonal steady-use reference: above it means usage is ahead of pace. Both terminal and browser trace observed history and project consumption trends. The terminal uses Braille lines and dark colour bands; the browser uses smoother SVG with directional arrows. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
+- **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The **SESSION TOTALS** readout has **Zero** to start a fresh measurement baseline and **Close All** to dismiss listed rows while keeping measurements and Codex sessions running. Page through sessions or dismiss individual rows with `[×]`: fresh activity brings them back.
+- **Usage** — explore OpenAI account token history in a GitHub-style daily activity grid, weekly bars, or a cumulative graph. Choose 6 or 12 months (26/52 weeks), browse older periods, and see lifetime tokens, peak usage, longest turn, and activity streaks. **Breakdown** and **Windows** views, in both terminal and web, show OpenAI's available daily model/surface/feature detail and historical allowance windows. Relative usage, credits, tokens and allowance percentages remain clearly separate. History is fetched directly from OpenAI on each run, with no local usage ledger. Unavailable data and approximate periods are labelled rather than guessed.
 - **Benchmark** — run programmatically checked challenges across selected model and reasoning-level combinations, then compare outcomes, wall time, tokens, estimated API-equivalent cost, and rankings.
 
 Use `Tab` / `Shift+Tab` or the mouse to navigate primary tabs, and `v` to cycle the clickable view subtabs within Quota or Usage. Usage keeps its range/grouping controls separate from those views; web offers matching view subtabs. Quota refreshes every minute by default. Passive monitoring and history views do not start model turns; explicitly sent follow-ups and benchmark runs do consume model usage.
 
-Click the **Codexometer title** to jump back to Quota’s Bars view. The **version label** links to that version’s release highlights through your terminal’s hyperlink support—typically Ctrl-click.
+Click the **Codexometer title** to jump back to Quota’s Bars view. The **version label** links to that version’s release highlights through your terminal’s hyperlink support, using its link-opening gesture, such as Ctrl-click in Windows Terminal or Cmd-click in Ghostty.
 
 ## Sessions: your session command centre
 
-The terminal now has a compact summary strip for tokens, visible sessions and
-working/approval/input/inferred-check counts. A reserved navigation row keeps
+The terminal has a compact summary strip for tokens, visible sessions, active sessions,
+and working/approval/input/error/inferred-check counts. A reserved navigation row keeps
 the session layout steady as requests arrive or clear. Completion pills follow
 approvals and input requests in the calmer theme-primary colour: your result is ready,
 but a reply is not necessarily required. Theme-coloured attention buttons
@@ -48,13 +49,18 @@ On tall terminals, full detail retains the summary too. As space runs short,
 the summary disappears before the attention strip so text and action controls
 keep priority. These shortcuts navigate only; they never approve or send for you.
 
-Optional quota step-down profiles also join the session command centre in the terminal and writable web interface:
+**Keep track of unread results:** on supported shared app-servers, **TURN COMPLETE** stays bright and its completion pill remains until you review the reply. Deliberately opening partial or full Detail, or scrolling within the displayed result, marks the latest completed reply as read; its status then stays visible in subdued text. Selecting a row, restoring a layout, or receiving another reply in an already-open pane does not mark it read. Reading an older turn cannot acknowledge a newer one. Codex saves these receipts and shares them with supported native clients, so they survive restarts. Read-only web mode displays this state without changing it. Older setups retain their existing completion behaviour.
+
+**Zero or clear the list:** `(Z)ERO` (`z`) starts a fresh measurement baseline and restores dismissed rows. `CL(O)SE ALL` (`o`) dismisses every currently listed row, including off-page rows matching the current filter, without stopping sessions or resetting measurements. Later activity can restore a dismissed row. Close All is immediate by default; strict confirmation mode adds a second action.
+
+Optional quota step-down profiles are available in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
 Configuring any steps also reveals **Quota → Thresholds**, after Resets, in the terminal
 and web dashboards, giving you a compact overview of every trigger and clearly
 marking the active and next model profile. It stays hidden on normal launches.
-Apply and confirm individually, or skip. A session can have separate pills for
+Review and apply individually, or skip. Applying requires confirmation by default;
+skipping is immediate unless strict confirmation mode is selected. A session can have separate pills for
 its Codex request and quota review; each opens the corresponding detail, with
 Codex requests ordered first. Completion pills wait until outstanding reviews
 are handled. The default `ask` mode requires approval; opt into `auto` per
@@ -62,14 +68,14 @@ threshold to apply the profile once per session for subsequent turns without
 prompting. Already-matching sessions are left alone and failed updates are not
 automatically retried. Applied settings are not rolled back when Codexometer closes.
 Browser profile reviews require `--web --web-control`; quota pills open the
-session's full detail beside its native Codex requests, with review and confirmation
-before applying. Read-only web mode cannot apply profiles.
+session's full detail beside its native Codex requests, with confirmation
+before applying under the default policy. Read-only web mode cannot apply profiles.
 
 Start with the session that needs you. A **WORKING** badge in its telemetry box blinks only its ball, keeping the text steady; completion and attention states take priority. Recent activity alone is not treated as proof of work. Compact and wide detail panels keep content headings such as **LAST REPLY** or **APPROVAL REQUEST**, while full detail puts the session status in its box title without repeating it in the body.
 
 Below each session's token count, the latest observed model, reasoning level and Fast setting take priority—for example, **gpt-6-astra medium fast**. These are recorded selections, not proof of the delivered backend model or speed; unavailable fields are omitted. **AVG TOK/MIN** shows average observed usage since measurement began rather than instantaneous generation speed. Total and per-session rates refresh together every five seconds, not on mouse movement or keypresses.
 
-Give each session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the Sessions overview with the same session showing full-width detail. While typing, arrows edit your text and Escape first leaves the editor.
+Give each session as much space as it needs. Select a session with `Up`/`Down`, then use `Left`/`Right` for less/more detail: **graph only ↔ split detail/graph ↔ full-width detail ↔ full-screen detail**. Clicking the left/right half of that row’s detail/graph area does the same thing, without wrapping at either end. Only that session changes; approval buttons and reply editors keep their own actions. From full-screen detail, Left or Escape returns to the Sessions overview with the same session showing full-width detail. While typing, arrows edit your text. Escape leaves an idle editor; during an active turn, Escape requests interruption and Ctrl+C leaves the editor without interrupting.
 
 Global **Show Detail / Hide Detail** (`h`) resets all rows to split detail/graph or graph-only. That global preference survives restarts, as do your last main tab and Quota view; individual row layouts, selection and dismissals are temporary.
 
@@ -77,43 +83,53 @@ Prefer visible controls? Click **[←] [→]** at the top-right of each row's ri
 
 Take useful text with you: **[ (C)OPY ]** sits at the bottom-right of split, wide and full-detail boxes containing **LAST REPLY** or **LAST ACTIVITY** text, when space permits. Copy works during a run as well as for replies recovered at startup, capturing the text at the moment you press it. Usable Copy buttons match their panel border colour in Sessions and Benchmark, highlight on hover, and flash when clicked or activated with `C`; an unavailable Benchmark matrix Copy button stays dim. The shortcut targets the selected session only while its detail is shown; approval confirmation and composer typing retain their own controls. Questions and approval commands stay separate. Translated labels embed C where natural, otherwise showing it separately.
 
-Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; press Escape first if the composer is focused to restore keyboard scrolling. Copy includes offscreen text from the entire sanitized, bounded reply available to Codexometer—not an unlimited conversation transcript—and uses the same terminal clipboard support as Benchmark Copy. Copied text follows your terminal and operating system's normal clipboard retention.
+Long full-screen replies scroll with Up/Down, Page Up/Down or the mouse wheel; leave the composer first to restore keyboard scrolling (Escape when idle, Ctrl+C during an active turn). Copy includes offscreen text from the entire sanitized, bounded reply available to Codexometer—not an unlimited conversation transcript—and uses the same terminal clipboard support as Benchmark Copy. Copied text follows your terminal and operating system's normal clipboard retention.
 
-Queued work moving too quickly to read? In terminal full detail, use **Alt+Left / Alt+Right** or **Previous / Next / Live** to browse up to ten recent completed prompt/reply excerpts per session. The answer you're reading stays pinned while newer turns run; scrolling and Copy follow that answer, while approvals and composing always target the live session. Shared app-server history can recover quick completions and reload recent replies after restarting; older setups retain only replies observed during the current launch. No conversation history is written to disk by Codexometer.
+Queued work moving too quickly to read? In terminal full detail, use **Alt+Left / Alt+Right** (**Opt+Left / Opt+Right** on macOS) or **Previous / Next / Live** to browse up to ten recent completed prompt/reply excerpts per session. Leave the reply editor first: Terminal.app and Ghostty’s default Option-arrow word-movement sequences navigate history when the editor is unfocused and edit words while typing. History controls appear when retained turns can be browsed, with unavailable directions dimmed. The answer you're reading stays pinned while newer turns run; scrolling and Copy follow that answer, while approvals and composing always target the live session. Shared app-server history can recover quick completions and reload recent replies after restarting; older setups retain only replies observed during the current launch. No conversation history is written to disk by Codexometer.
 
 If an approval request is too long for inline controls, a highlighted **APPROVAL — OPEN DETAIL →** warning takes you to the complete request. Dismiss another session or enlarge the window and the buttons reappear automatically when there is enough room to review the request safely.
 
-File-change approvals now have a proper diff review too: file paths, old/new line
+File-change approvals include a scrollable diff review: file paths, old/new line
 numbers, green additions and red removals, in both terminal and web detail. With a
-shared app-server, approve once (with confirmation), decline, or reject and stop
-the turn. Read-only web mode can show the changes without enabling decisions.
+shared app-server, approve once, decline, or reject and stop
+the turn. These one-time decisions are immediate by default; strict mode adds confirmation. Read-only web mode can show the changes without enabling decisions.
 Missing or unsafe patches and broader directory grants stay in Codex—no blind approvals.
 
-For **Approve Once**, press its number, release it, then press it again to confirm on terminals with detected **Kitty keyboard-protocol key-release support**. `C` remains an alternative; session-wide and persistent grants still require `C` or clicking confirmation. Confirmations expire after five seconds. Windows Terminal 1.24 inside Ubuntu/WSL and Apple's built-in Terminal.app use the `1` → `C` fallback. [Windows Terminal Preview 1.25](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0) introduced the protocol, and the separate [kitty app](https://sw.kovidgoyal.net/kitty/) supports it on macOS. Follow the shortcut shown on the button—this terminal capability is optional, not a requirement for using Codexometer or approving commands.
+**Choose the scope of an approval:** **APPROVE ONCE** appears first when Codex offers it and acts immediately by default. Broader **ALLOW FOR SESSION** and **ALWAYS ALLOW PREFIX** decisions show their scope or exact persistent rule and require confirmation by default. Numbered shortcuts follow the displayed order; strict mode also reviews one-time approvals, declines and stop decisions. When confirmation is required, use `C` or click the confirmation button. For Approve Once, terminals with detected Kitty keyboard-protocol key-release support also allow its number, release, then the same number again. Confirming a broader grant requires `C` or a click. Confirmations expire after five seconds; follow the hint on the button. Unsupported or incomplete requests remain in Codex.
+
+**Managed human checkpoints:** Codex 0.167+ can require fresh human approval under a managed command policy. The terminal and writable web interface label these **HUMAN APPROVAL REQUIRED** and offer the supported one-time approve, decline and stop decisions. Session-wide and persistent grants cannot satisfy them. Every request needs an explicit human action, including with `--confirmation none`; strict mode adds a separate review step. Passive monitoring and read-only web mode leave these checkpoints to a capable native Codex client.
 
 Subtle animated dots in inline and full-screen detail indicate observed work, disappearing when the session is no longer observed working or needs attention. When FOLLOW-UPS is visible, the dots sit above the queue to associate them with the active task rather than the waiting messages. “Text sent ...” and “Decision sent ...” confirmations linger briefly so fast updates do not swallow the acknowledgement. Local activity signals remain best-effort, not proof that a model is still executing.
 
-On a shared-server session ready for input, the selected full-width detail row also offers a follow-up composer when there is room for the complete context. Click or press Enter to write, Enter to send, and Escape to leave the editor. Smaller panels and structured questions keep full-screen detail as the fallback.
+On a shared-server session ready for input, the selected full-width detail row also offers a follow-up composer when there is room for the complete context. Click or press Enter to write, Enter to send while idle, and Escape to leave an idle editor. Smaller panels and structured questions keep full-screen detail as the fallback.
 
-**Live command menus:** type `/` in the composer for a vertical popup with help that shrinks as you type: Up/Down highlights, Tab completes, Enter opens options or applies a choice, and Escape dismisses. Terminal and writable web mode discover model/reasoning options, advertised speed tiers, collaboration modes and allowed permission profiles. Reversible session changes—name, model/reasoning, speed and Plan mode—apply on explicit selection without an extra confirmation. Permission, directory and goal changes remain guarded by default. A loaded shared-server session is required. Speed changes can be sent immediately during a turn for subsequent turns; other session settings require idle. Skills, apps, MCP tools, hooks and experimental flags have browse-only catalogues; this is not every Codex CLI slash command. Unsupported catalogues stay hidden, and slash text is never silently sent as a prompt (`//` escapes a literal leading slash).
+**Live command menus:** type `/` in the composer for a vertical popup with help that shrinks as you type: Up/Down highlights, Tab completes, Enter opens options or applies a choice, and Escape dismisses the menu while retaining your draft and session view. Rapid Escape bursts are absorbed so dismissing a menu does not interrupt the turn or leave Detail. Terminal and writable web mode discover model/reasoning options, advertised speed tiers, collaboration modes and allowed permission profiles. Reversible session changes—name, model/reasoning, speed and Plan mode—apply on explicit selection without an extra confirmation by default; strict mode reviews them. Permission, directory and goal changes remain guarded by default. A loaded shared-server session is required. Renaming also works during an active turn. Speed changes can be sent during a turn for subsequent turns; model, reasoning, permission and directory changes require an idle session. Skills, apps, MCP tools, hooks and experimental flags have browse-only catalogues; this is not every Codex CLI slash command. Unsupported catalogues stay hidden, and slash text is never silently sent as a prompt (`//` escapes a literal leading slash).
 
-**Keep your goals in sight:** `/goal` inspects, sets, edits, pauses, resumes or clears a session’s goal and manages its total token budget. Goal status sits below session-row statusline fields and before COPY in the full-detail footer: **PURSUING GOAL**, **GOAL STALLED**, paused, limited or complete. These are official Codex states, separate from whether a turn is working or waiting for input; stale observations are labelled. Goal-capable shared app-server required; writable web mode is needed for browser changes. Creating/resuming a goal can start work and spend quota immediately. Pause/clear do not interrupt an already-running turn. Changes are reviewed by default (`--no-confirm` opts out), freshly checked and never automatically retried.
+**Keep your goals in sight:** `/goal` inspects, sets, edits, pauses, resumes or clears a session’s goal and manages its total token budget. Goal status sits below session-row statusline fields and before COPY in the full-detail footer: **PURSUING GOAL**, **GOAL STALLED**, paused, limited or complete. These are official Codex states, separate from whether a turn is working or waiting for input; stale observations are labelled. Goal-capable shared app-server required; writable web mode is needed for browser changes. Creating/resuming a goal can start work and spend quota immediately. Pause/clear do not interrupt an already-running turn. Changes are reviewed by default (`--confirmation none` skips the extra review), freshly checked and never automatically retried.
 
-Prefer fewer extra clicks? Launch with `--no-confirm` (plus `--web --web-control` for browser actions) to make Codexometer's other guarded actions single-step too. **Quota-reset redemption always keeps its confirmation.** This launch-only option never auto-selects an approval or bypasses Codex's sandbox, permissions, live capabilities or replay checks. It can make accidental clicks consequential—including permission grants and paid benchmark launches—so leave it off unless you want that trade-off. Confirmation instructions elsewhere in this post describe the default guarded mode.
+**Choose your confirmation policy:**
+
+| Setting | Behaviour |
+|---|---|
+| Omitted (or `--confirmation balanced`) | Balanced default: narrow actions apply directly; broader changes require confirmation. |
+| `--confirmation none` | Skip extra confirmations, except quota-reset redemption. |
+| `--confirmation require` | Confirm substantive actions; viewing, navigation and local display preferences stay immediate. |
+
+The setting applies to that launch only. **Quota-reset redemption always requires confirmation.** No mode auto-selects or auto-approves a request, enables browser writes without `--web-control`, or bypasses Codex permissions, current capabilities or replay checks. Reviews identify the actual destination, including a linked agent answering a question, and mask secret answers. Failed or uncertain writes are never automatically retried. Confirmation descriptions elsewhere in this post assume the balanced default.
 
 **Your own status line:** full session detail has a configurable footer for model/reasoning, speed, tokens and directory. `/statusline` offers checkboxes, ordering and a live preview; choose multiple fields or hide it entirely. The settings belong to Codexometer and persist as display preferences. Web's footer configuration also works in read-only mode.
 
-**Schedule the next move:** experimental full-detail scheduling (Ctrl+S, also in writable web mode) offers a delay, a calendar date/time, or confirmed quota recovery. A clickable **TRIGGER SET** pill and session label open the scheduler. While queued, the saved prompt and timing replace the ordinary composer: edit with Ctrl+S, delete with Ctrl+D, or request Send now with Ctrl+N and explicitly confirm with Ctrl+Y. The form is fully keyboard navigable; buttons work too. Requests follow session settings and wait for an eligible idle session with quota available. Keep Codexometer running: the queue is memory-only, closing the process cancels it, and uncertain sends are never automatically retried. It does not redeem reset credits.
+**Schedule the next move:** experimental full-detail scheduling (Ctrl+S, also in writable web mode) offers a delay, a calendar date/time, or confirmed quota recovery. A clickable **TRIGGER SET** pill and session label open the scheduler. While queued, the saved prompt and timing replace the ordinary composer: edit with Ctrl+S, delete with Ctrl+D, or request Send now with Ctrl+N and confirm with Ctrl+Y under the default policy. `--confirmation none` skips that extra review; strict mode also reviews trigger deletion and ordinary reply/queue actions. The scheduling form retains its explicit Confirm Schedule / Save Changes action. It is fully keyboard navigable; buttons work too. Requests follow session settings and wait for an eligible idle session with quota available. Keep Codexometer running: the queue is memory-only, closing the process cancels it, and uncertain sends are never automatically retried. It does not redeem reset credits.
 
 ## Quota estimates, resets, and session attention
 
 API-equivalent figures are workload-dependent estimates, not your subscription’s cash value or a statement of OpenAI’s private quota formula. They need clean observed quota movement to learn, show uncertainty, and restart learning when Codexometer is relaunched. Pricing uses published input, cached-input, and output rates where the model and usage are known; missing data is not treated as free.
 
-Quota API-EQ also accounts for **requested Fast-mode premiums** on maintained Astra and GPT-5.6 models, per response, including applicable cache and long-context pricing. `TIER*` marks requested-tier estimates; `STD 100%` provides a standard-price comparison when space permits. Missing tier evidence is flagged `STD?` or `TIER*?` with LOW confidence. These are not confirmed charges: the observed data does not expose the actual billed tier, and quota percentages are never multiplied. Benchmark rankings remain standard-price comparisons. See the [Fast-mode estimation guidance](https://github.com/merefield/codexometer#fast-mode-and-service-tier-uncertainty).
+Quota API-EQ also accounts for **requested Fast-mode premiums** on supported maintained models, per response, including applicable cache and long-context pricing. `TIER*` marks requested-tier estimates; `STD 100%` provides a standard-price comparison when space permits. Missing tier evidence is flagged `STD?` or `TIER*?` with LOW confidence. These are not confirmed charges: the observed data does not expose the actual billed tier, and quota percentages are never multiplied. Benchmark rankings remain standard-price comparisons. See the [Fast-mode estimation guidance](https://github.com/merefield/codexometer#service-tiers-and-pricing-uncertainty).
 
-The reset button appears when Codex reports an available reset and a quota window is at least **80% consumed**, or a known reset expires in **less than 72 hours**. Change the usage threshold with `--reset-threshold 60`. The new **Quota → Resets** view is always accessible and shows available credits, grant dates, expiries and descriptions when supplied. A separate amber expiry countdown beside the button opens this view without arming confirmation; it shortens or moves to another row on narrow terminals. Click the reset button once to open this view and reveal confirmation, then again within ten seconds to redeem; `Esc` cancels. Codexometer targets the soonest-expiring credit it can identify, keeping that credit fixed through confirmation and retries. If details are missing, it reports that limitation and lets the backend choose. A reset refreshes eligible quota and changes the weekly reset schedule—it does not stack additional allowance.
+The reset button appears when Codex reports an available reset and a quota window is at least **80% consumed**, or a known reset expires in **less than 72 hours**. Change the usage threshold with `--reset-threshold 60`. The **Quota → Resets** view is always accessible and shows available credits, grant dates, expiries and descriptions when supplied. A separate amber expiry countdown beside the button opens this view without arming confirmation; it shortens or moves to another row on narrow terminals. Click the reset button once to open this view and reveal confirmation, then again within ten seconds to redeem; `Esc` cancels. Codexometer targets the soonest-expiring credit it can identify, keeping that credit fixed through confirmation and retries. If details are missing, it reports that limitation and lets the backend choose. A reset refreshes eligible quota and changes the weekly reset schedule—it does not stack additional allowance.
 
-Ordinary Codex CLI sessions work out of the box. For the best Sessions feedback, connect your CLI sessions through a shared local Codex app-server: Codexometer can distinguish **INPUT NEEDED** from **APPROVAL NEEDED**, show command-approval details with controls matching Codex's supported offered choices, and use positively matched resolved-model events for more accurate pricing. Permission grants require confirmation; session-wide and persistent-prefix choices are clearly labelled. Without that setup, it falls back to local session signals and a cautious **CHECK SESSION** inactivity prompt, not a guessed approval alert. See the [recommended setup](https://github.com/merefield/codexometer#recommended-codex-cli-setup).
+Ordinary Codex CLI sessions work out of the box. For the best Sessions feedback, connect your CLI sessions through a shared local Codex app-server: Codexometer can distinguish **INPUT NEEDED** from **APPROVAL NEEDED**, show command-approval details with controls matching Codex's supported offered choices, and use positively matched resolved-model events for more accurate pricing. Broader permission grants require confirmation by default; session-wide and persistent-prefix choices are clearly labelled. Without that setup, it falls back to local session signals and a cautious **CHECK SESSION** inactivity prompt, not a guessed approval alert. See the [recommended setup](https://github.com/merefield/codexometer#recommended-codex-cli-setup).
 
 Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 168` for a week (handy for testing known later expiries). The default is 72 hours; `0` disables expiry warnings while retaining the consumption-based reset button.
 
@@ -125,18 +141,17 @@ Troubleshooting a gremlin? Opt into `--error-log ./error.log`, optionally with `
 
 ## An experimental browser companion
 
-Prefer a browser window? `codexometer --web` now offers an **experimental,
+Prefer a browser window? `codexometer --web` offers an **experimental,
 read-only by default** Quota, Sessions and Usage dashboard with the same retro spirit:
-responsive gauges, live activity graphs and usage heatmaps. Zone
-traces the observed quota path, with a marked starting point and gaps for
-failed observations. The separate Pace view shows distance from the safe line,
-replacing the former horizontal gauge. Both graphs offer the same
-trace and trend controls. Arrowed trends use the
+responsive gauges, live activity graphs and usage heatmaps. Pace
+traces consumption against elapsed reset-window time, with a diagonal steady-use
+reference, a marked starting point and gaps for failed observations.
+Trace and trend controls let you inspect observed usage and its projection. Arrowed trends use the
 whole-window average by default or an observed recent period; green means
 projected usage stays within quota at reset, dark red means it exceeds it.
 Sessions offers graph-only, split, wide and full-page
 detail, with a compact totals strip for observed tokens, listed sessions and
-separate working/approval/input/inferred-check counts. Linked-agent tokens are
+separate active/working/approval/input/error/inferred-check counts. Linked-agent tokens are
 already included, and stale observations are labelled. Select sessions with ↑/↓,
 adjust detail with ←/→, or use the clickable controls.
 Reply/activity text also has a Copy button in split, wide and full-page detail—even
@@ -146,9 +161,10 @@ shows a manual-copy suggestion. The same bounded-observation limits apply.
 Prominent attention links distinguish observed requests from inferred inactivity,
 and commands are separated from the explanation when available. Add
 `--web-control` to opt into supported session approvals, input questions and
-follow-up messages from full-page detail, with an explicit review/confirmation
-step. These actions require live capabilities from connected shared-daemon
-sessions; local-only observations remain best-effort viewing.
+follow-up messages from full-page detail. One-time decisions and ordinary replies
+apply directly by default; broader changes retain review and confirmation.
+The launch confirmation policy also applies to these browser controls. These actions
+require live capabilities from connected shared-daemon sessions; local-only observations remain best-effort viewing.
 
 Your theme, tab, quota view and session layouts are remembered in the browser;
 use a fixed `--web-port` to retain preferences across launches. Trails live only
@@ -157,7 +173,7 @@ session usage. Try `codexometer --web --demo` with simulated data first.
 
 Open the private, one-use pairing link printed in your terminal and keep that
 process running. Everything is served from the local Go binary; no Node runtime
-or hosted service is required. This first preview is UK-English-only and does
+or hosted service is required. The browser interface is UK-English-only and does
 not expose benchmarks, reset redemption or quota
 API-EQ learning. The terminal remains the full session command centre.
 For browser control, use a dedicated updated browser profile without extensions,
@@ -178,7 +194,7 @@ CODEXOMETER_LANG=pt-PT codexometer
 CODEXOMETER_LANG=da codexometer --demo
 ```
 
-On PowerShell, use `$env:CODEXOMETER_LANG = 'fr'` before launching. Retain the setting in your shell profile or Windows user environment; restart Codexometer after changing it. Set `en-GB` or remove the variable to restore English. Bare `pt` selects Brazilian Portuguese; `pt-PT` selects European Portuguese with regional wording, number formatting and plural rules. `pt-AO` and `pt-MZ` match European Portuguese; `da-DK` selects Danish. Translations are embedded in the binary; existing hotkeys, model names, and benchmark prompts stay unchanged. These are initial UI translations, and native-language corrections are welcome.
+On PowerShell, use `$env:CODEXOMETER_LANG = 'fr'` before launching. Retain the setting in your shell profile or Windows user environment; restart Codexometer after changing it. Set `en-GB` or remove the variable to restore English. Bare `pt` selects Brazilian Portuguese; `pt-PT` selects European Portuguese with regional wording, number formatting and plural rules. `pt-AO` and `pt-MZ` match European Portuguese; `da-DK` selects Danish. Translations are embedded in the binary; existing hotkeys, model names, and benchmark prompts stay unchanged. Native-language corrections are welcome.
 
 ## Benchmarking
 
@@ -188,10 +204,10 @@ The built-in coding challenges return Starlark functions, evaluated in a restric
 
 The always-available benchmark catalogue is divided into:
 
-- **Codexometer Core** — the original easy and moderate deterministic coding tasks; and
-- **Codexometer Extended** — the later, harder deterministic tasks.
+- **Codexometer Core** — easy and moderate deterministic coding tasks; and
+- **Codexometer Extended** — harder deterministic tasks.
 
-Open **Scope** to select individual tasks, models, and reasoning levels. Compatibility cues show which efforts each model supports, while bulk controls make it easy to check or clear a complete group. **Run Scope** executes the selected intersections; **Run All** runs the active suite’s complete catalogue across every compatible model and reasoning level.
+Open **Scope** to select individual tasks, models, and reasoning levels. Compatibility cues show which efforts each model supports, while bulk controls make it easy to check or clear a complete group. **Run Scope** executes the selected intersections; **Run All** runs the active suite’s complete catalogue across every compatible model and reasoning level. Launch controls show the planned work before you commit; broad launches require confirmation by default, and strict mode also reviews individual built-in trials.
 
 Each trial appears in the result matrix as soon as it starts and remains clickable while in progress. The detail view includes:
 
@@ -208,13 +224,13 @@ Filter passed/failed results, click column headings to sort, or switch instantly
 
 ## Optional DigBench integration
 
-Codexometer also includes an experimental integration with [DigBench](https://digbench.ai/), or “Discovery in Games”. DigBench is a scientific-discovery benchmark containing 70 interactive games with undisclosed rules. Humans and AI agents receive the same states, available actions, and step budgets, and must discover each game’s mechanics through experimentation.
+Codexometer also includes an experimental integration with [DigBench](https://digbench.ai/), or “Discovery in Games”. DigBench is a scientific-discovery benchmark of interactive games with undisclosed rules. Humans and AI agents receive the same states, available actions, and step budgets, and must discover each game’s mechanics through experimentation.
 
 Supplying a `DIGBENCH_API_TOKEN` adds **DigBench** to the suite selector. Codexometer fetches the current game catalogue at launch rather than compiling a fixed list, so Scope can expose every game returned by DigBench alongside the model and reasoning controls.
 
 The exact published `gpt-5.6-sol`/`high` condition is identified on both Scope controls; `xhigh` is marked as an enhanced, non-paper experiment. Each game receives a two-hour default allowance, with a different finite timeout available to headless runs. The model gets DigBench's task description and creative-mode metadata, a compact state-focused response after every action, and explicit guidance to inspect that response before choosing its next single move. The derived level score remains operator-facing, and Codexometer keeps the richer sanitized API exchange in the benchmark detail transcript.
 
-Before a run, Codexometer shows the planned number of persisted remote sessions and asks for confirmation. During each game, the result table reports live game and level progress. Its detail view documents the solving workflow as safe prompts and tool definitions followed by each tool request, tool response, move, authoritative state, and final response. Win detection comes from the remote DigBench state rather than from interpreting the model’s prose.
+Before a run, Codexometer shows the planned number of persisted remote sessions and asks for confirmation under the default policy. During each game, the result table reports live game and level progress. Its detail view documents the solving workflow as safe prompts and tool definitions followed by each tool request, tool response, move, authoritative state, and final response. Win detection comes from the remote DigBench state rather than from interpreting the model’s prose.
 
 Without a DigBench token, the integration remains hidden and the normal Codexometer experience is unchanged. Tokens can be created from the [DigBench account page](https://digbench.ai/account/tokens).
 
@@ -222,7 +238,9 @@ Prefer a non-interactive run? `codexometer --digbench-game P-1` runs a named gam
 
 ## Privacy, authentication, and cost
 
-Quota monitoring uses the prevailing Codex login. Sessions can show a bounded last-reply, activity, question, or approval preview beside each session. Excerpts remain in memory and do not trigger another model call; global Hide Detail hides them until you choose to show them again, including by expanding an individual row. With a shared app-server, full detail lets you answer supported blocking questions or send a follow-up to an idle session; a selected wide inline row also offers follow-ups when space permits. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts; grants require a separately labelled confirmation (the same number for one-time approval where key-release support is detected, `C`, or a second click). Broader grants retain `C` or click confirmation, and persistent-prefix rules are shown for review. Approval controls belong to only the current target session. Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Full interaction capture remains restricted to isolated benchmark turns created by Codexometer; Sessions does not harvest user prompts, reasoning, or arbitrary tool output.
+Quota monitoring uses the prevailing Codex login. Sessions can show a bounded last-reply, activity, question, or approval preview beside each session. Excerpts remain in memory and do not trigger another model call; global Hide Detail hides them until you choose to show them again, including by expanding an individual row. With a shared app-server, full detail lets you answer supported blocking questions or send a follow-up to an idle session; a selected wide inline row also offers follow-ups when space permits. Unsupported questions and approvals remain in Codex. Supported command decisions use clickable buttons or numbered shortcuts. One-time decisions are immediate by default; broader grants use a separately labelled confirmation with `C` or a click, and persistent-prefix rules are shown for review. The launch confirmation policy controls additional review steps. Approval controls belong to only the current target session.
+
+Drafts stay in memory; submitted text becomes part of Codex's normal session history, and follow-up turns consume model usage. Sessions uses bounded task, reply, request and recent-history excerpts rather than collecting reasoning or unrestricted tool-output transcripts. Detailed tool-interaction capture is restricted to isolated benchmark turns created by Codexometer. Shared read receipts are saved by Codex; Codexometer does not write conversation previews to disk.
 
 Benchmark transcripts are bounded and sanitized. Credentials, request headers, known runtime identifiers, temporary paths, terminal controls, Codex reasoning, and unrelated local session content are not retained in the detail view.
 
@@ -266,7 +284,7 @@ Remove-Item $installer
 
 The execution-policy override applies only to the installer child process, leaving your current shell's policy and persistent machine/user settings unchanged. `-NoProfile` avoids custom profiles; `-UseBasicParsing` avoids Windows PowerShell 5.1's web-content parsing and associated security prompt. Organisational Group Policy, application-control rules and antivirus protections still apply. Inspect the downloaded script before running it if required by your security policy.
 
-Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. New Go 1.27-based macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.2 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
+Quit the running dashboard and re-run the relevant installer to upgrade or reinstall Codexometer, then check `codexometer --version`. It replaces the executable only after the downloaded artifact passes its checksum and version checks. Windows defaults to `%LOCALAPPDATA%\Programs\codexometer\bin`; add that to `PATH` if needed. macOS builds require macOS 13 (Ventura) or later. Developers who prefer to build from source can use `go install github.com/merefield/codexometer@latest` with Go 1.27.3 or later, ensuring `GOBIN` (or the default Go bin directory) is on `PATH`.
 
 Full installation, authentication, privacy, monitoring, and benchmarking guidance is available in the [README](https://github.com/merefield/codexometer#readme).
 
