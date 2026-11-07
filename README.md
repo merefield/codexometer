@@ -1575,10 +1575,10 @@ same action on that session. The presentations are:
 
    **Recent turn history:** `Alt+Left` opens the previous completed turn;
    `Alt+Right` moves forwards, eventually returning to live detail. Click
-   **Previous**, **Next**, or **Live** for the same navigation. On macOS, use
-   `Option+Left` / `Option+Right`: the default Terminal.app and Ghostty
-   word-movement encodings are also recognised while the reply editor is
-   unfocused. While typing, those encodings continue to move between words;
+   **Previous**, **Next**, or **Live** for the same navigation. On macOS, the
+   labels show `Opt` for the Option key. Use `Option+Left` / `Option+Right`:
+   the default Terminal.app and Ghostty word-movement encodings are also
+   recognised while the reply editor is unfocused. While typing, those encodings continue to move between words;
    leave the editor before navigating history. These controls
    appear when replies have been retained and space permits; narrow layouts
    shorten the labels, and the hotkeys remain available on short terminals.

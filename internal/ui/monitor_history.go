@@ -267,9 +267,13 @@ func (m Model) historyNavigationButtons(width, height int) []monitorNavigationBu
 	if !older && h.selected == nil {
 		return nil
 	}
+	modifier := "Alt"
+	if runtime.GOOS == "darwin" {
+		modifier = "Opt"
+	}
 	buttons := []monitorNavigationButton{
-		{label: i18n.Text("[ Alt+←: PREVIOUS ]"), action: "history:previous", enabled: older},
-		{label: i18n.Text("[ Alt+→: NEXT ]"), action: "history:next", enabled: h.selected != nil},
+		{label: strings.Replace(i18n.Text("[ Alt+←: PREVIOUS ]"), "Alt+", modifier+"+", 1), action: "history:previous", enabled: older},
+		{label: strings.Replace(i18n.Text("[ Alt+→: NEXT ]"), "Alt+", modifier+"+", 1), action: "history:next", enabled: h.selected != nil},
 		{label: i18n.Text("[ LIVE ]"), action: "history:live", enabled: h.selected != nil},
 	}
 	x := 2
@@ -278,7 +282,7 @@ func (m Model) historyNavigationButtons(width, height int) []monitorNavigationBu
 		x += buttons[i].rect.width + 1
 	}
 	if x > width-2 {
-		for i, label := range []string{"[Alt+←]", "[Alt+→]", i18n.Text("[ LIVE ]")} {
+		for i, label := range []string{"[" + modifier + "+←]", "[" + modifier + "+→]", i18n.Text("[ LIVE ]")} {
 			buttons[i].label = label
 		}
 		x = 2

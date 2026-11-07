@@ -108,6 +108,15 @@ func TestMonitorHistoryRenderedControlsAndLiveApproval(t *testing.T) {
 		}
 		lines := strings.Split(ansi.Strip(out), "\n")
 		for _, b := range m.historyNavigationButtons(g.contentWidth, g.meterHeight) {
+			if b.action != "history:live" {
+				modifier := "Alt+"
+				if runtime.GOOS == "darwin" {
+					modifier = "Opt+"
+				}
+				if !strings.Contains(b.label, modifier) {
+					t.Fatalf("history shortcut label does not match platform: %q", b.label)
+				}
+			}
 			if got := ansi.Cut(lines[b.rect.y], b.rect.x, b.rect.x+b.rect.width); got != b.label {
 				t.Fatalf("render/hit mismatch: %q vs %q", got, b.label)
 			}
