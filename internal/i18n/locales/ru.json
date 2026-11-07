@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ ПОДТВЕРДИТЬ ПРАВИЛО ]",
   "[ ALWAYS ALLOW TOOL ]": "[ ВСЕГДА РАЗРЕШАТЬ ИНСТРУМЕНТ ]",
   "[ CANCEL TOOL CALL ]": "[ ОТМЕНИТЬ ВЫЗОВ ИНСТРУМЕНТА ]",
-  "Unsupported MCP request. Review it in Codex.": "Неподдерживаемый запрос MCP. Просмотрите его в Codex."
+  "Unsupported MCP request. Review it in Codex.": "Неподдерживаемый запрос MCP. Просмотрите его в Codex.",
+  "NETWORK APPROVAL": "ОДОБРЕНИЕ СЕТИ",
+  "HOST": "ХОСТ",
+  "PROTOCOL": "ПРОТОКОЛ",
+  "[ CONFIRM HOST ALLOW ]": "[ ПОДТВЕРДИТЬ ДОСТУП К ХОСТУ ]",
+  "[ ALWAYS ALLOW HOST ]": "[ ВСЕГДА РАЗРЕШАТЬ ХОСТ ]",
+  "[ CONFIRM HOST BLOCK ]": "[ ПОДТВЕРДИТЬ БЛОКИРОВКУ ]",
+  "[ ALWAYS BLOCK HOST ]": "[ ВСЕГДА БЛОКИРОВАТЬ ХОСТ ]"
 }

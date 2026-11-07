@@ -456,3 +456,42 @@ func TestMCPApprovalFourButtonsAndConfirmationPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestNetworkApprovalButtonsAndPolicy(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, kind := range []string{"accept", "acceptForSession", "allowNetworkHost", "denyNetworkHost", "decline", "cancel"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			ctx := codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", ApprovalToken: "live", Text: "Allow network access?", ActionDetails: codex.ApprovalActionDetails{Kind: "network", Target: "example.com", Protocol: "https"}}
+			for i, k := range []string{"accept", "acceptForSession", "allowNetworkHost", "denyNetworkHost", "decline", "cancel"} {
+				ctx.ApprovalOptions[i] = codex.ApprovalOption{Kind: k, Value: k}
+			}
+			m.monitorSessionData[0].preview = ctx
+			if len(m.visibleMonitorApprovalButtons()) != 6 {
+				t.Fatal("network choices missing", mode)
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("NETWORK APPROVAL"), "example.com", "https"} {
+				if !strings.Contains(doc, text) {
+					t.Fatal("network review missing", text)
+				}
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			guarded := mode == confirmation.Require || mode == confirmation.Balanced && index >= 1 && index <= 3
+			if guarded {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("persistent host rule bypassed review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("network decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != kind {
+				t.Fatal("wrong network decision")
+			}
+		}
+	}
+}

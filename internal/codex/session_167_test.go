@@ -9,7 +9,7 @@ import (
 func TestCodex167NetworkExpiryResolvesOnlyItsRequest(t *testing.T) {
 	states := map[string]*daemonContextState{}
 	for _, id := range []string{"expired", "remaining"} {
-		daemonContextEvent(states, "item/commandExecution/requestApproval", rawJSON(id), rawJSON(map[string]any{"threadId": "root", "turnId": "turn", "itemId": "command", "command": "curl https://example.com", "cwd": "/work", "networkApprovalContext": map[string]any{"host": "example.com", "protocol": "https"}}), time.Now())
+		daemonContextEvent(states, "item/commandExecution/requestApproval", rawJSON(id), rawJSON(map[string]any{"threadId": "root", "turnId": "turn", "itemId": "command", "command": "curl https://example.com", "cwd": "/work", "availableDecisions": []string{"accept", "cancel"}, "networkApprovalContext": map[string]any{"host": "example.com", "protocol": "https"}}), time.Now())
 	}
 	daemonContextEvent(states, "serverRequest/resolved", nil, rawJSON(map[string]any{"threadId": "other", "requestId": "expired"}), time.Now())
 	if len(states["root"].requests) != 2 {
@@ -20,7 +20,7 @@ func TestCodex167NetworkExpiryResolvesOnlyItsRequest(t *testing.T) {
 		t.Fatal("expired network prompt remained or removed its sibling")
 	}
 	c := daemonContextSnapshot(states, []string{"root"}, map[string]sessionRuntimeStatus{"root": sessionRuntimeApproval})["root"]
-	if c.PendingApprovals != 1 || c.ApprovalBlocked != "network" {
+	if c.PendingApprovals != 1 || c.ApprovalBlocked != "" || c.ApprovalToken == "" || c.ActionDetails.Kind != "network" {
 		t.Fatal("network expiry changed remaining request semantics", c)
 	}
 	daemonContextEvent(states, "serverRequest/resolved", nil, json.RawMessage(`{"threadId":"root","requestId":"remaining"}`), time.Now())

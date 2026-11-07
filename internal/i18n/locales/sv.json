@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ BEKRÄFTA VERKTYGSREGEL ]",
   "[ ALWAYS ALLOW TOOL ]": "[ TILLÅT ALLTID VERKTYGET ]",
   "[ CANCEL TOOL CALL ]": "[ AVBRYT VERKTYGSANROP ]",
-  "Unsupported MCP request. Review it in Codex.": "MCP-begäran stöds inte. Granska den i Codex."
+  "Unsupported MCP request. Review it in Codex.": "MCP-begäran stöds inte. Granska den i Codex.",
+  "NETWORK APPROVAL": "NÄTVERKSGODKÄNNANDE",
+  "HOST": "VÄRD",
+  "PROTOCOL": "PROTOKOLL",
+  "[ CONFIRM HOST ALLOW ]": "[ BEKRÄFTA TILLÅTEN VÄRD ]",
+  "[ ALWAYS ALLOW HOST ]": "[ TILLÅT ALLTID VÄRD ]",
+  "[ CONFIRM HOST BLOCK ]": "[ BEKRÄFTA BLOCKERAD VÄRD ]",
+  "[ ALWAYS BLOCK HOST ]": "[ BLOCKERA ALLTID VÄRD ]"
 }

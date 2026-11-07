@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ WERKZEUGREGEL BESTÄTIGEN ]",
   "[ ALWAYS ALLOW TOOL ]": "[ WERKZEUG IMMER ERLAUBEN ]",
   "[ CANCEL TOOL CALL ]": "[ WERKZEUGAUFRUF ABBRECHEN ]",
-  "Unsupported MCP request. Review it in Codex.": "Nicht unterstützte MCP-Anfrage. In Codex prüfen."
+  "Unsupported MCP request. Review it in Codex.": "Nicht unterstützte MCP-Anfrage. In Codex prüfen.",
+  "NETWORK APPROVAL": "NETZWERKFREIGABE",
+  "HOST": "HOST",
+  "PROTOCOL": "PROTOKOLL",
+  "[ CONFIRM HOST ALLOW ]": "[ HOST-FREIGABE BESTÄTIGEN ]",
+  "[ ALWAYS ALLOW HOST ]": "[ HOST IMMER ERLAUBEN ]",
+  "[ CONFIRM HOST BLOCK ]": "[ HOST-SPERRE BESTÄTIGEN ]",
+  "[ ALWAYS BLOCK HOST ]": "[ HOST IMMER SPERREN ]"
 }

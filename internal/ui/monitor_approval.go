@@ -80,36 +80,28 @@ func (m Model) monitorApprovalToken() string {
 	return s.preview.ApprovalToken
 }
 
+var approvalOptionLabels = map[string][2]string{
+	"accept":                        {"[ APPROVE ONCE ]", "[ CONFIRM APPROVAL ]"},
+	"acceptForSession":              {"[ ALLOW FOR SESSION ]", "[ CONFIRM SESSION GRANT ]"},
+	"acceptWithExecpolicyAmendment": {"[ ALWAYS ALLOW PREFIX ]", "[ CONFIRM PERSISTENT RULE ]"},
+	"allowNetworkHost":              {"[ ALWAYS ALLOW HOST ]", "[ CONFIRM HOST ALLOW ]"},
+	"denyNetworkHost":               {"[ ALWAYS BLOCK HOST ]", "[ CONFIRM HOST BLOCK ]"},
+	"acceptMcpAlways":               {"[ ALWAYS ALLOW TOOL ]", "[ CONFIRM TOOL RULE ]"},
+	"cancelMcpTool":                 {"[ CANCEL TOOL CALL ]", "[ CANCEL TOOL CALL ]"},
+	"decline":                       {"[ DECLINE ]", "[ DECLINE ]"},
+	"cancel":                        {"[ REJECT & STOP TURN ]", "[ REJECT & STOP TURN ]"},
+}
+
 func approvalOptionLabel(kind string, confirm bool) string {
-	switch kind {
-	case "accept":
-		if confirm {
-			return i18n.Text("[ CONFIRM APPROVAL ]")
-		}
-		return i18n.Text("[ APPROVE ONCE ]")
-	case "acceptForSession":
-		if confirm {
-			return i18n.Text("[ CONFIRM SESSION GRANT ]")
-		}
-		return i18n.Text("[ ALLOW FOR SESSION ]")
-	case "acceptWithExecpolicyAmendment":
-		if confirm {
-			return i18n.Text("[ CONFIRM PERSISTENT RULE ]")
-		}
-		return i18n.Text("[ ALWAYS ALLOW PREFIX ]")
-	case "acceptMcpAlways":
-		if confirm {
-			return i18n.Text("[ CONFIRM TOOL RULE ]")
-		}
-		return i18n.Text("[ ALWAYS ALLOW TOOL ]")
-	case "cancelMcpTool":
-		return i18n.Text("[ CANCEL TOOL CALL ]")
-	case "decline":
-		return i18n.Text("[ DECLINE ]")
-	case "cancel":
-		return i18n.Text("[ REJECT & STOP TURN ]")
+	labels, known := approvalOptionLabels[kind]
+	if !known {
+		return ""
 	}
-	return ""
+	index := 0
+	if confirm {
+		index = 1
+	}
+	return i18n.Text(labels[index])
 }
 
 type monitorApprovalButton struct {

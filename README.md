@@ -2141,6 +2141,8 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**Managed network approvals (shared app-server):** review the requested host and protocol in the terminal or writable web UI. Codexometer offers only Codex’s advertised choices, including one-time access, a conversation grant and persistent host allow/block rules. Both persistent allow and block rules require confirmation by default. Missing or unsupported destination details still require review in Codex.
+
 **MCP/app tool approvals (shared app-server):** the terminal and writable web
 interface show the MCP server, tool/app metadata, request message and
 supplied arguments (or an unavailable marker when Codex omits them). Message-only tool approvals offer **APPROVE ONCE**,
@@ -2288,14 +2290,14 @@ Full approval reviews use a separate **65,536-character** budget, so longer comm
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or
 `CHECK SESSION` alone never enables these controls. Requests with missing,
-truncated or sanitised-away details, network approvals, incomplete file changes, permission
+truncated or sanitised-away details, unsupported network requests, incomplete file changes, permission
 grants and other unsupported requests remain **REPLY IN CODEX**. The complete
 eligible request is available in the scrollable detail, not just the compact
 two-line preview. Unsupported requests may have only a bounded excerpt.
 
 When controls are unavailable, the detail page explains why beside
 **REPLY IN CODEX**: for example, missing command/directory or request identity,
-additional permissions, network approval, unavailable complete file changes, no supported decisions,
+additional permissions, unsupported network details, unavailable complete file changes, no supported decisions,
 truncated or sanitised text, local-only observation, or a resolved/disconnected
 request. Eligible requests on small terminals instead explain that the terminal
 must be enlarged. These diagnostics do not relax any approval safeguards.

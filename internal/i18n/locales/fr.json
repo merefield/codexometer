@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ CONFIRMER LA RÈGLE D’OUTIL ]",
   "[ ALWAYS ALLOW TOOL ]": "[ TOUJOURS AUTORISER L’OUTIL ]",
   "[ CANCEL TOOL CALL ]": "[ ANNULER L’APPEL D’OUTIL ]",
-  "Unsupported MCP request. Review it in Codex.": "Requête MCP non prise en charge. Consultez-la dans Codex."
+  "Unsupported MCP request. Review it in Codex.": "Requête MCP non prise en charge. Consultez-la dans Codex.",
+  "NETWORK APPROVAL": "AUTORISATION RÉSEAU",
+  "HOST": "HÔTE",
+  "PROTOCOL": "PROTOCOLE",
+  "[ CONFIRM HOST ALLOW ]": "[ CONFIRMER AUTORISATION HÔTE ]",
+  "[ ALWAYS ALLOW HOST ]": "[ TOUJOURS AUTORISER HÔTE ]",
+  "[ CONFIRM HOST BLOCK ]": "[ CONFIRMER BLOCAGE HÔTE ]",
+  "[ ALWAYS BLOCK HOST ]": "[ TOUJOURS BLOQUER HÔTE ]"
 }

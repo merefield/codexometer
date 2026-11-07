@@ -37,6 +37,9 @@ func contextTitle(c codex.SessionContext) string {
 	case codex.SessionContextQuestion:
 		return i18n.Text("QUESTION")
 	case codex.SessionContextApproval:
+		if review := c.ActionReview(); review != nil {
+			return i18n.Text(review.Title)
+		}
 		if c.MCPTool.Server != "" {
 			return i18n.Text("MCP TOOL APPROVAL")
 		}

@@ -174,6 +174,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		c.RequiredHumanApproval = kindValid && kind == "humanCommand"
 		c.Text = strings.TrimSpace(p.Reason + "\nCommand: " + command + "\nDirectory: " + p.CWD)
 		special := func(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) != "null" }
+		if special(p.Network) && kindValid && kind == "command" && !special(p.Permissions) && p.TurnID != "" && p.ItemID != "" {
+			configureNetworkApproval(&c, p.Network, p.Decisions, p.Reason)
+			break
+		}
 		if special(p.Network) {
 			c.Text += "\nNetwork request: " + string(p.Network)
 		}

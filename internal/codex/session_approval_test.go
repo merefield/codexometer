@@ -44,7 +44,7 @@ func TestApprovalCompleteCommandAndFailClosed(t *testing.T) {
 		"hidden directory suffix":     {"cwd": "/work\u202e"},
 		"bidi":                        {"command": "echo \u202Ehidden"},
 		"bare carriage return":        {"command": "echo visible\rhidden"},
-		"network":                     {"networkApprovalContext": map[string]string{"host": "example.com", "protocol": "https"}},
+		"network":                     {"networkApprovalContext": map[string]string{"host": "example.com", "protocol": "unknown"}},
 		"permissions":                 {"additionalPermissions": map[string]any{"network": true}},
 		"no decisions":                {"availableDecisions": []string{}},
 		"ambiguous argv":              {"command": []string{"echo", "a b"}},

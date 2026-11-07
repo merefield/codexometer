@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ VAHVISTA TYÖKALUSÄÄNTÖ ]",
   "[ ALWAYS ALLOW TOOL ]": "[ SALLI TYÖKALU AINA ]",
   "[ CANCEL TOOL CALL ]": "[ PERU TYÖKALUKUTSU ]",
-  "Unsupported MCP request. Review it in Codex.": "MCP-pyyntöä ei tueta. Tarkista se Codexissa."
+  "Unsupported MCP request. Review it in Codex.": "MCP-pyyntöä ei tueta. Tarkista se Codexissa.",
+  "NETWORK APPROVAL": "VERKKOHYVÄKSYNTÄ",
+  "HOST": "PALVELIN",
+  "PROTOCOL": "PROTOKOLLA",
+  "[ CONFIRM HOST ALLOW ]": "[ VAHVISTA PALVELIMEN SALLINTA ]",
+  "[ ALWAYS ALLOW HOST ]": "[ SALLI PALVELIN AINA ]",
+  "[ CONFIRM HOST BLOCK ]": "[ VAHVISTA PALVELIMEN ESTO ]",
+  "[ ALWAYS BLOCK HOST ]": "[ ESTÄ PALVELIN AINA ]"
 }

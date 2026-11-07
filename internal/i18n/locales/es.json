@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ CONFIRMAR REGLA DE HERRAMIENTA ]",
   "[ ALWAYS ALLOW TOOL ]": "[ PERMITIR SIEMPRE HERRAMIENTA ]",
   "[ CANCEL TOOL CALL ]": "[ CANCELAR LLAMADA A HERRAMIENTA ]",
-  "Unsupported MCP request. Review it in Codex.": "Solicitud MCP no compatible. Revísala en Codex."
+  "Unsupported MCP request. Review it in Codex.": "Solicitud MCP no compatible. Revísala en Codex.",
+  "NETWORK APPROVAL": "APROBACIÓN DE RED",
+  "HOST": "HOST",
+  "PROTOCOL": "PROTOCOLO",
+  "[ CONFIRM HOST ALLOW ]": "[ CONFIRMAR PERMISO DEL HOST ]",
+  "[ ALWAYS ALLOW HOST ]": "[ PERMITIR HOST SIEMPRE ]",
+  "[ CONFIRM HOST BLOCK ]": "[ CONFIRMAR BLOQUEO DEL HOST ]",
+  "[ ALWAYS BLOCK HOST ]": "[ BLOQUEAR HOST SIEMPRE ]"
 }

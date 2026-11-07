@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ ツールルールを確認 ]",
   "[ ALWAYS ALLOW TOOL ]": "[ ツールを常に許可 ]",
   "[ CANCEL TOOL CALL ]": "[ ツール呼び出しをキャンセル ]",
-  "Unsupported MCP request. Review it in Codex.": "未対応のMCPリクエストです。Codexで確認してください。"
+  "Unsupported MCP request. Review it in Codex.": "未対応のMCPリクエストです。Codexで確認してください。",
+  "NETWORK APPROVAL": "ネットワーク承認",
+  "HOST": "ホスト",
+  "PROTOCOL": "プロトコル",
+  "[ CONFIRM HOST ALLOW ]": "[ ホストの許可を確認 ]",
+  "[ ALWAYS ALLOW HOST ]": "[ ホストを常に許可 ]",
+  "[ CONFIRM HOST BLOCK ]": "[ ホストの拒否を確認 ]",
+  "[ ALWAYS BLOCK HOST ]": "[ ホストを常に拒否 ]"
 }

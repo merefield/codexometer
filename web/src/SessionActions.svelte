@@ -4,6 +4,7 @@
   import SessionCommands from './SessionCommands.svelte';
   import FileDiff from './FileDiff.svelte';
   import MCPApproval from './MCPApproval.svelte';
+  import ActionApproval from './ActionApproval.svelte';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
@@ -531,7 +532,9 @@
     {#if notice}<p class:notice={!success} class:sent={success} role="status">
         {notice}
       </p>{/if}
-    {#if offer?.mcpTool && !stale && !offerError}
+    {#if offer?.approvalReview && !stale && !offerError}
+      <ActionApproval review={offer.approvalReview} />
+    {:else if offer?.mcpTool && !stale && !offerError}
       <MCPApproval details={offer.mcpTool} />
     {:else if offer?.fileChanges?.length && !stale && !offerError}
       <FileDiff lines={offer.fileChanges} />

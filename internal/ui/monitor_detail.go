@@ -128,6 +128,12 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		appendText(sanitize(c.Text), "body", "")
 		lines = append(lines, detailLine{})
 		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
+	} else if review := c.ActionReview(); c.Kind == codex.SessionContextApproval && review != nil {
+		section(i18n.Text(review.Title))
+		for _, field := range review.Fields {
+			section(i18n.Text(field.Label))
+			appendText(sanitize(field.Value), "body", "")
+		}
 	} else if c.Kind == codex.SessionContextApproval && c.MCPTool.Server != "" {
 		section(contextTitle(c))
 		d := c.MCPTool

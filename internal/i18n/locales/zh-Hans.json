@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ 确认工具规则 ]",
   "[ ALWAYS ALLOW TOOL ]": "[ 始终允许工具 ]",
   "[ CANCEL TOOL CALL ]": "[ 取消工具调用 ]",
-  "Unsupported MCP request. Review it in Codex.": "不支持此MCP请求。请在Codex中查看。"
+  "Unsupported MCP request. Review it in Codex.": "不支持此MCP请求。请在Codex中查看。",
+  "NETWORK APPROVAL": "网络审批",
+  "HOST": "主机",
+  "PROTOCOL": "协议",
+  "[ CONFIRM HOST ALLOW ]": "[ 确认允许主机 ]",
+  "[ ALWAYS ALLOW HOST ]": "[ 始终允许主机 ]",
+  "[ CONFIRM HOST BLOCK ]": "[ 确认阻止主机 ]",
+  "[ ALWAYS BLOCK HOST ]": "[ 始终阻止主机 ]"
 }

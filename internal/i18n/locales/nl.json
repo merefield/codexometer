@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ TOOLREGEL BEVESTIGEN ]",
   "[ ALWAYS ALLOW TOOL ]": "[ TOOL ALTIJD TOESTAAN ]",
   "[ CANCEL TOOL CALL ]": "[ TOOLAANROEP ANNULEREN ]",
-  "Unsupported MCP request. Review it in Codex.": "Niet-ondersteund MCP-verzoek. Bekijk het in Codex."
+  "Unsupported MCP request. Review it in Codex.": "Niet-ondersteund MCP-verzoek. Bekijk het in Codex.",
+  "NETWORK APPROVAL": "NETWERKGOEDKEURING",
+  "HOST": "HOST",
+  "PROTOCOL": "PROTOCOL",
+  "[ CONFIRM HOST ALLOW ]": "[ HOST TOESTAAN BEVESTIGEN ]",
+  "[ ALWAYS ALLOW HOST ]": "[ HOST ALTIJD TOESTAAN ]",
+  "[ CONFIRM HOST BLOCK ]": "[ HOST BLOKKEREN BEVESTIGEN ]",
+  "[ ALWAYS BLOCK HOST ]": "[ HOST ALTIJD BLOKKEREN ]"
 }

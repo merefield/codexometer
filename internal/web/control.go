@@ -50,6 +50,7 @@ type actionQuestion struct {
 }
 
 type actionOffer struct {
+	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	RequiredHumanApproval bool                          `json:"requiredHumanApproval,omitempty"`
 	FileChanges           []codex.FileDiffLine          `json:"fileChanges,omitempty"`
@@ -120,11 +121,12 @@ func (c *control) offer(id string) (offeredAction, error) {
 	}
 	o := offeredAction{actionOffer: actionOffer{Session: id, Thread: id, Directory: directory}}
 	if ctx.Kind == codex.SessionContextApproval {
-		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || (ctx.FileChanges == "" && ctx.MCPTool.Server == "" && (ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "")) || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
+		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || (ctx.FileChanges == "" && ctx.MCPTool.Server == "" && ctx.ActionReview() == nil && (ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "")) || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
 			return o, nil
 		}
 		o.Kind, o.token = "approval", ctx.ApprovalToken
 		o.RequiredHumanApproval = ctx.RequiredHumanApproval
+		o.ApprovalReview = ctx.ActionReview()
 		if ctx.MCPTool.Server != "" {
 			details := ctx.MCPTool
 			o.MCPTool = &details
@@ -132,11 +134,11 @@ func (c *control) offer(id string) (offeredAction, error) {
 		o.Command, o.Directory, o.Thread = ctx.CommandDetails.Command, ctx.CommandDetails.Directory, ctx.ThreadID
 		o.FileChanges = codex.FileDiffLines(ctx.FileChanges)
 		for _, option := range ctx.ApprovalOptions {
-			label := map[string]string{"accept": "APPROVE ONCE", "acceptForSession": "ALLOW FOR SESSION", "acceptWithExecpolicyAmendment": "ALWAYS ALLOW PREFIX", "decline": "DECLINE", "cancel": "REJECT & STOP TURN", "acceptMcpAlways": "ALWAYS ALLOW TOOL", "cancelMcpTool": "CANCEL TOOL CALL"}[option.Kind]
+			label := map[string]string{"accept": "APPROVE ONCE", "acceptForSession": "ALLOW FOR SESSION", "acceptWithExecpolicyAmendment": "ALWAYS ALLOW PREFIX", "decline": "DECLINE", "cancel": "REJECT & STOP TURN", "acceptMcpAlways": "ALWAYS ALLOW TOOL", "cancelMcpTool": "CANCEL TOOL CALL", "allowNetworkHost": "ALWAYS ALLOW HOST", "denyNetworkHost": "ALWAYS BLOCK HOST"}[option.Kind]
 			if label == "" {
 				continue
 			}
-			o.Choices = append(o.Choices, actionChoice{label, option.Detail, option.GrantsPermission() && option.Kind != "accept"})
+			o.Choices = append(o.Choices, actionChoice{label, option.Detail, (option.GrantsPermission() && option.Kind != "accept") || option.Kind == "denyNetworkHost"})
 			o.decisions = append(o.decisions, option.Value)
 		}
 		if len(o.Choices) == 0 {

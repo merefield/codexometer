@@ -43,6 +43,7 @@ type SessionContext struct {
 	// The count is a lower bound until the turn ends or the connection resets.
 	PendingApprovalsLimited bool
 	RequestID               string
+	ActionDetails           ApprovalActionDetails
 	MCPTool                 MCPToolApprovalDetails
 	CommandDetails          ApprovalCommandDetails
 	FileChanges             string // validated, bounded JSON; immutable comparable snapshot

@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ BEKRÆFT VÆRKTØJSREGEL ]",
   "[ ALWAYS ALLOW TOOL ]": "[ TILLAD ALTID VÆRKTØJET ]",
   "[ CANCEL TOOL CALL ]": "[ ANNULLER VÆRKTØJSKALD ]",
-  "Unsupported MCP request. Review it in Codex.": "MCP-anmodningen understøttes ikke. Gennemgå den i Codex."
+  "Unsupported MCP request. Review it in Codex.": "MCP-anmodningen understøttes ikke. Gennemgå den i Codex.",
+  "NETWORK APPROVAL": "NETVÆRKSGODKENDELSE",
+  "HOST": "VÆRT",
+  "PROTOCOL": "PROTOKOL",
+  "[ CONFIRM HOST ALLOW ]": "[ BEKRÆFT TILLADT VÆRT ]",
+  "[ ALWAYS ALLOW HOST ]": "[ TILLAD ALTID VÆRT ]",
+  "[ CONFIRM HOST BLOCK ]": "[ BEKRÆFT BLOKERET VÆRT ]",
+  "[ ALWAYS BLOCK HOST ]": "[ BLOKER ALTID VÆRT ]"
 }

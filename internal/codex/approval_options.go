@@ -16,7 +16,7 @@ func oneTimeApproval(kind string) bool {
 }
 
 func (o ApprovalOption) GrantsPermission() bool {
-	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways"
+	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways" || o.Kind == "allowNetworkHost"
 }
 
 func commandApprovalOptions(raw []json.RawMessage) ([8]ApprovalOption, string) {

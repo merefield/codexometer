@@ -435,3 +435,27 @@ func TestMCPApprovalOfferUsesToolDetailsAndAllAdvertisedChoices(t *testing.T) {
 		t.Fatalf("MCP grant not committed: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestNetworkApprovalReviewIsBoundToDestinationAndRule(t *testing.T) {
+	s, f, token := controlServer(t)
+	ctx := codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "child", ApprovalToken: "private-approval", ActionDetails: codex.ApprovalActionDetails{Kind: "network", Target: "example.com", Protocol: "https"}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "allowNetworkHost", Value: "allow-rule", Detail: "Future requests"}, {Kind: "denyNetworkHost", Value: "deny-rule", Detail: "Future requests"}}}
+	s.store.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "parent", Context: ctx}}}, nil, time.Now())
+	offer := getOffer(t, s, token)
+	if offer.ApprovalReview == nil || offer.ApprovalReview.Title != "NETWORK APPROVAL" || offer.Command != "" || offer.Thread != "child" || len(offer.Choices) != 3 || !offer.Choices[1].Persistent || !offer.Choices[2].Persistent || offer.Choices[0].Persistent {
+		t.Fatalf("bad network review: %+v", offer)
+	}
+	index := 2
+	prepared := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: offer.ID, Choice: &index})
+	changed := ctx
+	changed.ActionDetails.Target = "other.example"
+	s.store.contexts["parent"] = changed
+	if w := actionCall(s, token, "commit", prepared); w.Code != 409 || f.calls != 0 {
+		t.Fatal("changed destination reused review")
+	}
+	s.store.contexts["parent"] = ctx
+	offer = getOffer(t, s, token)
+	prepared = prepareAction(t, s, token, actionRequest{Session: "parent", Offer: offer.ID, Choice: &index})
+	if w := actionCall(s, token, "commit", prepared); w.Code != 200 || f.decision != "deny-rule" {
+		t.Fatalf("network denial not committed: %d", w.Code)
+	}
+}

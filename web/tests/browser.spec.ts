@@ -5850,3 +5850,148 @@ test('read-only MCP approvals show the tool review without decision controls', a
     ),
   ).toHaveLength(0);
 });
+
+const actionApprovalCases = [
+  {
+    title: 'NETWORK APPROVAL',
+    fields: [
+      { label: 'HOST', value: 'example.com' },
+      { label: 'PROTOCOL', value: 'https' },
+      { label: 'JUSTIFICATION', value: 'Fetch <release> metadata' },
+    ],
+    labels: [
+      'APPROVE ONCE',
+      'ALLOW FOR SESSION',
+      'ALWAYS ALLOW HOST',
+      'ALWAYS BLOCK HOST',
+      'DECLINE',
+      'REJECT & STOP TURN',
+    ],
+    persistent: [1, 2, 3],
+  },
+];
+for (const scenario of actionApprovalCases) {
+  for (const mode of ['balanced', 'none', 'require']) {
+    for (const index of scenario.labels.keys()) {
+      test(`${scenario.title} choice ${index + 1} follows ${mode} policy`, async ({
+        page,
+        pairingURL,
+      }) => {
+        const { snapshot, offer, calls } = await mockActions(
+          page,
+          'approval',
+          false,
+          true,
+          mode,
+        );
+        const review = { title: scenario.title, fields: scenario.fields };
+        await page.route('**/api/control/offer', (route) =>
+          route.fulfill({
+            json: {
+              ...offer,
+              command: '',
+              directory: '',
+              approvalReview: review,
+              choices: scenario.labels.map((label, choice) => ({
+                label,
+                detail: '',
+                persistent: scenario.persistent.includes(choice),
+              })),
+            },
+          }),
+        );
+        if (mode === 'balanced' && index === 3)
+          await page.setViewportSize({ width: 360, height: 740 });
+        await page.goto(pairingURL);
+        await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+        const detail = {
+          ...snapshot,
+          sessions: snapshot.sessions.map((row) => ({
+            ...row,
+            command: '',
+            approvalReview: review,
+          })),
+        };
+        await page.evaluate(
+          (detail) =>
+            window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+          detail,
+        );
+        await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+        const region = page.getByRole('region', {
+          name: scenario.title,
+          exact: true,
+        });
+        await expect(region).toBeVisible();
+        for (const field of scenario.fields)
+          await expect(region).toContainText(field.value);
+        await expect(
+          page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
+        ).toHaveCount(0);
+        await page
+          .getByRole('radio', {
+            name: new RegExp('^' + scenario.labels[index]),
+          })
+          .check();
+        const guarded =
+          mode === 'require' ||
+          (mode === 'balanced' && scenario.persistent.includes(index));
+        await page
+          .getByRole('button', {
+            name: guarded ? 'REVIEW BEFORE SENDING' : 'SEND DECISION',
+            exact: true,
+          })
+          .click();
+        if (guarded) {
+          expect(calls.filter((call) => call.action === 'commit')).toHaveLength(
+            0,
+          );
+          await page
+            .getByRole('button', {
+              name: 'CONFIRM ' + scenario.labels[index],
+              exact: true,
+            })
+            .click();
+        }
+        await expect
+          .poll(() => calls.filter((call) => call.action === 'commit').length)
+          .toBe(1);
+        expect(
+          calls.find((call) => call.action === 'prepare')?.body.choice,
+        ).toBe(index);
+      });
+    }
+  }
+  test(`read-only ${scenario.title} displays review without approval writes`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot, calls } = await mockActions(page, 'approval');
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const detail = {
+      ...snapshot,
+      control: false,
+      sessions: snapshot.sessions.map((row) => ({
+        ...row,
+        command: '',
+        approvalReview: { title: scenario.title, fields: scenario.fields },
+      })),
+    };
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    await expect(
+      page.getByRole('region', { name: scenario.title, exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('radio')).toHaveCount(0);
+    expect(
+      calls.filter(
+        (call) => call.action === 'prepare' || call.action === 'commit',
+      ),
+    ).toHaveLength(0);
+  });
+}

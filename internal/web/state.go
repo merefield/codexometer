@@ -24,6 +24,7 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	ReadStateKnown        bool                          `json:"readStateKnown,omitempty"`
 	Unread                bool                          `json:"unread,omitempty"`
@@ -348,9 +349,10 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
-				MCPTool: mcpTool,
-				Goal:    projectGoal(row.Goal),
-				ID:      row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				ApprovalReview: row.Context.ActionReview(),
+				MCPTool:        mcpTool,
+				Goal:           projectGoal(row.Goal),
+				ID:             row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Failed:                row.Attention == codex.SessionAttentionError,

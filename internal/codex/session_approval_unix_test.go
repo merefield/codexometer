@@ -56,6 +56,27 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 			t.Fatal("file capability reused")
 		}
 	}
+	for i := range networkDecisions() {
+		p.contexts, c = networkApprovalFixture(t, nil)
+		option := c.ApprovalOptions[i]
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "unoffered"); err == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("unadvertised network decision accepted")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, option.Value); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			if string(msg["id"]) != `"req"` || string(msg["result"]) != `{"decision":`+option.Wire+`}` {
+				t.Fatal("wrong network response", msg)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing network response")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) || p.RespondSessionApproval(context.Background(), c.ApprovalToken, option.Value) == nil {
+			t.Fatal("network request reused")
+		}
+	}
 	p.contexts, c = mcpApprovalFixture(t, map[string]any{"_meta": map[string]any{"codex_approval_kind": "mcp_tool_call"}})
 	for _, decision := range []string{"acceptForSession", "acceptMcpAlways"} {
 		if p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision) == nil || !p.SessionApprovalPending(c.ApprovalToken) {

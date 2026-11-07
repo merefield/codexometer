@@ -553,5 +553,12 @@
   "[ CONFIRM TOOL RULE ]": "[ KINNITA TÖÖRIISTA REEGEL ]",
   "[ ALWAYS ALLOW TOOL ]": "[ LUBA TÖÖRIIST ALATI ]",
   "[ CANCEL TOOL CALL ]": "[ TÜHISTA TÖÖRIISTA KUTSE ]",
-  "Unsupported MCP request. Review it in Codex.": "MCP-päringut ei toetata. Vaata seda Codexis."
+  "Unsupported MCP request. Review it in Codex.": "MCP-päringut ei toetata. Vaata seda Codexis.",
+  "NETWORK APPROVAL": "VÕRGU KINNITUS",
+  "HOST": "HOST",
+  "PROTOCOL": "PROTOKOLL",
+  "[ CONFIRM HOST ALLOW ]": "[ KINNITA HOSTI LUBAMINE ]",
+  "[ ALWAYS ALLOW HOST ]": "[ LUBA HOST ALATI ]",
+  "[ CONFIRM HOST BLOCK ]": "[ KINNITA HOSTI BLOKEERIMINE ]",
+  "[ ALWAYS BLOCK HOST ]": "[ BLOKEERI HOST ALATI ]"
 }
