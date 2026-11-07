@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F YENİLE ]",
   "[ ESC CANCEL ]": "[ ESC İPTAL ]",
   "HUMAN APPROVAL REQUIRED": "İNSAN ONAYI GEREKLİ",
-  "Managed policy requires approval each time.": "Yönetilen ilke her seferinde onay gerektirir."
+  "Managed policy requires approval each time.": "Yönetilen ilke her seferinde onay gerektirir.",
+  "MCP TOOL APPROVAL": "MCP ARAÇ ONAYI",
+  "MCP SERVER": "MCP SUNUCUSU",
+  "TOOL": "ARAÇ",
+  "TITLE": "BAŞLIK",
+  "APP": "UYGULAMA",
+  "ARGUMENTS": "BAĞIMSIZ DEĞİŞKENLER",
+  "PERMISSION SCOPE": "İZNİN KAPSAMI",
+  "[ CONFIRM TOOL RULE ]": "[ ARAÇ KURALINI ONAYLA ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ ARACA HER ZAMAN İZİN VER ]",
+  "[ CANCEL TOOL CALL ]": "[ ARAÇ ÇAĞRISINI İPTAL ET ]",
+  "Unsupported MCP request. Review it in Codex.": "Desteklenmeyen MCP isteği. Codex içinde inceleyin."
 }

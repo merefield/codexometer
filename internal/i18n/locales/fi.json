@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F PÄIVITÄ ]",
   "[ ESC CANCEL ]": "[ ESC PERUUTA ]",
   "HUMAN APPROVAL REQUIRED": "IHMISEN HYVÄKSYNTÄ VAADITAAN",
-  "Managed policy requires approval each time.": "Hallittu käytäntö edellyttää hyväksyntää joka kerta."
+  "Managed policy requires approval each time.": "Hallittu käytäntö edellyttää hyväksyntää joka kerta.",
+  "MCP TOOL APPROVAL": "MCP-TYÖKALUN HYVÄKSYNTÄ",
+  "MCP SERVER": "MCP-PALVELIN",
+  "TOOL": "TYÖKALU",
+  "TITLE": "OTSIKKO",
+  "APP": "SOVELLUS",
+  "ARGUMENTS": "ARGUMENTIT",
+  "PERMISSION SCOPE": "LUVAN LAAJUUS",
+  "[ CONFIRM TOOL RULE ]": "[ VAHVISTA TYÖKALUSÄÄNTÖ ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ SALLI TYÖKALU AINA ]",
+  "[ CANCEL TOOL CALL ]": "[ PERU TYÖKALUKUTSU ]",
+  "Unsupported MCP request. Review it in Codex.": "MCP-pyyntöä ei tueta. Tarkista se Codexissa."
 }

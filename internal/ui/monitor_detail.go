@@ -128,6 +128,29 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		appendText(sanitize(c.Text), "body", "")
 		lines = append(lines, detailLine{})
 		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
+	} else if c.Kind == codex.SessionContextApproval && c.MCPTool.Server != "" {
+		section(contextTitle(c))
+		d := c.MCPTool
+		if d.Arguments == "" {
+			d.Arguments = "—"
+		}
+		appendText(sanitize(d.Message), "body", "")
+		for _, field := range []struct{ title, text string }{
+			{i18n.Text("MCP SERVER"), d.Server}, {i18n.Text("TOOL"), d.Name},
+			{i18n.Text("TITLE"), d.Title}, {i18n.Text("APP"), d.Connector},
+			{i18n.Text("ARGUMENTS"), d.Arguments},
+		} {
+			if field.text != "" {
+				section(field.title)
+				appendText(sanitize(field.text), "body", "")
+			}
+		}
+		for _, option := range c.ApprovalOptions {
+			if option.Detail != "" {
+				section(i18n.Text("PERMISSION SCOPE"))
+				appendText(sanitize(option.Detail), "warning", "")
+			}
+		}
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails

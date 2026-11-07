@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F VERNIEUWEN ]",
   "[ ESC CANCEL ]": "[ ESC ANNULEREN ]",
   "HUMAN APPROVAL REQUIRED": "MENSELIJKE GOEDKEURING VEREIST",
-  "Managed policy requires approval each time.": "Beheerd beleid vereist elke keer goedkeuring."
+  "Managed policy requires approval each time.": "Beheerd beleid vereist elke keer goedkeuring.",
+  "MCP TOOL APPROVAL": "MCP-TOOLGOEDKEURING",
+  "MCP SERVER": "MCP-SERVER",
+  "TOOL": "TOOL",
+  "TITLE": "TITEL",
+  "APP": "APP",
+  "ARGUMENTS": "ARGUMENTEN",
+  "PERMISSION SCOPE": "TOESTEMMINGSBEREIK",
+  "[ CONFIRM TOOL RULE ]": "[ TOOLREGEL BEVESTIGEN ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ TOOL ALTIJD TOESTAAN ]",
+  "[ CANCEL TOOL CALL ]": "[ TOOLAANROEP ANNULEREN ]",
+  "Unsupported MCP request. Review it in Codex.": "Niet-ondersteund MCP-verzoek. Bekijk het in Codex."
 }

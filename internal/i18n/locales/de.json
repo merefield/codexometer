@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F AKTUALISIEREN ]",
   "[ ESC CANCEL ]": "[ ESC ABBRECHEN ]",
   "HUMAN APPROVAL REQUIRED": "MENSCHLICHE GENEHMIGUNG ERFORDERLICH",
-  "Managed policy requires approval each time.": "Die verwaltete Richtlinie erfordert jedes Mal eine Genehmigung."
+  "Managed policy requires approval each time.": "Die verwaltete Richtlinie erfordert jedes Mal eine Genehmigung.",
+  "MCP TOOL APPROVAL": "MCP-WERKZEUGFREIGABE",
+  "MCP SERVER": "MCP-SERVER",
+  "TOOL": "WERKZEUG",
+  "TITLE": "TITEL",
+  "APP": "APP",
+  "ARGUMENTS": "ARGUMENTE",
+  "PERMISSION SCOPE": "BERECHTIGUNGSUMFANG",
+  "[ CONFIRM TOOL RULE ]": "[ WERKZEUGREGEL BESTÄTIGEN ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ WERKZEUG IMMER ERLAUBEN ]",
+  "[ CANCEL TOOL CALL ]": "[ WERKZEUGAUFRUF ABBRECHEN ]",
+  "Unsupported MCP request. Review it in Codex.": "Nicht unterstützte MCP-Anfrage. In Codex prüfen."
 }

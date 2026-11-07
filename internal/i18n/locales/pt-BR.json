@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F ATUALIZAR ]",
   "[ ESC CANCEL ]": "[ ESC CANCELAR ]",
   "HUMAN APPROVAL REQUIRED": "APROVAÇÃO HUMANA NECESSÁRIA",
-  "Managed policy requires approval each time.": "A política gerenciada exige aprovação a cada vez."
+  "Managed policy requires approval each time.": "A política gerenciada exige aprovação a cada vez.",
+  "MCP TOOL APPROVAL": "APROVAÇÃO DE FERRAMENTA MCP",
+  "MCP SERVER": "SERVIDOR MCP",
+  "TOOL": "FERRAMENTA",
+  "TITLE": "TÍTULO",
+  "APP": "APLICATIVO",
+  "ARGUMENTS": "ARGUMENTOS",
+  "PERMISSION SCOPE": "ESCOPO DA PERMISSÃO",
+  "[ CONFIRM TOOL RULE ]": "[ CONFIRMAR REGRA DA FERRAMENTA ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ SEMPRE PERMITIR FERRAMENTA ]",
+  "[ CANCEL TOOL CALL ]": "[ CANCELAR CHAMADA DA FERRAMENTA ]",
+  "Unsupported MCP request. Review it in Codex.": "Solicitação MCP não compatível. Confira no Codex."
 }

@@ -5701,3 +5701,152 @@ test('selected session reply gets more reading space without expanding neighbour
     .click();
   expect(await height(1)).toBeGreaterThan((await height(0)) * 1.9);
 });
+
+for (const mode of ['balanced', 'none', 'require']) {
+  for (const index of [0, 1, 2, 3]) {
+    test(`MCP tool choice ${index + 1} follows ${mode} confirmation policy`, async ({
+      page,
+      pairingURL,
+    }) => {
+      const { snapshot, offer, calls } = await mockActions(
+        page,
+        'approval',
+        false,
+        true,
+        mode,
+      );
+      const tool = {
+        server: 'codex_apps',
+        title: 'Create Event',
+        connector: 'Calendar',
+        message: 'Allow Calendar to create an event?',
+        arguments: '{"title":"Demo <event>"}',
+      };
+      const labels = [
+        'APPROVE ONCE',
+        'ALLOW FOR SESSION',
+        'ALWAYS ALLOW TOOL',
+        'CANCEL TOOL CALL',
+      ];
+      await page.route('**/api/control/offer', (route) =>
+        route.fulfill({
+          json: {
+            ...offer,
+            command: '',
+            directory: '',
+            mcpTool: tool,
+            choices: labels.map((label, choice) => ({
+              label,
+              persistent: choice === 1 || choice === 2,
+              detail:
+                choice === 2
+                  ? 'Future Codex sessions'
+                  : choice === 1
+                    ? 'Current Codex session'
+                    : '',
+            })),
+          },
+        }),
+      );
+      await page.goto(pairingURL);
+      await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+      const detail = {
+        ...snapshot,
+        sessions: snapshot.sessions.map((row) => ({
+          ...row,
+          text: tool.message,
+          mcpTool: tool,
+        })),
+      };
+      await page.evaluate(
+        (detail) =>
+          window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+        detail,
+      );
+      await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+      const review = page.getByRole('region', { name: 'MCP tool approval' });
+      await expect(review).toBeVisible();
+      await expect(review).toContainText('codex_apps');
+      await expect(review).toContainText('Create Event');
+      await expect(review).toContainText('Demo <event>');
+      await expect(
+        page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
+      ).toHaveCount(0);
+      await expect(page.getByRole('radio')).toHaveCount(4);
+      await page
+        .getByRole('radio', { name: new RegExp('^' + labels[index]) })
+        .check();
+      const guarded =
+        mode === 'require' ||
+        (mode === 'balanced' && (index === 1 || index === 2));
+      await page
+        .getByRole('button', {
+          name: guarded ? 'REVIEW BEFORE SENDING' : 'SEND DECISION',
+          exact: true,
+        })
+        .click();
+      if (guarded) {
+        expect(calls.filter((call) => call.action === 'commit')).toHaveLength(
+          0,
+        );
+        await page
+          .getByRole('button', {
+            name: 'CONFIRM ' + labels[index],
+            exact: true,
+          })
+          .click();
+      }
+      await expect
+        .poll(() => calls.filter((call) => call.action === 'commit').length)
+        .toBe(1);
+      expect(calls.find((call) => call.action === 'prepare')?.body.choice).toBe(
+        index,
+      );
+    });
+  }
+}
+
+test('read-only MCP approvals show the tool review without decision controls', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page, 'approval');
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const detail = {
+    ...snapshot,
+    control: false,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      mcpTool: {
+        server: 'tools',
+        name: 'create_event',
+        message: 'Allow event creation?',
+        arguments: '',
+      },
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    detail,
+  );
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('region', { name: 'MCP tool approval' }),
+  ).toContainText('create_event');
+  await expect(
+    page
+      .getByRole('region', { name: 'MCP tool approval' })
+      .getByText('—', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'SEND DECISION', exact: true }),
+  ).toHaveCount(0);
+  expect(
+    calls.filter(
+      (call) => call.action === 'prepare' || call.action === 'commit',
+    ),
+  ).toHaveLength(0);
+});

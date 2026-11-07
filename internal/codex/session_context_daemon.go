@@ -239,6 +239,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	case "item/fileChange/patchUpdated":
 		state.capturePatch(p.TurnID, p.ItemID, p.Changes)
 		return
+	case "mcpServer/elicitation/request":
+		configureMCPApproval(&c, raw)
 	case "item/permissions/requestApproval":
 		c.ApprovalBlocked = "permissions"
 		c.Kind, c.Text = SessionContextApproval, p.Reason

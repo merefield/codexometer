@@ -7,7 +7,8 @@ import (
 )
 
 // Fixed-size, immutable value snapshots keep preview comparisons deterministic.
-// Value selects an advertised option; Wire is the validated server payload.
+// Value selects an advertised option. Wire is a command decision or a complete
+// MCP elicitation response, selected by the request's validated protocol.
 type ApprovalOption struct{ Kind, Value, Wire, Detail string }
 
 func oneTimeApproval(kind string) bool {
@@ -15,7 +16,7 @@ func oneTimeApproval(kind string) bool {
 }
 
 func (o ApprovalOption) GrantsPermission() bool {
-	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment"
+	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways"
 }
 
 func commandApprovalOptions(raw []json.RawMessage) ([8]ApprovalOption, string) {

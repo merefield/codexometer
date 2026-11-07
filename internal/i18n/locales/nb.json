@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F OPPDATER ]",
   "[ ESC CANCEL ]": "[ ESC AVBRYT ]",
   "HUMAN APPROVAL REQUIRED": "MENNESKELIG GODKJENNING KREVES",
-  "Managed policy requires approval each time.": "Den administrerte policyen krever godkjenning hver gang."
+  "Managed policy requires approval each time.": "Den administrerte policyen krever godkjenning hver gang.",
+  "MCP TOOL APPROVAL": "GODKJENNING AV MCP-VERKTØY",
+  "MCP SERVER": "MCP-SERVER",
+  "TOOL": "VERKTØY",
+  "TITLE": "TITTEL",
+  "APP": "APP",
+  "ARGUMENTS": "ARGUMENTER",
+  "PERMISSION SCOPE": "TILLATELSENS OMFANG",
+  "[ CONFIRM TOOL RULE ]": "[ BEKREFT VERKTØYREGEL ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ TILLAT ALLTID VERKTØYET ]",
+  "[ CANCEL TOOL CALL ]": "[ AVBRYT VERKTØYKALL ]",
+  "Unsupported MCP request. Review it in Codex.": "MCP-forespørselen støttes ikke. Se den i Codex."
 }

@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F ОБНОВИТЬ ]",
   "[ ESC CANCEL ]": "[ ESC ОТМЕНА ]",
   "HUMAN APPROVAL REQUIRED": "ТРЕБУЕТСЯ ОДОБРЕНИЕ ЧЕЛОВЕКА",
-  "Managed policy requires approval each time.": "Управляемая политика требует одобрения каждый раз."
+  "Managed policy requires approval each time.": "Управляемая политика требует одобрения каждый раз.",
+  "MCP TOOL APPROVAL": "ОДОБРЕНИЕ ИНСТРУМЕНТА MCP",
+  "MCP SERVER": "СЕРВЕР MCP",
+  "TOOL": "ИНСТРУМЕНТ",
+  "TITLE": "НАЗВАНИЕ",
+  "APP": "ПРИЛОЖЕНИЕ",
+  "ARGUMENTS": "АРГУМЕНТЫ",
+  "PERMISSION SCOPE": "ОБЛАСТЬ РАЗРЕШЕНИЯ",
+  "[ CONFIRM TOOL RULE ]": "[ ПОДТВЕРДИТЬ ПРАВИЛО ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ ВСЕГДА РАЗРЕШАТЬ ИНСТРУМЕНТ ]",
+  "[ CANCEL TOOL CALL ]": "[ ОТМЕНИТЬ ВЫЗОВ ИНСТРУМЕНТА ]",
+  "Unsupported MCP request. Review it in Codex.": "Неподдерживаемый запрос MCP. Просмотрите его в Codex."
 }

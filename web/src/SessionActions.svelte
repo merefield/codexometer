@@ -3,6 +3,7 @@
   import { onMount, tick } from 'svelte';
   import SessionCommands from './SessionCommands.svelte';
   import FileDiff from './FileDiff.svelte';
+  import MCPApproval from './MCPApproval.svelte';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
@@ -530,7 +531,9 @@
     {#if notice}<p class:notice={!success} class:sent={success} role="status">
         {notice}
       </p>{/if}
-    {#if offer?.fileChanges?.length && !stale && !offerError}
+    {#if offer?.mcpTool && !stale && !offerError}
+      <MCPApproval details={offer.mcpTool} />
+    {:else if offer?.fileChanges?.length && !stale && !offerError}
       <FileDiff lines={offer.fileChanges} />
     {:else if observedFileChanges.length}
       <FileDiff lines={observedFileChanges} />
@@ -539,8 +542,8 @@
       <pre class="command">{command}</pre>
     {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
       <p class="muted">
-        Command unavailable from this observation. Open Codex to inspect the
-        request.
+        Approval details unavailable from this observation. Open Codex to
+        inspect the request.
       </p>
     {/if}
     {#if stale || offerError}

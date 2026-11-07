@@ -2141,6 +2141,20 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**MCP/app tool approvals (shared app-server):** the terminal and writable web
+interface show the MCP server, tool/app metadata, request message and
+supplied arguments (or an unavailable marker when Codex omits them). Message-only tool approvals offer **APPROVE ONCE**,
+**ALLOW FOR SESSION**, **ALWAYS ALLOW TOOL**, and **CANCEL TOOL CALL**, with reusable
+grants included only when Codex advertises those scopes. One-time approval and
+tool cancellation are immediate by default; session/persistent grants require
+confirmation. The launch confirmation policy applies. Each action answers the
+original MCP request once; cancellation uses the MCP cancellation action rather
+than a command's reject-and-stop decision. Read-only web shows the same review
+without enabling decisions. General forms, URL authentication and device
+verification remain visible for handling in Codex. Missing turn/item IDs and
+connector payloads without a separate tool name are supported; no identity is
+guessed from the request prose.
+
 **Managed human approvals (Codex 0.167+):** a managed command policy can require
 fresh approval each time, even when ordinary approvals have been saved or
 reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE**,

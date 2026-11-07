@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F 刷新 ]",
   "[ ESC CANCEL ]": "[ ESC 取消 ]",
   "HUMAN APPROVAL REQUIRED": "需要人工批准",
-  "Managed policy requires approval each time.": "受管策略要求每次都进行批准。"
+  "Managed policy requires approval each time.": "受管策略要求每次都进行批准。",
+  "MCP TOOL APPROVAL": "MCP工具审批",
+  "MCP SERVER": "MCP服务器",
+  "TOOL": "工具",
+  "TITLE": "标题",
+  "APP": "应用",
+  "ARGUMENTS": "参数",
+  "PERMISSION SCOPE": "权限范围",
+  "[ CONFIRM TOOL RULE ]": "[ 确认工具规则 ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ 始终允许工具 ]",
+  "[ CANCEL TOOL CALL ]": "[ 取消工具调用 ]",
+  "Unsupported MCP request. Review it in Codex.": "不支持此MCP请求。请在Codex中查看。"
 }

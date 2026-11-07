@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F 更新 ]",
   "[ ESC CANCEL ]": "[ ESC キャンセル ]",
   "HUMAN APPROVAL REQUIRED": "人による承認が必要",
-  "Managed policy requires approval each time.": "管理ポリシーにより、毎回承認が必要です。"
+  "Managed policy requires approval each time.": "管理ポリシーにより、毎回承認が必要です。",
+  "MCP TOOL APPROVAL": "MCPツール承認",
+  "MCP SERVER": "MCPサーバー",
+  "TOOL": "ツール",
+  "TITLE": "タイトル",
+  "APP": "アプリ",
+  "ARGUMENTS": "引数",
+  "PERMISSION SCOPE": "許可の範囲",
+  "[ CONFIRM TOOL RULE ]": "[ ツールルールを確認 ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ ツールを常に許可 ]",
+  "[ CANCEL TOOL CALL ]": "[ ツール呼び出しをキャンセル ]",
+  "Unsupported MCP request. Review it in Codex.": "未対応のMCPリクエストです。Codexで確認してください。"
 }

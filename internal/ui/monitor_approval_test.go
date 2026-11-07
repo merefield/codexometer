@@ -417,3 +417,42 @@ func TestApprovalButtonsKeepEvenVisibleGapsAndStableConfirmationPositions(t *tes
 		}
 	}
 }
+
+func TestMCPApprovalFourButtonsAndConfirmationPolicy(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, kind := range []string{"accept", "acceptForSession", "acceptMcpAlways", "cancelMcpTool"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Allow Calendar to create an event?", ApprovalToken: "live", MCPTool: codex.MCPToolApprovalDetails{Server: "codex_apps", Title: "Create Event", Message: "Allow Calendar to create an event?", Arguments: `{"title":"Demo"}`}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "acceptForSession", Value: "acceptForSession"}, {Kind: "acceptMcpAlways", Value: "acceptMcpAlways"}, {Kind: "cancelMcpTool", Value: "cancelMcpTool"}}}
+			buttons := m.visibleMonitorApprovalButtons()
+			if len(buttons) != 4 {
+				t.Fatalf("mode %s: four MCP choices not visible", mode)
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("MCP TOOL APPROVAL"), "codex_apps", "Create Event", "Demo", strings.Trim(i18n.Text("[ CANCEL TOOL CALL ]"), "[] ")} {
+				if !strings.Contains(doc, strings.TrimSuffix(text, " ]")) {
+					t.Fatalf("missing MCP review text %q", text)
+				}
+			}
+			if strings.Contains(doc, strings.Trim(i18n.Text("[ REJECT & STOP TURN ]"), "[] ")) {
+				t.Fatal("tool cancellation labelled as turn rejection")
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			guarded := mode == confirmation.Require || mode == confirmation.Balanced && (index == 1 || index == 2)
+			if guarded {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("reusable MCP grant bypassed review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("explicit MCP decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != kind {
+				t.Fatal("wrong MCP choice")
+			}
+		}
+	}
+}

@@ -542,5 +542,16 @@
   "[ F REFRESH ]": "[ F VÄRSKENDA ]",
   "[ ESC CANCEL ]": "[ ESC TÜHISTA ]",
   "HUMAN APPROVAL REQUIRED": "VAJALIK ON INIMESE HEAKSKIIT",
-  "Managed policy requires approval each time.": "Hallatud poliitika nõuab iga kord heakskiitu."
+  "Managed policy requires approval each time.": "Hallatud poliitika nõuab iga kord heakskiitu.",
+  "MCP TOOL APPROVAL": "MCP-TÖÖRIISTA KINNITUS",
+  "MCP SERVER": "MCP-SERVER",
+  "TOOL": "TÖÖRIIST",
+  "TITLE": "PEALKIRI",
+  "APP": "RAKENDUS",
+  "ARGUMENTS": "ARGUMENDID",
+  "PERMISSION SCOPE": "LOA ULATUS",
+  "[ CONFIRM TOOL RULE ]": "[ KINNITA TÖÖRIISTA REEGEL ]",
+  "[ ALWAYS ALLOW TOOL ]": "[ LUBA TÖÖRIIST ALATI ]",
+  "[ CANCEL TOOL CALL ]": "[ TÜHISTA TÖÖRIISTA KUTSE ]",
+  "Unsupported MCP request. Review it in Codex.": "MCP-päringut ei toetata. Vaata seda Codexis."
 }

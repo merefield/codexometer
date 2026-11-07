@@ -22,6 +22,7 @@
   import SessionCommands from './SessionCommands.svelte';
   let copyControl: SessionCopy | undefined = $state();
   import FileDiff from './FileDiff.svelte';
+  import MCPApproval from './MCPApproval.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
@@ -438,7 +439,9 @@
   {#if heading}<h3>
       {contextTitle(session)}
     </h3>{/if}
-  {#if session.text || !session.workingCommand}
+  {#if session.mcpTool && (!full || !live.data?.control)}
+    <MCPApproval details={session.mcpTool} />
+  {:else if session.text || !session.workingCommand}
     <pre data-reply-text>{session.text || 'No session context available.'}</pre>
   {/if}
   {#if session.workingCommand}
@@ -459,7 +462,7 @@
   {/if}
   {#if (!full || !live.data?.control) && session.fileChanges?.length}
     <FileDiff lines={session.fileChanges} />
-  {:else if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
+  {:else if (!full || !live.data?.control) && !session.mcpTool && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>
       {stale || session.status !== 'APPROVAL NEEDED'

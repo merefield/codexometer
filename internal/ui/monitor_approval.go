@@ -30,6 +30,21 @@ func (m Model) monitorApprovalHasOutcome() bool {
 	return ok && !m.hasSessionProfile(s) && s.preview.Kind == codex.SessionContextApproval && s.preview.ApprovalToken != "" && s.preview.ApprovalToken == m.monitorApprovalNoticeToken && (m.monitorApprovalBusy || m.monitorApprovalNotice != "")
 }
 
+var approvalBlockMessages = map[string]string{
+	"mcp":               "Unsupported MCP request. Review it in Codex.",
+	"approval-kind":     "This approval action must be handled in Codex.",
+	"network":           "Network approval is not supported here.",
+	"permissions":       "Additional permissions require approval in Codex.",
+	"file-change":       "Complete file changes unavailable. Review in Codex.",
+	"command-format":    "Unsupported command format.",
+	"missing-command":   "Command details are missing.",
+	"missing-directory": "Working directory is missing.",
+	"missing-identity":  "Turn or item identity is missing.",
+	"decisions":         "No supported approval choices were offered.",
+	"truncated":         "Request details exceed the display limit.",
+	"sanitised":         "Request text was altered for safe display.",
+}
+
 func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
 	if m.monitorApprovalBusy {
 		return i18n.Text("Sending decision…")
@@ -40,30 +55,10 @@ func (m Model) monitorApprovalBlockReason(c codex.SessionContext) string {
 	if c.Source == "LOCAL" {
 		return i18n.Text("Local observation cannot answer live approvals.")
 	}
-	switch c.ApprovalBlocked {
-	case "approval-kind":
-		return i18n.Text("This approval action must be handled in Codex.")
-	case "network":
-		return i18n.Text("Network approval is not supported here.")
-	case "permissions":
-		return i18n.Text("Additional permissions require approval in Codex.")
-	case "file-change":
-		return i18n.Text("Complete file changes unavailable. Review in Codex.")
-	case "command-format":
-		return i18n.Text("Unsupported command format.")
-	case "missing-command":
-		return i18n.Text("Command details are missing.")
-	case "missing-directory":
-		return i18n.Text("Working directory is missing.")
-	case "missing-identity":
-		return i18n.Text("Turn or item identity is missing.")
-	case "decisions":
-		return i18n.Text("No supported approval choices were offered.")
-	case "truncated":
-		return i18n.Text("Request details exceed the display limit.")
-	case "sanitised":
-		return i18n.Text("Request text was altered for safe display.")
+	if message := approvalBlockMessages[c.ApprovalBlocked]; message != "" {
+		return i18n.Text(message)
 	}
+
 	if c.ApprovalToken == "" {
 		return i18n.Text("No actionable live approval was received.")
 	}
@@ -102,6 +97,13 @@ func approvalOptionLabel(kind string, confirm bool) string {
 			return i18n.Text("[ CONFIRM PERSISTENT RULE ]")
 		}
 		return i18n.Text("[ ALWAYS ALLOW PREFIX ]")
+	case "acceptMcpAlways":
+		if confirm {
+			return i18n.Text("[ CONFIRM TOOL RULE ]")
+		}
+		return i18n.Text("[ ALWAYS ALLOW TOOL ]")
+	case "cancelMcpTool":
+		return i18n.Text("[ CANCEL TOOL CALL ]")
 	case "decline":
 		return i18n.Text("[ DECLINE ]")
 	case "cancel":
@@ -120,7 +122,7 @@ func approvalShortcutLabel(kind string, confirm bool, index int) string {
 	if label == "" {
 		return ""
 	}
-	if confirm && (kind == "decline" || kind == "cancel") {
+	if confirm && (kind == "decline" || kind == "cancel" || kind == "cancelMcpTool") {
 		return i18n.Text("[ C CONFIRM ]") + " " + label
 	}
 	shortcut := strconv.Itoa(index + 1)

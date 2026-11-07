@@ -20,6 +20,7 @@ export interface ActionChoice {
 }
 
 export interface ActionOffer {
+  mcpTool?: MCPToolApprovalDetails | null;
   requiredHumanApproval?: boolean;
   fileChanges?: Array<FileDiffLine> | null;
   profile?: ProfileReview | null;
@@ -95,6 +96,15 @@ export interface FileDiffLine {
   kind: string;
   old?: number;
   new?: number;
+}
+
+export interface MCPToolApprovalDetails {
+  server: string;
+  name?: string;
+  title?: string;
+  connector?: string;
+  message: string;
+  arguments: string;
 }
 
 export interface Meter {
@@ -194,6 +204,7 @@ export interface Segment {
 }
 
 export interface Session {
+  mcpTool?: MCPToolApprovalDetails | null;
   readStateKnown?: boolean;
   unread?: boolean;
   readRevision?: string;

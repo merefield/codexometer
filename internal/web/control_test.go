@@ -405,3 +405,33 @@ func TestLiveTaskAndStreamProjection(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestMCPApprovalOfferUsesToolDetailsAndAllAdvertisedChoices(t *testing.T) {
+	s, f, token := controlServer(t)
+	ctx := codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "child", ApprovalToken: "private-approval", Text: "Allow tool?", MCPTool: codex.MCPToolApprovalDetails{Server: "tools", Name: "create_event", Message: "Allow tool?", Arguments: `{"title":"Demo"}`}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "acceptForSession", Value: "acceptForSession", Detail: "Current session"}, {Kind: "acceptMcpAlways", Value: "acceptMcpAlways", Detail: "Future sessions"}, {Kind: "cancelMcpTool", Value: "cancelMcpTool"}}}
+	s.store.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "parent", Context: ctx}}}, nil, time.Now())
+	o := getOffer(t, s, token)
+	if o.MCPTool == nil || o.MCPTool.Name != "create_event" || o.Command != "" || o.Directory != "" || o.Thread != "child" || len(o.Choices) != 4 {
+		t.Fatalf("bad MCP offer: %+v", o)
+	}
+	for i, label := range []string{"APPROVE ONCE", "ALLOW FOR SESSION", "ALWAYS ALLOW TOOL", "CANCEL TOOL CALL"} {
+		if o.Choices[i].Label != label || o.Choices[i].Persistent != (i == 1 || i == 2) {
+			t.Fatal("wrong MCP choice scope", o.Choices)
+		}
+	}
+	index := 2
+	r := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, Choice: &index})
+	changed := ctx
+	changed.MCPTool.Arguments = `{"title":"Changed"}`
+	s.store.contexts["parent"] = changed
+	if w := actionCall(s, token, "commit", r); w.Code != 409 || f.calls != 0 {
+		t.Fatal("changed MCP arguments reused a review")
+	}
+	s.store.contexts["parent"] = ctx
+	o = getOffer(t, s, token)
+	r = prepareAction(t, s, token, actionRequest{Session: "parent", Offer: o.ID, Choice: &index})
+	w := actionCall(s, token, "commit", r)
+	if w.Code != 200 || f.decision != "acceptMcpAlways" || f.calls != 1 {
+		t.Fatalf("MCP grant not committed: %d %s", w.Code, w.Body.String())
+	}
+}

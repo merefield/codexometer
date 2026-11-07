@@ -42,9 +42,10 @@ func (p *daemonStatusProvider) RespondSessionApproval(ctx context.Context, token
 		p.mu.Unlock()
 		return errors.New("request expired or connection closed; check Codex")
 	}
+	request := s.requests[id]
 	var wire string
-	for _, option := range s.requests[id].ApprovalOptions {
-		if option.Kind != "" && option.Value == decision && (!s.requests[id].RequiredHumanApproval || oneTimeApproval(option.Kind)) {
+	for _, option := range request.ApprovalOptions {
+		if option.Kind != "" && option.Value == decision && (!request.RequiredHumanApproval || oneTimeApproval(option.Kind)) {
 			wire = option.Wire
 			break
 		}
@@ -59,5 +60,9 @@ func (p *daemonStatusProvider) RespondSessionApproval(ctx context.Context, token
 	p.mu.Unlock()
 	// Never hold the state lock during IO: rendering can check pending state
 	// without waiting for the network. The server arbitrates concurrent replies.
-	return p.write(connection, map[string]any{"id": json.RawMessage(id), "result": map[string]any{"decision": json.RawMessage(wire)}})
+	var result any = map[string]any{"decision": json.RawMessage(wire)}
+	if request.MCPTool.Server != "" {
+		result = json.RawMessage(wire)
+	}
+	return p.write(connection, map[string]any{"id": json.RawMessage(id), "result": result})
 }

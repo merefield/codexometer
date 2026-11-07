@@ -54,7 +54,7 @@ func Command(reversible bool) Action {
 
 func Approval(kind string) Action {
 	switch kind {
-	case "accept", "decline", "cancel":
+	case "accept", "decline", "cancel", "cancelMcpTool":
 		return Narrow
 	default:
 		return Guarded

@@ -24,36 +24,37 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
-	ReadStateKnown        bool                 `json:"readStateKnown,omitempty"`
-	Unread                bool                 `json:"unread,omitempty"`
-	ReadRevision          string               `json:"readRevision,omitempty"`
-	ReplyTurn             string               `json:"replyTurn,omitempty"`
-	RequiredHumanApproval bool                 `json:"requiredHumanApproval,omitempty"`
-	Goal                  *goal                `json:"goal,omitempty"`
-	StatusLine            map[string]string    `json:"statusLine"`
-	FileChanges           []codex.FileDiffLine `json:"fileChanges,omitempty"`
-	CurrentTask           string               `json:"currentTask,omitempty"`
-	LatestGuidance        string               `json:"latestGuidance,omitempty"`
-	Streaming             bool                 `json:"streaming,omitempty"`
-	Name                  string               `json:"name,omitempty"`
-	ID                    string               `json:"id"`
-	Directory             string               `json:"directory"`
-	Tokens                int64                `json:"tokens"`
-	Agents                int                  `json:"agents"`
-	Status                string               `json:"status"`
-	Failed                bool                 `json:"failed,omitempty"`
-	ContextKind           string               `json:"contextKind"`
-	Text                  string               `json:"text"`
-	Command               string               `json:"command"`
-	WorkingCommand        string               `json:"workingCommand,omitempty"`
-	ApprovalContext       string               `json:"approvalContext,omitempty"`
-	CommandStatus         string               `json:"commandStatus,omitempty"`
-	CommandTiming         string               `json:"commandTiming,omitempty"`
-	RunningCommands       int                  `json:"runningCommands,omitempty"`
-	RunningLimited        bool                 `json:"runningLimited,omitempty"`
-	Source                string               `json:"source"`
-	Activity              time.Time            `json:"activity"`
-	Samples               []sample             `json:"samples"`
+	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
+	ReadStateKnown        bool                          `json:"readStateKnown,omitempty"`
+	Unread                bool                          `json:"unread,omitempty"`
+	ReadRevision          string                        `json:"readRevision,omitempty"`
+	ReplyTurn             string                        `json:"replyTurn,omitempty"`
+	RequiredHumanApproval bool                          `json:"requiredHumanApproval,omitempty"`
+	Goal                  *goal                         `json:"goal,omitempty"`
+	StatusLine            map[string]string             `json:"statusLine"`
+	FileChanges           []codex.FileDiffLine          `json:"fileChanges,omitempty"`
+	CurrentTask           string                        `json:"currentTask,omitempty"`
+	LatestGuidance        string                        `json:"latestGuidance,omitempty"`
+	Streaming             bool                          `json:"streaming,omitempty"`
+	Name                  string                        `json:"name,omitempty"`
+	ID                    string                        `json:"id"`
+	Directory             string                        `json:"directory"`
+	Tokens                int64                         `json:"tokens"`
+	Agents                int                           `json:"agents"`
+	Status                string                        `json:"status"`
+	Failed                bool                          `json:"failed,omitempty"`
+	ContextKind           string                        `json:"contextKind"`
+	Text                  string                        `json:"text"`
+	Command               string                        `json:"command"`
+	WorkingCommand        string                        `json:"workingCommand,omitempty"`
+	ApprovalContext       string                        `json:"approvalContext,omitempty"`
+	CommandStatus         string                        `json:"commandStatus,omitempty"`
+	CommandTiming         string                        `json:"commandTiming,omitempty"`
+	RunningCommands       int                           `json:"runningCommands,omitempty"`
+	RunningLimited        bool                          `json:"runningLimited,omitempty"`
+	Source                string                        `json:"source"`
+	Activity              time.Time                     `json:"activity"`
+	Samples               []sample                      `json:"samples"`
 }
 
 type goal struct {
@@ -326,6 +327,12 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			if row.Context.Kind == codex.SessionContextApproval {
 				approvalContext = codex.SanitizeSessionContext(row.Context.ApprovalContext)
 			}
+			var mcpTool *codex.MCPToolApprovalDetails
+			if row.Context.MCPTool.Server != "" {
+				details := row.Context.MCPTool
+				mcpTool = &details
+				text = details.Message
+			}
 			var activity codex.SessionActivity
 			if row.Context.Kind == codex.SessionContextActivity {
 				activity = row.Context.Activity
@@ -341,8 +348,9 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
-				Goal: projectGoal(row.Goal),
-				ID:   row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				MCPTool: mcpTool,
+				Goal:    projectGoal(row.Goal),
+				ID:      row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Failed:                row.Attention == codex.SessionAttentionError,
