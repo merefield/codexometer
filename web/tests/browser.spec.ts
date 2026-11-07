@@ -122,6 +122,26 @@ const test = base.extend<{
 // Existing dashboard tests open directly; startup motion is exercised separately.
 test.use({ reducedMotion: 'reduce' });
 
+// Reach a known layout through Cycle; the exact order is tested separately.
+async function setOverviewDetail(page: Page, level: number) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const levels = await page
+      .locator('.session-row')
+      .evaluateAll((rows) =>
+        rows.map((row) =>
+          row.classList.contains('wide')
+            ? 2
+            : row.classList.contains('split')
+              ? 1
+              : 0,
+        ),
+      );
+    if (levels.length && levels.every((value) => value === level)) return;
+    await page.getByRole('button', { name: 'C(Y)CLE', exact: true }).click();
+  }
+  throw new Error('Cycle did not reach overview detail level ' + level);
+}
+
 test.describe('quota profile reviews', () => {
   test.use({
     controlMode: true,
@@ -253,7 +273,7 @@ test('live detail separates the task and guidance from streamed replies', async 
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   await expect(
     page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
   ).toBeVisible();
@@ -330,7 +350,7 @@ test('working detail preserves prose alongside command state', async ({
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   const row = page.getByRole('region', {
     name: 'Session Build check',
     exact: true,
@@ -502,7 +522,7 @@ test('read-only session copy captures working prose in every detail level withou
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   const row = page.getByRole('region', { name: 'Session one', exact: true });
   await row.getByRole('button', { name: 'Copy text' }).click();
   await expect(row.getByRole('status')).toHaveText('Copied.');
@@ -1328,7 +1348,7 @@ for (const control of [false, true]) {
       detail,
     );
     await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-    await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+    await setOverviewDetail(page, 1);
     await expect(
       page.getByText(detail.sessions[0].approvalContext, { exact: true }),
     ).toHaveCount(0);
@@ -3699,13 +3719,9 @@ test('per-session detail navigation, selection and preferences survive reload', 
   await expect(rows.nth(1).locator('.graph-panel')).toHaveCount(1);
   await page.keyboard.press('ArrowLeft');
   await expect(rows.nth(1).locator('.context')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(2);
-  await page
-    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 0);
   await expect(page.locator('.context')).toHaveCount(0);
   await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
   await expect(page).toHaveURL(/#\/quota\/pie$/);
@@ -3721,9 +3737,7 @@ test('all full-detail entry routes return to a selected wide row with browser Ba
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   const row = page.locator('.session-row').first();
   for (const entry of ['attention', 'full link', 'badge', 'arrows']) {
-    await page
-      .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-      .click();
+    await setOverviewDetail(page, 0);
     if (entry === 'attention')
       await page
         .getByRole('navigation', { name: 'Sessions needing attention' })
@@ -3829,9 +3843,7 @@ test('attention distinguishes observed signals, inference and stale state withou
       .getByRole('navigation', { name: 'Sessions needing attention' })
       .getByRole('link'),
   ).toHaveCount(3);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   const rows = page.locator('.session-row');
   await expect(rows.nth(0).locator('.attention-badge')).toBeVisible();
   await expect(rows.nth(0).locator('.telemetry')).toContainText(
@@ -3934,9 +3946,7 @@ test('global detail controls cover more than 100 sessions and survive reload', a
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(105);
   // An explicit zero must override the nonzero global default.
   await page
@@ -3948,16 +3958,12 @@ test('global detail controls cover more than 100 sessions and survive reload', a
   ).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.context')).toHaveCount(104);
-  await page
-    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 0);
   await expect(page.locator('.context')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.session-row')).toHaveCount(105);
   await expect(page.locator('.context')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(105);
 });
 
@@ -5514,3 +5520,50 @@ for (const mode of ['balanced', 'none', 'require']) {
       .toBe(1);
   });
 }
+
+test('Cycle matches the most detailed session before cycling all three overview views', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const rows = page.locator('.session-row');
+  const cycle = page.getByRole('button', { name: 'C(Y)CLE', exact: true });
+  await expect(cycle).toHaveCount(1);
+  await rows.first().getByRole('button', { name: 'More detail' }).click();
+  await rows.first().getByRole('button', { name: 'More detail' }).click();
+  await expect(rows.first()).toHaveClass(/wide/);
+  await expect(rows.nth(1).locator('.context')).toHaveCount(0);
+  await cycle.click();
+  await expect(rows.locator('.context')).toHaveCount(2);
+  await expect(rows.locator('.graph-panel')).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/sessions$/);
+  await page.reload();
+  await expect(rows.first()).toHaveClass(/wide/);
+  await expect(rows.nth(1)).toHaveClass(/wide/);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(2);
+  await expect(rows.locator('.graph-panel')).toHaveCount(2);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.graph-panel')).toHaveCount(0);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.evaluate(() => {
+    const editor = document.createElement('textarea');
+    editor.id = 'test-cycle-editor';
+    document.body.append(editor);
+    editor.focus();
+  });
+  await page.keyboard.type('y');
+  await expect(page.locator('#test-cycle-editor')).toHaveValue('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.locator('#test-cycle-editor').evaluate((node) => node.remove());
+  await page.keyboard.press('Control+y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await rows.first().getByRole('link', { name: 'FULL DETAIL →' }).click();
+  await page.keyboard.press('y');
+  await expect(page.locator('.full-detail')).toBeVisible();
+  await expect(cycle).toHaveCount(0);
+});

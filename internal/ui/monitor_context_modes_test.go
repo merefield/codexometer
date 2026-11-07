@@ -151,7 +151,7 @@ func TestMonitorContextBackAndForthCycle(t *testing.T) {
 	for _, back := range []tea.KeyPressMsg{{Code: tea.KeyLeft}, {Code: tea.KeyEscape}} {
 		m := contextTestModel()
 		m.monitorSelectedID = "root-two"
-		m.monitorContextHidden = true
+		m.monitorContextView = "graph"
 		for _, delta := range []int{-1, 1, 1, 1, 1, -1, -1, -1, -1} {
 			k := tea.KeyPressMsg{Code: tea.KeyRight}
 			if delta < 0 {
@@ -163,16 +163,16 @@ func TestMonitorContextBackAndForthCycle(t *testing.T) {
 			if got, want := m.rowContextMode("root-two"), min(max(before+delta, contextGraph), contextFull); got != want {
 				t.Fatalf("got %d want %d", got, want)
 			}
-			if m.rowContextMode("root-one") != contextGraph || !m.monitorContextHidden {
+			if m.rowContextMode("root-one") != contextGraph || m.defaultMonitorContextMode() != contextGraph {
 				t.Fatal("changed another row")
 			}
 		}
 	}
 }
 
-func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
+func TestMonitorRowModesIndependentAndGlobalCycle(t *testing.T) {
 	m := contextTestModel()
-	m.monitorContextHidden = true
+	m.monitorContextView = "graph"
 	m.changeMonitorContext("root-one", 1)
 	if m.rowContextMode("root-one") != contextSplit || m.rowContextMode("root-two") != contextGraph {
 		t.Fatal("first row affected second row")
@@ -182,24 +182,50 @@ func TestMonitorRowModesIndependentAndGlobalToggle(t *testing.T) {
 	if m.rowContextMode("root-one") != contextWide || m.rowContextMode("root-two") != contextSplit {
 		t.Fatal("switching rows discarded presentation")
 	}
-	m.changeMonitorContext("root-two", 1)
-	if m.rowContextMode("root-one") != contextWide || m.rowContextMode("root-two") != contextWide {
-		t.Fatal("cannot independently expand two rows")
-	}
-	m.toggleMonitorContext() // global Show overrides individual choices
-	for _, s := range m.monitorSessionData {
-		if m.rowContextMode(s.id) != contextSplit {
-			t.Fatal("Show did not reset every row to split")
+	for _, want := range []int{contextWide, contextGraph, contextSplit, contextWide, contextGraph} {
+		next, _ := m.Update(key('y'))
+		m = next.(Model)
+		for _, s := range m.monitorSessionData {
+			if m.rowContextMode(s.id) != want {
+				t.Fatalf("row %s mode %d, want %d", s.id, m.rowContextMode(s.id), want)
+			}
+		}
+		if m.monitorContextDetail != "" || len(m.monitorContextRows) != 0 {
+			t.Fatal("global cycle retained overrides or opened full detail")
 		}
 	}
-	m.toggleMonitorContext()
-	for _, s := range m.monitorSessionData {
-		if m.rowContextMode(s.id) != contextGraph {
-			t.Fatal("Hide did not reset every row to graph")
-		}
+}
+
+func TestMonitorCycleOnlyListedRowsAndNoHeldKeys(t *testing.T) {
+	m := contextTestModel()
+	m.height = 16 // Keep a matching row off-page while cycling the whole list.
+	m.monitorSessionData[0].working = false
+	m.monitorFilter = monitorFilterWorking
+	m.monitorSelectedID = "root-two"
+	m.setRowContext("root-three", contextWide)
+	m.monitorSelectedID = "root-two"
+	m.monitorContextScroll = 10
+	m.monitorApprovalConfirm = "old"
+	m.monitorReadIntent = "root-two"
+	next, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y", IsRepeat: true})
+	if next.(Model).rowContextMode("root-two") != contextSplit {
+		t.Fatal("held Cycle changed layout")
 	}
-	if len(m.monitorContextRows) != 0 || m.monitorContextTarget() != "" {
-		t.Fatal("global reset retained row overrides")
+	m.cycleMonitorContext()
+	if m.rowContextMode("root-one") != contextSplit || m.rowContextMode("root-two") != contextWide || m.rowContextMode("root-three") != contextWide {
+		t.Fatal("cycle changed filtered rows or missed listed rows")
+	}
+	if m.monitorSelectedID != "root-two" || m.monitorContextExpanded != "root-two" || m.monitorContextScroll != 0 || m.monitorApprovalConfirm != "" || m.monitorReadIntent != "" {
+		t.Fatal("cycle lost selection or retained stale interaction state")
+	}
+	m.cycleMonitorContext()
+	if m.rowContextMode("root-one") != contextSplit || m.rowContextMode("root-two") != contextGraph || m.rowContextMode("root-three") != contextGraph {
+		t.Fatal("filtered row changed on wrap")
+	}
+	m.monitorFilter = monitorFilterInput
+	m.cycleMonitorContext()
+	if m.defaultMonitorContextMode() != contextGraph {
+		t.Fatal("empty list changed default")
 	}
 }
 
@@ -233,7 +259,7 @@ func TestMonitorRowSurfaceCyclesOnlyClickedSession(t *testing.T) {
 	for _, width := range []int{40, 80, 120, 200} {
 		m := contextTestModel()
 		m.width = width
-		m.monitorContextHidden = true
+		m.monitorContextView = "graph"
 		m.monitorSelectedID = "root-one"
 		for _, delta := range []int{-1, 1, 1, 1, 1, -1, -1, -1, -1} {
 			before := m.rowContextMode("root-two")
@@ -401,5 +427,24 @@ func TestMonitorObsoleteNavigationKeysDoNotChangeDetail(t *testing.T) {
 				t.Fatal("obsolete navigation key changed detail")
 			}
 		}
+	}
+}
+
+func TestMonitorCycleKeepsTypedYAndDrafts(t *testing.T) {
+	m, _ := promptTestModel()
+	m.setRowContext("root-one", contextWide)
+	m.focusMonitorPrompt()
+	next, _ := m.Update(key('y'))
+	m = next.(Model)
+	if m.monitorPrompt.input.Value() != "y" || m.defaultMonitorContextMode() != contextSplit {
+		t.Fatal("Cycle stole the editor's Y")
+	}
+	m.cycleMonitorContext() // Click while a draft is present: converge on wide.
+	if m.monitorDrafts["root-one"] != "y" || m.monitorPrompt.input.Focused() {
+		t.Fatal("bulk layout change lost the draft or retained editor focus")
+	}
+	m.focusMonitorPrompt()
+	if m.monitorPrompt.input.Value() != "y" {
+		t.Fatal("draft did not return to the selected wide row")
 	}
 }

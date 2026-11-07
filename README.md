@@ -595,7 +595,8 @@ codexometer --codex /path/to/codex
 | `s` | Open Benchmark Scope (Benchmark view only) |
 | `o` | Close All session rows; strict confirmation mode adds a second press, with `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace |
-| `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `h` | Toggle the trace in Quota → Pace |
+| `y` | Cycle all listed Sessions rows: first match the most detailed row, then graph → split → wide → graph; never opens full detail |
 | `Left` / `Right` | In Sessions, highlight attention pills or cycle status filters when that header area has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Run All benchmarks; confirmation follows the selected policy (Benchmark view only) |
@@ -1690,10 +1691,16 @@ collection or changes the Zero baseline. Dismissed sessions are skipped, and Dow
 matching session.
 These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
-background half-click navigation still work. Hide/Show and Close retain priority.
-The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
-graph-only, closes full detail and clears per-row overrides. Only that global
-default is persisted across launches. While typing, arrows move the text cursor,
+background half-click navigation still work. Cycle and Close retain priority.
+The global **C(Y)CLE** (`y`) button first brings mixed listed rows to the most
+detailed current overview layout, then cycles them together through **graph only →
+split detail/graph → wide detail → graph only**. It includes matching rows off the
+current page, leaves filtered-out or dismissed rows unchanged, and never opens
+full-screen detail. Full detail and focused editors retain their own keys.
+Cycling clears listed rows’ individual layout overrides and pending interaction
+state, preserves selection and ordinary drafts, and does not mark replies read. The chosen
+global default also applies to newly observed rows and survives restarts.
+While typing, arrows move the text cursor,
 Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
@@ -2272,9 +2279,9 @@ truncated or sanitised text, local-only observation, or a resolved/disconnected
 request. Eligible requests on small terminals instead explain that the terminal
 must be enlarged. These diagnostics do not relax any approval safeguards.
 
-The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
-previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
-survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
+The readout's **C(Y)CLE** button or `y` synchronizes the listed rows at their
+most detailed current layout, then cycles graph-only, split and wide layouts
+(shortened to `[Y]` in narrow layouts). The global choice survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
 uses a bounded in-memory cache and read-only app-server history where available.
 Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
@@ -2287,8 +2294,8 @@ any command; restart the demo to reset its approval.
 ### Saved presentation preferences
 
 Codexometer's presentation preferences store only the selected theme, main tab,
-Quota view, benchmark filter, benchmark ranking weight, and the Sessions context
-hide/show preference. No benchmark result, message content, credential, session
+Quota view, benchmark filter, benchmark ranking weight, and the global Sessions
+detail level. No benchmark result, message content, credential, session
 ID, email, or account ID is written to that file. The small JSON file uses the
 platform-standard user configuration directory:
 
@@ -3121,9 +3128,11 @@ available from the existing reader.
 - Use **← / →** or the row's arrow buttons to move through **graph only → split
   detail and graph → wide detail → full-page detail**. Each row has its own layout.
 - **Escape** or **← ALL SESSIONS** returns from full-page detail to that session's
-  wide detail row. **SHOW ALL DETAILS / HIDE ALL DETAILS** switches all current
-  rows between split detail and graph-only, clearing individual overrides and
-  setting the default for newly observed sessions too. This global default is
+  wide detail row. **C(Y)CLE** or `y` first matches all listed rows to the most
+  detailed current row, then cycles **graph → split → wide → graph** in unison,
+  without opening a full-page session. It clears listed rows’ individual overrides
+  and sets the default for newly observed sessions too. Bulk cycling does not
+  acknowledge unread results. Keyboard cycling is unavailable while typing or in full detail. This global default is
   independent of the 100-entry saved per-session history. Narrow screens stack panels.
 - Attention links jump to the relevant session. Approval indicators remain
   outside scrollable reply text; available commands are separated from their
@@ -3712,7 +3721,7 @@ Potential Sessions follow-ups (not implemented):
   would become persisted data and the saved-preferences documentation would
   need updating accordingly.
 
-Currently, the main tab, Quota view and global Sessions hide/show preference are
+Currently, the main tab, Quota view and global Sessions detail level are
 saved, but session selection, per-session detail levels and dismissals remain
 temporary.
 

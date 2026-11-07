@@ -13,7 +13,8 @@ import (
 // Operational, account, quota-estimation, session, and token-event data are
 // never stored.
 type Preferences struct {
-	HideSessionContext bool     `json:"hideSessionContext,omitempty"`
+	HideSessionContext bool     `json:"hideSessionContext,omitempty"` // Read legacy preferences only.
+	SessionContextView string   `json:"sessionContextView,omitempty"`
 	Theme              string   `json:"theme,omitempty"`
 	MainTab            string   `json:"mainTab,omitempty"`
 	QuotaView          string   `json:"quotaView,omitempty"`
@@ -82,7 +83,14 @@ func (m *Model) applyPreferences(preferences Preferences) {
 	if preferences.StatusLine != nil {
 		m.monitorStatusLine = statusline.Normalize(preferences.StatusLine)
 	}
-	m.monitorContextHidden = preferences.HideSessionContext
+	switch preferences.SessionContextView {
+	case "graph", "split", "wide":
+		m.monitorContextView = preferences.SessionContextView
+	default:
+		if preferences.HideSessionContext {
+			m.monitorContextView = "graph"
+		}
+	}
 	if theme, ok := themePreferenceIDs[preferences.Theme]; ok {
 		m.theme = theme
 	}
@@ -115,7 +123,7 @@ func (m Model) persistPreferences() {
 		return
 	}
 	_ = m.preferenceStore.Save(Preferences{
-		HideSessionContext: m.monitorContextHidden,
+		SessionContextView: sessionContextViewNames[m.defaultMonitorContextMode()],
 		Theme:              themePreferenceNames[m.theme],
 		MainTab:            mainTabPreferenceNames[m.currentMainTab()],
 		QuotaView:          quotaViewPreferenceNames[m.selectedQuotaView()],
@@ -134,10 +142,10 @@ var themePreferenceNames = map[themeID]string{
 	themeUltraviolet: "ultraviolet", themeNightshade: "nightshade",
 }
 
-var themePreferenceIDs = reverseThemePreferences(themePreferenceNames)
+var themePreferenceIDs = reversePreferenceNames(themePreferenceNames)
 
-func reverseThemePreferences(values map[themeID]string) map[string]themeID {
-	reversed := make(map[string]themeID, len(values))
+func reversePreferenceNames[T comparable](values map[T]string) map[string]T {
+	reversed := make(map[string]T, len(values))
 	for id, value := range values {
 		reversed[value] = id
 	}
@@ -151,10 +159,7 @@ var quotaViewPreferenceNames = map[meterViewID]string{
 var quotaViewPreferenceIDs = reverseViewPreferences(quotaViewPreferenceNames)
 
 func reverseViewPreferences(values map[meterViewID]string) map[string]meterViewID {
-	reversed := make(map[string]meterViewID, len(values))
-	for id, value := range values {
-		reversed[value] = id
-	}
+	reversed := reversePreferenceNames(values)
 	// Restore previous graph selections to the former Zone, now named Pace.
 	if _, ok := values[viewPace]; ok {
 		reversed["consumption-pace"] = viewPace
@@ -167,26 +172,10 @@ var benchmarkFilterPreferenceNames = map[benchmarkResultFilter]string{
 	benchmarkFilterAll: "all", benchmarkFilterPass: "pass", benchmarkFilterFail: "fail",
 }
 
-var benchmarkFilterPreferenceIDs = reverseFilterPreferences(benchmarkFilterPreferenceNames)
-
-func reverseFilterPreferences(values map[benchmarkResultFilter]string) map[string]benchmarkResultFilter {
-	reversed := make(map[string]benchmarkResultFilter, len(values))
-	for id, value := range values {
-		reversed[value] = id
-	}
-	return reversed
-}
+var benchmarkFilterPreferenceIDs = reversePreferenceNames(benchmarkFilterPreferenceNames)
 
 var benchmarkRankPreferenceNames = map[benchmarkRankMode]string{
 	benchmarkRankBalanced: "balanced", benchmarkRankCost: "cost", benchmarkRankSpeed: "speed",
 }
 
-var benchmarkRankPreferenceIDs = reverseRankPreferences(benchmarkRankPreferenceNames)
-
-func reverseRankPreferences(values map[benchmarkRankMode]string) map[string]benchmarkRankMode {
-	reversed := make(map[string]benchmarkRankMode, len(values))
-	for id, value := range values {
-		reversed[value] = id
-	}
-	return reversed
-}
+var benchmarkRankPreferenceIDs = reversePreferenceNames(benchmarkRankPreferenceNames)

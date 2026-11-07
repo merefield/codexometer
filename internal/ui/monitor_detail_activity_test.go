@@ -110,7 +110,8 @@ func TestMainSessionContextDots(t *testing.T) {
 		t.Fatal("idle monitor animated")
 	}
 	m.monitorState = monitorRunning
-	m.monitorContextHidden = true
+	m.cycleMonitorContext()
+	m.cycleMonitorContext()
 	if m.sessionActivityDots(s) != "" {
 		t.Fatal("hidden context animated")
 	}

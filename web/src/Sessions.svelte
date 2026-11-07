@@ -12,7 +12,7 @@
     preferences,
     detailLevel,
     setDetailLevel,
-    setAllDetailLevels,
+    cycleDetailLevels,
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
@@ -239,6 +239,9 @@
       }
     }
   }
+  function cycle() {
+    if (!params.id) cycleDetailLevels(sessions.map((session) => session.id));
+  }
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (
@@ -249,7 +252,10 @@
       target.closest('input, textarea, select, [contenteditable="true"]')
     )
       return;
-    if (event.key === 'Escape' && params.id) {
+    if (event.key.toLowerCase() === 'y' && !params.id) {
+      event.preventDefault();
+      if (!event.repeat) cycle();
+    } else if (event.key === 'Escape' && params.id) {
       event.preventDefault();
       change(params.id, -1);
     } else if (
@@ -583,8 +589,12 @@
       ↑ ↓ SELECT SESSION // ← LESS DETAIL // → MORE DETAIL // ESC BACK
     </p>
     <div>
-      <button onclick={() => setAllDetailLevels(1)}>SHOW ALL DETAILS</button>
-      <button onclick={() => setAllDetailLevels(0)}>HIDE ALL DETAILS</button>
+      <button
+        onclick={cycle}
+        disabled={!sessions.length}
+        title="Match the most detailed row, then cycle graph, split and wide views"
+        >C(Y)CLE</button
+      >
     </div>
   </div>
   {#each sessions as session (session.id)}

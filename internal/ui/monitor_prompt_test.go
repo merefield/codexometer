@@ -92,7 +92,7 @@ func TestMonitorPromptEnterAndHotkeyIsolation(t *testing.T) {
 	for _, text := range []string{"Q", "s", "t", "r", "h", "i", "X", "1", "C", "Hello 世界"} {
 		m, _ = promptKey(m, []rune(text)[0], text)
 	}
-	if m.monitorContextHidden || m.monitorContextDetail != "root-one" {
+	if m.defaultMonitorContextMode() == contextGraph || m.monitorContextDetail != "root-one" {
 		t.Fatal("typing triggered dashboard action")
 	}
 	want := "QstrhiX1CHello 世界"

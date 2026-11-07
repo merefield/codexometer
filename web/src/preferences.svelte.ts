@@ -49,7 +49,9 @@ function read(): Preferences {
       view: normaliseQuotaView(value.view),
       selected:
         typeof value.selected === 'string' ? value.selected.slice(0, 256) : '',
-      defaultDetail: value.defaultDetail === 1 ? 1 : 0,
+      defaultDetail: [0, 1, 2].includes(value.defaultDetail)
+        ? value.defaultDetail
+        : 0,
       layouts: Array.isArray(value.layouts)
         ? value.layouts
             .filter(
@@ -92,9 +94,17 @@ export function detailLevel(id: string) {
     preferences.defaultDetail
   );
 }
-export function setAllDetailLevels(level: 0 | 1) {
-  preferences.defaultDetail = level;
-  preferences.layouts = [];
+export function cycleDetailLevels(ids: string[]) {
+  if (!ids.length) return;
+  const levels = ids.map(detailLevel);
+  const most = Math.max(...levels);
+  preferences.defaultDetail = levels.every((level) => level === most)
+    ? (most + 1) % 3
+    : most;
+  const listed = new Set(ids);
+  preferences.layouts = preferences.layouts.filter(
+    (entry) => !listed.has(entry.id),
+  );
 }
 export function setDetailLevel(id: string, level: number) {
   preferences.layouts = [

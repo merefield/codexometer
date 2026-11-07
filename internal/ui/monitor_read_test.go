@@ -168,7 +168,7 @@ func TestUnreadLiveReviewGestures(t *testing.T) {
 
 func TestUnreadIndependentPartialPaneWithHiddenGlobalLayout(t *testing.T) {
 	m, client := unreadTestModel()
-	m.monitorContextHidden = true
+	m.monitorContextView = "graph"
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = next.(Model)
 	if !m.contextTargetHidden() || m.rowContextMode("root-one") != contextSplit || cmd == nil || !m.monitorReadBusy {
@@ -244,6 +244,18 @@ func TestUnreadFullResultBoundsExcludeControls(t *testing.T) {
 			if !ok || rect.y != firstBody || !rect.contains(rect.x, firstBody) || rect.contains(rect.x, g.meterY+controlY) {
 				t.Fatalf("history %v height %d: bounds include controls or miss first body row: %+v controlY=%d", history, height, rect, controlY)
 			}
+		}
+	}
+}
+
+func TestBulkCycleDoesNotAcknowledgeUnreadResults(t *testing.T) {
+	m, client := unreadTestModel()
+	m.monitorContextDetail, m.monitorContextExpanded = "", ""
+	for range 4 {
+		next, cmd := m.Update(key('y'))
+		m = next.(Model)
+		if cmd != nil || m.monitorReadBusy || len(client.reads) != 0 || m.monitorReadIntent != "" {
+			t.Fatal("bulk layout change acknowledged an unread reply")
 		}
 	}
 }

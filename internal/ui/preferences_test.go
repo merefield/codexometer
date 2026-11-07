@@ -150,3 +150,20 @@ func TestRestoredTabsLoadDataWithoutStartingBenchmark(t *testing.T) {
 		t.Fatal("wrong usage startup command")
 	}
 }
+
+func TestSessionContextPreferenceAcceptsThreeViewsAndLegacyHide(t *testing.T) {
+	for _, tc := range []struct {
+		view   string
+		hidden bool
+		want   int
+	}{
+		{"", false, contextSplit}, {"", true, contextGraph},
+		{"graph", false, contextGraph}, {"split", true, contextSplit},
+		{"wide", false, contextWide}, {"full", false, contextSplit},
+	} {
+		m := NewWithPreferences(nil, time.Minute, &memoryPreferenceStore{preferences: Preferences{SessionContextView: tc.view, HideSessionContext: tc.hidden}})
+		if m.defaultMonitorContextMode() != tc.want {
+			t.Fatalf("%+v: got %d", tc, m.defaultMonitorContextMode())
+		}
+	}
+}
