@@ -238,3 +238,47 @@ func TestBalancedOneTimeApprovalDoesNotReserveStrictButtonWidths(t *testing.T) {
 		t.Fatal("immediate approval buttons were hidden by unused confirmation widths")
 	}
 }
+
+func TestStrictBenchmarkScopeShowsConfirmationAtEveryLabelSize(t *testing.T) {
+	plan := codex.BenchmarkPlan{Models: []codex.BenchmarkModelOption{{Model: "model", DisplayName: "Model", Efforts: []string{"high"}}}, Efforts: []string{"high"}, Games: []string{"P-1"}}
+	client := codex.Client{DigBenchToken: "synthetic", DigBenchGames: plan.Games}
+	for _, suite := range []int{0, 1, 2} {
+		m := Model{width: 160, height: 40, meterView: viewBenchmark, benchmarkRunner: client, benchmarkScopedRunner: client, benchmarkPlan: plan, benchmarkScope: plan.AllScope(), benchmarkCombinations: 1, benchmarkSelectedSuite: suite}
+		m.SetConfirmationMode(confirmation.Require)
+		next, cmd := m.Update(key('b'))
+		m = next.(Model)
+		if cmd == nil || !m.benchmarkSelectedArmed || m.benchmarkState == benchmarkRunning {
+			t.Fatal("first press did not exclusively arm review", suite)
+		}
+		for _, width := range []int{200, 36, 18} {
+			found := false
+			for _, row := range m.benchmarkControlLines(width) {
+				for _, segment := range row {
+					if segment.button != footerButtonBenchmarkSelected {
+						continue
+					}
+					found = true
+					if !strings.Contains(segment.text, "CONFIRM") && !strings.Contains(segment.text, "?") {
+						t.Fatal("armed scope still looks like immediate launch", suite, width, segment.text)
+					}
+					if width == 200 {
+						unit := "TURNS"
+						if suite == 2 {
+							unit = "REMOTE SESSIONS"
+						}
+						if !strings.Contains(segment.text, unit) {
+							t.Fatal("wrong launch unit", segment.text)
+						}
+					}
+				}
+			}
+			if !found {
+				t.Fatal("confirmation control disappeared", suite, width)
+			}
+		}
+		next, cmd = m.Update(key('b'))
+		if cmd == nil || next.(Model).benchmarkSelectedArmed || next.(Model).benchmarkState != benchmarkRunning {
+			t.Fatal("explicit second press did not launch", suite)
+		}
+	}
+}

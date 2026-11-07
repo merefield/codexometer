@@ -925,17 +925,15 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	if m.benchmarkPlanning {
 		allLabel = i18n.Text("[ DISCOVERING TURNS… ]")
 	}
+	unit := i18n.Text("TURNS")
 	if selected.external {
 		selectedLabel = i18n.Format("[ (B) RUN SCOPE // %d REMOTE ]", scopeTurns)
-		if m.benchmarkSelectedArmed {
-			selectedLabel = i18n.Format("[ CONFIRM // %d REMOTE SESSIONS ]", scopeTurns)
-		}
+		unit = i18n.Text("REMOTE SESSIONS")
+	}
+	if m.benchmarkSelectedArmed {
+		selectedLabel = i18n.Format("[ CONFIRM // %d %s ]", scopeTurns, unit)
 	}
 	if m.benchmarkAllArmed {
-		unit := i18n.Text("TURNS")
-		if selected.external {
-			unit = i18n.Text("REMOTE SESSIONS")
-		}
 		allLabel = i18n.Format("[ CONFIRM // %d %s ]", allTurns, unit)
 	}
 	primaryLabelsWidth := lipgloss.Width(selectedLabel) + lipgloss.Width(allLabel) + 1
@@ -944,7 +942,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	}
 	if primaryLabelsWidth > width {
 		selectedLabel = i18n.Format("[B:SCOPE %d]", scopeTurns)
-		if selected.external && m.benchmarkSelectedArmed {
+		if m.benchmarkSelectedArmed {
 			selectedLabel = i18n.Format("[B:CONFIRM %d]", scopeTurns)
 		}
 		allLabel = fmt.Sprintf("[A:SUITE %d]", allTurns)
@@ -962,7 +960,7 @@ func (m Model) benchmarkControlLines(width int) [][]benchmarkControlSegment {
 	if primaryLabelsWidth > width {
 		stopLabel = i18n.Text("[STOP]")
 		selectedLabel = fmt.Sprintf("[S:%d]", scopeTurns)
-		if selected.external && m.benchmarkSelectedArmed {
+		if m.benchmarkSelectedArmed {
 			selectedLabel = fmt.Sprintf("[S:%d?]", scopeTurns)
 		}
 		allLabel = i18n.Format("[ALL:%d]", allTurns)
