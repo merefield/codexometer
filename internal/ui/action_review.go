@@ -184,8 +184,5 @@ func (m *Model) reviewPromptAction(action, destination string, payload any, text
 	if action != "reply" {
 		title += " // " + strings.ToUpper(action)
 	}
-	if m.monitorPrompt.input.secret {
-		text = "••••"
-	}
 	return m.reviewMonitorAction(action, destination, title, text, payload)
 }

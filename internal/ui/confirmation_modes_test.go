@@ -130,29 +130,39 @@ func TestStrictTurnActionsRequireExplicitReview(t *testing.T) {
 }
 
 func TestStrictReviewMasksAllSecretAnswers(t *testing.T) {
-	m, client := promptTestModel()
-	m.monitorSessionData[0].preview.Kind = codex.SessionContextQuestion
-	m.monitorSessionData[0].preview.InputToken = client.offer.Token
-	client.offer.Questions = []codex.PromptQuestion{{Text: "Secret", Secret: true, FreeText: true}, {Text: "Public", FreeText: true}}
-	m.SetConfirmationMode(confirmation.Require)
-	m.focusMonitorPrompt()
-	m.monitorPrompt.input.SetValue("Never reveal this secret")
-	m, _, _ = m.submitMonitorPrompt()
-	m.monitorPrompt.input.SetValue("Public answer")
-	m, cmd, _ := m.submitMonitorPrompt()
-	if cmd != nil || m.actionReview == nil {
-		t.Fatal("missing question review")
-	}
-	if strings.Contains(ansi.Strip(m.render()), "Never reveal this secret") || !strings.Contains(ansi.Strip(m.render()), "Public answer") {
-		t.Fatal("question review revealed secret or hid public answer")
-	}
-	next, cmd := m.Update(key('c'))
-	if cmd == nil || next.(Model).actionReview != nil {
-		t.Fatal("question answers could not be confirmed")
-	}
-	cmd()
-	if client.answers[0] != "Never reveal this secret" {
-		t.Fatal("masking altered submitted answer")
+	for _, secretLast := range []bool{false, true} {
+		m, client := promptTestModel()
+		m.monitorSessionData[0].preview.Kind = codex.SessionContextQuestion
+		m.monitorSessionData[0].preview.InputToken = client.offer.Token
+		questions := []codex.PromptQuestion{{Text: "Secret", Secret: true, FreeText: true}, {Text: "Public", FreeText: true}}
+		answers := []string{"Never reveal this secret", "Public answer"}
+		if secretLast {
+			questions[0], questions[1] = questions[1], questions[0]
+			answers[0], answers[1] = answers[1], answers[0]
+		}
+		client.offer.Questions = questions
+		m.SetConfirmationMode(confirmation.Require)
+		m.focusMonitorPrompt()
+		var cmd tea.Cmd
+		for _, answer := range answers {
+			m.monitorPrompt.input.SetValue(answer)
+			m, cmd, _ = m.submitMonitorPrompt()
+		}
+		if cmd != nil || m.actionReview == nil {
+			t.Fatal("missing question review", secretLast)
+		}
+		shown := ansi.Strip(m.render())
+		if strings.Contains(shown, "Never reveal this secret") || !strings.Contains(shown, "Public answer") {
+			t.Fatal("review revealed a secret or hid a public answer", secretLast)
+		}
+		next, cmd := m.Update(key('c'))
+		if cmd == nil || next.(Model).actionReview != nil {
+			t.Fatal("question answers could not be confirmed", secretLast)
+		}
+		cmd()
+		if len(client.answers) != len(answers) || client.answers[0] != answers[0] || client.answers[1] != answers[1] {
+			t.Fatal("display masking altered submitted answers", secretLast)
+		}
 	}
 }
 
