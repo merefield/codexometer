@@ -598,7 +598,7 @@ codexometer --codex /path/to/codex
 | `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
 | `Left` / `Right` | In Sessions, highlight attention pills or cycle status filters when that header area has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
-| `a` | Arm, then confirm, Run All (Benchmark view only) |
+| `a` | Run All benchmarks; confirmation follows the selected policy (Benchmark view only) |
 | `x` | Dismiss the selected Sessions row; close Benchmark detail/Scope, or stop an active suite and retain its incomplete trial |
 | `d` | Select Daily in Usage, or close the Benchmark Scope screen |
 | `6` / `1` | Select 6/12 months of Usage history |
@@ -608,7 +608,7 @@ codexometer --codex /path/to/codex
 | `w` | Select Weekly in Usage, or cycle Cost, Balanced, and Speed benchmark ranking weights |
 | `Up` / `Down` | Select a session row or scroll full detail. Up beyond the first row/top of detail moves through visible attention pills to summary filters; Down retraces that path. Select a Benchmark row or scroll its open detail. Focused editors retain their own arrows |
 | `Enter` / `Space` | Open a selected Benchmark result, or toggle a Scope checkbox; in Sessions, Enter opens a keyboard-highlighted attention pill. Otherwise in full detail, Enter focuses an available reply editor or submits its text |
-| `c` | Copy an eligible Sessions reply while its detail is shown, confirm an armed session approval, select Cumulative in Usage, or copy the Benchmark matrix/open run detail; types normally in a focused editor |
+| `c` | Copy an eligible Sessions reply while its detail is shown, confirm an armed approval or strict action review, select Cumulative in Usage, or copy the Benchmark matrix/open run detail; types normally in a focused editor |
 | `l` | Clear accumulated Benchmark results while no suite is running |
 | `Page Up` / `Page Down` | Page Usage history, session rows, or Benchmark results; scroll Sessions full detail / Benchmark detail (outside a focused editor) |
 | `q` | Quit |
@@ -1684,9 +1684,9 @@ the other categories; the counts are not separate parts to add together.
 The summary counts and token totals remain global, excluding dismissed sessions
 from state counts but retaining their measured tokens. Attention pills stay
 available across filters; opening an excluded session clears the filter to keep
-its row accessible. **Close All** only dismisses matching, non-dismissed sessions
-after confirmation; filtering never stops telemetry collection or changes the
-Zero baseline. Dismissed sessions are skipped, and Down is disabled at the last
+its row accessible. **Close All** only dismisses matching, non-dismissed sessions;
+`--confirmation require` adds confirmation. Filtering never stops telemetry
+collection or changes the Zero baseline. Dismissed sessions are skipped, and Down is disabled at the last
 matching session.
 These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
@@ -1844,18 +1844,20 @@ read-only browser mode, except for the terminal-only `/commands` shortcut.
 **Connected-session commands — shared app-server required.** Availability depends
 on the installed server and session state; unsupported or empty catalogues are
 omitted. Changes require explicit selection and, in the browser, opt-in writable
-mode. Reversible session-local changes do not need a second confirmation;
-permission/directory changes and unknown actions remain guarded by default.
+mode. By default, reversible session-local changes do not need a second
+confirmation; permission/directory changes and unknown actions remain guarded.
+The [confirmation policy](#confirmation-policy) can require review for every
+substantive change or skip extra review except quota-reset redemption.
 Browse-only entries do not execute tools or change configuration.
 
 | Command family | Live options and behaviour |
 | --- | --- |
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
-| `/rename` | Edit the selected session’s saved name and apply it without a second confirmation. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
+| `/rename` | Edit the selected session’s saved name and apply it without a second confirmation by default. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. Mutations require confirmation by default. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
-| Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
+| Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation by default. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
@@ -1924,8 +1926,10 @@ The terminal `/statusline` checkbox list uses the same composer expansion, but
 deliberately does not filter: **Up/Down** selects, **Space** toggles, **Left/Right**
 reorders and **Enter** applies the local display preferences. Escape discards
 unapplied changes. Other menu levels keep help subdued on one line, shortened
-with an ellipsis when needed. Reversible settings use **Enter APPLY**; guarded
-changes keep separate review and **C CONFIRM** by default. Shrinking the terminal
+with an ellipsis when needed. By default, reversible settings use **Enter APPLY**,
+while guarded changes use separate review and **C CONFIRM**. With
+`--confirmation require`, reversible settings also use **Enter REVIEW**, then
+**C CONFIRM**; `--confirmation none` applies either kind on explicit selection. Shrinking the terminal
 cannot activate a hidden control. The composer and conversation remain in place through
 all levels, including in a wide session row. `/commands` also opens the root
 list, including local commands without a shared daemon.
@@ -1951,8 +1955,8 @@ for the upstream catalogues.
 Renames require a loaded session and revalidated options; a concurrent rename or
 reconnect invalidates the old choice. The updated name appears on the next telemetry refresh.
 
-Codex session-setting changes require a loaded session. Guarded changes retain
-their separate confirmation with a 30-second expiry. Speed-only changes can be sent while working or waiting for an approval;
+Codex session-setting changes require a loaded session. When the selected policy
+requires review, confirmations expire after 30 seconds. Speed-only changes can be sent while working or waiting for an approval;
 other settings still require idle and no pending approval. The command and options
 are revalidated before sending; stale connections and changed options fail closed.
 A normal turn start/completion does not invalidate a speed confirmation, but changed
@@ -2001,8 +2005,10 @@ action or automatically approves an incoming request. Codex permissions, fresh
 state checks, one-use capabilities and replay guards remain active. The browser
 retains server-side prepare/commit validation even when one explicit click completes
 both phases. Failed or uncertain writes are never automatically retried.
-Recognised key-repeat events cannot submit or confirm actions. The old opt-out
-flag has been removed; use `--confirmation none` instead.
+Recognised key-repeat events cannot submit or confirm actions. On terminals that
+cannot identify held-key repeats, tap action keys rather than holding them. The
+old `--no-confirm` flag has been removed; replace it with `--confirmation none`.
+Use `--confirmation balanced` to select the default explicitly.
 
 **Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
 compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
@@ -2127,8 +2133,8 @@ reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE*
 **DECLINE**, and **REJECT & STOP TURN**, with a **HUMAN APPROVAL REQUIRED** label.
 Session-wide and persistent grants cannot satisfy these checkpoints. One-time
 decisions are immediate by default; `--confirmation require` adds a review step.
-Every request still needs an explicit human action. Passive observation and read-only web mode do not advertise support
-for answering these checkpoints; use a capable native Codex client there.
+Every request still needs an explicit human action. Passive observation and
+read-only web mode do not advertise support for answering these checkpoints; use a capable native Codex client there.
 
 **File-change approvals (shared app-server only):** proposed additions, deletions
 and updates are shown as scrollable patches, with file paths, rename destinations,
@@ -2178,24 +2184,25 @@ the decision list, only the legacy Accept/Cancel pair is offered.
 Closing the detail page cancels an unsubmitted confirmation. Each visible
 approval button has a numbered shortcut (`1`–`8`, following the displayed order).
 One-time approvals, decline and reject/stop act immediately by default. Broader
-grants first select their confirmation. In strict mode, **APPROVE ONCE** on terminals supporting
+grants first select their confirmation. In strict mode, terminals supporting
 key-release events through the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
-allow the same number again after releasing it (`1`, release,
+let **APPROVE ONCE** use the same number again after releasing it (`1`, release,
 `1` for the first option). The confirmation button displays that number; held-key
 repeats cannot confirm. `C` remains an alternative, whether selected by keyboard
 or mouse. Terminals without key-release support retain the displayed `C`
 confirmation. When a confirmation is required, session-wide and persistent grants
-require `C` or clicking
-the confirmation button, not repeating their number. Armed confirmations expire
+require `C` or clicking the confirmation button, not repeating their number. Armed confirmations expire
 after five seconds and are cancelled by changing the target or leaving its view;
 a new request requires a new confirmation. Strict mode also confirms decline
-and reject/stop decisions. Only one
-session—the expanded row or full-detail target—can display approval controls
+and reject/stop decisions. Only one session—the expanded row or full-detail
+target—can display approval controls
 at a time. Hidden, clipped and compact controls have no active shortcuts, and
 typing in the reply editor never triggers approval shortcuts.
 
-This enhanced shortcut depends on the **terminal application and detected
-keyboard protocol**, not just the operating system:
+The following Approve Once examples describe `--confirmation require`; the
+balanced default sends that choice on the first explicit action. The enhanced
+confirmation shortcut depends on the **terminal application and detected keyboard
+protocol**:
 
 - **Windows Terminal 1.24 with Ubuntu/WSL:** uses `1` then `C`. Microsoft
   introduced Kitty keyboard-protocol support in
@@ -2214,15 +2221,16 @@ Kitty protocol support is **not required to run Codexometer or approve commands*
 If the confirmation button shows `C`, use `C` or click it; this is the safe
 fallback in both inline and full-screen detail, not a missing approval feature.
 
-Buttons wrap into rows when needed, reserve their
-confirmation widths so other targets do not move, and sit in a pinned footer
+Buttons wrap into rows when needed and sit in a pinned footer. Guarded buttons
+reserve confirmation widths so other targets do not move; immediate decisions
+reserve only their displayed width. The footer sits
 below the scrolling request text, separated by one blank line when space allows.
 Very short terminals omit that spacer first. Controls are hidden if the terminal
-cannot fit them with room to read the request. All permission grants require
-their own explicit second confirmation; confirming one choice cannot confirm another.
+cannot fit them with room to read the request. When confirmation is required, it
+binds exactly one choice; confirming it cannot confirm another.
 
 Actions are bound to a single pending request on the current connection. They
-become unavailable when resolved elsewhere, the turn ends, or the connection
+become unavailable when the request is resolved or invalidated, or the connection
 closes. The server arbitrates simultaneous responses from multiple clients.
 Sending a decision is not proof that the command ran: check Codex for the outcome.
 Failed or ambiguous sends are not automatically retried.
@@ -2375,8 +2383,8 @@ authenticated `GET /games` and uses every game name returned by DigBench; no
 clear all, or choose any subset. **Run Scope** executes every selected game
 against every selected compatible model/reasoning-effort pair. **Run All**
 executes every discovered game against every compatible pair. Both controls
-display the exact remote-session count and require a second confirmation before
-creating those sessions, because every game/pair invocation creates a persisted
+display the exact remote-session count and require a second confirmation by
+default before creating those sessions, because every game/pair invocation creates a persisted
 remote session with a random seed.
 
 Create a token from the [DigBench token page](https://digbench.ai/account/tokens)
@@ -2515,8 +2523,9 @@ every selected compatible model/effort pair. The button is enabled whenever
 that scope contains at least one benchmark and one compatible pair, and its
 label shows the resulting turn count. **Run All** deliberately ignores the
 scope and executes every benchmark in the active suite against every compatible
-model/effort pair. Codexometer displays that exact total and requires a second
-confirmation within five seconds. A fresh, ephemeral, read-only app-server
+model/effort pair. Codexometer displays that exact total and, by default, requires
+a second confirmation within five seconds. `--confirmation none` skips that
+extra step; strict mode also confirms individual built-in scope launches. A fresh, ephemeral, read-only app-server
 thread is used for each built-in trial, so benchmark history does not clutter
 normal Codex sessions. The turns still consume the same account quota shown by
 Codexometer unless a benchmark API key is supplied; with a key, they use
@@ -2951,6 +2960,8 @@ enlarge the terminal. The Quota page retains only its existing reset controls.
 Click **APPLY PROFILE** (or press `1` for the selected session), then click
 **CONFIRM PROFILE** or press `C` within ten seconds. Click **SKIP** or press `2`
 to skip that session at the current threshold; `Esc` cancels confirmation.
+Applying a profile is immediate with `--confirmation none`. Strict mode also
+reviews Skip, using `C` or a confirmation click to commit and `Esc` to cancel.
 Navigation, resizing and inventory refresh disarm confirmations. Each approval
 is for exactly one session—there is no bulk approval and newly discovered
 sessions need their own review. Each pill represents a distinct review: one
@@ -2966,7 +2977,9 @@ that session's profile change, just like the terminal. Native Codex requests
 remain accessible through their own pills or normal session detail. Follow-up
 composers stay hidden while a quota review is pending, preserving existing
 drafts; switching reviews cancels pending confirmation. Select **APPLY PROFILE**
-or **SKIP**, then review and confirm. Cross-session quota navigation is blocked
+or **SKIP**. Apply requires review by default; Skip is immediate. Strict mode
+reviews either choice, while `--confirmation none` applies either directly.
+Cross-session quota navigation is blocked
 while the current session has an unsent draft or a send in progress. Confirmations
 bind to the exact session,
 current settings, threshold and quota window and expire after 30 seconds.
@@ -3193,7 +3206,8 @@ the dashboard. The composer stays anchored below it; on shorter terminals the
 form scrolls with the mouse wheel and follows keyboard focus. Esc or Ctrl+S
 returns to the conversation, preserving a new follow-up draft. Cancelling an
 edit to a saved trigger leaves that trigger and any separate reply draft intact.
-Normal Enter-to-send remains immediate. The structured form offers **after quota
+Normal Enter-to-send is immediate by default; `--confirmation require` adds
+a review of the exact draft before sending. The structured form offers **after quota
 refresh**, a delay in hours/minutes, or a calendar date and local time. Use Tab to
 move between visible fields (Shift+Tab goes back), arrows to adjust, digits to
 enter hours/minutes, and Page Up/Down to change calendar month. Calendar arrows
@@ -3207,11 +3221,14 @@ Hover highlights the individual control without changing the selected trigger.
 The dashboard tabs, attention pills and footer remain usable while editing;
 navigating away retains the unsaved form in memory for that session. Explicit
 Back/Esc still cancels an edit. Editing or deleting a native queued message also
-stays inside the detail pane; Tab/Shift+Tab selects its controls, Enter confirms
-the selected action and Esc cancels.
+stays inside the detail pane; Tab/Shift+Tab selects its controls, Enter submits
+the selected action and Esc cancels. Strict mode adds review before committing
+an ordinary edit; deletion keeps its existing review unless confirmation is
+disabled.
 
 Writable web mode offers the same triggers in the full-detail composer, with the
-browser's date/time picker and a separate review/confirmation step. Read-only web
+browser's date/time picker and a separate review/confirmation step by default.
+`--confirmation none` skips that extra step. Read-only web
 mode cannot create or access scheduled prompts. Both composers have a subtle
 theme-coloured background.
 
@@ -3238,15 +3255,18 @@ theme-coloured background.
   show an explanation before saving. Existing triggers use **SAVE CHANGES**.
   Terminal keyboard hints follow the focused field; the selected trigger stays
   underlined when unfocused and filled when focused.
-  **Ctrl+S** edits; **Ctrl+D** deletes the trigger. **Ctrl+N** requests
-  **Send now**, followed by **Ctrl+Y** or a confirmation click; Escape cancels that
-  confirmation. These actions also have clickable buttons. Send now remains
+  **Ctrl+S** edits; **Ctrl+D** deletes the trigger. Strict mode reviews deletion
+  before cancelling the saved job. **Ctrl+N** requests
+  **Send now**, followed by **Ctrl+Y** or a confirmation click by default;
+  `--confirmation none` skips the extra step. Escape cancels an armed confirmation. These actions also have clickable buttons. Send now remains
   disabled without fresh available quota and an eligible idle session. It shares
   the automatic dispatch guard so the same trigger cannot send twice. Editing
   invalidates older Send now confirmations. Approval/question controls retain
   priority over the pending-trigger controls.
 - Writable web detail provides **Edit · Ctrl+S**, **Delete trigger** and separately
-  confirmed **Send now**. Standard Tab/Shift+Tab and native form keyboard controls
+  confirmed **Send now** by default. Strict mode also reviews **Delete trigger**;
+  `--confirmation none` skips extra review. Standard Tab/Shift+Tab and native form
+  keyboard controls
   cover the entire web form. Back leaves the existing trigger unchanged.
   Browser editing does not pause the saved trigger. If it is changed, deleted or
   sent while you edit, the old edit cannot overwrite or recreate it: go back and
