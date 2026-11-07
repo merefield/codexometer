@@ -16,14 +16,14 @@ import (
 // A strict review holds no runnable closure. Confirmation re-enters the normal
 // action path, which rechecks the target, exact payload and live capability.
 type monitorActionReview struct {
-	action, target, title, text string
-	signature                   [32]byte
-	until                       time.Time
-	scroll                      int
-	approved                    bool
+	action, target, destination, title, text string
+	signature                                [32]byte
+	until                                    time.Time
+	scroll                                   int
+	approved                                 bool
 }
 
-func (m *Model) reviewMonitorAction(action, title, text string, payload any) bool {
+func (m *Model) reviewMonitorAction(action, destination, title, text string, payload any) bool {
 	if !m.confirmations.Required(confirmation.Narrow) {
 		return false
 	}
@@ -33,11 +33,11 @@ func (m *Model) reviewMonitorAction(action, title, text string, payload any) boo
 	}
 	signature := sha256.Sum256(encoded)
 	target := m.monitorContextTarget()
-	if r := m.actionReview; r != nil && r.approved && r.action == action && r.target == target && r.signature == signature && time.Now().Before(r.until) {
+	if r := m.actionReview; r != nil && r.approved && r.action == action && r.target == target && r.destination == destination && r.signature == signature && time.Now().Before(r.until) {
 		m.actionReview = nil
 		return false
 	}
-	m.actionReview = &monitorActionReview{action: action, target: target, title: title, text: text, signature: signature, until: time.Now().Add(30 * time.Second)}
+	m.actionReview = &monitorActionReview{action: action, target: target, destination: destination, title: title, text: text, signature: signature, until: time.Now().Add(30 * time.Second)}
 	return true
 }
 
@@ -75,7 +75,7 @@ func (m Model) actionReviewButtons() []monitorNavigationButton {
 func (m Model) renderActionReview(width, height int, colors palette) string {
 	r := m.actionReview
 	buttons, rows, gap := layoutActionReview(width, height)
-	lines := sessionWebLiteralTextLines(codex.SanitizeApprovalText(r.target+"\n\n"+r.text), max(width-4, 1))
+	lines := sessionWebLiteralTextLines(codex.SanitizeApprovalText(r.destination+"\n\n"+r.text), max(width-4, 1))
 	start := min(r.scroll, max(len(lines)-rows, 0))
 	body := append([]string(nil), lines[start:min(start+rows, len(lines))]...)
 	for len(body) < rows+gap {
@@ -179,7 +179,7 @@ func (m Model) updateActionReview(msg tea.Msg) (Model, tea.Cmd, bool) {
 
 // Ordinary sends and edits are narrow actions. Permission grants, scheduling,
 // queue deletion and other guarded workflows retain their own review screens.
-func (m *Model) reviewPromptAction(action string, payload any, text string) bool {
+func (m *Model) reviewPromptAction(action, destination string, payload any, text string) bool {
 	title := i18n.Text("REPLY")
 	if action != "reply" {
 		title += " // " + strings.ToUpper(action)
@@ -187,5 +187,5 @@ func (m *Model) reviewPromptAction(action string, payload any, text string) bool
 	if m.monitorPrompt.input.secret {
 		text = "••••"
 	}
-	return m.reviewMonitorAction(action, title, text, payload)
+	return m.reviewMonitorAction(action, destination, title, text, payload)
 }

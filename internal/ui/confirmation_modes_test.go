@@ -282,3 +282,33 @@ func TestStrictBenchmarkScopeShowsConfirmationAtEveryLabelSize(t *testing.T) {
 		}
 	}
 }
+
+func TestStrictChildQuestionDisplaysItsActualDestination(t *testing.T) {
+	m, client := promptTestModel()
+	client.offer.ThreadID = "child-worker"
+	client.offer.Questions = []codex.PromptQuestion{{Text: "Question", FreeText: true}}
+	row := &m.monitorSessionData[0]
+	row.preview.Kind = codex.SessionContextQuestion
+	row.preview.ThreadID = client.offer.ThreadID
+	row.preview.InputToken = client.offer.Token
+	m.SetConfirmationMode(confirmation.Require)
+	m.focusMonitorPrompt()
+	m.monitorPrompt.input.SetValue("Answer for the child")
+	m, cmd, _ := m.submitMonitorPrompt()
+	if cmd != nil || m.actionReview == nil || m.actionReview.target != "root-one" || m.actionReview.destination != "child-worker" {
+		t.Fatal("review confused the visible row and action destination")
+	}
+	g := m.monitorDashboardLayout()
+	shown := ansi.Strip(m.renderActionReview(g.contentWidth, g.meterHeight, paletteFor(m.theme)))
+	if !strings.Contains(shown, "child-worker") || strings.Contains(shown, "root-one") {
+		t.Fatal("review displays the wrong answer destination", shown)
+	}
+	next, cmd := m.Update(key('c'))
+	if cmd == nil || next.(Model).actionReview != nil {
+		t.Fatal("child answer could not be confirmed")
+	}
+	cmd()
+	if len(client.answers) != 1 || client.answers[0] != "Answer for the child" {
+		t.Fatal("review altered the answer")
+	}
+}

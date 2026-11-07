@@ -160,7 +160,7 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 	case "esc":
 		p.confirmID = ""
 	case "ctrl+d":
-		if m.reviewMonitorAction("trigger-delete", i18n.Text("TRIGGER SET"), j.Text, j) {
+		if m.reviewMonitorAction("trigger-delete", j.Session, i18n.Text("TRIGGER SET"), j.Text, j) {
 			return nil
 		}
 		if err := p.queue.Cancel(j.Session, j.ID); err != nil {

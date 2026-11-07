@@ -675,7 +675,7 @@ func (m Model) changeQueueItem() (Model, tea.Cmd, bool) {
 		q.notice = i18n.Text("Enlarge the terminal before confirming.")
 		return m, nil, true
 	}
-	if !q.deleting && m.reviewMonitorAction("queue-edit", i18n.Text("EDIT QUEUED MESSAGE"), text, []any{q.session, q.item, text}) {
+	if !q.deleting && m.reviewMonitorAction("queue-edit", q.session, i18n.Text("EDIT QUEUED MESSAGE"), text, []any{q.session, q.item, text}) {
 		return m, nil, true
 	}
 	q.busy = true

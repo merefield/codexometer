@@ -483,7 +483,7 @@ func (m Model) submitMonitorTurn(action string) (Model, tea.Cmd, bool) {
 	if !ok || p.busy || o.Token == "" || o.Token != p.offer.Token || o.TurnID == "" || action != "interrupt" && text == "" {
 		return m, nil, true
 	}
-	if m.reviewPromptAction(action, []any{o.Token, o.TurnID, action, text}, text) {
+	if m.reviewPromptAction(action, o.ThreadID, []any{o.Token, o.TurnID, action, text}, text) {
 		return m, nil, true
 	}
 	p.busy, p.notice = true, ""
@@ -544,7 +544,7 @@ func (m Model) submitMonitorPrompt() (Model, tea.Cmd, bool) {
 			display[i] = "••••"
 		}
 	}
-	if m.reviewPromptAction("reply", []any{p.offer.Token, p.answers}, strings.Join(display, "\n")) {
+	if m.reviewPromptAction("reply", p.offer.ThreadID, []any{p.offer.Token, p.answers}, strings.Join(display, "\n")) {
 		return m, nil, true
 	}
 	token, session := p.offer.Token, p.session
