@@ -568,6 +568,7 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			m.moveMonitorHistory(1)
 		case "history:live":
 			m.showLiveMonitorHistory()
+			m.monitorReadIntent = m.monitorContextDetail
 		default:
 			if page, ok := strings.CutPrefix(m.monitorContextHover, "attention-next:"); ok {
 				m.monitorAttentionPage, _ = strconv.Atoi(page)
@@ -576,6 +577,7 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			} else if id, ok := strings.CutPrefix(m.monitorContextHover, "badge:"); ok {
 				m.setRowContext(id, contextFull)
 				m.showLiveMonitorHistory()
+				m.monitorReadIntent = id
 				row := m.monitorContextRows[id]
 				row.review = "context"
 				m.monitorContextRows[id] = row

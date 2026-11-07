@@ -63,7 +63,7 @@ func (m *Model) acknowledgeMonitorResult() tea.Cmd {
 	id := m.monitorReadIntent
 	m.monitorReadIntent = ""
 	client, ok := m.fetcher.(codex.SessionReadStateClient)
-	if !ok || id == "" || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.contextTargetHidden() || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open || m.rowContextMode(id) == contextGraph {
+	if !ok || id == "" || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open || m.rowContextMode(id) == contextGraph {
 		return nil
 	}
 	for _, row := range m.monitorSessionData {

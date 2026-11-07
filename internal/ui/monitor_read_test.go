@@ -124,3 +124,67 @@ func TestReadReceiptSurvivesMonitorStartAndSessionUpdates(t *testing.T) {
 		t.Fatal("later activity did not restore unread result")
 	}
 }
+
+func TestUnreadLiveReviewGestures(t *testing.T) {
+	for _, action := range []string{"badge:root-one", "history:live"} {
+		t.Run(action, func(t *testing.T) {
+			m, client := unreadTestModel()
+			if action == "history:live" {
+				m.setRowContext("root-one", contextFull)
+				old := m.monitorSessionData[0].preview
+				old.TurnID = "older"
+				m.saveMonitorHistory("root-one", monitorTurnHistory{selected: &old})
+			}
+			for y := 0; y < m.height; y++ {
+				for x := 0; x < m.width; x++ {
+					if m.monitorContextAt(x, y) != action {
+						continue
+					}
+					next, _, handled := m.updateMonitorContextMouse(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+					if !handled {
+						t.Fatal("review gesture not handled")
+					}
+					cmd := next.acknowledgeMonitorResult()
+					if cmd == nil {
+						t.Fatal("explicit review did not stage receipt")
+					}
+					cmd()
+					if len(client.reads) != 1 {
+						t.Fatal("review did not acknowledge result")
+					}
+					return
+				}
+			}
+			t.Fatal("review control has no click target")
+		})
+	}
+	m, _ := unreadTestModel()
+	m.setRowContext("root-one", contextFull)
+	m.showLiveMonitorHistory()
+	if m.monitorReadIntent != "" {
+		t.Fatal("automatic Live restoration staged a receipt")
+	}
+}
+
+func TestUnreadIndependentPartialPaneWithHiddenGlobalLayout(t *testing.T) {
+	m, client := unreadTestModel()
+	m.monitorContextHidden = true
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = next.(Model)
+	if !m.contextTargetHidden() || m.rowContextMode("root-one") != contextSplit || cmd == nil || !m.monitorReadBusy {
+		t.Fatal("opening independent partial pane did not acknowledge visible result")
+	}
+	cmd()
+	if len(client.reads) != 1 {
+		t.Fatal("visible partial pane was not acknowledged")
+	}
+	m.monitorReadBusy = false
+	rect, ok := m.monitorResultRect("root-one")
+	if !ok {
+		t.Fatal("partial result has no visible body")
+	}
+	next, cmd = m.Update(tea.MouseWheelMsg{X: rect.x, Y: rect.y, Button: tea.MouseWheelDown})
+	if !next.(Model).monitorReadBusy || cmd == nil {
+		t.Fatal("wheel over independent result did not acknowledge it")
+	}
+}
