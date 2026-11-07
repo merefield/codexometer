@@ -312,3 +312,44 @@ func TestStrictChildQuestionDisplaysItsActualDestination(t *testing.T) {
 		t.Fatal("review altered the answer")
 	}
 }
+
+func TestStrictProfileSkipConfirmsTheClickedPartialRow(t *testing.T) {
+	for _, mode := range []int{contextSplit, contextWide} {
+		for _, target := range []string{"one", "two"} {
+			m, client := profileTestModel(t)
+			m.width, m.height = 240, 80
+			m.SetConfirmationMode(confirmation.Require)
+			m.setRowContext("one", mode)
+			presentation := m.monitorContextTarget()
+			clicked := false
+			for _, pane := range m.monitorPartialContextPanes() {
+				if pane.session.id != target {
+					continue
+				}
+				buttons := m.profileButtons(pane.frame.width, pane.frame.height, pane.session)
+				if len(buttons) != 2 {
+					t.Fatal("profile review does not fit fixture")
+				}
+				b := buttons[1]
+				_, _, cy := monitorContextBodyLayout(pane.frame.height, buttons[len(buttons)-1].y+1)
+				g := m.monitorDashboardLayout()
+				next, _ := m.Update(tea.MouseClickMsg{X: 4 + pane.frame.x + b.x, Y: g.meterY + pane.frame.y + cy + b.y, Button: tea.MouseLeft})
+				m = next.(Model)
+				clicked = true
+				break
+			}
+			if !clicked || m.actionReview == nil || m.actionReview.target != presentation || m.actionReview.destination != target || len(m.quotaCandidates()) != 2 {
+				t.Fatal("click did not review the intended profile", mode, target)
+			}
+			next, cmd := m.Update(key('c'))
+			m = next.(Model)
+			if cmd != nil || m.actionReview != nil || client.updates != 0 {
+				t.Fatal("Skip wrote settings or failed to finish review", mode, target)
+			}
+			candidates := m.quotaCandidates()
+			if len(candidates) != 1 || candidates[0].ID == target {
+				t.Fatal("Skip did not preserve the clicked session ID", mode, target, candidates)
+			}
+		}
+	}
+}

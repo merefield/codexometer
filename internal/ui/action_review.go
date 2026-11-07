@@ -163,7 +163,7 @@ func (m Model) updateActionReview(msg tea.Msg) (Model, tea.Cmd, bool) {
 	case "queue-edit":
 		next, cmd, _ = m.changeQueueItem()
 	case "profile-skip":
-		next, cmd, _ = m.profileAction("profile-skip:"+review.target, false)
+		next, cmd, _ = m.profileAction("profile-skip:"+review.destination, false)
 	case "trigger-delete":
 		cmd = m.triggerAction("ctrl+d")
 		next = m
