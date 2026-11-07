@@ -205,3 +205,56 @@ func TestMonitorApprovalButtonsReappearAfterDismissal(t *testing.T) {
 		t.Fatal("shrink did not restore safety warning")
 	}
 }
+
+func TestInlineApprovalRequiresTheCompleteLongReview(t *testing.T) {
+	for _, family := range []string{"command", "file", "mcp", "network", "stdin"} {
+		t.Run(family, func(t *testing.T) {
+			m := approvalTestModel()
+			m.setRowContext("root-one", contextWide)
+			c := &m.monitorSessionData[0].preview
+			text := strings.Repeat("review-data ", 650) + "END OF REVIEW"
+			c.ThreadID = "root-one"
+			c.Text = text
+			c.ApprovalOptions = [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "cancel", Value: "cancel"}}
+			switch family {
+			case "command":
+				c.CommandDetails = codex.ApprovalCommandDetails{Command: text, Directory: "/end"}
+			case "file":
+				c.FileChanges = `[{"path":"a","kind":{"type":"add"},"diff":"+ok"}]`
+			case "mcp":
+				c.MCPTool = codex.MCPToolApprovalDetails{Server: "tools", Message: "Allow tool?", Arguments: text}
+			case "network":
+				c.ActionDetails = codex.ApprovalActionDetails{Kind: "network", Target: "example.com", Protocol: "https", Justification: text}
+			case "stdin":
+				c.ActionDetails = codex.ApprovalActionDetails{Kind: "stdin", Target: "123", Input: text, Directory: "/end"}
+			}
+			row := m.monitorSessionData[0]
+			const width = 120
+			clipped := row
+			clipped.preview.Text = codex.SanitizeSessionContext(text)
+			// Leave exactly enough room for the old 4 KiB excerpt, but not its hidden tail.
+			previewRows := len(expandedContextLines(width, clipped))
+			controls := m.monitorApprovalButtons(width, 200)
+			controlRows := controls[len(controls)-1].y + 1
+			height := previewRows + controlRows + 3
+			complete := expandedContextLines(width, row)
+			if !strings.Contains(strings.Join(complete, ""), "END OF REVIEW") || len(complete) <= previewRows {
+				t.Fatal("complete approval text was truncated")
+			}
+			if len(m.expandedApprovalButtons(width, height, row)) != 0 {
+				t.Fatal("inline buttons allow approval of an unseen tail")
+			}
+			navigation := m.expandedContextNavigation(width, height, row)
+			if len(navigation) == 0 || navigation[0].action != "detail:root-one" {
+				t.Fatal("missing route to full approval review")
+			}
+			if len(m.expandedApprovalButtons(width, len(complete)+controlRows+3, row)) != 2 {
+				t.Fatal("complete fitting request lost its inline controls")
+			}
+			m.openMonitorContext("root-one")
+			if !strings.Contains(strings.Join(m.contextDetailLines(width-4), ""), "END OF REVIEW") {
+				t.Fatal("full Detail omitted the review tail")
+			}
+		})
+	}
+}

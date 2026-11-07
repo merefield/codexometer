@@ -214,12 +214,12 @@ func (m *Model) setRowContext(id string, mode int) {
 }
 
 func expandedContextLines(width int, s monitorSession) []string {
-	wrap := sessionWebTextLines
+	wrap, sanitize := sessionWebTextLines, codex.SanitizeSessionContext
 	if s.preview.Kind == codex.SessionContextApproval {
-		wrap = sessionWebLiteralTextLines
+		wrap, sanitize = sessionWebLiteralTextLines, codex.SanitizeApprovalText
 	}
 	if s.preview.FileChanges != "" {
-		lines := wrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1))
+		lines := wrap(sanitize(s.preview.Text), max(width-4, 1))
 		for _, line := range fileApprovalDocument(s.preview.FileChanges, max(width-4, 1)) {
 			lines = append(lines, line.text)
 		}
@@ -229,7 +229,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
 	header := terminalLabel(s.preview.ThreadID) + " // " + terminalLabel(s.preview.Source)
-	text := header + "\n" + codex.SanitizeSessionContext(s.preview.Text)
+	text := header + "\n" + sanitize(s.preview.Text)
 	if s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" {
 		text = header
 		if s.preview.CurrentTask != "" {
@@ -238,7 +238,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 		if s.preview.LatestGuidance != "" {
 			text += "\n" + ansi.Truncate(i18n.Text("LATEST GUIDANCE")+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.LatestGuidance)), " "), max(width-4, 1), "…")
 		}
-		text += "\n\n" + codex.SanitizeSessionContext(s.preview.Text)
+		text += "\n\n" + sanitize(s.preview.Text)
 	}
 	return wrap(text, max(width-4, 1))
 }
