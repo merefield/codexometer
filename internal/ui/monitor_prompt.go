@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -362,7 +363,7 @@ func (m Model) updateMonitorPrompt(msg tea.Msg) (Model, tea.Cmd, bool) {
 							*p = monitorPromptState{session: p.session}
 							m.monitorApprovalConfirm = ""
 							m.monitorApprovalNumberReleased = false
-							if m.confirmations.NoConfirm {
+							if !m.confirmations.Required(confirmation.Approval(s.preview.ApprovalOptions[index].Kind)) {
 								// Losing composer focus must never reinterpret typing
 								// as an immediate grant, even with fewer UI prompts.
 								return m, nil, true
@@ -482,6 +483,9 @@ func (m Model) submitMonitorTurn(action string) (Model, tea.Cmd, bool) {
 	if !ok || p.busy || o.Token == "" || o.Token != p.offer.Token || o.TurnID == "" || action != "interrupt" && text == "" {
 		return m, nil, true
 	}
+	if m.reviewPromptAction(action, o.ThreadID, []any{o.Token, o.TurnID, action, text}, text) {
+		return m, nil, true
+	}
 	p.busy, p.notice = true, ""
 	session := p.session
 	steer := monitorSteerReceipt{session: session, thread: o.ThreadID, turn: o.TurnID, text: codex.SanitizeSessionContext(text), sentAt: time.Now()}
@@ -534,6 +538,15 @@ func (m Model) submitMonitorPrompt() (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	answers := append([]string(nil), p.answers[:p.question+1]...)
+	display := append([]string(nil), answers...)
+	for i, question := range p.offer.Questions {
+		if i < len(display) && question.Secret {
+			display[i] = "••••"
+		}
+	}
+	if m.reviewPromptAction("reply", p.offer.ThreadID, []any{p.offer.Token, p.answers}, strings.Join(display, "\n")) {
+		return m, nil, true
+	}
 	token, session := p.offer.Token, p.session
 	p.busy = true
 	m.monitorDetailSent = detailSentState{}

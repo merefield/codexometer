@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,10 +19,10 @@ func TestLoggingFlagsAndLaunchFailures(t *testing.T) {
 	for _, browser := range []bool{false, true} {
 		path := filepath.Join(t.TempDir(), "error.log")
 		deps := dependencies{
-			startUI: func(ui.Fetcher, time.Duration, bool, int, int, bool) error {
+			startUI: func(ui.Fetcher, time.Duration, bool, int, int, confirmation.Mode) error {
 				return errors.New("PRIVATE_UPSTREAM_BODY")
 			},
-			startWeb: func(web.Source, time.Duration, int, io.Writer, bool, bool) error {
+			startWeb: func(web.Source, time.Duration, int, io.Writer, bool, confirmation.Mode) error {
 				return errors.New("PRIVATE_UPSTREAM_BODY")
 			},
 		}

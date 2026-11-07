@@ -80,6 +80,9 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
+	if m.actionReview != nil {
+		return monitorView{view: m.renderActionReview(width, height, colors)}
+	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		summary, rows, buttons := m.monitorDetailHeader(width, height)
 		var parts []string

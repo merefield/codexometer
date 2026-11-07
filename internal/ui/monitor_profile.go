@@ -246,6 +246,9 @@ func (m Model) profileAction(action string, confirm bool) (Model, tea.Cmd, bool)
 		return m, nil, true
 	}
 	if skip {
+		if m.reviewMonitorAction("profile-skip", id, i18n.Text("QUOTA THRESHOLD"), i18n.Text("[ (2) SKIP ]"), []any{id, m.quotaStepPending, m.quotaStepWindow}) {
+			return m, nil, true
+		}
 		m.declineQuotaSession(id)
 		return m, nil, true
 	}

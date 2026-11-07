@@ -244,7 +244,7 @@ export interface Snapshot {
   thresholds?: Array<Threshold> | null;
   profileError?: boolean;
   control: boolean;
-  noConfirm?: boolean;
+  confirmationMode: string;
   version: string;
   meters: Array<Meter>;
   credits: Array<Credit>;

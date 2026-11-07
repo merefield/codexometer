@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/ui"
 	"github.com/merefield/codexometer/internal/web"
 )
@@ -22,14 +23,14 @@ func TestLaunchModesAreIsolated(t *testing.T) {
 			t.Setenv("OPENAI_API_KEY", "private-key")
 			terminal, browser, discovery := 0, 0, 0
 			deps := dependencies{
-				startUI: func(_ ui.Fetcher, refresh time.Duration, inline bool, threshold, hours int, _ bool) error {
+				startUI: func(_ ui.Fetcher, refresh time.Duration, inline bool, threshold, hours int, _ confirmation.Mode) error {
 					terminal++
 					if refresh != time.Minute || inline || threshold != 80 || hours != 72 {
 						t.Fatal("terminal defaults changed")
 					}
 					return nil
 				},
-				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool, _ bool) error {
+				startWeb: func(source web.Source, refresh time.Duration, port int, output io.Writer, control bool, _ confirmation.Mode) error {
 					browser++
 					if refresh != time.Minute || port != 54321 || control {
 						t.Fatal("web options missing")
@@ -76,7 +77,7 @@ func TestWebFlagsAndErrors(t *testing.T) {
 		}
 	}
 	var out, err bytes.Buffer
-	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer, _ bool, _ bool) error {
+	deps := dependencies{startWeb: func(source web.Source, _ time.Duration, _ int, _ io.Writer, _ bool, _ confirmation.Mode) error {
 		if _, ok := source.(*demoFetcher); !ok {
 			t.Fatal("web demo not isolated")
 		}
@@ -94,7 +95,7 @@ func TestWebFlagsAndErrors(t *testing.T) {
 
 func TestWebControlExplicitOptIn(t *testing.T) {
 	var out, err bytes.Buffer
-	deps := dependencies{startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, control bool, _ bool) error {
+	deps := dependencies{startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, control bool, _ confirmation.Mode) error {
 		if !control {
 			t.Fatal("explicit control flag lost")
 		}
@@ -105,22 +106,22 @@ func TestWebControlExplicitOptIn(t *testing.T) {
 	}
 }
 
-func TestNoConfirmFlagIsLaunchScopedAndDoesNotEnableWebWrites(t *testing.T) {
+func TestConfirmationFlagIsLaunchScopedAndDoesNotEnableWebWrites(t *testing.T) {
 	for _, browser := range []bool{false, true} {
-		for _, enabled := range []bool{false, true} {
+		for _, wanted := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
 			seen := false
 			deps := dependencies{
-				startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _, _ int, noConfirm bool) error {
+				startUI: func(_ ui.Fetcher, _ time.Duration, _ bool, _, _ int, mode confirmation.Mode) error {
 					seen = true
-					if browser || noConfirm != enabled {
-						t.Fatal("wrong terminal policy")
+					if browser || mode != wanted {
+						t.Fatal("wrong terminal policy", mode, wanted)
 					}
 					return nil
 				},
-				startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, writable, noConfirm bool) error {
+				startWeb: func(_ web.Source, _ time.Duration, _ int, _ io.Writer, writable bool, mode confirmation.Mode) error {
 					seen = true
-					if !browser || writable || noConfirm != enabled {
-						t.Fatal("no-confirm enabled web writes or lost policy")
+					if !browser || writable || mode != wanted {
+						t.Fatal("confirmation policy enabled writes or lost mode", mode, wanted)
 					}
 					return nil
 				},
@@ -129,13 +130,22 @@ func TestNoConfirmFlagIsLaunchScopedAndDoesNotEnableWebWrites(t *testing.T) {
 			if browser {
 				args = append(args, "--web")
 			}
-			if enabled {
-				args = append(args, "--no-confirm")
+			if wanted != confirmation.Balanced {
+				args = append(args, "--confirmation", string(wanted))
 			}
 			var out, stderr bytes.Buffer
 			if code := run(args, &out, &stderr, deps); code != 0 || !seen {
-				t.Fatal("confirmation flag did not reach launch", code, stderr.String())
+				t.Fatal(code, stderr.String())
 			}
+		}
+	}
+}
+
+func TestInvalidConfirmationFlagsFailBeforeLaunch(t *testing.T) {
+	for _, args := range [][]string{{"--confirmation", "no"}, {"--confirmation", ""}, {"--no-confirm"}, {"--require-confirm"}} {
+		var out, stderr bytes.Buffer
+		if code := run(args, &out, &stderr, dependencies{}); code != 2 || stderr.Len() == 0 {
+			t.Fatal(args, code, stderr.String())
 		}
 	}
 }

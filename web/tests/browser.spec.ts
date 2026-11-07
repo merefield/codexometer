@@ -56,10 +56,12 @@ const test = base.extend<{
   pairingURL: string;
   controlMode: boolean;
   quotaMode: string;
+  confirmationMode: string;
 }>({
   controlMode: [false, { option: true }],
   quotaMode: ['', { option: true }],
-  pairingURL: async ({ controlMode, quotaMode }, use) => {
+  confirmationMode: ['balanced', { option: true }],
+  pairingURL: async ({ controlMode, quotaMode, confirmationMode }, use) => {
     const child = spawn(
       process.env.CODEXOMETER_TEST_BINARY ||
         resolve(
@@ -69,6 +71,8 @@ const test = base.extend<{
       [
         '--web',
         '--demo',
+        '--confirmation',
+        confirmationMode,
         ...(controlMode ? ['--web-control'] : []),
         ...(quotaMode
           ? ['--quota-step-down', '1:gpt-5.6-luna:medium::' + quotaMode]
@@ -119,7 +123,11 @@ const test = base.extend<{
 test.use({ reducedMotion: 'reduce' });
 
 test.describe('quota profile reviews', () => {
-  test.use({ controlMode: true, quotaMode: 'ask' });
+  test.use({
+    controlMode: true,
+    quotaMode: 'ask',
+    confirmationMode: 'require',
+  });
   test('profile and native approval coexist and confirm independently', async ({
     page,
     pairingURL,
@@ -597,8 +605,12 @@ test.describe('opt-in real server with simulated Codex actions', () => {
     await page
       .getByRole('radio', { name: 'APPROVE ONCE', exact: true })
       .check();
-    await page.getByRole('button', { name: 'REVIEW BEFORE SENDING' }).click();
-    await page.getByRole('button', { name: 'CONFIRM APPROVE ONCE' }).click();
+    await page
+      .getByRole('button', { name: 'SEND DECISION', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'CONFIRM APPROVE ONCE', exact: true }),
+    ).toHaveCount(0);
     await expect(page.locator('.full-detail')).toContainText(
       'Simulated decision: accept. No command was executed.',
     );
@@ -832,10 +844,11 @@ async function mockActions(
   kind = 'approval',
   noConfirm = false,
   sendInitial = true,
+  confirmationMode = noConfirm ? 'none' : 'require',
 ) {
   const snapshot = {
     control: true,
-    noConfirm,
+    confirmationMode,
     version: 'test',
     meters: [],
     credits: [],
@@ -1115,6 +1128,9 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
     page.getByRole('button', { name: 'CONFIRM SAVE CHANGES' }),
   ).toHaveCount(0);
   await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
+  await pending
+    .getByRole('button', { name: 'CONFIRM DELETE TRIGGER', exact: true })
+    .click();
   await expect(pending).toHaveCount(0);
 });
 
@@ -1923,7 +1939,13 @@ async function mockSpeedCommands(
   reversible = false,
   noConfirm = false,
 ) {
-  await mockActions(page, 'prompt', noConfirm);
+  await mockActions(
+    page,
+    'prompt',
+    noConfirm,
+    true,
+    noConfirm ? 'none' : 'balanced',
+  );
   const calls: { mode: string; path: string; choice?: string }[] = [];
   let reject = false;
   await page.route('**/api/control/commands', async (route) => {
@@ -5417,3 +5439,78 @@ test('restoring full detail with a late first snapshot keeps the result unread u
   await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
   await expect.poll(() => reads.length).toBe(2);
 });
+
+for (const mode of ['balanced', 'none', 'require']) {
+  for (const persistent of [false, true]) {
+    test(`confirmation ${mode} respects ${persistent ? 'session grant' : 'one-time approval'} scope`, async ({
+      page,
+      pairingURL,
+    }) => {
+      const { calls } = await mockActions(page, 'approval', false, true, mode);
+      await page.goto(pairingURL);
+      await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+      await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+      await page
+        .getByRole('radio', {
+          name: persistent ? /^ALLOW FOR SESSION/ : /^APPROVE ONCE$/,
+        })
+        .check();
+      const guarded = mode === 'require' || (mode === 'balanced' && persistent);
+      await page
+        .getByRole('button', {
+          name: guarded ? 'REVIEW BEFORE SENDING' : 'SEND DECISION',
+          exact: true,
+        })
+        .click();
+      await expect
+        .poll(() => calls.filter((c) => c.action === 'prepare').length)
+        .toBe(1);
+      if (guarded) {
+        expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+        await page
+          .getByRole('button', {
+            name:
+              'CONFIRM ' + (persistent ? 'ALLOW FOR SESSION' : 'APPROVE ONCE'),
+            exact: true,
+          })
+          .click();
+      }
+      await expect
+        .poll(() => calls.filter((c) => c.action === 'commit').length)
+        .toBe(1);
+      expect(calls.find((c) => c.action === 'prepare')?.body.choice).toBe(
+        persistent ? 1 : 0,
+      );
+    });
+  }
+  test(`confirmation ${mode} controls explicit browser replies`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { calls } = await mockActions(page, 'prompt', false, true, mode);
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    await page
+      .getByRole('textbox', { name: 'Follow-up message' })
+      .fill('Reviewed browser reply');
+    await page
+      .getByRole('button', {
+        name: mode === 'require' ? 'REVIEW BEFORE SENDING' : 'SEND',
+        exact: true,
+      })
+      .click();
+    if (mode === 'require') {
+      await expect
+        .poll(() => calls.filter((c) => c.action === 'prepare').length)
+        .toBe(1);
+      expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
+      await page
+        .getByRole('button', { name: 'CONFIRM SEND', exact: true })
+        .click();
+    }
+    await expect
+      .poll(() => calls.filter((c) => c.action === 'commit').length)
+      .toBe(1);
+  });
+}

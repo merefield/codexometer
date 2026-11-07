@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 func TestMonitorPickerClicksRespectConfirmationPolicy(t *testing.T) {
@@ -17,7 +18,7 @@ func TestMonitorPickerClicksRespectConfirmationPolicy(t *testing.T) {
 					t.Run(fmt.Sprintf("inline=%t/width=%d/reversible=%t/noConfirm=%t", inline, width, reversible, noConfirm), func(t *testing.T) {
 						m, f := speedCommandTestModel(t)
 						m.width = width
-						m.SetNoConfirm(noConfirm)
+						m.SetConfirmationMode(testConfirmationMode(noConfirm))
 						m.monitorCommands.menu.Choices[0].Reversible = reversible
 						if inline {
 							m.monitorCommands.inline = true
@@ -109,7 +110,7 @@ func TestMonitorCommandRightRepeatKeepsTextCursorMovement(t *testing.T) {
 
 func TestMonitorCommandRepeatGuardsOnlySubmissionKeys(t *testing.T) {
 	m, f := commandTestModel(t)
-	m.SetNoConfirm(true)
+	m.SetConfirmationMode(confirmation.None)
 	for _, code := range []rune{tea.KeyEnter, tea.KeyRight} {
 		next, cmd := m.Update(tea.KeyPressMsg{Code: code, IsRepeat: true})
 		m = next.(Model)

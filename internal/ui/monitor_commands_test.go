@@ -17,6 +17,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -51,7 +52,7 @@ func TestMonitorCommandsApplyReversibleChoicesWithoutExtraConfirmation(t *testin
 	for _, noConfirm := range []bool{false, true} {
 		for _, reversible := range []bool{false, true} {
 			m, f := commandTestModel(t)
-			m.SetNoConfirm(noConfirm)
+			m.SetConfirmationMode(testConfirmationMode(noConfirm))
 			m.monitorCommands.menu.Choices[0].Reversible = reversible
 			m.monitorPrompt.input.SetValue("keep draft")
 			next, cmd, _ := m.chooseMonitorCommand()
@@ -72,10 +73,10 @@ func TestMonitorCommandsApplyReversibleChoicesWithoutExtraConfirmation(t *testin
 	}
 }
 
-func TestNoConfirmDoesNotApplyUnavailableOrHiddenCommands(t *testing.T) {
+func TestConfirmationNoneDoesNotApplyUnavailableOrHiddenCommands(t *testing.T) {
 	for _, blocked := range []string{"unavailable", "tiny", "busy", "notice", "closed"} {
 		m, f := commandTestModel(t)
-		m.SetNoConfirm(true)
+		m.SetConfirmationMode(confirmation.None)
 		switch blocked {
 		case "unavailable":
 			m.monitorCommands.menu.Choices[0].Unavailable = "Waiting for idle."

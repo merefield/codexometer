@@ -13,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -142,6 +143,7 @@ func TestMonitorHistoryRenderedControlsAndLiveApproval(t *testing.T) {
 	m := historyTestModel()
 	m.moveMonitorHistory(-1)
 	live := approvalTestModel()
+	m.SetConfirmationMode(confirmation.Require)
 	approval := live.monitorSessionData[0].preview
 	m.fetcher = live.fetcher
 	m.monitorSessionData[0].preview = approval

@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/x/term"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 // Assets are checked in so go install and terminal-only builds need no Node.
@@ -43,7 +44,7 @@ type server struct {
 }
 
 type Options struct {
-	NoConfirm bool
+	ConfirmationMode confirmation.Mode
 }
 
 // Run binds IPv4 loopback only. Control must be explicitly enabled at launch.
@@ -68,12 +69,14 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		s.control = newControl(source, s.store)
 		s.store.state.Control = true
 		if len(options) > 0 {
-			s.store.state.NoConfirm = options[0].NoConfirm
+			s.store.state.ConfirmationMode = options[0].ConfirmationMode
 		}
 		s.store.publish()
 		mode = "SESSION CONTROL ENABLED — prompts, decisions and configured quota profiles enabled"
-		if s.store.state.NoConfirm {
+		if s.store.state.ConfirmationMode == confirmation.None {
 			mode += " // EXTRA CONFIRMATIONS OFF"
+		} else if s.store.state.ConfirmationMode == confirmation.Require {
+			mode += " // CONFIRM EVERY ACTION"
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)

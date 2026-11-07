@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -183,7 +184,7 @@ func (m Model) pressQuotaSession(id string, confirm bool) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.resetConfirmUntil = time.Time{}
-	if m.confirmations.NoConfirm {
+	if !m.confirmations.Required(confirmation.Guarded) {
 		return m.startQuotaUpdate(targets)
 	}
 	if !confirm {
