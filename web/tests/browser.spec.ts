@@ -5295,3 +5295,69 @@ test('managed human approval explains the policy and offers only one-time choice
     page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
   ).toBeVisible();
 });
+
+test('clipped partial results stay unread until visible inside the content scrollport', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const row = page.locator('.session-row').first();
+  await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  const result = row.locator('[data-result-session]');
+  await expect(result).toBeVisible();
+  // Place the result behind the footer: inside the browser viewport, but
+  // outside the application's clipped scrolling pane.
+  await result.evaluate((node) => {
+    const main = document.getElementById('content')!;
+    const offset =
+      main.getBoundingClientRect().bottom +
+      1 -
+      node.getBoundingClientRect().top;
+    node.style.transform = `translateY(${offset}px)`;
+  });
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'clip-v1',
+        replyTurn: 'clip-t1',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(row).toContainText('TURN COMPLETE');
+  const bounds = await result.evaluate((node) => ({
+    top: node.getBoundingClientRect().top,
+    clip: document.getElementById('content')!.getBoundingClientRect().bottom,
+    viewport: window.innerHeight,
+  }));
+  expect(bounds.top).toBeGreaterThanOrEqual(bounds.clip);
+  expect(bounds.top).toBeLessThan(bounds.viewport);
+  await result.dispatchEvent('wheel', { deltaY: 100 });
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  // A fresh expansion gesture must also respect the scrollport boundary.
+  await row.getByRole('button', { name: 'More detail', exact: true }).click();
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  await result.evaluate((node) => {
+    node.style.transform = '';
+  });
+  await result.scrollIntoViewIfNeeded();
+  await result.dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+});

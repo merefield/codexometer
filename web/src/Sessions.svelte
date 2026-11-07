@@ -147,19 +147,30 @@
     try {
       await tick();
       const current = sessions.find((s) => s.id === id);
+      const scrollport = document.getElementById('content');
+      const clip = scrollport?.getBoundingClientRect();
+      const left = clip ? clip.left + scrollport!.clientLeft : 0;
+      const top = clip ? clip.top + scrollport!.clientTop : 0;
+      const right = left + (scrollport?.clientWidth || 0);
+      const bottom = top + (scrollport?.clientHeight || 0);
       const visible = Array.from(
         document.querySelectorAll<HTMLElement>('[data-result-session]'),
-      ).some(
-        (node) =>
+      ).some((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          scrollport?.contains(node) &&
           node.dataset.resultSession === id &&
           node.dataset.resultTurn === turn &&
           !node.closest('[inert], [hidden]') &&
           document.visibilityState === 'visible' &&
-          node.getBoundingClientRect().top < window.innerHeight &&
-          node.getBoundingClientRect().bottom > 0 &&
-          node.getBoundingClientRect().width > 0 &&
-          node.getBoundingClientRect().height > 0,
-      );
+          rect.left < Math.min(window.innerWidth, right) &&
+          rect.right > Math.max(0, left) &&
+          rect.top < Math.min(window.innerHeight, bottom) &&
+          rect.bottom > Math.max(0, top) &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      });
       if (
         !visible ||
         current?.readRevision !== revision ||
