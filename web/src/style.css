@@ -425,6 +425,9 @@ button:disabled {
   max-height: 230px;
   overflow: auto;
 }
+.session-row.selected .context pre {
+  max-height: 460px;
+}
 .session-row .context {
   display: flex;
   flex-direction: column;

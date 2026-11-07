@@ -5186,7 +5186,7 @@ test('Quota accounting diagnostics retain source details safely on narrow screen
   await expect(notice).toHaveCount(0);
 });
 
-test('unread completion is acknowledged by opening partial detail, not by selection or refresh', async ({
+test('split stays unread and selected wide detail requires three seconds', async ({
   page,
   pairingURL,
 }) => {
@@ -5221,7 +5221,16 @@ test('unread completion is acknowledged by opening partial detail, not by select
     .getByRole('button', { name: '/project/parent', exact: true })
     .click();
   await expect.poll(() => reads.length).toBe(0);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0);
+  await row.getByRole('button', { name: 'More detail', exact: true }).click();
+  await expect(row).toHaveClass(/wide/);
+  await page.clock.fastForward(2999);
+  expect(reads).toHaveLength(0);
+  await page.clock.fastForward(1);
   await expect.poll(() => reads.length).toBe(1);
   expect(reads[0]).toEqual({
     session: 'parent',
@@ -5394,7 +5403,10 @@ test('clipped partial results stay unread until visible inside the content scrol
     node.style.transform = '';
   });
   await result.scrollIntoViewIfNeeded();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await result.dispatchEvent('wheel', { deltaY: 100 });
+  await page.clock.fastForward(3000);
   await expect.poll(() => reads.length).toBe(1);
 });
 
@@ -5566,4 +5578,126 @@ test('Cycle matches the most detailed session before cycling all three overview 
   await page.keyboard.press('y');
   await expect(page.locator('.full-detail')).toBeVisible();
   await expect(cycle).toHaveCount(0);
+});
+
+test('wide reading cancels on selection and new replies and never starts from Cycle', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const unread = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      readStateKnown: true,
+      unread: true,
+      readRevision: 'v1',
+      replyTurn: 't1',
+    })),
+  };
+  const reads: { session: string; read: { turn: string; revision: string } }[] =
+    [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await setOverviewDetail(page, 2);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0);
+  const rows = page.locator('.session-row');
+  const reply = rows.first().locator('[data-reply-text]');
+  await reply.evaluate((node) => {
+    (node as HTMLElement).hidden = true;
+  });
+  await rows
+    .first()
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0); // Visible task/metadata cannot substitute for the reply.
+  await reply.evaluate((node) => {
+    (node as HTMLElement).hidden = false;
+  });
+  await rows
+    .first()
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await page.clock.fastForward(2000);
+  expect(reads).toHaveLength(0);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await page.clock.fastForward(2000);
+  expect(reads).toHaveLength(0);
+  const newer = {
+    ...unread,
+    sessions: unread.sessions.map((row) => ({
+      ...row,
+      readRevision: 'v2',
+      replyTurn: 't2',
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    newer,
+  );
+  await page.clock.fastForward(4000);
+  expect(reads).toHaveLength(0);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  await page.clock.fastForward(3000);
+  await expect.poll(() => reads.length).toBe(1);
+  expect(reads[0]).toEqual({
+    session: 'other',
+    read: { turn: 't2', revision: 'v2' },
+  });
+});
+
+test('selected session reply gets more reading space without expanding neighbours', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const long = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      text: 'A readable reply line.\n'.repeat(100),
+    })),
+  };
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    long,
+  );
+  await setOverviewDetail(page, 2);
+  const rows = page.locator('.session-row');
+  const height = (index: number) =>
+    rows
+      .nth(index)
+      .locator('.context pre')
+      .first()
+      .evaluate((node) => node.getBoundingClientRect().height);
+  expect(await height(0)).toBeGreaterThan((await height(1)) * 1.9);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  expect(await height(1)).toBeGreaterThan((await height(0)) * 1.9);
 });

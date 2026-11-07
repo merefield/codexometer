@@ -448,3 +448,27 @@ func TestMonitorCycleKeepsTypedYAndDrafts(t *testing.T) {
 		t.Fatal("draft did not return to the selected wide row")
 	}
 }
+
+func TestSelectedSessionGetsSpaceWithoutChangingPageOrMinimum(t *testing.T) {
+	for _, height := range []int{9, 10, 12, 30, 31} {
+		m := contextTestModel()
+		m.monitorSelectedID = "root-two"
+		rows, heights, label := m.monitorSessionPage(height)
+		if len(rows) != 3 || label != "" {
+			t.Fatal("selection changed pagination")
+		}
+		total := 0
+		for _, h := range heights {
+			if h < 3 {
+				t.Fatal("selection clipped another row")
+			}
+			total += h
+		}
+		if total != height || heights[1] < heights[0] || heights[1] < heights[2] {
+			t.Fatalf("invalid weighted heights: %v", heights)
+		}
+		if height == 30 && heights[1] != 15 {
+			t.Fatalf("selected row did not receive a double share: %v", heights)
+		}
+	}
+}

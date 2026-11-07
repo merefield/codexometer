@@ -286,6 +286,26 @@ func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) 
 	// Joining framed rows with a newline adds no blank row. Allocate the full
 	// height so no row falls below the three lines its frame actually renders.
 	rowHeights := distributeSpace(max(height, rowCount), rowCount)
+	if rowCount > 1 && height >= 3*rowCount {
+		for selected, row := range visible {
+			if row.id != m.monitorSelectedID {
+				continue
+			}
+			// Give selection twice the normal share without dropping another
+			// row below its title, body and bottom border, or changing paging.
+			selectedHeight := min(2*height/(rowCount+1), height-3*(rowCount-1))
+			others := distributeSpace(height-selectedHeight, rowCount-1)
+			for i, j := 0, 0; i < rowCount; i++ {
+				if i == selected {
+					rowHeights[i] = selectedHeight
+				} else {
+					rowHeights[i] = others[j]
+					j++
+				}
+			}
+			break
+		}
+	}
 	return visible, rowHeights, pageLabel
 }
 

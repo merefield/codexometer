@@ -61,6 +61,7 @@ type Model struct {
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorReadIntent                   string
+	monitorReadDwell                    monitorReadDwell
 	monitorReadBusy                     bool
 	monitorHistory                      map[string]monitorTurnHistory
 	monitorHistorySequence              uint64
@@ -2889,6 +2890,7 @@ func (m *Model) selectMonitorSession(direction int) {
 		selected = min(max(selected+direction, 0), len(visible)-1)
 	}
 	m.monitorSelectedID = visible[selected]
+	m.monitorReadIntent = m.monitorSelectedID
 	if m.monitorContextExpanded != "" && m.monitorContextExpanded != m.monitorSelectedID {
 		m.monitorContextExpanded = ""
 		m.monitorApprovalConfirm = ""

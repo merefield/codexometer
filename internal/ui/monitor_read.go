@@ -15,9 +15,22 @@ type monitorReadResult struct {
 	err          error
 }
 
-// Only deliberate input may acknowledge a result. Rendering, refreshes,
-// restored layouts, hover and automatic history hydration never do so.
+const monitorReadDelay = 3 * time.Second
+
+type monitorReadDwell struct {
+	id, turn, revision string
+	until              time.Time
+}
+
+type monitorReadDwellElapsed monitorReadDwell
+
+// Only deliberate selection/expansion starts the wide-row dwell. Full detail
+// reviews immediately; rendering, restored layouts and result arrival do not.
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if elapsed, ok := message.(monitorReadDwellElapsed); ok {
+		command := m.finishMonitorReadDwell(monitorReadDwell(elapsed), time.Now())
+		return m, command
+	}
 	if result, ok := message.(monitorReadResult); ok {
 		m.monitorReadBusy = false
 		if result.err == nil {
@@ -31,13 +44,16 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if d := m.monitorReadDwell; d.id != "" && !m.validMonitorReadDwell(d) {
+		m.monitorReadDwell = monitorReadDwell{}
+	}
 	m.monitorReadIntent = ""
 	next, command := m.update(message)
 	updated := next.(Model)
 	deliberate := false
 	switch msg := message.(type) {
 	case tea.KeyPressMsg:
-		deliberate = true
+		deliberate = !msg.IsRepeat
 	case tea.MouseClickMsg:
 		deliberate = msg.Button == tea.MouseLeft
 	case tea.MouseWheelMsg:
@@ -50,21 +66,34 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-
 	}
 	if !deliberate {
 		updated.monitorReadIntent = ""
 	}
-	receipt := updated.acknowledgeMonitorResult()
+	if d := updated.monitorReadDwell; d.id != "" && !updated.validMonitorReadDwell(d) {
+		updated.monitorReadDwell = monitorReadDwell{}
+	}
+	id := updated.monitorReadIntent
+	updated.monitorReadIntent = ""
+	var receipt tea.Cmd
+	if id != "" && updated.monitorContextDetail == id {
+		updated.monitorReadDwell = monitorReadDwell{}
+		updated.monitorReadIntent = id
+		receipt = updated.acknowledgeMonitorResult()
+	} else if id != "" && updated.monitorReadDwell.id == "" {
+		row, eligible := updated.monitorWideReadResult(id)
+		if eligible {
+			d := monitorReadDwell{id: id, turn: row.preview.TurnID, revision: row.readState.Revision, until: time.Now().Add(monitorReadDelay)}
+			updated.monitorReadDwell = d
+			receipt = tea.Tick(monitorReadDelay, func(time.Time) tea.Msg { return monitorReadDwellElapsed(d) })
+		}
+	}
 	return updated, tea.Batch(command, receipt)
 }
 
-func (m *Model) acknowledgeMonitorResult() tea.Cmd {
-	id := m.monitorReadIntent
-	m.monitorReadIntent = ""
-	client, ok := m.fetcher.(codex.SessionReadStateClient)
-	if !ok || id == "" || m.actionReview != nil || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open || m.rowContextMode(id) == contextGraph {
-		return nil
+func (m Model) monitorUnreadResult(id string) (monitorSession, bool) {
+	if _, ok := m.fetcher.(codex.SessionReadStateClient); !ok || id == "" || m.width <= 0 || m.height <= 0 || m.actionReview != nil || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open {
+		return monitorSession{}, false
 	}
 	for _, row := range m.monitorSessionData {
 		c := row.preview
@@ -72,21 +101,68 @@ func (m *Model) acknowledgeMonitorResult() tea.Cmd {
 			continue
 		}
 		if _, visible := m.monitorResultRect(id); !visible {
-			return nil
+			return monitorSession{}, false
 		}
 		if h := m.monitorHistory[id]; h.selected != nil && !sameHistoryTurn(*h.selected, c) {
-			return nil
+			return monitorSession{}, false
 		}
-		revision, turn := row.readState.Revision, c.TurnID
-		m.monitorReadBusy = true
-		return func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-			defer cancel()
-			state, err := client.AcknowledgeSessionResult(ctx, id, turn, revision)
-			return monitorReadResult{id: id, revision: revision, state: state, err: err}
-		}
+		return row, true
 	}
-	return nil
+	return monitorSession{}, false
+}
+
+func (m Model) monitorWideReadResult(id string) (monitorSession, bool) {
+	if m.monitorContextDetail != "" || m.monitorSelectedID != id || m.rowContextMode(id) != contextWide || m.monitorSummaryFocused || m.monitorAttentionFocused || m.monitorPrompt.input.Focused() {
+		return monitorSession{}, false
+	}
+	row, ok := m.monitorUnreadResult(id)
+	if !ok {
+		return monitorSession{}, false
+	}
+	rect, _ := m.monitorResultRect(id)
+	header := terminalLabel(row.preview.ThreadID) + " // " + terminalLabel(row.preview.Source)
+	if rect.height <= len(sessionWebTextLines(header, max(rect.width, 1))) {
+		return monitorSession{}, false // Source metadata alone is not a visible reply.
+	}
+	return row, true
+}
+
+func (m Model) validMonitorReadDwell(d monitorReadDwell) bool {
+	row, ok := m.monitorWideReadResult(d.id)
+	return ok && row.preview.TurnID == d.turn && row.readState.Revision == d.revision
+}
+
+func (m *Model) finishMonitorReadDwell(d monitorReadDwell, now time.Time) tea.Cmd {
+	if d.id == "" || m.monitorReadDwell != d || now.Before(d.until) {
+		return nil
+	}
+	m.monitorReadDwell = monitorReadDwell{}
+	if !m.validMonitorReadDwell(d) {
+		return nil
+	}
+	m.monitorReadIntent = d.id
+	return m.acknowledgeMonitorResult()
+}
+
+func (m *Model) acknowledgeMonitorResult() tea.Cmd {
+	id := m.monitorReadIntent
+	m.monitorReadIntent = ""
+	if m.monitorContextDetail != id && (m.monitorSelectedID != id || m.rowContextMode(id) != contextWide) {
+		return nil
+	}
+	row, ok := m.monitorUnreadResult(id)
+	if !ok {
+		return nil
+	}
+	client := m.fetcher.(codex.SessionReadStateClient)
+	revision, turn := row.readState.Revision, row.preview.TurnID
+	m.monitorReadBusy = true
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		state, err := client.AcknowledgeSessionResult(ctx, id, turn, revision)
+		return monitorReadResult{id: id, revision: revision, state: state, err: err}
+	}
 }
 
 // Match the actual displayed context pane, including narrow split layouts

@@ -1526,6 +1526,10 @@ text areas under 12 columns and incomplete, oversized or unsupported destination
 plain. The version and pricing links continue to use the terminal's native
 hyperlink handling.
 
+The selected row receives roughly twice the height of other listed rows when space
+permits. Every other row keeps at least three terminal lines, and page size stays
+the same; selection changes the allocation, while hover does not.
+
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the
 same action on that session. The presentations are:
@@ -1603,12 +1607,15 @@ same action on that session. The presentations are:
 
 **Unread completed results (shared app-server):** when Codex supplies durable
 read state, **TURN COMPLETE** remains highlighted and its completion pill stays
-visible until the result is reviewed. Deliberately opening partial or full Detail,
-or scrolling within its displayed result pane, acknowledges the latest completed
-reply. The completion status remains visible in subdued styling afterward.
-Rendering a preview, selecting a row, restoring a layout or receiving a new result
-in an already-open pane does not acknowledge it. An older history page cannot
-acknowledge a newer result; changed receipts require a fresh review action.
+visible until the result is reviewed. In the Sessions list, deliberately select
+an unread reply in **wide detail** and keep its result visible for **three seconds**
+to mark it read. Selecting another row, leaving wide mode, hiding the reply or
+receiving a newer result cancels the timer. Split previews stay unread, even when
+scrolled. Opening full-screen Detail explicitly acknowledges the visible latest
+completed reply immediately; a result arriving in an already-open Detail page
+still needs a fresh review gesture. The completion status remains visible in
+subdued styling afterward. Bulk Cycle, restored layouts and hover never start a
+reading timer. An older history page cannot acknowledge a newer result.
 
 These receipts are saved by Codex and shared with supported native Codex views,
 so reviewed results remain reviewed across restarts. Codexometer does not save a
@@ -3114,7 +3121,10 @@ available from the existing reader.
   once. These are not account-wide or permanent cumulative totals: removing a
   session from the observation can reduce the sum. On stale data, token/session
   totals are labelled last-known and live state counts become unavailable (—).
-- Select a session by clicking its directory/name, or use **↑ / ↓**.
+- Select a session by clicking its directory/name, or use **↑ / ↓**. The selected
+  row allows twice as much reply-text height as its neighbours. Deliberate selection
+  in wide mode marks the visible latest reply read after three seconds; full-page
+  Detail opens mark it read immediately. Read-only mode never sends receipts.
 - **[ (C)OPY ]** copies visible reply/activity text from split, wide or full-page
   detail, including while Codex is working and in read-only mode. `C` targets the
   selected visible detail; typing and native Ctrl/Cmd+C retain their normal behaviour.

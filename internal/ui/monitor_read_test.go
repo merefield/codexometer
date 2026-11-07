@@ -33,7 +33,7 @@ func unreadTestModel() (Model, *readTestClient) {
 	return m, client
 }
 
-func TestUnreadPartialDetailAcknowledgesOnlyExplicitReview(t *testing.T) {
+func TestUnreadSplitStaysUnreadAndWideRequiresDwell(t *testing.T) {
 	m, c := unreadTestModel()
 	m.render()
 	if len(c.reads) != 0 {
@@ -49,11 +49,21 @@ func TestUnreadPartialDetailAcknowledgesOnlyExplicitReview(t *testing.T) {
 	m.setRowContext("root-one", contextGraph)
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = next.(Model)
-	if cmd == nil || m.rowContextMode("root-one") != contextSplit {
-		t.Fatal("opening partial detail did not stage receipt")
+	if cmd != nil || m.rowContextMode("root-one") != contextSplit || m.monitorReadDwell.id != "" {
+		t.Fatal("split preview staged a receipt")
 	}
-	if len(c.reads) != 0 {
-		t.Fatal("receipt sent before command dispatch")
+	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = next.(Model)
+	dwell := m.monitorReadDwell
+	if cmd == nil || dwell.id != "root-one" || m.monitorReadBusy || len(c.reads) != 0 {
+		t.Fatal("wide selection did not start a delayed review")
+	}
+	if m.finishMonitorReadDwell(dwell, dwell.until.Add(-time.Millisecond)) != nil {
+		t.Fatal("wide review completed before three seconds")
+	}
+	cmd = m.finishMonitorReadDwell(dwell, dwell.until)
+	if cmd == nil {
+		t.Fatal("wide review did not complete after three seconds")
 	}
 	result := cmd().(monitorReadResult)
 	if len(c.reads) != 1 || c.reads[0] != "root-one/t1/v1" {
@@ -166,26 +176,21 @@ func TestUnreadLiveReviewGestures(t *testing.T) {
 	}
 }
 
-func TestUnreadIndependentPartialPaneWithHiddenGlobalLayout(t *testing.T) {
+func TestUnreadIndependentSplitPaneCannotAcknowledgeByScrolling(t *testing.T) {
 	m, client := unreadTestModel()
 	m.monitorContextView = "graph"
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = next.(Model)
-	if !m.contextTargetHidden() || m.rowContextMode("root-one") != contextSplit || cmd == nil || !m.monitorReadBusy {
-		t.Fatal("opening independent partial pane did not acknowledge visible result")
+	if !m.contextTargetHidden() || m.rowContextMode("root-one") != contextSplit || cmd != nil || m.monitorReadBusy {
+		t.Fatal("split expansion acknowledged a result")
 	}
-	cmd()
-	if len(client.reads) != 1 {
-		t.Fatal("visible partial pane was not acknowledged")
-	}
-	m.monitorReadBusy = false
 	rect, ok := m.monitorResultRect("root-one")
 	if !ok {
 		t.Fatal("partial result has no visible body")
 	}
 	next, cmd = m.Update(tea.MouseWheelMsg{X: rect.x, Y: rect.y, Button: tea.MouseWheelDown})
-	if !next.(Model).monitorReadBusy || cmd == nil {
-		t.Fatal("wheel over independent result did not acknowledge it")
+	if next.(Model).monitorReadBusy || cmd != nil || len(client.reads) != 0 {
+		t.Fatal("wheel over split preview acknowledged a result")
 	}
 }
 
@@ -206,8 +211,9 @@ func TestUnreadCompactPartialResultBounds(t *testing.T) {
 						t.Fatalf("mode %v height %d: visible compact reply has incorrect bounds: %+v", mode, height, rect)
 					}
 					next, cmd := m.Update(tea.MouseWheelMsg{X: rect.x, Y: rect.y, Button: tea.MouseWheelUp})
-					if cmd == nil || !next.(Model).monitorReadBusy {
-						t.Fatalf("visible compact reply could not be reviewed: mode=%d paneHeight=%d terminalHeight=%d rect=%+v model=%+v", mode, height, terminalHeight, rect, next.(Model).monitorError)
+					wantDwell := mode == contextWide && height > 3
+					if next.(Model).monitorReadBusy || (next.(Model).monitorReadDwell.id != "") != wantDwell || (!wantDwell && cmd != nil) {
+						t.Fatalf("compact reply bypassed the wide-only delay: mode=%d paneHeight=%d terminalHeight=%d", mode, height, terminalHeight)
 					}
 					found = true
 					break
@@ -257,5 +263,79 @@ func TestBulkCycleDoesNotAcknowledgeUnreadResults(t *testing.T) {
 		if cmd != nil || m.monitorReadBusy || len(client.reads) != 0 || m.monitorReadIntent != "" {
 			t.Fatal("bulk layout change acknowledged an unread reply")
 		}
+	}
+}
+
+func TestWideReadDwellCancelsWhenReadingContextChanges(t *testing.T) {
+	for _, change := range []string{"selection", "split", "tab", "revision", "turn", "stale", "history", "commands", "hidden"} {
+		t.Run(change, func(t *testing.T) {
+			m, c := unreadTestModel()
+			m.setRowContext("root-one", contextSplit)
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+			m = next.(Model)
+			dwell := m.monitorReadDwell
+			if dwell.id == "" {
+				t.Fatal("missing dwell")
+			}
+			switch change {
+			case "selection":
+				m.monitorSelectedID = "root-two"
+			case "split":
+				m.setRowContext("root-one", contextSplit)
+			case "tab":
+				m.meterView = viewBars
+			case "revision":
+				m.monitorSessionData[0].readState.Revision = "new"
+			case "turn":
+				m.monitorSessionData[0].preview.TurnID = "new"
+			case "stale":
+				m.monitorError = "offline"
+			case "history":
+				old := m.monitorSessionData[0].preview
+				old.TurnID = "old"
+				m.saveMonitorHistory("root-one", monitorTurnHistory{selected: &old})
+			case "commands":
+				m.monitorCommands.open = true
+			case "hidden":
+				m.height = 0
+			}
+			next, _ = m.Update(tea.MouseMotionMsg{})
+			m = next.(Model)
+			if m.finishMonitorReadDwell(dwell, dwell.until) != nil || len(c.reads) != 0 {
+				t.Fatal("stale dwell acknowledged a result")
+			}
+		})
+	}
+}
+
+func TestSelectingWideRowStartsDwellButNewArrivalDoesNot(t *testing.T) {
+	m, _ := unreadTestModel()
+	m.setRowContext("root-one", contextWide)
+	m.setRowContext("root-two", contextWide)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = next.(Model)
+	if m.monitorReadDwell.id != "root-one" {
+		t.Fatal("deliberate wide selection did not start dwell")
+	}
+	old := m.monitorReadDwell
+	m.monitorSessionData[0].readState.Revision = "v2"
+	next, _ = m.Update(tea.MouseMotionMsg{})
+	m = next.(Model)
+	if m.monitorReadDwell.id != "" || m.finishMonitorReadDwell(old, old.until) != nil {
+		t.Fatal("new result inherited an old dwell")
+	}
+}
+
+func TestOpeningFullDetailAcknowledgesWithoutWideDelay(t *testing.T) {
+	m, client := unreadTestModel()
+	m.setRowContext("root-one", contextWide)
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = next.(Model)
+	if cmd == nil || !m.monitorReadBusy || m.monitorReadDwell.id != "" {
+		t.Fatal("full detail did not acknowledge immediately")
+	}
+	cmd()
+	if len(client.reads) != 1 {
+		t.Fatal("full detail did not send its receipt")
 	}
 }

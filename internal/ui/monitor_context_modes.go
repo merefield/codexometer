@@ -162,6 +162,7 @@ func (m *Model) cycleMonitorContext() {
 	m.monitorContextExpanded, m.monitorContextHover = "", ""
 	m.monitorContextScroll = 0
 	m.monitorReadIntent = "" // A bulk layout change is not a review of each reply.
+	m.monitorReadDwell = monitorReadDwell{}
 	if next == contextWide {
 		for _, s := range m.monitorSessionData {
 			if s.id == m.monitorSelectedID && m.monitorSessionInList(s) {
