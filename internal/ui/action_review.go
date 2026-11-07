@@ -41,37 +41,55 @@ func (m *Model) reviewMonitorAction(action, title, text string, payload any) boo
 	return true
 }
 
+// Controls and the document share one layout, including translated wrapping.
+func layoutActionReview(width, height int) (buttons []monitorNavigationButton, rows, gap int) {
+	labels := []string{i18n.Text("[ C CONFIRM ]"), i18n.Text("[ ESC CANCEL ]")}
+	x, y := 2, 0
+	for i, label := range labels {
+		buttonWidth := lipgloss.Width(label)
+		if buttonWidth > width-4 {
+			return nil, max(height-2, 1), 0
+		}
+		if x+buttonWidth > width-2 {
+			x, y = 2, y+1
+		}
+		buttons = append(buttons, monitorNavigationButton{label: label, action: []string{"confirm", "cancel"}[i], enabled: true, rect: monitorRect{x: x, y: y, width: buttonWidth, height: 1}})
+		x += buttonWidth + 2
+	}
+	rows, gap, top := monitorContextBodyLayout(height, y+1)
+	if rows < 1 {
+		return nil, max(height-2, 1), 0
+	}
+	for i := range buttons {
+		buttons[i].rect.y += top
+	}
+	return buttons, rows, gap
+}
+
 func (m Model) actionReviewButtons() []monitorNavigationButton {
 	g := m.monitorDashboardLayout()
-	_, _, y := monitorContextBodyLayout(g.meterHeight, 1)
-	labels := []string{i18n.Text("[ C CONFIRM ]"), i18n.Text("[ ESC CANCEL ]")}
-	x := 2
-	var buttons []monitorNavigationButton
-	for i, label := range labels {
-		width := lipgloss.Width(label)
-		if x+width > g.contentWidth-2 || y >= g.meterHeight-1 {
-			return nil
-		}
-		buttons = append(buttons, monitorNavigationButton{label: label, action: []string{"confirm", "cancel"}[i], enabled: true, rect: monitorRect{x: x, y: y, width: width, height: 1}})
-		x += width + 2
-	}
+	buttons, _, _ := layoutActionReview(g.contentWidth, g.meterHeight)
 	return buttons
 }
 
 func (m Model) renderActionReview(width, height int, colors palette) string {
 	r := m.actionReview
-	rows, gap, _ := monitorContextBodyLayout(height, 1)
+	buttons, rows, gap := layoutActionReview(width, height)
 	lines := sessionWebLiteralTextLines(codex.SanitizeApprovalText(r.target+"\n\n"+r.text), max(width-4, 1))
 	start := min(r.scroll, max(len(lines)-rows, 0))
 	body := append([]string(nil), lines[start:min(start+rows, len(lines))]...)
 	for len(body) < rows+gap {
 		body = append(body, "")
 	}
-	var controls []string
-	for _, button := range m.actionReviewButtons() {
-		controls = append(controls, colors.label().Render(button.label))
+	if len(buttons) > 0 {
+		top := buttons[0].rect.y
+		controls := make([]string, buttons[len(buttons)-1].rect.y-top+1)
+		for _, button := range buttons {
+			row := button.rect.y - top
+			controls[row] += strings.Repeat(" ", max(button.rect.x-2-lipgloss.Width(controls[row]), 0)) + colors.label().Render(button.label)
+		}
+		body = append(body, controls...)
 	}
-	body = append(body, strings.Join(controls, "  "))
 	return frameSizedWithActions(width, max(height-2, 1), r.title, "", "", strings.Join(body, "\n"), colors.primary, colors)
 }
 
