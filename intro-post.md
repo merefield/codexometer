@@ -97,6 +97,8 @@ Missing or unsafe patches and broader directory grants stay in Codex—no blind 
 
 **Choose the scope of an approval:** **APPROVE ONCE** appears first when Codex offers it and acts immediately by default. Broader **ALLOW FOR SESSION** and **ALWAYS ALLOW PREFIX** decisions show their scope or exact persistent rule and require confirmation by default. Numbered shortcuts follow the displayed order; strict mode also reviews one-time approvals, declines and stop decisions. When confirmation is required, use `C` or click the confirmation button. For Approve Once, terminals with detected Kitty keyboard-protocol key-release support also allow its number, release, then the same number again. Confirming a broader grant requires `C` or a click. Confirmations expire after five seconds; follow the hint on the button. Unsupported or incomplete requests remain in Codex.
 
+Terminal-input approvals show the target terminal, its start directory and the exact proposed input with visible escapes. Send that input once or cancel it; strict confirmation mode adds review. Additional permission requests remain in Codex.
+
 Managed network approvals show the requested host and protocol, with only the choices Codex offers: one-time access, a conversation grant, or a persistent allow/block rule. Both persistent choices require confirmation by default.
 
 **Approve MCP/app tools:** terminal and writable web Detail show the server, supplied tool/app identity, request and arguments. Approve once, allow for the session, always allow the tool, or cancel its call. Reusable grants appear only when Codex offers them and require confirmation by default; the launch confirmation policy applies. Read-only web can show the review. Other MCP forms and authentication requests remain in Codex.

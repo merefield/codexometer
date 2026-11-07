@@ -2141,6 +2141,8 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**Terminal-input approvals (shared app-server):** before Codex sends input to an existing terminal, review its terminal ID, start directory, optional environment, and the exact input. Input is quoted with visible escapes so newlines, control keys and hidden characters cannot disappear in either interface. **SEND INPUT ONCE** and **CANCEL INPUT** act on the original request and are immediate by default; `--confirmation require` adds confirmation. No session-wide or persistent stdin grant is offered. Requests that also ask for unsupported additional permissions remain in Codex.
+
 **Managed network approvals (shared app-server):** review the requested host and protocol in the terminal or writable web UI. Codexometer offers only Codex’s advertised choices, including one-time access, a conversation grant and persistent host allow/block rules. Both persistent allow and block rules require confirmation by default. Missing or unsupported destination details still require review in Codex.
 
 **MCP/app tool approvals (shared app-server):** the terminal and writable web

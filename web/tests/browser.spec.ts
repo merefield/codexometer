@@ -4672,8 +4672,15 @@ test.describe('browser startup', () => {
     await page.clock.runFor(16);
     await expect(intro).toHaveAttribute('data-entrance', 'shuffle');
     await expect(wordmark).toHaveAttribute('data-text', before!);
+    // Viewport resize delivery is asynchronous, including with the test clock
+    // paused. Advance frames until the layout observes the new viewport.
+    await expect
+      .poll(async () => {
+        await page.clock.runFor(16);
+        return (await wordmark.boundingBox())?.width;
+      })
+      .toBeCloseTo(360, 0);
     const box = (await wordmark.boundingBox())!;
-    expect(box.width).toBeCloseTo(360, 0);
     expect(box.y + box.height / 2).toBeCloseTo(320, 0);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
@@ -5852,6 +5859,16 @@ test('read-only MCP approvals show the tool review without decision controls', a
 });
 
 const actionApprovalCases = [
+  {
+    title: 'TERMINAL INPUT APPROVAL',
+    fields: [
+      { label: 'TERMINAL', value: '123' },
+      { label: 'INPUT (ESCAPED)', value: '"yes\\n\\x03\\u202e"' },
+      { label: 'TERMINAL START DIRECTORY', value: '/terminal/start' },
+    ],
+    labels: ['SEND INPUT ONCE', 'CANCEL INPUT'],
+    persistent: [] as number[],
+  },
   {
     title: 'NETWORK APPROVAL',
     fields: [

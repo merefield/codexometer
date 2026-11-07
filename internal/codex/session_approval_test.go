@@ -69,7 +69,7 @@ func TestApprovalKindExplicitAndLegacyCommand(t *testing.T) {
 		}
 	}
 	_, c := approvalFixture(t, map[string]any{"kind": "writeStdin", "command": "git push", "cwd": "/work"})
-	if c.ApprovalToken != "" || c.ApprovalBlocked != "approval-kind" {
+	if c.ApprovalToken != "" || c.ApprovalBlocked != "missing-identity" {
 		t.Fatal("stdin treated as command", c)
 	}
 }

@@ -560,5 +560,13 @@
   "[ CONFIRM HOST ALLOW ]": "[ ПОДТВЕРДИТЬ ДОСТУП К ХОСТУ ]",
   "[ ALWAYS ALLOW HOST ]": "[ ВСЕГДА РАЗРЕШАТЬ ХОСТ ]",
   "[ CONFIRM HOST BLOCK ]": "[ ПОДТВЕРДИТЬ БЛОКИРОВКУ ]",
-  "[ ALWAYS BLOCK HOST ]": "[ ВСЕГДА БЛОКИРОВАТЬ ХОСТ ]"
+  "[ ALWAYS BLOCK HOST ]": "[ ВСЕГДА БЛОКИРОВАТЬ ХОСТ ]",
+  "TERMINAL INPUT APPROVAL": "ОДОБРЕНИЕ ВВОДА В ТЕРМИНАЛ",
+  "TERMINAL": "ТЕРМИНАЛ",
+  "INPUT (ESCAPED)": "ВВОД (С ЭКРАНИРОВАНИЕМ)",
+  "TERMINAL START DIRECTORY": "НАЧАЛЬНЫЙ КАТАЛОГ ТЕРМИНАЛА",
+  "ENVIRONMENT": "ОКРУЖЕНИЕ",
+  "[ SEND INPUT ONCE ]": "[ ОТПРАВИТЬ ВВОД ОДИН РАЗ ]",
+  "[ CONFIRM INPUT ]": "[ ПОДТВЕРДИТЬ ВВОД ]",
+  "[ CANCEL INPUT ]": "[ ОТМЕНИТЬ ВВОД ]"
 }

@@ -560,5 +560,13 @@
   "[ CONFIRM HOST ALLOW ]": "[ ホストの許可を確認 ]",
   "[ ALWAYS ALLOW HOST ]": "[ ホストを常に許可 ]",
   "[ CONFIRM HOST BLOCK ]": "[ ホストの拒否を確認 ]",
-  "[ ALWAYS BLOCK HOST ]": "[ ホストを常に拒否 ]"
+  "[ ALWAYS BLOCK HOST ]": "[ ホストを常に拒否 ]",
+  "TERMINAL INPUT APPROVAL": "ターミナル入力の承認",
+  "TERMINAL": "ターミナル",
+  "INPUT (ESCAPED)": "入力（エスケープ表示）",
+  "TERMINAL START DIRECTORY": "ターミナルの開始ディレクトリ",
+  "ENVIRONMENT": "環境",
+  "[ SEND INPUT ONCE ]": "[ 入力を一度送信 ]",
+  "[ CONFIRM INPUT ]": "[ 入力を確認 ]",
+  "[ CANCEL INPUT ]": "[ 入力をキャンセル ]"
 }

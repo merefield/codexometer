@@ -56,6 +56,26 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 			t.Fatal("file capability reused")
 		}
 	}
+	for _, decision := range []string{"accept", "cancel"} {
+		p.contexts, c = stdinApprovalFixture(t, nil)
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "acceptForSession"); err == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("stdin session grant accepted")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			if string(msg["id"]) != `"req"` || string(msg["result"]) != `{"decision":"`+decision+`"}` {
+				t.Fatal("wrong stdin response", msg)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing stdin response")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) || p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision) == nil {
+			t.Fatal("stdin approval reused")
+		}
+	}
 	for i := range networkDecisions() {
 		p.contexts, c = networkApprovalFixture(t, nil)
 		option := c.ApprovalOptions[i]

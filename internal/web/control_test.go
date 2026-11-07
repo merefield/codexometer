@@ -459,3 +459,38 @@ func TestNetworkApprovalReviewIsBoundToDestinationAndRule(t *testing.T) {
 		t.Fatalf("network denial not committed: %d", w.Code)
 	}
 }
+
+func TestStdinApprovalPreparationBindsExactInputAndTerminal(t *testing.T) {
+	for _, field := range []string{"input", "target", "directory"} {
+		t.Run(field, func(t *testing.T) {
+			s, f, token := controlServer(t)
+			ctx := codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "child", ApprovalToken: "private-approval", ActionDetails: codex.ApprovalActionDetails{Kind: "stdin", Target: "123", Input: "yes\n\x03", Directory: "/start"}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "acceptStdin", Value: "accept"}, {Kind: "cancelStdin", Value: "cancel"}}}
+			s.store.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "parent", Context: ctx}}}, nil, time.Now())
+			offer := getOffer(t, s, token)
+			if offer.ApprovalReview == nil || offer.Command != "" || len(offer.Choices) != 2 || offer.Choices[0].Persistent || offer.Choices[1].Persistent || offer.Choices[0].Label != "SEND INPUT ONCE" {
+				t.Fatalf("bad input offer %+v", offer)
+			}
+			index := 0
+			prepared := prepareAction(t, s, token, actionRequest{Session: "parent", Offer: offer.ID, Choice: &index})
+			changed := ctx
+			switch field {
+			case "input":
+				changed.ActionDetails.Input = "no\n"
+			case "target":
+				changed.ActionDetails.Target = "456"
+			case "directory":
+				changed.ActionDetails.Directory = "/other"
+			}
+			s.store.contexts["parent"] = changed
+			if w := actionCall(s, token, "commit", prepared); w.Code != 409 || f.calls != 0 {
+				t.Fatal("changed terminal input reused review")
+			}
+			s.store.contexts["parent"] = ctx
+			offer = getOffer(t, s, token)
+			prepared = prepareAction(t, s, token, actionRequest{Session: "parent", Offer: offer.ID, Choice: &index})
+			if w := actionCall(s, token, "commit", prepared); w.Code != 200 || f.decision != "accept" {
+				t.Fatal("input decision failed")
+			}
+		})
+	}
+}

@@ -11,12 +11,48 @@ import (
 // MCP elicitation response, selected by the request's validated protocol.
 type ApprovalOption struct{ Kind, Value, Wire, Detail string }
 
+// Shared labels keep terminal and browser actions aligned. Grants can have a
+// distinct confirmation label; dismissals retain their original wording.
+var approvalGrantLabels = map[string][2]string{
+	"accept":                        {"APPROVE ONCE", "CONFIRM APPROVAL"},
+	"acceptStdin":                   {"SEND INPUT ONCE", "CONFIRM INPUT"},
+	"acceptForSession":              {"ALLOW FOR SESSION", "CONFIRM SESSION GRANT"},
+	"acceptWithExecpolicyAmendment": {"ALWAYS ALLOW PREFIX", "CONFIRM PERSISTENT RULE"},
+	"allowNetworkHost":              {"ALWAYS ALLOW HOST", "CONFIRM HOST ALLOW"},
+	"denyNetworkHost":               {"ALWAYS BLOCK HOST", "CONFIRM HOST BLOCK"},
+	"acceptMcpAlways":               {"ALWAYS ALLOW TOOL", "CONFIRM TOOL RULE"},
+}
+
+func (o ApprovalOption) Label(confirm bool) string {
+	switch o.Kind {
+	case "decline":
+		return "DECLINE"
+	case "cancel":
+		return "REJECT & STOP TURN"
+	case "cancelMcpTool":
+		return "CANCEL TOOL CALL"
+	case "cancelStdin":
+		return "CANCEL INPUT"
+	}
+	index := 0
+	if confirm {
+		index = 1
+	}
+	return approvalGrantLabels[o.Kind][index]
+}
+
 func oneTimeApproval(kind string) bool {
 	return kind == "accept" || kind == "decline" || kind == "cancel"
 }
 
 func (o ApprovalOption) GrantsPermission() bool {
-	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways" || o.Kind == "allowNetworkHost"
+	return o.Kind == "accept" || o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways" || o.Kind == "allowNetworkHost" || o.Kind == "acceptStdin"
+}
+
+// ChangesPolicy includes persistent denies, which broaden the effect of a decision
+// even though they grant no permission. One-time stdin decisions remain narrow.
+func (o ApprovalOption) ChangesPolicy() bool {
+	return o.Kind == "acceptForSession" || o.Kind == "acceptWithExecpolicyAmendment" || o.Kind == "acceptMcpAlways" || o.Kind == "allowNetworkHost" || o.Kind == "denyNetworkHost"
 }
 
 func commandApprovalOptions(raw []json.RawMessage) ([8]ApprovalOption, string) {

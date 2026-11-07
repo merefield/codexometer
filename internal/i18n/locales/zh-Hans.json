@@ -560,5 +560,13 @@
   "[ CONFIRM HOST ALLOW ]": "[ 确认允许主机 ]",
   "[ ALWAYS ALLOW HOST ]": "[ 始终允许主机 ]",
   "[ CONFIRM HOST BLOCK ]": "[ 确认阻止主机 ]",
-  "[ ALWAYS BLOCK HOST ]": "[ 始终阻止主机 ]"
+  "[ ALWAYS BLOCK HOST ]": "[ 始终阻止主机 ]",
+  "TERMINAL INPUT APPROVAL": "终端输入审批",
+  "TERMINAL": "终端",
+  "INPUT (ESCAPED)": "输入（转义显示）",
+  "TERMINAL START DIRECTORY": "终端起始目录",
+  "ENVIRONMENT": "环境",
+  "[ SEND INPUT ONCE ]": "[ 发送输入一次 ]",
+  "[ CONFIRM INPUT ]": "[ 确认输入 ]",
+  "[ CANCEL INPUT ]": "[ 取消输入 ]"
 }

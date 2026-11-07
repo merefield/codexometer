@@ -160,7 +160,11 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		return
 	case "item/commandExecution/requestApproval":
 		kind := "command" // legacy servers omit the discriminator
-		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && (kind == "command" || kind == "humanCommand") && string(p.Kind) != "null"
+		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && (kind == "command" || kind == "humanCommand" || kind == "writeStdin") && string(p.Kind) != "null"
+		if kindValid && kind == "writeStdin" {
+			configureStdinApproval(&c, raw)
+			break
+		}
 		var command string
 		commandValid := len(p.Command) == 0 || string(p.Command) == "null" || json.Unmarshal(p.Command, &command) == nil
 		previous := state.commands[p.TurnID+"/"+p.ItemID]

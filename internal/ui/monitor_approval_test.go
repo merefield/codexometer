@@ -495,3 +495,38 @@ func TestNetworkApprovalButtonsAndPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestStdinApprovalControlsAndEscapedReview(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, decision := range []string{"accept", "cancel"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			input := "yes\n\x03\u202e"
+			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Review terminal input", ApprovalToken: "live", ActionDetails: codex.ApprovalActionDetails{Kind: "stdin", Target: "123", Input: input, Directory: "/terminal/start"}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "acceptStdin", Value: "accept"}, {Kind: "cancelStdin", Value: "cancel"}}}
+			if len(m.visibleMonitorApprovalButtons()) != 2 {
+				t.Fatal("stdin choices missing")
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("TERMINAL INPUT APPROVAL"), "123", strconv.QuoteToASCII(input), "/terminal/start"} {
+				if !strings.Contains(doc, text) {
+					t.Fatal("stdin review missing", text)
+				}
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			if mode == confirmation.Require {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("strict input skipped review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("stdin decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != decision {
+				t.Fatal("input decision changed")
+			}
+		}
+	}
+}

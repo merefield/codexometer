@@ -80,28 +80,12 @@ func (m Model) monitorApprovalToken() string {
 	return s.preview.ApprovalToken
 }
 
-var approvalOptionLabels = map[string][2]string{
-	"accept":                        {"[ APPROVE ONCE ]", "[ CONFIRM APPROVAL ]"},
-	"acceptForSession":              {"[ ALLOW FOR SESSION ]", "[ CONFIRM SESSION GRANT ]"},
-	"acceptWithExecpolicyAmendment": {"[ ALWAYS ALLOW PREFIX ]", "[ CONFIRM PERSISTENT RULE ]"},
-	"allowNetworkHost":              {"[ ALWAYS ALLOW HOST ]", "[ CONFIRM HOST ALLOW ]"},
-	"denyNetworkHost":               {"[ ALWAYS BLOCK HOST ]", "[ CONFIRM HOST BLOCK ]"},
-	"acceptMcpAlways":               {"[ ALWAYS ALLOW TOOL ]", "[ CONFIRM TOOL RULE ]"},
-	"cancelMcpTool":                 {"[ CANCEL TOOL CALL ]", "[ CANCEL TOOL CALL ]"},
-	"decline":                       {"[ DECLINE ]", "[ DECLINE ]"},
-	"cancel":                        {"[ REJECT & STOP TURN ]", "[ REJECT & STOP TURN ]"},
-}
-
 func approvalOptionLabel(kind string, confirm bool) string {
-	labels, known := approvalOptionLabels[kind]
-	if !known {
+	label := (codex.ApprovalOption{Kind: kind}).Label(confirm)
+	if label == "" {
 		return ""
 	}
-	index := 0
-	if confirm {
-		index = 1
-	}
-	return i18n.Text(labels[index])
+	return i18n.Text("[ " + label + " ]")
 }
 
 type monitorApprovalButton struct {
@@ -114,7 +98,7 @@ func approvalShortcutLabel(kind string, confirm bool, index int) string {
 	if label == "" {
 		return ""
 	}
-	if confirm && (kind == "decline" || kind == "cancel" || kind == "cancelMcpTool") {
+	if confirm && (kind == "decline" || kind == "cancel" || kind == "cancelMcpTool" || kind == "cancelStdin") {
 		return i18n.Text("[ C CONFIRM ]") + " " + label
 	}
 	shortcut := strconv.Itoa(index + 1)

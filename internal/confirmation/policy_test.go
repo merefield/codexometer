@@ -14,8 +14,8 @@ func TestPolicy(t *testing.T) {
 	if Command(false) != Guarded || Command(true) != Narrow {
 		t.Fatal("unknown commands must remain guarded")
 	}
-	for _, kind := range []string{"accept", "decline", "cancel", "acceptForSession", "acceptWithExecpolicyAmendment", "acceptMcpAlways", "cancelMcpTool", "allowNetworkHost", "denyNetworkHost", "unknown"} {
-		narrow := kind == "accept" || kind == "decline" || kind == "cancel" || kind == "cancelMcpTool"
+	for _, kind := range []string{"accept", "decline", "cancel", "acceptForSession", "acceptWithExecpolicyAmendment", "acceptMcpAlways", "cancelMcpTool", "allowNetworkHost", "denyNetworkHost", "acceptStdin", "cancelStdin", "unknown"} {
+		narrow := kind == "accept" || kind == "decline" || kind == "cancel" || kind == "cancelMcpTool" || kind == "acceptStdin" || kind == "cancelStdin"
 		if (Approval(kind) == Narrow) != narrow {
 			t.Fatal("incorrect approval scope", kind)
 		}

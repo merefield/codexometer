@@ -134,11 +134,11 @@ func (c *control) offer(id string) (offeredAction, error) {
 		o.Command, o.Directory, o.Thread = ctx.CommandDetails.Command, ctx.CommandDetails.Directory, ctx.ThreadID
 		o.FileChanges = codex.FileDiffLines(ctx.FileChanges)
 		for _, option := range ctx.ApprovalOptions {
-			label := map[string]string{"accept": "APPROVE ONCE", "acceptForSession": "ALLOW FOR SESSION", "acceptWithExecpolicyAmendment": "ALWAYS ALLOW PREFIX", "decline": "DECLINE", "cancel": "REJECT & STOP TURN", "acceptMcpAlways": "ALWAYS ALLOW TOOL", "cancelMcpTool": "CANCEL TOOL CALL", "allowNetworkHost": "ALWAYS ALLOW HOST", "denyNetworkHost": "ALWAYS BLOCK HOST"}[option.Kind]
+			label := option.Label(false)
 			if label == "" {
 				continue
 			}
-			o.Choices = append(o.Choices, actionChoice{label, option.Detail, (option.GrantsPermission() && option.Kind != "accept") || option.Kind == "denyNetworkHost"})
+			o.Choices = append(o.Choices, actionChoice{label, option.Detail, option.ChangesPolicy()})
 			o.decisions = append(o.decisions, option.Value)
 		}
 		if len(o.Choices) == 0 {
