@@ -11,42 +11,45 @@ const projections = JSON.parse(
 
 // Keep the stream open so tests can distinguish fresh signals from disconnected
 // cached snapshots and can deliver updates without reloading the presentation.
-async function mockStream(page: Page, snapshot: object) {
-  await page.addInitScript((snapshot) => {
-    const original = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      if (input === '/api/events') {
-        document.documentElement.dataset.testStreams = String(
-          Number(document.documentElement.dataset.testStreams || 0) + 1,
-        );
-        return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(controller) {
-                const send = (value: unknown) =>
-                  controller.enqueue(
-                    new TextEncoder().encode(
-                      'data: ' + JSON.stringify(value) + '\n\n',
-                    ),
+async function mockStream(page: Page, snapshot: object, sendInitial = true) {
+  await page.addInitScript(
+    ({ snapshot, sendInitial }) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        if (input === '/api/events') {
+          document.documentElement.dataset.testStreams = String(
+            Number(document.documentElement.dataset.testStreams || 0) + 1,
+          );
+          return Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  const send = (value: unknown) =>
+                    controller.enqueue(
+                      new TextEncoder().encode(
+                        'data: ' + JSON.stringify(value) + '\n\n',
+                      ),
+                    );
+                  if (sendInitial) send(snapshot);
+                  window.addEventListener(
+                    'test-disconnect',
+                    () => controller.error(new Error('Test stream closed')),
+                    { once: true },
                   );
-                send(snapshot);
-                window.addEventListener(
-                  'test-disconnect',
-                  () => controller.error(new Error('Test stream closed')),
-                  { once: true },
-                );
-                window.addEventListener('test-snapshot', (event) =>
-                  send((event as CustomEvent).detail),
-                );
-              },
-            }),
-            { headers: { 'Content-Type': 'text/event-stream' } },
-          ),
-        );
-      }
-      return original(input, init);
-    };
-  }, snapshot);
+                  window.addEventListener('test-snapshot', (event) =>
+                    send((event as CustomEvent).detail),
+                  );
+                },
+              }),
+              { headers: { 'Content-Type': 'text/event-stream' } },
+            ),
+          );
+        }
+        return original(input, init);
+      };
+    },
+    { snapshot, sendInitial },
+  );
 }
 
 const test = base.extend<{
@@ -824,7 +827,12 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
-async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
+async function mockActions(
+  page: Page,
+  kind = 'approval',
+  noConfirm = false,
+  sendInitial = true,
+) {
   const snapshot = {
     control: true,
     noConfirm,
@@ -872,7 +880,7 @@ async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
     }[],
   };
   const calls: { action: string; body: Record<string, unknown> }[] = [];
-  await mockStream(page, snapshot);
+  await mockStream(page, snapshot, sendInitial);
   await page.route('**/api/control/*', async (route) => {
     const action = route.request().url().split('/').pop()!;
     const body = route.request().postDataJSON();
@@ -5360,4 +5368,52 @@ test('clipped partial results stay unread until visible inside the content scrol
   await result.scrollIntoViewIfNeeded();
   await result.dispatchEvent('wheel', { deltaY: 100 });
   await expect.poll(() => reads.length).toBe(1);
+});
+
+test('restoring full detail with a late first snapshot keeps the result unread until review', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt', false, false);
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.reload();
+  await expect(page.locator('.startup')).toHaveCount(0);
+  await expect(page.locator('#content')).not.toHaveAttribute('inert');
+  await expect(
+    page.getByText('Connecting to your local Codexometer…'),
+  ).toBeVisible();
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'restore-v1',
+        replyTurn: 'restore-t1',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(page.locator('.detail-context')).toBeVisible();
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+  // Leaving and deliberately reopening the result still counts as review.
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect.poll(() => reads.length).toBe(2);
 });

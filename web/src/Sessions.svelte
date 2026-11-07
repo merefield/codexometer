@@ -193,7 +193,8 @@
     if (row) void reviewResult(row);
   }
   // An arriving result in an already-open page needs a fresh review gesture.
-  let resultRoute = $state('');
+  // Restoring a URL is not a review gesture, including when data arrives late.
+  let resultRoute = $state(untrack(() => params.id || ''));
   let pendingResultRoute = $state('');
   $effect(() => {
     const id = params.id || '';
