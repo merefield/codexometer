@@ -125,7 +125,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 						continue
 					}
 					action := "decision:" + strconv.Itoa(i)
-					label := approvalShortcutLabel(option.Kind, confirmed && i == 0, i)
+					label := m.approvalButtonLabel(option.Kind, confirmed && i == 0, i)
 					found := false
 					for y, line := range lines {
 						pos := strings.Index(line, label)
@@ -204,7 +204,7 @@ func TestMonitorApprovalNumberSelectsCConfirms(t *testing.T) {
 				t.Fatal("number did not exclusively arm requested choice")
 			}
 		}
-		if !strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel(m.monitorSessionData[0].preview.ApprovalOptions[index].Kind, true, index)) {
+		if !strings.Contains(ansi.Strip(m.render()), m.approvalButtonLabel(m.monitorSessionData[0].preview.ApprovalOptions[index].Kind, true, index)) {
 			t.Fatal("C confirmation shortcut missing")
 		}
 		m, cmd, _ = m.updateMonitorContextKey("c")
@@ -369,5 +369,51 @@ func TestMonitorApprovalFooterPinnedBelowScrollingText(t *testing.T) {
 	}
 	if rows, gap, _ := monitorContextBodyLayout(6, 1); rows != 3 || gap != 0 {
 		t.Fatal("short terminal did not drop padding first")
+	}
+}
+
+func TestApprovalButtonsKeepEvenVisibleGapsAndStableConfirmationPositions(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for _, middle := range []string{"decline", "acceptForSession"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			m.monitorSessionData[0].preview.ApprovalOptions = [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: middle, Value: middle}, {Kind: "cancel", Value: "cancel"}}
+			before := m.monitorApprovalButtons(140, 20)
+			if len(before) != 3 {
+				t.Fatal("three choices were not visible")
+			}
+			for armed := -1; armed < len(before); armed++ {
+				if armed >= 0 && !m.confirmations.Required(confirmation.Approval(m.monitorSessionData[0].preview.ApprovalOptions[armed].Kind)) {
+					continue
+				}
+				m.monitorApprovalConfirm = ""
+				if armed >= 0 {
+					m.monitorApprovalConfirm = "live/decision:" + strconv.Itoa(armed)
+					m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
+				}
+				buttons := m.monitorApprovalButtons(140, 20)
+				rendered := ansi.Strip(m.renderMonitorApprovalControls(140, 20, paletteFor(m.theme)))
+				for i, button := range buttons {
+					if button.x != before[i].x || button.y != before[i].y {
+						t.Fatal("arming moved a neighbouring decision")
+					}
+					if lipgloss.Width(button.label) != button.slot {
+						t.Fatal("reserved space was left between buttons")
+					}
+					if i > 0 && buttons[i-1].y == button.y {
+						previous := buttons[i-1]
+						end := strings.Index(rendered, previous.label) + len(previous.label)
+						start := strings.Index(rendered, button.label)
+						if rendered[end:start] != "  " {
+							t.Fatalf("mode %s choice %d has uneven gap: %q", mode, i+1, rendered[end:start])
+						}
+					}
+					_, _, controlY := monitorContextBodyLayout(20, buttons[len(buttons)-1].y+1)
+					if monitorButtonAt(buttons, 20, 2+button.x+button.slot-2, controlY+button.y) != button.action {
+						t.Fatal("painted button padding does not belong to its button")
+					}
+				}
+			}
+		}
 	}
 }

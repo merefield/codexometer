@@ -135,6 +135,14 @@ func (m Model) approvalButtonLabel(kind string, confirm bool, index int) string 
 	if confirm && kind == "accept" && m.keyboardEventTypes {
 		label = strings.Replace(label, "(C)", "("+strconv.Itoa(index+1)+")", 1)
 	}
+	if m.confirmations.Required(confirmation.Approval(kind)) {
+		width := max(lipgloss.Width(approvalShortcutLabel(kind, false, index)), lipgloss.Width(approvalShortcutLabel(kind, true, index)))
+		if padding := width - lipgloss.Width(label); padding > 0 {
+			// Keep reserved confirmation space inside the painted brackets,
+			// so visible gaps and neighbouring button positions stay constant.
+			label = strings.TrimSuffix(label, " ]") + strings.Repeat(" ", padding) + " ]"
+		}
+	}
 	return label
 }
 
@@ -157,9 +165,6 @@ func (m Model) monitorApprovalButtons(width, height int) []monitorApprovalButton
 		}
 		label := m.approvalButtonLabel(option.Kind, false, i)
 		slot := lipgloss.Width(label)
-		if m.confirmations.Required(confirmation.Approval(option.Kind)) {
-			slot = max(slot, lipgloss.Width(m.approvalButtonLabel(option.Kind, true, i)))
-		}
 		if slot > width-4 || label == "" {
 			return nil
 		}

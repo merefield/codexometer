@@ -344,7 +344,7 @@ func TestExpandedContextResponsiveHitTargets(t *testing.T) {
 			m.monitorSessionData = append(m.monitorSessionData, s)
 		}
 		m.monitorSessionData = m.monitorSessionData[:size.n]
-		if strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel("accept", false, 0)) {
+		if strings.Contains(ansi.Strip(m.render()), m.approvalButtonLabel("accept", false, 0)) {
 			t.Fatal("compact exposed approval")
 		}
 		m.changeMonitorContext(m.monitorSessionData[0].id, 1)
