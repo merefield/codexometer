@@ -188,3 +188,62 @@ func TestUnreadIndependentPartialPaneWithHiddenGlobalLayout(t *testing.T) {
 		t.Fatal("wheel over independent result did not acknowledge it")
 	}
 }
+
+func TestUnreadCompactPartialResultBounds(t *testing.T) {
+	for _, mode := range []int{contextSplit, contextWide} {
+		for _, height := range []int{3, 4} {
+			found := false
+			for terminalHeight := 12; terminalHeight < 70; terminalHeight++ {
+				m, _ := unreadTestModel()
+				m.height = terminalHeight
+				m.setRowContext("root-one", mode)
+				for _, pane := range m.monitorPartialContextPanes() {
+					if pane.session.id != "root-one" || pane.frame.height != height || pane.frame.width < 5 {
+						continue
+					}
+					rect, ok := m.monitorResultRect("root-one")
+					if !ok || rect.y != m.monitorDashboardLayout().meterY+pane.frame.y+1 || rect.height != height-2 {
+						t.Fatalf("mode %v height %d: visible compact reply has incorrect bounds: %+v", mode, height, rect)
+					}
+					next, cmd := m.Update(tea.MouseWheelMsg{X: rect.x, Y: rect.y, Button: tea.MouseWheelUp})
+					if cmd == nil || !next.(Model).monitorReadBusy {
+						t.Fatalf("visible compact reply could not be reviewed: mode=%d paneHeight=%d terminalHeight=%d rect=%+v model=%+v", mode, height, terminalHeight, rect, next.(Model).monitorError)
+					}
+					found = true
+					break
+				}
+				if found {
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("no %d-row pane in mode %v", height, mode)
+			}
+		}
+	}
+}
+
+func TestUnreadFullResultBoundsExcludeControls(t *testing.T) {
+	for _, history := range []bool{false, true} {
+		for _, height := range []int{18, 40} {
+			m, _ := promptTestModel()
+			m.height = height
+			if history {
+				old := m.monitorSessionData[0].preview
+				old.TurnID = "older"
+				m.saveMonitorHistory("root-one", monitorTurnHistory{turns: []codex.SessionContext{old}})
+			}
+			g := m.monitorDashboardLayout()
+			controls := m.layoutDetailControls(g.contentWidth, g.meterHeight)
+			if controls.rows == 0 {
+				t.Fatal("fixture has no composer controls")
+			}
+			rect, ok := m.monitorResultRect("root-one")
+			_, _, controlY := m.detailBodyLayout(g.contentWidth, g.meterHeight, controls.rows)
+			firstBody := g.meterY + 1 + m.historyNavigationRows(g.contentWidth, g.meterHeight)
+			if !ok || rect.y != firstBody || !rect.contains(rect.x, firstBody) || rect.contains(rect.x, g.meterY+controlY) {
+				t.Fatalf("history %v height %d: bounds include controls or miss first body row: %+v controlY=%d", history, height, rect, controlY)
+			}
+		}
+	}
+}

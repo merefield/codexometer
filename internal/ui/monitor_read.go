@@ -99,13 +99,23 @@ func (m Model) monitorResultRect(id string) (monitorRect, bool) {
 		}
 		controls := m.layoutDetailControls(g.contentWidth, g.meterHeight)
 		rows, _, _ := m.detailBodyLayout(g.contentWidth, g.meterHeight, controls.rows)
-		rect := monitorRect{x: 4, y: g.meterY + 2, width: g.contentWidth - 4, height: rows}
+		rect := monitorRect{x: 4, y: g.meterY + 1 + m.historyNavigationRows(g.contentWidth, g.meterHeight), width: g.contentWidth - 4, height: rows}
 		return rect, rect.width > 0 && rect.height > 0
 	}
 	for _, pane := range m.monitorPartialContextPanes() {
 		if pane.session.id == id {
 			r := pane.frame
-			rect := monitorRect{x: r.x + 4, y: g.meterY + r.y + 2, width: r.width - 4, height: r.height - 4}
+			rows, _, _ := monitorContextBodyLayout(r.height, 0)
+			if m.rowContextMode(id) == contextWide {
+				controls := m.expandedControlRows(r.width, r.height, pane.session)
+				if id == m.monitorContextTarget() {
+					controls += m.monitorQueueRows(r.width, r.height, controls)
+				}
+				rows, _, _ = monitorContextBodyLayout(r.height, controls)
+			} else {
+				rows = min(rows, 2) // split previews display at most two reply rows
+			}
+			rect := monitorRect{x: r.x + 4, y: g.meterY + r.y + 1, width: r.width - 4, height: rows}
 			return rect, rect.width > 0 && rect.height > 0
 		}
 	}
