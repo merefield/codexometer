@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER HELP ]",
   "[ ← BACK ]": "[ ← TERUG ]",
   "[ F REFRESH ]": "[ F VERNIEUWEN ]",
-  "[ ESC CANCEL ]": "[ ESC ANNULEREN ]"
+  "[ ESC CANCEL ]": "[ ESC ANNULEREN ]",
+  "HUMAN APPROVAL REQUIRED": "MENSELIJKE GOEDKEURING VEREIST",
+  "Managed policy requires approval each time.": "Beheerd beleid vereist elke keer goedkeuring."
 }

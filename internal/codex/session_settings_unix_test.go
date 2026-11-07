@@ -17,36 +17,41 @@ import (
 )
 
 type quotaDaemonFixture struct {
-	mu            sync.Mutex
-	sessions      map[string]QuotaSession
-	writes        []map[string]any
-	fail          string
-	queued        bool
-	notify        bool
-	started       chan struct{}
-	release       chan struct{}
-	commandStatus string
-	catalogues    map[string]map[string]any
-	historyReads  []map[string]any
-	names         map[string]string
-	nameWrites    []map[string]any
-	cwds          map[string]string
-	ignoreCwd     bool
-	environments  []any
-	permissions   map[string]string
-	resumeReads   []map[string]any
-	hookReads     []map[string]any
-	threadHooks   map[string]any
-	hookError     map[string]any
-	goals         map[string]*SessionGoal
-	goalReads     int
-	goalWrites    []map[string]any
-	goalMethods   []string
-	ignoreGoal    bool
-	goalReadError map[string]any
-	goalReadHook  func()
-	goalNoReply   map[string]bool
-	threadReads   int
+	readReceipts     map[string]map[string]any
+	readUpdates      []map[string]any
+	readConflict     bool
+	historyReadHook  func()
+	initializeParams map[string]any
+	mu               sync.Mutex
+	sessions         map[string]QuotaSession
+	writes           []map[string]any
+	fail             string
+	queued           bool
+	notify           bool
+	started          chan struct{}
+	release          chan struct{}
+	commandStatus    string
+	catalogues       map[string]map[string]any
+	historyReads     []map[string]any
+	names            map[string]string
+	nameWrites       []map[string]any
+	cwds             map[string]string
+	ignoreCwd        bool
+	environments     []any
+	permissions      map[string]string
+	resumeReads      []map[string]any
+	hookReads        []map[string]any
+	threadHooks      map[string]any
+	hookError        map[string]any
+	goals            map[string]*SessionGoal
+	goalReads        int
+	goalWrites       []map[string]any
+	goalMethods      []string
+	ignoreGoal       bool
+	goalReadError    map[string]any
+	goalReadHook     func()
+	goalNoReply      map[string]bool
+	threadReads      int
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -128,6 +133,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			id, _ := req.Params["threadId"].(string)
 			switch req.Method {
 			case "initialize":
+				fixture.initializeParams = req.Params
 				result["userAgent"] = "test"
 			case "model/list":
 				result["data"] = []any{map[string]any{"model": "small", "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium"}}, "serviceTiers": []any{map[string]any{"id": "flex", "name": "Fast"}, map[string]any{"id": "priority", "name": "Slow"}}}}
@@ -148,11 +154,23 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
 			case "thread/read":
 				fixture.threadReads++
+				result["readState"] = fixture.readReceipts[id]
 				status := fixture.commandStatus
 				if status == "" {
 					status = "idle"
 				}
 				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments}
+			case "thread/readState/update":
+				fixture.readUpdates = append(fixture.readUpdates, req.Params)
+				receipt := fixture.readReceipts[id]
+				if fixture.readConflict || receipt == nil || req.Params["operation"] != "read" || req.Params["expectedRevision"] != receipt["revision"] {
+					failure = true
+					failureDetail = map[string]any{"code": -32600, "message": "read state changed", "data": map[string]any{"reason": "readStateConflict"}}
+				} else {
+					receipt = map[string]any{"revision": receipt["revision"].(string) + "-read", "firstUnread": nil}
+					fixture.readReceipts[id] = receipt
+					result["readState"] = receipt
+				}
 			case "thread/goal/get":
 				fixture.goalReads++
 				noReply = fixture.goalNoReply[id]
@@ -276,6 +294,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			default:
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)
+					if fixture.historyReadHook != nil {
+						fixture.historyReadHook()
+					}
 				}
 				if value, ok := fixture.catalogues[req.Method]; ok {
 					result = value

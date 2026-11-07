@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER ABI ]",
   "[ ← BACK ]": "[ ← TAGASI ]",
   "[ F REFRESH ]": "[ F VÄRSKENDA ]",
-  "[ ESC CANCEL ]": "[ ESC TÜHISTA ]"
+  "[ ESC CANCEL ]": "[ ESC TÜHISTA ]",
+  "HUMAN APPROVAL REQUIRED": "VAJALIK ON INIMESE HEAKSKIIT",
+  "Managed policy requires approval each time.": "Hallatud poliitika nõuab iga kord heakskiitu."
 }

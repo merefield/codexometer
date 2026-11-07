@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER HILFE ]",
   "[ ← BACK ]": "[ ← ZURÜCK ]",
   "[ F REFRESH ]": "[ F AKTUALISIEREN ]",
-  "[ ESC CANCEL ]": "[ ESC ABBRECHEN ]"
+  "[ ESC CANCEL ]": "[ ESC ABBRECHEN ]",
+  "HUMAN APPROVAL REQUIRED": "MENSCHLICHE GENEHMIGUNG ERFORDERLICH",
+  "Managed policy requires approval each time.": "Die verwaltete Richtlinie erfordert jedes Mal eine Genehmigung."
 }

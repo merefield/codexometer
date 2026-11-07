@@ -309,3 +309,14 @@ func withServerError(action string, err error, stderr string) error {
 	}
 	return fmt.Errorf("%s: %w", action, err)
 }
+
+// sessionCapability keeps optional live-control adapters consistent when the
+// local observer is unavailable (including platforms without a shared daemon).
+func sessionCapability[T any](c Client) (T, bool) {
+	var unavailable T
+	if c.LiveUsage == nil {
+		return unavailable, false
+	}
+	capability, ok := c.LiveUsage.statusProvider.(T)
+	return capability, ok
+}

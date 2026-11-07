@@ -1,7 +1,13 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { router } from 'svelte-spa-router';
-  import { live, date, number, type Session } from './state.svelte';
+  import {
+    live,
+    date,
+    number,
+    controlRequest,
+    type Session,
+  } from './state.svelte';
   import {
     preferences,
     detailLevel,
@@ -113,11 +119,99 @@
     sessions.filter(
       (s) =>
         s.status === 'TURN COMPLETE' &&
+        (!s.readStateKnown || s.unread) &&
         !triggers.some((t) => t.session === s.id) &&
         !profiles.some((p) => p.session === s.id && p.pending),
     ),
   );
 
+  let readNotice = $state('');
+  const reading = new Set<string>();
+  async function reviewResult(row: Session) {
+    if (
+      !live.data?.control ||
+      stale ||
+      !row.unread ||
+      !row.readRevision ||
+      !row.replyTurn ||
+      row.streaming ||
+      profileFocused
+    )
+      return;
+    const id = row.id,
+      revision = row.readRevision,
+      turn = row.replyTurn;
+    const key = JSON.stringify([id, revision, turn]);
+    if (reading.has(key)) return;
+    reading.add(key);
+    try {
+      await tick();
+      const current = sessions.find((s) => s.id === id);
+      const scrollport = document.getElementById('content');
+      const clip = scrollport?.getBoundingClientRect();
+      const left = clip ? clip.left + scrollport!.clientLeft : 0;
+      const top = clip ? clip.top + scrollport!.clientTop : 0;
+      const right = left + (scrollport?.clientWidth || 0);
+      const bottom = top + (scrollport?.clientHeight || 0);
+      const visible = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-result-session]'),
+      ).some((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          scrollport?.contains(node) &&
+          node.dataset.resultSession === id &&
+          node.dataset.resultTurn === turn &&
+          !node.closest('[inert], [hidden]') &&
+          document.visibilityState === 'visible' &&
+          rect.left < Math.min(window.innerWidth, right) &&
+          rect.right > Math.max(0, left) &&
+          rect.top < Math.min(window.innerHeight, bottom) &&
+          rect.bottom > Math.max(0, top) &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      });
+      if (
+        !visible ||
+        current?.readRevision !== revision ||
+        current?.replyTurn !== turn ||
+        stale
+      )
+        return;
+      await controlRequest('read', { session: id, read: { turn, revision } });
+      readNotice = '';
+    } catch {
+      readNotice =
+        'Result changed or could not be marked read. Open it again to retry.';
+    } finally {
+      reading.delete(key);
+    }
+  }
+  function openResult(id: string) {
+    select(id);
+    const row = sessions.find((s) => s.id === id);
+    if (row) void reviewResult(row);
+  }
+  // An arriving result in an already-open page needs a fresh review gesture.
+  // Restoring a URL is not a review gesture, including when data arrives late.
+  let resultRoute = $state(untrack(() => params.id || ''));
+  let pendingResultRoute = $state('');
+  $effect(() => {
+    const id = params.id || '';
+    if (id !== resultRoute) {
+      resultRoute = id;
+      pendingResultRoute = id;
+    }
+  });
+  $effect(() => {
+    if (pendingResultRoute && selected?.id === pendingResultRoute) {
+      const row = selected;
+      pendingResultRoute = '';
+      untrack(() => {
+        void reviewResult(row);
+      });
+    }
+  });
   function select(id: string) {
     preferences.selected = id;
     void tick().then(() =>
@@ -137,7 +231,13 @@
     }
     const level = detailLevel(id) + delta;
     if (level > 2) location.hash = '/sessions/' + encodeURIComponent(id);
-    else setDetailLevel(id, level);
+    else {
+      setDetailLevel(id, level);
+      if (delta > 0) {
+        const row = sessions.find((s) => s.id === id);
+        if (row) void reviewResult(row);
+      }
+    }
   }
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
@@ -282,6 +382,7 @@
     </p>{/if}
 {/snippet}
 
+{#if readNotice}<p class="notice" role="status">{readNotice}</p>{/if}
 <div class="spread">
   <h1>SESSION TOTALS</h1>
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
@@ -366,7 +467,12 @@
 {#if params.id}
   {#if selected}<section class="panel full-detail">
       <div class="detail-heading">
-        <h2 class:failed={isFailure(selected) && !stale && !profileFocused}>
+        <h2
+          class:failed={isFailure(selected) && !stale && !profileFocused}
+          class:reviewed={selected.status === 'TURN COMPLETE' &&
+            selected.readStateKnown &&
+            !selected.unread}
+        >
           <span
             class="lamp lit"
             class:failed={isFailure(selected) && !stale}
@@ -398,7 +504,14 @@
         class="detail-workspace"
         style:display={profileFocused ? 'none' : undefined}
       >
-        <div class="detail-context">
+        <div
+          class="detail-context"
+          data-result-session={selected.id}
+          data-result-turn={selected.replyTurn}
+          onwheel={() => {
+            void reviewResult(selected);
+          }}
+        >
           {@render context(selected, true, true)}
         </div>
         {#if live.data?.control}
@@ -498,9 +611,12 @@
         <h2>
           <a
             class="status-detail"
+            class:reviewed={session.status === 'TURN COMPLETE' &&
+              session.readStateKnown &&
+              !session.unread}
             class:failed={isFailure(session) && !stale}
             href={'#/sessions/' + encodeURIComponent(session.id)}
-            onclick={() => select(session.id)}
+            onclick={() => openResult(session.id)}
           >
             <span
               class="lamp lit"
@@ -530,8 +646,10 @@
           >
           <button
             onclick={() => {
+              const opening = level === 0;
               select(session.id);
-              setDetailLevel(session.id, level ? 0 : 1);
+              setDetailLevel(session.id, opening ? 1 : 0);
+              if (opening) void reviewResult(session);
             }}
             aria-expanded={level > 0}
             >{level ? 'HIDE DETAIL' : 'SHOW DETAIL'}</button
@@ -543,7 +661,7 @@
         <a
           class="button"
           href={'#/sessions/' + encodeURIComponent(session.id)}
-          onclick={() => select(session.id)}>FULL DETAIL →</a
+          onclick={() => openResult(session.id)}>FULL DETAIL →</a
         >
         {#if !stale && (['APPROVAL NEEDED', 'INPUT NEEDED', 'CHECK SESSION'].includes(session.status) || isFailure(session))}<p
             class="attention-note"
@@ -570,7 +688,15 @@
                   : 'APPROVAL IN CODEX ↗'}</a
               >{/if}
           </div>
-          {@render context(session, false)}
+          <div
+            data-result-session={session.id}
+            data-result-turn={session.replyTurn}
+            onwheel={() => {
+              void reviewResult(session);
+            }}
+          >
+            {@render context(session, false)}
+          </div>
           {#each profiles.filter((p) => p.session === session.id) as profile}
             {#if profile.notice}<p class="notice">{profile.notice}</p>{/if}
             {#if profile.pending}<a
@@ -603,6 +729,13 @@
 {/if}
 
 <style>
+  .reviewed {
+    color: var(--muted);
+    font-weight: normal;
+  }
+  .reviewed .lamp {
+    opacity: 0.35;
+  }
   .failed {
     color: var(--approval);
   }

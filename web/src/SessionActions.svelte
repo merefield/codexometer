@@ -475,6 +475,10 @@
         ? 'QUOTA THRESHOLD'
         : 'SESSION CONTROL // EXPERIMENTAL'}
     </h3>
+    {#if offer?.requiredHumanApproval && !stale && !offerError}
+      <h3>HUMAN APPROVAL REQUIRED</h3>
+      <p>Managed policy requires approval each time.</p>
+    {/if}
     {#if offer?.profile && !stale && !offerError}
       <p>
         Your {offer.profile.threshold}% quota threshold has been reached. Review

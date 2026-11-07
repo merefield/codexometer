@@ -543,5 +543,7 @@
   "[ ENTER HELP ]": "[ ENTER СПРАВКА ]",
   "[ ← BACK ]": "[ ← НАЗАД ]",
   "[ F REFRESH ]": "[ F ОБНОВИТЬ ]",
-  "[ ESC CANCEL ]": "[ ESC ОТМЕНА ]"
+  "[ ESC CANCEL ]": "[ ESC ОТМЕНА ]",
+  "HUMAN APPROVAL REQUIRED": "ТРЕБУЕТСЯ ОДОБРЕНИЕ ЧЕЛОВЕКА",
+  "Managed policy requires approval each time.": "Управляемая политика требует одобрения каждый раз."
 }

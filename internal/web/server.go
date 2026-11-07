@@ -60,6 +60,9 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
 		s.store.configureThresholds(policy.QuotaStepPolicy())
 	}
+	if client, ok := source.(interface{ SetSessionHumanApprovalSupport(bool) }); ok {
+		client.SetSessionHumanApprovalSupport(writable)
+	}
 	mode := "READ ONLY"
 	if writable {
 		s.control = newControl(source, s.store)
@@ -134,7 +137,7 @@ func (s *server) handler() http.Handler {
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
 	if s.control != nil {
-		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands"} {
+		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands", "read"} {
 			mux.Handle("POST /api/control/"+action, s.authorize(http.HandlerFunc(s.control.handle(action, "http://"+s.host))))
 		}
 	}

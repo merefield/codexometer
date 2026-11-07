@@ -60,6 +60,7 @@ type LiveUsageSnapshot struct {
 // LiveUsageSession is one independently started local Codex session. Token
 // usage from explicitly linked spawned descendants is folded into the root.
 type LiveUsageSession struct {
+	ReadState        SessionReadState
 	Goal             *SessionGoal
 	ModelSettings    SessionModelSettings
 	ID               string
@@ -140,6 +141,7 @@ type LiveUsageReader struct {
 	nameIndexInfo          os.FileInfo
 	daemonContexts         map[string]SessionContext
 	daemonDirectories      map[string]string
+	daemonReadStates       map[string]SessionReadState
 	daemonGoals            map[string]*SessionGoal
 	SessionsRoot           string
 	WriterLocksRoot        string
@@ -409,6 +411,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
 	r.daemonGoals = nil
+	r.daemonReadStates = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
@@ -419,6 +422,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.daemonGoals = daemonSnapshot.Goals
+			r.daemonReadStates = daemonSnapshot.ReadStates
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -1546,6 +1550,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	anyWorking := false
 	for _, session := range groups {
 		session.Goal = r.daemonGoals[session.ID].Clone()
+		session.ReadState = r.daemonReadStates[session.ID]
 		if root := byID[session.ID]; root != nil && !session.Unattributed {
 			session.ModelSettings = root.modelSettings
 		}

@@ -112,3 +112,14 @@ func TestApprovalDetailKeepsCommandWhitespaceAndControls(t *testing.T) {
 		t.Fatal("display formatting changed the original approval")
 	}
 }
+
+func TestHumanApprovalUsesExistingReviewWithClearPolicyLabel(t *testing.T) {
+	m := approvalTestModel()
+	c := &m.monitorSessionData[0].preview
+	c.RequiredHumanApproval = true
+	c.CommandDetails = codex.ApprovalCommandDetails{Command: "git push", Directory: "/work"}
+	text := strings.Join(m.contextDetailLines(120), "\n")
+	if !strings.Contains(text, "HUMAN APPROVAL REQUIRED") || !strings.Contains(text, "Managed policy requires approval each time.") {
+		t.Fatal("missing human checkpoint explanation", text)
+	}
+}

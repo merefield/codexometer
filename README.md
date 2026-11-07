@@ -1575,10 +1575,10 @@ same action on that session. The presentations are:
 
    **Recent turn history:** `Alt+Left` opens the previous completed turn;
    `Alt+Right` moves forwards, eventually returning to live detail. Click
-   **Previous**, **Next**, or **Live** for the same navigation. On macOS, use
-   `Option+Left` / `Option+Right`: the default Terminal.app and Ghostty
-   word-movement encodings are also recognised while the reply editor is
-   unfocused. While typing, those encodings continue to move between words;
+   **Previous**, **Next**, or **Live** for the same navigation. On macOS, the
+   labels show `Opt` for the Option key. Use `Option+Left` / `Option+Right`:
+   the default Terminal.app and Ghostty word-movement encodings are also
+   recognised while the reply editor is unfocused. While typing, those encodings continue to move between words;
    leave the editor before navigating history. These controls
    appear when replies have been retained and space permits; narrow layouts
    shorten the labels, and the hotkeys remain available on short terminals.
@@ -1599,6 +1599,22 @@ same action on that session. The presentations are:
    History reads request only the server's prompt/final-reply summary items,
    not full command-output logs, and run asynchronously at most every five
    seconds while full detail is visible.
+
+**Unread completed results (shared app-server):** when Codex supplies durable
+read state, **TURN COMPLETE** remains highlighted and its completion pill stays
+visible until the result is reviewed. Deliberately opening partial or full Detail,
+or scrolling within its displayed result pane, acknowledges the latest completed
+reply. The completion status remains visible in subdued styling afterward.
+Rendering a preview, selecting a row, restoring a layout or receiving a new result
+in an already-open pane does not acknowledge it. An older history page cannot
+acknowledge a newer result; changed receipts require a fresh review action.
+
+These receipts are saved by Codex and shared with supported native Codex views,
+so reviewed results remain reviewed across restarts. Codexometer does not save a
+second read-state database. Read-only web mode displays receipts without changing
+them; `--web-control` enables acknowledgement. When durable receipts are unavailable,
+existing completion behaviour remains. Linked-agent previews do not acknowledge
+the root's result, and approval/question/error controls keep priority.
 
 Whenever visible **LAST REPLY** or **LAST ACTIVITY** text is available, its box offers **[ (C)OPY ]**
 in the bottom-right border (split, expanded and full detail, when space permits).
@@ -2099,6 +2115,15 @@ metadata and blank separators. Commands retain their line breaks and are
 visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
+
+**Managed human approvals (Codex 0.167+):** a managed command policy can require
+fresh approval each time, even when ordinary approvals have been saved or
+reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE**,
+**DECLINE**, and **REJECT & STOP TURN**, with a **HUMAN APPROVAL REQUIRED** label.
+Session-wide and persistent grants cannot satisfy these checkpoints. `--no-confirm`
+can remove the extra confirmation step, but every request still needs an explicit
+human action. Passive observation and read-only web mode do not advertise support
+for answering these checkpoints; use a capable native Codex client there.
 
 **File-change approvals (shared app-server only):** proposed additions, deletions
 and updates are shown as scrollable patches, with file paths, rename destinations,
@@ -3760,10 +3785,10 @@ go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
 An optional Unix integration check verifies the installed Codex against either
-the 0.164.0 baseline or 0.166.0, including negotiated compressed WebSocket RPC:
+the 0.164.0 baseline, 0.166.0 or 0.167.0, including negotiated compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.166.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.167.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing

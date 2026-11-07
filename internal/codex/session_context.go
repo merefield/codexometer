@@ -26,12 +26,13 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	FailureCode      string
-	CurrentTask      string
-	LatestGuidance   string
-	LatestGuidanceID string
-	Streaming        bool
-	Activity         SessionActivity
+	RequiredHumanApproval bool
+	FailureCode           string
+	CurrentTask           string
+	LatestGuidance        string
+	LatestGuidanceID      string
+	Streaming             bool
+	Activity              SessionActivity
 	// ApprovalContext is preceding same-thread/turn prose captured when the
 	// request arrived. Display-only: never part of the authorised action.
 	ApprovalContext string

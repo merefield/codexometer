@@ -62,6 +62,9 @@ func (m *Model) changeMonitorContext(id string, delta int) {
 		if s.id == id && m.monitorSessionVisible(s) {
 			mode := m.rowContextMode(id)
 			next := min(max(mode+delta, contextGraph), contextFull)
+			if next > mode && next >= contextSplit {
+				m.monitorReadIntent = id
+			}
 			if next != mode || m.monitorSelectedID != id {
 				m.setRowContext(id, next)
 			}
@@ -344,4 +347,32 @@ func (m Model) expandedContextAt(x, y int) string {
 		rowY += heights[i]
 	}
 	return ""
+}
+
+// These frames are shared by Copy hit testing and explicit result review.
+// Coordinates are relative to the dashboard content, including its header rows.
+type monitorContextPane struct {
+	session monitorSession
+	frame   monitorRect
+}
+
+func (m Model) monitorPartialContextPanes() []monitorContextPane {
+	g := m.monitorDashboardLayout()
+	area := m.monitorArea(g.contentWidth, g.meterHeight)
+	sessions, heights, _ := m.monitorSessionPage(area.graphHeight)
+	metrics, wideWidth, _ := monitorSessionColumnWidths(area.width)
+	top := area.topHeight + area.gap - 1
+	var panes []monitorContextPane
+	for i, row := range sessions {
+		width := wideWidth
+		mode := m.rowContextMode(row.id)
+		if mode == contextSplit {
+			_, width, _ = m.contextColumns(area.width, row)
+		}
+		if mode == contextSplit || mode == contextWide {
+			panes = append(panes, monitorContextPane{row, monitorRect{x: metrics + 1, y: top, width: width, height: heights[i]}})
+		}
+		top += heights[i]
+	}
+	return panes
 }

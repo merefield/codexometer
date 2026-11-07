@@ -11,42 +11,45 @@ const projections = JSON.parse(
 
 // Keep the stream open so tests can distinguish fresh signals from disconnected
 // cached snapshots and can deliver updates without reloading the presentation.
-async function mockStream(page: Page, snapshot: object) {
-  await page.addInitScript((snapshot) => {
-    const original = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      if (input === '/api/events') {
-        document.documentElement.dataset.testStreams = String(
-          Number(document.documentElement.dataset.testStreams || 0) + 1,
-        );
-        return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(controller) {
-                const send = (value: unknown) =>
-                  controller.enqueue(
-                    new TextEncoder().encode(
-                      'data: ' + JSON.stringify(value) + '\n\n',
-                    ),
+async function mockStream(page: Page, snapshot: object, sendInitial = true) {
+  await page.addInitScript(
+    ({ snapshot, sendInitial }) => {
+      const original = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        if (input === '/api/events') {
+          document.documentElement.dataset.testStreams = String(
+            Number(document.documentElement.dataset.testStreams || 0) + 1,
+          );
+          return Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  const send = (value: unknown) =>
+                    controller.enqueue(
+                      new TextEncoder().encode(
+                        'data: ' + JSON.stringify(value) + '\n\n',
+                      ),
+                    );
+                  if (sendInitial) send(snapshot);
+                  window.addEventListener(
+                    'test-disconnect',
+                    () => controller.error(new Error('Test stream closed')),
+                    { once: true },
                   );
-                send(snapshot);
-                window.addEventListener(
-                  'test-disconnect',
-                  () => controller.error(new Error('Test stream closed')),
-                  { once: true },
-                );
-                window.addEventListener('test-snapshot', (event) =>
-                  send((event as CustomEvent).detail),
-                );
-              },
-            }),
-            { headers: { 'Content-Type': 'text/event-stream' } },
-          ),
-        );
-      }
-      return original(input, init);
-    };
-  }, snapshot);
+                  window.addEventListener('test-snapshot', (event) =>
+                    send((event as CustomEvent).detail),
+                  );
+                },
+              }),
+              { headers: { 'Content-Type': 'text/event-stream' } },
+            ),
+          );
+        }
+        return original(input, init);
+      };
+    },
+    { snapshot, sendInitial },
+  );
 }
 
 const test = base.extend<{
@@ -824,7 +827,12 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
-async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
+async function mockActions(
+  page: Page,
+  kind = 'approval',
+  noConfirm = false,
+  sendInitial = true,
+) {
   const snapshot = {
     control: true,
     noConfirm,
@@ -872,7 +880,7 @@ async function mockActions(page: Page, kind = 'approval', noConfirm = false) {
     }[],
   };
   const calls: { action: string; body: Record<string, unknown> }[] = [];
-  await mockStream(page, snapshot);
+  await mockStream(page, snapshot, sendInitial);
   await page.route('**/api/control/*', async (route) => {
     const action = route.request().url().split('/').pop()!;
     const body = route.request().postDataJSON();
@@ -5148,4 +5156,264 @@ test('Quota accounting diagnostics retain source details safely on narrow screen
     snapshot,
   );
   await expect(notice).toHaveCount(0);
+});
+
+test('unread completion is acknowledged by opening partial detail, not by selection or refresh', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'v1',
+        replyTurn: 't1',
+      },
+    ],
+  };
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  const row = page.locator('.session-row').first();
+  await expect(row).toContainText('TURN COMPLETE');
+  await row
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await expect.poll(() => reads.length).toBe(0);
+  await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  await expect.poll(() => reads.length).toBe(1);
+  expect(reads[0]).toEqual({
+    session: 'parent',
+    read: { turn: 't1', revision: 'v1' },
+  });
+  const reviewed = {
+    ...unread,
+    sessions: [
+      { ...unread.sessions[0], unread: false, readRevision: 'v1-read' },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    reviewed,
+  );
+  await expect(row.locator('.status-detail')).toHaveClass(/reviewed/);
+  await expect(page.locator('.attention-summary')).toHaveCount(0);
+});
+
+test('a result arriving in open detail waits for interaction and read-only web never acknowledges', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(page.locator('.detail-context')).toBeVisible();
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        text: 'New result while already open',
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'v2',
+        replyTurn: 't2',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(page.locator('.detail-context')).toContainText(
+    'New result while already open',
+  );
+  expect(reads).toHaveLength(0);
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+  const readOnly = {
+    ...unread,
+    control: false,
+    sessions: [{ ...unread.sessions[0], readRevision: 'v3', replyTurn: 't3' }],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    readOnly,
+  );
+  await expect(
+    page.getByText('Read only — reply or approve in Codex.'),
+  ).toBeVisible();
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  expect(reads).toHaveLength(1);
+});
+
+test('managed human approval explains the policy and offers only one-time choices', async ({
+  page,
+  pairingURL,
+}) => {
+  const { offer } = await mockActions(page);
+  await page.route('**/api/control/offer', (route) =>
+    route.fulfill({
+      json: {
+        ...offer,
+        requiredHumanApproval: true,
+        choices: [
+          { label: 'APPROVE ONCE', detail: '', persistent: false },
+          { label: 'DECLINE', detail: '', persistent: false },
+          { label: 'REJECT & STOP TURN', detail: '', persistent: false },
+        ],
+      },
+    }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'HUMAN APPROVAL REQUIRED' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Managed policy requires approval each time.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: 'ALLOW FOR SESSION', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('radio', { name: 'APPROVE ONCE', exact: true }),
+  ).toBeVisible();
+});
+
+test('clipped partial results stay unread until visible inside the content scrollport', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const row = page.locator('.session-row').first();
+  await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  const result = row.locator('[data-result-session]');
+  await expect(result).toBeVisible();
+  // Place the result behind the footer: inside the browser viewport, but
+  // outside the application's clipped scrolling pane.
+  await result.evaluate((node) => {
+    const main = document.getElementById('content')!;
+    const offset =
+      main.getBoundingClientRect().bottom +
+      1 -
+      node.getBoundingClientRect().top;
+    node.style.transform = `translateY(${offset}px)`;
+  });
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'clip-v1',
+        replyTurn: 'clip-t1',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(row).toContainText('TURN COMPLETE');
+  const bounds = await result.evaluate((node) => ({
+    top: node.getBoundingClientRect().top,
+    clip: document.getElementById('content')!.getBoundingClientRect().bottom,
+    viewport: window.innerHeight,
+  }));
+  expect(bounds.top).toBeGreaterThanOrEqual(bounds.clip);
+  expect(bounds.top).toBeLessThan(bounds.viewport);
+  await result.dispatchEvent('wheel', { deltaY: 100 });
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  // A fresh expansion gesture must also respect the scrollport boundary.
+  await row.getByRole('button', { name: 'More detail', exact: true }).click();
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  await result.evaluate((node) => {
+    node.style.transform = '';
+  });
+  await result.scrollIntoViewIfNeeded();
+  await result.dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+});
+
+test('restoring full detail with a late first snapshot keeps the result unread until review', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt', false, false);
+  const reads: unknown[] = [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  await page.reload();
+  await expect(page.locator('.startup')).toHaveCount(0);
+  await expect(page.locator('#content')).not.toHaveAttribute('inert');
+  await expect(
+    page.getByText('Connecting to your local Codexometer…'),
+  ).toBeVisible();
+  const unread = {
+    ...snapshot,
+    sessions: [
+      {
+        ...snapshot.sessions[0],
+        readStateKnown: true,
+        unread: true,
+        readRevision: 'restore-v1',
+        replyTurn: 'restore-t1',
+      },
+    ],
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await expect(page.locator('.detail-context')).toBeVisible();
+  await page.waitForTimeout(150);
+  expect(reads).toHaveLength(0);
+  await page.locator('.detail-context').dispatchEvent('wheel', { deltaY: 100 });
+  await expect.poll(() => reads.length).toBe(1);
+  // Leaving and deliberately reopening the result still counts as review.
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect.poll(() => reads.length).toBe(2);
 });

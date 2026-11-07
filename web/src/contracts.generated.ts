@@ -20,6 +20,7 @@ export interface ActionChoice {
 }
 
 export interface ActionOffer {
+  requiredHumanApproval?: boolean;
   fileChanges?: Array<FileDiffLine> | null;
   profile?: ProfileReview | null;
   id: string;
@@ -193,6 +194,11 @@ export interface Segment {
 }
 
 export interface Session {
+  readStateKnown?: boolean;
+  unread?: boolean;
+  readRevision?: string;
+  replyTurn?: string;
+  requiredHumanApproval?: boolean;
   goal?: SessionGoal | null;
   statusLine: Record<string, string>;
   fileChanges?: Array<FileDiffLine> | null;

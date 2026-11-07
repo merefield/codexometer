@@ -160,17 +160,18 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		return
 	case "item/commandExecution/requestApproval":
 		kind := "command" // legacy servers omit the discriminator
-		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && kind == "command" && string(p.Kind) != "null"
+		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && (kind == "command" || kind == "humanCommand") && string(p.Kind) != "null"
 		var command string
 		commandValid := len(p.Command) == 0 || string(p.Command) == "null" || json.Unmarshal(p.Command, &command) == nil
 		previous := state.commands[p.TurnID+"/"+p.ItemID]
-		if command == "" {
+		if command == "" && kind != "humanCommand" {
 			command = previous.Command
 		}
-		if p.CWD == "" {
+		if p.CWD == "" && kind != "humanCommand" {
 			p.CWD = previous.CWD
 		}
 		c.Kind = SessionContextApproval
+		c.RequiredHumanApproval = kindValid && kind == "humanCommand"
 		c.Text = strings.TrimSpace(p.Reason + "\nCommand: " + command + "\nDirectory: " + p.CWD)
 		special := func(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) != "null" }
 		if special(p.Network) {
@@ -180,6 +181,18 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.Text += "\nPermissions: " + string(p.Permissions)
 		}
 		c.ApprovalOptions, c.ApprovalDecisions = commandApprovalOptions(p.Decisions)
+		if c.RequiredHumanApproval {
+			c.Text = "HUMAN APPROVAL REQUIRED\nManaged policy requires approval each time.\n" + c.Text
+			var once [8]ApprovalOption
+			n := 0
+			for _, option := range c.ApprovalOptions {
+				if oneTimeApproval(option.Kind) {
+					once[n] = option
+					n++
+				}
+			}
+			c.ApprovalOptions = once
+		}
 		for _, option := range c.ApprovalOptions {
 			if option.Detail != "" {
 				c.Text += "\nPersistent command-prefix rule: " + option.Detail
@@ -201,7 +214,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			c.ApprovalBlocked = "missing-command"
 		case p.CWD == "":
 			c.ApprovalBlocked = "missing-directory"
-		case p.TurnID == "" || p.ItemID == "":
+		case p.TurnID == "" || p.ItemID == "" || c.RequiredHumanApproval && (state.ended || state.activeTurn != "" && p.TurnID != state.activeTurn):
 			c.ApprovalBlocked = "missing-identity"
 		case !allowed:
 			c.ApprovalBlocked = "decisions"

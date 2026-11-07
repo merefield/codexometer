@@ -56,6 +56,28 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 			t.Fatal("file capability reused")
 		}
 	}
+	p.contexts, c = approvalFixture(t, map[string]any{"kind": "humanCommand", "command": "git push", "cwd": "/work", "availableDecisions": []string{"accept", "acceptForSession"}})
+	// Defend at the response boundary even if a caller hands us a malformed option snapshot.
+	human := p.contexts["root"].requests[`"req"`]
+	human.ApprovalOptions[1] = ApprovalOption{Kind: "acceptForSession", Value: "acceptForSession", Wire: `"acceptForSession"`}
+	p.contexts["root"].requests[`"req"`] = human
+	if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "acceptForSession"); err == nil {
+		t.Fatal("checkpoint accepted a reusable grant")
+	}
+	if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case msg := <-received:
+		if string(msg["result"]) != `{"decision":"accept"}` {
+			t.Fatal("wrong human decision", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing human decision")
+	}
+	if p.SessionApprovalPending(c.ApprovalToken) {
+		t.Fatal("human decision capability reused")
+	}
 	p.contexts, c = approvalFixture(t, nil)
 	if !p.SessionApprovalPending(c.ApprovalToken) {
 		t.Fatal("missing pending")
@@ -182,5 +204,32 @@ func TestDaemonSuccessfulCompletionIsSeparateFromIdle(t *testing.T) {
 				t.Fatal("completion survived new turn")
 			}
 		})
+	}
+}
+
+func TestHumanApprovalCapabilityNegotiated(t *testing.T) {
+	p, fixture := newQuotaDaemon(t)
+	p.setHumanApprovalSupport(true)
+	if err := p.ensureConnected(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	capabilities, _ := fixture.initializeParams["capabilities"].(map[string]any)
+	if capabilities["requiredHumanApproval"] != true || capabilities["experimentalApi"] != true {
+		t.Fatal("human approval capability missing", capabilities)
+	}
+}
+
+func TestPassiveClientDoesNotClaimHumanApprovalSupport(t *testing.T) {
+	p, fixture := newQuotaDaemon(t)
+	if err := p.ensureConnected(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	capabilities, _ := fixture.initializeParams["capabilities"].(map[string]any)
+	if capabilities["requiredHumanApproval"] != false {
+		t.Fatal("passive observer claimed approval support", capabilities)
 	}
 }
