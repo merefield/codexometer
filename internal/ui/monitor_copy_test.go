@@ -59,7 +59,10 @@ func TestMonitorCopyRequiresVisibleDetail(t *testing.T) {
 	for _, hidden := range []bool{false, true} {
 		m := completedCopyModel()
 		m.setRowContext("root-one", contextGraph)
-		m.monitorContextHidden = hidden
+		m.monitorContextView = "split"
+		if hidden {
+			m.monitorContextView = "graph"
+		}
 		_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 		if cmd != nil {
 			t.Fatal("graph-only/hidden detail unexpectedly copied a reply")

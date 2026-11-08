@@ -20,6 +20,8 @@ export interface ActionChoice {
 }
 
 export interface ActionOffer {
+  approvalReview?: ApprovalReview | null;
+  mcpTool?: MCPToolApprovalDetails | null;
   requiredHumanApproval?: boolean;
   fileChanges?: Array<FileDiffLine> | null;
   profile?: ProfileReview | null;
@@ -38,6 +40,16 @@ export interface ActionQuestion {
   secret: boolean;
   freeText: boolean;
   options: Array<string> | null;
+}
+
+export interface ApprovalReview {
+  title: string;
+  fields: Array<ApprovalReviewField> | null;
+}
+
+export interface ApprovalReviewField {
+  label: string;
+  value: string;
 }
 
 export interface CommandChoice {
@@ -95,6 +107,15 @@ export interface FileDiffLine {
   kind: string;
   old?: number;
   new?: number;
+}
+
+export interface MCPToolApprovalDetails {
+  server: string;
+  name?: string;
+  title?: string;
+  connector?: string;
+  message: string;
+  arguments: string;
 }
 
 export interface Meter {
@@ -194,6 +215,8 @@ export interface Segment {
 }
 
 export interface Session {
+  approvalReview?: ApprovalReview | null;
+  mcpTool?: MCPToolApprovalDetails | null;
   readStateKnown?: boolean;
   unread?: boolean;
   readRevision?: string;

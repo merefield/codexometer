@@ -96,13 +96,82 @@ func (m Model) rowContextMode(id string) int {
 	if state, ok := m.monitorContextRows[id]; ok {
 		return state.mode
 	}
-	if m.monitorContextHidden {
-		return contextGraph
-	}
 	if id != "" && m.monitorContextExpanded == id {
 		return contextWide
 	}
-	return contextSplit
+	return m.defaultMonitorContextMode()
+}
+
+var sessionContextViewNames = map[int]string{
+	contextGraph: "graph", contextSplit: "split", contextWide: "wide",
+}
+
+func (m Model) defaultMonitorContextMode() int {
+	switch m.monitorContextView {
+	case "graph":
+		return contextGraph
+	case "wide":
+		return contextWide
+	default:
+		return contextSplit
+	}
+}
+
+// Mixed rows first converge on the most detailed listed row. Once uniform,
+// cycle only the three overview layouts; full-screen detail is independent.
+func (m *Model) cycleMonitorContext() {
+	if m.monitorContextDetail != "" {
+		return
+	}
+	least, most, count := contextWide, contextGraph, 0
+	for _, s := range m.monitorSessionData {
+		if m.monitorSessionInList(s) {
+			mode := m.rowContextMode(s.id)
+			least, most, count = min(least, mode), max(most, mode), count+1
+		}
+	}
+	if count == 0 {
+		return
+	}
+	next := most
+	if least == most {
+		next = (most + 1) % contextFull
+	}
+	rows := maps.Clone(m.monitorContextRows)
+	if rows == nil {
+		rows = make(map[string]rowContextState)
+	}
+	for _, s := range m.monitorSessionData {
+		if m.monitorSessionInList(s) {
+			delete(rows, s.id)
+		} else {
+			// Changing the default must not change filtered or dismissed rows.
+			state := rows[s.id]
+			state.mode = m.rowContextMode(s.id)
+			rows[s.id] = state
+		}
+	}
+	m.clearMonitorHeaderFocus()
+	m.clearQuotaConfirmation()
+	m.clearMonitorCloseAllConfirmation()
+	m.stashMonitorDraft()
+	m.monitorPrompt = monitorPromptState{}
+	m.monitorApprovalConfirm, m.monitorApprovalNotice = "", ""
+	m.monitorContextView = sessionContextViewNames[next]
+	m.monitorContextRows = rows
+	m.monitorContextExpanded, m.monitorContextHover = "", ""
+	m.monitorContextScroll = 0
+	m.monitorReadIntent = "" // A bulk layout change is not a review of each reply.
+	m.monitorReadDwell = monitorReadDwell{}
+	if next == contextWide {
+		for _, s := range m.monitorSessionData {
+			if s.id == m.monitorSelectedID && m.monitorSessionInList(s) {
+				m.monitorContextExpanded = s.id
+				break
+			}
+		}
+	}
+	m.persistPreferences()
 }
 
 func (m Model) contextTargetHidden() bool {
@@ -145,12 +214,12 @@ func (m *Model) setRowContext(id string, mode int) {
 }
 
 func expandedContextLines(width int, s monitorSession) []string {
-	wrap := sessionWebTextLines
+	wrap, sanitize := sessionWebTextLines, codex.SanitizeSessionContext
 	if s.preview.Kind == codex.SessionContextApproval {
-		wrap = sessionWebLiteralTextLines
+		wrap, sanitize = sessionWebLiteralTextLines, codex.SanitizeApprovalText
 	}
 	if s.preview.FileChanges != "" {
-		lines := wrap(codex.SanitizeSessionContext(s.preview.Text), max(width-4, 1))
+		lines := wrap(sanitize(s.preview.Text), max(width-4, 1))
 		for _, line := range fileApprovalDocument(s.preview.FileChanges, max(width-4, 1)) {
 			lines = append(lines, line.text)
 		}
@@ -160,7 +229,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
 	header := terminalLabel(s.preview.ThreadID) + " // " + terminalLabel(s.preview.Source)
-	text := header + "\n" + codex.SanitizeSessionContext(s.preview.Text)
+	text := header + "\n" + sanitize(s.preview.Text)
 	if s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" {
 		text = header
 		if s.preview.CurrentTask != "" {
@@ -169,7 +238,7 @@ func expandedContextLines(width int, s monitorSession) []string {
 		if s.preview.LatestGuidance != "" {
 			text += "\n" + ansi.Truncate(i18n.Text("LATEST GUIDANCE")+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.LatestGuidance)), " "), max(width-4, 1), "…")
 		}
-		text += "\n\n" + codex.SanitizeSessionContext(s.preview.Text)
+		text += "\n\n" + sanitize(s.preview.Text)
 	}
 	return wrap(text, max(width-4, 1))
 }

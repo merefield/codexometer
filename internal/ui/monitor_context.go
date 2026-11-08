@@ -37,6 +37,12 @@ func contextTitle(c codex.SessionContext) string {
 	case codex.SessionContextQuestion:
 		return i18n.Text("QUESTION")
 	case codex.SessionContextApproval:
+		if review := c.ActionReview(); review != nil {
+			return i18n.Text(review.Title)
+		}
+		if c.MCPTool.Server != "" {
+			return i18n.Text("MCP TOOL APPROVAL")
+		}
 		if c.RequiredHumanApproval {
 			return i18n.Text("HUMAN APPROVAL REQUIRED")
 		}
@@ -53,23 +59,17 @@ func contextTaskTitle(c codex.SessionContext) string {
 	return i18n.Text("CURRENT TASK")
 }
 
-func (m Model) monitorPrivacyLabel(widths ...int) string {
+func (m Model) monitorCycleLabel(widths ...int) string {
 	g := m.monitorDashboardLayout()
 	width := m.monitorArea(g.contentWidth, g.meterHeight).readoutWidth
 	if len(widths) > 0 {
 		width = widths[0]
 	}
-	hide, show := i18n.Text("[ H: HIDE DETAIL ]"), i18n.Text("[ H: SHOW DETAIL ]")
-	if width >= max(lipgloss.Width(hide), lipgloss.Width(show))+8 {
-		if m.monitorContextHidden {
-			return show
-		}
-		return hide
+	label := i18n.Text("[ C(Y)CLE ]")
+	if width >= lipgloss.Width(label)+8 {
+		return label
 	}
-	if m.monitorContextHidden {
-		return i18n.Text("[H:SHOW]")
-	}
-	return i18n.Text("[H:HIDE]")
+	return "[Y]"
 }
 
 func (m Model) renderContextAction(id, label string, colors palette) string {
@@ -212,8 +212,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	layout := m.layoutDetailControls(width, height)
 	controls := layout.render(m, width, height, colors)
 	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
-	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
-	end := min(start+textRows, len(lines))
+	start, end := m.detailVisibleRange(len(lines), textRows)
 	bodyLines := append([]string(nil), lines[start:end]...)
 	if m.historyNavigationRows(width, height) > 0 {
 		bodyLines = append([]string{m.renderMonitorNavigationButtons(m.historyNavigationButtons(width, height), colors)}, bodyLines...)
@@ -273,22 +272,6 @@ func monitorContextBodyLayout(height, controls int) (textRows, gap, controlY int
 	return
 }
 
-func (m *Model) toggleMonitorContext() {
-	m.clearMonitorHeaderFocus()
-	m.clearQuotaConfirmation()
-	m.stashMonitorDraft()
-	m.monitorPrompt = monitorPromptState{}
-	m.monitorApprovalConfirm = ""
-	m.monitorApprovalNotice = ""
-	m.monitorContextHidden = !m.monitorContextHidden
-	m.monitorContextRows = nil
-	m.monitorContextDetail = ""
-	m.monitorContextExpanded = ""
-	m.monitorContextHover = ""
-	m.monitorContextScroll = 0
-	m.persistPreferences()
-}
-
 func (m *Model) openMonitorContext(id string) {
 	for _, s := range m.monitorSessionData {
 		if s.id == id && (s.preview.Text != "" || s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" || s.preview.Kind == codex.SessionContextApproval || m.hasSessionProfile(s) || id == m.monitorContextExpanded) && m.monitorSessionVisible(s) {
@@ -333,8 +316,8 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 	if next, cmd, handled := m.updateMonitorApprovalKey(key); handled {
 		return next, cmd, true
 	}
-	if key == "h" {
-		m.toggleMonitorContext()
+	if key == "y" {
+		m.cycleMonitorContext()
 		return m, nil, true
 	}
 	if key == "left" || key == "right" {
@@ -558,8 +541,8 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			m.showLiveMonitorHistory()
 			cmd := m.focusMonitorPrompt()
 			return m, cmd, true
-		case "privacy":
-			m.toggleMonitorContext()
+		case "cycle":
+			m.cycleMonitorContext()
 		case "close":
 			m.stepBackMonitorContext()
 		case "history:previous":

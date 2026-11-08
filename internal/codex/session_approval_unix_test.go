@@ -56,6 +56,88 @@ func TestApprovalWireOneUseAndDisconnect(t *testing.T) {
 			t.Fatal("file capability reused")
 		}
 	}
+	for _, decision := range []string{"accept", "cancel"} {
+		p.contexts, c = stdinApprovalFixture(t, nil)
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "acceptForSession"); err == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("stdin session grant accepted")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			if string(msg["id"]) != `"req"` || string(msg["result"]) != `{"decision":"`+decision+`"}` {
+				t.Fatal("wrong stdin response", msg)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing stdin response")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) || p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision) == nil {
+			t.Fatal("stdin approval reused")
+		}
+	}
+	for i := range networkDecisions() {
+		p.contexts, c = networkApprovalFixture(t, nil)
+		option := c.ApprovalOptions[i]
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "unoffered"); err == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("unadvertised network decision accepted")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, option.Value); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			if string(msg["id"]) != `"req"` || string(msg["result"]) != `{"decision":`+option.Wire+`}` {
+				t.Fatal("wrong network response", msg)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing network response")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) || p.RespondSessionApproval(context.Background(), c.ApprovalToken, option.Value) == nil {
+			t.Fatal("network request reused")
+		}
+	}
+	p.contexts, c = mcpApprovalFixture(t, map[string]any{"_meta": map[string]any{"codex_approval_kind": "mcp_tool_call"}})
+	for _, decision := range []string{"acceptForSession", "acceptMcpAlways"} {
+		if p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision) == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("unadvertised reusable MCP grant was accepted")
+		}
+	}
+	for index, decision := range []string{"accept", "acceptForSession", "acceptMcpAlways", "cancelMcpTool"} {
+		p.contexts, c = mcpApprovalFixture(t, nil)
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, "unoffered"); err == nil || !p.SessionApprovalPending(c.ApprovalToken) {
+			t.Fatal("unoffered MCP action consumed capability")
+		}
+		if err := p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case msg := <-received:
+			var result map[string]json.RawMessage
+			if string(msg["id"]) != `"mcp-request"` || json.Unmarshal(msg["result"], &result) != nil || len(result) != 3 || len(result["decision"]) > 0 || string(result["content"]) != "null" {
+				t.Fatal("wrong MCP response envelope", msg)
+			}
+			want := `"accept"`
+			if index == 3 {
+				want = `"cancel"`
+			}
+			meta := "null"
+			if index == 1 {
+				meta = `{"persist":"session"}`
+			}
+			if index == 2 {
+				meta = `{"persist":"always"}`
+			}
+			if string(result["action"]) != want || string(result["_meta"]) != meta {
+				t.Fatal("wrong MCP action or persistence", string(msg["result"]))
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing MCP response")
+		}
+		if p.SessionApprovalPending(c.ApprovalToken) || p.RespondSessionApproval(context.Background(), c.ApprovalToken, decision) == nil {
+			t.Fatal("MCP capability reused")
+		}
+	}
 	p.contexts, c = approvalFixture(t, map[string]any{"kind": "humanCommand", "command": "git push", "cwd": "/work", "availableDecisions": []string{"accept", "acceptForSession"}})
 	// Defend at the response boundary even if a caller hands us a malformed option snapshot.
 	human := p.contexts["root"].requests[`"req"`]

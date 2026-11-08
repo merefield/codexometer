@@ -125,7 +125,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 						continue
 					}
 					action := "decision:" + strconv.Itoa(i)
-					label := approvalShortcutLabel(option.Kind, confirmed && i == 0, i)
+					label := m.approvalButtonLabel(option.Kind, confirmed && i == 0, i)
 					found := false
 					for y, line := range lines {
 						pos := strings.Index(line, label)
@@ -178,11 +178,13 @@ func TestMonitorApprovalStaleAndKeyboardSafety(t *testing.T) {
 			t.Fatal("keyboard approved")
 		}
 	}
-	m.toggleMonitorContext()
+	m.setRowContext("root-one", contextWide)
+	m.cycleMonitorContext()
+	m.cycleMonitorContext()
 	if m.monitorApprovalToken() != "" {
 		t.Fatal("hidden preview actionable")
 	}
-	m.toggleMonitorContext()
+	m.cycleMonitorContext()
 	m.monitorSessionData[0].preview.ApprovalToken = ""
 	if m.monitorApprovalToken() != "" {
 		t.Fatal("local request actionable")
@@ -202,7 +204,7 @@ func TestMonitorApprovalNumberSelectsCConfirms(t *testing.T) {
 				t.Fatal("number did not exclusively arm requested choice")
 			}
 		}
-		if !strings.Contains(ansi.Strip(m.render()), approvalShortcutLabel(m.monitorSessionData[0].preview.ApprovalOptions[index].Kind, true, index)) {
+		if !strings.Contains(ansi.Strip(m.render()), m.approvalButtonLabel(m.monitorSessionData[0].preview.ApprovalOptions[index].Kind, true, index)) {
 			t.Fatal("C confirmation shortcut missing")
 		}
 		m, cmd, _ = m.updateMonitorContextKey("c")
@@ -367,5 +369,164 @@ func TestMonitorApprovalFooterPinnedBelowScrollingText(t *testing.T) {
 	}
 	if rows, gap, _ := monitorContextBodyLayout(6, 1); rows != 3 || gap != 0 {
 		t.Fatal("short terminal did not drop padding first")
+	}
+}
+
+func TestApprovalButtonsKeepEvenVisibleGapsAndStableConfirmationPositions(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for _, middle := range []string{"decline", "acceptForSession"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			m.monitorSessionData[0].preview.ApprovalOptions = [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: middle, Value: middle}, {Kind: "cancel", Value: "cancel"}}
+			before := m.monitorApprovalButtons(140, 20)
+			if len(before) != 3 {
+				t.Fatal("three choices were not visible")
+			}
+			for armed := -1; armed < len(before); armed++ {
+				if armed >= 0 && !m.confirmations.Required(confirmation.Approval(m.monitorSessionData[0].preview.ApprovalOptions[armed].Kind)) {
+					continue
+				}
+				m.monitorApprovalConfirm = ""
+				if armed >= 0 {
+					m.monitorApprovalConfirm = "live/decision:" + strconv.Itoa(armed)
+					m.monitorApprovalConfirmUntil = time.Now().Add(monitorApprovalConfirmDuration)
+				}
+				buttons := m.monitorApprovalButtons(140, 20)
+				rendered := ansi.Strip(m.renderMonitorApprovalControls(140, 20, paletteFor(m.theme)))
+				for i, button := range buttons {
+					if button.x != before[i].x || button.y != before[i].y {
+						t.Fatal("arming moved a neighbouring decision")
+					}
+					if lipgloss.Width(button.label) != button.slot {
+						t.Fatal("reserved space was left between buttons")
+					}
+					if i > 0 && buttons[i-1].y == button.y {
+						previous := buttons[i-1]
+						end := strings.Index(rendered, previous.label) + len(previous.label)
+						start := strings.Index(rendered, button.label)
+						if rendered[end:start] != "  " {
+							t.Fatalf("mode %s choice %d has uneven gap: %q", mode, i+1, rendered[end:start])
+						}
+					}
+					_, _, controlY := monitorContextBodyLayout(20, buttons[len(buttons)-1].y+1)
+					if monitorButtonAt(buttons, 20, 2+button.x+button.slot-2, controlY+button.y) != button.action {
+						t.Fatal("painted button padding does not belong to its button")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestMCPApprovalFourButtonsAndConfirmationPolicy(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, kind := range []string{"accept", "acceptForSession", "acceptMcpAlways", "cancelMcpTool"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Allow Calendar to create an event?", ApprovalToken: "live", MCPTool: codex.MCPToolApprovalDetails{Server: "codex_apps", Title: "Create Event", Message: "Allow Calendar to create an event?", Arguments: `{"title":"Demo"}`}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "acceptForSession", Value: "acceptForSession"}, {Kind: "acceptMcpAlways", Value: "acceptMcpAlways"}, {Kind: "cancelMcpTool", Value: "cancelMcpTool"}}}
+			buttons := m.visibleMonitorApprovalButtons()
+			if len(buttons) != 4 {
+				t.Fatalf("mode %s: four MCP choices not visible", mode)
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("MCP TOOL APPROVAL"), "codex_apps", "Create Event", "Demo", strings.Trim(i18n.Text("[ CANCEL TOOL CALL ]"), "[] ")} {
+				if !strings.Contains(doc, strings.TrimSuffix(text, " ]")) {
+					t.Fatalf("missing MCP review text %q", text)
+				}
+			}
+			if strings.Contains(doc, strings.Trim(i18n.Text("[ REJECT & STOP TURN ]"), "[] ")) {
+				t.Fatal("tool cancellation labelled as turn rejection")
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			guarded := mode == confirmation.Require || mode == confirmation.Balanced && (index == 1 || index == 2)
+			if guarded {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("reusable MCP grant bypassed review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("explicit MCP decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != kind {
+				t.Fatal("wrong MCP choice")
+			}
+		}
+	}
+}
+
+func TestNetworkApprovalButtonsAndPolicy(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, kind := range []string{"accept", "acceptForSession", "allowNetworkHost", "denyNetworkHost", "decline", "cancel"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			ctx := codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", ApprovalToken: "live", Text: "Allow network access?", ActionDetails: codex.ApprovalActionDetails{Kind: "network", Target: "example.com", Protocol: "https"}}
+			for i, k := range []string{"accept", "acceptForSession", "allowNetworkHost", "denyNetworkHost", "decline", "cancel"} {
+				ctx.ApprovalOptions[i] = codex.ApprovalOption{Kind: k, Value: k}
+			}
+			m.monitorSessionData[0].preview = ctx
+			if len(m.visibleMonitorApprovalButtons()) != 6 {
+				t.Fatal("network choices missing", mode)
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("NETWORK APPROVAL"), "example.com", "https"} {
+				if !strings.Contains(doc, text) {
+					t.Fatal("network review missing", text)
+				}
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			guarded := mode == confirmation.Require || mode == confirmation.Balanced && index >= 1 && index <= 3
+			if guarded {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("persistent host rule bypassed review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("network decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != kind {
+				t.Fatal("wrong network decision")
+			}
+		}
+	}
+}
+
+func TestStdinApprovalControlsAndEscapedReview(t *testing.T) {
+	for _, mode := range []confirmation.Mode{confirmation.Balanced, confirmation.None, confirmation.Require} {
+		for index, decision := range []string{"accept", "cancel"} {
+			m := approvalTestModel()
+			m.SetConfirmationMode(mode)
+			input := "yes\n\x03\u202e"
+			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Review terminal input", ApprovalToken: "live", ActionDetails: codex.ApprovalActionDetails{Kind: "stdin", Target: "123", Input: input, Directory: "/terminal/start"}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "acceptStdin", Value: "accept"}, {Kind: "cancelStdin", Value: "cancel"}}}
+			if len(m.visibleMonitorApprovalButtons()) != 2 {
+				t.Fatal("stdin choices missing")
+			}
+			doc := ansi.Strip(m.render())
+			for _, text := range []string{i18n.Text("TERMINAL INPUT APPROVAL"), "123", strconv.QuoteToASCII(input), "/terminal/start"} {
+				if !strings.Contains(doc, text) {
+					t.Fatal("stdin review missing", text)
+				}
+			}
+			next, cmd, _ := m.updateMonitorApprovalKey(strconv.Itoa(index + 1))
+			m = next
+			if mode == confirmation.Require {
+				if cmd != nil || m.monitorApprovalConfirm == "" {
+					t.Fatal("strict input skipped review")
+				}
+				m, cmd, _ = m.updateMonitorApprovalKey("c")
+			}
+			if cmd == nil {
+				t.Fatal("stdin decision not sent")
+			}
+			cmd()
+			if m.fetcher.(*approvalTestClient).decision != decision {
+				t.Fatal("input decision changed")
+			}
+		}
 	}
 }

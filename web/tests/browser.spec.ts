@@ -122,6 +122,26 @@ const test = base.extend<{
 // Existing dashboard tests open directly; startup motion is exercised separately.
 test.use({ reducedMotion: 'reduce' });
 
+// Reach a known layout through Cycle; the exact order is tested separately.
+async function setOverviewDetail(page: Page, level: number) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const levels = await page
+      .locator('.session-row')
+      .evaluateAll((rows) =>
+        rows.map((row) =>
+          row.classList.contains('wide')
+            ? 2
+            : row.classList.contains('split')
+              ? 1
+              : 0,
+        ),
+      );
+    if (levels.length && levels.every((value) => value === level)) return;
+    await page.getByRole('button', { name: 'C(Y)CLE', exact: true }).click();
+  }
+  throw new Error('Cycle did not reach overview detail level ' + level);
+}
+
 test.describe('quota profile reviews', () => {
   test.use({
     controlMode: true,
@@ -253,7 +273,7 @@ test('live detail separates the task and guidance from streamed replies', async 
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   await expect(
     page.getByRole('heading', { name: 'CURRENT TASK', exact: true }),
   ).toBeVisible();
@@ -330,7 +350,7 @@ test('working detail preserves prose alongside command state', async ({
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   const row = page.getByRole('region', {
     name: 'Session Build check',
     exact: true,
@@ -502,7 +522,7 @@ test('read-only session copy captures working prose in every detail level withou
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+  await setOverviewDetail(page, 1);
   const row = page.getByRole('region', { name: 'Session one', exact: true });
   await row.getByRole('button', { name: 'Copy text' }).click();
   await expect(row.getByRole('status')).toHaveText('Copied.');
@@ -1328,7 +1348,7 @@ for (const control of [false, true]) {
       detail,
     );
     await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-    await page.getByRole('button', { name: 'SHOW ALL DETAILS' }).click();
+    await setOverviewDetail(page, 1);
     await expect(
       page.getByText(detail.sessions[0].approvalContext, { exact: true }),
     ).toHaveCount(0);
@@ -3699,13 +3719,9 @@ test('per-session detail navigation, selection and preferences survive reload', 
   await expect(rows.nth(1).locator('.graph-panel')).toHaveCount(1);
   await page.keyboard.press('ArrowLeft');
   await expect(rows.nth(1).locator('.context')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(2);
-  await page
-    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 0);
   await expect(page.locator('.context')).toHaveCount(0);
   await page.getByRole('link', { name: 'QUOTA', exact: true }).click();
   await expect(page).toHaveURL(/#\/quota\/pie$/);
@@ -3721,9 +3737,7 @@ test('all full-detail entry routes return to a selected wide row with browser Ba
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   const row = page.locator('.session-row').first();
   for (const entry of ['attention', 'full link', 'badge', 'arrows']) {
-    await page
-      .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-      .click();
+    await setOverviewDetail(page, 0);
     if (entry === 'attention')
       await page
         .getByRole('navigation', { name: 'Sessions needing attention' })
@@ -3829,9 +3843,7 @@ test('attention distinguishes observed signals, inference and stale state withou
       .getByRole('navigation', { name: 'Sessions needing attention' })
       .getByRole('link'),
   ).toHaveCount(3);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   const rows = page.locator('.session-row');
   await expect(rows.nth(0).locator('.attention-badge')).toBeVisible();
   await expect(rows.nth(0).locator('.telemetry')).toContainText(
@@ -3934,9 +3946,7 @@ test('global detail controls cover more than 100 sessions and survive reload', a
   await mockStream(page, snapshot);
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(105);
   // An explicit zero must override the nonzero global default.
   await page
@@ -3948,16 +3958,12 @@ test('global detail controls cover more than 100 sessions and survive reload', a
   ).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.context')).toHaveCount(104);
-  await page
-    .getByRole('button', { name: 'HIDE ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 0);
   await expect(page.locator('.context')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.session-row')).toHaveCount(105);
   await expect(page.locator('.context')).toHaveCount(0);
-  await page
-    .getByRole('button', { name: 'SHOW ALL DETAILS', exact: true })
-    .click();
+  await setOverviewDetail(page, 1);
   await expect(page.locator('.context')).toHaveCount(105);
 });
 
@@ -4666,8 +4672,15 @@ test.describe('browser startup', () => {
     await page.clock.runFor(16);
     await expect(intro).toHaveAttribute('data-entrance', 'shuffle');
     await expect(wordmark).toHaveAttribute('data-text', before!);
+    // Viewport resize delivery is asynchronous, including with the test clock
+    // paused. Advance frames until the layout observes the new viewport.
+    await expect
+      .poll(async () => {
+        await page.clock.runFor(16);
+        return (await wordmark.boundingBox())?.width;
+      })
+      .toBeCloseTo(360, 0);
     const box = (await wordmark.boundingBox())!;
-    expect(box.width).toBeCloseTo(360, 0);
     expect(box.y + box.height / 2).toBeCloseTo(320, 0);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
@@ -5180,7 +5193,7 @@ test('Quota accounting diagnostics retain source details safely on narrow screen
   await expect(notice).toHaveCount(0);
 });
 
-test('unread completion is acknowledged by opening partial detail, not by selection or refresh', async ({
+test('split stays unread and selected wide detail requires three seconds', async ({
   page,
   pairingURL,
 }) => {
@@ -5215,7 +5228,16 @@ test('unread completion is acknowledged by opening partial detail, not by select
     .getByRole('button', { name: '/project/parent', exact: true })
     .click();
   await expect.poll(() => reads.length).toBe(0);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await row.getByRole('button', { name: 'SHOW DETAIL', exact: true }).click();
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0);
+  await row.getByRole('button', { name: 'More detail', exact: true }).click();
+  await expect(row).toHaveClass(/wide/);
+  await page.clock.fastForward(2999);
+  expect(reads).toHaveLength(0);
+  await page.clock.fastForward(1);
   await expect.poll(() => reads.length).toBe(1);
   expect(reads[0]).toEqual({
     session: 'parent',
@@ -5388,7 +5410,10 @@ test('clipped partial results stay unread until visible inside the content scrol
     node.style.transform = '';
   });
   await result.scrollIntoViewIfNeeded();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await result.dispatchEvent('wheel', { deltaY: 100 });
+  await page.clock.fastForward(3000);
   await expect.poll(() => reads.length).toBe(1);
 });
 
@@ -5512,5 +5537,535 @@ for (const mode of ['balanced', 'none', 'require']) {
     await expect
       .poll(() => calls.filter((c) => c.action === 'commit').length)
       .toBe(1);
+  });
+}
+
+test('Cycle matches the most detailed session before cycling all three overview views', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const rows = page.locator('.session-row');
+  const cycle = page.getByRole('button', { name: 'C(Y)CLE', exact: true });
+  await expect(cycle).toHaveCount(1);
+  await rows.first().getByRole('button', { name: 'More detail' }).click();
+  await rows.first().getByRole('button', { name: 'More detail' }).click();
+  await expect(rows.first()).toHaveClass(/wide/);
+  await expect(rows.nth(1).locator('.context')).toHaveCount(0);
+  await cycle.click();
+  await expect(rows.locator('.context')).toHaveCount(2);
+  await expect(rows.locator('.graph-panel')).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/sessions$/);
+  await page.reload();
+  await expect(rows.first()).toHaveClass(/wide/);
+  await expect(rows.nth(1)).toHaveClass(/wide/);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(2);
+  await expect(rows.locator('.graph-panel')).toHaveCount(2);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.graph-panel')).toHaveCount(0);
+  await page.keyboard.press('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.evaluate(() => {
+    const editor = document.createElement('textarea');
+    editor.id = 'test-cycle-editor';
+    document.body.append(editor);
+    editor.focus();
+  });
+  await page.keyboard.type('y');
+  await expect(page.locator('#test-cycle-editor')).toHaveValue('y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await page.locator('#test-cycle-editor').evaluate((node) => node.remove());
+  await page.keyboard.press('Control+y');
+  await expect(rows.locator('.context')).toHaveCount(0);
+  await rows.first().getByRole('link', { name: 'FULL DETAIL →' }).click();
+  await page.keyboard.press('y');
+  await expect(page.locator('.full-detail')).toBeVisible();
+  await expect(cycle).toHaveCount(0);
+});
+
+test('wide reading cancels on selection and new replies and never starts from Cycle', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const unread = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      readStateKnown: true,
+      unread: true,
+      readRevision: 'v1',
+      replyTurn: 't1',
+    })),
+  };
+  const reads: { session: string; read: { turn: string; revision: string } }[] =
+    [];
+  await page.route('**/api/control/read', (route) => {
+    reads.push(route.request().postDataJSON());
+    return route.fulfill({ json: { read: true } });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    unread,
+  );
+  await setOverviewDetail(page, 2);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0);
+  const rows = page.locator('.session-row');
+  const reply = rows.first().locator('[data-reply-text]');
+  await reply.evaluate((node) => {
+    (node as HTMLElement).hidden = true;
+  });
+  await rows
+    .first()
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await page.clock.fastForward(5000);
+  expect(reads).toHaveLength(0); // Visible task/metadata cannot substitute for the reply.
+  await reply.evaluate((node) => {
+    (node as HTMLElement).hidden = false;
+  });
+  await rows
+    .first()
+    .getByRole('button', { name: '/project/parent', exact: true })
+    .click();
+  await page.clock.fastForward(2000);
+  expect(reads).toHaveLength(0);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await page.clock.fastForward(2000);
+  expect(reads).toHaveLength(0);
+  const newer = {
+    ...unread,
+    sessions: unread.sessions.map((row) => ({
+      ...row,
+      readRevision: 'v2',
+      replyTurn: 't2',
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    newer,
+  );
+  await page.clock.fastForward(4000);
+  expect(reads).toHaveLength(0);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  await page.clock.fastForward(3000);
+  await expect.poll(() => reads.length).toBe(1);
+  expect(reads[0]).toEqual({
+    session: 'other',
+    read: { turn: 't2', revision: 'v2' },
+  });
+});
+
+test('selected session reply gets more reading space without expanding neighbours', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  const long = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      text: 'A readable reply line.\n'.repeat(100),
+    })),
+  };
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    long,
+  );
+  await setOverviewDetail(page, 2);
+  const rows = page.locator('.session-row');
+  const height = (index: number) =>
+    rows
+      .nth(index)
+      .locator('.context pre')
+      .first()
+      .evaluate((node) => node.getBoundingClientRect().height);
+  expect(await height(0)).toBeGreaterThan((await height(1)) * 1.9);
+  await rows
+    .nth(1)
+    .getByRole('button', { name: '/project/other', exact: true })
+    .click();
+  expect(await height(1)).toBeGreaterThan((await height(0)) * 1.9);
+});
+
+for (const mode of ['balanced', 'none', 'require']) {
+  for (const index of [0, 1, 2, 3]) {
+    test(`MCP tool choice ${index + 1} follows ${mode} confirmation policy`, async ({
+      page,
+      pairingURL,
+    }) => {
+      const { snapshot, offer, calls } = await mockActions(
+        page,
+        'approval',
+        false,
+        true,
+        mode,
+      );
+      const tool = {
+        server: 'codex_apps',
+        title: 'Create Event',
+        connector: 'Calendar',
+        message: 'Allow Calendar to create an event?',
+        arguments: '{"title":"Demo <event>"}',
+      };
+      const labels = [
+        'APPROVE ONCE',
+        'ALLOW FOR SESSION',
+        'ALWAYS ALLOW TOOL',
+        'CANCEL TOOL CALL',
+      ];
+      await page.route('**/api/control/offer', (route) =>
+        route.fulfill({
+          json: {
+            ...offer,
+            command: '',
+            directory: '',
+            mcpTool: tool,
+            choices: labels.map((label, choice) => ({
+              label,
+              persistent: choice === 1 || choice === 2,
+              detail:
+                choice === 2
+                  ? 'Future Codex sessions'
+                  : choice === 1
+                    ? 'Current Codex session'
+                    : '',
+            })),
+          },
+        }),
+      );
+      await page.goto(pairingURL);
+      await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+      const detail = {
+        ...snapshot,
+        sessions: snapshot.sessions.map((row) => ({
+          ...row,
+          text: tool.message,
+          mcpTool: tool,
+        })),
+      };
+      await page.evaluate(
+        (detail) =>
+          window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+        detail,
+      );
+      await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+      const review = page.getByRole('region', { name: 'MCP tool approval' });
+      await expect(review).toBeVisible();
+      await expect(review).toContainText('codex_apps');
+      await expect(review).toContainText('Create Event');
+      await expect(review).toContainText('Demo <event>');
+      await expect(
+        page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
+      ).toHaveCount(0);
+      await expect(page.getByRole('radio')).toHaveCount(4);
+      await page
+        .getByRole('radio', { name: new RegExp('^' + labels[index]) })
+        .check();
+      const guarded =
+        mode === 'require' ||
+        (mode === 'balanced' && (index === 1 || index === 2));
+      await page
+        .getByRole('button', {
+          name: guarded ? 'REVIEW BEFORE SENDING' : 'SEND DECISION',
+          exact: true,
+        })
+        .click();
+      if (guarded) {
+        expect(calls.filter((call) => call.action === 'commit')).toHaveLength(
+          0,
+        );
+        await page
+          .getByRole('button', {
+            name: 'CONFIRM ' + labels[index],
+            exact: true,
+          })
+          .click();
+      }
+      await expect
+        .poll(() => calls.filter((call) => call.action === 'commit').length)
+        .toBe(1);
+      expect(calls.find((call) => call.action === 'prepare')?.body.choice).toBe(
+        index,
+      );
+    });
+  }
+}
+
+test('read-only MCP approvals show the tool review without decision controls', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page, 'approval');
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const detail = {
+    ...snapshot,
+    control: false,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      mcpTool: {
+        server: 'tools',
+        name: 'create_event',
+        message: 'Allow event creation?',
+        arguments: '',
+      },
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    detail,
+  );
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('region', { name: 'MCP tool approval' }),
+  ).toContainText('create_event');
+  await expect(
+    page
+      .getByRole('region', { name: 'MCP tool approval' })
+      .getByText('—', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'SEND DECISION', exact: true }),
+  ).toHaveCount(0);
+  expect(
+    calls.filter(
+      (call) => call.action === 'prepare' || call.action === 'commit',
+    ),
+  ).toHaveLength(0);
+});
+
+const actionApprovalCases = [
+  {
+    title: 'TERMINAL INPUT APPROVAL',
+    fields: [
+      { label: 'TERMINAL', value: '123' },
+      { label: 'INPUT (ESCAPED)', value: '"yes\\n\\x03\\u202e"' },
+      { label: 'TERMINAL START DIRECTORY', value: '/terminal/start' },
+    ],
+    labels: ['SEND INPUT ONCE', 'CANCEL INPUT'],
+    persistent: [] as number[],
+  },
+  {
+    title: 'NETWORK APPROVAL',
+    fields: [
+      { label: 'HOST', value: 'example.com' },
+      { label: 'PROTOCOL', value: 'https' },
+      { label: 'JUSTIFICATION', value: 'Fetch <release> metadata' },
+    ],
+    labels: [
+      'APPROVE ONCE',
+      'ALLOW FOR SESSION',
+      'ALWAYS ALLOW HOST',
+      'ALWAYS BLOCK HOST',
+      'DECLINE',
+      'REJECT & STOP TURN',
+    ],
+    persistent: [1, 2, 3],
+  },
+];
+for (const scenario of actionApprovalCases) {
+  for (const mode of ['balanced', 'none', 'require']) {
+    for (const index of scenario.labels.keys()) {
+      test(`${scenario.title} choice ${index + 1} follows ${mode} policy`, async ({
+        page,
+        pairingURL,
+      }) => {
+        const { snapshot, offer, calls } = await mockActions(
+          page,
+          'approval',
+          false,
+          true,
+          mode,
+        );
+        const review = { title: scenario.title, fields: scenario.fields };
+        await page.route('**/api/control/offer', (route) =>
+          route.fulfill({
+            json: {
+              ...offer,
+              command: '',
+              directory: '',
+              approvalReview: review,
+              choices: scenario.labels.map((label, choice) => ({
+                label,
+                detail: '',
+                persistent: scenario.persistent.includes(choice),
+              })),
+            },
+          }),
+        );
+        if (mode === 'balanced' && index === 3)
+          await page.setViewportSize({ width: 360, height: 740 });
+        await page.goto(pairingURL);
+        await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+        const detail = {
+          ...snapshot,
+          sessions: snapshot.sessions.map((row) => ({
+            ...row,
+            command: '',
+            approvalReview: review,
+          })),
+        };
+        await page.evaluate(
+          (detail) =>
+            window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+          detail,
+        );
+        await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+        const region = page.getByRole('region', {
+          name: scenario.title,
+          exact: true,
+        });
+        await expect(region).toBeVisible();
+        for (const field of scenario.fields)
+          await expect(region).toContainText(field.value);
+        await expect(
+          page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
+        ).toHaveCount(0);
+        await page
+          .getByRole('radio', {
+            name: new RegExp('^' + scenario.labels[index]),
+          })
+          .check();
+        const guarded =
+          mode === 'require' ||
+          (mode === 'balanced' && scenario.persistent.includes(index));
+        await page
+          .getByRole('button', {
+            name: guarded ? 'REVIEW BEFORE SENDING' : 'SEND DECISION',
+            exact: true,
+          })
+          .click();
+        if (guarded) {
+          expect(calls.filter((call) => call.action === 'commit')).toHaveLength(
+            0,
+          );
+          await page
+            .getByRole('button', {
+              name: 'CONFIRM ' + scenario.labels[index],
+              exact: true,
+            })
+            .click();
+        }
+        await expect
+          .poll(() => calls.filter((call) => call.action === 'commit').length)
+          .toBe(1);
+        expect(
+          calls.find((call) => call.action === 'prepare')?.body.choice,
+        ).toBe(index);
+      });
+    }
+  }
+  test(`read-only ${scenario.title} displays review without approval writes`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot, calls } = await mockActions(page, 'approval');
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const detail = {
+      ...snapshot,
+      control: false,
+      sessions: snapshot.sessions.map((row) => ({
+        ...row,
+        command: '',
+        approvalReview: { title: scenario.title, fields: scenario.fields },
+      })),
+    };
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    await expect(
+      page.getByRole('region', { name: scenario.title, exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('radio')).toHaveCount(0);
+    expect(
+      calls.filter(
+        (call) => call.action === 'prepare' || call.action === 'commit',
+      ),
+    ).toHaveLength(0);
+  });
+}
+
+for (const prefix of ['currentTask', 'latestGuidance']) {
+  test(`full Detail keeps the result unread while ${prefix} hides the reply`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot } = await mockActions(page, 'prompt');
+    const reads: unknown[] = [];
+    await page.route('**/api/control/read', (route) => {
+      reads.push(route.request().postDataJSON());
+      return route.fulfill({ json: { read: true } });
+    });
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const detail = {
+      ...snapshot,
+      sessions: [
+        {
+          ...snapshot.sessions[0],
+          [prefix]: 'Context preceding the result.\n'.repeat(120),
+          text: 'VISIBLE COMPLETED REPLY',
+          readStateKnown: true,
+          unread: true,
+          readRevision: 'hidden-v1',
+          replyTurn: 'hidden-t1',
+        },
+      ],
+    };
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    const context = page.locator('.detail-context');
+    const reply = context.locator('[data-reply-text]');
+    await expect(context).toBeVisible();
+    const hidden = await reply.evaluate(
+      (node) =>
+        node.getBoundingClientRect().top >=
+        document.getElementById('content')!.getBoundingClientRect().bottom,
+    );
+    expect(hidden).toBe(true);
+    await page.waitForTimeout(150);
+    expect(reads).toHaveLength(0);
+    await context.dispatchEvent('wheel', { deltaY: 100 });
+    await page.waitForTimeout(150);
+    expect(reads).toHaveLength(0);
+    await reply.scrollIntoViewIfNeeded();
+    await context.dispatchEvent('wheel', { deltaY: 100 });
+    await expect.poll(() => reads.length).toBe(1);
+    expect(reads[0]).toEqual({
+      session: snapshot.sessions[0].id,
+      read: { turn: 'hidden-t1', revision: 'hidden-v1' },
+    });
   });
 }

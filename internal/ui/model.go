@@ -55,12 +55,13 @@ type Model struct {
 	monitorSuggestions                  monitorSuggestionState
 	monitorStatusLine                   []string
 	monitorDrafts                       map[string]string
-	monitorContextHidden                bool
+	monitorContextView                  string
 	monitorContextDetail                string
 	monitorContextExpanded              string
 	monitorContextRows                  map[string]rowContextState
 	monitorContextScroll                int
 	monitorReadIntent                   string
+	monitorReadDwell                    monitorReadDwell
 	monitorReadBusy                     bool
 	monitorHistory                      map[string]monitorTurnHistory
 	monitorHistorySequence              uint64
@@ -638,7 +639,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pressFooterButton(footerButtonQuotaTrace)
 			}
 		}
-		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
+		if message.IsRepeat && m.meterView == viewMonitor && (strings.EqualFold(message.String(), "c") || strings.EqualFold(message.String(), "y") || len(message.String()) == 1 && message.String()[0] >= '1' && message.String()[0] <= '8') {
 			return m, nil
 		}
 		if m.meterView == viewMonitor {
@@ -2889,6 +2890,7 @@ func (m *Model) selectMonitorSession(direction int) {
 		selected = min(max(selected+direction, 0), len(visible)-1)
 	}
 	m.monitorSelectedID = visible[selected]
+	m.monitorReadIntent = m.monitorSelectedID
 	if m.monitorContextExpanded != "" && m.monitorContextExpanded != m.monitorSelectedID {
 		m.monitorContextExpanded = ""
 		m.monitorApprovalConfirm = ""

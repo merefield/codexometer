@@ -98,7 +98,10 @@ func TestMonitorCompletionIsIndependentOfPreview(t *testing.T) {
 	m.monitorSessionData[0].attention = codex.SessionAttentionComplete
 	m.monitorSessionData[0].preview = codex.SessionContext{}
 	for _, hidden := range []bool{false, true} {
-		m.monitorContextHidden = hidden
+		m.monitorContextView = "split"
+		if hidden {
+			m.monitorContextView = "graph"
+		}
 		if out := ansi.Strip(m.render()); !strings.Contains(out, i18n.Text("TURN COMPLETE")) {
 			t.Fatal("completion badge missing without visible reply")
 		}
@@ -162,14 +165,23 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	m := contextTestModel()
 	m.openMonitorContext("root-one")
 	m.monitorSessionData[0].preview.Text = strings.Repeat("private context\n", 100)
-	updated, _ := m.Update(key('h'))
+	updated, _ := m.Update(key('y'))
 	m = updated.(Model)
-	if !m.monitorContextHidden || m.monitorContextDetail != "" || strings.Contains(m.render(), "private context") {
+	if m.monitorContextDetail != "root-one" {
+		t.Fatal("Cycle left full detail")
+	}
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updated.(Model)
+	updated, _ = m.Update(key('y'))
+	m = updated.(Model)
+	updated, _ = m.Update(key('y'))
+	m = updated.(Model)
+	if m.defaultMonitorContextMode() != contextGraph || m.monitorContextDetail != "" || strings.Contains(m.render(), "private context") {
 		t.Fatal("privacy leak")
 	}
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updated.(Model)
-	if !m.monitorContextHidden || m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextSplit {
+	if m.defaultMonitorContextMode() != contextGraph || m.monitorContextDetail != "" || m.rowContextMode("root-one") != contextSplit {
 		t.Fatal("i did not restore inline context")
 	}
 	m.openMonitorContext("root-one")
@@ -207,21 +219,23 @@ func TestMonitorContextPrivacyAndModalIsolation(t *testing.T) {
 	}
 }
 
-func TestMonitorContextPrivacyPersistsWithoutText(t *testing.T) {
+func TestMonitorContextCyclePersistsWithoutText(t *testing.T) {
 	m := contextTestModel()
 	store := &memoryPreferenceStore{}
 	m.preferenceStore = store
-	m.toggleMonitorContext()
-	if !store.preferences.HideSessionContext {
-		t.Fatal("privacy not saved")
-	}
-	saved, err := json.Marshal(store.preferences)
-	if err != nil || strings.Contains(string(saved), "Finished") || strings.Contains(string(saved), "root-one") {
-		t.Fatalf("unexpected stored content: %s", saved)
-	}
-	next := NewWithPreferences(nil, time.Minute, store)
-	if !next.monitorContextHidden {
-		t.Fatal("privacy not restored")
+	for _, want := range []int{contextWide, contextGraph, contextSplit} {
+		m.cycleMonitorContext()
+		if store.preferences.SessionContextView != sessionContextViewNames[want] {
+			t.Fatal("global layout not saved")
+		}
+		saved, err := json.Marshal(store.preferences)
+		if err != nil || strings.Contains(string(saved), "Finished") || strings.Contains(string(saved), "root-one") || strings.Contains(string(saved), "hideSessionContext") {
+			t.Fatalf("unexpected stored content: %s", saved)
+		}
+		next := NewWithPreferences(nil, time.Minute, store)
+		if next.defaultMonitorContextMode() != want || next.rowContextMode("new-session") != want {
+			t.Fatal("global layout not restored")
+		}
 	}
 }
 
@@ -230,17 +244,20 @@ func TestMonitorContextPrivacyAndDismissRenderedTargets(t *testing.T) {
 		m := contextTestModel()
 		m.width = width
 		for _, hidden := range []bool{false, true} {
-			m.monitorContextHidden = hidden
+			m.monitorContextView = "split"
+			if hidden {
+				m.monitorContextView = "graph"
+			}
 			for y, line := range strings.Split(ansi.Strip(m.render()), "\n") {
-				if idx := strings.Index(line, m.monitorPrivacyLabel()); idx >= 0 {
+				if idx := strings.Index(line, m.monitorCycleLabel()); idx >= 0 {
 					x := lipgloss.Width(line[:idx])
-					for n := 0; n < lipgloss.Width(m.monitorPrivacyLabel()); n++ {
-						if m.monitorContextAt(x+n, y) != "privacy" {
+					for n := 0; n < lipgloss.Width(m.monitorCycleLabel()); n++ {
+						if m.monitorContextAt(x+n, y) != "cycle" {
 							t.Fatal("privacy button miss")
 						}
 					}
 					updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft}))
-					if updated.(Model).monitorContextHidden == hidden {
+					if updated.(Model).defaultMonitorContextMode() == m.defaultMonitorContextMode() {
 						t.Fatal("privacy click failed")
 					}
 				}
@@ -255,16 +272,12 @@ func TestMonitorContextPrivacyAndDismissRenderedTargets(t *testing.T) {
 	}
 }
 
-func TestMonitorDetailToggleLabelsAdaptToWidth(t *testing.T) {
+func TestMonitorCycleLabelAdaptsToWidth(t *testing.T) {
 	m := contextTestModel()
-	for _, hidden := range []bool{false, true} {
-		m.monitorContextHidden = hidden
-		full, compact := i18n.Text("[ H: HIDE DETAIL ]"), i18n.Text("[H:HIDE]")
-		if hidden {
-			full, compact = i18n.Text("[ H: SHOW DETAIL ]"), i18n.Text("[H:SHOW]")
-		}
-		if m.monitorPrivacyLabel(100) != full || m.monitorPrivacyLabel(16) != compact {
-			t.Fatal("unexpected detail toggle label")
+	for _, view := range []string{"graph", "split", "wide"} {
+		m.monitorContextView = view
+		if m.monitorCycleLabel(100) != i18n.Text("[ C(Y)CLE ]") || m.monitorCycleLabel(10) != "[Y]" {
+			t.Fatal("unexpected Cycle label")
 		}
 	}
 }

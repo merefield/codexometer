@@ -50,17 +50,19 @@ type actionQuestion struct {
 }
 
 type actionOffer struct {
-	RequiredHumanApproval bool                 `json:"requiredHumanApproval,omitempty"`
-	FileChanges           []codex.FileDiffLine `json:"fileChanges,omitempty"`
-	Profile               *profileReview       `json:"profile,omitempty"`
-	ID                    string               `json:"id"`
-	Session               string               `json:"session"`
-	Thread                string               `json:"thread"`
-	Directory             string               `json:"directory"`
-	Kind                  string               `json:"kind"`
-	Command               string               `json:"command"`
-	Choices               []actionChoice       `json:"choices"`
-	Questions             []actionQuestion     `json:"questions"`
+	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
+	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
+	RequiredHumanApproval bool                          `json:"requiredHumanApproval,omitempty"`
+	FileChanges           []codex.FileDiffLine          `json:"fileChanges,omitempty"`
+	Profile               *profileReview                `json:"profile,omitempty"`
+	ID                    string                        `json:"id"`
+	Session               string                        `json:"session"`
+	Thread                string                        `json:"thread"`
+	Directory             string                        `json:"directory"`
+	Kind                  string                        `json:"kind"`
+	Command               string                        `json:"command"`
+	Choices               []actionChoice                `json:"choices"`
+	Questions             []actionQuestion              `json:"questions"`
 }
 
 type offeredAction struct {
@@ -119,19 +121,24 @@ func (c *control) offer(id string) (offeredAction, error) {
 	}
 	o := offeredAction{actionOffer: actionOffer{Session: id, Thread: id, Directory: directory}}
 	if ctx.Kind == codex.SessionContextApproval {
-		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || (ctx.FileChanges == "" && (ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "")) || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
+		if c.approvals == nil || ctx.ApprovalToken == "" || ctx.ApprovalBlocked != "" || (ctx.FileChanges == "" && ctx.MCPTool.Server == "" && ctx.ActionReview() == nil && (ctx.CommandDetails.Command == "" || ctx.CommandDetails.Directory == "")) || ctx.ThreadID == "" || !c.approvals.SessionApprovalPending(ctx.ApprovalToken) {
 			return o, nil
 		}
 		o.Kind, o.token = "approval", ctx.ApprovalToken
 		o.RequiredHumanApproval = ctx.RequiredHumanApproval
+		o.ApprovalReview = ctx.ActionReview()
+		if ctx.MCPTool.Server != "" {
+			details := ctx.MCPTool
+			o.MCPTool = &details
+		}
 		o.Command, o.Directory, o.Thread = ctx.CommandDetails.Command, ctx.CommandDetails.Directory, ctx.ThreadID
 		o.FileChanges = codex.FileDiffLines(ctx.FileChanges)
 		for _, option := range ctx.ApprovalOptions {
-			label := map[string]string{"accept": "APPROVE ONCE", "acceptForSession": "ALLOW FOR SESSION", "acceptWithExecpolicyAmendment": "ALWAYS ALLOW PREFIX", "decline": "DECLINE", "cancel": "REJECT & STOP TURN"}[option.Kind]
+			label := option.Label(false)
 			if label == "" {
 				continue
 			}
-			o.Choices = append(o.Choices, actionChoice{label, option.Detail, option.Kind == "acceptForSession" || option.Kind == "acceptWithExecpolicyAmendment"})
+			o.Choices = append(o.Choices, actionChoice{label, option.Detail, option.ChangesPolicy()})
 			o.decisions = append(o.decisions, option.Value)
 		}
 		if len(o.Choices) == 0 {

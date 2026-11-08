@@ -160,7 +160,11 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		return
 	case "item/commandExecution/requestApproval":
 		kind := "command" // legacy servers omit the discriminator
-		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && (kind == "command" || kind == "humanCommand") && string(p.Kind) != "null"
+		kindValid := len(p.Kind) == 0 || json.Unmarshal(p.Kind, &kind) == nil && (kind == "command" || kind == "humanCommand" || kind == "writeStdin") && string(p.Kind) != "null"
+		if kindValid && kind == "writeStdin" {
+			configureStdinApproval(&c, raw)
+			break
+		}
 		var command string
 		commandValid := len(p.Command) == 0 || string(p.Command) == "null" || json.Unmarshal(p.Command, &command) == nil
 		previous := state.commands[p.TurnID+"/"+p.ItemID]
@@ -174,6 +178,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		c.RequiredHumanApproval = kindValid && kind == "humanCommand"
 		c.Text = strings.TrimSpace(p.Reason + "\nCommand: " + command + "\nDirectory: " + p.CWD)
 		special := func(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) != "null" }
+		if special(p.Network) && kindValid && kind == "command" && !special(p.Permissions) && p.TurnID != "" && p.ItemID != "" {
+			configureNetworkApproval(&c, p.Network, p.Decisions, p.Reason)
+			break
+		}
 		if special(p.Network) {
 			c.Text += "\nNetwork request: " + string(p.Network)
 		}
@@ -239,6 +247,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	case "item/fileChange/patchUpdated":
 		state.capturePatch(p.TurnID, p.ItemID, p.Changes)
 		return
+	case "mcpServer/elicitation/request":
+		configureMCPApproval(&c, raw)
 	case "item/permissions/requestApproval":
 		c.ApprovalBlocked = "permissions"
 		c.Kind, c.Text = SessionContextApproval, p.Reason

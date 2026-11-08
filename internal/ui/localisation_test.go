@@ -64,6 +64,10 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	}
 	t.Run("benchmark_click_surfaces", TestBenchmarkRenderedClickSurfacesMatchHitTestingAcrossSizes)
 	t.Run("monitor_click_surfaces", TestMonitorButtonBoxesMatchEnabledHitSurfacesAcrossSizes)
+	t.Run("approval_button_spacing", TestApprovalButtonsKeepEvenVisibleGapsAndStableConfirmationPositions)
+	t.Run("mcp_approval_controls", TestMCPApprovalFourButtonsAndConfirmationPolicy)
+	t.Run("network_approval_controls", TestNetworkApprovalButtonsAndPolicy)
+	t.Run("stdin_approval_controls", TestStdinApprovalControlsAndEscapedReview)
 	t.Run("monitor_control_shortcuts", TestMonitorCompactControlsKeepShortcutHints)
 	t.Run("schedule_click_surfaces", TestScheduleRenderedControlSurfaces)
 	t.Run("schedule_status_labels", TestScheduleLocalisedStatusAndHint)

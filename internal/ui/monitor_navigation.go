@@ -32,7 +32,7 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 		buttons = []monitorNavigationButton{
 			{label: "[↑]", action: "session-up", enabled: count > 0 && !m.monitorSummaryFocused},
 			{label: "[↓]", action: "session-down", enabled: count > 0 && (m.monitorAttentionFocused || m.monitorSummaryFocused || selected < 0 || selected < count-1)},
-			{label: m.monitorPrivacyLabel(width - 8), action: "privacy", enabled: true},
+			{label: m.monitorCycleLabel(width - 8), action: "cycle", enabled: count > 0},
 		}
 	} else {
 		mode := m.rowContextMode(id)
@@ -52,11 +52,11 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 		return n
 	}
 	if width < groupWidth()+8 {
-		// Preserve the existing Hide/Show or Close control on small boxes.
+		// Preserve the Cycle or Close control on small boxes.
 		if len(buttons) == 3 {
 			buttons = buttons[2:]
 			if id == "" {
-				buttons[0].label = m.monitorPrivacyLabel(width)
+				buttons[0].label = m.monitorCycleLabel(width)
 			}
 		} else {
 			return nil

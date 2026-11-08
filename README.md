@@ -595,7 +595,8 @@ codexometer --codex /path/to/codex
 | `s` | Open Benchmark Scope (Benchmark view only) |
 | `o` | Close All session rows; strict confirmation mode adds a second press, with `Esc` to cancel |
 | `g` | Cycle available trend periods in Quota → Pace |
-| `h` | Toggle the trace in Quota → Pace; in Sessions, reset all rows to graph-only / split detail-and-graph, closing full detail and clearing individual row choices |
+| `h` | Toggle the trace in Quota → Pace |
+| `y` | Cycle all listed Sessions rows: first match the most detailed row, then graph → split → wide → graph; never opens full detail |
 | `Left` / `Right` | In Sessions, highlight attention pills or cycle status filters when that header area has focus; otherwise less / more detail for the selected session: graph ↔ split ↔ wide ↔ full screen; stops at either end |
 | `b` | Run the selected benchmark scope (Benchmark view only) |
 | `a` | Run All benchmarks; confirmation follows the selected policy (Benchmark view only) |
@@ -1525,6 +1526,10 @@ text areas under 12 columns and incomplete, oversized or unsupported destination
 plain. The version and pricing links continue to use the terminal's native
 hyperlink handling.
 
+The selected row receives roughly twice the height of other listed rows when space
+permits. Every other row keeps at least three terminal lines, and page size stays
+the same; selection changes the allocation, while hover does not.
+
 Select a session with `Up`/`Down`, then use `Left` for less detail or `Right` for
 more. Click the left/right half of that row's combined detail/graph area for the
 same action on that session. The presentations are:
@@ -1602,12 +1607,15 @@ same action on that session. The presentations are:
 
 **Unread completed results (shared app-server):** when Codex supplies durable
 read state, **TURN COMPLETE** remains highlighted and its completion pill stays
-visible until the result is reviewed. Deliberately opening partial or full Detail,
-or scrolling within its displayed result pane, acknowledges the latest completed
-reply. The completion status remains visible in subdued styling afterward.
-Rendering a preview, selecting a row, restoring a layout or receiving a new result
-in an already-open pane does not acknowledge it. An older history page cannot
-acknowledge a newer result; changed receipts require a fresh review action.
+visible until the result is reviewed. In the Sessions list, deliberately select
+an unread reply in **wide detail** and keep its result visible for **three seconds**
+to mark it read. Selecting another row, leaving wide mode, hiding the reply or
+receiving a newer result cancels the timer. Split previews stay unread, even when
+scrolled. Opening full-screen Detail explicitly acknowledges the visible latest
+completed reply immediately; a result arriving in an already-open Detail page
+still needs a fresh review gesture. The completion status remains visible in
+subdued styling afterward. Bulk Cycle, restored layouts and hover never start a
+reading timer. An older history page cannot acknowledge a newer result.
 
 These receipts are saved by Codex and shared with supported native Codex views,
 so reviewed results remain reviewed across restarts. Codexometer does not save a
@@ -1690,10 +1698,16 @@ collection or changes the Zero baseline. Dismissed sessions are skipped, and Dow
 matching session.
 These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.
 On narrow boxes, arrow buttons are omitted if they cannot fit; keyboard and
-background half-click navigation still work. Hide/Show and Close retain priority.
-The global `h`/Show Detail/Hide Detail control resets **all** rows to split or
-graph-only, closes full detail and clears per-row overrides. Only that global
-default is persisted across launches. While typing, arrows move the text cursor,
+background half-click navigation still work. Cycle and Close retain priority.
+The global **C(Y)CLE** (`y`) button first brings mixed listed rows to the most
+detailed current overview layout, then cycles them together through **graph only →
+split detail/graph → wide detail → graph only**. It includes matching rows off the
+current page, leaves filtered-out or dismissed rows unchanged, and never opens
+full-screen detail. Full detail and focused editors retain their own keys.
+Cycling clears listed rows’ individual layout overrides and pending interaction
+state, preserves selection and ordinary drafts, and does not mark replies read. The chosen
+global default also applies to newly observed rows and survives restarts.
+While typing, arrows move the text cursor,
 Enter submits, and `Esc` leaves the editor first. Approval controls remain
 exclusive to the current target.
 
@@ -2127,6 +2141,24 @@ visually marked with a vertical rail. Formatting uses validated structured
 fields rather than guessing command boundaries from the justification. Legacy
 or incomplete requests retain their original bounded text.
 
+**Terminal-input approvals (shared app-server):** before Codex sends input to an existing terminal, review its terminal ID, start directory, optional environment, and the exact input. Input is quoted with visible escapes so newlines, control keys and hidden characters cannot disappear in either interface. **SEND INPUT ONCE** and **CANCEL INPUT** act on the original request and are immediate by default; `--confirmation require` adds confirmation. No session-wide or persistent stdin grant is offered. Requests that also ask for unsupported additional permissions remain in Codex.
+
+**Managed network approvals (shared app-server):** review the requested host and protocol in the terminal or writable web UI. Codexometer offers only Codex’s advertised choices, including one-time access, a conversation grant and persistent host allow/block rules. Both persistent allow and block rules require confirmation by default. Missing or unsupported destination details still require review in Codex.
+
+**MCP/app tool approvals (shared app-server):** the terminal and writable web
+interface show the MCP server, tool/app metadata, request message and
+supplied arguments (or an unavailable marker when Codex omits them). Message-only tool approvals offer **APPROVE ONCE**,
+**ALLOW FOR SESSION**, **ALWAYS ALLOW TOOL**, and **CANCEL TOOL CALL**, with reusable
+grants included only when Codex advertises those scopes. One-time approval and
+tool cancellation are immediate by default; session/persistent grants require
+confirmation. The launch confirmation policy applies. Each action answers the
+original MCP request once; cancellation uses the MCP cancellation action rather
+than a command's reject-and-stop decision. Read-only web shows the same review
+without enabling decisions. General forms, URL authentication and device
+verification remain visible for handling in Codex. Missing turn/item IDs and
+connector payloads without a separate tool name are supported; no identity is
+guessed from the request prose.
+
 **Managed human approvals (Codex 0.167+):** a managed command policy can require
 fresh approval each time, even when ordinary approvals have been saved or
 reviewed automatically. The terminal and writable web mode offer **APPROVE ONCE**,
@@ -2260,21 +2292,21 @@ Full approval reviews use a separate **65,536-character** budget, so longer comm
 Local rollout logs do **not** persist Codex's approval-request events, so a local
 preview can show only the message preceding an approval. `INPUT NEEDED` or
 `CHECK SESSION` alone never enables these controls. Requests with missing,
-truncated or sanitised-away details, network approvals, incomplete file changes, permission
+truncated or sanitised-away details, unsupported network requests, incomplete file changes, permission
 grants and other unsupported requests remain **REPLY IN CODEX**. The complete
 eligible request is available in the scrollable detail, not just the compact
 two-line preview. Unsupported requests may have only a bounded excerpt.
 
 When controls are unavailable, the detail page explains why beside
 **REPLY IN CODEX**: for example, missing command/directory or request identity,
-additional permissions, network approval, unavailable complete file changes, no supported decisions,
+additional permissions, unsupported network details, unavailable complete file changes, no supported decisions,
 truncated or sanitised text, local-only observation, or a resolved/disconnected
 request. Eligible requests on small terminals instead explain that the terminal
 must be enlarged. These diagnostics do not relax any approval safeguards.
 
-The readout's `[ H: HIDE DETAIL ]`/`[ H: SHOW DETAIL ]` button or `h` toggles all
-previews (shortened to `[H:HIDE]`/`[H:SHOW]` in narrow layouts); the choice
-survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
+The readout's **C(Y)CLE** button or `y` synchronizes the listed rows at their
+most detailed current layout, then cycles graph-only, split and wide layouts
+(shortened to `[Y]` in narrow layouts). The global choice survives restarts. No excerpt is saved to disk by Codexometer. Recent-turn browsing
 uses a bounded in-memory cache and read-only app-server history where available.
 Each retained excerpt is capped at 4,096
 Unicode characters; startup reads only a bounded 256 KiB rollout tail, so older
@@ -2287,8 +2319,8 @@ any command; restart the demo to reset its approval.
 ### Saved presentation preferences
 
 Codexometer's presentation preferences store only the selected theme, main tab,
-Quota view, benchmark filter, benchmark ranking weight, and the Sessions context
-hide/show preference. No benchmark result, message content, credential, session
+Quota view, benchmark filter, benchmark ranking weight, and the global Sessions
+detail level. No benchmark result, message content, credential, session
 ID, email, or account ID is written to that file. The small JSON file uses the
 platform-standard user configuration directory:
 
@@ -3107,7 +3139,10 @@ available from the existing reader.
   once. These are not account-wide or permanent cumulative totals: removing a
   session from the observation can reduce the sum. On stale data, token/session
   totals are labelled last-known and live state counts become unavailable (—).
-- Select a session by clicking its directory/name, or use **↑ / ↓**.
+- Select a session by clicking its directory/name, or use **↑ / ↓**. The selected
+  row allows twice as much reply-text height as its neighbours. Deliberate selection
+  in wide mode marks the visible latest reply read after three seconds; full-page
+  Detail opens mark it read immediately. Read-only mode never sends receipts.
 - **[ (C)OPY ]** copies visible reply/activity text from split, wide or full-page
   detail, including while Codex is working and in read-only mode. `C` targets the
   selected visible detail; typing and native Ctrl/Cmd+C retain their normal behaviour.
@@ -3121,9 +3156,11 @@ available from the existing reader.
 - Use **← / →** or the row's arrow buttons to move through **graph only → split
   detail and graph → wide detail → full-page detail**. Each row has its own layout.
 - **Escape** or **← ALL SESSIONS** returns from full-page detail to that session's
-  wide detail row. **SHOW ALL DETAILS / HIDE ALL DETAILS** switches all current
-  rows between split detail and graph-only, clearing individual overrides and
-  setting the default for newly observed sessions too. This global default is
+  wide detail row. **C(Y)CLE** or `y` first matches all listed rows to the most
+  detailed current row, then cycles **graph → split → wide → graph** in unison,
+  without opening a full-page session. It clears listed rows’ individual overrides
+  and sets the default for newly observed sessions too. Bulk cycling does not
+  acknowledge unread results. Keyboard cycling is unavailable while typing or in full detail. This global default is
   independent of the 100-entry saved per-session history. Narrow screens stack panels.
 - Attention links jump to the relevant session. Approval indicators remain
   outside scrollable reply text; available commands are separated from their
@@ -3712,7 +3749,7 @@ Potential Sessions follow-ups (not implemented):
   would become persisted data and the saved-preferences documentation would
   need updating accordingly.
 
-Currently, the main tab, Quota view and global Sessions hide/show preference are
+Currently, the main tab, Quota view and global Sessions detail level are
 saved, but session selection, per-session detail levels and dismissals remain
 temporary.
 

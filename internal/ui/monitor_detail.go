@@ -74,7 +74,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	var lines []detailLine
 	appendText := func(text, kind, prefix string) {
 		wrap := sessionWebTextLines
-		if c.Kind == codex.SessionContextApproval || kind != "body" {
+		if c.Kind == codex.SessionContextApproval || kind != "body" && kind != "reply" {
 			wrap = sessionWebLiteralTextLines
 		}
 		for _, line := range wrap(text, max(width-lipgloss.Width(prefix), 1)) {
@@ -128,6 +128,35 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		appendText(sanitize(c.Text), "body", "")
 		lines = append(lines, detailLine{})
 		lines = append(lines, fileApprovalDocument(c.FileChanges, width)...)
+	} else if review := c.ActionReview(); c.Kind == codex.SessionContextApproval && review != nil {
+		section(i18n.Text(review.Title))
+		for _, field := range review.Fields {
+			section(i18n.Text(field.Label))
+			appendText(sanitize(field.Value), "body", "")
+		}
+	} else if c.Kind == codex.SessionContextApproval && c.MCPTool.Server != "" {
+		section(contextTitle(c))
+		d := c.MCPTool
+		if d.Arguments == "" {
+			d.Arguments = "—"
+		}
+		appendText(sanitize(d.Message), "body", "")
+		for _, field := range []struct{ title, text string }{
+			{i18n.Text("MCP SERVER"), d.Server}, {i18n.Text("TOOL"), d.Name},
+			{i18n.Text("TITLE"), d.Title}, {i18n.Text("APP"), d.Connector},
+			{i18n.Text("ARGUMENTS"), d.Arguments},
+		} {
+			if field.text != "" {
+				section(field.title)
+				appendText(sanitize(field.text), "body", "")
+			}
+		}
+		for _, option := range c.ApprovalOptions {
+			if option.Detail != "" {
+				section(i18n.Text("PERMISSION SCOPE"))
+				appendText(sanitize(option.Detail), "warning", "")
+			}
+		}
 	} else if c.Kind == codex.SessionContextApproval && c.CommandDetails.Command != "" {
 		section(contextTitle(c))
 		d := c.CommandDetails
@@ -167,7 +196,11 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			}
 			text = strings.Join(parts, "\n")
 		}
-		appendText(text, "body", "")
+		kind := "body"
+		if c.Kind == codex.SessionContextReply {
+			kind = "reply"
+		}
+		appendText(text, kind, "")
 	}
 	if c.ApprovalDecisions != "" {
 		section(i18n.Text("OFFERED DECISIONS"))
@@ -200,4 +233,10 @@ func (m Model) contextDetailLines(width int) []string {
 		lines[i] = ansi.Strip(line.text)
 	}
 	return lines
+}
+
+// Rendering and read receipts must use the same clamped document slice.
+func (m Model) detailVisibleRange(lineCount, rows int) (int, int) {
+	start := min(max(m.monitorContextScroll, 0), max(lineCount-rows, 0))
+	return start, min(start+rows, lineCount)
 }

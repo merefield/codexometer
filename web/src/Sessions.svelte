@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { router } from 'svelte-spa-router';
   import {
     live,
@@ -12,7 +12,7 @@
     preferences,
     detailLevel,
     setDetailLevel,
-    setAllDetailLevels,
+    cycleDetailLevels,
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
@@ -22,6 +22,8 @@
   import SessionCommands from './SessionCommands.svelte';
   let copyControl: SessionCopy | undefined = $state();
   import FileDiff from './FileDiff.svelte';
+  import MCPApproval from './MCPApproval.svelte';
+  import ActionApproval from './ActionApproval.svelte';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
@@ -127,17 +129,125 @@
 
   let readNotice = $state('');
   const reading = new Set<string>();
-  async function reviewResult(row: Session) {
+  let readDwellSequence = 0;
+  let readDwell = $state<{
+    sequence: number;
+    id: string;
+    turn: string;
+    revision: string;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  function readableResult(row: Session) {
+    return (
+      live.data?.control &&
+      !stale &&
+      row.unread &&
+      row.readRevision &&
+      row.replyTurn &&
+      !row.streaming &&
+      row.contextKind === 'LAST REPLY' &&
+      !!row.text &&
+      !profileFocused &&
+      !profiles.some((p) => p.session === row.id && p.pending)
+    );
+  }
+  function resultVisible(row: Session) {
+    const scrollport = document.getElementById('content');
+    const clip = scrollport?.getBoundingClientRect();
+    const left = clip ? clip.left + scrollport!.clientLeft : 0;
+    const top = clip ? clip.top + scrollport!.clientTop : 0;
+    const right = left + (scrollport?.clientWidth || 0);
+    const bottom = top + (scrollport?.clientHeight || 0);
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[data-result-session]'),
+    ).some((node) => {
+      const result = node.querySelector('[data-reply-text]');
+      if (!result) return false;
+      const rect = result.getBoundingClientRect();
+      return (
+        scrollport?.contains(node) &&
+        node.dataset.resultSession === row.id &&
+        node.dataset.resultTurn === row.replyTurn &&
+        !node.closest('[inert], [hidden]') &&
+        document.visibilityState === 'visible' &&
+        rect.left < Math.min(window.innerWidth, right) &&
+        rect.right > Math.max(0, left) &&
+        rect.top < Math.min(window.innerHeight, bottom) &&
+        rect.bottom > Math.max(0, top) &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    });
+  }
+  function cancelReadDwell() {
+    if (readDwell) clearTimeout(readDwell.timer);
+    readDwell = undefined;
+  }
+  function wideResult(row: Session) {
+    return (
+      !params.id &&
+      selectedID === row.id &&
+      detailLevel(row.id) === 2 &&
+      readableResult(row)
+    );
+  }
+  function validateReadDwell() {
+    if (!readDwell) return;
+    const row = sessions.find((row) => row.id === readDwell!.id);
     if (
-      !live.data?.control ||
-      stale ||
-      !row.unread ||
-      !row.readRevision ||
-      !row.replyTurn ||
-      row.streaming ||
-      profileFocused
+      !row ||
+      !wideResult(row) ||
+      row.replyTurn !== readDwell.turn ||
+      row.readRevision !== readDwell.revision ||
+      !resultVisible(row)
     )
-      return;
+      cancelReadDwell();
+  }
+  function startReadDwell(row: Session) {
+    validateReadDwell();
+    if (!wideResult(row) || !resultVisible(row) || readDwell) return;
+    const id = row.id,
+      turn = row.replyTurn!,
+      revision = row.readRevision!;
+    const sequence = ++readDwellSequence;
+    readDwell = {
+      sequence,
+      id,
+      turn,
+      revision,
+      timer: setTimeout(() => {
+        validateReadDwell();
+        if (
+          !readDwell ||
+          readDwell.sequence !== sequence ||
+          readDwell.id !== id ||
+          readDwell.turn !== turn ||
+          readDwell.revision !== revision
+        )
+          return;
+        const current = sessions.find((row) => row.id === id);
+        cancelReadDwell();
+        if (current) void reviewResult(current);
+      }, 3000),
+    };
+  }
+  // State changes only cancel; result arrival and restored layouts never start a timer.
+  $effect(() => {
+    validateReadDwell();
+  });
+  onMount(() => {
+    document.addEventListener('scroll', validateReadDwell, true);
+    document.addEventListener('visibilitychange', validateReadDwell);
+    window.addEventListener('resize', validateReadDwell);
+    return () => {
+      cancelReadDwell();
+      document.removeEventListener('scroll', validateReadDwell, true);
+      document.removeEventListener('visibilitychange', validateReadDwell);
+      window.removeEventListener('resize', validateReadDwell);
+    };
+  });
+  async function reviewResult(row: Session) {
+    if (!readableResult(row)) return;
     const id = row.id,
       revision = row.readRevision,
       turn = row.replyTurn;
@@ -146,36 +256,13 @@
     reading.add(key);
     try {
       await tick();
-      const current = sessions.find((s) => s.id === id);
-      const scrollport = document.getElementById('content');
-      const clip = scrollport?.getBoundingClientRect();
-      const left = clip ? clip.left + scrollport!.clientLeft : 0;
-      const top = clip ? clip.top + scrollport!.clientTop : 0;
-      const right = left + (scrollport?.clientWidth || 0);
-      const bottom = top + (scrollport?.clientHeight || 0);
-      const visible = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-result-session]'),
-      ).some((node) => {
-        const rect = node.getBoundingClientRect();
-        return (
-          scrollport?.contains(node) &&
-          node.dataset.resultSession === id &&
-          node.dataset.resultTurn === turn &&
-          !node.closest('[inert], [hidden]') &&
-          document.visibilityState === 'visible' &&
-          rect.left < Math.min(window.innerWidth, right) &&
-          rect.right > Math.max(0, left) &&
-          rect.top < Math.min(window.innerHeight, bottom) &&
-          rect.bottom > Math.max(0, top) &&
-          rect.width > 0 &&
-          rect.height > 0
-        );
-      });
+      const current = sessions.find((row) => row.id === id);
       if (
-        !visible ||
-        current?.readRevision !== revision ||
-        current?.replyTurn !== turn ||
-        stale
+        !current ||
+        !readableResult(current) ||
+        !resultVisible(current) ||
+        current.readRevision !== revision ||
+        current.replyTurn !== turn
       )
         return;
       await controlRequest('read', { session: id, read: { turn, revision } });
@@ -187,10 +274,17 @@
       reading.delete(key);
     }
   }
+  function reviewDisplayedResult(row: Session) {
+    if (params.id === row.id) void reviewResult(row);
+    else startReadDwell(row);
+  }
   function openResult(id: string) {
-    select(id);
-    const row = sessions.find((s) => s.id === id);
-    if (row) void reviewResult(row);
+    cancelReadDwell();
+    select(id, false);
+    if (params.id === id) {
+      const row = sessions.find((row) => row.id === id);
+      if (row) void reviewResult(row);
+    }
   }
   // An arriving result in an already-open page needs a fresh review gesture.
   // Restoring a URL is not a review gesture, including when data arrives late.
@@ -212,13 +306,16 @@
       });
     }
   });
-  function select(id: string) {
+  function select(id: string, review = true) {
+    if (id !== selectedID) cancelReadDwell();
     preferences.selected = id;
-    void tick().then(() =>
+    void tick().then(() => {
       document
         .querySelector('.session-row.selected')
-        ?.scrollIntoView({ block: 'nearest' }),
-    );
+        ?.scrollIntoView({ block: 'nearest' });
+      const row = sessions.find((row) => row.id === id);
+      if (review && row) startReadDwell(row);
+    });
   }
   function change(id: string, delta: number) {
     select(id);
@@ -233,11 +330,11 @@
     if (level > 2) location.hash = '/sessions/' + encodeURIComponent(id);
     else {
       setDetailLevel(id, level);
-      if (delta > 0) {
-        const row = sessions.find((s) => s.id === id);
-        if (row) void reviewResult(row);
-      }
     }
+  }
+  function cycle() {
+    cancelReadDwell();
+    if (!params.id) cycleDetailLevels(sessions.map((session) => session.id));
   }
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
@@ -249,7 +346,10 @@
       target.closest('input, textarea, select, [contenteditable="true"]')
     )
       return;
-    if (event.key === 'Escape' && params.id) {
+    if (event.key.toLowerCase() === 'y' && !params.id) {
+      event.preventDefault();
+      if (!event.repeat) cycle();
+    } else if (event.key === 'Escape' && params.id) {
       event.preventDefault();
       change(params.id, -1);
     } else if (
@@ -340,8 +440,12 @@
   {#if heading}<h3>
       {contextTitle(session)}
     </h3>{/if}
-  {#if session.text || !session.workingCommand}
-    <pre>{session.text || 'No session context available.'}</pre>
+  {#if session.approvalReview && (!full || !live.data?.control)}
+    <ActionApproval review={session.approvalReview} />
+  {:else if session.mcpTool && (!full || !live.data?.control)}
+    <MCPApproval details={session.mcpTool} />
+  {:else if session.text || !session.workingCommand}
+    <pre data-reply-text>{session.text || 'No session context available.'}</pre>
   {/if}
   {#if session.workingCommand}
     <hr />
@@ -361,7 +465,7 @@
   {/if}
   {#if (!full || !live.data?.control) && session.fileChanges?.length}
     <FileDiff lines={session.fileChanges} />
-  {:else if (!full || !live.data?.control) && (session.command || session.status === 'APPROVAL NEEDED')}
+  {:else if (!full || !live.data?.control) && !session.mcpTool && !session.approvalReview && (session.command || session.status === 'APPROVAL NEEDED')}
     <hr />
     <h3>
       {stale || session.status !== 'APPROVAL NEEDED'
@@ -509,7 +613,7 @@
           data-result-session={selected.id}
           data-result-turn={selected.replyTurn}
           onwheel={() => {
-            void reviewResult(selected);
+            reviewDisplayedResult(selected);
           }}
         >
           {@render context(selected, true, true)}
@@ -583,8 +687,12 @@
       ↑ ↓ SELECT SESSION // ← LESS DETAIL // → MORE DETAIL // ESC BACK
     </p>
     <div>
-      <button onclick={() => setAllDetailLevels(1)}>SHOW ALL DETAILS</button>
-      <button onclick={() => setAllDetailLevels(0)}>HIDE ALL DETAILS</button>
+      <button
+        onclick={cycle}
+        disabled={!sessions.length}
+        title="Match the most detailed row, then cycle graph, split and wide views"
+        >C(Y)CLE</button
+      >
     </div>
   </div>
   {#each sessions as session (session.id)}
@@ -649,7 +757,6 @@
               const opening = level === 0;
               select(session.id);
               setDetailLevel(session.id, opening ? 1 : 0);
-              if (opening) void reviewResult(session);
             }}
             aria-expanded={level > 0}
             >{level ? 'HIDE DETAIL' : 'SHOW DETAIL'}</button
@@ -692,7 +799,7 @@
             data-result-session={session.id}
             data-result-turn={session.replyTurn}
             onwheel={() => {
-              void reviewResult(session);
+              reviewDisplayedResult(session);
             }}
           >
             {@render context(session, false)}
