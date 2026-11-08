@@ -330,18 +330,22 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 		}
 	}
 	lines := []detailLine{{ansi.Truncate(heading, width, "…"), "heading"}}
-	appendSection := func(title, text string) {
+	appendSection := func(title, text, kind string) {
 		if text == "" {
 			return
 		}
 		lines = append(lines, detailLine{}, detailLine{ansi.Truncate(title, width, "…"), "heading"})
 		for _, line := range sessionWebTextLines(codex.SanitizeSessionContext(text), width) {
-			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), "body"})
+			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), kind})
 		}
 	}
-	appendSection(i18n.Text("TASK"), c.CurrentTask)
-	appendSection(i18n.Text("LATEST GUIDANCE"), c.LatestGuidance)
-	appendSection(i18n.Text("LAST REPLY"), c.Text)
+	appendSection(i18n.Text("TASK"), c.CurrentTask, "body")
+	appendSection(i18n.Text("LATEST GUIDANCE"), c.LatestGuidance, "body")
+	replyKind := "body"
+	if c.Kind == codex.SessionContextReply && sameHistoryTurn(c, s.preview) && c.Text == s.preview.Text {
+		replyKind = "reply"
+	}
+	appendSection(i18n.Text("LAST REPLY"), c.Text, replyKind)
 	// Current requests are still live; never render controls beside a saved
 	// approval or present historical text as the justification for a new one.
 	if s.preview.Kind == codex.SessionContextApproval || s.preview.Kind == codex.SessionContextQuestion || m.hasSessionProfile(s) {

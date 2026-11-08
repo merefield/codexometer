@@ -151,7 +151,7 @@
       !profiles.some((p) => p.session === row.id && p.pending)
     );
   }
-  function resultVisible(row: Session, replyOnly = false) {
+  function resultVisible(row: Session) {
     const scrollport = document.getElementById('content');
     const clip = scrollport?.getBoundingClientRect();
     const left = clip ? clip.left + scrollport!.clientLeft : 0;
@@ -161,7 +161,7 @@
     return Array.from(
       document.querySelectorAll<HTMLElement>('[data-result-session]'),
     ).some((node) => {
-      const result = replyOnly ? node.querySelector('[data-reply-text]') : node;
+      const result = node.querySelector('[data-reply-text]');
       if (!result) return false;
       const rect = result.getBoundingClientRect();
       return (
@@ -199,13 +199,13 @@
       !wideResult(row) ||
       row.replyTurn !== readDwell.turn ||
       row.readRevision !== readDwell.revision ||
-      !resultVisible(row, true)
+      !resultVisible(row)
     )
       cancelReadDwell();
   }
   function startReadDwell(row: Session) {
     validateReadDwell();
-    if (!wideResult(row) || !resultVisible(row, true) || readDwell) return;
+    if (!wideResult(row) || !resultVisible(row) || readDwell) return;
     const id = row.id,
       turn = row.replyTurn!,
       revision = row.readRevision!;

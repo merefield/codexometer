@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
 
@@ -100,8 +102,18 @@ func (m Model) monitorUnreadResult(id string) (monitorSession, bool) {
 		if row.id != id || m.hasSessionProfile(row) || !m.monitorSessionVisible(row) || !row.readState.Unread || !row.readState.Known() || c.Kind != codex.SessionContextReply || c.Streaming || c.Text == "" || c.ThreadID != id || c.TurnID == "" {
 			continue
 		}
-		if _, visible := m.monitorResultRect(id); !visible {
+		rect, visible := m.monitorResultRect(id)
+		if !visible {
 			return monitorSession{}, false
+		}
+		if m.monitorContextDetail == id {
+			document := m.contextDetailDocument(rect.width)
+			start, end := m.detailVisibleRange(len(document), rect.height)
+			if !slices.ContainsFunc(document[start:end], func(line detailLine) bool {
+				return line.kind == "reply" && strings.TrimSpace(ansi.Strip(line.text)) != ""
+			}) {
+				return monitorSession{}, false
+			}
 		}
 		if h := m.monitorHistory[id]; h.selected != nil && !sameHistoryTurn(*h.selected, c) {
 			return monitorSession{}, false

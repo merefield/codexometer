@@ -74,7 +74,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	var lines []detailLine
 	appendText := func(text, kind, prefix string) {
 		wrap := sessionWebTextLines
-		if c.Kind == codex.SessionContextApproval || kind != "body" {
+		if c.Kind == codex.SessionContextApproval || kind != "body" && kind != "reply" {
 			wrap = sessionWebLiteralTextLines
 		}
 		for _, line := range wrap(text, max(width-lipgloss.Width(prefix), 1)) {
@@ -196,7 +196,11 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			}
 			text = strings.Join(parts, "\n")
 		}
-		appendText(text, "body", "")
+		kind := "body"
+		if c.Kind == codex.SessionContextReply {
+			kind = "reply"
+		}
+		appendText(text, kind, "")
 	}
 	if c.ApprovalDecisions != "" {
 		section(i18n.Text("OFFERED DECISIONS"))
@@ -229,4 +233,10 @@ func (m Model) contextDetailLines(width int) []string {
 		lines[i] = ansi.Strip(line.text)
 	}
 	return lines
+}
+
+// Rendering and read receipts must use the same clamped document slice.
+func (m Model) detailVisibleRange(lineCount, rows int) (int, int) {
+	start := min(max(m.monitorContextScroll, 0), max(lineCount-rows, 0))
+	return start, min(start+rows, lineCount)
 }

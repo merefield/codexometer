@@ -91,7 +91,7 @@ func TestUnreadSplitStaysUnreadAndWideRequiresDwell(t *testing.T) {
 }
 
 func TestUnreadHistoryAndUnavailableContextCannotAcknowledgeLatest(t *testing.T) {
-	for _, mode := range []string{"older-history", "streaming", "child", "no-text", "stale", "unsupported"} {
+	for _, mode := range []string{"older-history", "older-text", "streaming", "child", "no-text", "stale", "unsupported"} {
 		t.Run(mode, func(t *testing.T) {
 			m, c := unreadTestModel()
 			m.setRowContext("root-one", contextFull)
@@ -99,6 +99,10 @@ func TestUnreadHistoryAndUnavailableContextCannotAcknowledgeLatest(t *testing.T)
 			case "older-history":
 				old := m.monitorSessionData[0].preview
 				old.TurnID = "older"
+				m.saveMonitorHistory("root-one", monitorTurnHistory{selected: &old})
+			case "older-text":
+				old := m.monitorSessionData[0].preview
+				old.Text = "A previous reply revision"
 				m.saveMonitorHistory("root-one", monitorTurnHistory{selected: &old})
 			case "streaming":
 				m.monitorSessionData[0].preview.Streaming = true
@@ -337,5 +341,71 @@ func TestOpeningFullDetailAcknowledgesWithoutWideDelay(t *testing.T) {
 	cmd()
 	if len(client.reads) != 1 {
 		t.Fatal("full detail did not send its receipt")
+	}
+}
+
+func TestUnreadFullDetailRequiresVisibleReplyLines(t *testing.T) {
+	for _, prefix := range []string{"task", "guidance", "metadata", "current-history"} {
+		t.Run(prefix, func(t *testing.T) {
+			m, client := unreadTestModel()
+			m.setRowContext("root-one", contextFull)
+			row := &m.monitorSessionData[0]
+			row.preview.Text = "VISIBLE REPLY"
+			long := strings.Repeat("Context before the result.\n", 80)
+			switch prefix {
+			case "task", "current-history":
+				row.preview.CurrentTask = long
+			case "guidance":
+				row.preview.LatestGuidance = long
+			case "metadata":
+				row.preview.Source = strings.Repeat("SOURCE ", 500)
+			}
+			if prefix == "current-history" {
+				current := row.preview
+				m.saveMonitorHistory("root-one", monitorTurnHistory{selected: &current})
+			}
+			m.monitorReadIntent = "root-one"
+			if cmd := m.acknowledgeMonitorResult(); cmd != nil || m.monitorReadBusy || len(client.reads) != 0 {
+				t.Fatal("metadata or hidden reply acknowledged the result")
+			}
+			rect, visible := m.monitorResultRect("root-one")
+			if !visible {
+				t.Fatal("fixture has no visible document body")
+			}
+			document := m.contextDetailDocument(rect.width)
+			replyAt := -1
+			for i, line := range document {
+				if line.kind == "reply" && strings.Contains(line.text, "VISIBLE REPLY") {
+					replyAt = i
+					break
+				}
+			}
+			if replyAt < 0 {
+				t.Fatal("reply has no document identity")
+			}
+			// One actual reply line intersecting the viewport is sufficient. The same
+			// scroll slice is used by rendering, including its lower/upper clamps.
+			m.monitorContextScroll = max(replyAt-rect.height+1, 0)
+			m.monitorReadIntent = "root-one"
+			cmd := m.acknowledgeMonitorResult()
+			if cmd == nil {
+				t.Fatal("visible reply could not be acknowledged")
+			}
+			cmd()
+			if len(client.reads) != 1 || client.reads[0] != "root-one/t1/v1" {
+				t.Fatal("wrong visible result acknowledged", client.reads)
+			}
+		})
+	}
+}
+
+func TestUnreadFullDetailDoesNotCountTrailingNotices(t *testing.T) {
+	m, client := unreadTestModel()
+	m.setRowContext("root-one", contextFull)
+	m.quota.notices = map[string]string{"root-one": strings.Repeat("Notice after the reply.\n", 80)}
+	m.monitorContextScroll = m.monitorContextScrollLimit()
+	m.monitorReadIntent = "root-one"
+	if cmd := m.acknowledgeMonitorResult(); cmd != nil || len(client.reads) != 0 {
+		t.Fatal("notice-only viewport marked reply read")
 	}
 }

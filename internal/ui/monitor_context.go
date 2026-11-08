@@ -212,8 +212,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	layout := m.layoutDetailControls(width, height)
 	controls := layout.render(m, width, height, colors)
 	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
-	start := min(max(m.monitorContextScroll, 0), max(len(lines)-textRows, 0))
-	end := min(start+textRows, len(lines))
+	start, end := m.detailVisibleRange(len(lines), textRows)
 	bodyLines := append([]string(nil), lines[start:end]...)
 	if m.historyNavigationRows(width, height) > 0 {
 		bodyLines = append([]string{m.renderMonitorNavigationButtons(m.historyNavigationButtons(width, height), colors)}, bodyLines...)

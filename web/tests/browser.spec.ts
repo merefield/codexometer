@@ -6012,3 +6012,60 @@ for (const scenario of actionApprovalCases) {
     ).toHaveLength(0);
   });
 }
+
+for (const prefix of ['currentTask', 'latestGuidance']) {
+  test(`full Detail keeps the result unread while ${prefix} hides the reply`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot } = await mockActions(page, 'prompt');
+    const reads: unknown[] = [];
+    await page.route('**/api/control/read', (route) => {
+      reads.push(route.request().postDataJSON());
+      return route.fulfill({ json: { read: true } });
+    });
+    await page.goto(pairingURL);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    const detail = {
+      ...snapshot,
+      sessions: [
+        {
+          ...snapshot.sessions[0],
+          [prefix]: 'Context preceding the result.\n'.repeat(120),
+          text: 'VISIBLE COMPLETED REPLY',
+          readStateKnown: true,
+          unread: true,
+          readRevision: 'hidden-v1',
+          replyTurn: 'hidden-t1',
+        },
+      ],
+    };
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+      detail,
+    );
+    await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+    const context = page.locator('.detail-context');
+    const reply = context.locator('[data-reply-text]');
+    await expect(context).toBeVisible();
+    const hidden = await reply.evaluate(
+      (node) =>
+        node.getBoundingClientRect().top >=
+        document.getElementById('content')!.getBoundingClientRect().bottom,
+    );
+    expect(hidden).toBe(true);
+    await page.waitForTimeout(150);
+    expect(reads).toHaveLength(0);
+    await context.dispatchEvent('wheel', { deltaY: 100 });
+    await page.waitForTimeout(150);
+    expect(reads).toHaveLength(0);
+    await reply.scrollIntoViewIfNeeded();
+    await context.dispatchEvent('wheel', { deltaY: 100 });
+    await expect.poll(() => reads.length).toBe(1);
+    expect(reads[0]).toEqual({
+      session: snapshot.sessions[0].id,
+      read: { turn: 'hidden-t1', revision: 'hidden-v1' },
+    });
+  });
+}
