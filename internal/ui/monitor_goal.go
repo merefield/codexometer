@@ -67,8 +67,10 @@ func (m Model) monitorGoalFooter(width int, controls string, colors palette) str
 	if controls != "" {
 		available -= ansi.StringWidth(controls) + 2
 	}
-	if m.monitorStatusLineText(width, controls) != "" {
-		available -= 12
+	// Reserve the statusline as it would render without a goal. The optional
+	// duration/label must yield first, never shorten configured status fields.
+	if status := m.monitorStatusLineText(width, controls); status != "" {
+		available -= max(ansi.StringWidth(status), monitorStatusLineMinTextWidth)
 	}
 	goal := m.monitorGoalStatus(s, available, colors)
 	if goal == "" || ansi.StringWidth(goal) > available {

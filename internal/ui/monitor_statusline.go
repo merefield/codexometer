@@ -92,12 +92,14 @@ func (m Model) monitorPriorityFields(s monitorSession) ([]string, map[string]boo
 	return lines, selected
 }
 
+const monitorStatusLineMinTextWidth = 9
+
 func (m Model) monitorStatusLineText(width int, copyLabel string) string {
 	end := width - 2
 	if copyLabel != "" {
 		end = width - ansi.StringWidth(copyLabel) - 3
 	}
-	if end < 12 {
+	if end < monitorStatusLineMinTextWidth+3 {
 		return ""
 	}
 	text := statusline.Text(m.monitorStatusLine, m.monitorStatusValues())
