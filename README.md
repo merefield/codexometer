@@ -1885,6 +1885,15 @@ below row metadata and in the detail footer. **PURSUING GOAL**, **GOAL STALLED**
 **GOAL PAUSED**, **GOAL USAGE LIMITED**, **GOAL BUDGET LIMITED** and **GOAL COMPLETE**
 come from Codex—not inactivity guesses—and do not replace WORKING, approvals or
 TURN COMPLETE. Unavailable refreshes mark retained observations **GOAL STALE**.
+Terminal goal labels include Codex's reported pursuit duration when it fits,
+for example `PURSUING GOAL // 1d 1h 23m`. Zero units are omitted; less than a
+minute is shown as `<1m`. The duration is omitted before crowding other footer
+controls, and stale observations do not show a duration. This is accumulated
+wall-clock pursuit time recorded by Codex (including tool execution), not time
+since the goal was created or a model-only thinking timer. It updates when Codex
+reports accounting progress, not on a locally invented ticking clock. Codex
+retains its goal accounting across Codexometer restarts; replacing the goal
+resets it.
 Use `/goal` for the objective and counters. Linked agents do not inherit their
 parent’s goal label, and goal observations are not persisted by Codexometer.
 The menu shows one compact overview: **Create goal** when empty, or **Edit

@@ -2,7 +2,7 @@
   "version": "0.29.0",
   "synthetic": true,
   "sources": {
-    "internal/ui/documentation_screenshots_test.go": "015943f799500586ab1d77f25f056ee22f77b5d7a7110a5101450aeef2d57878",
+    "internal/ui/documentation_screenshots_test.go": "c4cdff76426dc75265f2d4b3354a28c7da39354bd91ee376dd7b28d749ca4d4f",
     "web/scripts/screenshots.mjs": "fe8f5b91a037ff833ee646f999d0bd2eb17e8d8a6bd333d944e57eb68e54f680",
     "web/package-lock.json": "d303563499dd89b42c77cf5ad10df0a2325d77148a7c344d716ae580a8525eea",
     "tools/screenshots/fonts/DejaVuSansMono.ttf": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88",
@@ -15,7 +15,7 @@
       "columns": 136,
       "rows": 35,
       "frameSHA256": "754171504e4048efd9070c47d40648aaeb82dd27e2db404695071e7c55a9d6dc",
-      "pngSHA256": "98894069fb0a773594d4bb31cbf82dfcc22220fdaff9c2ef60465b6401c6fb5b"
+      "pngSHA256": "7917843b2ce4dc8ffd5ec4e40c71ed8a1e619386a16dfcbd7e1824838a012733"
     },
     {
       "file": "benchmark.png",
@@ -23,7 +23,7 @@
       "columns": 136,
       "rows": 27,
       "frameSHA256": "305e44cc6444204fb4fba19d482a135a453d3018f9a9cc0e45a21b52bceaf533",
-      "pngSHA256": "2b29bf958fda6c5f3ad67b4809e6afb7d152e5791c9b7453d1e204b9b48b47c0"
+      "pngSHA256": "6a5198edbc2461ec907776b7c467c887c3535c21734ef74706f55a7d1f9611ea"
     },
     {
       "file": "pace.png",
@@ -31,7 +31,7 @@
       "columns": 136,
       "rows": 32,
       "frameSHA256": "1bdc2a52922cad354d218b8a7fecc4bca5a09e33ba5dec5e60a29c4d01d5e1bb",
-      "pngSHA256": "23b9143801a5a5a1f476bccce69c0e83ab29bec190c8e6b32fa9eaee3737f03b"
+      "pngSHA256": "6d5067a396eca7b145845404162de8cf3adc3d324d00ac821776ac24d960755a"
     },
     {
       "file": "quota.png",
@@ -39,7 +39,7 @@
       "columns": 136,
       "rows": 32,
       "frameSHA256": "f3ceb994c2f2b102b59a8325a99372877e48d0dc1b2a836306f52637acd4fa7a",
-      "pngSHA256": "40a11efcca07db50d75306ca6847f0c50d19606e48cb17b10144c418a3e217f4"
+      "pngSHA256": "0d07931106ae98cbcc5f8ca7ad0bf80a83be882de969e4e0cafd24674cab5ea4"
     },
     {
       "file": "scheduler.png",
@@ -47,15 +47,15 @@
       "columns": 136,
       "rows": 33,
       "frameSHA256": "82b66d56667e3ab7685b0fc10c73b23ea33998bd821c69457addf21e15b7d9d3",
-      "pngSHA256": "c9f2638e767a3dbfb53339467f6a1e2b011d65ee830c503f3f8840a5b8316b98"
+      "pngSHA256": "d7478e8abdc29092d100ddff2049e75235f6c24129093b3764eaf2f215345707"
     },
     {
       "file": "sessions.png",
       "caption": "Sessions command centre: three synthetic sessions, live activity and an approval awaiting review.",
       "columns": 136,
       "rows": 45,
-      "frameSHA256": "311a4b81156accc6b66ee2792e7ca9fa977bd6297162988b8f823e77099ab524",
-      "pngSHA256": "ec694ce285b0c11562e31d19b9deee0ba1037632a0f16129fd2cacf316ee91bc"
+      "frameSHA256": "079d12d1311596eee204657eddf8b987a0f9d88d520f2ca1477bc1b4a89e9637",
+      "pngSHA256": "37d4f1bfe81ce785d67eecce809885e488f4fbbb2f1e8b8110dac0b4ee103c0a"
     },
     {
       "file": "usage.png",
@@ -63,7 +63,7 @@
       "columns": 136,
       "rows": 26,
       "frameSHA256": "0d54963ac7f35e8d66570763a48cd5fab7d23a393ad012a4e8e463185736f98e",
-      "pngSHA256": "3aba5bdde0924245aae73913a9d9fb558d5ade739da1ea0ad12e092a909e427e"
+      "pngSHA256": "2331e492f10eac38c5931f7af58cd020779bd4d983b7148e8b6667dd1ab440ea"
     }
   ]
 }

@@ -112,7 +112,7 @@ func documentationScenes(version string) []documentationScene {
 	sessions.monitorSessionData[0].working = true
 	sessions.monitorSessionData[0].agentCount = 2
 	sessions.monitorSessionData[0].modelSettings.ServiceTier = "fast"
-	sessions.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", Objective: "Build a beautiful, responsive dashboard", TokensUsed: 168_400, TokenBudget: &budget}
+	sessions.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", Objective: "Build a beautiful, responsive dashboard", TokensUsed: 168_400, TokenBudget: &budget, TimeUsedSeconds: 4980}
 	sessions.monitorSessionData[0].preview.Kind = codex.SessionContextActivity
 	sessions.monitorSessionData[0].preview.Text = "The layout is responsive. I’m checking the narrow-terminal behaviour next."
 	sessions.monitorSessionData[0].preview.CurrentTask = "Give the dashboard a little more rocket fuel."
