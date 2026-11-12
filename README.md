@@ -1887,9 +1887,11 @@ come from Codex—not inactivity guesses—and do not replace WORKING, approvals
 TURN COMPLETE. Unavailable refreshes mark retained observations **GOAL STALE**.
 Terminal goal labels include Codex's reported pursuit duration when it fits,
 for example `PURSUING GOAL // 1d 1h 23m`. Zero units are omitted; less than a
-minute is shown as `<1m`. The duration is omitted before crowding other footer
-controls, and stale observations do not show a duration. This is accumulated
-wall-clock pursuit time recorded by Codex (including tool execution), not time
+minute is shown as `<1m`. The full statusline and footer controls take priority:
+the duration is omitted first, then the goal label if it still cannot fit,
+rather than shortening the statusline to make room. Stale observations do not
+show a duration. This is accumulated wall-clock pursuit time recorded by Codex
+(including tool execution), not time
 since the goal was created or a model-only thinking timer. It updates when Codex
 reports accounting progress, not on a locally invented ticking clock. Codex
 retains its goal accounting across Codexometer restarts; replacing the goal

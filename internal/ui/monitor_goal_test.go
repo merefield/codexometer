@@ -334,6 +334,7 @@ func TestMonitorGoalFooterDropsDurationBeforeStatus(t *testing.T) {
 	m := completedCopyModel()
 	m.setRowContext("root-one", contextFull)
 	m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", TimeUsedSeconds: 91439}
+	m.monitorSessionData[0].latest = 1200
 	colors := paletteFor(m.theme)
 	label, timed := "PURSUING GOAL", "PURSUING GOAL // 1d 1h 23m"
 	for _, fields := range [][]string{{}, {"used-tokens"}} {
@@ -344,7 +345,7 @@ func TestMonitorGoalFooterDropsDurationBeforeStatus(t *testing.T) {
 				reserve += ansi.StringWidth(controls) + 2
 			}
 			if len(fields) > 0 {
-				reserve += 12
+				reserve += len("1.2K tokens")
 			}
 			for _, available := range []int{len(label) - 1, len(label), len(timed) - 1, len(timed), len(timed) + 20} {
 				width := reserve + available
@@ -395,6 +396,88 @@ func TestMonitorGoalFooterKeepsCopyTarget(t *testing.T) {
 		}
 		if lipgloss.Width(out) > width || lipgloss.Height(out) > m.height {
 			t.Fatal("goal footer overflowed terminal")
+		}
+	}
+}
+
+func TestMonitorGoalFooterPreservesActualStatusline(t *testing.T) {
+	for _, status := range []struct{ raw, text string }{
+		{"short", "short"},
+		{strings.Repeat("long-session-name-", 6), strings.Repeat("long-session-name-", 6)},
+		{strings.Repeat("作業", 12), strings.Repeat("作業", 12)},
+		{"\x1b[31mHighlighted name\x1b[0m", "Highlighted name"},
+	} {
+		m := completedCopyModel()
+		m.setRowContext("root-one", contextFull)
+		m.monitorStatusLine = []string{"thread-name"}
+		m.monitorSessionData[0].name = status.raw
+		m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", TimeUsedSeconds: 91439}
+		colors := paletteFor(m.theme)
+		label, timed := "PURSUING GOAL", "PURSUING GOAL // 1d 1h 23m"
+		for _, controls := range []string{"", colors.label().Foreground(colors.primary).Render("[ (C)OPY ]")} {
+			// Existing footer layout keeps at least nine text cells even when
+			// a selected field is shorter; otherwise the statusline disappears.
+			reserve := max(ansi.StringWidth(status.text), 9) + 6
+			if controls != "" {
+				reserve += ansi.StringWidth(controls) + 2
+			}
+			for _, available := range []int{len(label) - 1, len(label), len(timed) - 1, len(timed)} {
+				width := reserve + available
+				footer := m.monitorGoalFooter(width, controls, colors)
+				if got := m.monitorStatusLineText(width, footer); got != status.text {
+					t.Fatalf("width %d goal shortened statusline: %q, want %q", width, got, status.text)
+				}
+				wantGoal := ""
+				if available >= len(timed) {
+					wantGoal = timed
+				} else if available >= len(label) {
+					wantGoal = label
+				}
+				want := wantGoal
+				if controls != "" {
+					if want != "" {
+						want += "  "
+					}
+					want += ansi.Strip(controls)
+				}
+				if got := ansi.Strip(footer); got != want {
+					t.Fatalf("width %d footer = %q, want %q", width, got, want)
+				}
+				panel := frameSizedWithActions(width, 2, "DETAIL", "", footer, "", colors.primary, colors)
+				panel = m.withMonitorStatusLine(panel, width, footer, colors)
+				lines := strings.Split(ansi.Strip(panel), "\n")
+				line := lines[len(lines)-1]
+				if !strings.Contains(line, status.text) || want != "" && !strings.Contains(line, want) || ansi.StringWidth(line) != width {
+					t.Fatalf("footer content overlapped or overflowed: %q", line)
+				}
+				if controls != "" {
+					at := strings.Index(line, "[ (C)OPY ]")
+					if at < 0 || ansi.StringWidth(line[:at]) != width-ansi.StringWidth(controls)-2 {
+						t.Fatal("goal changed Copy's column:", line)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestMonitorGoalFooterYieldsToTruncatedStatusline(t *testing.T) {
+	m := completedCopyModel()
+	m.setRowContext("root-one", contextFull)
+	m.monitorStatusLine = []string{"thread-name"}
+	m.monitorSessionData[0].name = strings.Repeat("session-name-", 40)
+	m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", TimeUsedSeconds: 91439}
+	colors := paletteFor(m.theme)
+	for _, width := range []int{40, 80, 120, 200} {
+		for _, controls := range []string{"", benchmarkDetailCopyLabel} {
+			before := m.monitorStatusLineText(width, controls)
+			if !strings.HasSuffix(before, "…") {
+				t.Fatal("fixture did not exercise an already-truncated statusline")
+			}
+			footer := m.monitorGoalFooter(width, controls, colors)
+			if footer != controls || m.monitorStatusLineText(width, footer) != before {
+				t.Fatalf("width %d displaced a full statusline with a goal", width)
+			}
 		}
 	}
 }
