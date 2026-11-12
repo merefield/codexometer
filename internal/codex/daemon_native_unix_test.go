@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,11 +20,12 @@ func TestNativeCodexCompression(t *testing.T) {
 	if expected == "" && os.Getenv("CODEXOMETER_TEST_CODEX_164") == "1" {
 		expected = "0.164.0" // Retain the existing baseline test invocation.
 	}
+	versions := []string{"0.164.0", "0.166.0", "0.167.0", "0.167.1", "0.167.2"}
 	if expected == "" {
-		t.Skip("set CODEXOMETER_TEST_CODEX_VERSION=0.164.0, 0.166.0 or 0.167.0 with that Codex installed")
+		t.Skip("set CODEXOMETER_TEST_CODEX_VERSION to one of " + strings.Join(versions, ", ") + " with that Codex installed")
 	}
-	if expected != "0.164.0" && expected != "0.166.0" && expected != "0.167.0" {
-		t.Fatal("native compatibility target must be 0.164.0, 0.166.0 or 0.167.0")
+	if !slices.Contains(versions, expected) {
+		t.Fatal("native compatibility target must be one of " + strings.Join(versions, ", "))
 	}
 	binary, err := exec.LookPath("codex")
 	if err != nil {

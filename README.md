@@ -3862,11 +3862,12 @@ go test -race -cover -timeout 10m -skip '^TestLocalisedScreens$' ./...
 go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
-An optional Unix integration check verifies the installed Codex against either
-the 0.164.0 baseline, 0.166.0 or 0.167.0, including negotiated compressed WebSocket RPC:
+An optional Unix integration check verifies the installed Codex against the
+0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1 or 0.167.2, including negotiated
+compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.167.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.167.2 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing
