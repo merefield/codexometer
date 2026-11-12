@@ -1885,6 +1885,15 @@ below row metadata and in the detail footer. **PURSUING GOAL**, **GOAL STALLED**
 **GOAL PAUSED**, **GOAL USAGE LIMITED**, **GOAL BUDGET LIMITED** and **GOAL COMPLETE**
 come from Codex—not inactivity guesses—and do not replace WORKING, approvals or
 TURN COMPLETE. Unavailable refreshes mark retained observations **GOAL STALE**.
+Terminal goal labels include Codex's reported pursuit duration when it fits,
+for example `PURSUING GOAL // 1d 1h 23m`. Zero units are omitted; less than a
+minute is shown as `<1m`. The duration is omitted before crowding other footer
+controls, and stale observations do not show a duration. This is accumulated
+wall-clock pursuit time recorded by Codex (including tool execution), not time
+since the goal was created or a model-only thinking timer. It updates when Codex
+reports accounting progress, not on a locally invented ticking clock. Codex
+retains its goal accounting across Codexometer restarts; replacing the goal
+resets it.
 Use `/goal` for the objective and counters. Linked agents do not inherit their
 parent’s goal label, and goal observations are not persisted by Codexometer.
 The menu shows one compact overview: **Create goal** when empty, or **Edit
@@ -3853,11 +3862,12 @@ go test -race -cover -timeout 10m -skip '^TestLocalisedScreens$' ./...
 go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
-An optional Unix integration check verifies the installed Codex against either
-the 0.164.0 baseline, 0.166.0 or 0.167.0, including negotiated compressed WebSocket RPC:
+An optional Unix integration check verifies the installed Codex against the
+0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1 or 0.167.2, including negotiated
+compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.167.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.167.2 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing
@@ -3875,7 +3885,7 @@ virtual clock rather than depending on millisecond wall-clock scheduling.
 
 Codexometer uses:
 
-- Go 1.27.3+
+- Go 1.27.4+
 - Bubble Tea v2 for the terminal event loop and declarative terminal modes
 - Lip Gloss v2 for adaptive ANSI styling and layout
 - Starlark for deterministic, hermetic benchmark-code evaluation

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"math"
 	"net/url"
 	"strings"
 	"testing"
@@ -246,10 +247,10 @@ func TestMonitorGoalFollowsConfiguredFields(t *testing.T) {
 	s := m.monitorSessionData[0]
 	s.modelSettings = codex.SessionModelSettings{Model: "test-model", ReasoningEffort: "high"}
 	s.latest = 1200
-	s.goal = &codex.SessionGoal{Status: "active", Objective: "A separate objective"}
+	s.goal = &codex.SessionGoal{Status: "active", Objective: "A separate objective", TimeUsedSeconds: 91439}
 	out := ansi.Strip(m.renderMonitorSessionMetrics(48, 12, s, "", paletteFor(m.theme)))
 	before := -1
-	for _, text := range []string{"TURN COMPLETE", "test-model high", "1.2K tokens", "PURSUING GOAL"} {
+	for _, text := range []string{"TURN COMPLETE", "test-model high", "1.2K tokens", "PURSUING GOAL // 1d 1h 23m"} {
 		at := strings.Index(out, text)
 		if at <= before || strings.Count(out, text) != 1 {
 			t.Fatalf("goal/state order or duplication for %q:\n%s", text, out)
@@ -267,6 +268,106 @@ func TestMonitorGoalFollowsConfiguredFields(t *testing.T) {
 	}
 }
 
+func TestFormatGoalDuration(t *testing.T) {
+	for _, test := range []struct {
+		seconds int64
+		want    string
+	}{
+		{-1, "<1m"}, {0, "<1m"}, {1, "<1m"}, {59, "<1m"},
+		{60, "1m"}, {119, "1m"}, {1380, "23m"}, {3599, "59m"},
+		{3600, "1h"}, {4980, "1h 23m"}, {86399, "23h 59m"},
+		{86400, "1d"}, {86460, "1d 1m"}, {90000, "1d 1h"},
+		{91439, "1d 1h 23m"}, {172800, "2d"},
+		{math.MaxInt64, "106751991167300d 15h 30m"},
+	} {
+		if got := formatGoalDuration(test.seconds); got != test.want {
+			t.Errorf("formatGoalDuration(%d) = %q, want %q", test.seconds, got, test.want)
+		}
+	}
+}
+
+func TestMonitorGoalDurationUsesReportedCounter(t *testing.T) {
+	m := completedCopyModel()
+	s := m.monitorSessionData[0]
+	s.goal = &codex.SessionGoal{TimeUsedSeconds: 91439, CreatedAt: 1, UpdatedAt: 2}
+	colors := paletteFor(m.theme)
+	for _, status := range []string{"active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"} {
+		s.goal.Status = status
+		label := s.goal.Label()
+		want := label + " // 1d 1h 23m"
+		for _, width := range []int{len(want) - 1, len(want), 200} {
+			got := ansi.Strip(m.monitorGoalStatus(s, width, colors))
+			expected := label
+			if width >= len(want) {
+				expected = want
+			}
+			if got != expected {
+				t.Errorf("status %s width %d = %q, want %q", status, width, got, expected)
+			}
+		}
+	}
+	// Old timestamps and a later render must not invent additional pursuit time.
+	s.goal.UpdatedAt = time.Now().Add(7 * 24 * time.Hour).Unix()
+	if got := ansi.Strip(m.monitorGoalStatus(s, 200, colors)); got != "GOAL COMPLETE // 1d 1h 23m" {
+		t.Fatal("render advanced the server's duration:", got)
+	}
+	for _, reason := range []string{"snapshot", "connection", "monitor"} {
+		m.monitorError, m.monitorState, s.goal.Stale = "", monitorRunning, false
+		switch reason {
+		case "snapshot":
+			s.goal.Stale = true
+		case "connection":
+			m.monitorError = "disconnected"
+		case "monitor":
+			m.monitorState = monitorIdle
+		}
+		if got := ansi.Strip(m.monitorGoalStatus(s, 200, colors)); got != "GOAL STALE" {
+			t.Errorf("%s retained a duration: %q", reason, got)
+		}
+	}
+	if s.goal.Stale || s.goal.TimeUsedSeconds != 91439 {
+		t.Fatal("render mutated observed goal")
+	}
+}
+
+func TestMonitorGoalFooterDropsDurationBeforeStatus(t *testing.T) {
+	m := completedCopyModel()
+	m.setRowContext("root-one", contextFull)
+	m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "active", TimeUsedSeconds: 91439}
+	colors := paletteFor(m.theme)
+	label, timed := "PURSUING GOAL", "PURSUING GOAL // 1d 1h 23m"
+	for _, fields := range [][]string{{}, {"used-tokens"}} {
+		m.monitorStatusLine = fields
+		for _, controls := range []string{"", colors.label().Foreground(colors.primary).Render("[ (C)OPY ]")} {
+			reserve := 6
+			if controls != "" {
+				reserve += ansi.StringWidth(controls) + 2
+			}
+			if len(fields) > 0 {
+				reserve += 12
+			}
+			for _, available := range []int{len(label) - 1, len(label), len(timed) - 1, len(timed), len(timed) + 20} {
+				width := reserve + available
+				want := ""
+				if available >= len(timed) {
+					want = timed
+				} else if available >= len(label) {
+					want = label
+				}
+				if controls != "" {
+					if want != "" {
+						want += "  "
+					}
+					want += ansi.Strip(controls)
+				}
+				if got := ansi.Strip(m.monitorGoalFooter(width, controls, colors)); got != want {
+					t.Errorf("width %d fields %v controls %q = %q, want %q", width, fields, controls, got, want)
+				}
+			}
+		}
+	}
+}
+
 func TestMonitorGoalFooterKeepsCopyTarget(t *testing.T) {
 	for _, width := range []int{24, 60, 120, 180} {
 		m := completedCopyModel()
@@ -274,17 +375,21 @@ func TestMonitorGoalFooterKeepsCopyTarget(t *testing.T) {
 		m.setRowContext("root-one", contextFull)
 		m.monitorSessionData[0].modelSettings = codex.SessionModelSettings{Model: "test-model", ReasoningEffort: "high"}
 		before := m.render()
-		m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "blocked", Objective: "Find a fix"}
+		beforeX, beforeY := -1, -1
+		if strings.Contains(ansi.Strip(before), benchmarkDetailCopyLabel) {
+			beforeX, beforeY = renderedTextStart(t, m, benchmarkDetailCopyLabel)
+		}
+		m.monitorSessionData[0].goal = &codex.SessionGoal{Status: "blocked", Objective: "Find a fix", TimeUsedSeconds: 91439}
 		out := ansi.Strip(m.render())
 		if width >= 120 {
-			goalAt, copyAt := strings.Index(out, "GOAL STALLED"), strings.Index(out, benchmarkDetailCopyLabel)
+			goalAt, copyAt := strings.Index(out, "GOAL STALLED // 1d 1h 23m"), strings.Index(out, benchmarkDetailCopyLabel)
 			if goalAt < 0 || copyAt < goalAt || strings.Contains(out[goalAt:copyAt], "\n") {
 				t.Fatal("goal not on bottom border immediately before Copy", out)
 			}
 		}
-		if strings.Contains(ansi.Strip(before), benchmarkDetailCopyLabel) {
+		if beforeX >= 0 {
 			x, y := renderedTextStart(t, m, benchmarkDetailCopyLabel)
-			if m.monitorContextAt(x, y) != "copy:root-one" {
+			if x != beforeX || y != beforeY || m.monitorContextAt(x, y) != "copy:root-one" {
 				t.Fatal("goal displaced Copy hit target")
 			}
 		}
@@ -316,7 +421,7 @@ func TestMonitorGoalStatusStaleAndSync(t *testing.T) {
 		t.Fatal("missing observation claimed current goal")
 	}
 	m.monitorError = "disconnected"
-	if got := ansi.Strip(m.monitorGoalStatus(m.monitorSessionData[1], paletteFor(m.theme))); got != "GOAL STALE" {
+	if got := ansi.Strip(m.monitorGoalStatus(m.monitorSessionData[1], 120, paletteFor(m.theme))); got != "GOAL STALE" {
 		t.Fatal("disconnected goal not stale:", got)
 	}
 	m.monitorError = ""

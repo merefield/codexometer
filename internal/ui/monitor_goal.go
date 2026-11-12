@@ -1,13 +1,33 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
-func (m Model) monitorGoalStatus(s monitorSession, colors palette) string {
+// Work in seconds rather than time.Duration so long-lived counters cannot
+// overflow. This is Codex's reported pursuit time, not time since creation.
+func formatGoalDuration(seconds int64) string {
+	if seconds < 60 {
+		return "<1m"
+	}
+	parts := make([]string, 0, 3)
+	for _, unit := range []struct {
+		seconds int64
+		suffix  string
+	}{{86400, "d"}, {3600, "h"}, {60, "m"}} {
+		if count := seconds / unit.seconds; count > 0 {
+			parts = append(parts, fmt.Sprintf("%d%s", count, unit.suffix))
+		}
+		seconds %= unit.seconds
+	}
+	return strings.Join(parts, " ")
+}
+
+func (m Model) monitorGoalStatus(s monitorSession, width int, colors palette) string {
 	goal := s.goal.Clone()
 	if goal == nil {
 		return ""
@@ -26,7 +46,14 @@ func (m Model) monitorGoalStatus(s monitorSession, colors palette) string {
 			style = style.Foreground(colors.warning)
 		}
 	}
-	return style.Render(i18n.Text(goal.Label()))
+	label := i18n.Text(goal.Label())
+	if !goal.Stale {
+		withDuration := label + " // " + formatGoalDuration(goal.TimeUsedSeconds)
+		if ansi.StringWidth(withDuration) <= width {
+			label = withDuration
+		}
+	}
+	return style.Render(label)
 }
 
 // Keep existing buttons anchored at the far right. Goal status is display-only
@@ -36,18 +63,20 @@ func (m Model) monitorGoalFooter(width int, controls string, colors palette) str
 	if !ok || m.hasSessionProfile(s) {
 		return controls
 	}
-	goal := m.monitorGoalStatus(s, colors)
-	if goal == "" {
+	available := width - 6
+	if controls != "" {
+		available -= ansi.StringWidth(controls) + 2
+	}
+	if m.monitorStatusLineText(width, controls) != "" {
+		available -= 12
+	}
+	goal := m.monitorGoalStatus(s, available, colors)
+	if goal == "" || ansi.StringWidth(goal) > available {
 		return controls
 	}
 	parts := []string{goal}
 	if controls != "" {
 		parts = append(parts, controls)
 	}
-	footer := strings.Join(parts, "  ")
-	spare := width - ansi.StringWidth(footer) - 6
-	if spare < 0 || spare < 12 && m.monitorStatusLineText(width, controls) != "" {
-		return controls
-	}
-	return footer
+	return strings.Join(parts, "  ")
 }
