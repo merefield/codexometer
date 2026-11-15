@@ -64,6 +64,16 @@ func (p *daemonStatusProvider) readQuotaSession(ctx context.Context, id string) 
 	return s, nil
 }
 
+// Catalogue discovery is asynchronous with respect to other clients' writes.
+// Recheck the reviewed snapshot after discovery, before constructing a mutation.
+func (p *daemonStatusProvider) checkQuotaSettings(ctx context.Context, expected QuotaSession) (QuotaSession, error) {
+	current, err := p.readQuotaSession(ctx, expected.ID)
+	if err == nil && !sameQuotaSettings(current, expected) {
+		err = errors.New("settings changed since review; skipped")
+	}
+	return current, err
+}
+
 func (p *daemonStatusProvider) QuotaSessions(ctx context.Context) ([]QuotaSession, error) {
 	p.settingsMu.Lock()
 	defer p.settingsMu.Unlock()
@@ -247,17 +257,17 @@ func (p *daemonStatusProvider) ApplyQuotaProfile(ctx context.Context, targets []
 			failures = append(failures, fmt.Errorf("%s: no longer loaded", target.ID))
 			continue
 		}
-		current, err := p.readQuotaSession(ctx, target.ID)
+		current, err := p.checkQuotaSettings(ctx, target)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
 			continue
 		}
-		if !sameQuotaSettings(current, target) {
-			failures = append(failures, fmt.Errorf("%s: settings changed since review; skipped", target.ID))
-			continue
-		}
 		resolved, err := p.validateQuotaStep(ctx, step, current.ModelProvider)
 		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
+			continue
+		}
+		if _, err := p.checkQuotaSettings(ctx, current); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
 			continue
 		}

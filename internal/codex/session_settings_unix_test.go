@@ -34,6 +34,7 @@ type quotaDaemonFixture struct {
 	catalogues       map[string]map[string]any
 	providerModels   map[string]map[string]any
 	modelReads       []map[string]any
+	modelReadHook    func()
 	attachments      map[string]string
 	historyReads     []map[string]any
 	names            map[string]string
@@ -148,6 +149,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					}
 					result = fixture.providerModels[provider]
 					failure = result == nil
+				}
+				if fixture.modelReadHook != nil {
+					fixture.modelReadHook()
 				}
 			case "thread/loaded/list":
 				ids := []string{}
