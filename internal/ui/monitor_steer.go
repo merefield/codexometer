@@ -1,6 +1,10 @@
 package ui
 
-import "time"
+import (
+	"time"
+
+	"github.com/merefield/codexometer/internal/codex"
+)
 
 // A steer is already sent, not a queued message that can be edited or cancelled.
 // Retain its receipt until a matching completed user-message event arrives.
@@ -30,18 +34,28 @@ func (m *Model) reconcileMonitorSteers() {
 	for _, receipt := range m.monitorSteers {
 		confirmed := false
 		for _, session := range m.monitorSessionData {
-			c := session.preview
-			if session.id != receipt.session || c.ThreadID != receipt.thread {
+			if session.id != receipt.session {
 				continue
 			}
-			if c.TurnID != receipt.turn {
-				// A positively newer turn supersedes its predecessor's guidance.
-				if c.TurnID != "" && !receipt.sentAt.IsZero() && c.At.After(receipt.sentAt) {
-					confirmed = true
+			progress := session.steerProgress
+			if len(progress) == 0 {
+				// Preserve compatibility with sources supplying only a context.
+				progress = []codex.SessionSteerProgress{session.preview.SteerProgress()}
+			}
+			for _, c := range progress {
+				if c.ThreadID != receipt.thread {
+					continue
 				}
-				continue
+				if c.TurnID != receipt.turn {
+					// A positively newer turn makes this old receipt obsolete.
+					confirmed = c.TurnID != "" && !receipt.sentAt.IsZero() && c.At.After(receipt.sentAt)
+				} else {
+					confirmed = c.HasCompletedSteer(receipt.clientID)
+				}
+				if confirmed {
+					break
+				}
 			}
-			confirmed = c.HasCompletedSteer(receipt.clientID)
 		}
 		if !confirmed {
 			remaining = append(remaining, receipt)

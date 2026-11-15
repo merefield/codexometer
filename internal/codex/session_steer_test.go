@@ -107,3 +107,34 @@ func TestSteerConfirmationSurvivesNewerLocalActivity(t *testing.T) {
 		}
 	}
 }
+
+func TestSteerProgressSurvivesChildDisplayPriority(t *testing.T) {
+	for _, kind := range []SessionContextKind{SessionContextApproval, SessionContextFailure} {
+		now := time.Now()
+		r := &LiveUsageReader{files: map[string]*rolloutCursor{
+			"root":  {threadID: "root", currentTurnID: "root-turn", lastModified: now},
+			"child": {threadID: "child", parentThreadID: "root", nonRoot: true, currentTurnID: "child-turn", lastModified: now},
+		}, daemonContexts: map[string]SessionContext{
+			"root":  {ThreadID: "root", TurnID: "root-turn", Kind: SessionContextActivity, Text: "Root working", At: now, CompletedSteerIDs: "root-steer"},
+			"child": {ThreadID: "child", TurnID: "child-turn", Kind: kind, Text: "Child needs attention", At: now, CompletedSteerIDs: "child-steer"},
+		}}
+		status := sessionRuntimeApproval
+		if kind == SessionContextFailure {
+			status = sessionRuntimeFailed
+		}
+		rows, _, _ := r.sessionSnapshots(now, nil, true, map[string]sessionRuntimeStatus{"root": sessionRuntimeWorking, "child": status})
+		if len(rows) != 1 || rows[0].Context.ThreadID != "child" || len(rows[0].SteerProgress) != 2 {
+			t.Fatal("test did not preserve grouping and child display priority", rows)
+		}
+		foundRoot := false
+		for _, p := range rows[0].SteerProgress {
+			foundRoot = foundRoot || p.ThreadID == "root"
+			if p.ThreadID == "root" && (p.TurnID != "root-turn" || !p.HasCompletedSteer("root-steer") || p.HasCompletedSteer("child-steer")) {
+				t.Fatal("child display discarded or mixed root completion identity", p)
+			}
+		}
+		if !foundRoot {
+			t.Fatal("root confirmation metadata was discarded")
+		}
+	}
+}

@@ -155,3 +155,47 @@ func TestMonitorSteerRetiresOnlyForPositivelyNewerTurn(t *testing.T) {
 		t.Fatal("new turn retained obsolete steering receipt")
 	}
 }
+
+func TestMonitorSteerConfirmationUsesIndependentGroupedProgress(t *testing.T) {
+	for _, kind := range []codex.SessionContextKind{codex.SessionContextApproval, codex.SessionContextFailure} {
+		m, _ := turnTestModel()
+		for _, thread := range []string{"root-one", "child"} {
+			m.recordMonitorSteer(monitorSteerReceipt{session: "root-one", thread: thread, turn: thread + "-turn", text: "Same text", clientID: thread + "-steer"})
+		}
+		old := m
+		updated, _, accepted := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchSample, at: time.Now(), usage: codex.LiveUsageSnapshot{
+			TotalTokens: m.monitorLatest,
+			Sessions: []codex.LiveUsageSession{{ID: "root-one", Active: true,
+				Context: codex.SessionContext{ThreadID: "child", TurnID: "child-turn", Kind: kind, Text: "Child needs attention"},
+				SteerProgress: []codex.SessionSteerProgress{
+					{ThreadID: "root-one", TurnID: "root-one-turn", CompletedSteerIDs: "root-one-steer"},
+					{ThreadID: "child", TurnID: "child-turn"},
+				},
+			}},
+		}})
+		m = updated.(Model)
+		if !accepted || len(m.monitorSteers) != 1 || m.monitorSteers[0].thread != "child" || len(old.monitorSteers) != 2 {
+			t.Fatal("child display hid root completion or root identity cleared child receipt", m.monitorSteers)
+		}
+	}
+}
+
+func TestMonitorSteerProgressKeepsThreadAndTurnScope(t *testing.T) {
+	m, _ := turnTestModel()
+	now := time.Now()
+	m.recordMonitorSteer(monitorSteerReceipt{session: "root-one", thread: "root-one", turn: "turn", text: "Direction", clientID: "same-id", sentAt: now})
+	m.monitorSessionData[0].steerProgress = []codex.SessionSteerProgress{
+		{ThreadID: "child", TurnID: "turn", CompletedSteerIDs: "same-id"},
+		{ThreadID: "root-one", TurnID: "old", CompletedSteerIDs: "same-id", At: now.Add(-time.Second)},
+	}
+	m.reconcileMonitorSteers()
+	if len(m.monitorSteers) != 1 {
+		t.Fatal("unrelated progress cleared a receipt")
+	}
+	m.monitorSessionData[0].steerProgress = append(m.monitorSessionData[0].steerProgress,
+		codex.SessionSteerProgress{ThreadID: "root-one", TurnID: "turn", CompletedSteerIDs: "same-id"})
+	m.reconcileMonitorSteers()
+	if len(m.monitorSteers) != 0 {
+		t.Fatal("matching progress did not clear the receipt")
+	}
+}

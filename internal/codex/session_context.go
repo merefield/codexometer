@@ -70,7 +70,22 @@ type SessionContext struct {
 	Source            string
 }
 
+// SessionSteerProgress is content-free, thread/turn-scoped confirmation data.
+// It must survive a grouped session choosing another thread's display context.
+type SessionSteerProgress struct {
+	ThreadID, TurnID, CompletedSteerIDs string
+	At                                  time.Time
+}
+
+func (c SessionContext) SteerProgress() SessionSteerProgress {
+	return SessionSteerProgress{ThreadID: c.ThreadID, TurnID: c.TurnID, CompletedSteerIDs: c.CompletedSteerIDs, At: c.At}
+}
+
 func (c SessionContext) HasCompletedSteer(id string) bool {
+	return c.SteerProgress().HasCompletedSteer(id)
+}
+
+func (c SessionSteerProgress) HasCompletedSteer(id string) bool {
 	if id == "" {
 		return false
 	}

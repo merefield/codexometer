@@ -60,6 +60,7 @@ type LiveUsageSnapshot struct {
 // LiveUsageSession is one independently started local Codex session. Token
 // usage from explicitly linked spawned descendants is folded into the root.
 type LiveUsageSession struct {
+	SteerProgress []SessionSteerProgress
 	// Attached side chats are related, not spawned agents. Never use this as
 	// parentThreadID when grouping tokens or approvals.
 	AttachedToThreadID string
@@ -1499,6 +1500,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			preview = SessionContext{}
 		}
 		if live, ok := r.daemonContexts[cursor.threadID]; ok {
+			if !unattributed && live.ThreadID == cursor.threadID && live.TurnID != "" {
+				group.SteerProgress = append(group.SteerProgress, live.SteerProgress())
+			}
 			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
 				preview = live
 			} else if (preview.Kind == SessionContextReply || preview.Kind == SessionContextFailure) && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {

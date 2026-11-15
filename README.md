@@ -2112,6 +2112,8 @@ completed user-message event echoes that submission's unique client ID (or a
 positively newer turn supersedes it). Matching **CURRENT TASK** or
 **LATEST GUIDANCE** text alone is not confirmation. The event proves that Codex
 incorporated the message into the conversation, not that the model obeyed it.
+Confirmation metadata remains separate from the displayed text, so a linked
+agent's approval or error cannot hide the root's completed-steer signal.
 If an older server does not echo client IDs, receipts remain conservative until
 a positively newer turn is observed.
 These are read-only receipts, not queued work:
