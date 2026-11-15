@@ -77,9 +77,6 @@ func configureFileApproval(c *SessionContext, grantRoot string, state *daemonCon
 	c.ApprovalToken = ""
 	c.ApprovalOptions = [8]ApprovalOption{}
 	c.ApprovalBlocked = "file-change"
-	if c.FileChanges == "" {
-		return
-	}
 	if c.TurnID == "" || c.ItemID == "" || state.ended || state.activeTurn != "" && c.TurnID != state.activeTurn {
 		c.ApprovalBlocked = "missing-identity"
 		return
@@ -98,6 +95,9 @@ func configureFileApproval(c *SessionContext, grantRoot string, state *daemonCon
 		c.ApprovalBlocked = "sanitised"
 		return
 	}
+	if c.FileChanges == "" {
+		return
+	}
 	c.ApprovalOptions, c.ApprovalDecisions = commandApprovalOptions([]json.RawMessage{json.RawMessage(`"accept"`), json.RawMessage(`"decline"`), json.RawMessage(`"cancel"`)})
 	c.ApprovalBlocked, c.ApprovalToken = "", rand.Text()
 }
@@ -110,6 +110,7 @@ func (s *daemonContextState) capturePatch(turn, item string, raw json.RawMessage
 		s.patches = map[string]string{}
 	}
 	key := turn + "/" + item
+	_, previouslyObserved := s.patches[key]
 	patch := validatedFileChanges(raw)
 	if _, exists := s.patches[key]; exists || len(s.patches) < 16 {
 		s.patches[key] = patch
@@ -119,6 +120,12 @@ func (s *daemonContextState) capturePatch(turn, item string, raw json.RawMessage
 	for id, c := range s.requests {
 		if c.TurnID == turn && c.ItemID == item && c.Kind == SessionContextApproval && c.FileChanges != patch {
 			c.FileChanges, c.ApprovalToken, c.ApprovalBlocked = patch, "", "file-change"
+			// Only the first complete patch can fill a missing review. Changes
+			// to an already observed patch still require a new approval request.
+			if c.fileApprovalRecoverable && !previouslyObserved && patch != "" {
+				configureFileApproval(&c, "", s)
+			}
+			c.fileApprovalRecoverable = false
 			s.requests[id] = c
 		}
 	}

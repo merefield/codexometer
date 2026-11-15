@@ -172,6 +172,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	p.statuses = cloneRuntimeStatuses(statuses)
 	p.mu.Unlock()
 
+	p.refreshFileApprovals(ctx, threadIDs)
 	p.refreshSessionGoals(ctx, threadIDs)
 	p.mu.Lock()
 	snapshot := p.statusSnapshotLocked(threadIDs)

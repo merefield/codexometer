@@ -26,11 +26,13 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	RequiredHumanApproval bool
-	FailureCode           string
-	CurrentTask           string
-	LatestGuidance        string
-	LatestGuidanceID      string
+	fileApprovalRecoverable bool
+	fileApprovalFetches     uint8
+	RequiredHumanApproval   bool
+	FailureCode             string
+	CurrentTask             string
+	LatestGuidance          string
+	LatestGuidanceID        string
 	// CompletedSteerIDs is a bounded newline-separated set of client IDs from
 	// completed user-message events. It confirms conversation incorporation,
 	// not that the model followed an instruction. No message text is retained.

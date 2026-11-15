@@ -2213,6 +2213,13 @@ offer **APPROVE ONCE**, **DECLINE**, and **REJECT & STOP TURN**. These decisions
 are immediate by default and reviewed with `--confirmation require`.
 Read-only web mode can display the patch but cannot answer it. Inline terminal
 buttons appear only when the entire proposed patch fits; otherwise open full detail.
+If Codexometer attaches after the patch event, it attempts a bounded read of the
+exact pending file-change item from Codex's `thread/items/read` endpoint. A late
+first patch event can also fill the missing review. Recovery rechecks the live
+request, connection and turn before enabling the existing controls; it never
+reconstructs a patch from local files or revives a resolved request. Changes to
+an already observed patch still invalidate the old approval. Missing, unsafe,
+oversized or unsupported details remain for review in Codex.
 
 The patch must come from the matching live thread, turn and item; Codexometer
 never reconstructs approval details from files on disk. Patches are memory-only,

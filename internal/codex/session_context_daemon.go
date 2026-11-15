@@ -249,6 +249,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		}
 		c.FileChanges = state.patches[p.TurnID+"/"+p.ItemID]
 		configureFileApproval(&c, p.GrantRoot, state)
+		_, observed := state.patches[p.TurnID+"/"+p.ItemID]
+		c.fileApprovalRecoverable = !observed && c.ApprovalBlocked == "file-change" && c.FileChanges == ""
 	case "item/fileChange/patchUpdated":
 		state.capturePatch(p.TurnID, p.ItemID, p.Changes)
 		return

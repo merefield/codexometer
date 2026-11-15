@@ -31,12 +31,15 @@ type quotaDaemonFixture struct {
 	started          chan struct{}
 	release          chan struct{}
 	commandStatus    string
+	commandFlags     []string
 	catalogues       map[string]map[string]any
 	providerModels   map[string]map[string]any
 	modelReads       []map[string]any
 	modelReadHook    func()
 	attachments      map[string]string
 	historyReads     []map[string]any
+	itemReads        []map[string]any
+	itemReadHook     func()
 	names            map[string]string
 	nameWrites       []map[string]any
 	cwds             map[string]string
@@ -175,7 +178,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				if status == "" {
 					status = "idle"
 				}
-				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments, "attachedToThreadId": fixture.attachments[id]}
+				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status, "activeFlags": fixture.commandFlags}, "name": fixture.names[id], "environments": fixture.environments, "attachedToThreadId": fixture.attachments[id]}
 			case "thread/readState/update":
 				fixture.readUpdates = append(fixture.readUpdates, req.Params)
 				receipt := fixture.readReceipts[id]
@@ -308,6 +311,12 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					failure = failureDetail != nil
 				}
 			default:
+				if req.Method == "thread/items/read" {
+					fixture.itemReads = append(fixture.itemReads, req.Params)
+					if fixture.itemReadHook != nil {
+						fixture.itemReadHook()
+					}
+				}
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)
 					if fixture.historyReadHook != nil {
