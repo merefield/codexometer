@@ -11,7 +11,8 @@ import (
 
 func TestMonitorFailureSummaryFilterPillAndContext(t *testing.T) {
 	for code, label := range map[string]string{
-		"serverOverloaded": "MODEL BUSY", "modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED",
+		"inferenceHookDenied": "HOOK DENIED",
+		"serverOverloaded":    "MODEL BUSY", "modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED",
 	} {
 		t.Run(code, func(t *testing.T) {
 			m := attentionTestModel()

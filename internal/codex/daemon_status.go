@@ -19,6 +19,7 @@ type sessionStatusProvider interface {
 }
 
 type sessionDaemonSnapshot struct {
+	AttachedThreads    map[string]string
 	ReadStates         map[string]SessionReadState
 	Goals              map[string]*SessionGoal
 	UsageCoverage      map[string]string

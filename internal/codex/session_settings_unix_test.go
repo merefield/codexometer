@@ -32,6 +32,9 @@ type quotaDaemonFixture struct {
 	release          chan struct{}
 	commandStatus    string
 	catalogues       map[string]map[string]any
+	providerModels   map[string]map[string]any
+	modelReads       []map[string]any
+	attachments      map[string]string
 	historyReads     []map[string]any
 	names            map[string]string
 	nameWrites       []map[string]any
@@ -136,7 +139,16 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				fixture.initializeParams = req.Params
 				result["userAgent"] = "test"
 			case "model/list":
+				fixture.modelReads = append(fixture.modelReads, req.Params)
 				result["data"] = []any{map[string]any{"model": "small", "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium"}}, "serviceTiers": []any{map[string]any{"id": "flex", "name": "Fast"}, map[string]any{"id": "priority", "name": "Slow"}}}}
+				if fixture.providerModels != nil {
+					provider, _ := req.Params["modelProvider"].(string)
+					if cursor, _ := req.Params["cursor"].(string); cursor != "" {
+						provider += "/" + cursor
+					}
+					result = fixture.providerModels[provider]
+					failure = result == nil
+				}
 			case "thread/loaded/list":
 				ids := []string{}
 				for id := range fixture.sessions {
@@ -151,7 +163,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				if cwd == "" {
 					cwd = "/work"
 				}
-				result = map[string]any{"cwd": cwd, "model": s.Model, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
+				result = map[string]any{"cwd": cwd, "model": s.Model, "modelProvider": s.ModelProvider, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
 			case "thread/read":
 				fixture.threadReads++
 				result["readState"] = fixture.readReceipts[id]
@@ -159,7 +171,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				if status == "" {
 					status = "idle"
 				}
-				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments}
+				result["thread"] = map[string]any{"id": id, "cwd": "/work", "status": map[string]any{"type": status}, "name": fixture.names[id], "environments": fixture.environments, "attachedToThreadId": fixture.attachments[id]}
 			case "thread/readState/update":
 				fixture.readUpdates = append(fixture.readUpdates, req.Params)
 				receipt := fixture.readReceipts[id]
@@ -269,7 +281,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					settingsNotification = map[string]any{
 						"method": "thread/settings/updated",
 						"params": map[string]any{"threadId": id, "threadSettings": map[string]any{
-							"model": desired.Model, "effort": desired.Effort, "serviceTier": desired.Tier,
+							"model": desired.Model, "modelProvider": desired.ModelProvider, "effort": desired.Effort, "serviceTier": desired.Tier,
 						}},
 					}
 				}

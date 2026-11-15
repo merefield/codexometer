@@ -53,6 +53,7 @@ type daemonStatusProvider struct {
 	usageCoverage     map[string]string
 	threadSettings    map[string]QuotaSession
 	threadDirectories map[string]string
+	threadAttachments map[string]string
 	settingsVersions  map[string]uint64
 	settingsVersion   uint64
 	settingsSignal    chan struct{}
@@ -123,8 +124,9 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		var result struct {
 			ReadState *wireReadState `json:"readState"`
 			Thread    struct {
-				ID     string `json:"id"`
-				Status struct {
+				ID                 string `json:"id"`
+				AttachedToThreadID string `json:"attachedToThreadId"`
+				Status             struct {
 					Type        string   `json:"type"`
 					ActiveFlags []string `json:"activeFlags"`
 				} `json:"status"`
@@ -138,6 +140,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		p.mu.Lock()
 		if p.connection == connection && p.readStates[threadID].version == readVersion && result.Thread.ID == threadID {
 			p.observeReadStateLocked(threadID, result.ReadState.snapshot())
+			p.threadAttachments[threadID] = result.Thread.AttachedToThreadID
 		}
 		p.mu.Unlock()
 		status := parseSessionRuntimeStatus(result.Thread.Status.Type, result.Thread.Status.ActiveFlags)
@@ -148,6 +151,11 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 
 	p.mu.Lock()
 	wanted := stringStructSet(threadIDs)
+	for id := range p.threadAttachments {
+		if _, keep := wanted[id]; !keep {
+			delete(p.threadAttachments, id)
+		}
+	}
 	for id := range p.readStates {
 		if _, keep := wanted[id]; !keep {
 			delete(p.readStates, id)
@@ -181,6 +189,12 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 }
 
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
+	attachments := make(map[string]string)
+	for _, id := range threadIDs {
+		if parent := p.threadAttachments[id]; parent != "" {
+			attachments[id] = parent
+		}
+	}
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	directories := make(map[string]string, len(threadIDs))
 	goals := make(map[string]*SessionGoal)
@@ -214,6 +228,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		coverage[id] = issue
 	}
 	return sessionDaemonSnapshot{
+		AttachedThreads:    attachments,
 		ReadStates:         readStates,
 		Goals:              goals,
 		UsageCoverage:      coverage,
@@ -278,6 +293,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 		delete(p.goalVersions, threadID)
 		p.goalGeneration++
 		delete(p.threadDirectories, threadID)
+		delete(p.threadAttachments, threadID)
 		for key := range p.reroutedTurns {
 			if key.threadID == threadID {
 				delete(p.reroutedTurns, key)
@@ -331,6 +347,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.reroutedTurns = make(map[daemonTurnKey]string)
 	p.threadSettings = make(map[string]QuotaSession)
 	p.threadDirectories = make(map[string]string)
+	p.threadAttachments = make(map[string]string)
 	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
 	p.mu.Unlock()
@@ -554,10 +571,11 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		var notification struct {
 			ThreadID       string `json:"threadId"`
 			ThreadSettings struct {
-				Cwd         string  `json:"cwd"`
-				Model       string  `json:"model"`
-				Effort      string  `json:"effort"`
-				ServiceTier *string `json:"serviceTier"`
+				Cwd           string  `json:"cwd"`
+				Model         string  `json:"model"`
+				ModelProvider string  `json:"modelProvider"`
+				Effort        string  `json:"effort"`
+				ServiceTier   *string `json:"serviceTier"`
 			} `json:"threadSettings"`
 		}
 		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" {
@@ -579,7 +597,8 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		}
 		p.threadSettings[notification.ThreadID] = QuotaSession{
 			ID: notification.ThreadID, Model: notification.ThreadSettings.Model,
-			Effort: notification.ThreadSettings.Effort, Tier: notification.ThreadSettings.ServiceTier,
+			ModelProvider: notification.ThreadSettings.ModelProvider,
+			Effort:        notification.ThreadSettings.Effort, Tier: notification.ThreadSettings.ServiceTier,
 		}
 		if p.settingsVersions == nil {
 			p.settingsVersions = make(map[string]uint64)
@@ -674,6 +693,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.threadSettings = nil
 	p.usageCoverage = nil
 	p.threadDirectories = nil
+	p.threadAttachments = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)
 		p.settingsSignal = nil

@@ -1247,7 +1247,10 @@ The other top-level views are:
   Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
   badge for server-reported model capacity, **MODEL UNAVAILABLE** when the provider
   cannot find the selected model, **CAPACITY RESTRICTED** for policy-restricted
-  capacity, and **TURN FAILED** for other failures.
+  capacity, **HOOK DENIED** when a workspace inference hook blocks a request,
+  and **TURN FAILED** for other failures. A hook denial is not a quota or
+  capacity signal; inspect the supplied explanation and workspace policy before
+  retrying. Codexometer never bypasses the hook.
   The row, full detail and attention pill retain the observed error message;
   capacity is not interpreted as quota exhaustion. Both the shared app-server's
   failed-turn/error events and local rollout error records are supported. Errors
@@ -1863,6 +1866,22 @@ confirmation; permission/directory changes and unknown actions remain guarded.
 The [confirmation policy](#confirmation-policy) can require review for every
 substantive change or skip extra review except quota-reset redemption.
 Browse-only entries do not execute tools or change configuration.
+
+On Codex 0.169+, model/reasoning and advertised speed options are requested
+from the selected session's saved model provider, not the daemon's default.
+Provider changes invalidate cached options and previous reviews. Quota-threshold
+updates are also validated against each target's provider and never switch
+providers. If loaded providers disagree on a speed alias such as "Fast", the
+shared threshold review fails explicitly; use an advertised tier ID supported
+by all target providers rather than guessing. An unavailable provider catalogue
+is not replaced with the default provider's catalogue. Older servers retain
+their existing default-catalogue behaviour; use 0.169+ for provider-scoped discovery.
+
+Codex's attached side-chat relationship is retained separately from spawned-agent
+lineage. Side chats remain independent session rows; attachment alone never
+combines their token counts or approvals with another session. The optional
+per-message `contentTokenCount` in newer completion events is not billed request
+usage and does not change token totals, quota learning or API-EQ calculations.
 
 | Command family | Live options and behaviour |
 | --- | --- |
@@ -3865,11 +3884,11 @@ go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
 An optional Unix integration check verifies the installed Codex against the
-0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1 or 0.167.2, including negotiated
+0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0 or 0.169.0, including negotiated
 compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.167.2 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.169.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing

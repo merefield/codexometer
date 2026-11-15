@@ -20,7 +20,7 @@ func TestNativeCodexCompression(t *testing.T) {
 	if expected == "" && os.Getenv("CODEXOMETER_TEST_CODEX_164") == "1" {
 		expected = "0.164.0" // Retain the existing baseline test invocation.
 	}
-	versions := []string{"0.164.0", "0.166.0", "0.167.0", "0.167.1", "0.167.2"}
+	versions := []string{"0.164.0", "0.166.0", "0.167.0", "0.167.1", "0.167.2", "0.168.0", "0.169.0"}
 	if expected == "" {
 		t.Skip("set CODEXOMETER_TEST_CODEX_VERSION to one of " + strings.Join(versions, ", ") + " with that Codex installed")
 	}
@@ -92,5 +92,12 @@ func TestNativeCodexCompression(t *testing.T) {
 	loaded, err := p.loadedThreads(context.Background())
 	if err != nil || len(loaded) != 0 {
 		t.Fatal("isolated server unexpectedly has loaded threads", loaded, err)
+	}
+	if expected == "0.169.0" {
+		// 0.169 adds explicit provider selection. An unknown provider must
+		// fail rather than silently returning the default catalogue.
+		if _, err := p.commandModels(context.Background(), "codexometer-unknown-provider"); err == nil {
+			t.Fatal("native model/list ignored its provider selector")
+		}
 	}
 }

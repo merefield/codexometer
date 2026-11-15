@@ -25,10 +25,11 @@ var ErrQuotaProfileUnverified = errors.New("profile update accepted but not veri
 var ErrQuotaProfileUncertain = errors.New("profile update outcome unknown")
 
 type QuotaSession struct {
-	ID     string
-	Model  string
-	Effort string
-	Tier   *string
+	ID            string
+	Model         string
+	ModelProvider string
+	Effort        string
+	Tier          *string
 }
 type QuotaStepPolicyProvider interface{ QuotaStepPolicy() []QuotaStep }
 type SessionSettingsClient interface {
