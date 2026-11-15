@@ -40,6 +40,7 @@ type quotaDaemonFixture struct {
 	historyReads     []map[string]any
 	itemReads        []map[string]any
 	itemReadHook     func()
+	itemNoReply      bool
 	names            map[string]string
 	nameWrites       []map[string]any
 	cwds             map[string]string
@@ -316,6 +317,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					if fixture.itemReadHook != nil {
 						fixture.itemReadHook()
 					}
+					noReply = fixture.itemNoReply
 				}
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)

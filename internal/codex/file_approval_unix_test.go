@@ -203,6 +203,50 @@ func TestFileApprovalRecoveryCapsReadsPerRefresh(t *testing.T) {
 	}
 }
 
+func TestFileApprovalRecoveryDoesNotChargeUnstartedReads(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	missingFileApproval(t, p, nil)
+	p.mu.Lock()
+	s := p.contexts["one"]
+	first := s.requests[`"request"`]
+	first.RequestID = `"a-first"`
+	later := first
+	later.RequestID, later.ItemID = `"z-later"`, "later-patch"
+	s.requests = map[string]SessionContext{first.RequestID: first, later.RequestID: later}
+	p.mu.Unlock()
+	for attempt := range 3 {
+		ctx, cancel := context.WithCancel(context.Background())
+		f.mu.Lock()
+		f.itemNoReply = true
+		f.itemReadHook = cancel // First RPC consumes the shared budget deterministically.
+		f.mu.Unlock()
+		p.refreshFileApprovals(ctx, []string{"one"})
+		cancel()
+		p.mu.Lock()
+		started := s.requests[first.RequestID].fileApprovalFetches
+		unstarted := s.requests[later.RequestID].fileApprovalFetches
+		p.mu.Unlock()
+		if int(started) != attempt+1 || unstarted != 0 {
+			t.Fatal("shared cancellation charged a read that never started", started, unstarted)
+		}
+	}
+	entry := recoveredFileItem()
+	entry["item"].(map[string]any)["id"] = later.ItemID
+	f.mu.Lock()
+	f.itemNoReply, f.itemReadHook = false, nil
+	f.catalogues = map[string]map[string]any{"thread/items/read": {"data": []any{entry}}}
+	f.mu.Unlock()
+	p.refreshFileApprovals(context.Background(), []string{"one"})
+	p.mu.Lock()
+	recovered := s.requests[later.RequestID]
+	p.mu.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if recovered.ApprovalToken == "" || recovered.fileApprovalFetches != 1 || len(f.itemReads) != 4 {
+		t.Fatal("unstarted request lost eligibility after earlier reads stalled", recovered, f.itemReads)
+	}
+}
+
 func TestFileApprovalRecoveryRetriesHistoryThatIsNotYetFlushed(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	missingFileApproval(t, p, nil)

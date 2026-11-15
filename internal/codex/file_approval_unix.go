@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"sort"
 )
 
 // Recover missed item/started data, never an authorisation or a local file diff.
@@ -25,18 +26,47 @@ func (p *daemonStatusProvider) refreshFileApprovals(ctx context.Context, threads
 		if s == nil || s.ended || p.statuses[thread] != sessionRuntimeApproval {
 			continue
 		}
-		for id, c := range s.requests {
+		for _, c := range s.requests {
 			_, observed := s.patches[c.TurnID+"/"+c.ItemID]
 			if observed || !c.fileApprovalRecoverable || c.fileApprovalFetches >= 3 || c.ApprovalToken != "" || c.FileChanges != "" || s.activeTurn != "" && c.TurnID != s.activeTurn || len(pending) >= 4 {
 				continue
 			}
-			c.fileApprovalFetches++
-			s.requests[id] = c
 			pending = append(pending, recovery{s, c})
 		}
 	}
 	p.mu.Unlock()
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].review.ThreadID != pending[j].review.ThreadID {
+			return pending[i].review.ThreadID < pending[j].review.ThreadID
+		}
+		return pending[i].review.RequestID < pending[j].review.RequestID
+	})
+	// Caller holds mu. The same guard protects reservation and application.
+	pendingState := func(job recovery) *daemonContextState {
+		c := job.review
+		s := p.contexts[c.ThreadID]
+		if connection == nil || p.connection != connection || s != job.state || s.ended || s.activeTurn != "" && s.activeTurn != c.TurnID || p.statuses[c.ThreadID] != sessionRuntimeApproval || s.requests[c.RequestID] != c {
+			return nil
+		}
+		if _, observed := s.patches[c.TurnID+"/"+c.ItemID]; observed {
+			return nil
+		}
+		return s
+	}
 	for _, job := range pending {
+		p.mu.Lock()
+		if ctx.Err() != nil {
+			p.mu.Unlock()
+			break
+		}
+		s := pendingState(job)
+		if s == nil {
+			p.mu.Unlock()
+			continue
+		}
+		job.review.fileApprovalFetches++
+		s.requests[job.review.RequestID] = job.review
+		p.mu.Unlock()
 		c := job.review
 		var response struct {
 			Data []struct {
@@ -58,11 +88,8 @@ func (p *daemonStatusProvider) refreshFileApprovals(ctx context.Context, threads
 			continue
 		}
 		p.mu.Lock()
-		s := p.contexts[c.ThreadID]
-		if p.connection == connection && s == job.state && !s.ended && (s.activeTurn == "" || s.activeTurn == c.TurnID) && p.statuses[c.ThreadID] == sessionRuntimeApproval && s.requests[c.RequestID] == c {
-			if _, observed := s.patches[c.TurnID+"/"+c.ItemID]; !observed {
-				s.capturePatch(c.TurnID, c.ItemID, entry.Item.Changes)
-			}
+		if s := pendingState(job); s != nil {
+			s.capturePatch(c.TurnID, c.ItemID, entry.Item.Changes)
 		}
 		p.mu.Unlock()
 	}
