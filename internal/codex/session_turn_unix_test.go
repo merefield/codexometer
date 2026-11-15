@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestSessionTurnWireAndIsolation(t *testing.T) {
@@ -18,6 +20,10 @@ func TestSessionTurnWireAndIsolation(t *testing.T) {
 			o := p.SessionTurn("root")
 			if o.Token == "" || o.TurnID != "turn-one" || p.SessionPrompt("root").Token != "" {
 				t.Fatal("active offer missing or leaked into idle API")
+			}
+			id, err := uuid.Parse(o.SteerMessageID())
+			if err != nil || id.Version() != 4 || id.Variant() != uuid.RFC4122 || p.SessionTurn("root").SteerMessageID() != id.String() || o.SteerMessageID() == o.Token {
+				t.Fatal("offer did not retain a separate UUID v4 identity", o, err)
 			}
 			if err := p.SendSessionTurn(context.Background(), o, action, "next task"); err != nil {
 				t.Fatal(err)
@@ -37,6 +43,9 @@ func TestSessionTurnWireAndIsolation(t *testing.T) {
 			if action == "steer" && string(params["expectedTurnId"]) != `"turn-one"` {
 				t.Fatal(string(e.Params))
 			}
+			if action == "steer" && string(params["clientUserMessageId"]) != `"`+o.SteerMessageID()+`"` {
+				t.Fatal("steer omitted its correlation identity", string(e.Params))
+			}
 			if action == "interrupt" && string(params["turnId"]) != `"turn-one"` {
 				t.Fatal(string(e.Params))
 			}
@@ -48,6 +57,9 @@ func TestSessionTurnWireAndIsolation(t *testing.T) {
 			}
 			if err := p.SendSessionTurn(context.Background(), o, action, "duplicate"); err == nil {
 				t.Fatal("reused capability")
+			}
+			if next := p.SessionTurn("root"); next.SteerMessageID() == o.SteerMessageID() || next.SteerMessageID() == "" {
+				t.Fatal("a subsequent submission reused its correlation ID")
 			}
 		})
 	}

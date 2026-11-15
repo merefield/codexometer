@@ -488,11 +488,7 @@ func (m Model) submitMonitorTurn(action string) (Model, tea.Cmd, bool) {
 	}
 	p.busy, p.notice = true, ""
 	session := p.session
-	steer := monitorSteerReceipt{session: session, thread: o.ThreadID, turn: o.TurnID, text: codex.SanitizeSessionContext(text), sentAt: time.Now()}
-	if s, ok := m.contextDetailSession(); ok {
-		steer.baselineID = s.preview.LatestGuidanceID
-		steer.baselineText = s.preview.LatestGuidance
-	}
+	steer := monitorSteerReceipt{session: session, thread: o.ThreadID, turn: o.TurnID, clientID: o.SteerMessageID(), text: codex.SanitizeSessionContext(text), sentAt: time.Now()}
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()

@@ -9,10 +9,20 @@ import (
 
 // SessionPromptOffer is connection-local. Neither drafts nor capabilities are persisted.
 type SessionPromptOffer struct {
-	Token     string
-	ThreadID  string
-	Questions []PromptQuestion
-	TurnID    string // Nonempty only for a separately requested active-turn offer.
+	ClientUserMessageID string // UUID v4 for one active-turn submission; not an authorisation.
+	Token               string
+	ThreadID            string
+	Questions           []PromptQuestion
+	TurnID              string // Nonempty only for a separately requested active-turn offer.
+}
+
+// SteerMessageID is separate from the single-use authorisation token, which
+// must not be exposed in the persisted conversation.
+func (o SessionPromptOffer) SteerMessageID() string {
+	if o.Token == "" || o.ThreadID == "" || o.TurnID == "" {
+		return ""
+	}
+	return o.ClientUserMessageID
 }
 
 // Active-turn controls are deliberately separate from idle follow-ups: neither

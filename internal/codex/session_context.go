@@ -31,8 +31,12 @@ type SessionContext struct {
 	CurrentTask           string
 	LatestGuidance        string
 	LatestGuidanceID      string
-	Streaming             bool
-	Activity              SessionActivity
+	// CompletedSteerIDs is a bounded newline-separated set of client IDs from
+	// completed user-message events. It confirms conversation incorporation,
+	// not that the model followed an instruction. No message text is retained.
+	CompletedSteerIDs string
+	Streaming         bool
+	Activity          SessionActivity
 	// ApprovalContext is preceding same-thread/turn prose captured when the
 	// request arrived. Display-only: never part of the authorised action.
 	ApprovalContext string
@@ -62,6 +66,18 @@ type SessionContext struct {
 	At                time.Time
 	ThreadID          string
 	Source            string
+}
+
+func (c SessionContext) HasCompletedSteer(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, completed := range strings.Split(c.CompletedSteerIDs, "\n") {
+		if completed == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Structured display fields are populated only alongside a complete validated

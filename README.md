@@ -2107,8 +2107,13 @@ when they run. The panel remains visible during work and ordinary approvals,
 above the approval controls when those replace the composer. Quota-threshold
 reviews remain isolated. Empty panels disappear unless the queue is unavailable; wide session rows show one
 preview at a time, while full detail shows more entries as space permits.
-Successfully sent steering also appears here as **STEER SENT** until the live
-**LATEST GUIDANCE** catches up (or a positively newer turn supersedes it).
+Successfully sent steering also appears here as **STEER SENT** until a live
+completed user-message event echoes that submission's unique client ID (or a
+positively newer turn supersedes it). Matching **CURRENT TASK** or
+**LATEST GUIDANCE** text alone is not confirmation. The event proves that Codex
+incorporated the message into the conversation, not that the model obeyed it.
+If an older server does not echo client IDs, receipts remain conservative until
+a positively newer turn is observed.
 These are read-only receipts, not queued work:
 they have no edit or cancel buttons, survive switching sessions within this run,
 and are never resent automatically.

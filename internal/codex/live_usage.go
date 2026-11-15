@@ -1507,7 +1507,14 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 				// context only for the same positively identified turn.
 				preview.CurrentTask, preview.LatestGuidance = live.CurrentTask, live.LatestGuidance
 				preview.LatestGuidanceID = live.LatestGuidanceID
+				preview.CompletedSteerIDs = live.CompletedSteerIDs
 				preview.TurnID = live.TurnID
+			}
+			// Completion identities are independent of whichever display text
+			// won the timestamp comparison. Preserve them only for this turn.
+			if live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID &&
+				preview.ThreadID == cursor.threadID && (preview.TurnID == "" || preview.TurnID == live.TurnID) {
+				preview.CompletedSteerIDs, preview.TurnID = live.CompletedSteerIDs, live.TurnID
 			}
 		}
 		if preview.Kind == SessionContextFailure && (!writerLocksSupported || writerActive || exact) && (!exact || exactStatus != sessionRuntimeWorking && exactStatus != sessionRuntimeComplete) {
