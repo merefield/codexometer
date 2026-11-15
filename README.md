@@ -1247,7 +1247,10 @@ The other top-level views are:
   Confirmed failed turns instead enter **ERRORS**, with an amber **MODEL BUSY**
   badge for server-reported model capacity, **MODEL UNAVAILABLE** when the provider
   cannot find the selected model, **CAPACITY RESTRICTED** for policy-restricted
-  capacity, and **TURN FAILED** for other failures.
+  capacity, **HOOK DENIED** when a workspace inference hook blocks a request,
+  and **TURN FAILED** for other failures. A hook denial is not a quota or
+  capacity signal; inspect the supplied explanation and workspace policy before
+  retrying. Codexometer never bypasses the hook.
   The row, full detail and attention pill retain the observed error message;
   capacity is not interpreted as quota exhaustion. Both the shared app-server's
   failed-turn/error events and local rollout error records are supported. Errors
@@ -1864,6 +1867,22 @@ The [confirmation policy](#confirmation-policy) can require review for every
 substantive change or skip extra review except quota-reset redemption.
 Browse-only entries do not execute tools or change configuration.
 
+On Codex 0.169+, model/reasoning and advertised speed options are requested
+from the selected session's saved model provider, not the daemon's default.
+Provider changes invalidate cached options and previous reviews. Quota-threshold
+updates are also validated against each target's provider and never switch
+providers. If loaded providers disagree on a speed alias such as "Fast", the
+shared threshold review fails explicitly; use an advertised tier ID supported
+by all target providers rather than guessing. An unavailable provider catalogue
+is not replaced with the default provider's catalogue. Older servers retain
+their existing default-catalogue behaviour; use 0.169+ for provider-scoped discovery.
+
+Codex's attached side-chat relationship is retained separately from spawned-agent
+lineage. Side chats remain independent session rows; attachment alone never
+combines their token counts or approvals with another session. The optional
+per-message `contentTokenCount` in newer completion events is not billed request
+usage and does not change token totals, quota learning or API-EQ calculations.
+
 | Command family | Live options and behaviour |
 | --- | --- |
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
@@ -2088,8 +2107,15 @@ when they run. The panel remains visible during work and ordinary approvals,
 above the approval controls when those replace the composer. Quota-threshold
 reviews remain isolated. Empty panels disappear unless the queue is unavailable; wide session rows show one
 preview at a time, while full detail shows more entries as space permits.
-Successfully sent steering also appears here as **STEER SENT** until the live
-**LATEST GUIDANCE** catches up (or a positively newer turn supersedes it).
+Successfully sent steering also appears here as **STEER SENT** until a live
+completed user-message event echoes that submission's unique client ID (or a
+positively newer turn supersedes it). Matching **CURRENT TASK** or
+**LATEST GUIDANCE** text alone is not confirmation. The event proves that Codex
+incorporated the message into the conversation, not that the model obeyed it.
+Confirmation metadata remains separate from the displayed text, so a linked
+agent's approval or error cannot hide the root's completed-steer signal.
+If an older server does not echo client IDs, receipts remain conservative until
+a positively newer turn is observed.
 These are read-only receipts, not queued work:
 they have no edit or cancel buttons, survive switching sessions within this run,
 and are never resent automatically.
@@ -2189,6 +2215,13 @@ offer **APPROVE ONCE**, **DECLINE**, and **REJECT & STOP TURN**. These decisions
 are immediate by default and reviewed with `--confirmation require`.
 Read-only web mode can display the patch but cannot answer it. Inline terminal
 buttons appear only when the entire proposed patch fits; otherwise open full detail.
+If Codexometer attaches after the patch event, it attempts a bounded read of the
+exact pending file-change item from Codex's `thread/items/read` endpoint. A late
+first patch event can also fill the missing review. Recovery rechecks the live
+request, connection and turn before enabling the existing controls; it never
+reconstructs a patch from local files or revives a resolved request. Changes to
+an already observed patch still invalidate the old approval. Missing, unsafe,
+oversized or unsupported details remain for review in Codex.
 
 The patch must come from the matching live thread, turn and item; Codexometer
 never reconstructs approval details from files on disk. Patches are memory-only,
@@ -3865,11 +3898,11 @@ go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
 An optional Unix integration check verifies the installed Codex against the
-0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1 or 0.167.2, including negotiated
+0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0 or 0.169.0, including negotiated
 compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.167.2 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.169.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing

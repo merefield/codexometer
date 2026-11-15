@@ -267,6 +267,7 @@ type monitorSessionDismissal struct {
 }
 
 type monitorSession struct {
+	steerProgress    []codex.SessionSteerProgress
 	readState        codex.SessionReadState
 	goal             *codex.SessionGoal
 	name             string
@@ -2938,6 +2939,7 @@ func applyMonitorSessionObservation(row *monitorSession, observed codex.LiveUsag
 	row.name = observed.Name
 	row.modelSettings = observed.ModelSettings
 	row.preview = observed.Context
+	row.steerProgress = append([]codex.SessionSteerProgress(nil), observed.SteerProgress...)
 	row.goal = observed.Goal.Clone()
 	row.readState = observed.ReadState
 	row.active = observed.Active

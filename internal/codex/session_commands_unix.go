@@ -123,8 +123,12 @@ func (p *daemonStatusProvider) commandRows(ctx context.Context, method string, p
 	return nil, ErrSessionCommand
 }
 
-func (p *daemonStatusProvider) commandModels(ctx context.Context) ([]commandModel, error) {
-	rows, err := p.commandRows(ctx, "model/list", map[string]any{})
+func (p *daemonStatusProvider) commandModels(ctx context.Context, provider string) ([]commandModel, error) {
+	params := map[string]any{}
+	if provider != "" {
+		params["modelProvider"] = provider
+	}
+	rows, err := p.commandRows(ctx, "model/list", params)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +140,14 @@ func (p *daemonStatusProvider) commandModels(ctx context.Context) ([]commandMode
 		}
 	}
 	return models, nil
+}
+
+func (p *daemonStatusProvider) sessionCommandModels(ctx context.Context, current QuotaSession) ([]commandModel, error) {
+	models, err := p.commandModels(ctx, current.ModelProvider)
+	if err == nil {
+		_, err = p.checkQuotaSettings(ctx, current)
+	}
+	return models, err
 }
 
 func (p *daemonStatusProvider) SessionCommands(ctx context.Context, id, path string) (SessionCommandMenu, error) {
@@ -286,8 +298,8 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 				}
 			}
 		}
-		if models, err := p.commandModels(ctx); err == nil {
-			if current, err := p.readQuotaSession(ctx, t.ID); err == nil {
+		if current, err := p.readQuotaSession(ctx, t.ID); err == nil {
+			if models, err := p.sessionCommandModels(ctx, current); err == nil {
 				for _, model := range models {
 					if model.Model == current.Model {
 						for _, tier := range model.ServiceTiers {
@@ -340,6 +352,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			return m, err
 		}
 		m.Revision = commandDigest([]any{current, t.Cwd})
+		m.settings = &current
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
 			if !threadAcceptsFollowup(t.Status.Type) && parts[0] != "tier" {
@@ -350,7 +363,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		}
 		switch parts[0] {
 		case "model", "tier":
-			models, err := p.commandModels(ctx)
+			models, err := p.sessionCommandModels(ctx, current)
 			if err != nil {
 				return m, err
 			}
@@ -541,7 +554,10 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 			}
 			_, changingModel := o.params["model"]
 			if m.Picker || changingModel {
-				current, err := p.readQuotaSession(ctx, id)
+				if m.settings == nil {
+					return ErrSessionCommand
+				}
+				current, err := p.checkQuotaSettings(ctx, *m.settings)
 				if err != nil {
 					return err
 				}

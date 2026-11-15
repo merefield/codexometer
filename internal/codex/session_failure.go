@@ -15,6 +15,8 @@ func SessionFailureLabel(c SessionContext) string {
 		return "MODEL UNAVAILABLE"
 	case "policycapacityunavailable":
 		return "CAPACITY RESTRICTED"
+	case "inferencehookdenied":
+		return "HOOK DENIED"
 	}
 	return "TURN FAILED"
 }
@@ -59,6 +61,8 @@ func sessionFailureContext(c SessionContext, raw json.RawMessage) SessionContext
 		name = "modelNotFound"
 	case "policycapacityunavailable":
 		name = "policyCapacityUnavailable"
+	case "inferencehookdenied":
+		name = "inferenceHookDenied"
 	}
 	c.Kind, c.Streaming, c.Activity = SessionContextFailure, false, SessionActivity{}
 	c.FailureCode = SanitizeSessionContext(name)

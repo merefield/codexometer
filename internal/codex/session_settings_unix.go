@@ -17,7 +17,7 @@ func tierEqual(a, b *string) bool {
 	return canonicalQuotaSessionTier(a) == canonicalQuotaSessionTier(b)
 }
 func sameQuotaSettings(a, b QuotaSession) bool {
-	return a.Model == b.Model && a.Effort == b.Effort && tierEqual(a.Tier, b.Tier)
+	return a.Model == b.Model && a.ModelProvider == b.ModelProvider && a.Effort == b.Effort && tierEqual(a.Tier, b.Tier)
 }
 
 func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <-chan struct{}, uint64, bool) {
@@ -32,15 +32,20 @@ func (p *daemonStatusProvider) observedQuotaSettings(id string) (QuotaSession, <
 func (p *daemonStatusProvider) readQuotaSession(ctx context.Context, id string) (QuotaSession, error) {
 	var response struct {
 		Model           string
+		ModelProvider   string
 		ReasoningEffort string
 		ServiceTier     json.RawMessage
 		Thread          struct {
 			Model           string
+			ModelProvider   string
 			ReasoningEffort string
 		}
 	}
 	err := p.request(ctx, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &response)
-	s := QuotaSession{ID: id, Model: response.Model, Effort: response.ReasoningEffort}
+	s := QuotaSession{ID: id, Model: response.Model, ModelProvider: response.ModelProvider, Effort: response.ReasoningEffort}
+	if s.ModelProvider == "" {
+		s.ModelProvider = response.Thread.ModelProvider
+	}
 	if s.Model == "" {
 		s.Model = response.Thread.Model
 	}
@@ -57,6 +62,16 @@ func (p *daemonStatusProvider) readQuotaSession(ctx context.Context, id string) 
 		return s, err
 	}
 	return s, nil
+}
+
+// Catalogue discovery is asynchronous with respect to other clients' writes.
+// Recheck the reviewed snapshot after discovery, before constructing a mutation.
+func (p *daemonStatusProvider) checkQuotaSettings(ctx context.Context, expected QuotaSession) (QuotaSession, error) {
+	current, err := p.readQuotaSession(ctx, expected.ID)
+	if err == nil && !sameQuotaSettings(current, expected) {
+		err = errors.New("settings changed since review; skipped")
+	}
+	return current, err
 }
 
 func (p *daemonStatusProvider) QuotaSessions(ctx context.Context) ([]QuotaSession, error) {
@@ -95,7 +110,7 @@ func (p *daemonStatusProvider) QuotaSessions(ctx context.Context) ([]QuotaSessio
 
 // Resolve a requested speed against the model catalogue. "slow" is a name,
 // never an assumed alias for flex; explicit standard routing is a sentinel.
-func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step QuotaStep) (QuotaStep, error) {
+func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step QuotaStep, provider string) (QuotaStep, error) {
 	var cursor any
 	seen := map[string]bool{}
 	for {
@@ -110,6 +125,9 @@ func (p *daemonStatusProvider) validateQuotaStep(ctx context.Context, step Quota
 			NextCursor *string
 		}
 		params := map[string]any{}
+		if provider != "" {
+			params["modelProvider"] = provider
+		}
 		if cursor != nil {
 			params["cursor"] = cursor
 		}
@@ -223,10 +241,6 @@ func (p *daemonStatusProvider) ApplyQuotaProfile(ctx context.Context, targets []
 	if err := p.ensureConnected(ctx); err != nil {
 		return 0, err
 	}
-	step, err := p.validateQuotaStep(ctx, step)
-	if err != nil {
-		return 0, err
-	}
 	var failures []error
 	updated := 0
 	for _, target := range targets {
@@ -243,25 +257,30 @@ func (p *daemonStatusProvider) ApplyQuotaProfile(ctx context.Context, targets []
 			failures = append(failures, fmt.Errorf("%s: no longer loaded", target.ID))
 			continue
 		}
-		current, err := p.readQuotaSession(ctx, target.ID)
+		current, err := p.checkQuotaSettings(ctx, target)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
 			continue
 		}
-		if !sameQuotaSettings(current, target) {
-			failures = append(failures, fmt.Errorf("%s: settings changed since review; skipped", target.ID))
+		resolved, err := p.validateQuotaStep(ctx, step, current.ModelProvider)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
+			continue
+		}
+		if _, err := p.checkQuotaSettings(ctx, current); err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", target.ID, err))
 			continue
 		}
 		desired := current
-		desired.Model = step.Model
-		desired.Effort = step.Effort
-		params := map[string]any{"threadId": target.ID, "model": step.Model, "effort": step.Effort}
-		if step.ServiceTier != "" {
-			if step.ServiceTier == "default" {
+		desired.Model = resolved.Model
+		desired.Effort = resolved.Effort
+		params := map[string]any{"threadId": target.ID, "model": resolved.Model, "effort": resolved.Effort}
+		if resolved.ServiceTier != "" {
+			if resolved.ServiceTier == "default" {
 				desired.Tier = nil
 				params["serviceTier"] = nil
 			} else {
-				tier := step.ServiceTier
+				tier := resolved.ServiceTier
 				desired.Tier = &tier
 				params["serviceTier"] = tier
 			}
@@ -289,7 +308,36 @@ func (p *daemonStatusProvider) ResolveQuotaStep(ctx context.Context, step QuotaS
 	if err := p.ensureConnected(ctx); err != nil {
 		return step, err
 	}
-	return p.validateQuotaStep(ctx, step)
+	loaded, err := p.loadedThreads(ctx)
+	if err != nil {
+		return step, err
+	}
+	// Inventory has one resolved step. Do not guess when providers disagree
+	// about a speed alias, or advertise incompatible models/efforts.
+	providers := map[string]bool{}
+	var resolved QuotaStep
+	for id := range loaded {
+		current, err := p.readQuotaSession(ctx, id)
+		if err != nil {
+			return step, err
+		}
+		if providers[current.ModelProvider] {
+			continue
+		}
+		candidate, err := p.validateQuotaStep(ctx, step, current.ModelProvider)
+		if err != nil {
+			return step, fmt.Errorf("provider %q: %w", current.ModelProvider, err)
+		}
+		if len(providers) > 0 && candidate.ServiceTier != resolved.ServiceTier {
+			return step, errors.New("providers disagree on requested speed tier; use an explicit shared tier ID")
+		}
+		resolved = candidate
+		providers[current.ModelProvider] = true
+	}
+	if len(providers) == 0 {
+		return p.validateQuotaStep(ctx, step, "")
+	}
+	return resolved, nil
 }
 
 // Drain in-flight work and reject later writes. Closing never changes settings.

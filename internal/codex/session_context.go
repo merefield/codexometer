@@ -26,13 +26,19 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
-	RequiredHumanApproval bool
-	FailureCode           string
-	CurrentTask           string
-	LatestGuidance        string
-	LatestGuidanceID      string
-	Streaming             bool
-	Activity              SessionActivity
+	fileApprovalRecoverable bool
+	fileApprovalFetches     uint8
+	RequiredHumanApproval   bool
+	FailureCode             string
+	CurrentTask             string
+	LatestGuidance          string
+	LatestGuidanceID        string
+	// CompletedSteerIDs is a bounded newline-separated set of client IDs from
+	// completed user-message events. It confirms conversation incorporation,
+	// not that the model followed an instruction. No message text is retained.
+	CompletedSteerIDs string
+	Streaming         bool
+	Activity          SessionActivity
 	// ApprovalContext is preceding same-thread/turn prose captured when the
 	// request arrived. Display-only: never part of the authorised action.
 	ApprovalContext string
@@ -62,6 +68,33 @@ type SessionContext struct {
 	At                time.Time
 	ThreadID          string
 	Source            string
+}
+
+// SessionSteerProgress is content-free, thread/turn-scoped confirmation data.
+// It must survive a grouped session choosing another thread's display context.
+type SessionSteerProgress struct {
+	ThreadID, TurnID, CompletedSteerIDs string
+	At                                  time.Time
+}
+
+func (c SessionContext) SteerProgress() SessionSteerProgress {
+	return SessionSteerProgress{ThreadID: c.ThreadID, TurnID: c.TurnID, CompletedSteerIDs: c.CompletedSteerIDs, At: c.At}
+}
+
+func (c SessionContext) HasCompletedSteer(id string) bool {
+	return c.SteerProgress().HasCompletedSteer(id)
+}
+
+func (c SessionSteerProgress) HasCompletedSteer(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, completed := range strings.Split(c.CompletedSteerIDs, "\n") {
+		if completed == id {
+			return true
+		}
+	}
+	return false
 }
 
 // Structured display fields are populated only alongside a complete validated

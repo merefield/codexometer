@@ -3,13 +3,18 @@ package codex
 import (
 	"crypto/rand"
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
+	completedSteers                                 []string
+	steerMessageID                                  string
 	turnObserved                                    bool
 	userItems                                       map[string]bool
 	task, guidance                                  string
@@ -67,7 +72,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			ID            string          `json:"id"`
+			ID, ClientID  string
 			CWD           string          `json:"cwd"`
 			Type          string          `json:"type"`
 			Text          string          `json:"text"`
@@ -244,6 +249,8 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		}
 		c.FileChanges = state.patches[p.TurnID+"/"+p.ItemID]
 		configureFileApproval(&c, p.GrantRoot, state)
+		_, observed := state.patches[p.TurnID+"/"+p.ItemID]
+		c.fileApprovalRecoverable = !observed && c.ApprovalBlocked == "file-change" && c.FileChanges == ""
 	case "item/fileChange/patchUpdated":
 		state.capturePatch(p.TurnID, p.ItemID, p.Changes)
 		return
@@ -274,6 +281,17 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		}
 	case "item/completed":
 		if p.Item.Type == "userMessage" {
+			// Started items and the steer RPC acknowledgement are not proof
+			// that input has been incorporated. Only this completion is.
+			if p.Item.ID != "" && p.TurnID != "" && p.TurnID == state.activeTurn &&
+				!slices.Contains(state.completedSteers, p.Item.ClientID) {
+				if id, err := uuid.Parse(p.Item.ClientID); err == nil && id.Version() == 4 && id.Variant() == uuid.RFC4122 && id.String() == p.Item.ClientID {
+					state.completedSteers = append(state.completedSteers, p.Item.ClientID)
+					if len(state.completedSteers) > 64 {
+						state.completedSteers = state.completedSteers[1:]
+					}
+				}
+			}
 			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && state.latest.Text == "" {
 				c.Kind = SessionContextActivity
 				state.latest = c
@@ -476,11 +494,12 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 		c.PendingApprovals = count
 		c.CurrentTask, c.LatestGuidance = state.task, state.guidance
 		c.LatestGuidanceID = state.guidanceID
-		if c.ThreadID == "" && (c.CurrentTask != "" || c.LatestGuidance != "") {
+		c.CompletedSteerIDs = strings.Join(state.completedSteers, "\n")
+		if c.ThreadID == "" && (c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "") {
 			c.ThreadID, c.TurnID, c.Source = id, state.activeTurn, "LIVE"
 		}
 		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
-		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.PendingApprovalsLimited {
+		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}

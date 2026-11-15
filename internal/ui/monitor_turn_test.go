@@ -20,7 +20,7 @@ type turnTestClient struct {
 func inlineTurnTestModel() (Model, *turnTestClient) {
 	m, idle := inlinePromptTestModel()
 	idle.offer = codex.SessionPromptOffer{}
-	c := &turnTestClient{promptTestClient: idle, active: codex.SessionPromptOffer{Token: "working", ThreadID: "root-one", TurnID: "turn"}}
+	c := &turnTestClient{promptTestClient: idle, active: codex.SessionPromptOffer{Token: "working", ThreadID: "root-one", TurnID: "turn", ClientUserMessageID: "550e8400-e29b-41d4-a716-446655440000"}}
 	m.fetcher = c
 	return m, c
 }
@@ -156,7 +156,7 @@ func (c *turnTestClient) SendSessionTurn(_ context.Context, o codex.SessionPromp
 func turnTestModel() (Model, *turnTestClient) {
 	m, idle := promptTestModel()
 	idle.offer = codex.SessionPromptOffer{}
-	c := &turnTestClient{promptTestClient: idle, active: codex.SessionPromptOffer{Token: "working", ThreadID: "root-one", TurnID: "turn"}}
+	c := &turnTestClient{promptTestClient: idle, active: codex.SessionPromptOffer{Token: "working", ThreadID: "root-one", TurnID: "turn", ClientUserMessageID: "550e8400-e29b-41d4-a716-446655440000"}}
 	m.fetcher = c
 	m.focusMonitorPrompt()
 	m.monitorPrompt.input.SetValue("Keep this draft")

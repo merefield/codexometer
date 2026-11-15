@@ -370,12 +370,12 @@ func TestMonitorRenameEditorKeepsBackgroundUpdates(t *testing.T) {
 	t.Run("telemetry and steer reconciliation", func(t *testing.T) {
 		m := renameEditorTestModel(t)
 		m.monitorRequest, m.monitorFetchActive = 7, true
-		m.recordMonitorSteer(monitorSteerReceipt{session: "root-one", thread: "root-one", turn: "turn", text: "new guidance"})
+		m.recordMonitorSteer(monitorSteerReceipt{session: "root-one", thread: "root-one", turn: "turn", text: "new guidance", clientID: "sent-guidance"})
 		next, _ := m.Update(monitorFetchedMsg{kind: monitorFetchSample, sequence: 7, at: time.Now(), usage: codex.LiveUsageSnapshot{
 			TotalTokens: 100,
 			Sessions: []codex.LiveUsageSession{{ID: "root-one", Name: "Renamed root", TotalTokens: 100, Active: true,
 				Attention: codex.SessionAttentionApproval,
-				Context:   codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "root-one", TurnID: "turn", Text: "new approval", LatestGuidance: "new guidance", LatestGuidanceID: "guidance-2"},
+				Context:   codex.SessionContext{Kind: codex.SessionContextApproval, ThreadID: "root-one", TurnID: "turn", Text: "new approval", LatestGuidance: "new guidance", LatestGuidanceID: "guidance-2", CompletedSteerIDs: "sent-guidance"},
 			}},
 		}})
 		m = next.(Model)

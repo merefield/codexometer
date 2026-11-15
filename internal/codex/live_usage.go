@@ -60,17 +60,21 @@ type LiveUsageSnapshot struct {
 // LiveUsageSession is one independently started local Codex session. Token
 // usage from explicitly linked spawned descendants is folded into the root.
 type LiveUsageSession struct {
-	ReadState        SessionReadState
-	Goal             *SessionGoal
-	ModelSettings    SessionModelSettings
-	ID               string
-	Name             string
-	WorkingDirectory string
-	StartedAt        time.Time
-	TotalTokens      int64
-	LastActivity     time.Time
-	AgentCount       int
-	Active           bool
+	SteerProgress []SessionSteerProgress
+	// Attached side chats are related, not spawned agents. Never use this as
+	// parentThreadID when grouping tokens or approvals.
+	AttachedToThreadID string
+	ReadState          SessionReadState
+	Goal               *SessionGoal
+	ModelSettings      SessionModelSettings
+	ID                 string
+	Name               string
+	WorkingDirectory   string
+	StartedAt          time.Time
+	TotalTokens        int64
+	LastActivity       time.Time
+	AgentCount         int
+	Active             bool
 	// Working requires a live turn signal, not merely recent file activity.
 	Working      bool
 	Attention    SessionAttention
@@ -141,6 +145,7 @@ type LiveUsageReader struct {
 	nameIndexInfo          os.FileInfo
 	daemonContexts         map[string]SessionContext
 	daemonDirectories      map[string]string
+	daemonAttachments      map[string]string
 	daemonReadStates       map[string]SessionReadState
 	daemonGoals            map[string]*SessionGoal
 	SessionsRoot           string
@@ -410,6 +415,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	var daemonCoverage map[string]string
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
+	r.daemonAttachments = nil
 	r.daemonGoals = nil
 	r.daemonReadStates = nil
 	appServerUp := false
@@ -421,6 +427,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			r.daemonContexts = daemonSnapshot.Contexts
 			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
+			r.daemonAttachments = daemonSnapshot.AttachedThreads
 			r.daemonGoals = daemonSnapshot.Goals
 			r.daemonReadStates = daemonSnapshot.ReadStates
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
@@ -1493,6 +1500,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			preview = SessionContext{}
 		}
 		if live, ok := r.daemonContexts[cursor.threadID]; ok {
+			if !unattributed && live.ThreadID == cursor.threadID && live.TurnID != "" {
+				group.SteerProgress = append(group.SteerProgress, live.SteerProgress())
+			}
 			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
 				preview = live
 			} else if (preview.Kind == SessionContextReply || preview.Kind == SessionContextFailure) && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
@@ -1501,7 +1511,14 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 				// context only for the same positively identified turn.
 				preview.CurrentTask, preview.LatestGuidance = live.CurrentTask, live.LatestGuidance
 				preview.LatestGuidanceID = live.LatestGuidanceID
+				preview.CompletedSteerIDs = live.CompletedSteerIDs
 				preview.TurnID = live.TurnID
+			}
+			// Completion identities are independent of whichever display text
+			// won the timestamp comparison. Preserve them only for this turn.
+			if live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID &&
+				preview.ThreadID == cursor.threadID && (preview.TurnID == "" || preview.TurnID == live.TurnID) {
+				preview.CompletedSteerIDs, preview.TurnID = live.CompletedSteerIDs, live.TurnID
 			}
 		}
 		if preview.Kind == SessionContextFailure && (!writerLocksSupported || writerActive || exact) && (!exact || exactStatus != sessionRuntimeWorking && exactStatus != sessionRuntimeComplete) {
@@ -1549,6 +1566,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	activeCount := 0
 	anyWorking := false
 	for _, session := range groups {
+		session.AttachedToThreadID = r.daemonAttachments[session.ID]
 		session.Goal = r.daemonGoals[session.ID].Clone()
 		session.ReadState = r.daemonReadStates[session.ID]
 		if root := byID[session.ID]; root != nil && !session.Unattributed {
