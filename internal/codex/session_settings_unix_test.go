@@ -17,6 +17,12 @@ import (
 )
 
 type quotaDaemonFixture struct {
+	approvalPolicies  map[string]any
+	reviewers         map[string]string
+	ignorePermissions bool
+	denialWrites      []map[string]any
+	resumeReadHook    func()
+
 	readReceipts     map[string]map[string]any
 	readUpdates      []map[string]any
 	readConflict     bool
@@ -164,6 +170,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				result["data"] = ids
 			case "thread/resume":
+				if fixture.resumeReadHook != nil {
+					fixture.resumeReadHook()
+				}
 				fixture.resumeReads = append(fixture.resumeReads, req.Params)
 				s, ok := fixture.sessions[id]
 				failure = !ok || fixture.fail == id
@@ -172,6 +181,10 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					cwd = "/work"
 				}
 				result = map[string]any{"cwd": cwd, "model": s.Model, "modelProvider": s.ModelProvider, "reasoningEffort": s.Effort, "serviceTier": s.Tier, "thread": map[string]any{"id": id}, "activePermissionProfile": map[string]any{"id": fixture.permissions[id]}}
+				if fixture.reviewers != nil {
+					result["approvalsReviewer"] = fixture.reviewers[id]
+					result["approvalPolicy"] = fixture.approvalPolicies[id]
+				}
 			case "thread/read":
 				fixture.threadReads++
 				result["readState"] = fixture.readReceipts[id]
@@ -254,6 +267,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				if fixture.queued {
 					result["data"] = []any{map[string]any{"id": "queued"}}
 				}
+			case "thread/approveGuardianDeniedAction":
+				fixture.denialWrites = append(fixture.denialWrites, req.Params)
+				failure = fixture.fail == "approve"
 			case "thread/settings/update":
 				fixture.writes = append(fixture.writes, req.Params)
 				failure = fixture.fail == "cwd"
@@ -277,6 +293,20 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					}
 				}
 				if !fixture.queued {
+					if !fixture.ignorePermissions {
+						if v, ok := req.Params["approvalPolicy"]; ok {
+							if fixture.approvalPolicies == nil {
+								fixture.approvalPolicies = map[string]any{}
+							}
+							fixture.approvalPolicies[id] = v
+						}
+						if v, ok := req.Params["approvalsReviewer"].(string); ok {
+							if fixture.reviewers == nil {
+								fixture.reviewers = map[string]string{}
+							}
+							fixture.reviewers[id] = v
+						}
+					}
 					if permission, ok := req.Params["permissions"].(string); ok {
 						if fixture.permissions == nil {
 							fixture.permissions = make(map[string]string)

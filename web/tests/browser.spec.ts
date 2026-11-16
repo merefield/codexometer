@@ -142,6 +142,70 @@ async function setOverviewDetail(page: Page, level: number) {
   throw new Error('Cycle did not reach overview detail level ' + level);
 }
 
+test('native Auto-review remains informational in read-only mode', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'native-review',
+    name: 'Native reviewer',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST ACTIVITY',
+    text: 'Inspecting the repository.',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    reviewer: 'auto_review',
+    autoReview: {
+      id: 'review',
+      status: 'inProgress',
+      risk: 'low',
+      authorization: 'high',
+      action: 'ls /work',
+      rationale: 'Inspect files.',
+    },
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await setOverviewDetail(page, 1);
+  const row = page.locator('.session-row').first();
+  await expect(row.getByText('REVIEW // AUTO', { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole('heading', { name: 'AUTO REVIEWING', exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByText('Inspecting the repository.', { exact: true }),
+  ).toBeVisible();
+  session.autoReview.status = 'denied';
+  session.autoReview.rationale = 'Outside the project.';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    row.getByRole('heading', { name: 'AUTO REVIEW', exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByText('Outside the project.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByRole('button', { name: /APPROVE|CONFIRM|SEND DECISION/ }),
+  ).toHaveCount(0);
+});
+
 test.describe('quota profile reviews', () => {
   test.use({
     controlMode: true,
@@ -1588,6 +1652,295 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   await expect(page.getByRole('button', { name: /CONFIRM/ })).toHaveCount(0);
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
 });
+
+test('inline permission Enter is consumed and guarded during review', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const paths: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.command.mode === 'prepare') {
+      await route.fulfill({
+        json: {
+          confirmation: 'permission-token',
+          expires: new Date(Date.now() + 30000).toISOString(),
+        },
+      });
+      return;
+    }
+    paths.push(body.command.path);
+    const applying = body.command.path.startsWith('permissions ');
+    await route.fulfill({
+      json: {
+        title: '/permissions',
+        help: 'Native reviewer options',
+        path: applying ? 'permissions/apply/review' : '',
+        revision: 'r',
+        inputReview: applying,
+        choices: applying
+          ? [
+              {
+                id: 'apply',
+                label: 'Apply native permissions',
+                help: 'Reviewer: auto_review',
+                action: true,
+              },
+            ]
+          : [
+              {
+                id: 'permissions',
+                label: '/permissions',
+                help: 'Native settings',
+                next: 'permissions',
+              },
+            ],
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const editor = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  const command = '/permissions :workspace --reviewer=auto_review';
+  await editor.fill(command);
+  await expect.poll(() => paths.length).toBeGreaterThan(0);
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByText('No available matching commands.', { exact: true }),
+  ).toBeVisible();
+  const heldEnter = await editor.evaluate((element) => {
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(heldEnter).toBe(true);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(0);
+  await editor.press('Enter');
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toBeVisible();
+  await expect(editor).toHaveValue(command);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+  await panel
+    .getByRole('group', { name: 'Review command change' })
+    .press('Enter');
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+  const repeated = await panel
+    .getByRole('group', { name: 'Review command change' })
+    .evaluate((element) => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  expect(repeated).toBe(true);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+});
+
+for (const pending of [false, true])
+  test(`editing inline permissions invalidates ${pending ? 'in-flight' : 'prepared'} review`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page, 'prompt');
+    const original = '/permissions :workspace --reviewer=auto_review';
+    const edited = '/permissions :workspace --reviewer=user';
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let preparations = 0;
+    const commits: string[] = [];
+    await page.route('**/api/control/commands', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.command.mode === 'prepare') {
+        preparations++;
+        if (pending && preparations === 1) await gate;
+        await route.fulfill({
+          json: {
+            confirmation: `token-${preparations}`,
+            expires: new Date(Date.now() + 30000).toISOString(),
+          },
+        });
+        return;
+      }
+      if (body.command.mode === 'commit') {
+        commits.push(body.command.path);
+        await route.fulfill({
+          json: { message: 'Native permissions updated.' },
+        });
+        return;
+      }
+      const path = body.command.path;
+      const applying = path.startsWith('permissions ');
+      await route.fulfill({
+        json: {
+          title: '/permissions',
+          help: 'Native permission review',
+          path: applying
+            ? 'permissions/apply/' +
+              encodeURIComponent(path.slice('permissions '.length))
+            : '',
+          revision: path,
+          inputReview: applying,
+          choices: applying
+            ? [
+                {
+                  id: 'apply',
+                  label: 'Apply native permissions',
+                  help: 'Requested: ' + path,
+                  action: true,
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const editor = page
+      .locator('.detail-workspace')
+      .getByRole('textbox', { name: 'Follow-up message' });
+    const panel = page.getByRole('region', { name: 'Session slash commands' });
+    const confirm = panel.getByRole('button', {
+      name: 'C CONFIRM CHANGE',
+      exact: true,
+    });
+    await editor.fill(original);
+    await expect(
+      panel.getByText('No available matching commands.', { exact: true }),
+    ).toBeVisible();
+    await editor.press('Enter');
+    await expect.poll(() => preparations).toBe(1);
+    if (!pending) await expect(confirm).toBeVisible();
+    await editor.fill(edited);
+    await expect(
+      panel.getByText('No available matching commands.', { exact: true }),
+    ).toBeVisible();
+    await expect(confirm).toHaveCount(0);
+    if (pending) {
+      const late = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/control/commands') &&
+          response.request().postDataJSON().command.mode === 'prepare',
+      );
+      release();
+      await late;
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      await expect(confirm).toHaveCount(0);
+    }
+    expect(commits).toHaveLength(0);
+    await editor.press('Enter');
+    await expect(confirm).toBeVisible();
+    await expect(
+      panel.getByText('Requested: ' + edited.slice(1), { exact: true }),
+    ).toBeVisible();
+    await confirm.click();
+    await expect
+      .poll(() => commits)
+      .toEqual([
+        'permissions/apply/' +
+          encodeURIComponent(edited.slice('/permissions '.length)),
+      ]);
+  });
+
+for (const apply of ['click', 'enter'] as const)
+  test(`no-confirm native retry still exposes full denial before consent (${apply})`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page, 'prompt', true);
+    let commits = 0;
+    const rationale =
+      'Denied action context.\n'.repeat(100) + 'FINAL NATIVE RATIONALE';
+    await page.route('**/api/control/commands', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.command.mode === 'prepare') {
+        await route.fulfill({
+          json: {
+            confirmation: 'retry-token',
+            expires: new Date(Date.now() + 30000).toISOString(),
+          },
+        });
+        return;
+      }
+      if (body.command.mode === 'commit') {
+        commits++;
+        await route.fulfill({ json: { message: 'Retry consent recorded.' } });
+        return;
+      }
+      const root = body.command.path === '';
+      await route.fulfill({
+        json: {
+          title: '/approve',
+          help: 'One exact retry; native review still applies.',
+          path: root ? '' : 'approve/denial',
+          revision: 'r',
+          choices: root
+            ? [{ id: 'approve', label: '/approve', next: 'approve/denial' }]
+            : [
+                {
+                  id: 'retry',
+                  label: 'Record approval for one retry',
+                  help: rationale,
+                  action: true,
+                },
+              ],
+        },
+      });
+    });
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const editor = page
+      .locator('.detail-workspace')
+      .getByRole('textbox', { name: 'Follow-up message' });
+    await editor.fill('/');
+    const panel = page.getByRole('region', { name: 'Session slash commands' });
+    await panel
+      .getByRole('button', { name: '/approve →', exact: true })
+      .click();
+    await panel
+      .getByRole('button', {
+        name: 'Record approval for one retry',
+        exact: true,
+      })
+      .click();
+    await expect(
+      panel
+        .getByRole('group', { name: 'Review command change' })
+        .locator('pre'),
+    ).toHaveText(rationale);
+    const confirm = panel.getByRole('button', {
+      name: 'ENTER APPLY',
+      exact: true,
+    });
+    await expect(confirm).toBeVisible();
+    expect(commits).toBe(0);
+    if (apply === 'click') await confirm.click();
+    else
+      await panel
+        .getByRole('group', { name: 'Review command change' })
+        .press('Enter');
+    await expect.poll(() => commits).toBe(1);
+  });
 
 test('slash commands discover help and require a separate confirmation', async ({
   page,

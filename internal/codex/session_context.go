@@ -26,6 +26,8 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
+	Reviewer                string
+	AutoReview              SessionAutoReview
 	fileApprovalRecoverable bool
 	fileApprovalFetches     uint8
 	RequiredHumanApproval   bool

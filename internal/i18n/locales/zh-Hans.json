@@ -1,4 +1,7 @@
 {
+  "AUTO REVIEWING": "正在自动审核",
+  "REVIEW // HUMAN": "审核 // 人工",
+  "REVIEW // AUTO": "审核 // 自动",
   "HOOK DENIED": "钩子已拒绝",
   "PURSUING GOAL": "正在推进目标",
   "GOAL STALLED": "目标已停滞",

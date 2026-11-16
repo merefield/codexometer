@@ -414,6 +414,25 @@
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
+  {#if session.reviewer}<p class="muted">
+      REVIEW // {session.reviewer === 'auto_review' ? 'AUTO' : 'HUMAN'}
+    </p>{/if}
+  {#if session.autoReview}
+    <h3>
+      {session.autoReview.status === 'inProgress'
+        ? 'AUTO REVIEWING'
+        : 'AUTO REVIEW'}
+    </h3>
+    <p>
+      {session.autoReview.status}
+      {session.autoReview.risk ? `// Risk: ${session.autoReview.risk}` : ''}
+      {session.autoReview.authorization
+        ? `// User authorisation: ${session.autoReview.authorization}`
+        : ''}
+    </p>
+    <pre>{session.autoReview.action}</pre>
+    <p>{session.autoReview.rationale}</p>
+  {/if}
   {#if session.currentTask}
     <h3>
       {session.contextKind === 'LAST REPLY' && !session.streaming

@@ -59,7 +59,7 @@ func commandMenuPath(path string) string {
 
 func cacheableCommandPath(path string) bool {
 	// Typed names and paths are short-lived reviews, not catalogue branches.
-	if _, _, input := SessionCommandInputValue(path); input || strings.HasPrefix(path, "goal ") {
+	if _, _, input := SessionCommandInputValue(path); input || strings.HasPrefix(path, "goal ") || strings.HasPrefix(path, "permissions ") || strings.HasPrefix(path, "permissions/apply/") {
 		return false
 	}
 	return ValidSessionCommandPath(path) && !strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "rename/") &&

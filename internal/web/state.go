@@ -24,6 +24,8 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	Reviewer              string                        `json:"reviewer,omitempty"`
+	AutoReview            *codex.SessionAutoReview      `json:"autoReview,omitempty"`
 	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	ReadStateKnown        bool                          `json:"readStateKnown,omitempty"`
@@ -66,6 +68,16 @@ type goal struct {
 	TokensUsed      int64  `json:"tokensUsed"`
 	TimeUsedSeconds int64  `json:"timeUsedSeconds"`
 	Stale           bool   `json:"stale"`
+}
+
+func projectAutoReview(r codex.SessionAutoReview) *codex.SessionAutoReview {
+	if r.ID == "" {
+		return nil
+	}
+	for _, value := range []*string{&r.ID, &r.Status, &r.Risk, &r.Authorization, &r.Action, &r.Rationale} {
+		*value = codex.SanitizeSessionContext(*value)
+	}
+	return &r
 }
 
 func projectGoal(observed *codex.SessionGoal) *goal {
@@ -348,6 +360,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				}
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
+				Reviewer: codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: projectAutoReview(row.Context.AutoReview),
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
 				ApprovalReview: row.Context.ActionReview(),
 				MCPTool:        mcpTool,

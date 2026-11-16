@@ -405,6 +405,13 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		appendPriority(model)
 	}
 	priorityRows := len(lines)
+	if reviewer := session.preview.Reviewer; reviewer != "" {
+		label := "REVIEW // HUMAN"
+		if reviewer == "auto_review" {
+			label = "REVIEW // AUTO"
+		}
+		appendLine(i18n.Text(label))
+	}
 	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
 		appendLine(estimate)
 	}
@@ -496,6 +503,9 @@ func (m Model) renderMonitorSessionBadge(session monitorSession, width int, colo
 		badgeLabel = monitorSessionAttentionLabel(session)
 	} else if m.sessionObservedWorking(session) {
 		badgeLabel = i18n.Text("WORKING")
+		if session.preview.AutoReview.Active() {
+			badgeLabel = i18n.Text("AUTO REVIEWING")
+		}
 	}
 	if badgeLabel != "" {
 		badgeColor := colors.primary
