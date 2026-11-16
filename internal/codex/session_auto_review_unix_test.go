@@ -292,3 +292,110 @@ func TestNativePermissionArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeHumanWaitGuards(t *testing.T) {
+	for _, kind := range []string{"overflow", "approval", "input", "fresh-read-approval", "fresh-read-input", "arrives-during-settings-read"} {
+		t.Run(kind, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			configureNativePermissions(f)
+			ctx := context.Background()
+			menu, err := p.SessionCommands(ctx, "one", "permissions/reviewer")
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.mu.Lock()
+			p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification("denial", "denied", 1))
+			p.mu.Unlock()
+			retry, err := p.SessionCommands(ctx, "one", "approve/denial")
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.mu.Lock()
+			switch kind {
+			case "overflow":
+				p.contexts = map[string]*daemonContextState{"one": {requests: map[string]SessionContext{}, approvalsLimited: true}}
+			case "approval":
+				p.statuses = map[string]sessionRuntimeStatus{"one": sessionRuntimeApproval}
+			case "input":
+				p.statuses = map[string]sessionRuntimeStatus{"one": sessionRuntimeInput}
+			}
+			p.mu.Unlock()
+			f.mu.Lock()
+			switch kind {
+			case "fresh-read-approval":
+				f.commandStatus = "active"
+				f.commandFlags = []string{"waitingOnApproval"}
+			case "fresh-read-input":
+				f.commandStatus = "active"
+				f.commandFlags = []string{"waitingOnUserInput"}
+			case "arrives-during-settings-read":
+				reads := 0
+				f.resumeReadHook = func() {
+					reads++
+					if reads == 3 {
+						p.mu.Lock()
+						p.contexts = map[string]*daemonContextState{"one": {approvalsLimited: true}}
+						p.mu.Unlock()
+					}
+				}
+			}
+			f.mu.Unlock()
+			if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err == nil {
+				t.Fatal("permission change crossed pending human checkpoint")
+			}
+			if err := p.ExecuteSessionCommand(ctx, "one", retry.Path, retry.Revision, retry.Choices[0].ID); err == nil {
+				t.Fatal("retry consent crossed pending human checkpoint")
+			}
+			f.mu.Lock()
+			writes, retries := len(f.writes), len(f.denialWrites)
+			f.mu.Unlock()
+			p.mu.Lock()
+			retained := len(p.autoReviews["one"].denials)
+			p.mu.Unlock()
+			if writes != 0 || retries != 0 || retained != 1 {
+				t.Fatalf("mutated/reserved before guard: writes=%d retries=%d retained=%d", writes, retries, retained)
+			}
+		})
+	}
+}
+
+func TestNativeReviewConnectionAdmissionBound(t *testing.T) {
+	p := &daemonStatusProvider{}
+	for i := range 300 {
+		var n map[string]any
+		_ = json.Unmarshal(reviewNotification("denial", "denied", 1), &n)
+		n["threadId"] = fmt.Sprintf("thread-%d", i)
+		data, _ := json.Marshal(n)
+		p.autoReviewNotificationLocked("item/autoApprovalReview/completed", data)
+	}
+	if len(p.autoReviews) != 256 {
+		t.Fatalf("unbounded connection ledger: %d", len(p.autoReviews))
+	}
+	if p.autoReviews["thread-0"] == nil || p.autoReviews["thread-299"] != nil {
+		t.Fatal("admission evicted existing consent history")
+	}
+	p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification("update", "denied", 2))
+	if len(p.autoReviews) != 256 {
+		t.Fatal("admission cap exceeded on subsequent event")
+	}
+}
+
+func TestNativeReviewProjectionKeepsRootOwnership(t *testing.T) {
+	now := time.Now()
+	r := &LiveUsageReader{files: map[string]*rolloutCursor{
+		"root":  {threadID: "root", lastModified: now},
+		"child": {threadID: "child", parentThreadID: "root", nonRoot: true, lastModified: now},
+	}, daemonContexts: map[string]SessionContext{
+		"root":  {ThreadID: "root", Text: "Root working", Kind: SessionContextActivity, At: now, AutoReview: SessionAutoReview{ID: "root-review", Status: "denied"}},
+		"child": {ThreadID: "child", Text: "Child working", Kind: SessionContextActivity, At: now.Add(time.Second), AutoReview: SessionAutoReview{ID: "child-review", Status: "inProgress"}},
+	}}
+	rows, _, _ := r.sessionSnapshots(now, nil, true, map[string]sessionRuntimeStatus{"root": sessionRuntimeWorking, "child": sessionRuntimeWorking})
+	if len(rows) != 1 || rows[0].Context.AutoReview.ID != "root-review" {
+		t.Fatalf("child assessment crossed command routing ownership: %+v", rows)
+	}
+	delete(r.daemonContexts, "root")
+	rows, _, _ = r.sessionSnapshots(now, nil, true, nil)
+	if len(rows) != 1 || rows[0].Context.AutoReview.ID != "" {
+		t.Fatal("child-only assessment projected onto root")
+	}
+}

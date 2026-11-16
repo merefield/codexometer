@@ -1536,16 +1536,11 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			if live, ok := r.daemonContexts[cursor.threadID]; ok {
 				preview.Reviewer, preview.AutoReview = live.Reviewer, live.AutoReview
 			}
-			review := group.Context.AutoReview
-			if preview.AutoReview.Active() || review.ID == "" {
-				review = preview.AutoReview
-			}
 			pending := group.Context.PendingApprovals + preview.PendingApprovals
 			limited := group.Context.PendingApprovalsLimited || preview.PendingApprovalsLimited
 			group.Context = preferSessionContext(group.Context, preview)
 			group.Context.PendingApprovals = pending
 			group.Context.PendingApprovalsLimited = limited
-			group.Context.AutoReview = review
 		}
 		groupWorking[rootID] = groupWorking[rootID] || exactWorking || localWorking
 		// CHECK SESSION is only an inactivity inference. A freshly writing
@@ -1575,9 +1570,9 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	anyWorking := false
 	for _, session := range groups {
 		session.Context.Reviewer = r.daemonContexts[session.ID].Reviewer
-		if review := r.daemonContexts[session.ID].AutoReview; review.ID != "" && (review.Active() || session.Context.AutoReview.ID == "") {
-			session.Context.AutoReview = review
-		}
+		// /approve routes to this root thread. Do not project another thread's
+		// assessment here until command routing can preserve its ownership too.
+		session.Context.AutoReview = r.daemonContexts[session.ID].AutoReview
 		session.AttachedToThreadID = r.daemonAttachments[session.ID]
 		session.Goal = r.daemonGoals[session.ID].Clone()
 		session.ReadState = r.daemonReadStates[session.ID]

@@ -1653,6 +1653,104 @@ test('changed requests, stale data and navigation invalidate browser confirmatio
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
 });
 
+test('inline permission Enter is consumed and guarded during review', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const paths: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.command.mode === 'prepare') {
+      await route.fulfill({
+        json: {
+          confirmation: 'permission-token',
+          expires: new Date(Date.now() + 30000).toISOString(),
+        },
+      });
+      return;
+    }
+    paths.push(body.command.path);
+    const applying = body.command.path.startsWith('permissions ');
+    await route.fulfill({
+      json: {
+        title: '/permissions',
+        help: 'Native reviewer options',
+        path: applying ? 'permissions/apply/review' : '',
+        revision: 'r',
+        inputReview: applying,
+        choices: applying
+          ? [
+              {
+                id: 'apply',
+                label: 'Apply native permissions',
+                help: 'Reviewer: auto_review',
+                action: true,
+              },
+            ]
+          : [
+              {
+                id: 'permissions',
+                label: '/permissions',
+                help: 'Native settings',
+                next: 'permissions',
+              },
+            ],
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const editor = page
+    .locator('.detail-workspace')
+    .getByRole('textbox', { name: 'Follow-up message' });
+  const command = '/permissions :workspace --reviewer=auto_review';
+  await editor.fill(command);
+  await expect.poll(() => paths.length).toBeGreaterThan(0);
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await expect(
+    panel.getByText('No available matching commands.', { exact: true }),
+  ).toBeVisible();
+  const heldEnter = await editor.evaluate((element) => {
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(heldEnter).toBe(true);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(0);
+  await editor.press('Enter');
+  await expect(
+    panel.getByRole('button', { name: 'C CONFIRM CHANGE', exact: true }),
+  ).toBeVisible();
+  await expect(editor).toHaveValue(command);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+  await panel
+    .getByRole('group', { name: 'Review command change' })
+    .press('Enter');
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+  const repeated = await panel
+    .getByRole('group', { name: 'Review command change' })
+    .evaluate((element) => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  expect(repeated).toBe(true);
+  expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
+});
+
 test('slash commands discover help and require a separate confirmation', async ({
   page,
   pairingURL,

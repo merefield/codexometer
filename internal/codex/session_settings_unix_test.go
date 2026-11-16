@@ -21,6 +21,7 @@ type quotaDaemonFixture struct {
 	reviewers         map[string]string
 	ignorePermissions bool
 	denialWrites      []map[string]any
+	resumeReadHook    func()
 
 	readReceipts     map[string]map[string]any
 	readUpdates      []map[string]any
@@ -169,6 +170,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				result["data"] = ids
 			case "thread/resume":
+				if fixture.resumeReadHook != nil {
+					fixture.resumeReadHook()
+				}
 				fixture.resumeReads = append(fixture.resumeReads, req.Params)
 				s, ok := fixture.sessions[id]
 				failure = !ok || fixture.fail == id

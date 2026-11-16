@@ -1920,8 +1920,13 @@ Approve. Actual mandatory human checkpoints keep their normal controls and pills
 Auto-review consumes model resources and is not a guarantee that only low-risk
 actions can pass: Codex owns the policy and final decision.
 
+Assessment display and `/approve` are scoped to the root thread represented by
+the session row; linked-agent assessments are not attributed to that root.
 `/approve` retains up to ten recent, fully representable denials **per thread,
-in memory for the current shared-server connection**. Read the complete action
+in memory for the current shared-server connection**.
+The connection admits at most 256 review ledgers without evicting spent-consent
+history to make room for another thread. Denial consent in the terminal opens a
+full scrollable review rather than a truncated composer popup. Read the complete action
 and rationale before recording one retry. This is native consent context, not
 direct execution or a policy override; a critical denial can still be denied.
 Sent or uncertain consent is removed rather than automatically retried, and

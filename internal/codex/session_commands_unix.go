@@ -23,8 +23,11 @@ type commandModel struct {
 
 type commandThread struct {
 	ID, Cwd, Name string
-	Status        struct{ Type string }
-	Environments  []struct {
+	Status        struct {
+		Type        string
+		ActiveFlags []string
+	}
+	Environments []struct {
 		EnvironmentID string `json:"environmentId"`
 	}
 }
@@ -192,6 +195,8 @@ func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path str
 }
 
 func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path string, menu SessionCommandMenu) SessionCommandMenu {
+	state := parseSessionRuntimeStatus(thread.Status.Type, thread.Status.ActiveFlags)
+	menu.humanWait = state == sessionRuntimeApproval || state == sessionRuntimeInput
 	menu.Path = path
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
@@ -495,6 +500,9 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 	}
 	for _, o := range m.Choices {
 		if o.ID == choice && o.Action {
+			if m.humanWait && (m.permissions != nil || o.method == "thread/approveGuardianDeniedAction") {
+				return ErrSessionCommand
+			}
 			if strings.HasPrefix(o.method, "thread/goal/") {
 				return p.executeGoalCommand(ctx, conn, id, o)
 			}
@@ -504,7 +512,7 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 			_, hasTier := o.params["serviceTier"]
 			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
 			p.mu.Lock()
-			valid := p.connection == conn && (speedOnly || o.method == "thread/name/set" || p.contexts[id] == nil || len(p.contexts[id].requests) == 0)
+			valid := p.connection == conn && (speedOnly || o.method == "thread/name/set" || !p.commandHumanWaitLocked(id))
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand

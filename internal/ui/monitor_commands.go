@@ -264,6 +264,12 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		cmd := m.navigateMonitorCommands(o.Next)
 		return m, cmd, true
 	}
+	if o.Action && strings.HasPrefix(m.monitorCommands.menu.Path, "approve/") {
+		// Exact-action consent must expose the complete scrollable document,
+		// not the bounded inline preview over the composer.
+		m.monitorCommands.inline = false
+		m.monitorPrompt.input.Blur()
+	}
 	if o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
 		return m.executeMonitorCommand(o)
 	}

@@ -12,10 +12,23 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Caller holds p.mu. An overflowed inventory is not evidence that all human
+// checkpoints have resolved, even after the retained requests drain.
+func (p *daemonStatusProvider) commandHumanWaitLocked(id string) bool {
+	state := p.contexts[id]
+	return state != nil && (len(state.requests) > 0 || state.approvalsLimited) || p.statuses[id] == sessionRuntimeApproval || p.statuses[id] == sessionRuntimeInput
+}
+
 // A settings acknowledgement means queued. Read the loaded thread without
 // overrides until native permission provenance confirms the chosen profile.
 // This neither waits under the event-state lock nor retries the mutation.
 func (p *daemonStatusProvider) writeVerifiedPermissions(ctx context.Context, conn *websocket.Conn, id, permission string, params map[string]any) error {
+	p.mu.Lock()
+	allowed := p.connection == conn && !p.commandHumanWaitLocked(id)
+	p.mu.Unlock()
+	if !allowed {
+		return ErrSessionCommand
+	}
 	if err := p.requestOn(ctx, conn, "thread/settings/update", params, nil); err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"strings"
 	"testing"
 
@@ -37,5 +38,31 @@ func TestMonitorNativeReviewPreservesConversationAndHumanApproval(t *testing.T) 
 	metrics := ansi.Strip(m.renderMonitorSessionMetrics(48, 16, *s, "", paletteFor(m.theme)))
 	if !strings.Contains(metrics, i18n.Text("REVIEW // AUTO")) {
 		t.Fatal("missing reviewer metadata", metrics)
+	}
+}
+
+func TestNativeDenialConsentUsesScrollableReview(t *testing.T) {
+	m, f := commandTestModel(t)
+	m.monitorCommands.inline = true
+	m.monitorCommands.menu.Path = "approve/denial"
+	m.monitorCommands.menu.Choices[0].Help = strings.Repeat("Review this action carefully.\n", 100) + "FINAL RATIONALE SENTINEL"
+	m.monitorPrompt.input.Focus()
+	next, cmd, _ := m.chooseMonitorCommand()
+	if cmd != nil || f.calls != 0 || next.monitorCommands.inline || !next.monitorCommands.detail || next.monitorPrompt.input.Focused() {
+		t.Fatal("retry consent retained truncated inline review or sent early")
+	}
+	var visible strings.Builder
+	for i := 0; i < 20; i++ {
+		for _, row := range next.monitorCommandRows(80, 20) {
+			visible.WriteString(row.text)
+			visible.WriteByte('\n')
+		}
+		next, cmd, _ = next.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyPgDown})
+		if cmd != nil {
+			t.Fatal("scrolling sent a retry")
+		}
+	}
+	if !strings.Contains(visible.String(), "FINAL RATIONALE SENTINEL") {
+		t.Fatal("complete retry rationale cannot be reached by scrolling")
 	}
 }

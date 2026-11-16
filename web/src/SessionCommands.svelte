@@ -262,14 +262,6 @@
       return;
     if (
       event.key === 'Enter' &&
-      (menu?.path === '' || menu?.path === 'permissions') &&
-      /^\/permissions\s+\S/.test(query.trim())
-    ) {
-      void navigate(query.trim().slice(1));
-      return;
-    }
-    if (
-      event.key === 'Enter' &&
       event.target instanceof Element &&
       event.target.closest('button') &&
       !optionList?.contains(event.target) &&
@@ -301,6 +293,14 @@
       if (event.key === 'Enter' && selected.action && !reviewed && !notice)
         void reviewChoice(selected);
       return; // Repeated Enter never confirms a reviewed change.
+    }
+    if (
+      event.key === 'Enter' &&
+      (menu?.path === '' || menu?.path === 'permissions') &&
+      /^\/permissions\s+\S/.test(query.trim())
+    ) {
+      void navigate(query.trim().slice(1));
+      return;
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       highlight(

@@ -144,6 +144,11 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 	}
 	s := p.autoReviews[n.ThreadID]
 	if s == nil {
+		// Never evict a live connection's spent-consent ledger to admit another
+		// thread. Like context tracking, stop admission at a fixed global cap.
+		if len(p.autoReviews) >= 256 {
+			return
+		}
 		s = &autoReviewState{consumed: map[string]int64{}, running: map[string]nativeAutoReview{}, finished: map[string]int64{}}
 		p.autoReviews[n.ThreadID] = s
 	}
@@ -205,7 +210,7 @@ func (p *daemonStatusProvider) approveAutoReview(ctx context.Context, conn *webs
 	p.mu.Lock()
 	s := p.autoReviews[id]
 	valid := false
-	if p.connection == conn && s != nil && (p.contexts[id] == nil || len(p.contexts[id].requests) == 0) {
+	if p.connection == conn && s != nil && !p.commandHumanWaitLocked(id) {
 		for i, r := range s.denials {
 			if r.started > s.consumedThrough && commandDigest(r.event) == commandDigest(o.params["event"]) {
 				// Reserve before the RPC. Lost acknowledgements never trigger a retry.
