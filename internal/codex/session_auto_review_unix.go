@@ -24,10 +24,11 @@ type nativeAutoReview struct {
 	details string
 }
 type autoReviewState struct {
-	latest   nativeAutoReview
-	denials  []nativeAutoReview
-	running  map[string]nativeAutoReview
-	finished map[string]int64
+	latest          nativeAutoReview
+	denials         []nativeAutoReview
+	running         map[string]nativeAutoReview
+	finished        map[string]int64
+	finishedThrough int64
 	// IDs are not reusable after ambiguous writes. Bounded by the denial
 	// inventory; replayed notifications must not recreate spent capabilities.
 	consumed        map[string]int64
@@ -153,7 +154,7 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 		p.autoReviews[n.ThreadID] = s
 	}
 	if r.view.Active() {
-		if _, ended := s.finished[r.view.ID]; ended || s.consumed[r.view.ID] != 0 || r.started <= s.consumedThrough {
+		if _, ended := s.finished[r.view.ID]; ended || s.consumed[r.view.ID] != 0 || r.started <= s.consumedThrough || r.started <= s.finishedThrough {
 			return
 		}
 		if state := p.contexts[n.ThreadID]; state != nil && (state.ended || state.activeTurn != "" && state.activeTurn != n.TurnID) {
@@ -165,7 +166,7 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 	} else {
 		delete(s.running, r.view.ID)
 		s.finished[r.view.ID] = r.started
-		pruneReviewIDs(s.finished)
+		s.finishedThrough = max(s.finishedThrough, pruneReviewIDs(s.finished))
 	}
 	if r.started >= s.latest.started && !(s.latest.view.ID == r.view.ID && !s.latest.view.Active() && r.view.Active()) {
 		s.latest = r

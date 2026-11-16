@@ -119,8 +119,11 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if p.busy || p.notice != "" {
 				return m, nil, true
 			}
-			if p.menu.Path == "permissions" && !p.detail && strings.Contains(m.commandQuery(), "--") {
-				return m.openMonitorCommands("permissions " + m.commandQuery())
+			if p.menu.Path == "permissions" && !p.detail && m.commandQuery() != "" {
+				_, matching := m.commandChoice()
+				if strings.Contains(m.commandQuery(), "--") || !matching {
+					return m.openMonitorCommands("permissions " + m.commandQuery())
+				}
 			}
 			if p.menu.Path == "goal" && !p.detail && m.commandQuery() != "" {
 				if choice, ok := m.commandChoice(); ok && strings.EqualFold(m.commandQuery(), choice.Label) {

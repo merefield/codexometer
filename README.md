@@ -1926,7 +1926,11 @@ the session row; linked-agent assessments are not attributed to that root.
 in memory for the current shared-server connection**.
 The connection admits at most 256 review ledgers without evicting spent-consent
 history to make room for another thread. Denial consent in the terminal opens a
-full scrollable review rather than a truncated composer popup. Read the complete action
+full scrollable review rather than a truncated composer popup, even with
+`--confirmation none`: the next explicit Apply action records consent. Writable
+web likewise exposes the full denial before allowing consent. Editing a browser
+permission command invalidates its prepared review and requires fresh review of
+the edited arguments. Read the complete action
 and rationale before recording one retry. This is native consent context, not
 direct execution or a policy override; a critical denial can still be denied.
 Sent or uncertain consent is removed rather than automatically retried, and

@@ -63,6 +63,25 @@ func TestNativeConcurrentReviewsRemainActive(t *testing.T) {
 	}
 }
 
+func TestNativeCompletedWatermarkRejectsEvictedLateStart(t *testing.T) {
+	p := &daemonStatusProvider{}
+	for i := 1; i <= 129; i++ {
+		p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification(fmt.Sprint(i), "approved", int64(i)))
+	}
+	s := p.autoReviews["one"]
+	if len(s.finished) != 128 || s.finishedThrough != 1 {
+		t.Fatalf("missing completed watermark: %d / %d", len(s.finished), s.finishedThrough)
+	}
+	p.autoReviewNotificationLocked("item/autoApprovalReview/started", reviewNotification("1", "inProgress", 1))
+	if len(s.running) != 0 || s.display().Active() {
+		t.Fatal("evicted completed review resurrected")
+	}
+	p.autoReviewNotificationLocked("item/autoApprovalReview/started", reviewNotification("new", "inProgress", 130))
+	if !s.display().Active() {
+		t.Fatal("watermark blocked a genuinely new review")
+	}
+}
+
 func TestNativeDenialReviewNeverUsesClippedTelemetry(t *testing.T) {
 	p := &daemonStatusProvider{}
 	var n map[string]any

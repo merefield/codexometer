@@ -1751,6 +1751,197 @@ test('inline permission Enter is consumed and guarded during review', async ({
   expect(paths.filter((p) => p === command.slice(1))).toHaveLength(1);
 });
 
+for (const pending of [false, true])
+  test(`editing inline permissions invalidates ${pending ? 'in-flight' : 'prepared'} review`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page, 'prompt');
+    const original = '/permissions :workspace --reviewer=auto_review';
+    const edited = '/permissions :workspace --reviewer=user';
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let preparations = 0;
+    const commits: string[] = [];
+    await page.route('**/api/control/commands', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.command.mode === 'prepare') {
+        preparations++;
+        if (pending && preparations === 1) await gate;
+        await route.fulfill({
+          json: {
+            confirmation: `token-${preparations}`,
+            expires: new Date(Date.now() + 30000).toISOString(),
+          },
+        });
+        return;
+      }
+      if (body.command.mode === 'commit') {
+        commits.push(body.command.path);
+        await route.fulfill({
+          json: { message: 'Native permissions updated.' },
+        });
+        return;
+      }
+      const path = body.command.path;
+      const applying = path.startsWith('permissions ');
+      await route.fulfill({
+        json: {
+          title: '/permissions',
+          help: 'Native permission review',
+          path: applying
+            ? 'permissions/apply/' +
+              encodeURIComponent(path.slice('permissions '.length))
+            : '',
+          revision: path,
+          inputReview: applying,
+          choices: applying
+            ? [
+                {
+                  id: 'apply',
+                  label: 'Apply native permissions',
+                  help: 'Requested: ' + path,
+                  action: true,
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const editor = page
+      .locator('.detail-workspace')
+      .getByRole('textbox', { name: 'Follow-up message' });
+    const panel = page.getByRole('region', { name: 'Session slash commands' });
+    const confirm = panel.getByRole('button', {
+      name: 'C CONFIRM CHANGE',
+      exact: true,
+    });
+    await editor.fill(original);
+    await expect(
+      panel.getByText('No available matching commands.', { exact: true }),
+    ).toBeVisible();
+    await editor.press('Enter');
+    await expect.poll(() => preparations).toBe(1);
+    if (!pending) await expect(confirm).toBeVisible();
+    await editor.fill(edited);
+    await expect(
+      panel.getByText('No available matching commands.', { exact: true }),
+    ).toBeVisible();
+    await expect(confirm).toHaveCount(0);
+    if (pending) {
+      const late = page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/control/commands') &&
+          response.request().postDataJSON().command.mode === 'prepare',
+      );
+      release();
+      await late;
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      await expect(confirm).toHaveCount(0);
+    }
+    expect(commits).toHaveLength(0);
+    await editor.press('Enter');
+    await expect(confirm).toBeVisible();
+    await expect(
+      panel.getByText('Requested: ' + edited.slice(1), { exact: true }),
+    ).toBeVisible();
+    await confirm.click();
+    await expect
+      .poll(() => commits)
+      .toEqual([
+        'permissions/apply/' +
+          encodeURIComponent(edited.slice('/permissions '.length)),
+      ]);
+  });
+
+for (const apply of ['click', 'enter'] as const)
+  test(`no-confirm native retry still exposes full denial before consent (${apply})`, async ({
+    page,
+    pairingURL,
+  }) => {
+    await mockActions(page, 'prompt', true);
+    let commits = 0;
+    const rationale =
+      'Denied action context.\n'.repeat(100) + 'FINAL NATIVE RATIONALE';
+    await page.route('**/api/control/commands', async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.command.mode === 'prepare') {
+        await route.fulfill({
+          json: {
+            confirmation: 'retry-token',
+            expires: new Date(Date.now() + 30000).toISOString(),
+          },
+        });
+        return;
+      }
+      if (body.command.mode === 'commit') {
+        commits++;
+        await route.fulfill({ json: { message: 'Retry consent recorded.' } });
+        return;
+      }
+      const root = body.command.path === '';
+      await route.fulfill({
+        json: {
+          title: '/approve',
+          help: 'One exact retry; native review still applies.',
+          path: root ? '' : 'approve/denial',
+          revision: 'r',
+          choices: root
+            ? [{ id: 'approve', label: '/approve', next: 'approve/denial' }]
+            : [
+                {
+                  id: 'retry',
+                  label: 'Record approval for one retry',
+                  help: rationale,
+                  action: true,
+                },
+              ],
+        },
+      });
+    });
+    await page.goto(pairingURL);
+    await page.evaluate(() => {
+      location.hash = '/sessions/parent';
+    });
+    const editor = page
+      .locator('.detail-workspace')
+      .getByRole('textbox', { name: 'Follow-up message' });
+    await editor.fill('/');
+    const panel = page.getByRole('region', { name: 'Session slash commands' });
+    await panel
+      .getByRole('button', { name: '/approve →', exact: true })
+      .click();
+    await panel
+      .getByRole('button', {
+        name: 'Record approval for one retry',
+        exact: true,
+      })
+      .click();
+    await expect(
+      panel
+        .getByRole('group', { name: 'Review command change' })
+        .locator('pre'),
+    ).toHaveText(rationale);
+    const confirm = panel.getByRole('button', {
+      name: 'ENTER APPLY',
+      exact: true,
+    });
+    await expect(confirm).toBeVisible();
+    expect(commits).toBe(0);
+    if (apply === 'click') await confirm.click();
+    else
+      await panel
+        .getByRole('group', { name: 'Review command change' })
+        .press('Enter');
+    await expect.poll(() => commits).toBe(1);
+  });
+
 test('slash commands discover help and require a separate confirmation', async ({
   page,
   pairingURL,

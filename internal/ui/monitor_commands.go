@@ -269,6 +269,10 @@ func (m Model) chooseMonitorCommand() (Model, tea.Cmd, bool) {
 		// not the bounded inline preview over the composer.
 		m.monitorCommands.inline = false
 		m.monitorPrompt.input.Blur()
+		m.monitorCommands.detail = true
+		m.monitorCommands.scroll = 0
+		m.monitorCommands.until = time.Now().Add(30 * time.Second)
+		return m, nil, true
 	}
 	if o.Action && !m.confirmations.Required(confirmation.Command(o.Reversible)) {
 		return m.executeMonitorCommand(o)
@@ -547,7 +551,16 @@ func (m Model) commandFooter(width int) []commandDisplayRow {
 		buttons = append(buttons, commandDisplayRow{text: i18n.Text(label), action: "confirm"})
 	} else if o, ok := m.commandChoice(); ok && o.Action && !p.busy && p.notice == "" {
 		if !m.confirmations.Required(confirmation.Command(o.Reversible)) {
-			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ ENTER APPLY ]"), action: "stage"})
+			action := "stage"
+			label := "[ ENTER APPLY ]"
+			if strings.HasPrefix(p.menu.Path, "approve/") {
+				if p.detail && time.Now().Before(p.until) {
+					action = "confirm"
+				} else {
+					label = "[ ENTER REVIEW ]"
+				}
+			}
+			buttons = append(buttons, commandDisplayRow{text: i18n.Text(label), action: action})
 		} else if (p.detail || (p.menu.Picker && p.reviewedChoice == o.ID)) && time.Now().Before(p.until) {
 			buttons = append(buttons, commandDisplayRow{text: i18n.Text("[ C CONFIRM ]"), action: "confirm"})
 		} else {
@@ -889,6 +902,9 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			if !p.detail {
 				return m.chooseMonitorCommand()
+			}
+			if key.String() == "enter" && strings.HasPrefix(p.menu.Path, "approve/") && !m.confirmations.Required(confirmation.Command(false)) {
+				return m.confirmMonitorCommand()
 			}
 		case "c", "C":
 			return m.confirmMonitorCommand()

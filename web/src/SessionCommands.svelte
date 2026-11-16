@@ -1,6 +1,6 @@
 <script lang="ts">
   import { requiresConfirmation } from './confirmation';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { controlRequest, live } from './state.svelte';
   import { statusLineUI, themeUI } from './preferences.svelte';
   import { sessionCopyText } from './session-copy';
@@ -45,6 +45,7 @@
     };
   }
   function resetNavigation() {
+    reviewDraft = null;
     confirmation = '';
     stagedChoice = '';
     expires = 0;
@@ -99,6 +100,24 @@
   let commandPanel: HTMLDivElement | undefined = $state();
   let reviewPanel: HTMLDivElement | undefined = $state();
   let stagedChoice = $state('');
+  let reviewDraft = $state<string | null>(null);
+  function draftMatches() {
+    return reviewDraft === null || reviewDraft === query;
+  }
+  function invalidateDraftReview() {
+    request++;
+    busy = false;
+    selected = null;
+    menu = null;
+    notice = '';
+    resetNavigation();
+    if (open) void load('');
+  }
+  $effect(() => {
+    const draft = query;
+    const source = reviewDraft;
+    if (source !== null && source !== draft) untrack(invalidateDraftReview);
+  });
   interface Level {
     path: string;
     index: number;
@@ -290,9 +309,21 @@
       return;
     }
     if (selected) {
+      if (
+        event.key === 'Enter' &&
+        reviewed &&
+        menu?.path.startsWith('approve/') &&
+        !requiresConfirmation(
+          live.data?.confirmationMode,
+          !!selected.reversible,
+        )
+      ) {
+        void commit();
+        return;
+      }
       if (event.key === 'Enter' && selected.action && !reviewed && !notice)
         void reviewChoice(selected);
-      return; // Repeated Enter never confirms a reviewed change.
+      return; // Other reviewed changes still require C or a click.
     }
     if (
       event.key === 'Enter' &&
@@ -370,6 +401,14 @@
     }
   });
   async function load(path: string, restore?: Level, refresh = false) {
+    if (!draftMatches()) {
+      invalidateDraftReview();
+      return;
+    }
+    reviewDraft =
+      path.startsWith('permissions ') || path.startsWith('permissions/apply/')
+        ? query
+        : null;
     const seq = ++request;
     if (menu) menu = { ...menu, path };
     if (restore) name = restore.input;
@@ -390,7 +429,7 @@
         session,
         command: { mode: 'list', path, ...(refresh ? { refresh: true } : {}) },
       });
-      if (seq === request) {
+      if (seq === request && draftMatches()) {
         result.choices ||= [];
         if (path === '' || path === 'help')
           result.choices = [
@@ -460,9 +499,27 @@
     await reviewChoice(o);
   }
   async function reviewChoice(o: Choice) {
-    if (busy || unavailable || !menu || o.unavailable || notice) return;
+    if (
+      busy ||
+      unavailable ||
+      !menu ||
+      o.unavailable ||
+      notice ||
+      !draftMatches()
+    )
+      return;
+    if (
+      menu.path.startsWith('approve/') &&
+      selected?.id === o.id &&
+      reviewed &&
+      !requiresConfirmation(live.data?.confirmationMode, !!o.reversible)
+    ) {
+      await commit();
+      return;
+    }
     const direct =
       o.action &&
+      !menu.path.startsWith('approve/') &&
       !requiresConfirmation(live.data?.confirmationMode, !!o.reversible);
     if (menu.picker) {
       if (reviewed && stagedChoice === o.id) return;
@@ -490,7 +547,7 @@
           choice: o.id,
         },
       });
-      if (seq === request) {
+      if (seq === request && draftMatches()) {
         const deadline = Date.parse(result.expires);
         if (
           !result.confirmation ||
@@ -509,12 +566,14 @@
     }
     // The user already chose the exact option. Retain both server-side phases
     // and their freshness/revision/replay checks without a redundant UI click.
-    if (direct && seq === request && confirmation) await commit();
+    if (direct && seq === request && confirmation && draftMatches())
+      await commit();
   }
 
   async function commit() {
     if (
       !confirmation ||
+      !draftMatches() ||
       unavailable ||
       busy ||
       Date.now() >= expires ||

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
 )
 
@@ -64,5 +65,62 @@ func TestNativeDenialConsentUsesScrollableReview(t *testing.T) {
 	}
 	if !strings.Contains(visible.String(), "FINAL RATIONALE SENTINEL") {
 		t.Fatal("complete retry rationale cannot be reached by scrolling")
+	}
+}
+
+func TestNativeDenialNoConfirmStillRequiresInspectThenApply(t *testing.T) {
+	m, f := commandTestModel(t)
+	m.SetConfirmationMode(confirmation.None)
+	m.monitorCommands.inline = true
+	m.monitorCommands.menu.Path = "approve/denial"
+	m.monitorPrompt.input.Focus()
+	m, cmd, _ := m.chooseMonitorCommand()
+	if cmd != nil || f.calls != 0 || !m.monitorCommands.detail || m.monitorCommands.inline {
+		t.Fatal("no-confirm skipped denial inspection")
+	}
+	visible := false
+	for _, b := range m.commandFooter(120) {
+		visible = visible || b.action == "confirm"
+	}
+	if !visible {
+		t.Fatal("no explicit Apply control on inspected denial")
+	}
+	m, cmd, _ = m.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("second explicit Enter did not send inspected consent")
+	}
+	_, _ = m.Update(cmd())
+	if f.calls != 1 {
+		t.Fatal("inspected retry consent not sent exactly once")
+	}
+}
+
+func TestInlinePermissionsQuotedProfileUsesNativeParser(t *testing.T) {
+	for _, query := range []string{"':workspace'", ":workspace", "Reviewer"} {
+		m, _ := commandTestModel(t)
+		p := &m.monitorCommands
+		p.inline = true
+		p.prefix = "/permissions "
+		p.menu.Path = "permissions"
+		p.menu.Choices = []codex.SessionCommandChoice{{Label: ":workspace", Action: true}, {Label: "Reviewer", Next: "permissions/reviewer"}}
+		m.monitorPrompt.input.SetValue(p.prefix + query)
+		m.monitorPrompt.input.Focus()
+		indices := m.commandChoiceIndices()
+		p.selected = -1
+		if len(indices) > 0 {
+			p.selected = indices[0]
+		}
+		next, cmd, _ := m.updateMonitorCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if query == "':workspace'" {
+			if cmd == nil || next.monitorCommands.menu.Path != "permissions "+query {
+				t.Fatal("quoted profile did not reach native parser")
+			}
+		} else if query == ":workspace" {
+			if cmd != nil || !next.monitorCommands.detail {
+				t.Fatal("matching profile selection changed")
+			}
+		} else if cmd == nil || next.monitorCommands.menu.Path != "permissions/reviewer" {
+			t.Fatal("matching submenu selection changed")
+		}
 	}
 }
