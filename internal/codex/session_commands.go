@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"strings"
@@ -73,7 +74,16 @@ type SessionCommandChoice struct {
 	params      map[string]any
 }
 
+type sessionPermissionSnapshot struct {
+	Cwd      string               `json:"cwd"`
+	Thread   struct{ ID string }  `json:"thread"`
+	Profile  *struct{ ID string } `json:"activePermissionProfile"`
+	Policy   json.RawMessage      `json:"approvalPolicy"`
+	Reviewer string               `json:"approvalsReviewer"`
+}
+
 type SessionCommandMenu struct {
+	permissions     *sessionPermissionSnapshot
 	settings        *QuotaSession // Fresh execution snapshot; never part of the wire menu.
 	ReversibleInput bool          `json:"reversibleInput,omitempty"`
 	Title           string        `json:"title"`
@@ -125,6 +135,26 @@ type CachedSessionCommandsClient interface {
 }
 
 var ErrSessionCommand = errors.New("command unavailable or session/options changed; reopen the command menu")
+
+// Shared acknowledgements describe the native operation, not inferred execution
+// of an approved action. Keep terminal and browser wording aligned.
+func SessionCommandSuccess(path string, speed bool) string {
+	family, _, _ := strings.Cut(path, "/")
+	switch family {
+	case "rename":
+		return "Session renamed."
+	case "cd":
+		return "Working directory changed."
+	case "goal":
+		return "Goal updated."
+	case "approve":
+		return "Approval recorded for one retry. The retry still goes through Auto-review."
+	}
+	if speed {
+		return "Session speed changed. Applies to subsequent turns."
+	}
+	return "Change requested. Codex will apply it to subsequent turns."
+}
 
 func IsSessionCommand(text string) bool {
 	text = strings.TrimSpace(text)

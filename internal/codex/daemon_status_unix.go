@@ -24,6 +24,8 @@ const (
 )
 
 type daemonStatusProvider struct {
+	autoReviews        map[string]*autoReviewState
+	permissionSettings map[string]string
 	readStates         map[string]readStateObservation
 	readStateVersion   uint64
 	humanApprovals     bool
@@ -100,7 +102,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 			if _, ok := loaded[threadID]; !ok || p.isSubscribed(threadID) {
 				continue
 			}
-			var resumed struct{ Cwd string }
+			var resumed struct{ Cwd, ApprovalsReviewer string }
 			if err := p.request(ctx, "thread/resume", map[string]any{
 				"threadId": threadID, "excludeTurns": true,
 			}, &resumed); err != nil {
@@ -108,6 +110,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 			}
 			p.mu.Lock()
 			p.subscribed[threadID] = struct{}{}
+			p.permissionSettings[threadID] = resumed.ApprovalsReviewer
 			if filepath.IsAbs(resumed.Cwd) {
 				p.threadDirectories[threadID] = resumed.Cwd
 			}
@@ -228,12 +231,24 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	for id, issue := range p.usageCoverage {
 		coverage[id] = issue
 	}
+	contexts := daemonContextSnapshot(p.contexts, threadIDs, statuses)
+	if contexts == nil {
+		contexts = map[string]SessionContext{}
+	}
+	for _, id := range threadIDs {
+		c := contexts[id]
+		c.Reviewer = p.permissionSettings[id]
+		if review := p.autoReviews[id]; review != nil {
+			c.AutoReview = review.display()
+		}
+		contexts[id] = c
+	}
 	return sessionDaemonSnapshot{
 		AttachedThreads:    attachments,
 		ReadStates:         readStates,
 		Goals:              goals,
 		UsageCoverage:      coverage,
-		Contexts:           daemonContextSnapshot(p.contexts, threadIDs, statuses),
+		Contexts:           contexts,
 		WorkingDirectories: directories,
 		Statuses:           statuses,
 		ModelObservations:  append([]resolvedModelObservation(nil), p.observations...),
@@ -347,6 +362,8 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.readStates = make(map[string]readStateObservation)
 	p.reroutedTurns = make(map[daemonTurnKey]string)
 	p.threadSettings = make(map[string]QuotaSession)
+	p.autoReviews = make(map[string]*autoReviewState)
+	p.permissionSettings = make(map[string]string)
 	p.threadDirectories = make(map[string]string)
 	p.threadAttachments = make(map[string]string)
 	p.settingsVersions = make(map[string]uint64)
@@ -540,6 +557,7 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 			p.queueRevision++
 		}
 		p.goalNotificationLocked(envelope.Method, envelope.Params)
+		p.autoReviewNotificationLocked(envelope.Method, envelope.Params)
 		p.readStateNotificationLocked(envelope.Method, envelope.Params)
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
@@ -572,17 +590,24 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 		var notification struct {
 			ThreadID       string `json:"threadId"`
 			ThreadSettings struct {
-				Cwd           string  `json:"cwd"`
-				Model         string  `json:"model"`
-				ModelProvider string  `json:"modelProvider"`
-				Effort        string  `json:"effort"`
-				ServiceTier   *string `json:"serviceTier"`
+				ApprovalsReviewer string  `json:"approvalsReviewer"`
+				Cwd               string  `json:"cwd"`
+				Model             string  `json:"model"`
+				ModelProvider     string  `json:"modelProvider"`
+				Effort            string  `json:"effort"`
+				ServiceTier       *string `json:"serviceTier"`
 			} `json:"threadSettings"`
 		}
 		if json.Unmarshal(params, &notification) != nil || notification.ThreadID == "" {
 			return
 		}
 		p.mu.Lock()
+		if notification.ThreadSettings.ApprovalsReviewer != "" {
+			if p.permissionSettings == nil {
+				p.permissionSettings = map[string]string{}
+			}
+			p.permissionSettings[notification.ThreadID] = notification.ThreadSettings.ApprovalsReviewer
+		}
 		if filepath.IsAbs(notification.ThreadSettings.Cwd) {
 			if p.threadDirectories == nil {
 				p.threadDirectories = map[string]string{}
@@ -692,6 +717,8 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.statuses = nil
 	p.commandTransitions = nil
 	p.threadSettings = nil
+	p.autoReviews = nil
+	p.permissionSettings = nil
 	p.usageCoverage = nil
 	p.threadDirectories = nil
 	p.threadAttachments = nil

@@ -262,6 +262,14 @@
       return;
     if (
       event.key === 'Enter' &&
+      (menu?.path === '' || menu?.path === 'permissions') &&
+      /^\/permissions\s+\S/.test(query.trim())
+    ) {
+      void navigate(query.trim().slice(1));
+      return;
+    }
+    if (
+      event.key === 'Enter' &&
       event.target instanceof Element &&
       event.target.closest('button') &&
       !optionList?.contains(event.target) &&
@@ -644,6 +652,12 @@
                 directory changes; project configuration is not reloaded.
               {:else if menu?.path.startsWith('goal/')}Only this session's goal
                 changes.
+              {:else if menu?.path.startsWith('approve/')}Records consent for
+                one exact retry, not execution. The retry still goes through
+                Codex's native reviewer.
+              {:else if menu?.path.startsWith('permissions')}Changes this
+                session's native permissions for subsequent turns, subject to
+                managed policy. Review carefully.
               {:else}No change sent yet. Model, reasoning and speed settings can
                 change token usage and cost. Changes affect subsequent turns of
                 this session, not global defaults. Automatic quota thresholds

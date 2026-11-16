@@ -400,13 +400,19 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 		text := o.Label + "\n\n" + p.menu.Help + "\n\n" + o.Help
 		if o.Action {
 			text += "\n\nTARGET // " + p.session
-			if strings.HasPrefix(p.menu.Path, "rename/") {
+			family, _, _ := strings.Cut(p.menu.Path, "/")
+			switch family {
+			case "rename":
 				text += "\nOnly this session's saved name changes. Confirm after reviewing the new name."
-			} else if strings.HasPrefix(p.menu.Path, "cd/") {
+			case "cd":
 				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
-			} else if strings.HasPrefix(p.menu.Path, "goal/") {
+			case "goal":
 				text += "\nOnly this session's goal changes."
-			} else {
+			case "approve":
+				text += "\nRecords consent for one exact retry, not execution. The retry still goes through Codex's native reviewer."
+			case "permissions":
+				text += "\nChanges this session's native permissions for subsequent turns, subject to managed policy. Review carefully."
+			default:
 				text += "\nNo change sent yet. Model, reasoning and speed settings can change token usage and cost."
 				text += "\nChanges apply to subsequent turns of this session. They are not global defaults. Confirm only after reviewing the option. Automatic quota thresholds may later supersede model settings."
 			}
@@ -692,17 +698,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 				cmd := m.focusMonitorPrompt()
 				m.monitorPrompt.session = r.session
-				m.monitorPrompt.notice = "Change requested. Codex will apply it to subsequent turns."
-				if speed {
-					m.monitorPrompt.notice = "Session speed changed. Applies to subsequent turns."
-				}
-				if strings.HasPrefix(r.path, "rename/") {
-					m.monitorPrompt.notice = "Session renamed."
-				} else if strings.HasPrefix(r.path, "cd/") {
-					m.monitorPrompt.notice = "Working directory changed."
-				} else if strings.HasPrefix(r.path, "goal/") {
-					m.monitorPrompt.notice = "Goal updated."
-				}
+				m.monitorPrompt.notice = codex.SessionCommandSuccess(r.path, speed)
 				return m, cmd, true
 			} else {
 				if p.inline && r.menu.Picker {

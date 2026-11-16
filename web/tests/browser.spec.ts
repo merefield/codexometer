@@ -142,6 +142,70 @@ async function setOverviewDetail(page: Page, level: number) {
   throw new Error('Cycle did not reach overview detail level ' + level);
 }
 
+test('native Auto-review remains informational in read-only mode', async ({
+  page,
+  pairingURL,
+}) => {
+  const session = {
+    id: 'native-review',
+    name: 'Native reviewer',
+    directory: '/work',
+    tokens: 1,
+    agents: 0,
+    status: 'WORKING',
+    contextKind: 'LAST ACTIVITY',
+    text: 'Inspecting the repository.',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+    reviewer: 'auto_review',
+    autoReview: {
+      id: 'review',
+      status: 'inProgress',
+      risk: 'low',
+      authorization: 'high',
+      action: 'ls /work',
+      rationale: 'Inspect files.',
+    },
+  };
+  const snapshot = {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [session],
+  };
+  await mockStream(page, snapshot);
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await setOverviewDetail(page, 1);
+  const row = page.locator('.session-row').first();
+  await expect(row.getByText('REVIEW // AUTO', { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole('heading', { name: 'AUTO REVIEWING', exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByText('Inspecting the repository.', { exact: true }),
+  ).toBeVisible();
+  session.autoReview.status = 'denied';
+  session.autoReview.rationale = 'Outside the project.';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(
+    row.getByRole('heading', { name: 'AUTO REVIEW', exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByText('Outside the project.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    row.getByRole('button', { name: /APPROVE|CONFIRM|SEND DECISION/ }),
+  ).toHaveCount(0);
+});
+
 test.describe('quota profile reviews', () => {
   test.use({
     controlMode: true,

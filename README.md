@@ -1892,9 +1892,43 @@ usage and does not change token totals, quota learning or API-EQ calculations.
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation by default. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
-| `/permissions` | Named profiles allowed for the session's directory, with supplied descriptions. Review carefully: this changes future permission behaviour. |
+| `/permissions` | Native permission profiles, approval policies and reviewer selection, subject to Codex's managed requirements. Also accepts `/permissions <profile-id> [--approval-policy=<policy>] [--reviewer=user\|auto_review]`. Changes are verified against the running session. |
+| `/approve` | Review a recently observed native Auto-review denial and record consent for **one retry of that exact action**. It does not run the action directly; the retry still passes through Auto-review. |
 | `/skills`, `/apps`, `/mcp`, `/hooks`, `/experimental` | **Browse-only** live inventories and supplied help, including MCP tool descriptions. Invoke/configure these through Codex. |
 | `/help` | Available command families. Unsupported or empty catalogues are omitted. |
+
+**Native Auto-review:** use `/permissions` → **Reviewer** to choose **Human**
+or **Auto-review** for the selected session. This does not change its sandbox.
+The server must expose reviewer settings, enable `guardian_approval`, and permit
+the choice under its managed requirements. For example:
+
+```text
+/permissions :workspace --approval-policy=on-request --reviewer=auto_review
+```
+
+Profile IDs come from the live catalogue; `:workspace` is an example, not a
+hard-coded fallback. Quoted arguments and native granular policy JSON are
+accepted. Profile, policy and reviewer changes target subsequent turns. An
+acknowledgement alone is not success: Codexometer reads back the requested
+settings. An unconfirmed update is not automatically retried.
+
+Rows show `REVIEW // HUMAN` or `REVIEW // AUTO` when Codex reports the setting.
+During native assessment, the working badge becomes **AUTO REVIEWING**; detail
+retains the conversation and adds the latest native action, risk, authorisation
+assessment and rationale. This is informational, not a request for you to click
+Approve. Actual mandatory human checkpoints keep their normal controls and pills.
+Auto-review consumes model resources and is not a guarantee that only low-risk
+actions can pass: Codex owns the policy and final decision.
+
+`/approve` retains up to ten recent, fully representable denials **per thread,
+in memory for the current shared-server connection**. Read the complete action
+and rationale before recording one retry. This is native consent context, not
+direct execution or a policy override; a critical denial can still be denied.
+Sent or uncertain consent is removed rather than automatically retried, and
+mandatory human requests cannot be answered by this command. Older servers keep
+profile-only controls when reviewer metadata is absent. Read-only web mode shows
+review telemetry but never enables these mutations; writable web uses the same
+fresh-menu validation and native requests as the terminal.
 
 **Session goals:** a connected shared app-server with its goals feature enabled
 is required. Goal status appears directly below the configured statusline fields
@@ -1940,7 +1974,7 @@ from its execution environments, and identifies their environment when supplied.
 Older servers retain directory-based discovery. A real thread/permission/transport
 error is not silently replaced with a different inventory, and a successful empty
 thread inventory remains empty rather than falling back to directory hooks.
-Model/reasoning, permission and Plan changes remain guarded by the existing idle-state checks;
+Model/reasoning and Plan changes remain guarded by the existing idle-state checks;
 this compatibility update does not broaden write permissions.
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
@@ -2001,7 +2035,9 @@ reconnect invalidates the old choice. The updated name appears on the next telem
 
 Codex session-setting changes require a loaded session. When the selected policy
 requires review, confirmations expire after 30 seconds. Speed-only changes can be sent while working or waiting for an approval;
-other settings still require idle and no pending approval. The command and options
+model/reasoning and Plan settings still require idle and no pending approval. Native
+permission changes can be queued during work for subsequent turns, but not while
+a human request is pending. The command and options
 are revalidated before sending; stale connections and changed options fail closed.
 A normal turn start/completion does not invalidate a speed confirmation, but changed
 model, reasoning or speed settings do. A successful

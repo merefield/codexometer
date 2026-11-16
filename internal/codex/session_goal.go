@@ -80,6 +80,10 @@ func knownGoalStatus(status string) bool {
 // Input command paths have an explicit allowlist shared by adapters and views.
 // The value is URL-encoded as a single segment, including any literal slashes.
 func SessionCommandInputValue(path string) (parent, value string, ok bool) {
+	if encoded, found := strings.CutPrefix(path, "permissions/apply/"); found {
+		decoded, err := url.PathUnescape(encoded)
+		return "permissions", decoded, err == nil
+	}
 	for _, prefix := range []string{"rename", "cd", "goal/set", "goal/edit", "goal/budget"} {
 		if encoded, found := strings.CutPrefix(path, prefix+"/"); found {
 			decoded, err := url.PathUnescape(encoded)

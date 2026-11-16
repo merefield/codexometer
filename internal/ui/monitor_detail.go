@@ -52,6 +52,14 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if doc := m.profileDocument(s, width); doc != nil {
 		return doc
 	}
+	defer func() {
+		if text := s.preview.AutoReview.Detail(); text != "" {
+			document = append(document, detailLine{})
+			for _, line := range sessionWebLiteralTextLines(text, width) {
+				document = append(document, detailLine{ansi.Truncate(line, width, ""), "metadata"})
+			}
+		}
+	}()
 	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
 		var lines []detailLine

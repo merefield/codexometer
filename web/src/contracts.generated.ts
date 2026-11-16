@@ -215,6 +215,8 @@ export interface Segment {
 }
 
 export interface Session {
+  reviewer?: string;
+  autoReview?: SessionAutoReview | null;
   approvalReview?: ApprovalReview | null;
   mcpTool?: MCPToolApprovalDetails | null;
   readStateKnown?: boolean;
@@ -247,6 +249,15 @@ export interface Session {
   source: string;
   activity: string;
   samples: Array<Sample> | null;
+}
+
+export interface SessionAutoReview {
+  id: string;
+  status: string;
+  risk?: string;
+  authorization?: string;
+  rationale?: string;
+  action?: string;
 }
 
 export interface SessionGoal {

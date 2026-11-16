@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -33,11 +34,31 @@ func (p *daemonStatusProvider) writeVerifiedPermissions(ctx context.Context, con
 		var result struct {
 			Thread                  struct{ ID string }
 			ActivePermissionProfile *struct{ ID string }
+			ApprovalPolicy          json.RawMessage
+			ApprovalsReviewer       string
 		}
 		if err := p.requestOn(verify, conn, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &result); err != nil {
 			return fmt.Errorf("permission update unconfirmed: %w", err)
 		}
-		if result.Thread.ID == id && result.ActivePermissionProfile != nil && result.ActivePermissionProfile.ID == permission {
+		policyOK, reviewerOK := true, true
+		if v, ok := params["approvalPolicy"]; ok {
+			policyOK = equalPermissionPolicy(v, result.ApprovalPolicy)
+		}
+		if v, ok := params["approvalsReviewer"]; ok {
+			reviewerOK = v == result.ApprovalsReviewer
+		}
+		if result.Thread.ID == id && result.ActivePermissionProfile != nil && result.ActivePermissionProfile.ID == permission && policyOK && reviewerOK {
+			p.mu.Lock()
+			if p.connection == conn {
+				p.commandGeneration++
+				if result.ApprovalsReviewer != "" {
+					if p.permissionSettings == nil {
+						p.permissionSettings = map[string]string{}
+					}
+					p.permissionSettings[id] = result.ApprovalsReviewer
+				}
+			}
+			p.mu.Unlock()
 			return nil
 		}
 		select {

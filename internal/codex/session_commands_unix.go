@@ -58,7 +58,7 @@ func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 	}
 	// Resuming a thread can repeat its settings notification. Invalidate on
 	// effective values, not notification counters, so warming can settle.
-	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id], goalScope})
+	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id], p.permissionSettings[id], goalScope})
 }
 
 func commandDigest(value any) string {
@@ -169,6 +169,11 @@ func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path str
 		path = "rename/" + url.PathEscape(strings.TrimSpace(name))
 	}
 	path = goalCommandPath(path)
+	var parseErr error
+	path, parseErr = permissionCommandPath(path)
+	if parseErr != nil {
+		return SessionCommandMenu{}, parseErr
+	}
 	if directory, ok := strings.CutPrefix(path, "cd "); ok {
 		path = "cd/" + url.PathEscape(strings.TrimSpace(directory))
 	}
@@ -203,7 +208,7 @@ func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path st
 
 func normalizeCommandMenu(menu SessionCommandMenu) SessionCommandMenu {
 	helpText := commandText
-	if menu.Path == "goal" || strings.HasPrefix(menu.Path, "goal/") {
+	if menu.Path == "goal" || strings.HasPrefix(menu.Path, "goal/") || menu.Path == "approve" || strings.HasPrefix(menu.Path, "approve/") {
 		// A complete objective plus review instructions can exceed the ordinary
 		// telemetry excerpt budget. Never silently clip an actionable review.
 		helpText = func(s string) string { return strings.TrimSpace(SanitizeApprovalText(s)) }
@@ -275,7 +280,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 	}
 
 	if path == "" || path == "help" {
-		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental", "goal"}
+		families := []string{"rename", "cd", "cwd", "pwd", "model", "plan", "permissions", "approve", "skills", "apps", "mcp", "hooks", "experimental", "goal"}
 		menus := make([]SessionCommandMenu, len(families))
 		scopes := make([]string, len(families))
 		errs := make([]error, len(families))
@@ -313,14 +318,18 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Speed changes can be sent during a turn and apply to subsequent turns; other settings require idle. Browse-only catalogues do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Speed and permission changes target subsequent turns and can be sent during work; model/reasoning and Plan changes require idle. Browse-only catalogues do not execute tools or change global configuration."
 		return m, nil
 	}
-	if parts[0] == "cd" || parts[0] == "cwd" || parts[0] == "pwd" {
+	switch parts[0] {
+	case "cd", "cwd", "pwd":
 		return p.commandDirectoryMenu(ctx, t, path)
-	}
-	if parts[0] == "goal" {
+	case "goal":
 		return p.commandGoalMenu(ctx, t, path)
+	case "permissions":
+		return p.permissionMenu(ctx, t, path)
+	case "approve":
+		return p.autoReviewMenu(t, path)
 	}
 	if parts[0] == "rename" {
 		m.Title = "/rename"
@@ -346,7 +355,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		})
 		return m, nil
 	}
-	if parts[0] == "model" || parts[0] == "tier" || parts[0] == "plan" || parts[0] == "permissions" {
+	if parts[0] == "model" || parts[0] == "tier" || parts[0] == "plan" {
 		current, err := p.readQuotaSession(ctx, t.ID)
 		if err != nil {
 			return m, err
@@ -422,22 +431,6 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 					return m, nil
 				}
 			}
-		case "permissions":
-			m.Help = "Permission profiles allowed by the effective requirements for this directory. Review the scope carefully: this changes what Codex may do without asking in subsequent turns."
-			rows, err := p.commandRows(ctx, "permissionProfile/list", map[string]any{"cwd": t.Cwd})
-			if err != nil {
-				return m, err
-			}
-			for _, raw := range rows {
-				var v struct {
-					ID, Description string
-					Allowed         bool
-				}
-				if json.Unmarshal(raw, &v) == nil && v.Allowed && commandSafe(v.ID) && strings.TrimSpace(v.Description) != "" {
-					setting(v.ID, v.Description, map[string]any{"permissions": v.ID})
-				}
-			}
-			return m, nil
 		case "plan":
 			m.Help = "Choose an advertised collaboration mode for subsequent turns. Uses Codex's built-in mode instructions, not a generated prompt."
 			rows, err := p.commandRows(ctx, "collaborationMode/list", map[string]any{})
@@ -476,7 +469,7 @@ func commandReserved(s string) bool {
 	if IsLocalSessionCommand(s) {
 		return true
 	}
-	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "skills", "apps", "mcp", "hooks", "experimental", "goal"} {
+	for _, name := range []string{"help", "rename", "cd", "cwd", "pwd", "model", "tier", "plan", "permissions", "approve", "skills", "apps", "mcp", "hooks", "experimental", "goal"} {
 		if s == name {
 			return true
 		}
@@ -504,6 +497,9 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 		if o.ID == choice && o.Action {
 			if strings.HasPrefix(o.method, "thread/goal/") {
 				return p.executeGoalCommand(ctx, conn, id, o)
+			}
+			if o.method == "thread/approveGuardianDeniedAction" {
+				return p.approveAutoReview(ctx, conn, id, o)
 			}
 			_, hasTier := o.params["serviceTier"]
 			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
@@ -549,7 +545,21 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 					}
 				}
 			}
-			if permission, ok := o.params["permissions"].(string); ok {
+			if m.permissions != nil {
+				before, err := p.readPermissions(ctx, conn, id)
+				if err != nil {
+					return err
+				}
+				if commandDigest(before) != commandDigest(m.permissions) {
+					return ErrSessionCommand
+				}
+				permission := ""
+				if before.Profile != nil {
+					permission = before.Profile.ID
+				}
+				if v, ok := o.params["permissions"].(string); ok {
+					permission = v
+				}
 				return p.writeVerifiedPermissions(ctx, conn, id, permission, o.params)
 			}
 			_, changingModel := o.params["model"]

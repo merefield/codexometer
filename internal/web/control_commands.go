@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -57,17 +56,7 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 			http.Error(w, "Command unconfirmed; check Codex before retrying", 409)
 			return
 		}
-		message := "Change requested. Codex will apply it to subsequent turns."
-		if p.speed {
-			message = "Session speed changed. Applies to subsequent turns."
-		}
-		if strings.HasPrefix(q.Path, "rename/") {
-			message = "Session renamed."
-		} else if strings.HasPrefix(q.Path, "cd/") {
-			message = "Working directory changed."
-		} else if strings.HasPrefix(q.Path, "goal/") {
-			message = "Goal updated."
-		}
+		message := codex.SessionCommandSuccess(q.Path, p.speed)
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 		return
 	}
