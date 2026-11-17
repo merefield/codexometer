@@ -1836,11 +1836,15 @@ The separate **CURRENT** marker identifies the
 existing speed; the highlighted choice uses bright text without a reversed background.
 The action line shows the current next step. Permission changes, directory changes
 and unknown actions retain **Enter REVIEW**, then **C CONFIRM**, by default.
-Settings blocked during an active turn show
+Model/reasoning and Plan settings blocked during an active turn show
 **WAITING FOR IDLE**, with **Ctrl+R REFRESH** in the terminal composer
 (**F REFRESH** in the read-only picker) to read their availability again;
 speed changes are available during a turn and are sent on explicit selection,
 without a local queue. They configure subsequent turns, not a request already in flight.
+Native permission changes also target subsequent turns and can be sent during
+work, but not while human approval/input is pending, including when approval
+tracking has overflowed. `/approve` switches to a full scrollable denial review
+before consent, rather than truncating the action and rationale in this popup.
 **HELP** identifies genuine browse-only entries. Merely navigating or changing
 the highlight sends no settings update. Buttons
 are clickable. Writable web mode exposes the same catalogue through
@@ -1864,7 +1868,9 @@ omitted. Changes require explicit selection and, in the browser, opt-in writable
 mode. By default, reversible session-local changes do not need a second
 confirmation; permission/directory changes and unknown actions remain guarded.
 The [confirmation policy](#confirmation-policy) can require review for every
-substantive change or skip extra review except quota-reset redemption.
+substantive change or skip extra review except quota-reset redemption. Native
+denial retries still open their full inspection view before an explicit Apply
+action, including with `--confirmation none`.
 Browse-only entries do not execute tools or change configuration.
 
 On Codex 0.169+, model/reasoning and advertised speed options are requested
@@ -2073,7 +2079,7 @@ and speed choices can affect quota consumption or API cost.
 | Setting | Behaviour |
 |---|---|
 | Omitted | Balanced default: confirm higher-impact actions. |
-| `--confirmation none` | Skip extra confirmations, except quota-reset redemption. |
+| `--confirmation none` | Skip extra confirmations, except quota-reset redemption. Native denial inspection still precedes an explicit Apply action. |
 | `--confirmation require` | Confirm every substantive action; navigation and viewing stay immediate. |
 
 ```sh
@@ -2099,16 +2105,21 @@ cannot identify held-key repeats, tap action keys rather than holding them. The
 old `--no-confirm` flag has been removed; replace it with `--confirmation none`.
 Use `--confirmation balanced` to select the default explicitly.
 
-**Slash-command audit:** the [complete version-matched inventory](docs/slash-command-support.md)
-compares Codexometer with Codex CLI **0.162.1**, including aliases, partial support
-and the reason for each missing adapter. Several missing commands already have
+**Slash-command audit and roadmap:** the [version-matched inventory](docs/slash-command-support.md),
+refreshed **2026-11-17** for **Codexometer v0.30.0**, compares the implementation
+with Codex CLI **0.169.0**: **65 command variants plus three aliases**. It separates
+delivered controls (including `/permissions` and `/approve`) from prioritised
+future work, and includes the missing `/presets` and `/config` interfaces.
+Several missing commands already have
 server APIs (`/compact`, `/fork`, `/review`, `/ps`, `/stop`); they need
 Codexometer workflows. Native display commands need local UI implementations.
-The published reference is incomplete for this version and includes older names.
+The pinned native registry, rather than an assumed exhaustive published list,
+defines the inventory; actual visibility also depends on platform and features.
 
 `/cd` requires an existing local directory and no queued messages. Confirmation
 rechecks the target (including symlinks), current running directory and session
-state. The server retains current permission settings and other workspace roots.
+state. Codexometer sends only the thread ID and directory; native server
+directory/environment and permission validation remains authoritative.
 The native CLI’s project trust/configuration reload and conversation-fork workflow
 is not performed; use native `/cd` for that full transition. `/cwd` and `/pwd`
 read running configuration rather than captured thread metadata. Failed or
@@ -3841,6 +3852,16 @@ Potential Sessions follow-ups (not implemented):
 Currently, the main tab, Quota view and global Sessions detail level are
 saved, but session selection, per-session detail levels and dismissals remain
 temporary.
+
+### Session-command roadmap
+
+The [slash-command support audit](docs/slash-command-support.md#recommended-delivery-order)
+is the canonical prioritised backlog. Native reviewer controls and exact-action
+retry consent are delivered in v0.30.0, not pending work. Recommended next
+increments are read-only `/ps`, `/status` and `/warnings` views, followed by
+compaction, linked-agent navigation and reviewed background-terminal stopping.
+Thread creation/resume/fork and full project-context transitions need their own
+lifecycle foundation. These are proposals, not delivery commitments.
 
 ### Go 1.27 follow-ups
 
