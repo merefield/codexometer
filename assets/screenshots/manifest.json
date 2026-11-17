@@ -22,24 +22,24 @@
       "caption": "Benchmark: illustrative results only, not measured model performance or price comparisons.",
       "columns": 136,
       "rows": 27,
-      "frameSHA256": "ac8ee879287d85c9e7b034125c370f7d14c8ac76e838bdb1d86d82a6e4643893",
-      "pngSHA256": "ce1edd9d4eb71b63b48e9c4711a1a9262cc323f7118b79edd8e2aa74788df1c0"
+      "frameSHA256": "f83f32286dc463f939a02ca69b77414852c70dcddbfa97e534965c0057e11763",
+      "pngSHA256": "92479650f5b2e8f99aedcdd68862f5d7cdfb33fbff3569083a4ebab410ea9bd1"
     },
     {
       "file": "pace.png",
       "caption": "Quota Pace: synthetic consumption plotted against time elapsed.",
       "columns": 136,
       "rows": 32,
-      "frameSHA256": "b949e4c916f6851dbc411348d8476628d4e1fbd9e6f97b9eed20b99ee3fdb856",
-      "pngSHA256": "f27f1718a405b99c5a012328bb937d56a5902f00c3c57a662ce6cdbb793fad3a"
+      "frameSHA256": "70fd9d6297330f4c88ca5a1262eee4affdcada314470808b5945494daa8b6851",
+      "pngSHA256": "212234b783b79fc2b08216ef9e3bcae90b72da01552a5ca1375b4c46537968bf"
     },
     {
       "file": "quota.png",
       "caption": "Quota Bars: synthetic short-term and weekly allowances, with directly comparable reset-cycle gauges.",
       "columns": 136,
       "rows": 32,
-      "frameSHA256": "f6b6d892344037a97c88ecad4e7e36689aef3e3ba6c57e3830d9cfd3971c9e8f",
-      "pngSHA256": "49c1f3852da0c91d4277ff8092aa192128102f85e0bf5bab056c1c105a1aebc2"
+      "frameSHA256": "c08d651340e80e7fd31ccb8321e4560ff2db46ac15b0c36c92ac76bce160332e",
+      "pngSHA256": "3bed60a3e59d1a9378ae55cf9506d99b5e9c851bec0c13889b2e5dc24361481e"
     },
     {
       "file": "scheduler.png",
