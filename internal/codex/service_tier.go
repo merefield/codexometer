@@ -9,31 +9,42 @@ import (
 
 // FastAPIPricingRetrievedOn is separate from the standard-price review date.
 // Source: https://developers.openai.com/api/docs/pricing (Fast, Flex and Ultrafast).
-const FastAPIPricingRetrievedOn = "2026-10-27"
+const FastAPIPricingRetrievedOn = "2026-11-17"
 
 // requestedTierPremium prices a single response's requested tier. It does not
 // claim that the backend delivered/billed that tier. Empty means unavailable,
 // not confirmed standard. Unknown explicit tiers fail closed.
-func requestedTierPremium(model, tier string, standard float64) (float64, bool) {
-	multiplier, known := requestedTierMultiplier(model, tier)
+func requestedTierPremium(model, tier string, standard float64, at time.Time) (float64, bool) {
+	multiplier, known := requestedTierMultiplier(model, tier, at)
 	return standard * (multiplier - 1), known
 }
 
 // Only published model/tier combinations are maintained. The adjustment may
 // be negative for Flex; Standard totals remain independently monotonic.
-func requestedTierMultiplier(model, tier string) (float64, bool) {
+func requestedTierMultiplier(model, tier string, at time.Time) (float64, bool) {
 	name := pricedModelName(model)
 	switch strings.ToLower(strings.TrimSpace(tier)) {
 	case "", "default", "standard":
 		return 1, true
 	case "fast", "priority":
 		switch name {
-		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex":
+		case "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.2", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex":
 			return 2, true
 		case "gpt-5.5":
 			return 2.5, true
 		}
 	case "ultrafast":
+		if name == "gpt-6.2-astra" || name == "gpt-6.2-sol" {
+			// The promotion ends at midnight March 1, 2027 Pacific (PST).
+			// Price historical responses by their own timestamp, not startup time.
+			if at.IsZero() {
+				return 1, false
+			}
+			if at.Before(time.Date(2027, time.March, 1, 8, 0, 0, 0, time.UTC)) {
+				return 3, true
+			}
+			return 6, true
+		}
 		if name == "gpt-6-astra" || name == "gpt-6.1-sol" {
 			return 6, true
 		}
@@ -92,7 +103,11 @@ func (r *LiveUsageReader) finalizeCallPricing(call *LiveModelCall, usage Benchma
 		call.APIEqIssue = "no maintained long-context Fast price for model " + call.Model
 	}
 	if call.APIEqKnown {
-		call.APIEqTierPremiumUSD, call.APIEqKnown = requestedTierPremium(call.Model, call.RequestedServiceTier, call.APIEqUSD)
+		at := call.At
+		if call.timestampEstimated {
+			at = time.Time{}
+		}
+		call.APIEqTierPremiumUSD, call.APIEqKnown = requestedTierPremium(call.Model, call.RequestedServiceTier, call.APIEqUSD, at)
 		if !call.APIEqKnown {
 			call.APIEqIssue = "unavailable pricing for requested service tier"
 		}

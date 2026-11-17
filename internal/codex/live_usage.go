@@ -106,6 +106,7 @@ const (
 type LiveModelCall struct {
 	Sequence             uint64
 	At                   time.Time
+	timestampEstimated   bool // Display fallback only; not evidence for dated prices.
 	OutputTokens         int64
 	OutputAvailable      bool
 	Model                string
@@ -833,6 +834,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 					r.totalTokens += delta
 					cursor.observedTokens += delta
 					if delta > 0 {
+						timestampEstimated := record.at.IsZero()
 						if record.at.IsZero() {
 							record.at = time.Now()
 						}
@@ -854,7 +856,8 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 						resolutionDeferred := usageMatchesDelta && resolutionPending && !resolved
 						call := LiveModelCall{
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
-							OutputAvailable: record.outputKnown, Model: model,
+							timestampEstimated: timestampEstimated,
+							OutputAvailable:    record.outputKnown, Model: model,
 							RequestedServiceTier: cursor.currentServiceTier,
 							SessionID:            cursor.threadID, TurnID: cursor.currentTurnID, Effort: cursor.modelSettings.ReasoningEffort, UsageSource: "legacy token snapshot", ModelBasis: "requested",
 						}

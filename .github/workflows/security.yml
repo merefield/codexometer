@@ -43,6 +43,9 @@ jobs:
       # Audit the committed lockfile without installing or executing package scripts.
       - name: Runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high
+      - name: Test advisory exception policy
+        if: always()
+        run: node --test scripts/audit.test.mjs
       - name: All dependencies including build tooling
         if: always()
-        run: npm audit --audit-level=high
+        run: node scripts/audit.mjs

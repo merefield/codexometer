@@ -134,7 +134,8 @@ func (r *LiveUsageReader) consumeExactUsage(cursor *rolloutCursor, record rollou
 		at = time.Now()
 	}
 	call := LiveModelCall{Sequence: r.nextEventSequence, At: at, Model: cursor.currentModel,
-		SessionID: cursor.threadID, TurnID: record.Payload.TurnID, ResponseID: id,
+		timestampEstimated: record.Timestamp.IsZero(),
+		SessionID:          cursor.threadID, TurnID: record.Payload.TurnID, ResponseID: id,
 		Effort: cursor.modelSettings.ReasoningEffort, UsageSource: "exact response", ModelBasis: "requested", RequestedServiceTier: cursor.currentServiceTier}
 	call.OutputAvailable = record.Payload.Usage != nil && record.Payload.Usage.OutputTokens != nil
 	call.OutputTokens = usage.OutputTokens

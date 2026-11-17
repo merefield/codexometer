@@ -122,13 +122,33 @@ dependencies automatically.
   Investigate failures and update dependencies deliberately; do not use blind
   `npm audit fix --force` or blanket suppressions.
 
+### Temporary build-tool exception
+
+Until **17 December 2026, 00:00 UTC**, the full-tree audit excepts only
+[GHSA-fc5q-39xc-vjpf / CVE-2026-112366](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+for **picomatch 4.0.7**, and only when every affected lockfile instance is
+development-only. As checked on 17 November, there is no patched npm release;
+follow [upstream issue #234](https://github.com/micromatch/picomatch/issues/234).
+Vite/type-checking tooling uses this package; it is not included in the shipped
+browser bundle or Go binary. The vulnerable operation accepts crafted glob
+patterns: build only trusted source/configuration, not untrusted uploaded projects.
+This is temporary risk acceptance, not a vulnerability fix.
+
+The original audit report remains visible. Other high/critical advisories,
+including another advisory against picomatch, still block. Runtime dependencies
+are separately audited without exceptions. Changed versions, runtime instances,
+an expired exception, invalid reports or audit-service failures fail closed.
+Update to an upstream patched version and remove this exception as soon as one
+is available; do not automatically extend the deadline.
+
 To repeat locally, use the project's Go toolchain and run:
 
 ```sh
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 cd web
 npm audit --omit=dev --audit-level=high
-npm audit --audit-level=high
+node --test scripts/audit.test.mjs
+node scripts/audit.mjs
 ```
 
 If your Go launcher auto-selects toolchains, set `GOTOOLCHAIN` to the exact version

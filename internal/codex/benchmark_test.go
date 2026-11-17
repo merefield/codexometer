@@ -1240,6 +1240,8 @@ func TestEstimateAPICostUsesCachedAndOutputRates(t *testing.T) {
 
 func TestStandardAPIPricesMatchPublishedRates(t *testing.T) {
 	want := map[string]apiPrice{
+		"gpt-6.2-astra": {input: 8.00, cached: 0.40, cacheWrite: 10.00, cacheWriteKnown: true, output: 40.00, longInput: 16.00, longCached: 0.80, longCacheWrite: 20.00, longOutput: 60.00, longKnown: true},
+		"gpt-6.2-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-5.2":       {input: 1.75, cached: 0.175, output: 14.00},
 		"gpt-6.1-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 		"gpt-6.1-terra": {input: 1.00, cached: 0.05, cacheWrite: 1.25, cacheWriteKnown: true, output: 5.00, longInput: 2.00, longCached: 0.10, longCacheWrite: 2.50, longOutput: 7.50, longKnown: true},
@@ -1275,6 +1277,8 @@ func TestGPT6PricingBoundaries(t *testing.T) {
 		model                        string
 		input, cached, write, output float64
 	}{
+		{"gpt-6.2-astra", 8, 0.4, 10, 40},
+		{"gpt-6.2-sol", 2, 0.1, 2.5, 10},
 		{"gpt-6-sol", 2, 0.2, 2.5, 10},
 		{"gpt-6.1-sol", 2, 0.1, 2.5, 10},
 		{"gpt-6.1-terra", 1, 0.05, 1.25, 5},
@@ -1293,6 +1297,9 @@ func TestGPT6PricingBoundaries(t *testing.T) {
 					t.Fatalf("%s input %d: %g, %v, %s; want %g", model, input, got, known, issue, want)
 				}
 				for tier, factor := range map[string]float64{"default": 1, "fast": 2, "priority": 2, "flex": 0.5} {
+					if strings.HasPrefix(tc.model, "gpt-6.2-") && tier == "flex" {
+						continue // No published GPT-6.2 Flex rates.
+					}
 					r := &LiveUsageReader{}
 					call := LiveModelCall{Model: model, RequestedServiceTier: tier}
 					r.finalizeCallPricing(&call, usage)
@@ -1301,6 +1308,11 @@ func TestGPT6PricingBoundaries(t *testing.T) {
 					}
 				}
 			}
+		}
+	}
+	for _, model := range []string{"gpt-6.2-terra", "gpt-6.2-luna", "gpt-6.2-astra-preview", "gpt-6.2-sol-preview", "gpt-6.2-sol-2026-99-99"} {
+		if _, known := priceForModel(model); known {
+			t.Fatalf("unpublished model %s was priced", model)
 		}
 	}
 	for _, model := range []string{"gpt-6-terra", "gpt-6.1-terra-preview", "gpt-6.1-terra-2026-99-99", "gpt-6-sol-preview", "gpt-6-luna-preview", "gpt-6.1-sol-preview", "gpt-6.1-astra", "gpt-6.1-luna"} {
