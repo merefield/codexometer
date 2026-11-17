@@ -41,7 +41,7 @@ func TestRequestedTierPremium(t *testing.T) {
 		{"unknown", "fast", 0, false},
 	} {
 		t.Run(test.model+test.tier, func(t *testing.T) {
-			premium, known := requestedTierPremium(test.model, test.tier, 3)
+			premium, known := requestedTierPremium(test.model, test.tier, 3, time.Time{})
 			if premium != test.premium || known != test.known {
 				t.Fatalf("got %v, %v", premium, known)
 			}
@@ -51,11 +51,13 @@ func TestRequestedTierPremium(t *testing.T) {
 
 func TestMaintainedTierMultipliersMatchPublishedRates(t *testing.T) {
 	// Reviewed against the Standard, Fast, Flex and Ultrafast tables on
-	// https://developers.openai.com/api/docs/pricing, 2026-10-27.
+	// https://developers.openai.com/api/docs/pricing, 2026-11-17.
 	for _, test := range []struct {
 		model                 string
 		fast, flex, ultrafast float64
 	}{
+		{"gpt-6.2-astra", 2, 0, 3},
+		{"gpt-6.2-sol", 2, 0, 3},
 		{"gpt-6-astra", 2, 0.5, 6},
 		{"gpt-6.1-sol", 2, 0.5, 6},
 		{"gpt-6.1-terra", 2, 0.5, 0},
@@ -71,11 +73,61 @@ func TestMaintainedTierMultipliersMatchPublishedRates(t *testing.T) {
 		{"gpt-5.2", 2, 0.5, 0},
 	} {
 		for tier, want := range map[string]float64{"standard": 1, "fast": test.fast, "priority": test.fast, "flex": test.flex, "ultrafast": test.ultrafast} {
-			got, known := requestedTierMultiplier(test.model, tier)
+			got, known := requestedTierMultiplier(test.model, tier, time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC))
 			// Zero denotes a deliberately unmaintained combination, not free usage.
 			if known != (want > 0) || known && got != want {
 				t.Errorf("%s %s = %g, known %v; want %g", test.model, tier, got, known, want)
 			}
+		}
+	}
+}
+
+func TestGPT62UltrafastPricingByResponseTime(t *testing.T) {
+	end := time.Date(2027, 3, 1, 8, 0, 0, 0, time.UTC)
+	for _, model := range []struct {
+		name                         string
+		input, cached, write, output float64
+	}{
+		{"gpt-6.2-astra", 8, 0.4, 10, 40},
+		{" GPT-6.2-SOL-2026-11-17 ", 2, 0.1, 2.5, 10},
+	} {
+		for _, sample := range []struct {
+			at        time.Time
+			factor    float64 // Zero means the response cannot be priced safely.
+			estimated bool
+		}{
+			{time.Time{}, 0, false},
+			{end, 0, true},
+			{end.Add(-time.Nanosecond), 3, false},
+			{end, 6, false},
+			{end.Add(time.Hour), 6, false},
+		} {
+			for _, input := range []int64{272000, 272001} {
+				usage := BenchmarkUsage{InputTokens: input, CachedInputTokens: 1000, CacheWriteInputTokens: 2000, OutputTokens: 100, TotalTokens: input + 100}
+				call := LiveModelCall{Model: model.name, RequestedServiceTier: "ultrafast", At: sample.at, timestampEstimated: sample.estimated}
+				r := &LiveUsageReader{}
+				r.finalizeCallPricing(&call, usage)
+				if sample.factor == 0 {
+					if call.APIEqKnown || call.APIEqIssue == "" || r.apiEqPricedCalls != 0 {
+						t.Fatalf("missing timestamp was priced: %+v", call)
+					}
+					continue
+				}
+				inFactor, outFactor := 1.0, 1.0
+				if input > 272000 {
+					inFactor, outFactor = 2, 1.5
+				}
+				standard := ((float64(input-3000)*model.input+1000*model.cached+2000*model.write)*inFactor + 100*model.output*outFactor) / 1e6
+				wantPremium := standard * (sample.factor - 1)
+				if !call.APIEqKnown || math.Abs(r.apiEqUSD-standard) > 1e-12 || math.Abs(r.apiEqTierPremiumUSD-wantPremium) > 1e-12 {
+					t.Fatalf("%s at %s input %d: %+v; want Standard %g, premium %g", model.name, sample.at, input, call, standard, wantPremium)
+				}
+			}
+		}
+	}
+	for _, model := range []string{"gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.2-sol-preview", "gpt-6.2-terra"} {
+		if _, known := requestedTierMultiplier(model, "flex", end); known {
+			t.Fatalf("unpublished Flex rate for %s", model)
 		}
 	}
 }
@@ -94,6 +146,29 @@ func TestFastPricingPreservesTokenClassesAndLongContext(t *testing.T) {
 		if !call.APIEqKnown || math.Abs(r.apiEqUSD-standard) > 1e-12 || math.Abs(r.apiEqTierPremiumUSD-standard) > 1e-12 {
 			t.Fatalf("input %d: %+v", input, call)
 		}
+	}
+}
+
+func TestGPT62MissingRolloutTimestampDoesNotSelectPromotion(t *testing.T) {
+	for _, exact := range []bool{false, true} {
+		t.Run(fmt.Sprintf("exact=%v", exact), func(t *testing.T) {
+			r, path, _ := astraUsageReader(t, 100)
+			r.statusProvider = nil
+			r.files[path].currentModel = "gpt-6.2-astra"
+			r.files[path].currentServiceTier = "ultrafast"
+			line := richTokenCountLine(time.Time{}, 1200, 1000, 200, 30, 100)
+			if exact {
+				line = exactLine(t, time.Time{}, "astra-accounting", "t", "r1", BenchmarkUsage{InputTokens: 1000, OutputTokens: 100, TotalTokens: 1100})
+			}
+			appendRollout(t, path, line+"\n")
+			usage, err := r.FetchTokenUsage(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if usage.TotalTokens != 1100 || usage.APIEqPricedCalls != 0 || usage.APIEqUnpricedCalls != 1 {
+				t.Fatalf("missing date should preserve usage but not select a promotional price: %+v", usage)
+			}
+		})
 	}
 }
 

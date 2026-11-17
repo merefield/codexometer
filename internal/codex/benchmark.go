@@ -34,7 +34,7 @@ const (
 	// the published rates compiled into this release. Keep both in sync whenever
 	// standardAPIPrices changes.
 	StandardAPIPricingSourceURL   = "https://developers.openai.com/api/docs/pricing"
-	StandardAPIPricingRetrievedOn = "2026-10-27"
+	StandardAPIPricingRetrievedOn = "2026-11-17"
 )
 
 // BenchmarkUsage is the app-server token breakdown for one isolated turn.
@@ -1687,6 +1687,8 @@ type apiPrice struct {
 }
 
 var standardAPIPrices = map[string]apiPrice{
+	"gpt-6.2-astra": {input: 8.00, cached: 0.40, cacheWrite: 10.00, cacheWriteKnown: true, output: 40.00, longInput: 16.00, longCached: 0.80, longCacheWrite: 20.00, longOutput: 60.00, longKnown: true},
+	"gpt-6.2-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 	"gpt-5.2":       {input: 1.75, cached: 0.175, output: 14.00},
 	"gpt-6.1-sol":   {input: 2.00, cached: 0.10, cacheWrite: 2.50, cacheWriteKnown: true, output: 10.00, longInput: 4.00, longCached: 0.20, longCacheWrite: 5.00, longOutput: 15.00, longKnown: true},
 	"gpt-6.1-terra": {input: 1.00, cached: 0.05, cacheWrite: 1.25, cacheWriteKnown: true, output: 5.00, longInput: 2.00, longCached: 0.10, longCacheWrite: 2.50, longOutput: 7.50, longKnown: true},
