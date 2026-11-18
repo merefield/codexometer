@@ -6430,6 +6430,49 @@ const actionApprovalCases = [
     persistent: [1, 2, 3],
   },
 ];
+test('permission request stays readable in write mode without an approval offer', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page);
+  await page.route('**/api/control/offer', (route) =>
+    route.fulfill({ json: { session: 'parent' } }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const detail = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      contextKind: 'APPROVAL REQUEST',
+      text: 'Permissions: {"network":{"enabled":true}}',
+      approvalReview: {
+        title: 'PERMISSIONS REVIEW',
+        fields: [
+          {
+            label: 'PERMISSION SCOPE',
+            value: 'Network access:\n  Enabled: true',
+          },
+        ],
+      },
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    detail,
+  );
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('region', { name: 'PERMISSIONS REVIEW' }),
+  ).toContainText('Enabled: true');
+  await expect(page.getByText(/Permissions: \{/)).toHaveCount(0);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  expect(
+    calls.filter((c) => c.action === 'prepare' || c.action === 'commit'),
+  ).toHaveLength(0);
+});
+
 for (const scenario of actionApprovalCases) {
   for (const mode of ['balanced', 'none', 'require']) {
     for (const index of scenario.labels.keys()) {
