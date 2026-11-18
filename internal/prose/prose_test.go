@@ -52,6 +52,10 @@ func TestMarkdownTablesPreserveDataAndAdjacentLines(t *testing.T) {
 	if len(b.Rows) != 3 || b.Align[1] != "right" || visible(b.Rows[1][0]) != "a|b" || !b.Rows[1][0][0].Code || !b.Rows[1][1][0].Bold || visible(b.Rows[2][1]) != "" {
 		t.Fatal(b)
 	}
+	d = Parse("| Code | Prose |\n|---|---|\n| `a\\\\|b` | a\\|b |")
+	if len(d) != 1 || len(d[0].Rows) != 2 || visible(d[0].Rows[1][0]) != `a\|b` || visible(d[0].Rows[1][1]) != "a|b" {
+		t.Fatalf("table escaping lost a literal backslash: %#v", d)
+	}
 	d = Parse("| A |\n|---|\n\n**tail**")
 	if len(d) != 2 || len(d[0].Rows) != 1 || visible(d[1].Runs) != "\ntail" {
 		t.Fatal(d)

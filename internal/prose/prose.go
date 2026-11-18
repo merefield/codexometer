@@ -137,7 +137,10 @@ func Parse(source string) []ProseBlock {
 						seg := lines.At(0)
 						r, _ = inlineRuns(cell, src, seg.Stop, ProseRun{})
 						for i := range r {
-							r[i].Text = strings.ReplaceAll(r[i].Text, `\|`, "|")
+							// Goldmark's table transformer already unescaped code spans.
+							if !r[i].Code {
+								r[i].Text = strings.ReplaceAll(r[i].Text, `\|`, "|")
+							}
 						}
 					}
 					cells = append(cells, r)
