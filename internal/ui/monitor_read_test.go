@@ -250,7 +250,10 @@ func TestUnreadFullResultBoundsExcludeControls(t *testing.T) {
 			}
 			rect, ok := m.monitorResultRect("root-one")
 			_, _, controlY := m.detailBodyLayout(g.contentWidth, g.meterHeight, controls.rows)
-			firstBody := g.meterY + 1 + m.historyNavigationRows(g.contentWidth, g.meterHeight)
+			firstBody := g.meterY + 1
+			if len(m.historyNavigationButtons(g.contentWidth, g.meterHeight)) > 0 {
+				firstBody++
+			}
 			if !ok || rect.y != firstBody || !rect.contains(rect.x, firstBody) || rect.contains(rect.x, g.meterY+controlY) {
 				t.Fatalf("history %v height %d: bounds include controls or miss first body row: %+v controlY=%d", history, height, rect, controlY)
 			}
@@ -372,7 +375,8 @@ func TestUnreadFullDetailRequiresVisibleReplyLines(t *testing.T) {
 			if !visible {
 				t.Fatal("fixture has no visible document body")
 			}
-			document := m.contextDetailDocument(rect.width)
+			g := m.monitorDashboardLayout()
+			document := m.detailPage(g.contentWidth, g.meterHeight, m.layoutDetailControls(g.contentWidth, g.meterHeight).rows).document
 			replyAt := -1
 			for i, line := range document {
 				if line.kind == "reply" && strings.Contains(line.text, "VISIBLE REPLY") {

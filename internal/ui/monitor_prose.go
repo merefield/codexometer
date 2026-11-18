@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/prose"
@@ -35,17 +34,20 @@ func styledRuns(runs []prose.ProseRun, width int, p palette, header bool) string
 		if width >= 12 {
 			text = formatSessionWebLinks(text, !r.Code)
 		}
-		if r.Bold || r.Italic || r.Code || header {
-			style := lipgloss.NewStyle().Bold(header || r.Bold).Italic(r.Italic)
-			if r.Bold || header {
-				style = style.Foreground(p.primary)
-			}
-			if r.Code {
-				style = style.Background(blendColors(p.background, p.dim))
-			}
-			text = style.Render(text)
+		// SGR resets don't restore a parent style. Give even ordinary runs
+		// their own ink so text after code or emphasis stays in theme.
+		var style ansi.Style
+		ink := p.accent
+		if r.Bold || header {
+			style, ink = style.Bold(), p.primary
 		}
-		b.WriteString(text)
+		if r.Italic {
+			style = style.Italic(true)
+		}
+		if r.Code {
+			style = style.BackgroundColor(blendColors(p.background, p.dim))
+		}
+		b.WriteString(style.ForegroundColor(ink).Styled(text))
 	}
 	return b.String()
 }
@@ -136,7 +138,7 @@ func proseTableLines(b prose.ProseBlock, width int, p palette) []string {
 					label = fmt.Sprintf("#%d", j+1)
 				}
 				if i > 0 {
-					value = label + ": " + value
+					value = label + ansi.Style{}.ForegroundColor(p.accent).Styled(": ") + value
 				}
 				lines = append(lines, wrapProse(value, width)...)
 			}

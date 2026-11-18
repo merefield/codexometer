@@ -44,7 +44,7 @@ func (line detailLine) render(colors palette) string {
 		style = style.Bold(false)
 	case "heading":
 		style = style.Bold(true).Foreground(colors.primary)
-	case "metadata":
+	case "metadata", "observation":
 		style = colors.dimmed()
 	case "assessment-note":
 		style = lipgloss.NewStyle().Foreground(blendColors(colors.dim, colors.accent))
@@ -98,7 +98,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 	if c.Kind == codex.SessionContextApproval {
 		sanitize = codex.SanitizeApprovalText
 	}
-	var lines []detailLine
+	lines := observationLines(c, width)
 	appendText := func(text, kind, prefix string) {
 		wrap := sessionWebTextLines
 		if c.Kind == codex.SessionContextApproval || kind != "body" && kind != "reply" {
@@ -124,7 +124,6 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		}
 		lines = append(lines, detailLine{title, "heading"})
 	}
-	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
 	if c.CurrentTask != "" {
 		section(contextTaskTitle(c))
 		appendText(codex.SanitizeSessionContext(c.CurrentTask), "body", "")

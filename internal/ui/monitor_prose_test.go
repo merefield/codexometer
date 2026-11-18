@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -8,6 +9,43 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 )
+
+func TestSessionInlineColoursStayInTheme(t *testing.T) {
+	m := historyTestModel()
+	m.width, m.height = 120, 42
+	s := &m.monitorSessionData[0]
+	s.name, s.attention = "Ω-session", codex.SessionAttentionComplete
+	s.preview = codex.SessionContext{Kind: codex.SessionContextReply, ThreadID: s.id, Text: "α `β` γ **δ** *ε* ζ."}
+	m.setRowContext(s.id, contextFull)
+	for theme := themeHacker; theme < themeCount; theme++ {
+		m.theme = theme
+		p := paletteFor(theme)
+		cells := backgroundTestLines(m.View().Content)
+		for _, tc := range []struct {
+			char string
+			want color.Color
+		}{{"α", p.accent}, {"β", p.accent}, {"γ", p.accent}, {"δ", p.primary}, {"ε", p.accent}, {"ζ", p.accent}, {"Ω", p.primary}} {
+			found := false
+			for _, row := range cells {
+				for _, c := range row {
+					if c.Content != tc.char {
+						continue
+					}
+					found = true
+					if c.Style.Fg == nil || color.RGBA64Model.Convert(c.Style.Fg) != color.RGBA64Model.Convert(tc.want) {
+						t.Errorf("%s %q: foreground %v, want %v", p.name, tc.char, c.Style.Fg, tc.want)
+					}
+					if tc.char == "β" {
+						assertBackground(t, c.Style.Bg, blendColors(p.background, p.dim))
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("missing %q in detail view", tc.char)
+			}
+		}
+	}
+}
 
 func TestMonitorProseWrapsWithStylesAndResponsiveTable(t *testing.T) {
 	m := contextTestModel()

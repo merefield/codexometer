@@ -244,7 +244,11 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 }
 
 func (m Model) historyNavigationButtons(width, height int) []monitorNavigationButton {
-	textRows, _, _ := monitorContextBodyLayout(height, m.layoutDetailControls(width, height).rows)
+	buttons, _, _ := m.detailBodyLayout(width, height, m.layoutDetailControls(width, height).rows)
+	return buttons
+}
+
+func (m Model) historyButtonsForRows(width, textRows int) []monitorNavigationButton {
 	if textRows < 2 {
 		return nil
 	}
@@ -297,17 +301,68 @@ func (m Model) historyNavigationButtons(width, height int) []monitorNavigationBu
 	return buttons
 }
 
-func (m Model) historyNavigationRows(width, height int) int {
-	if len(m.historyNavigationButtons(width, height)) > 0 {
-		return 1
+func (m Model) detailBodyLayout(width, height, controls int) (buttons []monitorNavigationButton, textRows, controlY int) {
+	textRows, _, controlY = monitorContextBodyLayout(height, controls)
+	buttons = m.historyButtonsForRows(width, textRows)
+	if len(buttons) > 0 {
+		textRows--
 	}
-	return 0
+	return
 }
 
-func (m Model) detailBodyLayout(width, height, controls int) (textRows, gap, controlY int) {
-	textRows, gap, controlY = monitorContextBodyLayout(height, controls)
-	textRows = max(textRows-m.historyNavigationRows(width, height), 0)
-	return
+// Use the observation's timestamp, not the duration of the turn or command.
+func observationLines(c codex.SessionContext, width int) []detailLine {
+	age := "--"
+	if !c.At.IsZero() {
+		age = i18n.Format("%s ago", strings.ToLower(formatMonitorAge(time.Since(c.At))))
+	}
+	var fields []string
+	for _, s := range []string{c.Source, c.ThreadID} {
+		if label := terminalLabel(s); label != "" {
+			fields = append(fields, label)
+		}
+	}
+	var lines []detailLine
+	for _, s := range strings.Split(ansi.Hardwrap(strings.Join(append(fields, age), " // "), width, true), "\n") {
+		lines = append(lines, detailLine{ansi.Truncate(s, width, ""), "observation"})
+	}
+	return lines
+}
+
+type monitorDetailPage struct {
+	document []detailLine
+	buttons  []monitorNavigationButton
+	right    string // leading padding plus metadata; never part of a button
+	rows     int
+}
+
+// Rendering, scrolling and read receipts must agree about which observations
+// moved out of the document and how many rows are available to show replies.
+func (m Model) detailPage(width, height, controls int) monitorDetailPage {
+	var p monitorDetailPage
+	p.buttons, p.rows, _ = m.detailBodyLayout(width, height, controls)
+	inner := max(1, width-4)
+	doc := m.contextDetailDocument(inner)
+	n := 0
+	for n < len(doc) && doc[n].kind == "observation" {
+		n++
+	}
+	if n == 1 && len(p.buttons) > 0 {
+		first, last := p.buttons[0].rect, p.buttons[len(p.buttons)-1].rect
+		gap := inner - (last.x + last.width - first.x) - lipgloss.Width(doc[0].text)
+		if gap >= 1 {
+			p.right = strings.Repeat(" ", gap) + doc[0].text
+			doc, n = doc[1:], 0
+		}
+	}
+	// Keep a blank before the first heading if it fits. For an already
+	// scrolling document, keep it on roomy viewports but not on short ones.
+	if n < len(doc) && doc[n] == (detailLine{}) && len(doc) > p.rows &&
+		(p.rows < 8 || len(doc)-1 == p.rows) {
+		doc = append(doc[:n], doc[n+1:]...)
+	}
+	p.document = spaceCommandReview(doc, p.rows, false)
+	return p
 }
 
 func (m *Model) showLiveMonitorHistory() {
@@ -329,7 +384,7 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 			break
 		}
 	}
-	lines := []detailLine{{ansi.Truncate(heading, width, "…"), "heading"}}
+	lines := append(observationLines(c, width), detailLine{}, detailLine{ansi.Truncate(heading, width, "…"), "heading"})
 	appendSection := func(title, text, kind string) {
 		if text == "" {
 			return

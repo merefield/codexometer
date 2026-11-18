@@ -107,7 +107,8 @@ func (m Model) monitorUnreadResult(id string) (monitorSession, bool) {
 			return monitorSession{}, false
 		}
 		if m.monitorContextDetail == id {
-			document := m.contextDetailDocument(rect.width)
+			g := m.monitorDashboardLayout()
+			document := m.detailPage(g.contentWidth, g.meterHeight, m.layoutDetailControls(g.contentWidth, g.meterHeight).rows).document
 			start, end := m.detailVisibleRange(len(document), rect.height)
 			if !slices.ContainsFunc(document[start:end], func(line detailLine) bool {
 				return line.kind == "reply" && strings.TrimSpace(ansi.Strip(line.text)) != ""
@@ -186,8 +187,11 @@ func (m Model) monitorResultRect(id string) (monitorRect, bool) {
 			return monitorRect{}, false
 		}
 		controls := m.layoutDetailControls(g.contentWidth, g.meterHeight)
-		rows, _, _ := m.detailBodyLayout(g.contentWidth, g.meterHeight, controls.rows)
-		rect := monitorRect{x: 4, y: g.meterY + 1 + m.historyNavigationRows(g.contentWidth, g.meterHeight), width: g.contentWidth - 4, height: rows}
+		buttons, rows, _ := m.detailBodyLayout(g.contentWidth, g.meterHeight, controls.rows)
+		rect := monitorRect{x: 4, y: g.meterY + 1, width: g.contentWidth - 4, height: rows}
+		if len(buttons) > 0 {
+			rect.y++
+		}
 		return rect, rect.width > 0 && rect.height > 0
 	}
 	for _, pane := range m.monitorPartialContextPanes() {
