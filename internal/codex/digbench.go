@@ -393,19 +393,22 @@ func (s *appServerSession) runDigBench(
 		}
 		if envelopeErr != nil {
 			result.Duration = time.Since(startedAt)
-			if errors.Is(context.Cause(ctx), errDigBenchTimeout) {
-				result.Failure = fmt.Sprintf("DigBench run timed out after %s", options.Timeout)
-				cleanupCompleted := false
-				handle := func(method string, params json.RawMessage) bool {
-					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure, sensitiveValues...) {
-						cleanupCompleted = true
-						return true
-					}
+			if ctx.Err() == nil {
+				return result, envelopeErr
+			}
+			// The run context is done. interruptBenchmarkTurn sets its own
+			// cleanup deadline and waits for this particular turn to finish.
+			threadID, turnID := startedThread.Thread.ID, startedTurn.Turn.ID
+			markCompleted := func(method string, params json.RawMessage) bool {
+				if method != "turn/completed" || !digBenchTurnCompleted(params, threadID, turnID, &turnFailure, sensitiveValues...) {
 					return false
 				}
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), s.benchmarkInterruptTimeout())
-				interruptErr := s.interruptBenchmarkTurn(cleanupCtx, startedThread.Thread.ID, startedTurn.Turn.ID, &cleanupCompleted, handle)
-				cleanupCancel()
+				completed = true
+				return true
+			}
+			interruptErr := s.interruptBenchmarkTurn(context.Background(), threadID, turnID, &completed, markCompleted)
+			if errors.Is(context.Cause(ctx), errDigBenchTimeout) {
+				result.Failure = fmt.Sprintf("DigBench run timed out after %s", options.Timeout)
 				if interruptErr != nil {
 					result.Failure += "; cleanup failed: " + redactDigBenchText(interruptErr.Error(), sensitiveValues...)
 					return result, fmt.Errorf("interrupt timed-out DigBench turn: %w", interruptErr)
@@ -417,26 +420,12 @@ func (s *appServerSession) runDigBench(
 				publishDigBenchSnapshot(options.Snapshot, result)
 				return result, nil
 			}
-			if ctx.Err() != nil {
-				cleanupCompleted := false
-				handle := func(method string, params json.RawMessage) bool {
-					if method == "turn/completed" && digBenchTurnCompleted(params, startedThread.Thread.ID, startedTurn.Turn.ID, &turnFailure, sensitiveValues...) {
-						cleanupCompleted = true
-						return true
-					}
-					return false
-				}
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), s.benchmarkInterruptTimeout())
-				interruptErr := s.interruptBenchmarkTurn(cleanupCtx, startedThread.Thread.ID, startedTurn.Turn.ID, &cleanupCompleted, handle)
-				cleanupCancel()
-				applyDigBenchMeasurements(&result, telemetry)
-				if interruptErr != nil {
-					result.Failure = "remote interruption could not be confirmed: " + redactDigBenchText(interruptErr.Error(), sensitiveValues...)
-				}
-				publishDigBenchSnapshot(options.Snapshot, result)
-				return result, ctx.Err()
+			applyDigBenchMeasurements(&result, telemetry)
+			if interruptErr != nil {
+				result.Failure = "remote interruption could not be confirmed: " + redactDigBenchText(interruptErr.Error(), sensitiveValues...)
 			}
-			return result, envelopeErr
+			publishDigBenchSnapshot(options.Snapshot, result)
+			return result, ctx.Err()
 		}
 		if len(envelope.ID) > 0 && envelope.Method != "" {
 			if envelope.Method != "item/tool/call" {

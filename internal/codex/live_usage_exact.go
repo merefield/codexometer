@@ -144,7 +144,7 @@ func (r *LiveUsageReader) consumeExactUsage(cursor *rolloutCursor, record rollou
 		call.APIEqIssue = "exact response record omitted response ID"
 		call.apiEqFinalized = true
 		r.apiEqInconsistentUsageCalls++
-	} else if record.Payload.Usage == nil || record.Payload.Usage.InputTokens == nil || record.Payload.Usage.OutputTokens == nil || record.Payload.Usage.TotalTokens == nil || record.Payload.Usage.CachedInputTokens == nil || record.Payload.Usage.ReasoningOutputTokens == nil {
+	} else if !record.Payload.Usage.complete() {
 		call.issueKind = UsageIssueMissing
 		call.APIEqIssue = "exact response record omitted required token breakdown fields"
 		call.apiEqFinalized = true
@@ -162,9 +162,14 @@ func (r *LiveUsageReader) consumeExactUsage(cursor *rolloutCursor, record rollou
 			r.lastActivity = at
 		}
 		_, subscribed := r.daemonSubscribedThreads[cursor.threadID]
-		if subscribed && call.TurnID != "" {
+		var reviewOrdinal *uint64
+		if cursor.planReviewCandidate() && call.TurnID != "" && call.TurnID == cursor.currentTurnID {
+			reviewOrdinal = record.Ordinal
+		}
+		if subscribed && call.TurnID != "" || reviewOrdinal != nil {
 			r.pendingModelResolutions = append(r.pendingModelResolutions, pendingModelResolution{
-				callSequence: call.Sequence, threadID: call.SessionID, turnID: call.TurnID, usage: usage, cumulativeTotal: -1, exact: true})
+				callSequence: call.Sequence, threadID: call.SessionID, turnID: call.TurnID, usage: usage, cumulativeTotal: -1, exact: true,
+				reviewOrdinal: reviewOrdinal, localReview: !subscribed})
 		} else {
 			r.finalizeCallPricing(&call, usage)
 		}
@@ -181,6 +186,19 @@ func (r *LiveUsageReader) attachExactCheckpoint(cursor *rolloutCursor, record ro
 	for i := len(r.pendingModelResolutions) - 1; i >= 0; i-- {
 		pending := &r.pendingModelResolutions[i]
 		if pending.exact && pending.threadID == cursor.threadID && (cursor.currentTurnID == "" || pending.turnID == cursor.currentTurnID) && pending.cumulativeTotal < 0 && sameBenchmarkUsage(pending.usage, record.usage) {
+			if pending.reviewOrdinal != nil {
+				// Equal token counts alone are not billing provenance. The owned
+				// checkpoint must immediately follow this response in the same turn.
+				if record.ordinal == nil || *record.ordinal == 0 || *record.ordinal-1 != *pending.reviewOrdinal ||
+					cursor.currentTurnID != pending.turnID || len(cursor.modelCalls) == 0 {
+					continue
+				}
+				call := &cursor.modelCalls[len(cursor.modelCalls)-1]
+				if call.Sequence != pending.callSequence {
+					continue
+				}
+				call.planReviewEvidence = record.planCheckpoint
+			}
 			pending.cumulativeTotal = record.total
 			break
 		}

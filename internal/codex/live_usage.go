@@ -114,6 +114,7 @@ type LiveModelCall struct {
 	APIEqKnown           bool
 	APIEqIssue           string
 	apiEqFinalized       bool
+	planReviewEvidence   bool // A matching token_count reported a recognised ChatGPT plan.
 	issueKind            APIEqIssueKind
 	SessionID            string
 	TurnID               string
@@ -200,6 +201,7 @@ type rolloutCursor struct {
 	currentTurnID               string
 	nonRoot                     bool
 	guardianReviewer            bool
+	openAIProvider              bool
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
@@ -222,6 +224,8 @@ type pendingModelResolution struct {
 	usage           BenchmarkUsage
 	cumulativeTotal int64
 	exact           bool
+	reviewOrdinal   *uint64 // Only this exact response's adjacent checkpoint can attest plan use.
+	localReview     bool    // No daemon model attribution is pending.
 }
 
 type sessionAttentionState int
@@ -278,6 +282,11 @@ func (u rolloutTokenUsage) benchmarkUsage() BenchmarkUsage {
 	}
 }
 
+func (u *rolloutTokenUsage) complete() bool {
+	return u != nil && u.InputTokens != nil && u.CachedInputTokens != nil &&
+		u.OutputTokens != nil && u.ReasoningOutputTokens != nil && u.TotalTokens != nil
+}
+
 type rolloutModelEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	Ordinal   *uint64   `json:"ordinal"`
@@ -328,6 +337,7 @@ type rolloutMetadata struct {
 	StartedAt                   time.Time
 	NonRoot                     bool
 	GuardianReviewer            bool
+	OpenAIProvider              bool
 	SubagentHistoryStartOrdinal *uint64
 }
 
@@ -340,6 +350,7 @@ type rolloutMetadataEvent struct {
 func (c *rolloutCursor) setMetadata(m rolloutMetadata) {
 	c.threadID, c.parentThreadID, c.workingDirectory = m.ID, m.ParentThreadID, m.WorkingDirectory
 	c.startedAt, c.nonRoot, c.guardianReviewer = m.StartedAt, m.NonRoot, m.GuardianReviewer
+	c.openAIProvider = m.OpenAIProvider
 	c.subagentHistoryStartOrdinal = m.SubagentHistoryStartOrdinal
 }
 
@@ -350,6 +361,7 @@ type rolloutMetadataPayload struct {
 	WorkingDirectory            string          `json:"cwd"`
 	Source                      json.RawMessage `json:"source"`
 	ThreadSource                string          `json:"thread_source"`
+	ModelProvider               json.RawMessage `json:"model_provider"`
 	SubagentHistoryStartOrdinal *uint64         `json:"subagent_history_start_ordinal"`
 }
 
@@ -443,7 +455,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
 	}
-	r.reconcilePendingModelResolutions()
+	previousSequence := r.nextEventSequence
+	r.reconcilePendingModelResolutions(func(p pendingModelResolution) bool {
+		// Read newly appended checkpoints before finalising an unpaired review.
+		return p.reviewOrdinal == nil || p.cumulativeTotal >= 0
+	})
 
 	var firstReadErr error
 	readableFiles := 0
@@ -497,6 +513,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	if firstReadErr != nil && readableFiles == 0 {
 		return LiveUsageSnapshot{}, fmt.Errorf("read local Codex token telemetry: %w", firstReadErr)
 	}
+	r.reconcilePendingModelResolutions(func(p pendingModelResolution) bool {
+		// A local review and its checkpoint usually arrive in one read. If
+		// split across polls, allow one more read, then fail closed as usual.
+		return p.reviewOrdinal != nil && (p.callSequence <= previousSequence || p.localReview && p.cumulativeTotal >= 0)
+	})
 
 	liveWriters, writerLocksSupported := r.liveWriterThreads()
 	sessions, activeSessions, sessionWorking := r.sessionSnapshots(now, liveWriters, writerLocksSupported, exactStatuses)
@@ -800,6 +821,9 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 				r.consumeExactUsage(cursor, record)
 			}
 			if record, ok := tokenUsageRecord(line); ok {
+				if cursor.planReviewCandidate() && record.completeUsage && !record.contextWindowFill && validateBenchmarkUsage(record.usage) == "" {
+					record.planCheckpoint = reportsChatGPTQuota(line)
+				}
 				if cursor.exactUsage || cursor.exactUsageUncertain {
 					if tokenRecordIsOwned(record.ordinal, cursor.subagentHistoryStartOrdinal, record.at, cursor.nonRoot, cursor.startedAt) {
 						r.attachExactCheckpoint(cursor, record)
@@ -858,6 +882,7 @@ func (r *LiveUsageReader) consume(path string, cursor *rolloutCursor) error {
 							Sequence: r.nextEventSequence, At: record.at, OutputTokens: record.outputTokens,
 							timestampEstimated: timestampEstimated,
 							OutputAvailable:    record.outputKnown, Model: model,
+							planReviewEvidence:   record.planCheckpoint,
 							RequestedServiceTier: cursor.currentServiceTier,
 							SessionID:            cursor.threadID, TurnID: cursor.currentTurnID, Effort: cursor.modelSettings.ReasoningEffort, UsageSource: "legacy token snapshot", ModelBasis: "requested",
 						}
@@ -938,8 +963,13 @@ func (r *LiveUsageReader) ingestResolvedModelObservations(observations []resolve
 	}
 }
 
-func (r *LiveUsageReader) reconcilePendingModelResolutions() {
+func (r *LiveUsageReader) reconcilePendingModelResolutions(ready func(pendingModelResolution) bool) {
+	remaining := r.pendingModelResolutions[:0]
 	for _, pending := range r.pendingModelResolutions {
+		if ready != nil && !ready(pending) {
+			remaining = append(remaining, pending)
+			continue
+		}
 		call := r.modelCall(pending.callSequence)
 		if call == nil {
 			// The response aged out before model resolution; the loss is a
@@ -970,7 +1000,12 @@ func (r *LiveUsageReader) reconcilePendingModelResolutions() {
 			r.rememberCallIssue(*call)
 		}
 	}
-	r.pendingModelResolutions = nil
+	if len(remaining) == 0 {
+		r.pendingModelResolutions = nil
+		return
+	}
+	clear(r.pendingModelResolutions[len(remaining):])
+	r.pendingModelResolutions = remaining
 }
 
 func (r *LiveUsageReader) takeResolvedModelObservation(threadID, turnID string, usage BenchmarkUsage, cumulativeTotal int64) (resolvedModelObservation, bool) {
@@ -1149,6 +1184,8 @@ func tokenTotalRecord(line []byte) (int64, time.Time, *uint64, bool) {
 }
 
 type rolloutTokenRecord struct {
+	planCheckpoint    bool
+	completeUsage     bool
 	usageAvailable    bool
 	contextWindowFill bool
 	total             int64
@@ -1189,6 +1226,7 @@ func tokenUsageRecord(line []byte) (rolloutTokenRecord, bool) {
 		*info.TotalTokenUsage.TotalTokens == *info.ModelContextWindow &&
 		zeroClasses(info.TotalTokenUsage) && zeroClasses(info.LastTokenUsage)
 	return rolloutTokenRecord{
+		completeUsage:     info.LastTokenUsage.complete(),
 		usageAvailable:    info.LastTokenUsage.InputTokens != nil && outputKnown,
 		contextWindowFill: contextFill,
 		total:             *info.TotalTokenUsage.TotalTokens,
@@ -1390,6 +1428,7 @@ func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
 					ID: payload.ID, ParentThreadID: parent,
 					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
 					GuardianReviewer:            guardian,
+					OpenAIProvider:              bytes.Equal(payload.ModelProvider, []byte(`"openai"`)),
 					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
 					SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
 				}, true

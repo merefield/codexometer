@@ -240,11 +240,11 @@ func TestPendingResolutionRetainsCallTier(t *testing.T) {
 	r := &LiveUsageReader{files: map[string]*rolloutCursor{"a": {modelCalls: []LiveModelCall{{Sequence: 1, Model: "gpt-5.6-sol", RequestedServiceTier: "fast"}}}},
 		pendingModelResolutions: []pendingModelResolution{{callSequence: 1, threadID: "a", turnID: "t", usage: u, cumulativeTotal: 110}},
 		resolvedObservations:    []resolvedModelObservation{{ThreadID: "a", TurnID: "t", Model: "gpt-6-astra", Usage: u, CumulativeTotal: 110}}}
-	r.reconcilePendingModelResolutions()
+	r.reconcilePendingModelResolutions(nil)
 	if r.apiEqTierPremiumUSD <= 0 || r.apiEqTierPremiumUSD != r.apiEqUSD || r.apiEqPricedCalls != 1 {
 		t.Fatalf("reader %+v", r)
 	}
-	r.reconcilePendingModelResolutions()
+	r.reconcilePendingModelResolutions(nil)
 	if r.apiEqPricedCalls != 1 {
 		t.Fatal("double counted")
 	}

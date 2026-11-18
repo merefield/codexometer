@@ -108,6 +108,41 @@ func TestMonitorCommandRightRepeatKeepsTextCursorMovement(t *testing.T) {
 	}
 }
 
+func TestMonitorCommandKeyboardAndWheelNavigation(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		m, _ := speedCommandTestModel(t)
+		m.monitorCommands.inline = inline
+		m.monitorCommands.menu.Choices = nil
+		for i := range 24 {
+			label := []string{"Show", "Hide"}[i%2]
+			m.monitorCommands.menu.Choices = append(m.monitorCommands.menu.Choices, codex.SessionCommandChoice{Label: label})
+		}
+		m.monitorCommands.selected, m.monitorCommands.reviewedChoice = 0, "reviewed"
+		m.monitorCommands.prefix = "/fast "
+		m.monitorPrompt.input.SetValue("/fast Show")
+		popup := m.monitorCommandPopup()
+		wheel := tea.MouseWheelMsg{X: popup.x + 2, Y: popup.y + 1, Button: tea.MouseWheelUp}
+		stride := 1
+		if inline {
+			stride = 2 // Only the even rows match the inline filter.
+		}
+		for _, step := range []struct {
+			msg      tea.Msg
+			position int
+			reviewed string
+		}{
+			{wheel, 0, "reviewed"}, {specialKey(tea.KeyDown), 1, ""},
+			{specialKey(tea.KeyPgDown), 11, ""}, {wheel, 8, ""}, {specialKey(tea.KeyPgUp), 0, ""},
+		} {
+			next, cmd, handled := m.updateMonitorCommands(step.msg)
+			m = next
+			if !handled || cmd != nil || m.monitorCommands.selected != step.position*stride || m.monitorCommands.reviewedChoice != step.reviewed || m.monitorPrompt.input.Value() != "/fast Show" {
+				t.Fatalf("inline=%t input=%v: selected=%d reviewed=%q draft=%q", inline, step.msg, m.monitorCommands.selected, m.monitorCommands.reviewedChoice, m.monitorPrompt.input.Value())
+			}
+		}
+	}
+}
+
 func TestMonitorCommandRepeatGuardsOnlySubmissionKeys(t *testing.T) {
 	m, f := commandTestModel(t)
 	m.SetConfirmationMode(confirmation.None)

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/merefield/codexometer/internal/digbench"
@@ -527,6 +528,43 @@ func TestRunDigBenchInterruptsTurnWhenStopped(t *testing.T) {
 	}
 	if !strings.Contains(requests.String(), `"method":"turn/interrupt"`) {
 		t.Fatalf("turn interrupt was not requested: %s", requests.String())
+	}
+}
+
+func TestDigBenchTimedOutTurnRequiresMatchingCompletion(t *testing.T) {
+	for _, tc := range []struct{ thread, turn string }{
+		{"thread-1", "turn-1"}, {"other", "turn-1"}, {"thread-1", "other"},
+	} {
+		t.Run(tc.thread+"/"+tc.turn, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				server, requests := newFakeBenchmarkServer(
+					benchmarkEnvelope{ID: rawJSON(1), Result: json.RawMessage(`{"thread":{"id":"thread-1"}}`)},
+					benchmarkEnvelope{ID: rawJSON(2), Result: json.RawMessage(`{"turn":{"id":"turn-1"}}`)},
+				)
+				defer server.close()
+				server.interruptTimeout = 3 * time.Second
+				ctx, cancel := context.WithTimeoutCause(t.Context(), time.Second, errDigBenchTimeout)
+				defer cancel()
+				go func() {
+					time.Sleep(2 * time.Second) // Virtual time: after the run deadline, during cleanup.
+					server.envelopes <- benchmarkEnvelope{ID: rawJSON(3), Result: rawJSON(nil)}
+					server.envelopes <- benchmarkEnvelope{Method: "turn/completed", Params: rawJSON(map[string]any{
+						"threadId": tc.thread, "turn": map[string]string{"id": tc.turn, "status": "interrupted"},
+					})}
+				}()
+				result, err := server.runDigBench(ctx, &fakeDigBenchService{}, benchmarkCombination{}, DigBenchOptions{Timeout: time.Second})
+				if strings.Count(requests.String(), `"method":"turn/interrupt"`) != 1 {
+					t.Fatalf("expected one interrupt: %s", requests)
+				}
+				if tc.thread == "thread-1" && tc.turn == "turn-1" {
+					if err != nil || result.Failure != "DigBench run timed out after 1s" {
+						t.Fatalf("confirmed interrupt: failure=%q err=%v", result.Failure, err)
+					}
+				} else if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(result.Failure, "cleanup failed") {
+					t.Fatalf("unrelated completion acknowledged: failure=%q err=%v", result.Failure, err)
+				}
+			})
+		})
 	}
 }
 

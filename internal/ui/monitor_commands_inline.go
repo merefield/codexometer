@@ -180,15 +180,7 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			m.closeMonitorCommands()
 			return m, nil, false
 		case "up", "down", "pgup", "pgdown":
-			d := 1
-			if key.String() == "up" || key.String() == "pgup" {
-				d = -1
-			}
-			if strings.HasPrefix(key.String(), "pg") {
-				d *= 10
-			}
-			m.moveInlineCommandSelection(d)
-			return m, nil, true
+			return m, nil, false // Let the shared popup navigation move the selection.
 		case "enter":
 			if p.busy || p.notice != "" {
 				return m, nil, true
