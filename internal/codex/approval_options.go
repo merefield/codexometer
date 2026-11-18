@@ -3,6 +3,7 @@ package codex
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -10,6 +11,16 @@ import (
 // Value selects an advertised option. Wire is a command decision or a complete
 // MCP elicitation response, selected by the request's validated protocol.
 type ApprovalOption struct{ Kind, Value, Wire, Detail string }
+
+// This is an argument vector, not a shell command. Preserve token boundaries,
+// embedded quotes and line breaks even when two rules differ by a single space.
+func quotedArguments(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = strconv.Quote(arg)
+	}
+	return strings.Join(quoted, " ")
+}
 
 // Shared labels keep terminal and browser actions aligned. Grants can have a
 // distinct confirmation label; dismissals retain their original wording.
@@ -94,7 +105,7 @@ func commandApprovalOptions(raw []json.RawMessage) ([8]ApprovalOption, string) {
 						}
 						if valid {
 							wire, _ := json.Marshal(map[string]any{"acceptWithExecpolicyAmendment": amendment})
-							o = ApprovalOption{Kind: name, Value: string(wire), Wire: string(wire), Detail: string(prefix)}
+							o = ApprovalOption{Kind: name, Value: string(wire), Wire: string(wire), Detail: quotedArguments(amendment.Prefix)}
 						} else {
 							name = "unsupported-execpolicy"
 						}

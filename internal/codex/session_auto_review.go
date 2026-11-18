@@ -92,11 +92,7 @@ func reviewSubject(raw json.RawMessage) (string, string) {
 	case "execve":
 		text = a.Program
 		if len(a.Argv) > 0 {
-			args := make([]string, len(a.Argv))
-			for i, arg := range a.Argv {
-				args[i] = strconv.Quote(arg)
-			}
-			text += " // argv: " + strings.Join(args, " ")
+			text += " // argv: " + quotedArguments(a.Argv)
 		}
 	case "networkAccess":
 		text = a.Target

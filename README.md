@@ -2323,7 +2323,8 @@ first when available and the remaining choices in their offered order:
   without asking again.
 - **ALWAYS ALLOW PREFIX** applies the exact displayed persistent command-prefix
   rule after **CONFIRM PERSISTENT RULE**. Future matching commands may run
-  without asking again; review the displayed prefix carefully.
+  without asking again. Each argument is quoted separately: `"git" "a b"`
+  matches a different prefix from `"git" "a" "b"`.
 - **DECLINE** rejects the command but lets the agent continue the turn.
 - **REJECT & STOP TURN** sends Codex's `cancel` decision: reject the command and
   interrupt the turn. This is distinct from declining or closing the detail page.
