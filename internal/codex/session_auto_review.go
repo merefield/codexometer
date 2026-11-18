@@ -108,17 +108,8 @@ func reviewSubject(raw json.RawMessage) (string, string) {
 	return a.Type, SanitizeSessionContext(text)
 }
 
-var retryFieldNames = map[string]string{
-	"type": "Action type", "source": "Source", "command": "Command", "cwd": "Working directory",
-	"program": "Program", "argv": "Arguments", "files": "Files", "approvalId": "Approval ID",
-	"processId": "Process ID", "stdin": "Terminal input", "target": "Target", "host": "Host",
-	"protocol": "Protocol", "port": "Port", "server": "Server", "toolName": "Tool",
-	"connectorId": "Connector ID", "connectorName": "Connector", "toolTitle": "Tool title",
-	"reason": "Reason", "permissions": "Requested access",
-}
-
 func retryInspection(kind string, raw json.RawMessage, finding ReviewFinding) (string, bool) {
-	action, ok := reviewFields(raw, retryFieldNames)
+	action, ok := reviewFields(raw, nativeFieldLabel)
 	if !ok {
 		return "", false
 	}

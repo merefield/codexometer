@@ -12,7 +12,7 @@ import (
 // reviewFields renders an object's fields without changing their types, merging
 // duplicate keys, rounding numbers, or interpreting strings as markup. Limits
 // apply to the whole inspection: never offer an action on a partial outline.
-func reviewFields(raw json.RawMessage, labels map[string]string) (string, bool) {
+func reviewFields(raw json.RawMessage, labelFor func(string) string) (string, bool) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || len(raw) > approvalTextLimit || raw[0] != '{' || !json.Valid(raw) {
 		return "", false
@@ -54,12 +54,14 @@ func reviewFields(raw json.RawMessage, labels map[string]string) (string, bool) 
 						return false
 					}
 					seen[key] = true
-					name = labels[key]
+					if labelFor != nil {
+						name = labelFor(key)
+					}
 					if name == "" {
 						// Quote unusual keys so an argument cannot forge a heading
 						// or masquerade as an array index or translated label.
 						name = strconv.Quote(key)
-						if labels == nil && simpleReviewKey(key) {
+						if labelFor == nil && simpleReviewKey(key) {
 							name = key
 						}
 					}
@@ -97,17 +99,38 @@ func simpleReviewKey(s string) bool {
 	}) < 0
 }
 
-var permissionFieldNames = map[string]string{
-	"network": "Network access", "enabled": "Enabled", "fileSystem": "File system",
-	"read": "Read paths", "write": "Write paths", "entries": "Access rules", "access": "Access",
-	"path": "Path", "type": "Type", "pattern": "Pattern", "value": "Value", "kind": "Kind",
-	"subpath": "Subpath", "globScanMaxDepth": "Maximum glob depth", "host": "Host", "protocol": "Protocol",
+// Only native schema keys receive captions. Literal tool argument names and
+// unfamiliar future fields remain identifiable as such.
+func nativeFieldLabel(key string) string {
+	switch key {
+	case "read", "write":
+		return strings.ToUpper(key[:1]) + key[1:] + " paths"
+	case "enabled", "access", "path", "type", "pattern", "value", "kind", "subpath", "host", "protocol", "target", "port", "server", "source", "command", "program", "files", "reason",
+		"approvalId", "processId", "connectorId", "connectorName", "toolName", "toolTitle", "fileSystem", "globScanMaxDepth":
+		// These native keys are ASCII lowerCamelCase.
+		var b strings.Builder
+		b.WriteString(strings.ToUpper(key[:1]))
+		for _, ch := range key[1:] {
+			if ch >= 'A' && ch <= 'Z' {
+				b.WriteByte(' ')
+				ch += 'a' - 'A'
+			}
+			b.WriteRune(ch)
+		}
+		return strings.ReplaceAll(b.String(), " id", " ID")
+	}
+	return fieldAliases[key]
+}
+
+var fieldAliases = map[string]string{
+	"network": "Network access", "entries": "Access rules", "permissions": "Requested access",
+	"cwd": "Working directory", "argv": "Arguments", "stdin": "Terminal input",
 }
 
 // Only for requests that must be reviewed in Codex. Unknown, ambiguous or
 // oversized data never becomes an actionable substitute for a native review.
 func observedScope(raw json.RawMessage) string {
-	if fields, ok := reviewFields(raw, permissionFieldNames); ok {
+	if fields, ok := reviewFields(raw, nativeFieldLabel); ok {
 		return fields
 	}
 	return incompleteScope

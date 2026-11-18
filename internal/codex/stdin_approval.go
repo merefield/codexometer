@@ -7,21 +7,23 @@ import (
 	"strings"
 )
 
-type stdinApprovalParams struct {
-	Command     string            `json:"command"`
-	Directory   string            `json:"cwd"`
-	Reason      string            `json:"reason"`
-	ApprovalID  string            `json:"approvalId"`
-	Environment string            `json:"environmentId"`
-	Decisions   []json.RawMessage `json:"availableDecisions"`
-	Permissions json.RawMessage   `json:"additionalPermissions"`
-	Network     json.RawMessage   `json:"networkApprovalContext"`
+type approvalRequestScope struct {
+	CWD           string            `json:"cwd"`
+	EnvironmentID string            `json:"environmentId"`
+	Decisions     []json.RawMessage `json:"availableDecisions"`
+	Permissions   json.RawMessage   `json:"additionalPermissions"`
+	Network       json.RawMessage   `json:"networkApprovalContext"`
 }
 
 func configureStdinApproval(c *SessionContext, raw json.RawMessage) {
 	c.Kind, c.ApprovalBlocked = SessionContextApproval, "command-format"
 	c.Text = "Terminal input requires review in Codex."
-	var p stdinApprovalParams
+	var p struct {
+		approvalRequestScope
+		Command    string `json:"command"`
+		Reason     string `json:"reason"`
+		ApprovalID string `json:"approvalId"`
+	}
 	if len(raw) > approvalTextLimit {
 		c.ApprovalBlocked = "truncated"
 		return
@@ -42,7 +44,7 @@ func configureStdinApproval(c *SessionContext, raw json.RawMessage) {
 		c.ApprovalBlocked = "network"
 		return
 	}
-	if p.Directory == "" {
+	if p.CWD == "" {
 		c.ApprovalBlocked = "missing-directory"
 		return
 	}
@@ -50,7 +52,7 @@ func configureStdinApproval(c *SessionContext, raw json.RawMessage) {
 	if !valid || strings.ContainsRune(input, 0) {
 		return
 	}
-	c.Text = "Terminal: " + terminal + "\nInput (escaped): " + strconv.QuoteToASCII(input) + "\nStart directory: " + p.Directory + "\nEnvironment: " + p.Environment + "\n" + p.Reason
+	c.Text = "Terminal: " + terminal + "\nInput (escaped): " + strconv.QuoteToASCII(input) + "\nStart directory: " + p.CWD + "\nEnvironment: " + p.EnvironmentID + "\n" + p.Reason
 	if !approvalTextFits(c.Text) {
 		c.ApprovalBlocked = "truncated"
 		return
@@ -80,7 +82,7 @@ func configureStdinApproval(c *SessionContext, raw json.RawMessage) {
 		c.ApprovalBlocked = "decisions"
 		return
 	}
-	c.ActionDetails = ApprovalActionDetails{Kind: "stdin", Target: terminal, Input: input, Directory: p.Directory, Environment: p.Environment, Justification: p.Reason}
+	c.ActionDetails = ApprovalActionDetails{Kind: "stdin", Target: terminal, Input: input, Directory: p.CWD, Environment: p.EnvironmentID, Justification: p.Reason}
 	c.ApprovalOptions = options
 	c.ApprovalToken, c.ApprovalBlocked = rand.Text(), ""
 }

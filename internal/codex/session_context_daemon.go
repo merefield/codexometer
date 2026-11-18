@@ -41,6 +41,7 @@ type contextCommandItem struct{ Command, CWD string }
 
 func daemonContextEvent(states map[string]*daemonContextState, method string, id, raw json.RawMessage, now time.Time) {
 	var p struct {
+		approvalRequestScope
 		Turn struct {
 			ID     string          `json:"id"`
 			Status string          `json:"status"`
@@ -51,12 +52,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		TurnID               string            `json:"turnId"`
 		ItemID               string            `json:"itemId"`
 		Delta                string            `json:"delta"`
-		CWD                  string            `json:"cwd"`
-		EnvironmentID        string            `json:"environmentId"`
-		Network              json.RawMessage   `json:"networkApprovalContext"`
-		Permissions          json.RawMessage   `json:"additionalPermissions"`
 		RequestedPermissions json.RawMessage   `json:"permissions"`
-		Decisions            []json.RawMessage `json:"availableDecisions"`
 		ThreadID             string            `json:"threadId"`
 		StartedAtMS          *int64            `json:"startedAtMs"`
 		CompletedAtMS        *int64            `json:"completedAtMs"`
