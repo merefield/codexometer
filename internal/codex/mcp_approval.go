@@ -157,12 +157,11 @@ func mcpApprovalArguments(raw, display json.RawMessage) (string, bool) {
 			return "", true // Omitted metadata is not proof of an empty argument object.
 		}
 	}
-	var object map[string]json.RawMessage
-	if json.Unmarshal(raw, &object) != nil || object == nil {
-		return "", false
+	fields, ok := reviewFields(raw, nil)
+	if ok && fields == "{}" {
+		return "No arguments", true
 	}
-	formatted, err := json.MarshalIndent(object, "", "  ")
-	return string(formatted), err == nil && approvalTextFits(string(formatted))
+	return fields, ok
 }
 
 func mcpApprovalScopes(raw json.RawMessage) []string {

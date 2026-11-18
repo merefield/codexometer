@@ -6270,7 +6270,7 @@ for (const mode of ['balanced', 'none', 'require']) {
         title: 'Create Event',
         connector: 'Calendar',
         message: 'Allow Calendar to create an event?',
-        arguments: '{"title":"Demo <event>"}',
+        arguments: 'title: "Demo <event>"',
       };
       const labels = [
         'APPROVE ONCE',
@@ -6318,7 +6318,7 @@ for (const mode of ['balanced', 'none', 'require']) {
       await expect(review).toBeVisible();
       await expect(review).toContainText('codex_apps');
       await expect(review).toContainText('Create Event');
-      await expect(review).toContainText('Demo <event>');
+      await expect(review).toContainText('title: "Demo <event>"');
       await expect(
         page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
       ).toHaveCount(0);

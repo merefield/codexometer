@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // reviewFields renders an object's fields without changing their types, merging
@@ -49,7 +50,7 @@ func reviewFields(raw json.RawMessage, labels map[string]string) (string, bool) 
 				if obj {
 					k, err := d.Token()
 					key, ok := k.(string)
-					if err != nil || !ok || seen[key] {
+					if err != nil || !ok || seen[key] || strings.ContainsRune(key, utf8.RuneError) {
 						return false
 					}
 					seen[key] = true
@@ -71,6 +72,11 @@ func reviewFields(raw json.RawMessage, labels map[string]string) (string, bool) 
 			}
 			_, err = d.Token()
 		case string:
+			// encoding/json replaces invalid UTF-8 and lone UTF-16 surrogates
+			// with U+FFFD. Never describe a lossy decoding as an exact review.
+			if strings.ContainsRune(v, utf8.RuneError) {
+				return false
+			}
 			out.WriteString(" " + strconv.Quote(v) + "\n")
 		case nil:
 			out.WriteString(" null\n")
