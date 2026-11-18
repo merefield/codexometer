@@ -594,8 +594,15 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 				if tier, ok := o.params["serviceTier"].(string); ok {
 					current.Tier = &tier
 				}
-				if changingModel && m.deferModel {
-					return p.queueModelChange(conn, *m.settings, current, o.params)
+				if changingModel {
+					if m.deferModel {
+						return p.queueModelChange(conn, *m.settings, current, o.params)
+					}
+					// Both paths hold settingsMu: a newly accepted idle choice
+					// supersedes any older intent, even if this write is unconfirmed.
+					p.mu.Lock()
+					delete(p.pendingModels, id)
+					p.mu.Unlock()
 				}
 				return p.writeQuotaSettingsOn(ctx, conn, current, o.params)
 			}

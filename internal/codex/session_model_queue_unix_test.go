@@ -63,6 +63,49 @@ func TestQueuedModelAppliesOnceAtIdleStop(t *testing.T) {
 	}
 }
 
+func TestIdleModelReselectionSupersedesOlderIntent(t *testing.T) {
+	for _, state := range []string{"queued", "failed; reselect /model"} {
+		t.Run(state, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			f.mu.Lock()
+			f.providerModels = map[string]map[string]any{"": {"data": []any{
+				map[string]any{"model": "large", "defaultReasoningEffort": "high"},
+				map[string]any{"model": "small", "defaultReasoningEffort": "medium"},
+			}}}
+			f.mu.Unlock()
+			m, err := p.SessionCommands(t.Context(), "one", "model/large")
+			if err != nil || len(m.Choices) != 1 || !m.Choices[0].Action {
+				t.Fatal(m, err)
+			}
+			p.mu.Lock()
+			old := &pendingModelChange{connection: p.connection, before: *m.settings,
+				target:  QuotaSession{ID: "one", Model: "small", Effort: "medium"},
+				params:  map[string]any{"threadId": "one", "model": "small", "effort": "medium", "serviceTier": nil},
+				display: PendingModelChange{State: state}}
+			p.pendingModels = map[string]*pendingModelChange{"one": old}
+			p.mu.Unlock()
+
+			// Re-select the original settings: a settings-change check alone
+			// cannot distinguish this new intent from the older queued one.
+			if err := p.ExecuteSessionCommand(t.Context(), "one", m.Path, m.Revision, m.Choices[0].ID); err != nil {
+				t.Fatal(err)
+			}
+			p.mu.Lock()
+			remaining := p.pendingModels["one"]
+			p.mu.Unlock()
+			if remaining != nil {
+				t.Fatal("older model receipt survived explicit reselection")
+			}
+			p.applyModelChange("one", old) // Even a worker already waiting for settingsMu loses.
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.writes) != 1 || f.sessions["one"].Model != "large" {
+				t.Fatalf("obsolete selection overwrote newer intent: %+v", f.writes)
+			}
+		})
+	}
+}
+
 func TestQueuedModelRejectsConflictAndNeverRetriesUnconfirmedWrite(t *testing.T) {
 	for _, scenario := range []string{"conflict", "unconfirmed", "closed", "disconnected", "still-working"} {
 		t.Run(scenario, func(t *testing.T) {
