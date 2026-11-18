@@ -94,11 +94,16 @@
     now = $state(Date.now());
   let name = $state('');
   let typedInputPrefix = $state('');
+  const commandDraft = $derived(query.trimStart()); // A trailing separator enters the next level.
   $effect(() => {
     // A typed command keeps the real composer editable while its input
     // menu loads. Manual picks and Back use the server or restored value.
-    if (typedInputPrefix && menu?.input && query.startsWith(typedInputPrefix))
-      name = query.slice(typedInputPrefix.length) || menu.value || '';
+    if (
+      typedInputPrefix &&
+      menu?.input &&
+      commandDraft.startsWith(typedInputPrefix)
+    )
+      name = commandDraft.slice(typedInputPrefix.length) || menu.value || '';
   });
   let request = 0;
   let selectedIndex = $state(0);
@@ -152,7 +157,7 @@
           path: menu.path,
           index: selectedIndex,
           input: name,
-          draft: parentDraft,
+          draft: parentDraft ?? (slash ? query : undefined),
         },
       ];
     await load(path, undefined, false, parentDraft !== undefined);
@@ -178,7 +183,8 @@
     const level = history.at(-1);
     if (!level) return;
     history = history.slice(0, -1);
-    if (level.draft !== undefined) oncomplete(level.draft);
+    if (level.draft !== undefined && level.draft !== query)
+      oncomplete(level.draft);
     await load(level.path, level);
   }
   function reviewInput() {
@@ -196,11 +202,11 @@
     request++;
   });
   let slash = $derived(
-    query.trim().startsWith('/') && !query.trim().startsWith('//'),
+    commandDraft.startsWith('/') && !commandDraft.startsWith('//'),
   );
   let filter = $derived(
     menu?.path === '' && slash
-      ? query.trim().slice(1).split(/\s/, 1)[0].toLowerCase()
+      ? commandDraft.slice(1).split(/\s/, 1)[0].toLowerCase()
       : parameterQuery().trim().toLowerCase(),
   );
   function parameterNames(choice: Choice) {
@@ -225,8 +231,8 @@
     )
       return '';
     const prefix = commandPrefix(menu.path);
-    return query.toLowerCase().startsWith(prefix.toLowerCase())
-      ? query.slice(prefix.length)
+    return commandDraft.toLowerCase().startsWith(prefix.toLowerCase())
+      ? commandDraft.slice(prefix.length)
       : '';
   }
   let choices = $derived.by(() => {
@@ -266,7 +272,8 @@
       history.length >= 16
     )
       return;
-    const raw = menu.path === '' && slash ? query.slice(1) : parameterQuery();
+    const raw =
+      menu.path === '' && slash ? commandDraft.slice(1) : parameterQuery();
     for (const choice of menu.choices || []) {
       if (!choice.next || localPaths.includes(choice.next)) continue;
       const names = parameterNames(choice);

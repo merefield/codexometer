@@ -2355,7 +2355,7 @@ test('Back after a pasted model command stays on its parent until another separa
   });
   const editor = page.getByRole('textbox', { name: 'Follow-up message' });
   const panel = page.getByRole('region', { name: 'Session slash commands' });
-  await editor.fill('/model beta high');
+  await editor.fill('  /model beta high');
   await expect(
     panel.getByRole('button', { name: 'High // HELP' }),
   ).toBeEnabled();
@@ -2363,6 +2363,21 @@ test('Back after a pasted model command stays on its parent until another separa
   await expect(editor).toHaveValue('/model beta');
   await expect(panel.getByRole('button', { name: 'Beta →' })).toBeEnabled();
   expect(paths).toEqual(['', 'model', 'model/beta', 'model']);
+  // A manually selected child must retain the same parent draft as one
+  // opened by a separator, even if the composer changes while inside it.
+  for (const via of ['click', 'Enter']) {
+    if (via === 'click')
+      await panel.getByRole('button', { name: 'Beta →' }).click();
+    else await editor.press('Enter');
+    await expect(
+      panel.getByRole('button', { name: 'High // HELP' }),
+    ).toBeEnabled();
+    await editor.fill('/model beta high');
+    await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+    await expect(editor).toHaveValue('/model beta');
+    await expect(panel.getByRole('button', { name: 'Beta →' })).toBeEnabled();
+    expect(paths.slice(-2)).toEqual(['model/beta', 'model']);
+  }
   await editor.press('End');
   await editor.press('Space');
   await expect(
@@ -2473,9 +2488,9 @@ for (const command of ['rename', 'cd']) {
             req.url().endsWith('/api/control/commands') &&
             req.postDataJSON().command.path === 'rename',
         );
-        await text.fill('/rename ');
+        await text.fill('  /rename ');
         await requested;
-        await text.fill('/rename still typing');
+        await text.fill('  /rename still typing');
         gate.resolve();
         await expect(input).toHaveValue('still typing');
         await text.fill('/rename ' + value);
