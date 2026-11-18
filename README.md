@@ -1922,7 +1922,9 @@ the choice under its managed requirements. For example:
 
 Profile IDs come from the live catalogue; `:workspace` is an example, not a
 hard-coded fallback. Quoted arguments and native granular policy JSON are
-accepted. Profile, policy and reviewer changes target subsequent turns. An
+accepted. The menu spells out which kinds of approval **prompts** a managed
+policy enables or disables; enabling a prompt does not grant permission.
+Profile, policy and reviewer changes target subsequent turns. An
 acknowledgement alone is not success: Codexometer reads back the requested
 settings. An unconfirmed update is not automatically retried.
 
@@ -1933,7 +1935,8 @@ Decision and risk share a line when space permits; full detail also shows Codex'
 assessment of user authorisation when reported. Terminal and web attach a verdict
 to the command only when its native identity matches. It clears as work moves to
 another command or the turn ends; an old denial can still be inspected via
-`/approve`. Private Guardian thread output is never treated as the conversation's
+`/approve`, which shows the action fields, risk, rationale (when reported),
+and one-retry scope before you consent. Private Guardian thread output is never treated as the conversation's
 last reply. Its tokens still count, but only a native review event—not JSON
 extracted from a reply—supplies a verdict. This is informational, not a request for you to click
 Approve. Actual mandatory human checkpoints keep their normal controls and pills.
@@ -2336,6 +2339,11 @@ names/types for troubleshooting, not conversation content. Structured
 command-prefix grants are validated and their exact payload is returned; no
 decision absent from the request can be submitted. For older servers omitting
 the decision list, only the legacy Accept/Cancel pair is offered.
+
+Terminal and web show tool arguments as named rows, with numbered entries for
+lists. Additional permission requests show the requested access and working
+directory when reported. These remain **review in Codex** requests: displaying
+the scope does not enable an Approve button.
 
 Closing the detail page cancels an unsubmitted confirmation. Each visible
 approval button has a numbered shortcut (`1`–`8`, following the displayed order).
