@@ -317,6 +317,9 @@ func TestNativePermissionsInlineAndVerification(t *testing.T) {
 	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action {
 		t.Fatalf("menu %+v %v", menu, err)
 	}
+	if !strings.Contains(menu.Help, "Current approval policy: On request") || !strings.Contains(menu.Choices[0].Help, "Reviewer: Codex auto-review") || strings.Contains(menu.Choices[0].Help, "--approval-policy") {
+		t.Fatal(menu)
+	}
 	if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -334,6 +337,29 @@ func TestNativePermissionsInlineAndVerification(t *testing.T) {
 	defer cancel()
 	if err := p.ExecuteSessionCommand(limited, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err == nil || !strings.Contains(err.Error(), "unconfirmed") {
 		t.Fatalf("ignored reviewer reported success: %v", err)
+	}
+}
+
+func TestManagedPolicyOptionsExplainDifferencesWithoutChangingWireValues(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	configureNativePermissions(f)
+	policy := func(on bool) map[string]any {
+		return map[string]any{"granular": map[string]bool{"sandbox_approval": true, "rules": on, "mcp_elicitations": false}}
+	}
+	f.mu.Lock()
+	f.catalogues["configRequirements/read"] = map[string]any{"requirements": map[string]any{"allowedApprovalPolicies": []any{policy(false), policy(true), map[string]any{"future": true}}}}
+	f.mu.Unlock()
+	menu, err := p.SessionCommands(context.Background(), "one", "permissions/policy")
+	if err != nil || len(menu.Choices) != 3 {
+		t.Fatalf("%+v %v", menu, err)
+	}
+	for i, o := range menu.Choices[:2] {
+		if !o.Action || !equalPermissionPolicy(o.params["approvalPolicy"], policy(i == 1)) || !strings.Contains(o.Help, "Approval prompts disabled:") || strings.Contains(o.Help+o.Label, "{") {
+			t.Fatal(o)
+		}
+	}
+	if menu.Choices[0].Label == menu.Choices[1].Label || menu.Choices[2].Action || menu.Choices[2].Unavailable == "" {
+		t.Fatal(menu.Choices)
 	}
 }
 
