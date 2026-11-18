@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -97,6 +98,12 @@ func TestMonitorHistoryRejectsStreamingAndRemovesCapabilities(t *testing.T) {
 }
 
 func TestMonitorHistoryRenderedControlsAndLiveApproval(t *testing.T) {
+	// Hover should only change styling. Freeze the observation age across
+	// renders so crossing a clock boundary cannot change the underlying text.
+	synctest.Test(t, testMonitorHistoryRenderedControlsAndLiveApproval)
+}
+
+func testMonitorHistoryRenderedControlsAndLiveApproval(t *testing.T) {
 	for _, width := range []int{28, 40, 80, 160} {
 		m := historyTestModel()
 		m.width = width
@@ -133,8 +140,11 @@ func TestMonitorHistoryRenderedControlsAndLiveApproval(t *testing.T) {
 			if b.enabled {
 				m.monitorContextHover = b.action
 				hover := m.renderMonitorContextDetail(g.contentWidth, g.meterHeight, paletteFor(m.theme))
-				if hover == out || ansi.Strip(hover) != ansi.Strip(out) {
-					t.Fatal("history hover altered layout or was missing")
+				if hover == out {
+					t.Fatalf("hover did not style %s at width %d", b.action, width)
+				}
+				if got := ansi.Strip(hover); got != ansi.Strip(out) {
+					t.Fatalf("hover on %s at width %d changed the visible text:\nbefore:\n%s\nafter:\n%s", b.action, width, ansi.Strip(out), got)
 				}
 				m.monitorContextHover = ""
 			}
