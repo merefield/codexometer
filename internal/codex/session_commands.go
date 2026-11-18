@@ -116,7 +116,6 @@ type sessionPermissionSnapshot struct {
 
 type SessionCommandMenu struct {
 	humanWait       bool
-	deferModel      bool
 	permissions     *sessionPermissionSnapshot
 	settings        *QuotaSession // Fresh execution snapshot; never part of the wire menu.
 	ReversibleInput bool          `json:"reversibleInput,omitempty"`

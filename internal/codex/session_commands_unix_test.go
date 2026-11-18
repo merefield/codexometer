@@ -425,7 +425,7 @@ func TestSessionCommandAvailabilityQueuesModelDuringWork(t *testing.T) {
 		t.Fatal(menu, err)
 	}
 	for _, choice := range menu.Choices {
-		if !choice.Action || choice.Unavailable != "" || !menu.deferModel {
+		if !choice.Action || choice.Unavailable != "" {
 			t.Fatalf("working model selection should be queueable: %+v", choice)
 		}
 		if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err != nil {

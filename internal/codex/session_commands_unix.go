@@ -197,7 +197,6 @@ func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path str
 func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path string, menu SessionCommandMenu) SessionCommandMenu {
 	state := parseSessionRuntimeStatus(thread.Status.Type, thread.Status.ActiveFlags)
 	menu.humanWait = state == sessionRuntimeApproval || state == sessionRuntimeInput
-	menu.deferModel = strings.HasPrefix(path, "model/") && thread.Status.Type == "active"
 	menu.Path = path
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
@@ -515,9 +514,10 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 				return p.approveAutoReview(ctx, conn, id, o)
 			}
 			_, hasTier := o.params["serviceTier"]
+			_, changingModel := o.params["model"]
 			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
 			p.mu.Lock()
-			valid := p.connection == conn && (m.deferModel || speedOnly || o.method == "thread/name/set" || !p.commandHumanWaitLocked(id))
+			valid := p.connection == conn && (changingModel || speedOnly || o.method == "thread/name/set" || !p.commandHumanWaitLocked(id))
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand
@@ -575,7 +575,6 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 				}
 				return p.writeVerifiedPermissions(ctx, conn, id, permission, o.params)
 			}
-			_, changingModel := o.params["model"]
 			if m.Picker || changingModel {
 				if m.settings == nil {
 					return ErrSessionCommand
@@ -595,14 +594,7 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 					current.Tier = &tier
 				}
 				if changingModel {
-					if m.deferModel {
-						return p.queueModelChange(conn, *m.settings, current, o.params)
-					}
-					// Both paths hold settingsMu: a newly accepted idle choice
-					// supersedes any older intent, even if this write is unconfirmed.
-					p.mu.Lock()
-					delete(p.pendingModels, id)
-					p.mu.Unlock()
+					return p.setOrQueueModel(ctx, conn, *m.settings, current, o.params)
 				}
 				return p.writeQuotaSettingsOn(ctx, conn, current, o.params)
 			}

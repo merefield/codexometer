@@ -19,6 +19,29 @@ type pendingModelChange struct {
 	writing        bool
 }
 
+// Discovery and settings reads may span another client's turn start. Decide
+// from fresh state before superseding an older intent, under settingsMu.
+func (p *daemonStatusProvider) setOrQueueModel(ctx context.Context, conn *websocket.Conn, before, target QuotaSession, params map[string]any) error {
+	err := p.requireIdleModelThread(ctx, before.ID)
+	if err != nil && !errors.Is(err, errModelStillWorking) {
+		return err
+	}
+	p.mu.Lock()
+	if p.connection != conn {
+		p.mu.Unlock()
+		return ErrSessionCommand
+	}
+	queue := err != nil || p.commandHumanWaitLocked(before.ID)
+	if !queue {
+		delete(p.pendingModels, before.ID)
+	}
+	p.mu.Unlock()
+	if queue {
+		return p.queueModelChange(conn, before, target, params)
+	}
+	return p.writeQuotaSettingsOn(ctx, conn, target, params)
+}
+
 // Called with settingsMu held. One pending change per session: an explicit
 // later selection replaces an unsent selection, never an in-flight write.
 func (p *daemonStatusProvider) queueModelChange(conn *websocket.Conn, before, target QuotaSession, params map[string]any) error {

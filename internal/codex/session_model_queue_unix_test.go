@@ -63,6 +63,41 @@ func TestQueuedModelAppliesOnceAtIdleStop(t *testing.T) {
 	}
 }
 
+func TestModelRechecksThreadAfterDiscovery(t *testing.T) {
+	for _, status := range []string{"active", "notLoaded"} {
+		t.Run(status, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			menu, err := p.SessionCommands(t.Context(), "one", "model/small")
+			if err != nil || len(menu.Choices) != 1 {
+				t.Fatal(menu, err)
+			}
+			previous := &pendingModelChange{display: PendingModelChange{State: "failed; reselect /model"}}
+			p.mu.Lock()
+			p.pendingModels = map[string]*pendingModelChange{"one": previous}
+			p.mu.Unlock()
+			f.mu.Lock()
+			f.modelReadHook = func() { f.commandStatus = status; f.modelReadHook = nil }
+			f.mu.Unlock()
+			err = p.ExecuteSessionCommand(t.Context(), "one", menu.Path, menu.Revision, menu.Choices[0].ID)
+			if (err == nil) != (status == "active") {
+				t.Fatalf("status %s: %v", status, err)
+			}
+			p.mu.Lock()
+			item := p.pendingModels["one"]
+			queued := item != nil && item != previous && item.display.State == "queued" && item.target.Model == "small"
+			p.mu.Unlock()
+			if status == "active" && !queued || status != "active" && item != previous {
+				t.Fatal("incorrect queued intent")
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.writes) != 0 {
+				t.Fatal("wrote after losing idle status", f.writes)
+			}
+		})
+	}
+}
+
 func TestIdleModelReselectionSupersedesOlderIntent(t *testing.T) {
 	for _, state := range []string{"queued", "failed; reselect /model"} {
 		t.Run(state, func(t *testing.T) {
