@@ -210,6 +210,14 @@ func TestNativeDenialReviewNeverUsesClippedTelemetry(t *testing.T) {
 	if len(p.autoReviews["one"].latest.view.Rationale) >= len(rationale) {
 		t.Fatal("ordinary telemetry no longer bounded")
 	}
+	for _, want := range []string{"COMMAND REVIEW // BLOCKED BY AUTO-REVIEW", `Command: "touch /outside/result"`, `Working directory: "/work"`, "Risk: high", "Scope: one retry"} {
+		if !strings.Contains(menu.Choices[0].Help, want) {
+			t.Errorf("missing %q in retry inspection", want)
+		}
+	}
+	if strings.Contains(menu.Choices[0].Help, `"command":`) {
+		t.Fatal("raw action leaked into retry inspection")
+	}
 }
 
 func TestNativeAutoReviewExactRetryAndReplay(t *testing.T) {

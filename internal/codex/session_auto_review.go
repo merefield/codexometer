@@ -112,22 +112,31 @@ func reviewSubject(raw json.RawMessage) (string, string) {
 	return a.Type, SanitizeSessionContext(text)
 }
 
-func (r SessionAutoReview) Detail() string {
-	if r.ID == "" {
-		return ""
+var retryFieldNames = map[string]string{
+	"type": "Action type", "source": "Source", "command": "Command", "cwd": "Working directory",
+	"program": "Program", "argv": "Arguments", "files": "Files", "approvalId": "Approval ID",
+	"processId": "Process ID", "stdin": "Terminal input", "target": "Target", "host": "Host",
+	"protocol": "Protocol", "port": "Port", "server": "Server", "toolName": "Tool",
+	"connectorId": "Connector ID", "connectorName": "Connector", "toolTitle": "Tool title",
+	"reason": "Reason", "permissions": "Requested access",
+}
+
+func retryInspection(kind string, raw json.RawMessage, finding ReviewFinding) (string, bool) {
+	action, ok := reviewFields(raw, retryFieldNames)
+	if !ok {
+		return "", false
 	}
-	parts := []string{"AUTO REVIEW // " + r.Status}
-	if r.Risk != "" {
-		parts = append(parts, "Risk: "+r.Risk)
+	parts := []string{reviewTitles[kind] + " // " + reviewDecisions["denied"], "", action, ""}
+	if finding.Risk != "" {
+		parts = append(parts, "Risk: "+finding.Risk)
 	}
-	if r.Authorization != "" {
-		parts = append(parts, "User authorisation: "+r.Authorization)
+	if finding.Authorization != "" {
+		parts = append(parts, "User authorisation: "+finding.Authorization)
 	}
-	if r.Action != "" {
-		parts = append(parts, r.Action)
+	if finding.Rationale != "" {
+		parts = append(parts, "Rationale: "+finding.Rationale)
 	}
-	if r.Rationale != "" {
-		parts = append(parts, r.Rationale)
-	}
-	return strings.Join(parts, "\n")
+	parts = append(parts, "", "Scope: one retry of this action only.")
+	doc := strings.Join(parts, "\n")
+	return doc, approvalTextFits(doc) && SanitizeApprovalText(doc) == doc
 }

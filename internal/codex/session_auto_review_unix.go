@@ -3,6 +3,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -167,10 +168,8 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 			event["rationale"] = n.Review.Rationale
 		}
 		// Full authority is not reconstructed from a clipped/sanitised display.
-		full := r.view
-		full.Rationale, full.Action = n.Review.Rationale, string(n.Action)
-		details := full.Detail()
-		if approvalTextFits(details) && strings.TrimSpace(SanitizeApprovalText(details)) == strings.TrimSpace(details) {
+		finding := ReviewFinding{Risk: n.Review.RiskLevel, Authorization: n.Review.UserAuthorization, Rationale: n.Review.Rationale}
+		if details, ok := retryInspection(kind, n.Action, finding); ok {
 			r.details = details
 			r.event, _ = json.Marshal(event)
 		}
@@ -279,7 +278,9 @@ func (p *daemonStatusProvider) approveAutoReview(ctx context.Context, conn *webs
 // Unknown action fields fail closed, never silently weaken the retry identity.
 func nativeReviewAction(data json.RawMessage) (map[string]any, error) {
 	var a map[string]any
-	if json.Unmarshal(data, &a) != nil {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber() // Preserve integer scope values in the eventual retry event.
+	if !json.Valid(data) || d.Decode(&a) != nil {
 		return nil, ErrSessionCommand
 	}
 	kind, _ := a["type"].(string)
@@ -317,7 +318,11 @@ func nativeReviewAction(data json.RawMessage) (map[string]any, error) {
 				return nil, ErrSessionCommand
 			}
 		case "port":
-			if n, ok := v.(float64); !ok || n < 0 || n > 65535 || n != float64(int(n)) {
+			number, ok := v.(json.Number)
+			if !ok {
+				return nil, ErrSessionCommand
+			}
+			if n, err := number.Int64(); err != nil || n < 0 || n > 65535 {
 				return nil, ErrSessionCommand
 			}
 		default:
