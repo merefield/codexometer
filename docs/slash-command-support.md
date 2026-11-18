@@ -1,6 +1,6 @@
 # Slash-command support audit
 
-Refreshed on **2026-11-17** for **Codexometer v0.30.0**, against **Codex CLI 0.169.0** (`rust-v0.169.0`). Sources are the pinned [command registry](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/slash_command.rs), [native command dispatch](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/chatwidget/slash_dispatch.rs), [app-server method registry](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server-protocol/src/protocol/common.rs), [thread settings types](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs), and [native directory-change workflow](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/app/working_directory.rs). This replaces the earlier 0.162.1 registry snapshot; it is not a claim of compatibility with every newer Codex release.
+Codexometer behaviour updated for [v0.31.0](https://github.com/merefield/codexometer/releases/tag/v0.31.0) on **2026-11-18**. The upstream inventory remains pinned to **Codex CLI 0.169.0** (`rust-v0.169.0`): [command registry](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/slash_command.rs), [native command dispatch](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/chatwidget/slash_dispatch.rs), [app-server method registry](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server-protocol/src/protocol/common.rs), [thread settings types](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs), and [native directory-change workflow](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tui/src/app/working_directory.rs). This is not a claim of compatibility with every newer Codex release.
 
 The tables cover all **65 registered command variants** and the three additional accepted aliases `/cwd`, `/pet` and `/clean`: **68 upstream command names** in total. `/presets` and `/config` were absent from the earlier inventory and are now included as gaps, not newly implemented features. Codexometer’s local `/help` and terminal `/commands` entries, and model-advertised speed aliases, are outside that count. Platform, feature and debug-build filters affect actual visibility. The [published reference](https://learn.chatgpt.com/docs/developer-commands#built-in-slash-commands) is supplementary; the pinned registry determines this inventory. Codexometer has explicit adapters/local UI implementations; it does not send slash commands as model prompts. There is no generic server endpoint to discover or execute the CLI's slash commands.
 
@@ -29,12 +29,13 @@ These are proposed priorities for Codexometer's session-monitoring/control role,
 
 Aliases on one row share the rating and implementation. Lifecycle commands share a thread-handoff foundation, so their costs should not be added as independent projects. P1 is a value/need ranking, not a claim that every P1 is a quick win. Work blocked on a foundation comes after that foundation even if it has the same priority.
 
-### Delivered through v0.30.0
+### Delivered through v0.31.0
 
 - Native `/permissions` profiles, approval policies and Human/Auto-review reviewer selection, including quoted inline arguments and managed-policy checks.
 - Native `/approve` exact-denial retry consent, full inspection even with extra confirmations disabled, and root-thread-scoped assessment telemetry in terminal/web.
 - Provider-aware model/speed discovery and threshold validation on Codex 0.169+, plus thread/environment-aware `/hooks` discovery on 0.166+.
-- Immediate default application of reversible session settings; the launch confirmation policy controls extra review, not Codex's permissions or mandatory human checkpoints.
+- In the terminal and writable web composer, a space after a supported command opens its parameter list. Type `/goal resume` to narrow it to **Resume goal**, or type through the model and reasoning choices. Browsing does not run a command.
+- Reversible settings normally need no extra confirmation. Choose `/model` during work to queue a change for the next observed idle stop, not the running turn. The launch confirmation policy does not override Codex's permissions or mandatory human checkpoints.
 
 Local display commands remain daemon-independent. Server-backed menus use a bounded, memory-only catalogue tree; execution always revalidates fresh server options. These delivered items are not future roadmap work.
 

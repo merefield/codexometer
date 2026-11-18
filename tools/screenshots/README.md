@@ -61,7 +61,7 @@ they do not write files unless export is explicitly requested.
 
 ## Release checklist
 
-1. Finish the release changes and update `internal/version/VERSION`.
+1. Finish the [release documentation review](../../README.md#release-builds) and update `internal/version/VERSION`.
 2. Run `make screenshots` from that checkout.
 3. Open **every image** at readable size. Check clipping, missing glyphs,
    readable labels, meaningful states, synthetic-only content and the version.

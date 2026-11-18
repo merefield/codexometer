@@ -1598,6 +1598,9 @@ same action on that session. The presentations are:
    leave the editor before navigating history. These controls
    appear when replies have been retained and space permits; narrow layouts
    shorten the labels, and the hotkeys remain available on short terminals.
+   The source, thread ID and observation age sit to the right of the history
+   buttons when they fit, or on a left-aligned line below. The age is how long
+   ago that context was observed, not how long the turn took.
    Up/Down, Page Up/Down and the wheel still scroll the displayed reply; Copy
    copies that reply. A historical answer stays pinned while queued work runs,
    even if newer completions move it outside the recent-history cache.
@@ -2139,9 +2142,9 @@ cannot identify held-key repeats, tap action keys rather than holding them. The
 old `--no-confirm` flag has been removed; replace it with `--confirmation none`.
 Use `--confirmation balanced` to select the default explicitly.
 
-**Slash-command audit and roadmap:** the [version-matched inventory](docs/slash-command-support.md),
-refreshed **2026-11-17** for **Codexometer v0.30.0**, compares the implementation
-with Codex CLI **0.169.0**: **65 command variants plus three aliases**. It separates
+**Slash-command audit and roadmap:** the [support inventory](docs/slash-command-support.md)
+compares Codexometer's commands with a pinned Codex CLI registry and identifies
+both versions used for the comparison. It separates
 delivered controls (including `/permissions` and `/approve`) from prioritised
 future work, and includes the missing `/presets` and `/config` interfaces.
 Several missing commands already have
@@ -3571,8 +3574,10 @@ vulnerability checks. These checks add no application startup or runtime cost.
   same-origin JSON and bearer authorization. CORS is not enabled; control routes
   exist only when launched with `--web-control`.
 - Responses use `no-store`, `no-referrer`, `nosniff` and a restrictive Content
-  Security Policy with framing disabled. Session replies and commands render as
-  text, never HTML/Markdown execution. No CDN assets, analytics or external reply
+  Security Policy with framing disabled. Replies can display Markdown emphasis,
+  inline code and tables using fixed UI elements and escaped text. Reply text is
+  never inserted as raw HTML; commands and diffs stay literal.
+  No CDN assets, analytics or external reply
   images are loaded. Inline CSS is allowed for responsive gauges; inline scripts
   and JavaScript evaluation are not.
 
@@ -3699,7 +3704,14 @@ the `Release` GitHub Actions workflow: a semantic `v*` tag must resolve to a
 commit reachable from `main`, pass the full Linux/macOS/Windows test matrix, and
 remain unchanged between validation and publication.
 
-Before tagging **every release**, update `internal/version/VERSION`, run
+Before tagging **every release**, compare the user-visible changes since the
+previous tag with this README and the [forum intro](intro-post.md). If command
+behaviour changed, update the [slash-command audit](docs/slash-command-support.md)
+too. Documentation can land in separate `DOC:` commits before the tag. Use the
+same comparison for the [release highlights](https://github.com/merefield/codexometer/releases):
+describe what shipped, not intermediate PR iterations.
+
+Update `internal/version/VERSION`, run
 `make screenshots`, visually check the hero and feature images, and commit the
 refreshed `assets/screenshots/` alongside the version bump. CI checks that the
 images still match the current TUI; release validation also rejects a stale
