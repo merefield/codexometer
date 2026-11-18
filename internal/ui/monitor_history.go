@@ -280,22 +280,12 @@ func (m Model) historyButtonsForRows(width, textRows int) []monitorNavigationBut
 		{label: strings.Replace(i18n.Text("[ Alt+→: NEXT ]"), "Alt+", modifier+"+", 1), action: "history:next", enabled: h.selected != nil},
 		{label: i18n.Text("[ LIVE ]"), action: "history:live", enabled: h.selected != nil},
 	}
-	x := 2
-	for i := range buttons {
-		buttons[i].rect = monitorRect{x: x, y: 1, width: lipgloss.Width(buttons[i].label), height: 1}
-		x += buttons[i].rect.width + 1
+	if layoutNavigationButtons(buttons, 2, 1) <= width-2 {
+		return buttons
 	}
-	if x > width-2 {
-		for i, label := range []string{"[" + modifier + "+←]", "[" + modifier + "+→]", i18n.Text("[ LIVE ]")} {
-			buttons[i].label = label
-		}
-		x = 2
-		for i := range buttons {
-			buttons[i].rect = monitorRect{x: x, y: 1, width: lipgloss.Width(buttons[i].label), height: 1}
-			x += buttons[i].rect.width + 1
-		}
-	}
-	if x > width-2 {
+	buttons[0].label = "[" + modifier + "+←]"
+	buttons[1].label = "[" + modifier + "+→]"
+	if layoutNavigationButtons(buttons, 2, 1) > width-2 {
 		return nil
 	}
 	return buttons

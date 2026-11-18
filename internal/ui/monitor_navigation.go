@@ -65,12 +65,17 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 	if width < groupWidth()+8 {
 		return nil
 	}
-	x := width - groupWidth() - 2
+	layoutNavigationButtons(buttons, width-groupWidth()-2, 0)
+	return buttons
+}
+
+// Position a row of buttons and return the next x, including the trailing gap.
+func layoutNavigationButtons(buttons []monitorNavigationButton, x, y int) int {
 	for i := range buttons {
-		buttons[i].rect = monitorRect{x: x, y: 0, width: lipgloss.Width(buttons[i].label), height: 1}
+		buttons[i].rect = monitorRect{x: x, y: y, width: lipgloss.Width(buttons[i].label), height: 1}
 		x += buttons[i].rect.width + 1
 	}
-	return buttons
+	return x
 }
 
 func (m Model) renderMonitorNavigation(width int, id string, full bool, colors palette) string {
