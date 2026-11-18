@@ -932,15 +932,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if strings.HasPrefix(key.String(), "pg") {
 				d *= 10
 			}
-			if p.detail {
-				p.scroll = max(0, p.scroll+d)
-			} else {
-				before := p.selected
-				p.selected = min(max(0, p.selected+d), max(len(p.menu.Choices)-1, 0))
-				if before != p.selected {
-					p.reviewedChoice = ""
-				}
-			}
+			m.moveMonitorCommandCursor(d)
 		}
 		return m, nil, true
 	}
@@ -966,17 +958,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 			if v.Button == tea.MouseWheelUp {
 				d = -3
 			}
-			if p.inline {
-				m.moveInlineCommandSelection(d)
-			} else if p.detail {
-				p.scroll = max(0, p.scroll+d)
-			} else {
-				before := p.selected
-				p.selected = min(max(0, p.selected+d), max(len(p.menu.Choices)-1, 0))
-				if before != p.selected {
-					p.reviewedChoice = ""
-				}
-			}
+			m.moveMonitorCommandCursor(d)
 			return m, nil, true
 		}
 		rows := m.monitorCommandRows(popup.width, popup.height)
@@ -1032,6 +1014,21 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func (m *Model) moveMonitorCommandCursor(delta int) {
+	p := &m.monitorCommands
+	switch {
+	case p.inline:
+		m.moveInlineCommandSelection(delta)
+	case p.detail:
+		p.scroll = max(0, p.scroll+delta)
+	default:
+		selected := min(max(0, p.selected+delta), max(len(p.menu.Choices)-1, 0))
+		if selected != p.selected {
+			p.selected, p.reviewedChoice = selected, ""
+		}
+	}
 }
 
 func (m Model) reviewMonitorCommandInput() (Model, tea.Cmd, bool) {
