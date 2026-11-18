@@ -3,27 +3,27 @@
   "status": "established",
   "toolVersion": "5.4.2",
   "policyHash": "2f9238f01911c2fdfceaf791f0fc92ca7293aced8e4c10cb02bc59ef8688795c",
-  "sourceCommit": "218668621c4921a34164326241fbe30d0a744b0b",
+  "sourceCommit": "c96879b2be7e54643b0983969feb7d89b3316ebe",
   "scans": {
     "exact-50": {
-      "clones": 29,
-      "duplicatedLines": 267,
-      "duplicatedTokens": 2089
+      "clones": 25,
+      "duplicatedLines": 233,
+      "duplicatedTokens": 1788
     },
     "renamed-50": {
-      "clones": 136,
-      "duplicatedLines": 1387,
-      "duplicatedTokens": 9942
+      "clones": 131,
+      "duplicatedLines": 1347,
+      "duplicatedTokens": 9573
     },
     "exact-100": {
-      "clones": 2,
-      "duplicatedLines": 28,
-      "duplicatedTokens": 274
+      "clones": 1,
+      "duplicatedLines": 17,
+      "duplicatedTokens": 164
     },
     "renamed-100": {
-      "clones": 10,
-      "duplicatedLines": 192,
-      "duplicatedTokens": 1828
+      "clones": 9,
+      "duplicatedLines": 181,
+      "duplicatedTokens": 1718
     }
   }
 }
