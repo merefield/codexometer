@@ -6470,6 +6470,7 @@ for (const scenario of actionApprovalCases) {
             ...row,
             command: '',
             approvalReview: review,
+            text: 'Network request: {"host":"example.com","protocol":"https"}',
           })),
         };
         await page.evaluate(
@@ -6483,6 +6484,7 @@ for (const scenario of actionApprovalCases) {
           exact: true,
         });
         await expect(region).toBeVisible();
+        await expect(page.getByText(/Network request: \{/)).toHaveCount(0);
         for (const field of scenario.fields)
           await expect(region).toContainText(field.value);
         await expect(

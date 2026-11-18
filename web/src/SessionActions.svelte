@@ -6,12 +6,13 @@
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
   import CommandReview from './CommandReview.svelte';
-  import type { ReviewAssessment } from './contracts.generated';
+  import type { ApprovalReview, ReviewAssessment } from './contracts.generated';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
+    observedAction,
     observedReview,
     observedFileChanges = [],
     review = '',
@@ -22,6 +23,7 @@
   }: {
     session: string;
     observedCommand?: string;
+    observedAction?: ApprovalReview;
     observedReview?: ReviewAssessment;
     observedFileChanges?: FileDiffLine[];
     review?: string;
@@ -558,6 +560,8 @@
       <FileDiff lines={offer.fileChanges} />
     {:else if observedFileChanges.length}
       <FileDiff lines={observedFileChanges} />
+    {:else if observedAction && !offer?.id && !command && review !== 'profile'}
+      <ActionApproval review={observedAction} />
     {:else if command}
       <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
       <pre class="command">{command}</pre>

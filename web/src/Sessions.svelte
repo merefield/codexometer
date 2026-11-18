@@ -448,7 +448,7 @@
     <ActionApproval review={session.approvalReview} />
   {:else if session.mcpTool && (!full || !live.data?.control)}
     <MCPApproval details={session.mcpTool} />
-  {:else if session.text || !session.workingCommand}
+  {:else if !session.approvalReview && (session.text || !session.workingCommand)}
     <pre data-reply-text>{session.text || 'No session context available.'}</pre>
   {/if}
   {#if session.workingCommand}
@@ -633,6 +633,7 @@
                 'schedule',
               ) === 'edit'}
               observedCommand={selected.command}
+              observedAction={selected.approvalReview ?? undefined}
               observedReview={selected.command && selected.autoReview?.attached
                 ? selected.autoReview
                 : undefined}
