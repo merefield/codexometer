@@ -2250,6 +2250,47 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toHaveCount(0);
 });
 
+test('Back after a pasted model command stays on its parent until another separator', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const paths: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const { mode, path } = route.request().postDataJSON().command;
+    expect(mode).toBe('list');
+    paths.push(path);
+    const [label, next] =
+      path === ''
+        ? ['/model', 'model']
+        : path === 'model'
+          ? ['Beta', 'model/beta']
+          : ['High'];
+    await route.fulfill({
+      json: { title: path, path, choices: [{ id: label, label, next }] },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const editor = page.getByRole('textbox', { name: 'Follow-up message' });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await editor.fill('/model beta high');
+  await expect(
+    panel.getByRole('button', { name: 'High // HELP' }),
+  ).toBeEnabled();
+  await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+  await expect(editor).toHaveValue('/model beta');
+  await expect(panel.getByRole('button', { name: 'Beta →' })).toBeEnabled();
+  expect(paths).toEqual(['', 'model', 'model/beta', 'model']);
+  await editor.press('End');
+  await editor.press('Space');
+  await expect(
+    panel.getByRole('button', { name: 'High // HELP' }),
+  ).toBeEnabled();
+});
+
 for (const command of ['rename', 'cd']) {
   test(
     command + ' edits and reviews input before a separate confirmation',
@@ -2262,6 +2303,7 @@ for (const command of ['rename', 'cd']) {
         command === 'cd' ? 'Working directory changed.' : 'Session renamed.';
       const modes: string[] = [];
       let reviewed = '';
+      let holdInput: Promise<void> | undefined;
       await page.route('**/api/control/commands', async (route) => {
         const body = route.request().postDataJSON();
         const { mode, path } = body.command;
@@ -2292,6 +2334,7 @@ for (const command of ['rename', 'cd']) {
             ],
           };
         } else if (path === command) {
+          await holdInput;
           result = {
             title: '/' + command,
             help: 'Enter a name, review and confirm.',
@@ -2342,7 +2385,23 @@ for (const command of ['rename', 'cd']) {
         exact: true,
       });
       await expect(input).toHaveValue('Current name');
-      await input.fill(value);
+      if (command === 'rename') {
+        await panel.getByRole('button', { name: 'ESC CANCEL' }).click();
+        const gate = Promise.withResolvers<void>();
+        holdInput = gate.promise;
+        const requested = page.waitForRequest(
+          (req) =>
+            req.url().endsWith('/api/control/commands') &&
+            req.postDataJSON().command.path === 'rename',
+        );
+        await text.fill('/rename ');
+        await requested;
+        await text.fill('/rename still typing');
+        gate.resolve();
+        await expect(input).toHaveValue('still typing');
+        await text.fill('/rename ' + value);
+        await expect(input).toHaveValue(value);
+      } else await input.fill(value);
       await panel
         .getByRole('button', {
           name: 'ENTER REVIEW',
@@ -5349,6 +5408,7 @@ for (const control of [false, true]) {
           const command = route.request().postDataJSON().command;
           commands.push(command.mode);
           expect(command.mode).toBe('list');
+          expect(command.path).toBe(''); // Never list a local action on the server.
           await route.fulfill({
             json: {
               title: '/ COMMANDS',
@@ -5413,7 +5473,7 @@ for (const control of [false, true]) {
       });
       const text = page.getByRole('textbox', { name: 'Follow-up message' });
       if (control) {
-        await text.fill('/' + command);
+        await text.fill('/' + command + ' ');
         await expect(
           panel.getByRole('button', {
             name: '/' + command + ' →',

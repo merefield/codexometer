@@ -1873,12 +1873,13 @@ denial retries still open their full inspection view before an explicit Apply
 action, including with `--confirmation none`.
 Browse-only entries do not execute tools or change configuration.
 
-Type a space after an exact command to open its valid parameter list immediately;
+Type a space after a command with a parameter menu to open that list immediately;
 further typing filters that level, without sending anything. For example,
 `/goal resume` matches **Resume goal**, and `/goal budget` matches **Token budget**.
 The same live tree supports typing through model/reasoning levels as well as
 step-by-step selection. Free-text editors retain their input; opening a parameter
 list never bypasses the normal explicit selection or confirmation policy.
+Local actions such as `/quit`, `/usage` and `/copy` still require Enter or a click.
 
 On Codex 0.169+, model/reasoning and advertised speed options are requested
 from the selected session's saved model provider, not the daemon's default.

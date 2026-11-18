@@ -39,22 +39,25 @@ func (m Model) commandQuery() string {
 	return strings.TrimSpace(strings.TrimPrefix(m.monitorPrompt.input.Value(), m.monitorCommands.prefix))
 }
 
-func (m *Model) openInlineCommandLevel(path, argument string) tea.Cmd {
+func (m *Model) openInlineCommandLevel(path, argument, parentDraft string) tea.Cmd {
+	// Only these local commands have browsable TUI submenus. Other local
+	// paths (including theme/<id>) are actions and require Enter or a click.
+	root, _, _ := strings.Cut(path, "/")
+	if codex.IsLocalSessionCommand(root) && path != "theme" && path != "statusline" {
+		return nil
+	}
 	p := &m.monitorCommands
+	draft := m.inlineCommandPrefix(path) + argument
 	if p.open {
 		if len(p.history) >= 16 {
 			return nil
 		}
-		p.history = append(append([]monitorCommandLevel(nil), p.history...), monitorCommandLevel{path: p.menu.Path, selected: p.selected, input: p.input.Value(), draft: m.monitorPrompt.input.Value()})
-		m.monitorPrompt.input.SetValue(m.inlineCommandPrefix(path) + argument)
-		m.monitorPrompt.input.CursorEnd()
-		draft := m.monitorPrompt.input.Value()
+		m.monitorPrompt.input.SetValue(parentDraft)
 		p.preserveDraft = &draft
-		return m.loadMonitorCommands(path)
+		return m.navigateMonitorCommands(path)
 	}
-	m.monitorPrompt.input.SetValue(m.inlineCommandPrefix(path) + argument)
-	m.monitorPrompt.input.CursorEnd()
-	updated, cmd, _ := m.openMonitorCommands(path, m.monitorPrompt.input.Value())
+	m.monitorPrompt.input.SetValue(parentDraft)
+	updated, cmd, _ := m.openMonitorCommands(path, draft)
 	*m = updated
 	return cmd
 }
@@ -85,7 +88,7 @@ func (m *Model) advanceInlineCommand() tea.Cmd {
 				suffix := raw[len(name):]
 				argument := strings.TrimLeftFunc(suffix, unicode.IsSpace)
 				if argument != suffix {
-					return m.openInlineCommandLevel(choice.Next, argument)
+					return m.openInlineCommandLevel(choice.Next, argument, p.prefix+raw[:len(name)])
 				}
 			}
 		}
@@ -286,9 +289,10 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.selected = indices[0]
 				}
 			}
+			next := m.advanceInlineCommand()
+			return m, tea.Batch(cmd, next), true
 		}
-		next := m.advanceInlineCommand()
-		return m, tea.Batch(cmd, next), true
+		return m, cmd, true
 	}
 	return m, nil, false
 }

@@ -93,6 +93,13 @@
     expires = $state(0),
     now = $state(Date.now());
   let name = $state('');
+  let typedInputPrefix = $state('');
+  $effect(() => {
+    // A typed command keeps the real composer editable while its input
+    // menu loads. Manual picks and Back use the server or restored value.
+    if (typedInputPrefix && menu?.input && query.startsWith(typedInputPrefix))
+      name = query.slice(typedInputPrefix.length) || menu.value || '';
+  });
   let request = 0;
   let selectedIndex = $state(0);
   let dismissedQuery = $state<string | null>(null);
@@ -122,6 +129,7 @@
     path: string;
     index: number;
     input: string;
+    draft?: string;
   }
   let history = $state<Level[]>([]);
   const inputReview = $derived(!!menu?.inputReview);
@@ -135,14 +143,19 @@
         : ' // UNAVAILABLE';
     return o.next ? ' →' : !o.action ? ' // HELP' : '';
   }
-  async function navigate(path: string, argument?: string) {
+  async function navigate(path: string, parentDraft?: string) {
     // A filtered slash suggestion opens the command directly, with no parent menu.
     if (menu && !(suggesting && filter))
       history = [
         ...history,
-        { path: menu.path, index: selectedIndex, input: name },
+        {
+          path: menu.path,
+          index: selectedIndex,
+          input: name,
+          draft: parentDraft,
+        },
       ];
-    await load(path, undefined, false, argument);
+    await load(path, undefined, false, parentDraft !== undefined);
   }
   async function back() {
     if (!canBack) return;
@@ -165,6 +178,7 @@
     const level = history.at(-1);
     if (!level) return;
     history = history.slice(0, -1);
+    if (level.draft !== undefined) oncomplete(level.draft);
     await load(level.path, level);
   }
   function reviewInput() {
@@ -254,7 +268,7 @@
       return;
     const raw = menu.path === '' && slash ? query.slice(1) : parameterQuery();
     for (const choice of menu.choices || []) {
-      if (!choice.next) continue;
+      if (!choice.next || localPaths.includes(choice.next)) continue;
       const names = parameterNames(choice);
       if (names.some((name) => raw.toLowerCase() === name.toLowerCase()))
         continue;
@@ -264,9 +278,15 @@
           /^\s/.test(raw.slice(name.length))
         ) {
           const argument = raw.slice(name.length).trimStart();
+          // Back restores the matched parent option, not the separator
+          // and child argument which would immediately open it again.
+          const parentDraft = query.slice(
+            0,
+            query.length - raw.length + name.length,
+          );
           untrack(() => {
             oncomplete(commandPrefix(choice.next!) + argument);
-            void navigate(choice.next!, argument || undefined);
+            void navigate(choice.next!, parentDraft);
           });
           return;
         }
@@ -474,7 +494,7 @@
     path: string,
     restore?: Level,
     refresh = false,
-    argument?: string,
+    typed = false,
   ) {
     if (!draftMatches()) {
       invalidateDraftReview();
@@ -485,6 +505,7 @@
         ? query
         : null;
     const seq = ++request;
+    typedInputPrefix = '';
     if (menu) menu = { ...menu, path };
     if (restore) name = restore.input;
     busy = true;
@@ -523,7 +544,9 @@
               )
             : 0;
         if (result.picker) void tick().then(() => optionList?.focus());
-        name = restore?.input ?? argument ?? result.value ?? '';
+        name = restore?.input ?? result.value ?? '';
+        if (typed && result.input)
+          typedInputPrefix = commandPrefix(result.path);
         if (restore)
           void tick().then(() => {
             if (result.input) commandPanel?.querySelector('input')?.focus();

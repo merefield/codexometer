@@ -89,6 +89,9 @@ func (m *Model) loadMonitorCommands(path string, fresh ...bool) tea.Cmd {
 			m.restoreCommandDraft()
 			p.restore = nil
 		}
+		if p.inline && !menu.Multiple {
+			m.moveInlineCommandSelection(0)
+		}
 		return nil
 	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
@@ -795,8 +798,10 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.detail = true
 					p.until = time.Now().Add(30 * time.Second)
 				}
-				cmd := m.advanceInlineCommand()
-				return m, cmd, true
+				if restore == nil {
+					cmd := m.advanceInlineCommand()
+					return m, cmd, true
+				}
 			}
 		}
 		return m, nil, true

@@ -46,7 +46,7 @@ func (m *Model) syncMonitorSuggestions() tea.Cmd {
 			name, argument, separated := codex.SplitSessionCommand(m.monitorPrompt.input.Value())
 			for _, choice := range s.menu.Choices {
 				if separated && strings.EqualFold(name, strings.TrimPrefix(choice.Label, "/")) && choice.Next != "" {
-					return m.openInlineCommandLevel(choice.Next, argument)
+					return m.openInlineCommandLevel(choice.Next, argument, "/"+name)
 				}
 			}
 		}
