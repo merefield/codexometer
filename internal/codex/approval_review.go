@@ -3,10 +3,11 @@ package codex
 import "strconv"
 
 // ApprovalActionDetails remains a comparable value snapshot. It is populated
-// only for a complete validated action, never inferred from explanatory text.
+// from the request, never inferred from explanatory text. A permission scope
+// is observational only; it does not grant an approval token.
 type ApprovalActionDetails struct {
 	Kind, Target, Protocol, Justification string
-	Input, Directory, Environment         string
+	Input, Directory, Environment, Scope  string
 }
 
 // ApprovalReview is a browser-safe projection shared with terminal rendering.
@@ -25,6 +26,14 @@ func (c SessionContext) ActionReview() *ApprovalReview {
 	d := c.ActionDetails
 	var r *ApprovalReview
 	switch d.Kind {
+	case "permissions":
+		r = &ApprovalReview{Title: "PERMISSIONS REVIEW", Fields: []ApprovalReviewField{{"PERMISSION SCOPE", d.Scope}}}
+		if d.Directory != "" {
+			r.Fields = append(r.Fields, ApprovalReviewField{"WORKING DIRECTORY", d.Directory})
+		}
+		if d.Environment != "" {
+			r.Fields = append(r.Fields, ApprovalReviewField{"ENVIRONMENT", d.Environment})
+		}
 	case "network":
 		r = &ApprovalReview{Title: "NETWORK APPROVAL", Fields: []ApprovalReviewField{{"HOST", d.Target}, {"PROTOCOL", d.Protocol}}}
 	case "stdin":
