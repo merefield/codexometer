@@ -1873,6 +1873,13 @@ denial retries still open their full inspection view before an explicit Apply
 action, including with `--confirmation none`.
 Browse-only entries do not execute tools or change configuration.
 
+Type a space after an exact command to open its valid parameter list immediately;
+further typing filters that level, without sending anything. For example,
+`/goal resume` matches **Resume goal**, and `/goal budget` matches **Token budget**.
+The same live tree supports typing through model/reasoning levels as well as
+step-by-step selection. Free-text editors retain their input; opening a parameter
+list never bypasses the normal explicit selection or confirmation policy.
+
 On Codex 0.169+, model/reasoning and advertised speed options are requested
 from the selected session's saved model provider, not the daemon's default.
 Provider changes invalidate cached options and previous reviews. Quota-threshold
@@ -1895,7 +1902,7 @@ usage and does not change token totals, quota learning or API-EQ calculations.
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name and apply it without a second confirmation by default. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. Mutations require confirmation by default. |
-| `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
+| `/model` | Advertised models, their descriptions and supported reasoning levels. Apply while idle, or queue during work for the next observed idle turn stop. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation by default. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Native permission profiles, approval policies and reviewer selection, subject to Codex's managed requirements. Also accepts `/permissions <profile-id> [--approval-policy=<policy>] [--reviewer=user\|auto_review]`. Changes are verified against the running session. |
@@ -1989,8 +1996,8 @@ from its execution environments, and identifies their environment when supplied.
 Older servers retain directory-based discovery. A real thread/permission/transport
 error is not silently replaced with a different inventory, and a successful empty
 thread inventory remains empty rather than falling back to directory hooks.
-Model/reasoning and Plan changes remain guarded by the existing idle-state checks;
-this compatibility update does not broaden write permissions.
+Plan changes remain guarded by idle-state checks. Model/reasoning selections can
+be queued during work; they do not change the running turn or broaden permissions.
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
 the last line of full session detail on web. Its default fields are observed
@@ -2050,11 +2057,20 @@ reconnect invalidates the old choice. The updated name appears on the next telem
 
 Codex session-setting changes require a loaded session. When the selected policy
 requires review, confirmations expire after 30 seconds. Speed-only changes can be sent while working or waiting for an approval;
-model/reasoning and Plan settings still require idle and no pending approval. Native
+Plan settings still require idle and no pending approval. Model/reasoning selections
+made during work become a visible **MODEL // QUEUED** item in the terminal's
+follow-up queue and the writable browser's session controls. Codexometer rechecks
+the loaded session, provider, model/effort catalogue and original settings before
+sending once at an observed idle stop. If another turn starts first, it waits for
+another idle opportunity rather than interrupting. One pending model change per
+session is retained in memory; another explicit selection replaces an unsent one.
+Closing Codexometer or losing the daemon connection discards unsent changes.
+Concurrent settings changes fail safely, and failed/unconfirmed writes stay visible
+without automatic retries; reselect `/model` or check Codex as indicated. Native
 permission changes can be queued during work for subsequent turns, but not while
 a human request is pending. The command and options
 are revalidated before sending; stale connections and changed options fail closed.
-A normal turn start/completion does not invalidate a speed confirmation, but changed
+A normal turn start/completion does not invalidate a speed or model confirmation, but changed
 model, reasoning or speed settings do. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already
 used the setting. Successful confirmations close the menu and return focus to

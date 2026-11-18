@@ -197,12 +197,13 @@ func (p *daemonStatusProvider) sessionCommands(ctx context.Context, id, path str
 func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path string, menu SessionCommandMenu) SessionCommandMenu {
 	state := parseSessionRuntimeStatus(thread.Status.Type, thread.Status.ActiveFlags)
 	menu.humanWait = state == sessionRuntimeApproval || state == sessionRuntimeInput
+	menu.deferModel = strings.HasPrefix(path, "model/") && thread.Status.Type == "active"
 	menu.Path = path
 	p.mu.Lock()
 	connection := fmt.Sprintf("%p", p.connection)
 	p.mu.Unlock()
 	status := thread.Status.Type
-	if menu.Picker || path == "goal" || strings.HasPrefix(path, "goal/") {
+	if menu.Picker || strings.HasPrefix(path, "model/") || path == "goal" || strings.HasPrefix(path, "goal/") {
 		// Speed overrides target future turns, so starting/completing a turn
 		// does not invalidate confirmation. Effective settings still do.
 		status = ""
@@ -323,7 +324,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Speed and permission changes target subsequent turns and can be sent during work; model/reasoning and Plan changes require idle. Browse-only catalogues do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Model/reasoning changes queue during work for the next idle turn stop. Speed and permission changes target subsequent turns and can be sent during work; Plan changes require idle. Browse-only catalogues do not execute tools or change global configuration."
 		return m, nil
 	}
 	switch parts[0] {
@@ -369,7 +370,11 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.settings = &current
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
-			if !threadAcceptsFollowup(t.Status.Type) && parts[0] != "tier" {
+			if parts[0] == "model" && t.Status.Type != "active" && !threadAcceptsFollowup(t.Status.Type) {
+				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Session state unavailable; refresh before changing model."})
+				return
+			}
+			if !threadAcceptsFollowup(t.Status.Type) && parts[0] == "plan" {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Waiting for idle. Refresh options when this turn finishes."})
 				return
 			}
@@ -397,7 +402,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 			for _, model := range models {
 				if parts[0] == "model" && model.Model == target {
-					m.Help = model.Description + "\nSelect reasoning effort. Existing speed will be reset to the server default to avoid carrying an unsupported tier to another model."
+					m.Help = model.Description + "\nSelect reasoning effort. During work, the change queues until the next idle turn stop. Existing speed will be reset to the server default to avoid carrying an unsupported tier to another model."
 					for _, effort := range model.SupportedReasoningEfforts {
 						if commandSafe(effort.ReasoningEffort) {
 							setting(effort.ReasoningEffort, effort.Description, map[string]any{"model": model.Model, "effort": effort.ReasoningEffort, "serviceTier": nil})
@@ -512,7 +517,7 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 			_, hasTier := o.params["serviceTier"]
 			speedOnly := m.Picker && o.method == "thread/settings/update" && hasTier && len(o.params) == 2
 			p.mu.Lock()
-			valid := p.connection == conn && (speedOnly || o.method == "thread/name/set" || !p.commandHumanWaitLocked(id))
+			valid := p.connection == conn && (m.deferModel || speedOnly || o.method == "thread/name/set" || !p.commandHumanWaitLocked(id))
 			p.mu.Unlock()
 			if !valid {
 				return ErrSessionCommand
@@ -588,6 +593,9 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 				current.Tier = nil
 				if tier, ok := o.params["serviceTier"].(string); ok {
 					current.Tier = &tier
+				}
+				if changingModel && m.deferModel {
+					return p.queueModelChange(conn, *m.settings, current, o.params)
 				}
 				return p.writeQuotaSettingsOn(ctx, conn, current, o.params)
 			}

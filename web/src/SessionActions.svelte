@@ -31,6 +31,9 @@
     ScheduledJob as Job,
   } from './contracts.generated';
   let offer = $state<Offer | null>(null);
+  const pendingModel = $derived(
+    live.data?.sessions.find((row) => row.id === session)?.pendingModel,
+  );
   let answers = $state<string[]>([]);
   let choice = $state<number | null>(null);
   let confirmation = $state('');
@@ -503,6 +506,17 @@
         >{/if}
     </section>
   {/each}
+{/if}
+
+{#if pendingModel && review !== 'profile'}
+  <section class="session-actions" aria-label="Queued model change">
+    <h3>MODEL CHANGE // {(pendingModel.state || 'queued').toUpperCase()}</h3>
+    <p>{pendingModel.summary}</p>
+    {#if pendingModel.state === 'queued'}<p class="muted">
+        Applies at the next observed idle turn stop. Memory only; Codexometer
+        must stay running.
+      </p>{/if}
+  </section>
 {/if}
 
 {#if !followUpBlocked && (!pending || editing || review || offer?.kind !== 'prompt' || offer.questions?.length)}

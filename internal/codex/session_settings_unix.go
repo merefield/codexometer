@@ -345,6 +345,9 @@ func (p *daemonStatusProvider) CloseQuotaProfiles() {
 	p.settingsMu.Lock()
 	defer p.settingsMu.Unlock()
 	p.settingsClosed = true
+	p.mu.Lock()
+	p.pendingModels = nil
+	p.mu.Unlock()
 }
 
 func quotaEffortSupported(model benchmarkModel, effort string) bool {

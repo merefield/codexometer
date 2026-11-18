@@ -135,14 +135,14 @@
         : ' // UNAVAILABLE';
     return o.next ? ' →' : !o.action ? ' // HELP' : '';
   }
-  async function navigate(path: string) {
+  async function navigate(path: string, argument?: string) {
     // A filtered slash suggestion opens the command directly, with no parent menu.
     if (menu && !(suggesting && filter))
       history = [
         ...history,
         { path: menu.path, index: selectedIndex, input: name },
       ];
-    await load(path);
+    await load(path, undefined, false, argument);
   }
   async function back() {
     if (!canBack) return;
@@ -185,13 +185,48 @@
     query.trim().startsWith('/') && !query.trim().startsWith('//'),
   );
   let filter = $derived(
-    menu?.path === '' && slash ? query.trim().slice(1).toLowerCase() : '',
+    menu?.path === '' && slash
+      ? query.trim().slice(1).split(/\s/, 1)[0].toLowerCase()
+      : parameterQuery().trim().toLowerCase(),
   );
-  let choices = $derived(
-    (menu?.choices || []).filter(
-      (o) => !filter || o.label.toLowerCase().startsWith('/' + filter),
-    ),
-  );
+  function parameterNames(choice: Choice) {
+    const names = [choice.label.replace(/^\//, '')];
+    if (choice.next)
+      names.push(decodeURIComponent(choice.next.split('/').at(-1)!));
+    return names;
+  }
+  function commandPrefix(path: string) {
+    if (path === 'goal/set') return '/goal ';
+    if (path.startsWith('tier/'))
+      return (menu?.picker ? menu.title : query.trim().split(/\s/, 1)[0]) + ' ';
+    return '/' + path.split('/').map(decodeURIComponent).join(' ') + ' ';
+  }
+  function parameterQuery() {
+    if (
+      !slash ||
+      !menu?.path ||
+      menu.input ||
+      menu.multiple ||
+      menu.inputReview
+    )
+      return '';
+    const prefix = commandPrefix(menu.path);
+    return query.toLowerCase().startsWith(prefix.toLowerCase())
+      ? query.slice(prefix.length)
+      : '';
+  }
+  let choices = $derived.by(() => {
+    const query =
+      menu?.path === 'permissions' ? filter.split(/\s/, 1)[0] : filter;
+    const matches = (menu?.choices || []).filter(
+      (o) =>
+        !query ||
+        parameterNames(o).some((name) => name.toLowerCase().startsWith(query)),
+    );
+    return !matches.length && menu?.path === 'goal'
+      ? (menu.choices || []).filter((choice) => choice.next === 'goal/set')
+      : matches;
+  });
   const currentChoice = $derived(selected || choices[selectedIndex]);
   const reviewed = $derived(
     !!confirmation &&
@@ -205,6 +240,39 @@
   let suggesting = $derived(
     open && slash && (!menu || menu.path === '') && !selected,
   );
+  $effect(() => {
+    if (
+      !open ||
+      busy ||
+      selected ||
+      !menu ||
+      menu.input ||
+      menu.multiple ||
+      menu.inputReview ||
+      history.length >= 16
+    )
+      return;
+    const raw = menu.path === '' && slash ? query.slice(1) : parameterQuery();
+    for (const choice of menu.choices || []) {
+      if (!choice.next) continue;
+      const names = parameterNames(choice);
+      if (names.some((name) => raw.toLowerCase() === name.toLowerCase()))
+        continue;
+      for (const name of names) {
+        if (
+          raw.slice(0, name.length).toLowerCase() === name.toLowerCase() &&
+          /^\s/.test(raw.slice(name.length))
+        ) {
+          const argument = raw.slice(name.length).trimStart();
+          untrack(() => {
+            oncomplete(commandPrefix(choice.next!) + argument);
+            void navigate(choice.next!, argument || undefined);
+          });
+          return;
+        }
+      }
+    }
+  });
   $effect(() => {
     query;
     selectedIndex = 0;
@@ -355,10 +423,12 @@
     ) {
       const option =
         menu?.path === 'goal'
-          ? choices.find(
-              (choice) =>
-                query.trim().slice(6).trim().toLowerCase() ===
-                choice.label.toLowerCase(),
+          ? choices.find((choice) =>
+              parameterNames(choice).some(
+                (name) =>
+                  query.trim().slice(6).trim().toLowerCase() ===
+                  name.toLowerCase(),
+              ),
             )
           : undefined;
       if (option) {
@@ -400,7 +470,12 @@
       void load('');
     }
   });
-  async function load(path: string, restore?: Level, refresh = false) {
+  async function load(
+    path: string,
+    restore?: Level,
+    refresh = false,
+    argument?: string,
+  ) {
     if (!draftMatches()) {
       invalidateDraftReview();
       return;
@@ -448,7 +523,7 @@
               )
             : 0;
         if (result.picker) void tick().then(() => optionList?.focus());
-        name = restore?.input ?? result.value ?? '';
+        name = restore?.input ?? argument ?? result.value ?? '';
         if (restore)
           void tick().then(() => {
             if (result.input) commandPanel?.querySelector('input')?.focus();

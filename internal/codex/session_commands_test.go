@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestParameterFilteringUsesAdvertisedNamesAndTokens(t *testing.T) {
+	for _, tc := range []struct {
+		choice SessionCommandChoice
+		query  string
+		want   bool
+	}{
+		{SessionCommandChoice{Label: "Resume goal", Next: "goal/resume"}, "resume", true},
+		{SessionCommandChoice{Label: "Token budget", Next: "goal/budget"}, "BUD", true},
+		{SessionCommandChoice{Label: "Vendor Small", Next: "model/vendor%2Fsmall"}, "vendor/small", true},
+		{SessionCommandChoice{Label: "Medium", Action: true}, "med", true},
+		{SessionCommandChoice{Label: "Resume goal", Next: "goal/resume"}, "unknown", false},
+	} {
+		if tc.choice.MatchesParameter(tc.query) != tc.want {
+			t.Fatalf("wrong match for %+v / %q", tc.choice, tc.query)
+		}
+	}
+	for _, input := range []string{"/goal ", " /goal\t", "/goal\n"} {
+		name, argument, separated := SplitSessionCommand(input)
+		if name != "goal" || argument != "" || !separated {
+			t.Fatalf("separator lost in %q", input)
+		}
+	}
+}
+
 func TestSessionCommandLiteral(t *testing.T) {
 	for _, tc := range []struct {
 		text    string

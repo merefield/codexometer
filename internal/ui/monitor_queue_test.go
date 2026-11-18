@@ -47,6 +47,28 @@ func queueTestModel(inline bool) (Model, *queueTestClient) {
 	return m, client
 }
 
+func TestPendingModelUsesReadOnlyQueueWithoutDisplacingPromptTargets(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		m, _ := queueTestModel(inline)
+		for i := range m.monitorSessionData {
+			if m.monitorSessionData[i].id == m.monitorContextTarget() {
+				m.monitorSessionData[i].preview.PendingModel = codex.PendingModelChange{Summary: "small // medium // DEFAULT", State: "queued"}
+			}
+		}
+		entries := m.followupEntries()
+		if len(entries) != 3 || entries[1].native.ID != "one" || entries[2].native.ID != "two" || !entries[0].readOnly || len(followupButtons(entries[0], 100)) != 0 {
+			t.Fatal("model queue displaced editable prompt indices or exposed edit controls", entries)
+		}
+		if m.followupAction(0, "delete") != nil || m.followupAction(0, "edit") != nil || !strings.Contains(ansi.Strip(m.render()), "small // medium") {
+			t.Fatal("pending model was not visible/read-only")
+		}
+		m.followupAction(1, "edit")
+		if m.monitorQueue.item.ID != "one" {
+			t.Fatal("model row displaced prompt edit target")
+		}
+	}
+}
+
 func TestQueuedSendShowsReceiptAndReconcilesImmediately(t *testing.T) {
 	m, c := queueTestModel(false)
 	m.monitorQueue.items = nil

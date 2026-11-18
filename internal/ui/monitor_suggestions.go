@@ -42,18 +42,26 @@ func (m *Model) syncMonitorSuggestions() tea.Cmd {
 		return nil
 	}
 	if s.active && s.session == m.monitorPrompt.session {
+		if !s.busy {
+			name, argument, separated := codex.SplitSessionCommand(m.monitorPrompt.input.Value())
+			for _, choice := range s.menu.Choices {
+				if separated && strings.EqualFold(name, strings.TrimPrefix(choice.Label, "/")) && choice.Next != "" {
+					return m.openInlineCommandLevel(choice.Next, argument)
+				}
+			}
+		}
 		return nil
 	}
 	c, ok := m.fetcher.(codex.SessionCommandsClient)
 	if !ok {
 		*s = monitorSuggestionState{active: true, session: m.monitorPrompt.session, request: s.request + 1, menu: m.localCommandsMenu()}
-		return nil
+		return m.syncMonitorSuggestions()
 	}
 	*s = monitorSuggestionState{active: true, busy: true, session: m.monitorPrompt.session, request: s.request + 1, menu: m.localCommandsMenu()}
 	if cache, ok := c.(codex.CachedSessionCommandsClient); ok {
 		if menu, hit := cache.CachedSessionCommands(s.session, ""); hit {
 			s.menu, s.busy = m.withLocalCommands(menu), false
-			return nil
+			return m.syncMonitorSuggestions()
 		}
 	}
 	id, seq := s.session, s.request
@@ -70,7 +78,8 @@ func (m Model) suggestionChoices() []codex.SessionCommandChoice {
 	if !m.suggestionsActive() || s.session != m.monitorPrompt.session {
 		return nil
 	}
-	query := strings.ToLower(strings.TrimSpace(m.monitorPrompt.input.Value()))
+	name, _, _ := codex.SplitSessionCommand(m.monitorPrompt.input.Value())
+	query := "/" + strings.ToLower(name)
 	var choices []codex.SessionCommandChoice
 	for _, o := range s.menu.Choices {
 		if strings.HasPrefix(strings.ToLower(o.Label), query) {
@@ -138,7 +147,8 @@ func (m Model) updateMonitorSuggestions(msg tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			s.err = r.err != nil
 		}
-		return m, nil, true
+		cmd := m.syncMonitorSuggestions()
+		return m, cmd, true
 	}
 	if !m.suggestionsActive() {
 		s.active = false

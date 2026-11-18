@@ -24,6 +24,7 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	PendingModel          *codex.PendingModelChange     `json:"pendingModel,omitempty"`
 	Reviewer              string                        `json:"reviewer,omitempty"`
 	AutoReview            *codex.SessionAutoReview      `json:"autoReview,omitempty"`
 	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
@@ -360,7 +361,8 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				}
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
-				Reviewer: codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: projectAutoReview(row.Context.AutoReview),
+				PendingModel: projectPendingModel(row.Context.PendingModel),
+				Reviewer:     codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: projectAutoReview(row.Context.AutoReview),
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
 				ApprovalReview: row.Context.ActionReview(),
 				MCPTool:        mcpTool,

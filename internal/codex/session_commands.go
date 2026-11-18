@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -74,6 +75,37 @@ type SessionCommandChoice struct {
 	params      map[string]any
 }
 
+// ParameterNames uses advertised navigation, never inferred RPC methods. The
+// path token can differ from the human label ("resume" vs "Resume goal").
+func (c SessionCommandChoice) ParameterNames() []string {
+	names := []string{strings.TrimPrefix(c.Label, "/")}
+	if c.Next != "" {
+		if token, err := url.PathUnescape(c.Next[strings.LastIndex(c.Next, "/")+1:]); err == nil {
+			names = append(names, token)
+		}
+	}
+	return names
+}
+
+func (c SessionCommandChoice) MatchesParameter(query string) bool {
+	for _, name := range c.ParameterNames() {
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(query)) {
+			return true
+		}
+	}
+	return false
+}
+
+// SplitSessionCommand keeps the argument verbatim and distinguishes a trailing
+// space from no argument separator, so UIs can open a child list immediately.
+func SplitSessionCommand(text string) (name, argument string, separated bool) {
+	text = strings.TrimPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "/")
+	if index := strings.IndexFunc(text, unicode.IsSpace); index >= 0 {
+		return text[:index], strings.TrimLeftFunc(text[index:], unicode.IsSpace), true
+	}
+	return text, "", false
+}
+
 type sessionPermissionSnapshot struct {
 	Cwd      string               `json:"cwd"`
 	Thread   struct{ ID string }  `json:"thread"`
@@ -84,6 +116,7 @@ type sessionPermissionSnapshot struct {
 
 type SessionCommandMenu struct {
 	humanWait       bool
+	deferModel      bool
 	permissions     *sessionPermissionSnapshot
 	settings        *QuotaSession // Fresh execution snapshot; never part of the wire menu.
 	ReversibleInput bool          `json:"reversibleInput,omitempty"`
@@ -142,6 +175,8 @@ var ErrSessionCommand = errors.New("command unavailable or session/options chang
 func SessionCommandSuccess(path string, speed bool) string {
 	family, _, _ := strings.Cut(path, "/")
 	switch family {
+	case "model":
+		return "Model change accepted. Queued during work; applies at the next idle turn stop."
 	case "rename":
 		return "Session renamed."
 	case "cd":

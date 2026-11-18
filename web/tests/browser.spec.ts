@@ -883,7 +883,20 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
     await expect(
       panel.getByRole('button', { name: /PURSUING GOAL/ }),
     ).toHaveCount(0);
-    if (name === 'edit') {
+    if (name === 'resume' || name === 'budget') {
+      await text.fill('/goal ');
+      await expect(
+        panel.getByRole('button', { name: 'Resume goal →', exact: true }),
+      ).toBeVisible();
+      await text.fill('/goal ' + name);
+      await expect(
+        panel.getByRole('button', { name: labels[name] + ' →', exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: 'Clear goal →', exact: true }),
+      ).toHaveCount(0);
+      await text.press('Enter');
+    } else if (name === 'edit') {
       await text.fill('/goal Edit objective');
       await text.press('Enter');
     } else
@@ -923,6 +936,46 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
+test('queued model changes stay visible without queue edit or cancel actions', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const updated = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      pendingModel:
+        row.id === 'parent'
+          ? { summary: 'small // medium // DEFAULT', state: 'queued' }
+          : undefined,
+    })),
+  };
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new CustomEvent('test-snapshot', { detail: snapshot }),
+      ),
+    updated,
+  );
+  const pending = page.getByRole('region', { name: 'Queued model change' });
+  await expect(pending).toContainText('MODEL CHANGE // QUEUED');
+  await expect(pending).toContainText('small // medium // DEFAULT');
+  await expect(pending.getByRole('button')).toHaveCount(0);
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new CustomEvent('test-snapshot', { detail: snapshot }),
+      ),
+    snapshot,
+  );
+  await expect(pending).toHaveCount(0);
+});
+
 async function mockActions(
   page: Page,
   kind = 'approval',
@@ -1672,11 +1725,16 @@ test('inline permission Enter is consumed and guarded during review', async ({
     }
     paths.push(body.command.path);
     const applying = body.command.path.startsWith('permissions ');
+    const parameters = body.command.path === 'permissions';
     await route.fulfill({
       json: {
         title: '/permissions',
         help: 'Native reviewer options',
-        path: applying ? 'permissions/apply/review' : '',
+        path: applying
+          ? 'permissions/apply/review'
+          : parameters
+            ? 'permissions'
+            : '',
         revision: 'r',
         inputReview: applying,
         choices: applying
@@ -1688,14 +1746,23 @@ test('inline permission Enter is consumed and guarded during review', async ({
                 action: true,
               },
             ]
-          : [
-              {
-                id: 'permissions',
-                label: '/permissions',
-                help: 'Native settings',
-                next: 'permissions',
-              },
-            ],
+          : parameters
+            ? [
+                {
+                  id: 'workspace',
+                  label: ':workspace',
+                  help: 'Workspace profile',
+                  action: true,
+                },
+              ]
+            : [
+                {
+                  id: 'permissions',
+                  label: '/permissions',
+                  help: 'Native settings',
+                  next: 'permissions',
+                },
+              ],
       },
     });
   });
@@ -1711,7 +1778,7 @@ test('inline permission Enter is consumed and guarded during review', async ({
   await expect.poll(() => paths.length).toBeGreaterThan(0);
   const panel = page.getByRole('region', { name: 'Session slash commands' });
   await expect(
-    panel.getByText('No available matching commands.', { exact: true }),
+    panel.getByRole('button', { name: ':workspace', exact: true }),
   ).toBeVisible();
   const heldEnter = await editor.evaluate((element) => {
     const event = new KeyboardEvent('keydown', {
