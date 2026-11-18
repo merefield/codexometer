@@ -50,6 +50,7 @@ type actionQuestion struct {
 }
 
 type actionOffer struct {
+	ReviewID              string                        `json:"reviewId,omitempty"`
 	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	RequiredHumanApproval bool                          `json:"requiredHumanApproval,omitempty"`
@@ -175,6 +176,13 @@ func (c *control) offer(id string) (offeredAction, error) {
 		h := hmac.New(sha256.New, []byte(c.key))
 		_, _ = h.Write(data)
 		o.ID = hex.EncodeToString(h.Sum(nil))
+		// Presentation only. A review arriving/finishing must not invalidate
+		// a pending offer or an already prepared confirmation.
+		if o.Kind == "approval" {
+			if r := ctx.ReviewAssessment(); r != nil && r.Attached {
+				o.ReviewID = r.ID
+			}
+		}
 	}
 	return o, nil
 }

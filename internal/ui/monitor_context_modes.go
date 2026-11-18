@@ -327,6 +327,16 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 			}
 		}
 	}
+	// A preview uses only spare rows: never displace the exact request or
+	// change the geometry of existing approval controls.
+	if review := s.preview.ReviewAssessment(); review != nil && len(lines) < textRows {
+		extra := assessmentLines(review, max(width-4, 1), false)
+		if len(lines)+len(extra) <= textRows {
+			for _, line := range extra {
+				lines = append(lines, line.render(colors))
+			}
+		}
+	}
 	if n > 0 {
 		for len(lines) < textRows+gap {
 			lines = append(lines, "")

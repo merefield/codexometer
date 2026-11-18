@@ -199,6 +199,7 @@ type rolloutCursor struct {
 	nextServiceTier             string
 	currentTurnID               string
 	nonRoot                     bool
+	guardianReviewer            bool
 	subagentHistoryStartOrdinal *uint64
 	modelCalls                  []LiveModelCall
 	turnTimings                 []LiveTurnTiming
@@ -326,6 +327,7 @@ type rolloutMetadata struct {
 	WorkingDirectory            string
 	StartedAt                   time.Time
 	NonRoot                     bool
+	GuardianReviewer            bool
 	SubagentHistoryStartOrdinal *uint64
 }
 
@@ -333,6 +335,12 @@ type rolloutMetadataEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 	Type      string          `json:"type"`
 	Payload   json.RawMessage `json:"payload"`
+}
+
+func (c *rolloutCursor) setMetadata(m rolloutMetadata) {
+	c.threadID, c.parentThreadID, c.workingDirectory = m.ID, m.ParentThreadID, m.WorkingDirectory
+	c.startedAt, c.nonRoot, c.guardianReviewer = m.StartedAt, m.NonRoot, m.GuardianReviewer
+	c.subagentHistoryStartOrdinal = m.SubagentHistoryStartOrdinal
 }
 
 type rolloutMetadataPayload struct {
@@ -642,16 +650,8 @@ func (r *LiveUsageReader) addFile(ctx context.Context, path string, info os.File
 	if err != nil {
 		return err
 	}
-	cursor := &rolloutCursor{
-		lastModified:                info.ModTime(),
-		lastSize:                    info.Size(),
-		threadID:                    metadata.ID,
-		parentThreadID:              metadata.ParentThreadID,
-		workingDirectory:            metadata.WorkingDirectory,
-		startedAt:                   metadata.StartedAt,
-		nonRoot:                     metadata.NonRoot,
-		subagentHistoryStartOrdinal: metadata.SubagentHistoryStartOrdinal,
-	}
+	cursor := &rolloutCursor{lastModified: info.ModTime(), lastSize: info.Size()}
+	cursor.setMetadata(metadata)
 	if err := cursor.bootstrapActivity(ctx, path, info.Size(), r.activityNow()); err != nil {
 		return err
 	}
@@ -1382,12 +1382,14 @@ func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
 					parent = payload.ParentThreadID
 					nonRoot = true
 				}
-				if payload.ThreadSource == "subagent" {
+				guardian := payload.ThreadSource == "guardian_review" || guardianSessionSource(payload.Source)
+				if guardian || payload.ThreadSource == "subagent" {
 					nonRoot = true
 				}
 				return rolloutMetadata{
 					ID: payload.ID, ParentThreadID: parent,
 					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
+					GuardianReviewer:            guardian,
 					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
 					SubagentHistoryStartOrdinal: payload.SubagentHistoryStartOrdinal,
 				}, true
@@ -1395,6 +1397,16 @@ func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
 		}
 	}
 	return rolloutMetadata{}, false
+}
+
+// Native provenance, not a heuristic on JSON prose: normal users and coding
+// agents may legitimately return a document with exactly the same keys.
+func guardianSessionSource(raw json.RawMessage) bool {
+	var source struct {
+		Internal string
+		Subagent struct{ Other string }
+	}
+	return json.Unmarshal(raw, &source) == nil && (source.Internal == "guardian" || source.Subagent.Other == "guardian")
 }
 
 func sessionSourceParent(raw json.RawMessage) (string, bool) {
@@ -1523,6 +1535,12 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 				preview.ThreadID == cursor.threadID && (preview.TurnID == "" || preview.TurnID == live.TurnID) {
 				preview.CompletedSteerIDs, preview.TurnID = live.CompletedSteerIDs, live.TurnID
 			}
+		}
+		if cursor.guardianReviewer && !preview.pending() {
+			// A private reviewer's reply (streaming or final) is not the
+			// conversation. Its tokens above still belong to this group; the
+			// parent's official review notification supplies the verdict.
+			preview = SessionContext{}
 		}
 		if preview.Kind == SessionContextFailure && (!writerLocksSupported || writerActive || exact) && (!exact || exactStatus != sessionRuntimeWorking && exactStatus != sessionRuntimeComplete) {
 			attention = mergeSessionAttention(attention, SessionAttentionError)

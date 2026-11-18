@@ -1928,8 +1928,14 @@ settings. An unconfirmed update is not automatically retried.
 
 Rows show `REVIEW // HUMAN` or `REVIEW // AUTO` when Codex reports the setting.
 During native assessment, the working badge becomes **AUTO REVIEWING**; detail
-retains the conversation and adds the latest native action, risk, authorisation
-assessment and rationale. This is informational, not a request for you to click
+keeps the command and its justification separate from Codex's verdict and rationale.
+Decision and risk share a line when space permits; full detail also shows Codex's
+assessment of user authorisation when reported. Terminal and web attach a verdict
+to the command only when its native identity matches. It clears as work moves to
+another command or the turn ends; an old denial can still be inspected via
+`/approve`. Private Guardian thread output is never treated as the conversation's
+last reply. Its tokens still count, but only a native review event—not JSON
+extracted from a reply—supplies a verdict. This is informational, not a request for you to click
 Approve. Actual mandatory human checkpoints keep their normal controls and pills.
 Auto-review consumes model resources and is not a guarantee that only low-risk
 actions can pass: Codex owns the policy and final decision.

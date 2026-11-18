@@ -17,6 +17,25 @@ type detailLine struct {
 
 func (line detailLine) render(colors palette) string {
 	style := colors.label()
+	if status, ok := strings.CutPrefix(line.kind, "assessment:"); ok {
+		fields := strings.Split(line.text, "   ")
+		for i, field := range fields {
+			s := style
+			if strings.HasPrefix(field, "● ") {
+				s = s.Bold(true).Foreground(colors.primary)
+				switch status {
+				case "approved":
+					s = s.Foreground(colors.success)
+				case "denied":
+					s = s.Foreground(colors.danger)
+				case "timedOut", "aborted":
+					s = s.Foreground(colors.warning)
+				}
+			}
+			fields[i] = s.Render(field)
+		}
+		return strings.Join(fields, "   ")
+	}
 	switch line.kind {
 	case "heading":
 		style = style.Bold(true).Foreground(colors.primary)
@@ -40,7 +59,7 @@ func (line detailLine) render(colors palette) string {
 
 // A single document owns both display and scroll geometry. Formatting never
 // changes the stored request, capability or text sent back to Codex.
-func (m Model) contextDetailDocument(width int) (document []detailLine) {
+func (m Model) contextDetailDocument(width int) []detailLine {
 	width = max(width, 1)
 	s, ok := m.contextDetailSession()
 	if !ok {
@@ -52,15 +71,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if doc := m.profileDocument(s, width); doc != nil {
 		return doc
 	}
-	defer func() {
-		if text := s.preview.AutoReview.Detail(); text != "" {
-			document = append(document, detailLine{})
-			for _, line := range sessionWebLiteralTextLines(text, width) {
-				document = append(document, detailLine{ansi.Truncate(line, width, ""), "metadata"})
-			}
-		}
-	}()
-	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
+	assessment := s.preview.ReviewAssessment()
+	if assessment == nil && s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
 		var lines []detailLine
 		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
@@ -131,6 +143,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
+		lines = append(lines, assessmentLines(assessment, width, true)...)
+		assessment = nil
 	} else if c.Kind == codex.SessionContextApproval && c.FileChanges != "" {
 		section(contextTitle(c))
 		appendText(sanitize(c.Text), "body", "")
@@ -181,6 +195,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(sanitize(d.Command), "command", prefix)
+		lines = append(lines, assessmentLines(assessment, width, true)...)
+		assessment = nil
 		section(i18n.Text("WORKING DIRECTORY"))
 		appendText(sanitize(d.Directory), "metadata", "")
 		for _, option := range c.ApprovalOptions {
@@ -210,12 +226,52 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		}
 		appendText(text, kind, "")
 	}
+	lines = append(lines, assessmentLines(assessment, width, true)...)
 	if c.ApprovalDecisions != "" {
 		section(i18n.Text("OFFERED DECISIONS"))
 		appendText(c.ApprovalDecisions, "metadata", "")
 	}
 	if notice := m.quota.notices[s.id]; notice != "" {
 		appendText(codex.SanitizeSessionContext(notice), "warning", "")
+	}
+	return lines
+}
+
+// Wrap at field boundaries first; on a very narrow pane even one field may
+// need wrapping. Use the same plain lines for scroll geometry and painting.
+func assessmentLines(r *codex.ReviewAssessment, width int, full bool) []detailLine {
+	if r == nil {
+		return nil
+	}
+	width = max(width, 1)
+	var lines []detailLine
+	add := func(text, kind string) {
+		for _, line := range sessionWebLiteralTextLines(text, width) {
+			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), kind})
+		}
+	}
+	if !r.Attached && r.Subject != "" {
+		add(r.Subject, "command")
+	}
+	fields := []string{i18n.Text(r.Title), "● " + i18n.Text(r.Decision)}
+	if r.Risk != "" {
+		fields = append(fields, i18n.Text("RISK")+": "+i18n.Text(strings.ToUpper(r.Risk)))
+	}
+	if full && r.Authorization != "" {
+		fields = append(fields, i18n.Text("USER AUTHORISATION")+": "+i18n.Text(strings.ToUpper(r.Authorization)))
+	}
+	row := fields[0]
+	for _, field := range fields[1:] {
+		if ansi.StringWidth(row)+3+ansi.StringWidth(field) > width {
+			add(row, "assessment:"+r.Status)
+			row = field
+		} else {
+			row += "   " + field
+		}
+	}
+	add(row, "assessment:"+r.Status)
+	if full && r.Rationale != "" {
+		add(r.Rationale, "body")
 	}
 	return lines
 }

@@ -20,6 +20,7 @@ export interface ActionChoice {
 }
 
 export interface ActionOffer {
+  reviewId?: string;
   approvalReview?: ApprovalReview | null;
   mcpTool?: MCPToolApprovalDetails | null;
   requiredHumanApproval?: boolean;
@@ -195,6 +196,18 @@ export interface QuotaPlot {
   modes: Array<Projection>;
 }
 
+export interface ReviewAssessment {
+  id: string;
+  title: string;
+  decision: string;
+  status: string;
+  subject?: string;
+  attached?: boolean;
+  risk?: string;
+  authorization?: string;
+  rationale?: string;
+}
+
 export interface Sample {
   at: string;
   tokens: number;
@@ -222,7 +235,7 @@ export interface Segment {
 export interface Session {
   pendingModel?: PendingModelChange | null;
   reviewer?: string;
-  autoReview?: SessionAutoReview | null;
+  autoReview?: ReviewAssessment | null;
   approvalReview?: ApprovalReview | null;
   mcpTool?: MCPToolApprovalDetails | null;
   readStateKnown?: boolean;
@@ -255,15 +268,6 @@ export interface Session {
   source: string;
   activity: string;
   samples: Array<Sample> | null;
-}
-
-export interface SessionAutoReview {
-  id: string;
-  status: string;
-  risk?: string;
-  authorization?: string;
-  rationale?: string;
-  action?: string;
 }
 
 export interface SessionGoal {

@@ -49,6 +49,117 @@ func TestNativeAutoReviewLifecycle(t *testing.T) {
 	}
 }
 
+func TestCommandAssessmentFollowsItemNotRepeatedCommandText(t *testing.T) {
+	p := &daemonStatusProvider{}
+	notify := func(status string) {
+		var n map[string]any
+		_ = json.Unmarshal(reviewNotification("r", status, 1), &n)
+		n["targetItemId"] = "first"
+		data, _ := json.Marshal(n)
+		method := "item/autoApprovalReview/completed"
+		if status == "inProgress" {
+			method = "item/autoApprovalReview/started"
+		}
+		p.autoReviewNotificationLocked(method, data)
+	}
+	notify("inProgress")
+	c := SessionContext{ThreadID: "one", TurnID: "turn", Kind: SessionContextActivity, Activity: SessionActivity{commandKey: "turn/first", Command: "touch /outside/result", CommandStatus: "completed"}}
+	notify("denied")
+	c.AutoReview = p.autoReviews["one"].display()
+	r := c.ReviewAssessment()
+	if r == nil || !r.Attached || r.Subject != c.Activity.Command || r.Decision != "BLOCKED BY AUTO-REVIEW" {
+		t.Fatal(r)
+	}
+	c.Activity.commandKey = "turn/second"
+	if c.ReviewAssessment() != nil {
+		t.Fatal("same command text endorsed a different item")
+	}
+	c.Activity.commandKey = "turn/first"
+	c.ThreadID = "child"
+	if c.ReviewAssessment() != nil {
+		t.Fatal("assessment crossed threads")
+	}
+	c.ThreadID = "one"
+	c.Kind = SessionContextReply
+	if c.ReviewAssessment() != nil {
+		t.Fatal("assessment leaked into last reply")
+	}
+	p.autoReviewNotificationLocked("item/started", json.RawMessage(`{"threadId":"one","turnId":"turn","item":{"id":"second","type":"commandExecution"}}`))
+	notify("denied") // Out-of-order or duplicate completion cannot repin a superseded review.
+	if s := p.autoReviews["one"]; s.display().ID != "" || len(s.denials) != 1 {
+		t.Fatal("wrong live/denial lifetime", s.display(), len(s.denials))
+	}
+}
+
+func TestReviewSubjectsDescribeActionNotJSON(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{`{"type":"command","command":"git status"}`, "git status"},
+		{`{"type":"execve","program":"cat","argv":["cat","a b"]}`, `cat // argv: "cat" "a b"`},
+		{`{"type":"networkAccess","target":"example.org:443"}`, "example.org:443"},
+		{`{"type":"applyPatch","files":["a","b"]}`, "a\nb"},
+		{`{"type":"mcpToolCall","server":"tools","toolName":"list"}`, "tools / list"},
+		{`{"type":"writeStdin","processId":"p","stdin":"abc\n"}`, `p // "abc\n"`},
+		{`{"type":"requestPermissions","reason":"Read files"}`, "Read files"},
+	} {
+		if _, got := reviewSubject(json.RawMessage(tc.raw)); got != tc.want {
+			t.Errorf("%s: %q", tc.raw, got)
+		}
+	}
+}
+
+func TestGuardianTranscriptIsNotConversationButUsageStillCounts(t *testing.T) {
+	meta := func(source, kind string) rolloutMetadata {
+		raw := fmt.Sprintf(`{"type":"session_meta","payload":{"id":"child","parent_thread_id":"one","source":%s,"thread_source":%q}}`, source, kind)
+		result, ok := rolloutMetadataRecord([]byte(raw))
+		if !ok {
+			t.Fatal("bad test metadata")
+		}
+		return result
+	}
+	for _, typ := range []rolloutMetadata{meta(`{"subagent":{"other":"guardian"}}`, ""), meta(`{"internal":"guardian"}`, ""), meta(`"exec"`, "guardian_review")} {
+		if !typ.GuardianReviewer || !typ.NonRoot {
+			t.Fatal("unrecognised native reviewer", typ)
+		}
+	}
+	if meta(`{"subagent":{"other":"code-review"}}`, "subagent").GuardianReviewer {
+		t.Fatal("ordinary code-review child was classified as Guardian")
+	}
+	now := time.Now()
+	output := `{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"Only reads files."}`
+	line := contextRecord(t, "event_msg", map[string]string{"type": "task_complete", "last_agent_message": output})
+	root := &rolloutCursor{threadID: "one", observedTokens: 3, lastModified: now, preview: SessionContext{ThreadID: "one", TurnID: "turn", Kind: SessionContextActivity, Text: "Checking files.", At: now}}
+	child := &rolloutCursor{threadID: "child", parentThreadID: "one", nonRoot: true, guardianReviewer: true, observedTokens: 7, lastModified: now}
+	if _, ok := rolloutContextRecord(line, child); ok {
+		t.Fatal("private reviewer JSON became a reply")
+	}
+	if c, ok := rolloutContextRecord(line, root); !ok || c.Kind != SessionContextReply || c.Text != output {
+		t.Fatal("legitimate JSON reply was filtered")
+	}
+	p := &daemonStatusProvider{}
+	p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification("actual", "approved", 1))
+	r := &LiveUsageReader{files: map[string]*rolloutCursor{"root": root, "child": child}, daemonContexts: map[string]SessionContext{
+		"one":   {AutoReview: p.autoReviews["one"].display()},
+		"child": {ThreadID: "child", Kind: SessionContextReply, At: now.Add(time.Second), Text: output},
+	}}
+	rows, _, _ := r.sessionSnapshots(now, nil, true, nil)
+	if len(rows) != 1 || rows[0].TotalTokens != 10 || rows[0].Context.Text != "Checking files." {
+		t.Fatal("private live reply displaced parent, or usage changed", rows)
+	}
+	if a := rows[0].Context.ReviewAssessment(); a == nil || a.Decision != "AUTO-APPROVED" {
+		t.Fatal("native decision lost", a)
+	}
+}
+
+func TestTurnEndRetiresAssessmentWithoutDroppingRetry(t *testing.T) {
+	p := &daemonStatusProvider{}
+	p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification("r", "denied", 1))
+	p.autoReviewNotificationLocked("turn/completed", json.RawMessage(`{"threadId":"one","turn":{"id":"turn"}}`))
+	p.autoReviewNotificationLocked("item/autoApprovalReview/completed", reviewNotification("r", "denied", 1))
+	if s := p.autoReviews["one"]; s.display().ID != "" || len(s.denials) != 1 {
+		t.Fatal("turn end did not separate display from retry")
+	}
+}
+
 func TestNativeConcurrentReviewsRemainActive(t *testing.T) {
 	p := &daemonStatusProvider{}
 	p.autoReviewNotificationLocked("item/autoApprovalReview/started", reviewNotification("first", "inProgress", 1))

@@ -142,6 +142,54 @@ async function setOverviewDetail(page: Page, level: number) {
   throw new Error('Cycle did not reach overview detail level ' + level);
 }
 
+test('writable command detail attaches an assessment only to its matching offer', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page);
+  Object.assign(offer, { reviewId: 'observed-review' });
+  const assessment = {
+    id: 'observed-review',
+    attached: true,
+    status: 'approved',
+    title: 'COMMAND REVIEW',
+    decision: 'AUTO-APPROVED',
+    subject: offer.command,
+    risk: 'low',
+    authorization: 'high',
+    rationale: 'Only reads working tree status.',
+  };
+  Object.assign(snapshot.sessions[0], {
+    contextKind: 'APPROVAL REQUEST',
+    command: offer.command,
+    autoReview: assessment,
+  });
+  await page.goto(pairingURL);
+  await page.evaluate((detail) => {
+    window.dispatchEvent(new CustomEvent('test-snapshot', { detail }));
+    location.hash = '/sessions/parent';
+  }, snapshot);
+  const pane = page.locator('.detail-workspace');
+  await expect(
+    pane.getByRole('heading', { name: 'EXACT COMMAND' }),
+  ).toBeVisible();
+  await expect(pane.getByText(offer.command, { exact: true })).toHaveCount(1);
+  const block = pane.getByRole('region', { name: 'COMMAND REVIEW' });
+  await expect(block.getByText('USER AUTHORISATION: HIGH')).toBeVisible();
+  assessment.id = 'different-review-same-command';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(block).toHaveCount(0);
+  expect(
+    calls.filter(
+      (call) => call.action === 'commit' || call.action === 'prepare',
+    ),
+  ).toHaveLength(0);
+});
+
 test('native Auto-review remains informational in read-only mode', async ({
   page,
   pairingURL,
@@ -163,9 +211,11 @@ test('native Auto-review remains informational in read-only mode', async ({
     autoReview: {
       id: 'review',
       status: 'inProgress',
+      title: 'COMMAND REVIEW',
+      decision: 'AUTO REVIEWING',
       risk: 'low',
       authorization: 'high',
-      action: 'ls /work',
+      subject: 'ls /work',
       rationale: 'Inspect files.',
     },
   };
@@ -183,27 +233,40 @@ test('native Auto-review remains informational in read-only mode', async ({
   const row = page.locator('.session-row').first();
   await expect(row.getByText('REVIEW // AUTO', { exact: true })).toBeVisible();
   await expect(
-    row.getByRole('heading', { name: 'AUTO REVIEWING', exact: true }),
+    row.getByRole('heading', { name: 'COMMAND REVIEW', exact: true }),
   ).toBeVisible();
+  await expect(row.getByText('● AUTO REVIEWING')).toBeVisible();
+  await expect(row.getByText('RISK: LOW')).toBeVisible();
   await expect(
     row.getByText('Inspecting the repository.', { exact: true }),
   ).toBeVisible();
   session.autoReview.status = 'denied';
+  session.autoReview.decision = 'BLOCKED BY AUTO-REVIEW';
   session.autoReview.rationale = 'Outside the project.';
   await page.evaluate(
     (detail) =>
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(
-    row.getByRole('heading', { name: 'AUTO REVIEW', exact: true }),
-  ).toBeVisible();
+  await expect(row.getByText('● BLOCKED BY AUTO-REVIEW')).toBeVisible();
   await expect(
     row.getByText('Outside the project.', { exact: true }),
   ).toBeVisible();
   await expect(
     row.getByRole('button', { name: /APPROVE|CONFIRM|SEND DECISION/ }),
   ).toHaveCount(0);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      sessions: [{ ...session, autoReview: undefined, workingCommand: 'pwd' }],
+    },
+  );
+  await expect(row.getByText('pwd', { exact: true })).toBeVisible();
+  await expect(row.getByRole('region', { name: 'COMMAND REVIEW' })).toHaveCount(
+    0,
+  );
 });
 
 test.describe('quota profile reviews', () => {

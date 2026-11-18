@@ -26,7 +26,7 @@ type Source interface {
 type session struct {
 	PendingModel          *codex.PendingModelChange     `json:"pendingModel,omitempty"`
 	Reviewer              string                        `json:"reviewer,omitempty"`
-	AutoReview            *codex.SessionAutoReview      `json:"autoReview,omitempty"`
+	AutoReview            *codex.ReviewAssessment       `json:"autoReview,omitempty"`
 	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	ReadStateKnown        bool                          `json:"readStateKnown,omitempty"`
@@ -69,16 +69,6 @@ type goal struct {
 	TokensUsed      int64  `json:"tokensUsed"`
 	TimeUsedSeconds int64  `json:"timeUsedSeconds"`
 	Stale           bool   `json:"stale"`
-}
-
-func projectAutoReview(r codex.SessionAutoReview) *codex.SessionAutoReview {
-	if r.ID == "" {
-		return nil
-	}
-	for _, value := range []*string{&r.ID, &r.Status, &r.Risk, &r.Authorization, &r.Action, &r.Rationale} {
-		*value = codex.SanitizeSessionContext(*value)
-	}
-	return &r
 }
 
 func projectGoal(observed *codex.SessionGoal) *goal {
@@ -362,7 +352,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 			}
 			s.state.Sessions = append(s.state.Sessions, session{
 				PendingModel: projectPendingModel(row.Context.PendingModel),
-				Reviewer:     codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: projectAutoReview(row.Context.AutoReview),
+				Reviewer:     codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: row.Context.ReviewAssessment(),
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
 				ApprovalReview: row.Context.ActionReview(),
 				MCPTool:        mcpTool,

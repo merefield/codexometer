@@ -13,7 +13,7 @@ func TestNativeReviewReadOnlyProjection(t *testing.T) {
 	s := newStore()
 	s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "thread", Active: true, Working: true, Context: codex.SessionContext{
 		Text: "Existing conversation", Reviewer: "auto_review", ApprovalToken: "private-token",
-		AutoReview: codex.SessionAutoReview{ID: "review", Status: "inProgress", Risk: "low", Authorization: "high", Rationale: "Reason\x1b[31m", Action: "Action\x1b[31m"},
+		AutoReview: codex.SessionAutoReview{ID: "review", Status: "inProgress", Action: "Action\x1b[31m", ReviewFinding: codex.ReviewFinding{Risk: "low", Authorization: "high", Rationale: "Reason\x1b[31m"}},
 	}}}}, nil, time.Now())
 	data, _ := s.snapshot()
 	var wire map[string]any

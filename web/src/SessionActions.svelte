@@ -5,11 +5,14 @@
   import FileDiff from './FileDiff.svelte';
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
+  import CommandReview from './CommandReview.svelte';
+  import type { ReviewAssessment } from './contracts.generated';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
+    observedReview,
     observedFileChanges = [],
     review = '',
     suspended = false,
@@ -19,6 +22,7 @@
   }: {
     session: string;
     observedCommand?: string;
+    observedReview?: ReviewAssessment;
     observedFileChanges?: FileDiffLine[];
     review?: string;
     suspended?: boolean;
@@ -557,6 +561,9 @@
     {:else if command}
       <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
       <pre class="command">{command}</pre>
+      {#if observedReview && (!actionableCommand || offer?.reviewId === observedReview.id)}
+        <CommandReview assessment={observedReview} full />
+      {/if}
     {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
       <p class="muted">
         Approval details unavailable from this observation. Open Codex to
