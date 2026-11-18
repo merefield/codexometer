@@ -176,6 +176,22 @@ test('writable command detail attaches an assessment only to its matching offer'
   await expect(pane.getByText(offer.command, { exact: true })).toHaveCount(1);
   const block = pane.getByRole('region', { name: 'COMMAND REVIEW' });
   await expect(block.getByText('USER AUTHORISATION: HIGH')).toBeVisible();
+  await expect(block.getByRole('heading')).toHaveCSS('font-weight', '400');
+  const verdict = block.locator('.verdict');
+  await expect(verdict).toHaveCSS('font-weight', '400');
+  expect(await verdict.evaluate((el) => getComputedStyle(el).color)).not.toBe(
+    await verdict.locator('.dot').evaluate((el) => getComputedStyle(el).color),
+  );
+  const gap = () =>
+    block.evaluate(
+      (el) =>
+        el.getBoundingClientRect().top -
+        el.previousElementSibling!.getBoundingClientRect().bottom,
+    );
+  await page.setViewportSize({ width: 1000, height: 900 });
+  const roomy = await gap();
+  await page.setViewportSize({ width: 1000, height: 460 });
+  expect(roomy).toBeGreaterThan(await gap());
   assessment.id = 'different-review-same-command';
   await page.evaluate(
     (detail) =>

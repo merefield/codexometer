@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -18,21 +19,23 @@ type detailLine struct {
 func (line detailLine) render(colors palette) string {
 	style := colors.label()
 	if status, ok := strings.CutPrefix(line.kind, "assessment:"); ok {
+		ink := lipgloss.NewStyle().Foreground(blendColors(colors.dim, colors.accent))
 		fields := strings.Split(line.text, "   ")
 		for i, field := range fields {
-			s := style
-			if strings.HasPrefix(field, "● ") {
-				s = s.Bold(true).Foreground(colors.primary)
+			if verdict, marked := strings.CutPrefix(field, "●"); marked {
+				dot := colors.primary
 				switch status {
 				case "approved":
-					s = s.Foreground(colors.success)
+					dot = colors.success
 				case "denied":
-					s = s.Foreground(colors.danger)
+					dot = colors.danger
 				case "timedOut", "aborted":
-					s = s.Foreground(colors.warning)
+					dot = colors.warning
 				}
+				fields[i] = ink.Foreground(dot).Render("●") + ink.Foreground(colors.accent).Render(verdict)
+			} else {
+				fields[i] = ink.Render(field)
 			}
-			fields[i] = s.Render(field)
 		}
 		return strings.Join(fields, "   ")
 	}
@@ -41,6 +44,8 @@ func (line detailLine) render(colors palette) string {
 		style = style.Bold(true).Foreground(colors.primary)
 	case "metadata":
 		style = colors.dimmed()
+	case "assessment-note":
+		style = lipgloss.NewStyle().Foreground(blendColors(colors.dim, colors.accent))
 	case "warning":
 		style = style.Foreground(colors.warning)
 	case "command":
@@ -271,7 +276,20 @@ func assessmentLines(r *codex.ReviewAssessment, width int, full bool) []detailLi
 	}
 	add(row, "assessment:"+r.Status)
 	if full && r.Rationale != "" {
-		add(r.Rationale, "body")
+		add(r.Rationale, "assessment-note")
+	}
+	return lines
+}
+
+// Spend only a genuinely unused row. In a full document the command may wrap;
+// in a row preview an attached command has already been painted separately.
+func spaceCommandReview(lines []detailLine, rows int, followsCommand bool) []detailLine {
+	if len(lines) < rows {
+		for i, line := range lines {
+			if strings.HasPrefix(line.kind, "assessment:") && ((i == 0 && followsCommand) || (i > 0 && lines[i-1].kind == "command")) {
+				return slices.Insert(lines, i, detailLine{})
+			}
+		}
 	}
 	return lines
 }

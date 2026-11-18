@@ -458,12 +458,7 @@ func historyHeatLevel(tokens, peak int64) int {
 }
 
 func historyHeatColors(colors palette) []color.Color {
-	blend := func(a, b color.Color) color.Color {
-		ar, ag, ab, _ := a.RGBA()
-		br, bg, bb, _ := b.RGBA()
-		return color.RGBA{uint8((ar + br) / 2 >> 8), uint8((ag + bg) / 2 >> 8), uint8((ab + bb) / 2 >> 8), 255}
-	}
-	return []color.Color{blend(colors.background, colors.dim), colors.dim, blend(colors.dim, colors.primary), colors.primary, colors.accent}
+	return []color.Color{blendColors(colors.background, colors.dim), colors.dim, blendColors(colors.dim, colors.primary), colors.primary, colors.accent}
 }
 
 func (m Model) renderHistoryCalendar(width, height int, colors palette) []string {

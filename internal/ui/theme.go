@@ -177,6 +177,12 @@ func (p palette) dimmed() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(p.dim)
 }
 
+func blendColors(a, b imagecolor.Color) imagecolor.Color {
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	return imagecolor.RGBA{uint8((ar + br) / 2 >> 8), uint8((ag + bg) / 2 >> 8), uint8((ab + bb) / 2 >> 8), 255}
+}
+
 func (p palette) label() lipgloss.Style {
 	return lipgloss.NewStyle().Bold(true).Foreground(p.accent)
 }

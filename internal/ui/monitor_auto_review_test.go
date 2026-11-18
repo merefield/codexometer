@@ -1,10 +1,12 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
+	"slices"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
@@ -63,6 +65,51 @@ func TestAssessmentLayoutWrapAndCommandDeduplication(t *testing.T) {
 	r.Attached = false
 	if got := assessmentLines(r, 90, true)[0].text; got != "git status" {
 		t.Fatal(got)
+	}
+}
+
+func TestReviewGapUsesOnlySpareRows(t *testing.T) {
+	command := detailLine{"last wrapped command line", "command"}
+	review := detailLine{"COMMAND REVIEW", "assessment:approved"}
+	note := detailLine{"reason", "assessment-note"}
+	for _, tc := range []struct {
+		name    string
+		lines   []detailLine
+		follows bool
+		gap     int
+	}{
+		{"full after wrapped command", []detailLine{{"first line", "command"}, command, review, note}, false, 2},
+		{"preview with attached command", []detailLine{review}, true, 0},
+		{"preview with own subject", []detailLine{command, review}, false, 1},
+		{"no visible command", []detailLine{review, note}, false, -1},
+		{"no assessment", []detailLine{command, note}, false, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := spaceCommandReview(slices.Clone(tc.lines), len(tc.lines), tc.follows); !slices.Equal(got, tc.lines) {
+				t.Fatal("spacing displaced content", got)
+			}
+			want := slices.Clone(tc.lines)
+			if tc.gap >= 0 {
+				want = slices.Insert(want, tc.gap, detailLine{})
+			}
+			if got := spaceCommandReview(slices.Clone(tc.lines), len(tc.lines)+4, tc.follows); !slices.Equal(got, want) {
+				t.Fatal("expected exactly one conditional gap", got)
+			}
+		})
+	}
+}
+
+func TestReviewOnlyColoursTheStatusDot(t *testing.T) {
+	p := paletteFor(themeRust)
+	line := detailLine{"● AUTO-APPROVED", "assessment:approved"}
+	plain := lipgloss.NewStyle()
+	want := plain.Foreground(p.success).Render("●") + plain.Foreground(p.accent).Render(" AUTO-APPROVED")
+	if got := line.render(p); got != want {
+		t.Fatalf("review verdict should be ordinary text with a coloured dot: %q", got)
+	}
+	note := detailLine{"reason", "assessment-note"}
+	if got := note.render(p); got != plain.Foreground(blendColors(p.dim, p.accent)).Render("reason") {
+		t.Fatalf("rationale should use the intermediate tone: %q", got)
 	}
 }
 

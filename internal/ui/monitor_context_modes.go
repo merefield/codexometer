@@ -332,7 +332,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	if review := s.preview.ReviewAssessment(); review != nil && len(lines) < textRows {
 		extra := assessmentLines(review, max(width-4, 1), false)
 		if len(lines)+len(extra) <= textRows {
-			for _, line := range extra {
+			for _, line := range spaceCommandReview(extra, textRows-len(lines), review.Attached) {
 				lines = append(lines, line.render(colors))
 			}
 		}

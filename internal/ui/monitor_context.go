@@ -203,15 +203,15 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		}
 		return panel
 	}
-	document := m.contextDetailDocument(max(width-4, 1))
+	rows := max(height-2, 1)
+	layout := m.layoutDetailControls(width, height)
+	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
+	document := spaceCommandReview(m.contextDetailDocument(max(width-4, 1)), textRows, false)
 	lines := make([]string, len(document))
 	for i, line := range document {
 		lines[i] = line.render(colors)
 	}
-	rows := max(height-2, 1)
-	layout := m.layoutDetailControls(width, height)
 	controls := layout.render(m, width, height, colors)
-	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
 	start, end := m.detailVisibleRange(len(lines), textRows)
 	bodyLines := append([]string(nil), lines[start:end]...)
 	if m.historyNavigationRows(width, height) > 0 {
