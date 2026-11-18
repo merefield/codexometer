@@ -5,6 +5,7 @@ import "time"
 // SessionActivity keeps prose separate from shell activity. It never contains
 // approval capabilities or command output; all display strings are bounded.
 type SessionActivity struct {
+	commandKey      string // native turn/item key of the command actually displayed
 	Prose           string
 	Command         string
 	CommandStatus   string
@@ -14,6 +15,18 @@ type SessionActivity struct {
 	// unknown; they neither refresh session freshness nor affect token accounting.
 	CommandStartedAt   time.Time
 	CommandCompletedAt time.Time
+}
+
+// Only assistant-authored conversation text is eligible for presentation as
+// Markdown. Commands, request descriptions and approval decisions stay literal.
+func (c SessionContext) AssistantProse() string {
+	switch c.Kind {
+	case SessionContextReply:
+		return c.Text
+	case SessionContextActivity:
+		return c.Activity.Prose
+	}
+	return ""
 }
 
 // CommandTiming reports elapsed or completed duration only with valid timing
@@ -34,6 +47,7 @@ func (a SessionActivity) CommandTiming(now time.Time) string {
 }
 
 type activityCommand struct {
+	id                 string
 	text               string
 	status             string
 	sequence           uint64
@@ -86,7 +100,7 @@ func (s *sessionActivityState) commandTimed(id, text, status string, finished bo
 	if !completed.IsZero() && !started.IsZero() && completed.Before(started) {
 		completed = time.Time{}
 	}
-	c := activityCommand{text: text, status: status, sequence: s.sequence, started: started, completed: completed}
+	c := activityCommand{id: id, text: text, status: status, sequence: s.sequence, started: started, completed: completed}
 	s.last = c
 	if !finished && id != "" && status == "running" {
 		if s.running == nil {
@@ -110,7 +124,7 @@ func (s sessionActivityState) snapshot() SessionActivity {
 			command, sequence = c, c.sequence
 		}
 	}
-	return SessionActivity{Prose: s.prose, Command: command.text, CommandStatus: command.status,
+	return SessionActivity{commandKey: command.id, Prose: s.prose, Command: command.text, CommandStatus: command.status,
 		RunningCommands: len(s.running), RunningLimited: s.limited,
 		CommandStartedAt: command.started, CommandCompletedAt: command.completed}
 }

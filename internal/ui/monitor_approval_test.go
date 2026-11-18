@@ -423,7 +423,7 @@ func TestMCPApprovalFourButtonsAndConfirmationPolicy(t *testing.T) {
 		for index, kind := range []string{"accept", "acceptForSession", "acceptMcpAlways", "cancelMcpTool"} {
 			m := approvalTestModel()
 			m.SetConfirmationMode(mode)
-			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Allow Calendar to create an event?", ApprovalToken: "live", MCPTool: codex.MCPToolApprovalDetails{Server: "codex_apps", Title: "Create Event", Message: "Allow Calendar to create an event?", Arguments: `{"title":"Demo"}`}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "acceptForSession", Value: "acceptForSession"}, {Kind: "acceptMcpAlways", Value: "acceptMcpAlways"}, {Kind: "cancelMcpTool", Value: "cancelMcpTool"}}}
+			m.monitorSessionData[0].preview = codex.SessionContext{Kind: codex.SessionContextApproval, Source: "LIVE", ThreadID: "root-one", Text: "Allow Calendar to create an event?", ApprovalToken: "live", MCPTool: codex.MCPToolApprovalDetails{Server: "codex_apps", Title: "Create Event", Message: "Allow Calendar to create an event?", Arguments: `title: "Demo"`}, ApprovalOptions: [8]codex.ApprovalOption{{Kind: "accept", Value: "accept"}, {Kind: "acceptForSession", Value: "acceptForSession"}, {Kind: "acceptMcpAlways", Value: "acceptMcpAlways"}, {Kind: "cancelMcpTool", Value: "cancelMcpTool"}}}
 			buttons := m.visibleMonitorApprovalButtons()
 			if len(buttons) != 4 {
 				t.Fatalf("mode %s: four MCP choices not visible", mode)

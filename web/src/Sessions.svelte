@@ -16,6 +16,8 @@
   } from './preferences.svelte';
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
+  import CommandReview from './CommandReview.svelte';
+  import SessionProse from './SessionProse.svelte';
   import StatusLine from './StatusLine.svelte';
   import GoalStatus from './GoalStatus.svelte';
   import SessionCopy from './SessionCopy.svelte';
@@ -417,22 +419,6 @@
   {#if session.reviewer}<p class="muted">
       REVIEW // {session.reviewer === 'auto_review' ? 'AUTO' : 'HUMAN'}
     </p>{/if}
-  {#if session.autoReview}
-    <h3>
-      {session.autoReview.status === 'inProgress'
-        ? 'AUTO REVIEWING'
-        : 'AUTO REVIEW'}
-    </h3>
-    <p>
-      {session.autoReview.status}
-      {session.autoReview.risk ? `// Risk: ${session.autoReview.risk}` : ''}
-      {session.autoReview.authorization
-        ? `// User authorisation: ${session.autoReview.authorization}`
-        : ''}
-    </p>
-    <pre>{session.autoReview.action}</pre>
-    <p>{session.autoReview.rationale}</p>
-  {/if}
   {#if session.currentTask}
     <h3>
       {session.contextKind === 'LAST REPLY' && !session.streaming
@@ -463,8 +449,10 @@
     <ActionApproval review={session.approvalReview} />
   {:else if session.mcpTool && (!full || !live.data?.control)}
     <MCPApproval details={session.mcpTool} />
-  {:else if session.text || !session.workingCommand}
-    <pre data-reply-text>{session.text || 'No session context available.'}</pre>
+  {:else if !session.approvalReview && (session.text || !session.workingCommand)}
+    {#if session.prose?.length}<SessionProse blocks={session.prose} />
+    {:else}<pre data-reply-text>{session.text ||
+          'No session context available.'}</pre>{/if}
   {/if}
   {#if session.workingCommand}
     <hr />
@@ -499,6 +487,9 @@
         Command unavailable from this observation. Open Codex to inspect the
         request.
       </p>{/if}
+  {/if}
+  {#if session.autoReview && !(full && live.data?.control && session.command && session.autoReview.attached)}
+    <CommandReview assessment={session.autoReview} {full} />
   {/if}
   {#if !full}<p class="muted">
       CONTEXT SOURCE // {session.source || 'LOCAL'} // OBSERVATION
@@ -645,6 +636,10 @@
                 'schedule',
               ) === 'edit'}
               observedCommand={selected.command}
+              observedAction={selected.approvalReview ?? undefined}
+              observedReview={selected.command && selected.autoReview?.attached
+                ? selected.autoReview
+                : undefined}
               observedFileChanges={selected.fileChanges || []}
               suspended={profileFocused}
               onProtectedChange={(value) => {

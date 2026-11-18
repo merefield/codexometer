@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -17,11 +18,36 @@ type detailLine struct {
 
 func (line detailLine) render(colors palette) string {
 	style := colors.label()
+	if status, ok := strings.CutPrefix(line.kind, "assessment:"); ok {
+		ink := lipgloss.NewStyle().Foreground(blendColors(colors.dim, colors.accent))
+		fields := strings.Split(line.text, "   ")
+		for i, field := range fields {
+			if verdict, marked := strings.CutPrefix(field, "●"); marked {
+				dot := colors.primary
+				switch status {
+				case "approved":
+					dot = colors.success
+				case "denied":
+					dot = colors.danger
+				case "timedOut", "aborted":
+					dot = colors.warning
+				}
+				fields[i] = ink.Foreground(dot).Render("●") + ink.Foreground(colors.accent).Render(verdict)
+			} else {
+				fields[i] = ink.Render(field)
+			}
+		}
+		return strings.Join(fields, "   ")
+	}
 	switch line.kind {
+	case "reply", "prose":
+		style = style.Bold(false)
 	case "heading":
 		style = style.Bold(true).Foreground(colors.primary)
-	case "metadata":
+	case "metadata", "observation":
 		style = colors.dimmed()
+	case "assessment-note":
+		style = lipgloss.NewStyle().Foreground(blendColors(colors.dim, colors.accent))
 	case "warning":
 		style = style.Foreground(colors.warning)
 	case "command":
@@ -40,7 +66,7 @@ func (line detailLine) render(colors palette) string {
 
 // A single document owns both display and scroll geometry. Formatting never
 // changes the stored request, capability or text sent back to Codex.
-func (m Model) contextDetailDocument(width int) (document []detailLine) {
+func (m Model) contextDetailDocument(width int) []detailLine {
 	width = max(width, 1)
 	s, ok := m.contextDetailSession()
 	if !ok {
@@ -52,15 +78,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if doc := m.profileDocument(s, width); doc != nil {
 		return doc
 	}
-	defer func() {
-		if text := s.preview.AutoReview.Detail(); text != "" {
-			document = append(document, detailLine{})
-			for _, line := range sessionWebLiteralTextLines(text, width) {
-				document = append(document, detailLine{ansi.Truncate(line, width, ""), "metadata"})
-			}
-		}
-	}()
-	if s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
+	assessment := s.preview.ReviewAssessment()
+	if assessment == nil && s.preview.Text == "" && s.preview.CurrentTask == "" && s.preview.LatestGuidance == "" {
 		identity := terminalLabel(s.id) + " // " + terminalLabel(s.workingDirectory)
 		var lines []detailLine
 		for _, line := range strings.Split(ansi.Hardwrap(identity, width, true), "\n") {
@@ -79,11 +98,14 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if c.Kind == codex.SessionContextApproval {
 		sanitize = codex.SanitizeApprovalText
 	}
-	var lines []detailLine
+	lines := observationLines(c, width)
 	appendText := func(text, kind, prefix string) {
 		wrap := sessionWebTextLines
 		if c.Kind == codex.SessionContextApproval || kind != "body" && kind != "reply" {
 			wrap = sessionWebLiteralTextLines
+		}
+		if kind == "reply" || kind == "prose" {
+			wrap = m.proseLines
 		}
 		for _, line := range wrap(text, max(width-lipgloss.Width(prefix), 1)) {
 			// A double-width glyph cannot fit a one-cell viewport. Clip that
@@ -102,7 +124,6 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		}
 		lines = append(lines, detailLine{title, "heading"})
 	}
-	appendText(terminalLabel(c.Source)+" // "+terminalLabel(c.ThreadID)+" // "+contextAge(c), "metadata", "")
 	if c.CurrentTask != "" {
 		section(contextTaskTitle(c))
 		appendText(codex.SanitizeSessionContext(c.CurrentTask), "body", "")
@@ -123,7 +144,7 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 	if hasWorkingCommand(c) {
 		if c.Activity.Prose != "" {
 			section(i18n.Text("COMMENTARY"))
-			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "body", "")
+			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "prose", "")
 		}
 		section(m.workingCommandTitle(c.Activity))
 		prefix := "│ "
@@ -131,6 +152,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(codex.SanitizeSessionContext(c.Activity.Command), "command", prefix)
+		lines = append(lines, assessmentLines(assessment, width, true)...)
+		assessment = nil
 	} else if c.Kind == codex.SessionContextApproval && c.FileChanges != "" {
 		section(contextTitle(c))
 		appendText(sanitize(c.Text), "body", "")
@@ -181,6 +204,8 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 			prefix = ""
 		}
 		appendText(sanitize(d.Command), "command", prefix)
+		lines = append(lines, assessmentLines(assessment, width, true)...)
+		assessment = nil
 		section(i18n.Text("WORKING DIRECTORY"))
 		appendText(sanitize(d.Directory), "metadata", "")
 		for _, option := range c.ApprovalOptions {
@@ -207,15 +232,70 @@ func (m Model) contextDetailDocument(width int) (document []detailLine) {
 		kind := "body"
 		if c.Kind == codex.SessionContextReply {
 			kind = "reply"
+		} else if c.AssistantProse() != "" && c.AssistantProse() == c.Text {
+			kind = "prose"
 		}
 		appendText(text, kind, "")
 	}
+	lines = append(lines, assessmentLines(assessment, width, true)...)
 	if c.ApprovalDecisions != "" {
 		section(i18n.Text("OFFERED DECISIONS"))
 		appendText(c.ApprovalDecisions, "metadata", "")
 	}
 	if notice := m.quota.notices[s.id]; notice != "" {
 		appendText(codex.SanitizeSessionContext(notice), "warning", "")
+	}
+	return lines
+}
+
+// Wrap at field boundaries first; on a very narrow pane even one field may
+// need wrapping. Use the same plain lines for scroll geometry and painting.
+func assessmentLines(r *codex.ReviewAssessment, width int, full bool) []detailLine {
+	if r == nil {
+		return nil
+	}
+	width = max(width, 1)
+	var lines []detailLine
+	add := func(text, kind string) {
+		for _, line := range sessionWebLiteralTextLines(text, width) {
+			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), kind})
+		}
+	}
+	if !r.Attached && r.Subject != "" {
+		add(r.Subject, "command")
+	}
+	fields := []string{i18n.Text(r.Title), "● " + i18n.Text(r.Decision)}
+	if r.Risk != "" {
+		fields = append(fields, i18n.Text("RISK")+": "+i18n.Text(strings.ToUpper(r.Risk)))
+	}
+	if full && r.Authorization != "" {
+		fields = append(fields, i18n.Text("USER AUTHORISATION")+": "+i18n.Text(strings.ToUpper(r.Authorization)))
+	}
+	row := fields[0]
+	for _, field := range fields[1:] {
+		if ansi.StringWidth(row)+3+ansi.StringWidth(field) > width {
+			add(row, "assessment:"+r.Status)
+			row = field
+		} else {
+			row += "   " + field
+		}
+	}
+	add(row, "assessment:"+r.Status)
+	if full && r.Rationale != "" {
+		add(r.Rationale, "assessment-note")
+	}
+	return lines
+}
+
+// Spend only a genuinely unused row. In a full document the command may wrap;
+// in a row preview an attached command has already been painted separately.
+func spaceCommandReview(lines []detailLine, rows int, followsCommand bool) []detailLine {
+	if len(lines) < rows {
+		for i, line := range lines {
+			if strings.HasPrefix(line.kind, "assessment:") && ((i == 0 && followsCommand) || (i > 0 && lines[i-1].kind == "command")) {
+				return slices.Insert(lines, i, detailLine{})
+			}
+		}
 	}
 	return lines
 }

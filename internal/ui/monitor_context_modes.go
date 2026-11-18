@@ -213,7 +213,7 @@ func (m *Model) setRowContext(id string, mode int) {
 	m.restoreMonitorDraft()
 }
 
-func expandedContextLines(width int, s monitorSession) []string {
+func (m Model) expandedContextLines(width int, s monitorSession) []string {
 	wrap, sanitize := sessionWebTextLines, codex.SanitizeSessionContext
 	if s.preview.Kind == codex.SessionContextApproval {
 		wrap, sanitize = sessionWebLiteralTextLines, codex.SanitizeApprovalText
@@ -229,18 +229,19 @@ func expandedContextLines(width int, s monitorSession) []string {
 		return []string{i18n.Text("NO CONTEXT")}
 	}
 	header := terminalLabel(s.preview.ThreadID) + " // " + terminalLabel(s.preview.Source)
-	text := header + "\n" + sanitize(s.preview.Text)
 	if s.preview.CurrentTask != "" || s.preview.LatestGuidance != "" {
-		text = header
 		if s.preview.CurrentTask != "" {
-			text += "\n" + ansi.Truncate(contextTaskTitle(s.preview)+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.CurrentTask)), " "), max(width-4, 1), "…")
+			header += "\n" + ansi.Truncate(contextTaskTitle(s.preview)+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.CurrentTask)), " "), max(width-4, 1), "…")
 		}
 		if s.preview.LatestGuidance != "" {
-			text += "\n" + ansi.Truncate(i18n.Text("LATEST GUIDANCE")+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.LatestGuidance)), " "), max(width-4, 1), "…")
+			header += "\n" + ansi.Truncate(i18n.Text("LATEST GUIDANCE")+" // "+strings.Join(strings.Fields(codex.SanitizeSessionContext(s.preview.LatestGuidance)), " "), max(width-4, 1), "…")
 		}
-		text += "\n\n" + sanitize(s.preview.Text)
+		header += "\n"
 	}
-	return wrap(text, max(width-4, 1))
+	if prose := s.preview.AssistantProse(); prose != "" && prose == s.preview.Text {
+		return append(wrap(header, max(width-4, 1)), m.proseLines(sanitize(prose), max(width-4, 1))...)
+	}
+	return wrap(header+"\n"+sanitize(s.preview.Text), max(width-4, 1))
 }
 
 // Inline decisions are only offered when the complete source/request fits
@@ -255,7 +256,7 @@ func (m Model) expandedApprovalButtons(width, height int, s monitorSession) []mo
 	}
 	n := buttons[len(buttons)-1].y + 1
 	rows, _, _ := monitorContextBodyLayout(height, n)
-	if len(expandedContextLines(width, s)) > rows {
+	if len(m.expandedContextLines(width, s)) > rows {
 		return nil
 	}
 	return buttons
@@ -265,7 +266,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	if m.hasSessionProfile(s) {
 		return m.renderSessionProfile(width, height, s, colors)
 	}
-	lines := expandedContextLines(width, s)
+	lines := m.expandedContextLines(width, s)
 	if notice := m.quota.notices[s.id]; notice != "" {
 		lines = append(lines, strings.Split(ansi.Hardwrap(codex.SanitizeSessionContext(notice), max(width-4, 1), true), "\n")...)
 	}
@@ -301,7 +302,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		// Keep the reply readable in short rows. Full detail retains the task.
 		withoutTask := s
 		withoutTask.preview.CurrentTask, withoutTask.preview.LatestGuidance = "", ""
-		lines = expandedContextLines(width, withoutTask)
+		lines = m.expandedContextLines(width, withoutTask)
 	}
 	if hasWorkingCommand(s.preview) {
 		lines = m.workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
@@ -313,17 +314,27 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		}
 	}
 	for i := range lines {
-		lines[i] = colors.label().Render(lines[i])
+		lines[i] = colors.label().Bold(s.preview.AssistantProse() == "").Render(lines[i])
 	}
 	if s.preview.FileChanges != "" {
 		document := fileApprovalDocument(s.preview.FileChanges, max(width-4, 1))
-		offset := len(expandedContextLines(width, s)) - len(document)
+		offset := len(m.expandedContextLines(width, s)) - len(document)
 		for i, line := range document {
 			if i+offset < len(lines) {
 				if i+offset == len(lines)-1 && len(document)+offset > len(lines) {
 					line.text = ansi.Truncate(line.text, max(width-5, 0), "") + "…"
 				}
 				lines[i+offset] = line.render(colors)
+			}
+		}
+	}
+	// A preview uses only spare rows: never displace the exact request or
+	// change the geometry of existing approval controls.
+	if review := s.preview.ReviewAssessment(); review != nil && len(lines) < textRows {
+		extra := assessmentLines(review, max(width-4, 1), false)
+		if len(lines)+len(extra) <= textRows {
+			for _, line := range spaceCommandReview(extra, textRows-len(lines), review.Attached) {
+				lines = append(lines, line.render(colors))
 			}
 		}
 	}

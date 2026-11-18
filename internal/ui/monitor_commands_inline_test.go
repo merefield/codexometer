@@ -17,6 +17,13 @@ type inlineCommandClient struct {
 
 func (f *inlineCommandClient) SessionCommands(ctx context.Context, id, path string) (codex.SessionCommandMenu, error) {
 	switch path {
+	case "goal":
+		return codex.SessionCommandMenu{Path: path, Choices: []codex.SessionCommandChoice{
+			{Label: "Edit objective", Next: "goal/edit"},
+			{Label: "Token budget", Next: "goal/budget"},
+			{Label: "Resume goal", Next: "goal/resume"},
+			{Label: "Clear goal", Next: "goal/clear"},
+		}}, nil
 	case "model":
 		f.reads++
 		return codex.SessionCommandMenu{Path: path, Choices: []codex.SessionCommandChoice{
@@ -31,6 +38,121 @@ func (f *inlineCommandClient) SessionCommands(ctx context.Context, id, path stri
 		}}, nil
 	}
 	return f.suggestionClient.SessionCommands(ctx, id, path)
+}
+
+func TestInlineParameterListsOpenOnSeparatorAndPreserveArguments(t *testing.T) {
+	for _, tc := range []struct {
+		draft, path, label string
+	}{
+		{"/goal ", "goal", ""},
+		{"/goal resume", "goal", "Resume goal"},
+		{"/goal budget", "goal", "Token budget"},
+		{"/goal clear", "goal", "Clear goal"},
+		{"/model ", "model", ""},
+		{"/model beta high", "model/beta", "High"},
+	} {
+		t.Run(tc.draft, func(t *testing.T) {
+			m, base := suggestionTestModel(t)
+			f := &inlineCommandClient{suggestionClient: base}
+			m.fetcher = f
+			m.monitorSuggestions.menu.Choices = append(m.monitorSuggestions.menu.Choices, codex.SessionCommandChoice{Label: "/goal", Next: "goal"})
+			m.monitorPrompt.input.SetValue(tc.draft)
+			cmd := m.syncMonitorSuggestions()
+			for i := 0; cmd != nil; i++ {
+				if i > 8 {
+					t.Fatal("navigation did not settle")
+				}
+				next, more := m.Update(cmd())
+				m, cmd = next.(Model), more
+			}
+			if !m.monitorCommands.open || !m.monitorCommands.inline || m.monitorCommands.menu.Path != tc.path || f.calls != 0 {
+				t.Fatalf("parameter navigation failed: %+v, calls %d", m.monitorCommands, f.calls)
+			}
+			if m.monitorPrompt.input.Value() != tc.draft {
+				t.Fatalf("draft changed: %q", m.monitorPrompt.input.Value())
+			}
+			indices := m.commandChoiceIndices()
+			if len(indices) == 0 || tc.label != "" && (len(indices) != 1 || m.monitorCommands.menu.Choices[indices[0]].Label != tc.label) {
+				t.Fatalf("valid arguments did not filter the parameter list: %v", indices)
+			}
+			if tc.draft == "/goal resume" {
+				next, _, _ := m.updateInlineCommands(tea.KeyPressMsg{Code: tea.KeyEnter})
+				if next.monitorCommands.menu.Path != "goal/resume" || f.calls != 0 {
+					t.Fatal("canonical parameter did not select its advertised branch")
+				}
+			}
+		})
+	}
+}
+
+func TestTypingSpaceOpensParameterMenuWithoutEnter(t *testing.T) {
+	m, _ := suggestionTestModel(t)
+	m.monitorPrompt.input.SetValue("/model")
+	next, cmd := m.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	m = next.(Model)
+	if !m.monitorCommands.open || m.monitorCommands.menu.Path != "model" || m.monitorPrompt.input.Value() != "/model " || cmd == nil {
+		t.Fatal("space did not immediately open the parameter catalogue")
+	}
+}
+
+func TestInlineSpaceDoesNotExecuteLocalActions(t *testing.T) {
+	for _, path := range []string{"quit", "exit", "copy", "usage"} {
+		t.Run(path, func(t *testing.T) {
+			m, _ := suggestionTestModel(t)
+			m.monitorSessionData[0].preview.Text = "Reply to copy"
+			draft := "/" + path + " "
+			m.monitorPrompt.input.SetValue(draft)
+			cmd := m.syncMonitorSuggestions()
+			choices := m.suggestionChoices()
+			if cmd != nil || m.monitorCommands.open || m.monitorPrompt.input.Value() != draft ||
+				len(choices) != 1 || choices[0].Next != path {
+				t.Fatal("separator should leave this action available for explicit selection")
+			}
+		})
+	}
+	m, _ := suggestionTestModel(t)
+	store := &memoryPreferenceStore{}
+	m.preferenceStore = store
+	m.monitorPrompt.input.SetValue("/theme Rust ")
+	if cmd := m.syncMonitorSuggestions(); cmd != nil {
+		t.Fatal("local theme menu requested I/O")
+	}
+	choice, ok := m.commandChoice()
+	if m.monitorCommands.menu.Path != "theme" || !ok || !strings.EqualFold(choice.Label, "Rust") || len(store.saves) != 0 {
+		t.Fatal("typed theme should be selected, not applied", choice)
+	}
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if next.(Model).monitorCommands.open || len(store.saves) != 1 {
+		t.Fatal("explicit selection did not apply exactly once")
+	}
+}
+
+func TestInlineBackFromPastedModelRestoresUsableParent(t *testing.T) {
+	m, base := suggestionTestModel(t)
+	m.fetcher = &inlineCommandClient{suggestionClient: base}
+	m.monitorPrompt.input.SetValue("/model beta high")
+	cmd := m.syncMonitorSuggestions()
+	for steps := 0; cmd != nil; steps++ {
+		if steps >= 3 {
+			t.Fatal("pasted command did not settle")
+		}
+		var next tea.Model
+		next, cmd = m.Update(cmd())
+		m = next.(Model)
+	}
+	for _, want := range []struct{ path, draft string }{{"model/beta", "/model beta high"}, {"model", "/model beta"}, {"", "/model"}} {
+		if m.monitorCommands.menu.Path != want.path || m.monitorPrompt.input.Value() != want.draft || len(m.commandChoiceIndices()) != 1 {
+			t.Fatalf("wanted usable %q menu with draft %q; got %q, %q", want.path, want.draft, m.monitorCommands.menu.Path, m.monitorPrompt.input.Value())
+		}
+		if want.path != "" {
+			next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})
+			next, more := next.Update(cmd())
+			if more != nil {
+				t.Fatal("restoring the parent requested its child again")
+			}
+			m = next.(Model)
+		}
+	}
 }
 
 func inlineCommandModel(t *testing.T) (Model, *inlineCommandClient) {

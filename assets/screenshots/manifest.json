@@ -14,8 +14,8 @@
       "caption": "Session detail: synthetic commentary, the exact command to review, and explicit approval controls.",
       "columns": 136,
       "rows": 35,
-      "frameSHA256": "c78d3ee6fa95a448d4fb6a278d4c64a41861c011e7df45dc70c11dd7d0dc8786",
-      "pngSHA256": "40c69fcce18628464d98e6c559f5429263d41e672c6738091bd0d8d03db681ba"
+      "frameSHA256": "d10fe418f6564e5d096f0ff0d783bb50345bd7651c88a51d642a2a516503fc61",
+      "pngSHA256": "94aee0b8e48f9e513bbad7c8c71cc2ce0d3fd9c99fa955334ff44975a7cb13c7"
     },
     {
       "file": "benchmark.png",
@@ -46,16 +46,16 @@
       "caption": "Schedule a synthetic follow-up without leaving session detail; no job is submitted.",
       "columns": 136,
       "rows": 33,
-      "frameSHA256": "7a8b65312d55941624ac11d8c8563285850eae95761ee46a6101b253f829dcb5",
-      "pngSHA256": "e1e25ec3c805ea203eb75311c0613c22ffe4870d73ae495093a9a6059c51ccf2"
+      "frameSHA256": "1324b9f33f02087d489f32c8d858a536c080e41e10844d27ad5770f6f90054ce",
+      "pngSHA256": "60e8a1b0d9f30e8dc0084e70798d3a62545b0adc2e9ad89d936b23032f83825f"
     },
     {
       "file": "sessions.png",
       "caption": "Sessions command centre: three synthetic sessions, live activity and an approval awaiting review.",
       "columns": 136,
       "rows": 45,
-      "frameSHA256": "534ef8616e5539a00180312fb977189b0c85d85bad2c56d9cb833b21c527601d",
-      "pngSHA256": "67cdfe31866813000d8db123efddeabee65b85bd6cb40c32d842aa350ed53a12"
+      "frameSHA256": "a07246a12a7242f7bf564dbb21e015b61edf5821669116be3dbc6fadab286a0c",
+      "pngSHA256": "e7fba0e4ea3dc76ae402cfe97e545ba3e314b8d8b5c473e048300b9361b05f35"
     },
     {
       "file": "usage.png",

@@ -38,6 +38,7 @@ type monitorCommandsState struct {
 	restore                 *monitorCommandLevel
 	inline                  bool
 	prefix                  string
+	preserveDraft           *string
 	escapeUntil             time.Time
 }
 type monitorCommandsResult struct {
@@ -59,7 +60,12 @@ func (m *Model) loadMonitorCommands(path string, fresh ...bool) tea.Cmd {
 	}
 	if p.inline && !commandInputReview(path) {
 		p.prefix = m.inlineCommandPrefix(path)
-		m.monitorPrompt.input.SetValue(p.prefix)
+		draft := p.prefix
+		if p.preserveDraft != nil {
+			draft = *p.preserveDraft
+			p.preserveDraft = nil
+		}
+		m.monitorPrompt.input.SetValue(draft)
 		m.monitorPrompt.input.CursorEnd()
 	}
 	p.menu.Path = path
@@ -82,6 +88,9 @@ func (m *Model) loadMonitorCommands(path string, fresh ...bool) tea.Cmd {
 			p.selected = min(p.restore.selected, max(len(menu.Choices)-1, 0))
 			m.restoreCommandDraft()
 			p.restore = nil
+		}
+		if p.inline && !menu.Multiple {
+			m.moveInlineCommandSelection(0)
 		}
 		return nil
 	}
@@ -191,7 +200,7 @@ func (m *Model) escapeMonitorCommands() tea.Cmd {
 	return cmd
 }
 
-func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
+func (m Model) openMonitorCommands(path string, draft ...string) (Model, tea.Cmd, bool) {
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
 	if path == "commands" {
 		path = ""
@@ -224,6 +233,9 @@ func (m Model) openMonitorCommands(path string) (Model, tea.Cmd, bool) {
 	m.monitorApprovalConfirm = ""
 	m.clearQuotaConfirmation()
 	m.monitorCommands = monitorCommandsState{open: true, session: id, request: m.monitorCommands.request, hover: -1, history: history, inline: inline}
+	if len(draft) > 0 {
+		m.monitorCommands.preserveDraft = &draft[0]
+	}
 	cmd := m.loadMonitorCommands(path)
 	return m, cmd, true
 }
@@ -785,6 +797,10 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					}
 					p.detail = true
 					p.until = time.Now().Add(30 * time.Second)
+				}
+				if restore == nil {
+					cmd := m.advanceInlineCommand()
+					return m, cmd, true
 				}
 			}
 		}

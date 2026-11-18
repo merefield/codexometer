@@ -20,6 +20,7 @@ export interface ActionChoice {
 }
 
 export interface ActionOffer {
+  reviewId?: string;
   approvalReview?: ApprovalReview | null;
   mcpTool?: MCPToolApprovalDetails | null;
   requiredHumanApproval?: boolean;
@@ -128,6 +129,11 @@ export interface Meter {
   plot: QuotaPlot;
 }
 
+export interface PendingModelChange {
+  summary?: string;
+  state?: string;
+}
+
 export interface PlanUsageBreakdown {
   dimension: string;
   rows: Array<PlanUsageValue> | null;
@@ -184,10 +190,35 @@ export interface Projection {
   segment?: Segment | null;
 }
 
+export interface ProseBlock {
+  runs?: Array<ProseRun> | null;
+  rows?: Array<Array<Array<ProseRun> | null> | null> | null;
+  align?: Array<string> | null;
+}
+
+export interface ProseRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+}
+
 export interface QuotaPlot {
   elapsed: number;
   known: boolean;
   modes: Array<Projection>;
+}
+
+export interface ReviewAssessment {
+  id: string;
+  title: string;
+  decision: string;
+  status: string;
+  subject?: string;
+  attached?: boolean;
+  risk?: string;
+  authorization?: string;
+  rationale?: string;
 }
 
 export interface Sample {
@@ -215,8 +246,9 @@ export interface Segment {
 }
 
 export interface Session {
+  pendingModel?: PendingModelChange | null;
   reviewer?: string;
-  autoReview?: SessionAutoReview | null;
+  autoReview?: ReviewAssessment | null;
   approvalReview?: ApprovalReview | null;
   mcpTool?: MCPToolApprovalDetails | null;
   readStateKnown?: boolean;
@@ -239,6 +271,7 @@ export interface Session {
   failed?: boolean;
   contextKind: string;
   text: string;
+  prose?: Array<ProseBlock> | null;
   command: string;
   workingCommand?: string;
   approvalContext?: string;
@@ -249,15 +282,6 @@ export interface Session {
   source: string;
   activity: string;
   samples: Array<Sample> | null;
-}
-
-export interface SessionAutoReview {
-  id: string;
-  status: string;
-  risk?: string;
-  authorization?: string;
-  rationale?: string;
-  action?: string;
 }
 
 export interface SessionGoal {

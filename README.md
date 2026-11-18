@@ -1510,6 +1510,14 @@ switch between graph-only, split, expanded, and full detail as described below.
   through its normal refresh. Local-only mode retains completed-message fallback;
   missed events are not reconstructed and the existing context length cap applies.
 
+Session replies and assistant commentary support Markdown emphasis: `*italics*`,
+`**bold**`, and `inline code` (in backticks). Pipe tables keep their column
+alignment with one rule under the headings. If a table is too wide, terminal
+detail shows each row as **heading: value** pairs; in the browser the table
+scrolls horizontally. Previous replies in terminal history use the same layout.
+Commands, approval requests, diffs and fenced code stay literal, and **Copy**
+still takes the original Markdown, not the rendered layout.
+
 Terminal session text marks HTTP/HTTPS web links explicitly and underlines both
 Markdown labels and visible URLs. Wrapped links and scrolled-in fragments retain
 their full destination. In prose, complete inline Markdown links to the HTTPS
@@ -1873,6 +1881,14 @@ denial retries still open their full inspection view before an explicit Apply
 action, including with `--confirmation none`.
 Browse-only entries do not execute tools or change configuration.
 
+Type a space after a command with a parameter menu to open that list immediately;
+further typing filters that level, without sending anything. For example,
+`/goal resume` matches **Resume goal**, and `/goal budget` matches **Token budget**.
+The same live tree supports typing through model/reasoning levels as well as
+step-by-step selection. Free-text editors retain their input; opening a parameter
+list never bypasses the normal explicit selection or confirmation policy.
+Local actions such as `/quit`, `/usage` and `/copy` still require Enter or a click.
+
 On Codex 0.169+, model/reasoning and advertised speed options are requested
 from the selected session's saved model provider, not the daemon's default.
 Provider changes invalidate cached options and previous reviews. Quota-threshold
@@ -1895,7 +1911,7 @@ usage and does not change token totals, quota learning or API-EQ calculations.
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name and apply it without a second confirmation by default. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. Mutations require confirmation by default. |
-| `/model` | Advertised models, their descriptions and supported reasoning levels. Choosing a model resets its explicit speed override to the server default. |
+| `/model` | Advertised models, their descriptions and supported reasoning levels. Apply while idle, or queue during work for the next observed idle turn stop. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation by default. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
 | `/permissions` | Native permission profiles, approval policies and reviewer selection, subject to Codex's managed requirements. Also accepts `/permissions <profile-id> [--approval-policy=<policy>] [--reviewer=user\|auto_review]`. Changes are verified against the running session. |
@@ -1914,14 +1930,23 @@ the choice under its managed requirements. For example:
 
 Profile IDs come from the live catalogue; `:workspace` is an example, not a
 hard-coded fallback. Quoted arguments and native granular policy JSON are
-accepted. Profile, policy and reviewer changes target subsequent turns. An
+accepted. The menu spells out which kinds of approval **prompts** a managed
+policy enables or disables; enabling a prompt does not grant permission.
+Profile, policy and reviewer changes target subsequent turns. An
 acknowledgement alone is not success: Codexometer reads back the requested
 settings. An unconfirmed update is not automatically retried.
 
 Rows show `REVIEW // HUMAN` or `REVIEW // AUTO` when Codex reports the setting.
 During native assessment, the working badge becomes **AUTO REVIEWING**; detail
-retains the conversation and adds the latest native action, risk, authorisation
-assessment and rationale. This is informational, not a request for you to click
+keeps the command and its justification separate from Codex's verdict and rationale.
+Decision and risk share a line when space permits; full detail also shows Codex's
+assessment of user authorisation when reported. Terminal and web attach a verdict
+to the command only when its native identity matches. It clears as work moves to
+another command or the turn ends; an old denial can still be inspected via
+`/approve`, which shows the action fields, risk, rationale (when reported),
+and one-retry scope before you consent. Private Guardian thread output is never treated as the conversation's
+last reply. Its tokens still count, but only a native review event—not JSON
+extracted from a reply—supplies a verdict. This is informational, not a request for you to click
 Approve. Actual mandatory human checkpoints keep their normal controls and pills.
 Auto-review consumes model resources and is not a guarantee that only low-risk
 actions can pass: Codex owns the policy and final decision.
@@ -1989,8 +2014,8 @@ from its execution environments, and identifies their environment when supplied.
 Older servers retain directory-based discovery. A real thread/permission/transport
 error is not silently replaced with a different inventory, and a successful empty
 thread inventory remains empty rather than falling back to directory hooks.
-Model/reasoning and Plan changes remain guarded by the existing idle-state checks;
-this compatibility update does not broaden write permissions.
+Plan changes remain guarded by idle-state checks. Model/reasoning selections can
+be queued during work; they do not change the running turn or broaden permissions.
 
 The detail footer uses theme-highlighted text in the bottom border in terminal mode, and
 the last line of full session detail on web. Its default fields are observed
@@ -2050,11 +2075,20 @@ reconnect invalidates the old choice. The updated name appears on the next telem
 
 Codex session-setting changes require a loaded session. When the selected policy
 requires review, confirmations expire after 30 seconds. Speed-only changes can be sent while working or waiting for an approval;
-model/reasoning and Plan settings still require idle and no pending approval. Native
+Plan settings still require idle and no pending approval. Model/reasoning selections
+made during work become a visible **MODEL // QUEUED** item in the terminal's
+follow-up queue and the writable browser's session controls. Codexometer rechecks
+the loaded session, provider, model/effort catalogue and original settings before
+sending once at an observed idle stop. If another turn starts first, it waits for
+another idle opportunity rather than interrupting. One pending model change per
+session is retained in memory; another explicit selection replaces an unsent one.
+Closing Codexometer or losing the daemon connection discards unsent changes.
+Concurrent settings changes fail safely, and failed/unconfirmed writes stay visible
+without automatic retries; reselect `/model` or check Codex as indicated. Native
 permission changes can be queued during work for subsequent turns, but not while
 a human request is pending. The command and options
 are revalidated before sending; stale connections and changed options fail closed.
-A normal turn start/completion does not invalidate a speed confirmation, but changed
+A normal turn start/completion does not invalidate a speed or model confirmation, but changed
 model, reasoning or speed settings do. A successful
 request is an acknowledgement, not a claim that a subsequent turn has already
 used the setting. Successful confirmations close the menu and return focus to
@@ -2300,7 +2334,8 @@ first when available and the remaining choices in their offered order:
   without asking again.
 - **ALWAYS ALLOW PREFIX** applies the exact displayed persistent command-prefix
   rule after **CONFIRM PERSISTENT RULE**. Future matching commands may run
-  without asking again; review the displayed prefix carefully.
+  without asking again. Each argument is quoted separately: `"git" "a b"`
+  matches a different prefix from `"git" "a" "b"`.
 - **DECLINE** rejects the command but lets the agent continue the turn.
 - **REJECT & STOP TURN** sends Codex's `cancel` decision: reject the command and
   interrupt the turn. This is distinct from declining or closing the detail page.
@@ -2312,6 +2347,11 @@ names/types for troubleshooting, not conversation content. Structured
 command-prefix grants are validated and their exact payload is returned; no
 decision absent from the request can be submitted. For older servers omitting
 the decision list, only the legacy Accept/Cancel pair is offered.
+
+Terminal and web show tool arguments as named rows, with numbered entries for
+lists. Additional permission requests show the requested access and working
+directory when reported. These remain **review in Codex** requests: displaying
+the scope does not enable an Approve button.
 
 Closing the detail page cancels an unsubmitted confirmation. Each visible
 approval button has a numbered shortcut (`1`–`8`, following the displayed order).

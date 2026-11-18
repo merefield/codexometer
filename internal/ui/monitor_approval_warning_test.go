@@ -233,11 +233,11 @@ func TestInlineApprovalRequiresTheCompleteLongReview(t *testing.T) {
 			clipped := row
 			clipped.preview.Text = codex.SanitizeSessionContext(text)
 			// Leave exactly enough room for the old 4 KiB excerpt, but not its hidden tail.
-			previewRows := len(expandedContextLines(width, clipped))
+			previewRows := len(m.expandedContextLines(width, clipped))
 			controls := m.monitorApprovalButtons(width, 200)
 			controlRows := controls[len(controls)-1].y + 1
 			height := previewRows + controlRows + 3
-			complete := expandedContextLines(width, row)
+			complete := m.expandedContextLines(width, row)
 			if !strings.Contains(strings.Join(complete, ""), "END OF REVIEW") || len(complete) <= previewRows {
 				t.Fatal("complete approval text was truncated")
 			}

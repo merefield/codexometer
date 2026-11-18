@@ -286,7 +286,7 @@ func TestNonTerminalErrorsDoNotUnlockRecovery(t *testing.T) {
 	}
 }
 
-func TestModelCommandsRecoverSystemErrorsButNotUnknownOrActiveSessions(t *testing.T) {
+func TestModelCommandsRecoverErrorsQueueDuringWorkAndRejectUnknownSessions(t *testing.T) {
 	for _, status := range []string{"systemError", "active", "notLoaded", "unknown"} {
 		t.Run(status, func(t *testing.T) {
 			p, f := newQuotaDaemon(t)
@@ -297,11 +297,11 @@ func TestModelCommandsRecoverSystemErrorsButNotUnknownOrActiveSessions(t *testin
 				t.Fatal("model discovery failed", menu, err)
 			}
 			choice := menu.Choices[0]
-			if want := status == "systemError"; choice.Action != want {
+			if want := status == "systemError" || status == "active"; choice.Action != want {
 				t.Fatal("model action has wrong readiness", status, choice)
 			}
 			err = p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, choice.ID)
-			if (err == nil) != (status == "systemError") {
+			if (err == nil) != (status == "systemError" || status == "active") {
 				t.Fatal("model recovery ignored runtime readiness", status, err)
 			}
 			f.mu.Lock()

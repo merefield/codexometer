@@ -71,13 +71,18 @@ func TestCachedCommandClientRevalidatesWritesAndSettingsScope(t *testing.T) {
 	}
 	f.mu.Lock()
 	f.commandStatus = "active" // The cached menu still describes idle settings.
+	original := f.sessions["one"]
+	changed := original
+	changed.Effort = "low" // Effective settings changes, unlike work alone, invalidate review.
+	f.sessions["one"] = changed
 	f.mu.Unlock()
 	if err := c.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID); err == nil {
-		t.Fatal("write trusted cached settings after a turn started")
+		t.Fatal("write trusted cached settings after effective settings changed")
 	}
 	f.mu.Lock()
 	writes := len(f.writes)
 	f.commandStatus = "idle"
+	f.sessions["one"] = original
 	f.mu.Unlock()
 	if writes != 0 {
 		t.Fatal("stale cached command mutated the session")
@@ -409,7 +414,7 @@ func TestSessionSpeedPickerDoesNotTreatQueuedWriteAsApplied(t *testing.T) {
 	}
 }
 
-func TestSessionCommandAvailabilityDistinguishesBlockedSettingsFromHelp(t *testing.T) {
+func TestSessionCommandAvailabilityQueuesModelDuringWork(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	f.mu.Lock()
 	f.commandStatus = "active"
@@ -420,11 +425,11 @@ func TestSessionCommandAvailabilityDistinguishesBlockedSettingsFromHelp(t *testi
 		t.Fatal(menu, err)
 	}
 	for _, choice := range menu.Choices {
-		if choice.Action || !strings.HasPrefix(choice.Unavailable, "Waiting for idle.") {
-			t.Fatalf("blocked setting lacks reason: %+v", choice)
+		if !choice.Action || choice.Unavailable != "" {
+			t.Fatalf("working model selection should be queueable: %+v", choice)
 		}
-		if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err == nil {
-			t.Fatal("executed unavailable option")
+		if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err != nil {
+			t.Fatal("could not queue model selection", err)
 		}
 	}
 	f.mu.Lock()

@@ -45,7 +45,23 @@ func TestAdvertisedApprovalChoices(t *testing.T) {
 		t.Fatal("standard accept/cancel prompt still blocked")
 	}
 	_, c = approvalFixture(t, map[string]any{"availableDecisions": []any{map[string]any{"acceptWithExecpolicyAmendment": map[string]any{"execpolicy_amendment": []string{"git", "status"}}}}})
-	if c.ApprovalToken == "" || !strings.Contains(c.Text, `Persistent command-prefix rule: ["git","status"]`) {
+	if c.ApprovalToken == "" || !strings.Contains(c.Text, `Persistent command-prefix rule: "git" "status"`) {
 		t.Fatal("persistent grant lacks displayed rule")
+	}
+}
+
+func TestPersistentPrefixPreservesArgumentBoundariesAndWire(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"git", "a b"}, `"git" "a b"`}, {[]string{"git", "a", "b"}, `"git" "a" "b"`},
+		{[]string{"git", `"quoted"`, "a\nb"}, `"git" "\"quoted\"" "a\nb"`},
+	} {
+		raw := rawJSON(map[string]any{"acceptWithExecpolicyAmendment": map[string]any{"execpolicy_amendment": tc.args}})
+		options, _ := commandApprovalOptions([]json.RawMessage{raw})
+		if o := options[0]; o.Detail != tc.want || o.Wire != string(raw) || o.Value != o.Wire {
+			t.Fatalf("prefix %v: %+v", tc.args, o)
+		}
 	}
 }

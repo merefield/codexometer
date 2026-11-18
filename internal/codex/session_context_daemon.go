@@ -41,6 +41,7 @@ type contextCommandItem struct{ Command, CWD string }
 
 func daemonContextEvent(states map[string]*daemonContextState, method string, id, raw json.RawMessage, now time.Time) {
 	var p struct {
+		approvalRequestScope
 		Turn struct {
 			ID     string          `json:"id"`
 			Status string          `json:"status"`
@@ -51,11 +52,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		TurnID               string            `json:"turnId"`
 		ItemID               string            `json:"itemId"`
 		Delta                string            `json:"delta"`
-		CWD                  string            `json:"cwd"`
-		Network              json.RawMessage   `json:"networkApprovalContext"`
-		Permissions          json.RawMessage   `json:"additionalPermissions"`
 		RequestedPermissions json.RawMessage   `json:"permissions"`
-		Decisions            []json.RawMessage `json:"availableDecisions"`
 		ThreadID             string            `json:"threadId"`
 		StartedAtMS          *int64            `json:"startedAtMs"`
 		CompletedAtMS        *int64            `json:"completedAtMs"`
@@ -188,10 +185,10 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 			break
 		}
 		if special(p.Network) {
-			c.Text += "\nNetwork request: " + string(p.Network)
+			c.Text += "\nNetwork request:\n" + observedScope(p.Network)
 		}
 		if special(p.Permissions) {
-			c.Text += "\nPermissions: " + string(p.Permissions)
+			c.Text += "\nPermissions:\n" + observedScope(p.Permissions)
 		}
 		c.ApprovalOptions, c.ApprovalDecisions = commandApprovalOptions(p.Decisions)
 		if c.RequiredHumanApproval {
@@ -262,9 +259,9 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if c.Text == "" {
 			c.Text = "Additional permissions requested"
 		}
-		if len(p.RequestedPermissions) > 0 {
-			c.Text += "\nPermissions: " + string(p.RequestedPermissions)
-		}
+		scope := observedScope(p.RequestedPermissions)
+		c.ActionDetails = ApprovalActionDetails{Kind: "permissions", Scope: scope, Justification: SanitizeApprovalText(p.Reason), Directory: SanitizeApprovalText(p.CWD), Environment: SanitizeApprovalText(p.EnvironmentID)}
+		c.Text += "\nPermissions:\n" + scope
 		if p.CWD != "" {
 			c.Text += "\nDirectory: " + p.CWD
 		}

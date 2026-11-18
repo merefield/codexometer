@@ -21,7 +21,7 @@ func TestCurrentTaskAndStreamingDetail(t *testing.T) {
 	if strings.Index(text, "Original task") > strings.Index(text, "Partial reply") {
 		t.Fatal("task not above reply")
 	}
-	wide := strings.Join(expandedContextLines(80, m.monitorSessionData[0]), "\n")
+	wide := strings.Join(m.expandedContextLines(80, m.monitorSessionData[0]), "\n")
 	if !strings.Contains(wide, "Original task") || !strings.Contains(wide, "New guidance") {
 		t.Fatal(wide)
 	}

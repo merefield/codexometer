@@ -26,6 +26,7 @@ const (
 // SessionContext is a bounded, memory-only excerpt, never a generated summary.
 // It is deliberately separate from token accounting and persisted preferences.
 type SessionContext struct {
+	PendingModel            PendingModelChange
 	Reviewer                string
 	AutoReview              SessionAutoReview
 	fileApprovalRecoverable bool
@@ -232,6 +233,9 @@ func contextCommand(raw json.RawMessage) string {
 }
 
 func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, bool) {
+	if cursor.guardianReviewer {
+		return SessionContext{}, false
+	}
 	var event struct {
 		Type      string    `json:"type"`
 		Timestamp time.Time `json:"timestamp"`
@@ -364,6 +368,9 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 // Bootstrap only a bounded tail, not a complete conversation history. Files
 // already being followed are handled by the existing incremental reader.
 func latestSessionContext(path string, cursor *rolloutCursor) SessionContext {
+	if cursor.guardianReviewer {
+		return SessionContext{}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return SessionContext{}

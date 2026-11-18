@@ -16,7 +16,11 @@ func decodeApprovalObject(raw json.RawMessage, value any) bool {
 
 func configureNetworkApproval(c *SessionContext, raw json.RawMessage, decisions []json.RawMessage, reason string) {
 	c.Kind, c.ApprovalBlocked = SessionContextApproval, "network"
-	c.Text = reason + "\nNetwork request: " + string(raw)
+	scope := observedScope(raw)
+	c.Text = reason + "\nNetwork request:\n" + scope
+	if scope == incompleteScope {
+		return
+	}
 	var network struct {
 		Host     string `json:"host"`
 		Protocol string `json:"protocol"`
@@ -29,11 +33,11 @@ func configureNetworkApproval(c *SessionContext, raw json.RawMessage, decisions 
 	default:
 		return
 	}
-	if !approvalTextFits(c.Text) {
+	if !approvalTextFits(c.Text) || !approvalTextFits(reason+"\nNetwork request: "+string(raw)) {
 		c.ApprovalBlocked = "truncated"
 		return
 	}
-	if !approvalTextDisplayable(c.Text) {
+	if !approvalTextDisplayable(c.Text) || !approvalTextDisplayable(string(raw)) {
 		c.ApprovalBlocked = "sanitised"
 		return
 	}

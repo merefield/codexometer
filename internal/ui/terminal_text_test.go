@@ -29,7 +29,7 @@ func TestSessionDisplayRejectsTerminalControlsWithoutChangingRequests(t *testing
 	outputs := []string{
 		m.renderMonitorSessionMetrics(120, 20, *s, "", paletteFor(themeHacker)),
 		m.renderMonitorContextRow(120, 20, "", *s, paletteFor(themeHacker)),
-		strings.Join(expandedContextLines(120, *s), "\n"),
+		strings.Join(m.expandedContextLines(120, *s), "\n"),
 		strings.Join(m.contextDetailLines(120), "\n"),
 		m.renderMonitorPrompt(120, 20, paletteFor(themeHacker)),
 	}

@@ -138,6 +138,10 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		text = i18n.Text("NO CONTEXT")
 	}
 	wrap := sessionWebTextLines
+	isProse := s.preview.AssistantProse() != "" && s.preview.Text == s.preview.AssistantProse()
+	if isProse {
+		wrap = m.proseLines
+	}
 	if s.preview.Kind == codex.SessionContextApproval {
 		wrap = sessionWebLiteralTextLines
 	}
@@ -163,7 +167,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		lines = append(lines, terminalLabel(s.preview.Source)+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}
 	for i := range lines {
-		lines[i] = colors.label().Render(ansi.Truncate(lines[i], inner, ""))
+		lines[i] = colors.label().Bold(!isProse).Render(ansi.Truncate(lines[i], inner, ""))
 	}
 	if dots != "" {
 		for len(lines) < bodyRows-1 {
@@ -203,22 +207,23 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 		}
 		return panel
 	}
-	document := m.contextDetailDocument(max(width-4, 1))
+	rows := max(height-2, 1)
+	layout := m.layoutDetailControls(width, height)
+	page := m.detailPage(width, height, layout.rows)
+	document := page.document
 	lines := make([]string, len(document))
 	for i, line := range document {
 		lines[i] = line.render(colors)
 	}
-	rows := max(height-2, 1)
-	layout := m.layoutDetailControls(width, height)
 	controls := layout.render(m, width, height, colors)
-	textRows, gap, _ := m.detailBodyLayout(width, height, layout.rows)
-	start, end := m.detailVisibleRange(len(lines), textRows)
+	start, end := m.detailVisibleRange(len(lines), page.rows)
 	bodyLines := append([]string(nil), lines[start:end]...)
-	if m.historyNavigationRows(width, height) > 0 {
-		bodyLines = append([]string{m.renderMonitorNavigationButtons(m.historyNavigationButtons(width, height), colors)}, bodyLines...)
+	if len(page.buttons) > 0 {
+		timeline := m.renderMonitorNavigationButtons(page.buttons, colors) + colors.dimmed().Render(page.right)
+		bodyLines = append([]string{timeline}, bodyLines...)
 	}
 	if controls != "" {
-		for len(bodyLines) < textRows+gap+m.historyNavigationRows(width, height) {
+		for len(bodyLines) < rows-layout.rows {
 			bodyLines = append(bodyLines, "")
 		}
 		bodyLines = append(bodyLines, controls)
@@ -254,7 +259,9 @@ func (m Model) monitorDetailTitle(width int, colors palette) string {
 		if _, historical := m.historicalContext(); historical {
 			title = i18n.Text("PREVIOUS TURN") + " // " + i18n.Text("LIVE SESSION") + ": " + title
 		}
-		title += " // " + monitorSessionIdentity(s)
+		// The badge ends with a reset; the identity belongs to the frame,
+		// not to the badge or the terminal's default foreground.
+		title += colors.header().Render(" // " + monitorSessionIdentity(s))
 	}
 	return title
 }
@@ -292,9 +299,8 @@ func (m *Model) scrollMonitorContext(delta int) {
 func (m Model) monitorContextScrollLimit() int {
 	g := m.monitorDashboardLayout()
 	layout := m.layoutDetailControls(g.contentWidth, g.meterHeight)
-	rows, _, _ := m.detailBodyLayout(g.contentWidth, g.meterHeight, layout.rows)
-	limit := max(len(m.contextDetailLines(max(g.contentWidth-4, 1)))-rows, 0)
-	return limit
+	page := m.detailPage(g.contentWidth, g.meterHeight, layout.rows)
+	return max(len(page.document)-page.rows, 0)
 }
 
 func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {

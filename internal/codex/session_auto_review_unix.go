@@ -3,6 +3,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 const autoReviewLimit = 10
 
 type nativeAutoReview struct {
+	hidden  bool // no longer belongs in live telemetry; retry ledger is independent
 	turn    string
 	view    SessionAutoReview
 	started int64
@@ -38,9 +40,12 @@ type autoReviewState struct {
 func (s *autoReviewState) display() SessionAutoReview {
 	r := s.latest
 	for _, active := range s.running {
-		if !r.view.Active() || active.started > r.started || active.started == r.started && active.view.ID < r.view.ID {
+		if !active.hidden && (r.hidden || !r.view.Active() || active.started > r.started || active.started == r.started && active.view.ID < r.view.ID) {
 			r = active
 		}
+	}
+	if r.hidden {
+		return SessionAutoReview{}
 	}
 	return r.view
 }
@@ -63,6 +68,27 @@ func pruneReviewIDs(ids map[string]int64) int64 {
 }
 
 func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data json.RawMessage) {
+	if method == "item/started" && len(p.autoReviews) != 0 {
+		var e struct {
+			ThreadID, TurnID string
+			Item             struct{ ID, Type string }
+		}
+		if json.Unmarshal(data, &e) == nil && e.Item.Type == "commandExecution" && e.Item.ID != "" {
+			if s := p.autoReviews[e.ThreadID]; s != nil {
+				obsolete := func(r nativeAutoReview) bool { return r.turn == e.TurnID && r.view.target != e.Item.ID }
+				if obsolete(s.latest) {
+					s.latest.hidden = true
+				}
+				for id, r := range s.running {
+					if !r.hidden && obsolete(r) {
+						r.hidden = true
+						s.running[id] = r
+					}
+				}
+			}
+		}
+		return
+	}
 	if method == "thread/closed" {
 		var e struct{ ThreadID string }
 		if json.Unmarshal(data, &e) == nil {
@@ -81,14 +107,21 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 				if e.TurnID == "" {
 					e.TurnID = e.Turn.ID
 				}
-				if s := p.autoReviews[e.ThreadID]; s != nil && s.latest.view.Active() {
-					if s.latest.turn == e.TurnID && method != "turn/started" || s.latest.turn != e.TurnID && method == "turn/started" {
-						s.latest.view.Status = "unconfirmed"
-					}
-				}
 				if s := p.autoReviews[e.ThreadID]; s != nil {
+					ended := func(turn string) bool {
+						if method == "turn/started" {
+							return turn != e.TurnID
+						}
+						return turn == e.TurnID
+					}
+					if ended(s.latest.turn) {
+						s.latest.hidden = true
+						if s.latest.view.Active() {
+							s.latest.view.Status = "unconfirmed"
+						}
+					}
 					for id, r := range s.running {
-						if r.turn == e.TurnID && method != "turn/started" || r.turn != e.TurnID && method == "turn/started" {
+						if ended(r.turn) {
 							delete(s.running, id)
 						}
 					}
@@ -98,11 +131,11 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 		return
 	}
 	var n struct {
-		ThreadID, TurnID, ReviewID string
-		StartedAtMs, CompletedAtMs int64
-		DecisionSource             string
-		Review                     struct{ Status, RiskLevel, UserAuthorization, Rationale string }
-		Action                     json.RawMessage
+		ThreadID, TurnID, ReviewID, TargetItemID string
+		StartedAtMs, CompletedAtMs               int64
+		DecisionSource                           string
+		Review                                   struct{ Status, RiskLevel, UserAuthorization, Rationale string }
+		Action                                   json.RawMessage
 	}
 	if len(data) > 128*1024 || json.Unmarshal(data, &n) != nil || !commandSafe(n.ThreadID) || !commandSafe(n.TurnID) || !commandSafe(n.ReviewID) || len(n.ReviewID) > 512 || n.StartedAtMs <= 0 {
 		return
@@ -114,7 +147,10 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 	if method == "item/autoApprovalReview/completed" && (status == "in_progress" || n.CompletedAtMs < n.StartedAtMs || n.DecisionSource != "agent") {
 		return
 	}
-	r := nativeAutoReview{turn: n.TurnID, started: n.StartedAtMs, view: SessionAutoReview{ID: n.ReviewID, Status: n.Review.Status, Risk: commandLabel(n.Review.RiskLevel), Authorization: commandLabel(n.Review.UserAuthorization), Rationale: commandText(n.Review.Rationale), Action: commandText(string(n.Action))}}
+	kind, subject := reviewSubject(n.Action)
+	r := nativeAutoReview{turn: n.TurnID, started: n.StartedAtMs, view: SessionAutoReview{
+		ID: n.ReviewID, thread: n.ThreadID, turn: n.TurnID, target: n.TargetItemID, kind: kind, Status: n.Review.Status, Action: subject,
+		ReviewFinding: ReviewFinding{Risk: commandLabel(n.Review.RiskLevel), Authorization: commandLabel(n.Review.UserAuthorization), Rationale: commandText(n.Review.Rationale)}}}
 	action, err := nativeReviewAction(n.Action)
 	if err == nil {
 		event := map[string]any{"id": n.ReviewID, "turn_id": n.TurnID, "started_at_ms": n.StartedAtMs, "status": status, "action": action}
@@ -132,10 +168,8 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 			event["rationale"] = n.Review.Rationale
 		}
 		// Full authority is not reconstructed from a clipped/sanitised display.
-		full := r.view
-		full.Rationale, full.Action = n.Review.Rationale, string(n.Action)
-		details := full.Detail()
-		if approvalTextFits(details) && strings.TrimSpace(SanitizeApprovalText(details)) == strings.TrimSpace(details) {
+		finding := ReviewFinding{Risk: n.Review.RiskLevel, Authorization: n.Review.UserAuthorization, Rationale: n.Review.Rationale}
+		if details, ok := retryInspection(kind, n.Action, finding); ok {
 			r.details = details
 			r.event, _ = json.Marshal(event)
 		}
@@ -153,11 +187,15 @@ func (p *daemonStatusProvider) autoReviewNotificationLocked(method string, data 
 		s = &autoReviewState{consumed: map[string]int64{}, running: map[string]nativeAutoReview{}, finished: map[string]int64{}}
 		p.autoReviews[n.ThreadID] = s
 	}
-	if r.view.Active() {
-		if _, ended := s.finished[r.view.ID]; ended || s.consumed[r.view.ID] != 0 || r.started <= s.consumedThrough || r.started <= s.finishedThrough {
+	r.hidden = s.running[r.view.ID].hidden || s.latest.view.ID == r.view.ID && s.latest.hidden
+	if state := p.contexts[n.ThreadID]; state != nil && (state.ended || state.activeTurn != "" && state.activeTurn != n.TurnID) {
+		if r.view.Active() {
 			return
 		}
-		if state := p.contexts[n.ThreadID]; state != nil && (state.ended || state.activeTurn != "" && state.activeTurn != n.TurnID) {
+		r.hidden = true // A late terminal result may enter /approve, but not the live pane.
+	}
+	if r.view.Active() {
+		if _, ended := s.finished[r.view.ID]; ended || s.consumed[r.view.ID] != 0 || r.started <= s.consumedThrough || r.started <= s.finishedThrough {
 			return
 		}
 		if len(s.running) < 32 {
@@ -240,7 +278,9 @@ func (p *daemonStatusProvider) approveAutoReview(ctx context.Context, conn *webs
 // Unknown action fields fail closed, never silently weaken the retry identity.
 func nativeReviewAction(data json.RawMessage) (map[string]any, error) {
 	var a map[string]any
-	if json.Unmarshal(data, &a) != nil {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber() // Preserve integer scope values in the eventual retry event.
+	if !json.Valid(data) || d.Decode(&a) != nil {
 		return nil, ErrSessionCommand
 	}
 	kind, _ := a["type"].(string)
@@ -278,7 +318,11 @@ func nativeReviewAction(data json.RawMessage) (map[string]any, error) {
 				return nil, ErrSessionCommand
 			}
 		case "port":
-			if n, ok := v.(float64); !ok || n < 0 || n > 65535 || n != float64(int(n)) {
+			number, ok := v.(json.Number)
+			if !ok {
+				return nil, ErrSessionCommand
+			}
+			if n, err := number.Int64(); err != nil || n < 0 || n > 65535 {
 				return nil, ErrSessionCommand
 			}
 		default:

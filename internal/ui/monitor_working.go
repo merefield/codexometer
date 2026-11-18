@@ -49,7 +49,11 @@ func (m Model) workingCommandTitle(a codex.SessionActivity) string {
 func (m Model) workingContextLines(c codex.SessionContext, width, rows int, compact bool) []string {
 	width, rows = max(width, 1), max(rows, 1)
 	fit := func(text string, n int, cook bool) []string {
-		lines := wrappedSessionWebText(codex.SanitizeSessionContext(text), width, cook)
+		wrap := sessionWebLiteralTextLines
+		if cook {
+			wrap = m.proseLines
+		}
+		lines := wrap(codex.SanitizeSessionContext(text), width)
 		if len(lines) > n {
 			lines = lines[:n]
 			lines[n-1] = ansi.Truncate(lines[n-1], max(width-1, 0), "") + "…"

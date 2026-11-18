@@ -83,7 +83,7 @@ func TestInlineMonitorPromptEligibilityAndResize(t *testing.T) {
 	m = next.(Model)
 	rows := m.monitorPromptRows(w, h)
 	textRows, _, _ := monitorContextBodyLayout(h, rows)
-	if rows <= 3 || len(expandedContextLines(w, m.monitorSessionData[0])) > textRows {
+	if rows <= 3 || len(m.expandedContextLines(w, m.monitorSessionData[0])) > textRows {
 		t.Fatal("draft did not wrap within spare space")
 	}
 	next, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 14})

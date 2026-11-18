@@ -35,7 +35,7 @@ func TestMCPToolApprovalMatchesNativeFourChoicesWithoutItemTurnOrToolName(t *tes
 	if c.Kind != SessionContextApproval || c.ApprovalToken == "" || c.ApprovalBlocked != "" || c.TurnID != "" || c.ItemID != "" || c.MCPTool.Name != "" {
 		t.Fatalf("native connector request not actionable: %+v", c)
 	}
-	if c.MCPTool.Server != "codex_apps" || c.MCPTool.Connector != "Calendar" || !strings.Contains(c.MCPTool.Arguments, `"title": "Roadmap review"`) {
+	if c.MCPTool.Server != "codex_apps" || c.MCPTool.Connector != "Calendar" || c.MCPTool.Arguments != `title: "Roadmap review"` {
 		t.Fatal("complete tool review was lost", c.MCPTool)
 	}
 	for i, want := range []string{"accept", "acceptForSession", "acceptMcpAlways", "cancelMcpTool"} {
@@ -85,8 +85,21 @@ func TestMCPApprovalOffersOnlyAdvertisedScopesAndModes(t *testing.T) {
 		}
 	}
 	_, c := mcpApprovalFixture(t, map[string]any{"mode": "openai/form", "requestedSchema": nil, "_meta": map[string]any{"codex_approval_kind": "mcp_tool_call", "tool_params_display": []any{map[string]any{"name": "title", "value": "Demo", "display_name": "Title"}}}})
-	if c.ApprovalToken == "" || !strings.Contains(c.MCPTool.Arguments, `"title": "Demo"`) {
+	if c.ApprovalToken == "" || c.MCPTool.Arguments != `title: "Demo"` {
 		t.Fatal("display-only argument metadata not supported")
+	}
+}
+
+func TestMCPArgumentInspectionIsCompleteOrBlocked(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{`{}`, "No arguments"},
+		{`{"to":["Demo <event>","Ada"],"id":9007199254740993}`, "to:\n  [1]: \"Demo <event>\"\n  [2]: \"Ada\"\nid: 9007199254740993"},
+		{`{"to":"A","to":"B"}`, ""}, {`{"to":"\ud800"}`, ""},
+	} {
+		_, c := mcpApprovalFixture(t, map[string]any{"_meta": map[string]any{"codex_approval_kind": "mcp_tool_call", "tool_params": json.RawMessage(tc.raw)}})
+		if (c.ApprovalToken != "") != (tc.want != "") || c.MCPTool.Arguments != tc.want {
+			t.Fatalf("arguments %s: %+v", tc.raw, c)
+		}
 	}
 }
 

@@ -129,8 +129,7 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 
 func baselineRolloutRecord(c *rolloutCursor, line []byte) {
 	if metadata, ok := rolloutMetadataRecord(line); ok && c.threadID == "" {
-		c.threadID, c.parentThreadID, c.workingDirectory = metadata.ID, metadata.ParentThreadID, metadata.WorkingDirectory
-		c.startedAt, c.nonRoot, c.subagentHistoryStartOrdinal = metadata.StartedAt, metadata.NonRoot, metadata.SubagentHistoryStartOrdinal
+		c.setMetadata(metadata)
 	}
 	if settings, ordinal, at, ok := rolloutSessionSettingsRecord(line, c.modelSettings); ok && tokenRecordIsOwned(ordinal, c.subagentHistoryStartOrdinal, at, c.nonRoot, c.startedAt) {
 		c.modelSettings = settings

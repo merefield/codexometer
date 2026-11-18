@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
@@ -38,16 +39,89 @@ func (m Model) commandQuery() string {
 	return strings.TrimSpace(strings.TrimPrefix(m.monitorPrompt.input.Value(), m.monitorCommands.prefix))
 }
 
+func (m *Model) openInlineCommandLevel(path, argument, parentDraft string) tea.Cmd {
+	// Only these local commands have browsable TUI submenus. Other local
+	// paths (including theme/<id>) are actions and require Enter or a click.
+	root, _, _ := strings.Cut(path, "/")
+	if codex.IsLocalSessionCommand(root) && path != "theme" && path != "statusline" {
+		return nil
+	}
+	p := &m.monitorCommands
+	draft := m.inlineCommandPrefix(path) + argument
+	if p.open {
+		if len(p.history) >= 16 {
+			return nil
+		}
+		m.monitorPrompt.input.SetValue(parentDraft)
+		p.preserveDraft = &draft
+		return m.navigateMonitorCommands(path)
+	}
+	m.monitorPrompt.input.SetValue(parentDraft)
+	updated, cmd, _ := m.openMonitorCommands(path, draft)
+	*m = updated
+	return cmd
+}
+
+// Typing a separator after an exact advertised branch is equivalent to
+// entering it from the list. Opening a menu never commits an action.
+func (m *Model) advanceInlineCommand() tea.Cmd {
+	p := &m.monitorCommands
+	if !p.inline || p.busy || p.detail || p.menu.Input || p.menu.Multiple || commandInputReview(p.menu.Path) {
+		return nil
+	}
+	// commandQuery trims the trailing separator; retain it for navigation.
+	raw := strings.TrimPrefix(m.monitorPrompt.input.Value(), p.prefix)
+	for _, choice := range p.menu.Choices {
+		if choice.Next == "" {
+			continue
+		}
+		names := choice.ParameterNames()
+		exact := false
+		for _, name := range names {
+			exact = exact || strings.EqualFold(raw, name)
+		}
+		if exact {
+			continue // A complete multiword label is not its short token plus an argument.
+		}
+		for _, name := range names {
+			if len(raw) > len(name) && strings.EqualFold(raw[:len(name)], name) {
+				suffix := raw[len(name):]
+				argument := strings.TrimLeftFunc(suffix, unicode.IsSpace)
+				if argument != suffix {
+					return m.openInlineCommandLevel(choice.Next, argument, p.prefix+raw[:len(name)])
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (m Model) commandChoiceIndices() []int {
 	p := m.monitorCommands
 	query := ""
 	if p.inline && !p.menu.Input && !p.menu.Multiple && !commandInputReview(p.menu.Path) {
 		query = strings.ToLower(m.commandQuery())
+		if p.menu.Path == "permissions" {
+			// Compound flags are validated in the existing typed review, not
+			// silently dropped by selecting just the profile. Keep its match.
+			if name, _, separated := codex.SplitSessionCommand(query); separated {
+				query = name
+			}
+		}
 	}
 	var indices []int
 	for i, choice := range p.menu.Choices {
-		if strings.HasPrefix(strings.ToLower(strings.TrimPrefix(choice.Label, "/")), query) {
+		if choice.MatchesParameter(query) {
 			indices = append(indices, i)
+		}
+	}
+	if len(indices) == 0 && p.inline && p.menu.Path == "goal" {
+		// /goal also accepts a free-form objective. Surface the advertised
+		// create/replace branch rather than claiming valid text is invalid.
+		for i, choice := range p.menu.Choices {
+			if choice.Next == "goal/set" {
+				return []int{i}
+			}
 		}
 	}
 	return indices
@@ -126,8 +200,12 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 				}
 			}
 			if p.menu.Path == "goal" && !p.detail && m.commandQuery() != "" {
-				if choice, ok := m.commandChoice(); ok && strings.EqualFold(m.commandQuery(), choice.Label) {
-					return m.chooseMonitorCommand()
+				if choice, ok := m.commandChoice(); ok {
+					for _, name := range choice.ParameterNames() {
+						if strings.EqualFold(m.commandQuery(), name) {
+							return m.chooseMonitorCommand()
+						}
+					}
 				}
 				return m.openMonitorCommands("goal " + m.commandQuery())
 			}
@@ -211,6 +289,8 @@ func (m Model) updateInlineCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 					p.selected = indices[0]
 				}
 			}
+			next := m.advanceInlineCommand()
+			return m, tea.Batch(cmd, next), true
 		}
 		return m, cmd, true
 	}

@@ -36,6 +36,10 @@ func (entry followupEntry) key() string {
 
 func (m Model) followupEntries() []followupEntry {
 	var entries []followupEntry
+	if s, ok := m.contextDetailSession(); ok && s.preview.PendingModel.Summary != "" {
+		pending := s.preview.PendingModel
+		entries = append(entries, followupEntry{label: i18n.Text("MODEL") + " // " + i18n.Text(strings.ToUpper(pending.State)), text: pending.Summary, receipt: "model:" + s.id, readOnly: true})
+	}
 	if m.monitorQueue.session == m.monitorContextTarget() {
 		for _, item := range m.monitorQueue.items {
 			entries = append(entries, followupEntry{label: i18n.Text("QUEUED"), text: item.Text, native: &item, editable: item.Editable && !m.monitorQueue.stale, removable: !m.monitorQueue.stale})
@@ -184,7 +188,7 @@ func (m Model) monitorQueueRows(width, height, controlRows int) int {
 		textRows, _, _ := monitorContextBodyLayout(height, controlRows)
 		// Even long commentary leaves a compact queue/status line. Never
 		// take space from approval buttons or the composer.
-		available = min(available, max(1, textRows-len(expandedContextLines(width, s))))
+		available = min(available, max(1, textRows-len(m.expandedContextLines(width, s))))
 		limit = 2
 	}
 	if available < 1 {
@@ -421,7 +425,14 @@ func (m *Model) followupAction(index int, action string) tea.Cmd {
 		}
 		return nil
 	}
-	return m.openQueueItem(index, action == "delete")
+	if entry.native != nil {
+		for i, item := range m.monitorQueue.items {
+			if item.ID == entry.native.ID {
+				return m.openQueueItem(i, action == "delete")
+			}
+		}
+	}
+	return nil
 }
 
 func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {

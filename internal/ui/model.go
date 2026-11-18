@@ -14,6 +14,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/prose"
 	"github.com/merefield/codexometer/internal/quotaestimate"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/version"
@@ -43,7 +44,8 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
-	startup startupState
+	proseCache *prose.Cache
+	startup    startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
 	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
@@ -440,6 +442,7 @@ func New(fetcher Fetcher, refreshEvery time.Duration) Model {
 		refreshEvery = time.Minute
 	}
 	model := Model{
+		proseCache:        &prose.Cache{},
 		startup:           startupState{pending: true},
 		resetThreshold:    80,
 		resetWarningHours: 72,

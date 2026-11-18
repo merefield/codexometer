@@ -108,7 +108,7 @@ func permissionPolicy(value string) (json.RawMessage, error) {
 	var policy struct {
 		Granular map[string]bool `json:"granular"`
 	}
-	if !json.Valid([]byte(value)) {
+	if _, ok := reviewFields(json.RawMessage(value), nil); !ok {
 		return nil, ErrSessionCommand
 	}
 	d := json.NewDecoder(strings.NewReader(value))
@@ -146,6 +146,60 @@ func permissionPolicy(value string) (json.RawMessage, error) {
 	return data, err
 }
 
+// A granular switch controls whether Codex may ask, not whether permission
+// is granted. Keep the executable option's original wire policy separate.
+func describePolicy(raw json.RawMessage) (label, detail string, known bool) {
+	var name string
+	if json.Unmarshal(raw, &name) == nil && name != "" {
+		titles := map[string]string{"on-request": "On request", "untrusted": "Untrusted commands", "never": "Never", "on-failure": "On failure"}
+		if title := titles[name]; title != "" {
+			return title, "", true
+		}
+		return name, "", false
+	}
+	normalized, err := permissionPolicy(string(raw))
+	if err != nil {
+		return "Unrecognised policy (inspect in Codex)", "", false
+	}
+	var policy struct{ Granular map[string]bool }
+	if json.Unmarshal(normalized, &policy) != nil || policy.Granular == nil {
+		return "Unavailable", "", false
+	}
+	var on, off []string
+	for _, field := range [][2]string{{"sandbox_approval", "Shell commands"}, {"rules", "Command rules"}, {"skill_approval", "Skill scripts"}, {"request_permissions", "Permission requests"}, {"mcp_elicitations", "MCP requests"}} {
+		if policy.Granular[field[0]] {
+			on = append(on, field[1])
+		} else {
+			off = append(off, field[1])
+		}
+	}
+	list := func(items []string) string {
+		if len(items) == 0 {
+			return "None"
+		}
+		return strings.Join(items, ", ")
+	}
+	return "Managed // " + list(on), "Approval prompts enabled: " + list(on) + "\nApproval prompts disabled: " + list(off), true
+}
+
+func policySummary(raw json.RawMessage) string {
+	label, details, _ := describePolicy(raw)
+	if details != "" {
+		return label + "\n" + details
+	}
+	return label
+}
+
+func reviewerName(reviewer string) string {
+	switch reviewer {
+	case "user":
+		return "Human"
+	case "auto_review":
+		return "Codex auto-review"
+	}
+	return reviewer
+}
+
 func (p *daemonStatusProvider) permissionMenu(ctx context.Context, t commandThread, path string) (SessionCommandMenu, error) {
 	p.mu.Lock()
 	conn := p.connection
@@ -164,7 +218,7 @@ func (p *daemonStatusProvider) permissionMenu(ctx context.Context, t commandThre
 		m.Help += "\nCurrent profile: " + s.Profile.ID
 	}
 	if s.Reviewer != "" {
-		m.Help += "\nCurrent reviewer: " + s.Reviewer + "\nCurrent approval policy: " + string(s.Policy)
+		m.Help += "\nCurrent reviewer: " + reviewerName(s.Reviewer) + "\nCurrent approval policy: " + policySummary(s.Policy)
 	}
 	rows, err := p.commandRows(ctx, "permissionProfile/list", map[string]any{"cwd": t.Cwd})
 	if err != nil {
@@ -262,7 +316,11 @@ func (p *daemonStatusProvider) permissionMenu(ctx context.Context, t commandThre
 		if requirements.Policies != nil {
 			for _, v := range *requirements.Policies {
 				if len(v) > 0 && v[0] == '{' {
-					add(string(v), "Managed granular policy.", map[string]any{"approvalPolicy": v})
+					if label, details, known := describePolicy(v); known {
+						add(label, details, map[string]any{"approvalPolicy": v})
+					} else {
+						m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Unavailable: "Review this policy in Codex."})
+					}
 				}
 			}
 		}
@@ -292,7 +350,14 @@ func (p *daemonStatusProvider) permissionMenu(ctx context.Context, t commandThre
 		if !allowed(params) {
 			return m, ErrSessionCommand
 		}
-		add("Apply native permissions", profiles[profile]+"\n"+data, params)
+		detail := "Profile: " + profile + "\n" + profiles[profile]
+		if policy, ok := params["approvalPolicy"].(json.RawMessage); ok {
+			detail += "\nApproval policy: " + policySummary(policy)
+		}
+		if reviewer, ok := params["approvalsReviewer"].(string); ok {
+			detail += "\nReviewer: " + reviewerName(reviewer)
+		}
+		add("Apply native permissions", detail, params)
 	}
 	return m, nil
 }

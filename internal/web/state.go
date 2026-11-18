@@ -10,6 +10,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
+	"github.com/merefield/codexometer/internal/prose"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
 	"github.com/merefield/codexometer/internal/version"
@@ -24,8 +25,9 @@ type Source interface {
 // Deliberately project source types: never serialize approval/input capabilities,
 // account fingerprints, arbitrary errors, or authentication objects to browsers.
 type session struct {
+	PendingModel          *codex.PendingModelChange     `json:"pendingModel,omitempty"`
 	Reviewer              string                        `json:"reviewer,omitempty"`
-	AutoReview            *codex.SessionAutoReview      `json:"autoReview,omitempty"`
+	AutoReview            *codex.ReviewAssessment       `json:"autoReview,omitempty"`
 	ApprovalReview        *codex.ApprovalReview         `json:"approvalReview,omitempty"`
 	MCPTool               *codex.MCPToolApprovalDetails `json:"mcpTool,omitempty"`
 	ReadStateKnown        bool                          `json:"readStateKnown,omitempty"`
@@ -48,6 +50,7 @@ type session struct {
 	Failed                bool                          `json:"failed,omitempty"`
 	ContextKind           string                        `json:"contextKind"`
 	Text                  string                        `json:"text"`
+	Prose                 []prose.ProseBlock            `json:"prose,omitempty"`
 	Command               string                        `json:"command"`
 	WorkingCommand        string                        `json:"workingCommand,omitempty"`
 	ApprovalContext       string                        `json:"approvalContext,omitempty"`
@@ -68,16 +71,6 @@ type goal struct {
 	TokensUsed      int64  `json:"tokensUsed"`
 	TimeUsedSeconds int64  `json:"timeUsedSeconds"`
 	Stale           bool   `json:"stale"`
-}
-
-func projectAutoReview(r codex.SessionAutoReview) *codex.SessionAutoReview {
-	if r.ID == "" {
-		return nil
-	}
-	for _, value := range []*string{&r.ID, &r.Status, &r.Risk, &r.Authorization, &r.Action, &r.Rationale} {
-		*value = codex.SanitizeSessionContext(*value)
-	}
-	return &r
 }
 
 func projectGoal(observed *codex.SessionGoal) *goal {
@@ -165,6 +158,7 @@ type state struct {
 }
 
 type store struct {
+	proseCache      prose.Cache
 	profileWindow   string
 	profileRevision uint64
 	quotaSnapshot   codex.Snapshot
@@ -359,8 +353,14 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 					text = "HUMAN APPROVAL REQUIRED\nManaged policy requires approval each time.\n" + text
 				}
 			}
+			var doc []prose.ProseBlock
+			if message := row.Context.AssistantProse(); message != "" && message == text {
+				doc = s.proseCache.Get(codex.SanitizeSessionContext(message))
+			}
 			s.state.Sessions = append(s.state.Sessions, session{
-				Reviewer: codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: projectAutoReview(row.Context.AutoReview),
+				Prose:        doc,
+				PendingModel: projectPendingModel(row.Context.PendingModel),
+				Reviewer:     codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: row.Context.ReviewAssessment(),
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),
 				ApprovalReview: row.Context.ActionReview(),
 				MCPTool:        mcpTool,

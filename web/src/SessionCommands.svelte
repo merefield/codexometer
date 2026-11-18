@@ -93,6 +93,18 @@
     expires = $state(0),
     now = $state(Date.now());
   let name = $state('');
+  let typedInputPrefix = $state('');
+  const commandDraft = $derived(query.trimStart()); // A trailing separator enters the next level.
+  $effect(() => {
+    // A typed command keeps the real composer editable while its input
+    // menu loads. Manual picks and Back use the server or restored value.
+    if (
+      typedInputPrefix &&
+      menu?.input &&
+      commandDraft.startsWith(typedInputPrefix)
+    )
+      name = commandDraft.slice(typedInputPrefix.length) || menu.value || '';
+  });
   let request = 0;
   let selectedIndex = $state(0);
   let dismissedQuery = $state<string | null>(null);
@@ -122,6 +134,7 @@
     path: string;
     index: number;
     input: string;
+    draft?: string;
   }
   let history = $state<Level[]>([]);
   const inputReview = $derived(!!menu?.inputReview);
@@ -135,14 +148,19 @@
         : ' // UNAVAILABLE';
     return o.next ? ' →' : !o.action ? ' // HELP' : '';
   }
-  async function navigate(path: string) {
+  async function navigate(path: string, parentDraft?: string) {
     // A filtered slash suggestion opens the command directly, with no parent menu.
     if (menu && !(suggesting && filter))
       history = [
         ...history,
-        { path: menu.path, index: selectedIndex, input: name },
+        {
+          path: menu.path,
+          index: selectedIndex,
+          input: name,
+          draft: parentDraft ?? (slash ? query : undefined),
+        },
       ];
-    await load(path);
+    await load(path, undefined, false, parentDraft !== undefined);
   }
   async function back() {
     if (!canBack) return;
@@ -165,6 +183,8 @@
     const level = history.at(-1);
     if (!level) return;
     history = history.slice(0, -1);
+    if (level.draft !== undefined && level.draft !== query)
+      oncomplete(level.draft);
     await load(level.path, level);
   }
   function reviewInput() {
@@ -182,16 +202,51 @@
     request++;
   });
   let slash = $derived(
-    query.trim().startsWith('/') && !query.trim().startsWith('//'),
+    commandDraft.startsWith('/') && !commandDraft.startsWith('//'),
   );
   let filter = $derived(
-    menu?.path === '' && slash ? query.trim().slice(1).toLowerCase() : '',
+    menu?.path === '' && slash
+      ? commandDraft.slice(1).split(/\s/, 1)[0].toLowerCase()
+      : parameterQuery().trim().toLowerCase(),
   );
-  let choices = $derived(
-    (menu?.choices || []).filter(
-      (o) => !filter || o.label.toLowerCase().startsWith('/' + filter),
-    ),
-  );
+  function parameterNames(choice: Choice) {
+    const names = [choice.label.replace(/^\//, '')];
+    if (choice.next)
+      names.push(decodeURIComponent(choice.next.split('/').at(-1)!));
+    return names;
+  }
+  function commandPrefix(path: string) {
+    if (path === 'goal/set') return '/goal ';
+    if (path.startsWith('tier/'))
+      return (menu?.picker ? menu.title : query.trim().split(/\s/, 1)[0]) + ' ';
+    return '/' + path.split('/').map(decodeURIComponent).join(' ') + ' ';
+  }
+  function parameterQuery() {
+    if (
+      !slash ||
+      !menu?.path ||
+      menu.input ||
+      menu.multiple ||
+      menu.inputReview
+    )
+      return '';
+    const prefix = commandPrefix(menu.path);
+    return commandDraft.toLowerCase().startsWith(prefix.toLowerCase())
+      ? commandDraft.slice(prefix.length)
+      : '';
+  }
+  let choices = $derived.by(() => {
+    const query =
+      menu?.path === 'permissions' ? filter.split(/\s/, 1)[0] : filter;
+    const matches = (menu?.choices || []).filter(
+      (o) =>
+        !query ||
+        parameterNames(o).some((name) => name.toLowerCase().startsWith(query)),
+    );
+    return !matches.length && menu?.path === 'goal'
+      ? (menu.choices || []).filter((choice) => choice.next === 'goal/set')
+      : matches;
+  });
   const currentChoice = $derived(selected || choices[selectedIndex]);
   const reviewed = $derived(
     !!confirmation &&
@@ -205,6 +260,46 @@
   let suggesting = $derived(
     open && slash && (!menu || menu.path === '') && !selected,
   );
+  $effect(() => {
+    if (
+      !open ||
+      busy ||
+      selected ||
+      !menu ||
+      menu.input ||
+      menu.multiple ||
+      menu.inputReview ||
+      history.length >= 16
+    )
+      return;
+    const raw =
+      menu.path === '' && slash ? commandDraft.slice(1) : parameterQuery();
+    for (const choice of menu.choices || []) {
+      if (!choice.next || localPaths.includes(choice.next)) continue;
+      const names = parameterNames(choice);
+      if (names.some((name) => raw.toLowerCase() === name.toLowerCase()))
+        continue;
+      for (const name of names) {
+        if (
+          raw.slice(0, name.length).toLowerCase() === name.toLowerCase() &&
+          /^\s/.test(raw.slice(name.length))
+        ) {
+          const argument = raw.slice(name.length).trimStart();
+          // Back restores the matched parent option, not the separator
+          // and child argument which would immediately open it again.
+          const parentDraft = query.slice(
+            0,
+            query.length - raw.length + name.length,
+          );
+          untrack(() => {
+            oncomplete(commandPrefix(choice.next!) + argument);
+            void navigate(choice.next!, parentDraft);
+          });
+          return;
+        }
+      }
+    }
+  });
   $effect(() => {
     query;
     selectedIndex = 0;
@@ -355,10 +450,12 @@
     ) {
       const option =
         menu?.path === 'goal'
-          ? choices.find(
-              (choice) =>
-                query.trim().slice(6).trim().toLowerCase() ===
-                choice.label.toLowerCase(),
+          ? choices.find((choice) =>
+              parameterNames(choice).some(
+                (name) =>
+                  query.trim().slice(6).trim().toLowerCase() ===
+                  name.toLowerCase(),
+              ),
             )
           : undefined;
       if (option) {
@@ -400,7 +497,12 @@
       void load('');
     }
   });
-  async function load(path: string, restore?: Level, refresh = false) {
+  async function load(
+    path: string,
+    restore?: Level,
+    refresh = false,
+    typed = false,
+  ) {
     if (!draftMatches()) {
       invalidateDraftReview();
       return;
@@ -410,6 +512,7 @@
         ? query
         : null;
     const seq = ++request;
+    typedInputPrefix = '';
     if (menu) menu = { ...menu, path };
     if (restore) name = restore.input;
     busy = true;
@@ -449,6 +552,8 @@
             : 0;
         if (result.picker) void tick().then(() => optionList?.focus());
         name = restore?.input ?? result.value ?? '';
+        if (typed && result.input)
+          typedInputPrefix = commandPrefix(result.path);
         if (restore)
           void tick().then(() => {
             if (result.input) commandPanel?.querySelector('input')?.focus();

@@ -142,6 +142,70 @@ async function setOverviewDetail(page: Page, level: number) {
   throw new Error('Cycle did not reach overview detail level ' + level);
 }
 
+test('writable command detail attaches an assessment only to its matching offer', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, offer, calls } = await mockActions(page);
+  Object.assign(offer, { reviewId: 'observed-review' });
+  const assessment = {
+    id: 'observed-review',
+    attached: true,
+    status: 'approved',
+    title: 'COMMAND REVIEW',
+    decision: 'AUTO-APPROVED',
+    subject: offer.command,
+    risk: 'low',
+    authorization: 'high',
+    rationale: 'Only reads working tree status.',
+  };
+  Object.assign(snapshot.sessions[0], {
+    contextKind: 'APPROVAL REQUEST',
+    command: offer.command,
+    autoReview: assessment,
+  });
+  await page.goto(pairingURL);
+  await page.evaluate((detail) => {
+    window.dispatchEvent(new CustomEvent('test-snapshot', { detail }));
+    location.hash = '/sessions/parent';
+  }, snapshot);
+  const pane = page.locator('.detail-workspace');
+  await expect(
+    pane.getByRole('heading', { name: 'EXACT COMMAND' }),
+  ).toBeVisible();
+  await expect(pane.getByText(offer.command, { exact: true })).toHaveCount(1);
+  const block = pane.getByRole('region', { name: 'COMMAND REVIEW' });
+  await expect(block.getByText('USER AUTHORISATION: HIGH')).toBeVisible();
+  await expect(block.getByRole('heading')).toHaveCSS('font-weight', '400');
+  const verdict = block.locator('.verdict');
+  await expect(verdict).toHaveCSS('font-weight', '400');
+  expect(await verdict.evaluate((el) => getComputedStyle(el).color)).not.toBe(
+    await verdict.locator('.dot').evaluate((el) => getComputedStyle(el).color),
+  );
+  const gap = () =>
+    block.evaluate(
+      (el) =>
+        el.getBoundingClientRect().top -
+        el.previousElementSibling!.getBoundingClientRect().bottom,
+    );
+  await page.setViewportSize({ width: 1000, height: 900 });
+  const roomy = await gap();
+  await page.setViewportSize({ width: 1000, height: 460 });
+  expect(roomy).toBeGreaterThan(await gap());
+  assessment.id = 'different-review-same-command';
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    snapshot,
+  );
+  await expect(block).toHaveCount(0);
+  expect(
+    calls.filter(
+      (call) => call.action === 'commit' || call.action === 'prepare',
+    ),
+  ).toHaveLength(0);
+});
+
 test('native Auto-review remains informational in read-only mode', async ({
   page,
   pairingURL,
@@ -163,9 +227,11 @@ test('native Auto-review remains informational in read-only mode', async ({
     autoReview: {
       id: 'review',
       status: 'inProgress',
+      title: 'COMMAND REVIEW',
+      decision: 'AUTO REVIEWING',
       risk: 'low',
       authorization: 'high',
-      action: 'ls /work',
+      subject: 'ls /work',
       rationale: 'Inspect files.',
     },
   };
@@ -183,27 +249,40 @@ test('native Auto-review remains informational in read-only mode', async ({
   const row = page.locator('.session-row').first();
   await expect(row.getByText('REVIEW // AUTO', { exact: true })).toBeVisible();
   await expect(
-    row.getByRole('heading', { name: 'AUTO REVIEWING', exact: true }),
+    row.getByRole('heading', { name: 'COMMAND REVIEW', exact: true }),
   ).toBeVisible();
+  await expect(row.getByText('● AUTO REVIEWING')).toBeVisible();
+  await expect(row.getByText('RISK: LOW')).toBeVisible();
   await expect(
     row.getByText('Inspecting the repository.', { exact: true }),
   ).toBeVisible();
   session.autoReview.status = 'denied';
+  session.autoReview.decision = 'BLOCKED BY AUTO-REVIEW';
   session.autoReview.rationale = 'Outside the project.';
   await page.evaluate(
     (detail) =>
       window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
     snapshot,
   );
-  await expect(
-    row.getByRole('heading', { name: 'AUTO REVIEW', exact: true }),
-  ).toBeVisible();
+  await expect(row.getByText('● BLOCKED BY AUTO-REVIEW')).toBeVisible();
   await expect(
     row.getByText('Outside the project.', { exact: true }),
   ).toBeVisible();
   await expect(
     row.getByRole('button', { name: /APPROVE|CONFIRM|SEND DECISION/ }),
   ).toHaveCount(0);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      sessions: [{ ...session, autoReview: undefined, workingCommand: 'pwd' }],
+    },
+  );
+  await expect(row.getByText('pwd', { exact: true })).toBeVisible();
+  await expect(row.getByRole('region', { name: 'COMMAND REVIEW' })).toHaveCount(
+    0,
+  );
 });
 
 test.describe('quota profile reviews', () => {
@@ -883,7 +962,20 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
     await expect(
       panel.getByRole('button', { name: /PURSUING GOAL/ }),
     ).toHaveCount(0);
-    if (name === 'edit') {
+    if (name === 'resume' || name === 'budget') {
+      await text.fill('/goal ');
+      await expect(
+        panel.getByRole('button', { name: 'Resume goal →', exact: true }),
+      ).toBeVisible();
+      await text.fill('/goal ' + name);
+      await expect(
+        panel.getByRole('button', { name: labels[name] + ' →', exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: 'Clear goal →', exact: true }),
+      ).toHaveCount(0);
+      await text.press('Enter');
+    } else if (name === 'edit') {
       await text.fill('/goal Edit objective');
       await text.press('Enter');
     } else
@@ -923,6 +1015,46 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
+test('queued model changes stay visible without queue edit or cancel actions', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const updated = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      pendingModel:
+        row.id === 'parent'
+          ? { summary: 'small // medium // DEFAULT', state: 'queued' }
+          : undefined,
+    })),
+  };
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new CustomEvent('test-snapshot', { detail: snapshot }),
+      ),
+    updated,
+  );
+  const pending = page.getByRole('region', { name: 'Queued model change' });
+  await expect(pending).toContainText('MODEL CHANGE // QUEUED');
+  await expect(pending).toContainText('small // medium // DEFAULT');
+  await expect(pending.getByRole('button')).toHaveCount(0);
+  await page.evaluate(
+    (snapshot) =>
+      window.dispatchEvent(
+        new CustomEvent('test-snapshot', { detail: snapshot }),
+      ),
+    snapshot,
+  );
+  await expect(pending).toHaveCount(0);
+});
+
 async function mockActions(
   page: Page,
   kind = 'approval',
@@ -1672,11 +1804,16 @@ test('inline permission Enter is consumed and guarded during review', async ({
     }
     paths.push(body.command.path);
     const applying = body.command.path.startsWith('permissions ');
+    const parameters = body.command.path === 'permissions';
     await route.fulfill({
       json: {
         title: '/permissions',
         help: 'Native reviewer options',
-        path: applying ? 'permissions/apply/review' : '',
+        path: applying
+          ? 'permissions/apply/review'
+          : parameters
+            ? 'permissions'
+            : '',
         revision: 'r',
         inputReview: applying,
         choices: applying
@@ -1688,14 +1825,23 @@ test('inline permission Enter is consumed and guarded during review', async ({
                 action: true,
               },
             ]
-          : [
-              {
-                id: 'permissions',
-                label: '/permissions',
-                help: 'Native settings',
-                next: 'permissions',
-              },
-            ],
+          : parameters
+            ? [
+                {
+                  id: 'workspace',
+                  label: ':workspace',
+                  help: 'Workspace profile',
+                  action: true,
+                },
+              ]
+            : [
+                {
+                  id: 'permissions',
+                  label: '/permissions',
+                  help: 'Native settings',
+                  next: 'permissions',
+                },
+              ],
       },
     });
   });
@@ -1711,7 +1857,7 @@ test('inline permission Enter is consumed and guarded during review', async ({
   await expect.poll(() => paths.length).toBeGreaterThan(0);
   const panel = page.getByRole('region', { name: 'Session slash commands' });
   await expect(
-    panel.getByText('No available matching commands.', { exact: true }),
+    panel.getByRole('button', { name: ':workspace', exact: true }),
   ).toBeVisible();
   const heldEnter = await editor.evaluate((element) => {
     const event = new KeyboardEvent('keydown', {
@@ -2183,6 +2329,62 @@ test('slash commands discover help and require a separate confirmation', async (
   ).toHaveCount(0);
 });
 
+test('Back after a pasted model command stays on its parent until another separator', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  const paths: string[] = [];
+  await page.route('**/api/control/commands', async (route) => {
+    const { mode, path } = route.request().postDataJSON().command;
+    expect(mode).toBe('list');
+    paths.push(path);
+    const [label, next] =
+      path === ''
+        ? ['/model', 'model']
+        : path === 'model'
+          ? ['Beta', 'model/beta']
+          : ['High'];
+    await route.fulfill({
+      json: { title: path, path, choices: [{ id: label, label, next }] },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const editor = page.getByRole('textbox', { name: 'Follow-up message' });
+  const panel = page.getByRole('region', { name: 'Session slash commands' });
+  await editor.fill('  /model beta high');
+  await expect(
+    panel.getByRole('button', { name: 'High // HELP' }),
+  ).toBeEnabled();
+  await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+  await expect(editor).toHaveValue('/model beta');
+  await expect(panel.getByRole('button', { name: 'Beta →' })).toBeEnabled();
+  expect(paths).toEqual(['', 'model', 'model/beta', 'model']);
+  // A manually selected child must retain the same parent draft as one
+  // opened by a separator, even if the composer changes while inside it.
+  for (const via of ['click', 'Enter']) {
+    if (via === 'click')
+      await panel.getByRole('button', { name: 'Beta →' }).click();
+    else await editor.press('Enter');
+    await expect(
+      panel.getByRole('button', { name: 'High // HELP' }),
+    ).toBeEnabled();
+    await editor.fill('/model beta high');
+    await panel.getByRole('button', { name: '← BACK', exact: true }).click();
+    await expect(editor).toHaveValue('/model beta');
+    await expect(panel.getByRole('button', { name: 'Beta →' })).toBeEnabled();
+    expect(paths.slice(-2)).toEqual(['model/beta', 'model']);
+  }
+  await editor.press('End');
+  await editor.press('Space');
+  await expect(
+    panel.getByRole('button', { name: 'High // HELP' }),
+  ).toBeEnabled();
+});
+
 for (const command of ['rename', 'cd']) {
   test(
     command + ' edits and reviews input before a separate confirmation',
@@ -2195,6 +2397,7 @@ for (const command of ['rename', 'cd']) {
         command === 'cd' ? 'Working directory changed.' : 'Session renamed.';
       const modes: string[] = [];
       let reviewed = '';
+      let holdInput: Promise<void> | undefined;
       await page.route('**/api/control/commands', async (route) => {
         const body = route.request().postDataJSON();
         const { mode, path } = body.command;
@@ -2225,6 +2428,7 @@ for (const command of ['rename', 'cd']) {
             ],
           };
         } else if (path === command) {
+          await holdInput;
           result = {
             title: '/' + command,
             help: 'Enter a name, review and confirm.',
@@ -2275,7 +2479,23 @@ for (const command of ['rename', 'cd']) {
         exact: true,
       });
       await expect(input).toHaveValue('Current name');
-      await input.fill(value);
+      if (command === 'rename') {
+        await panel.getByRole('button', { name: 'ESC CANCEL' }).click();
+        const gate = Promise.withResolvers<void>();
+        holdInput = gate.promise;
+        const requested = page.waitForRequest(
+          (req) =>
+            req.url().endsWith('/api/control/commands') &&
+            req.postDataJSON().command.path === 'rename',
+        );
+        await text.fill('  /rename ');
+        await requested;
+        await text.fill('  /rename still typing');
+        gate.resolve();
+        await expect(input).toHaveValue('still typing');
+        await text.fill('/rename ' + value);
+        await expect(input).toHaveValue(value);
+      } else await input.fill(value);
       await panel
         .getByRole('button', {
           name: 'ENTER REVIEW',
@@ -4001,6 +4221,78 @@ test('quota graphics use viewport height and keep compact navigation accessible'
   await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
 
+test('session Markdown styles prose, preserves raw copy and scrolls wide tables locally', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          document.body.dataset.copied = text;
+        },
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const cells = Array.from({ length: 12 }, (_, i) => [
+    { text: 'Column ' + (i + 1) },
+  ]);
+  const raw =
+    '**Strong** *emphasis* `<img src=x>`\n\n| ' +
+    cells.map((c) => c[0].text).join(' | ') +
+    ' |\n|' +
+    '---|'.repeat(cells.length);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      control: false,
+      sessions: [
+        {
+          ...snapshot.sessions[0],
+          text: raw,
+          prose: [
+            {
+              runs: [
+                { bold: true, text: 'Strong' },
+                { italic: true, text: 'emphasis' },
+                { code: true, text: '<img src=x>' },
+              ],
+            },
+            { rows: [cells] },
+          ],
+        },
+      ],
+    },
+  );
+  const detail = page.locator('.full-detail');
+  const reply = detail.locator('[data-reply-text]');
+  await expect(reply.locator('strong')).toHaveText('Strong');
+  await expect(reply.locator('em')).toHaveText('emphasis');
+  await expect(reply.locator('code')).toHaveText('<img src=x>');
+  await expect(reply.locator('img')).toHaveCount(0);
+  await expect(reply.getByRole('columnheader')).toHaveCount(cells.length);
+  expect(
+    await reply
+      .locator('.table-scroll')
+      .evaluate((el) => el.scrollWidth > el.clientWidth),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await detail.getByRole('button', { name: 'Copy text' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied', raw);
+});
+
 test('session detail deep links and responsive layout', async ({
   page,
   pairingURL,
@@ -5282,6 +5574,7 @@ for (const control of [false, true]) {
           const command = route.request().postDataJSON().command;
           commands.push(command.mode);
           expect(command.mode).toBe('list');
+          expect(command.path).toBe(''); // Never list a local action on the server.
           await route.fulfill({
             json: {
               title: '/ COMMANDS',
@@ -5346,7 +5639,7 @@ for (const control of [false, true]) {
       });
       const text = page.getByRole('textbox', { name: 'Follow-up message' });
       if (control) {
-        await text.fill('/' + command);
+        await text.fill('/' + command + ' ');
         await expect(
           panel.getByRole('button', {
             name: '/' + command + ' →',
@@ -6080,7 +6373,7 @@ for (const mode of ['balanced', 'none', 'require']) {
         title: 'Create Event',
         connector: 'Calendar',
         message: 'Allow Calendar to create an event?',
-        arguments: '{"title":"Demo <event>"}',
+        arguments: 'title: "Demo <event>"',
       };
       const labels = [
         'APPROVE ONCE',
@@ -6128,7 +6421,7 @@ for (const mode of ['balanced', 'none', 'require']) {
       await expect(review).toBeVisible();
       await expect(review).toContainText('codex_apps');
       await expect(review).toContainText('Create Event');
-      await expect(review).toContainText('Demo <event>');
+      await expect(review).toContainText('title: "Demo <event>"');
       await expect(
         page.getByRole('heading', { name: 'EXACT COMMAND', exact: true }),
       ).toHaveCount(0);
@@ -6240,6 +6533,49 @@ const actionApprovalCases = [
     persistent: [1, 2, 3],
   },
 ];
+test('permission request stays readable in write mode without an approval offer', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot, calls } = await mockActions(page);
+  await page.route('**/api/control/offer', (route) =>
+    route.fulfill({ json: { session: 'parent' } }),
+  );
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const detail = {
+    ...snapshot,
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      contextKind: 'APPROVAL REQUEST',
+      text: 'Permissions: {"network":{"enabled":true}}',
+      approvalReview: {
+        title: 'PERMISSIONS REVIEW',
+        fields: [
+          {
+            label: 'PERMISSION SCOPE',
+            value: 'Network access:\n  Enabled: true',
+          },
+        ],
+      },
+    })),
+  };
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    detail,
+  );
+  await page.getByRole('link', { name: 'FULL DETAIL →' }).first().click();
+  await expect(
+    page.getByRole('region', { name: 'PERMISSIONS REVIEW' }),
+  ).toContainText('Enabled: true');
+  await expect(page.getByText(/Permissions: \{/)).toHaveCount(0);
+  await expect(page.getByRole('radio')).toHaveCount(0);
+  expect(
+    calls.filter((c) => c.action === 'prepare' || c.action === 'commit'),
+  ).toHaveLength(0);
+});
+
 for (const scenario of actionApprovalCases) {
   for (const mode of ['balanced', 'none', 'require']) {
     for (const index of scenario.labels.keys()) {
@@ -6280,6 +6616,7 @@ for (const scenario of actionApprovalCases) {
             ...row,
             command: '',
             approvalReview: review,
+            text: 'Network request: {"host":"example.com","protocol":"https"}',
           })),
         };
         await page.evaluate(
@@ -6293,6 +6630,7 @@ for (const scenario of actionApprovalCases) {
           exact: true,
         });
         await expect(region).toBeVisible();
+        await expect(page.getByText(/Network request: \{/)).toHaveCount(0);
         for (const field of scenario.fields)
           await expect(region).toContainText(field.value);
         await expect(

@@ -1,10 +1,12 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
+	"slices"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
@@ -16,7 +18,8 @@ func TestMonitorNativeReviewPreservesConversationAndHumanApproval(t *testing.T) 
 	s := &m.monitorSessionData[0]
 	s.working, s.active, s.attention = true, true, codex.SessionAttentionNone
 	s.preview.Reviewer = "auto_review"
-	s.preview.AutoReview = codex.SessionAutoReview{ID: "review", Status: "inProgress", Action: "ls /work", Rationale: "Inspect repository", Risk: "low", Authorization: "high"}
+	s.preview.Kind = codex.SessionContextActivity
+	s.preview.AutoReview = codex.SessionAutoReview{ID: "review", Status: "inProgress", Action: "ls /work", ReviewFinding: codex.ReviewFinding{Rationale: "Inspect repository", Risk: "low", Authorization: "high"}}
 	m.monitorContextDetail = s.id
 	badge := ansi.Strip(m.renderMonitorSessionBadge(*s, 80, paletteFor(m.theme)))
 	if !strings.Contains(badge, i18n.Text("AUTO REVIEWING")) {
@@ -26,7 +29,7 @@ func TestMonitorNativeReviewPreservesConversationAndHumanApproval(t *testing.T) 
 		t.Fatal("native reviewer became human request")
 	}
 	doc := strings.Join(m.contextDetailLines(120), "\n")
-	for _, text := range []string{s.preview.Text, "AUTO REVIEW", "ls /work", "Inspect repository"} {
+	for _, text := range []string{s.preview.Text, "● AUTO REVIEWING", "ls /work", "Inspect repository", "RISK: LOW", "USER AUTHORISATION: HIGH"} {
 		if !strings.Contains(doc, text) {
 			t.Fatalf("lost context/review %q: %s", text, doc)
 		}
@@ -39,6 +42,74 @@ func TestMonitorNativeReviewPreservesConversationAndHumanApproval(t *testing.T) 
 	metrics := ansi.Strip(m.renderMonitorSessionMetrics(48, 16, *s, "", paletteFor(m.theme)))
 	if !strings.Contains(metrics, i18n.Text("REVIEW // AUTO")) {
 		t.Fatal("missing reviewer metadata", metrics)
+	}
+}
+
+func TestAssessmentLayoutWrapAndCommandDeduplication(t *testing.T) {
+	r := &codex.ReviewAssessment{Title: "COMMAND REVIEW", Decision: "AUTO-APPROVED", Status: "approved", Subject: "git status", Attached: true, ReviewFinding: codex.ReviewFinding{Risk: "low", Authorization: "high", Rationale: "Read-only inspection."}}
+	wide := assessmentLines(r, 100, true)
+	if len(wide) != 2 || !strings.Contains(wide[0].text, "● AUTO-APPROVED   RISK: LOW") || wide[1].text != r.Rationale {
+		t.Fatal(wide)
+	}
+	for _, width := range []int{1, 12, 24} {
+		for _, line := range assessmentLines(r, width, true) {
+			if ansi.StringWidth(line.text) > width {
+				t.Fatal(width, line)
+			}
+		}
+	}
+	compact := assessmentLines(r, 90, false)
+	if len(compact) != 1 || strings.Contains(compact[0].text, "AUTHORISATION") {
+		t.Fatal(compact)
+	}
+	r.Attached = false
+	if got := assessmentLines(r, 90, true)[0].text; got != "git status" {
+		t.Fatal(got)
+	}
+}
+
+func TestReviewGapUsesOnlySpareRows(t *testing.T) {
+	command := detailLine{"last wrapped command line", "command"}
+	review := detailLine{"COMMAND REVIEW", "assessment:approved"}
+	note := detailLine{"reason", "assessment-note"}
+	for _, tc := range []struct {
+		name    string
+		lines   []detailLine
+		follows bool
+		gap     int
+	}{
+		{"full after wrapped command", []detailLine{{"first line", "command"}, command, review, note}, false, 2},
+		{"preview with attached command", []detailLine{review}, true, 0},
+		{"preview with own subject", []detailLine{command, review}, false, 1},
+		{"no visible command", []detailLine{review, note}, false, -1},
+		{"no assessment", []detailLine{command, note}, false, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := spaceCommandReview(slices.Clone(tc.lines), len(tc.lines), tc.follows); !slices.Equal(got, tc.lines) {
+				t.Fatal("spacing displaced content", got)
+			}
+			want := slices.Clone(tc.lines)
+			if tc.gap >= 0 {
+				want = slices.Insert(want, tc.gap, detailLine{})
+			}
+			if got := spaceCommandReview(slices.Clone(tc.lines), len(tc.lines)+4, tc.follows); !slices.Equal(got, want) {
+				t.Fatal("expected exactly one conditional gap", got)
+			}
+		})
+	}
+}
+
+func TestReviewOnlyColoursTheStatusDot(t *testing.T) {
+	p := paletteFor(themeRust)
+	line := detailLine{"● AUTO-APPROVED", "assessment:approved"}
+	plain := lipgloss.NewStyle()
+	want := plain.Foreground(p.success).Render("●") + plain.Foreground(p.accent).Render(" AUTO-APPROVED")
+	if got := line.render(p); got != want {
+		t.Fatalf("review verdict should be ordinary text with a coloured dot: %q", got)
+	}
+	note := detailLine{"reason", "assessment-note"}
+	if got := note.render(p); got != plain.Foreground(blendColors(p.dim, p.accent)).Render("reason") {
+		t.Fatalf("rationale should use the intermediate tone: %q", got)
 	}
 }
 

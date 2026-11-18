@@ -5,11 +5,15 @@
   import FileDiff from './FileDiff.svelte';
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
+  import CommandReview from './CommandReview.svelte';
+  import type { ApprovalReview, ReviewAssessment } from './contracts.generated';
   import type { FileDiffLine } from './state.svelte';
   import { live, controlRequest, ControlRejected } from './state.svelte';
   let {
     session,
     observedCommand = '',
+    observedAction,
+    observedReview,
     observedFileChanges = [],
     review = '',
     suspended = false,
@@ -19,6 +23,8 @@
   }: {
     session: string;
     observedCommand?: string;
+    observedAction?: ApprovalReview;
+    observedReview?: ReviewAssessment;
     observedFileChanges?: FileDiffLine[];
     review?: string;
     suspended?: boolean;
@@ -31,6 +37,9 @@
     ScheduledJob as Job,
   } from './contracts.generated';
   let offer = $state<Offer | null>(null);
+  const pendingModel = $derived(
+    live.data?.sessions.find((row) => row.id === session)?.pendingModel,
+  );
   let answers = $state<string[]>([]);
   let choice = $state<number | null>(null);
   let confirmation = $state('');
@@ -505,6 +514,17 @@
   {/each}
 {/if}
 
+{#if pendingModel && review !== 'profile'}
+  <section class="session-actions" aria-label="Queued model change">
+    <h3>MODEL CHANGE // {(pendingModel.state || 'queued').toUpperCase()}</h3>
+    <p>{pendingModel.summary}</p>
+    {#if pendingModel.state === 'queued'}<p class="muted">
+        Applies at the next observed idle turn stop. Memory only; Codexometer
+        must stay running.
+      </p>{/if}
+  </section>
+{/if}
+
 {#if !followUpBlocked && (!pending || editing || review || offer?.kind !== 'prompt' || offer.questions?.length)}
   <section class="session-actions" aria-label="Session controls">
     <h3>
@@ -540,9 +560,14 @@
       <FileDiff lines={offer.fileChanges} />
     {:else if observedFileChanges.length}
       <FileDiff lines={observedFileChanges} />
+    {:else if observedAction && !offer?.id && !command && review !== 'profile'}
+      <ActionApproval review={observedAction} />
     {:else if command}
       <h3>{actionableCommand ? 'EXACT COMMAND' : 'LAST OBSERVED COMMAND'}</h3>
       <pre class="command">{command}</pre>
+      {#if observedReview && (!actionableCommand || offer?.reviewId === observedReview.id)}
+        <CommandReview assessment={observedReview} full />
+      {/if}
     {:else if review !== 'profile' && status === 'APPROVAL NEEDED' && !success}
       <p class="muted">
         Approval details unavailable from this observation. Open Codex to
