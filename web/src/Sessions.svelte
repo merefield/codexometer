@@ -17,6 +17,7 @@
   import Graph from './Graph.svelte';
   import SessionActions from './SessionActions.svelte';
   import CommandReview from './CommandReview.svelte';
+  import SessionProse from './SessionProse.svelte';
   import StatusLine from './StatusLine.svelte';
   import GoalStatus from './GoalStatus.svelte';
   import SessionCopy from './SessionCopy.svelte';
@@ -449,7 +450,9 @@
   {:else if session.mcpTool && (!full || !live.data?.control)}
     <MCPApproval details={session.mcpTool} />
   {:else if !session.approvalReview && (session.text || !session.workingCommand)}
-    <pre data-reply-text>{session.text || 'No session context available.'}</pre>
+    {#if session.prose?.length}<SessionProse blocks={session.prose} />
+    {:else}<pre data-reply-text>{session.text ||
+          'No session context available.'}</pre>{/if}
   {/if}
   {#if session.workingCommand}
     <hr />

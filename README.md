@@ -1510,6 +1510,14 @@ switch between graph-only, split, expanded, and full detail as described below.
   through its normal refresh. Local-only mode retains completed-message fallback;
   missed events are not reconstructed and the existing context length cap applies.
 
+Session replies and assistant commentary support Markdown emphasis: `*italics*`,
+`**bold**`, and `inline code` (in backticks). Pipe tables keep their column
+alignment with one rule under the headings. If a table is too wide, terminal
+detail shows each row as **heading: value** pairs; in the browser the table
+scrolls horizontally. Previous replies in terminal history use the same layout.
+Commands, approval requests, diffs and fenced code stay literal, and **Copy**
+still takes the original Markdown, not the rendered layout.
+
 Terminal session text marks HTTP/HTTPS web links explicitly and underlines both
 Markdown labels and visible URLs. Wrapped links and scrolled-in fragments retain
 their full destination. In prose, complete inline Markdown links to the HTTPS

@@ -190,6 +190,19 @@ export interface Projection {
   segment?: Segment | null;
 }
 
+export interface ProseBlock {
+  runs?: Array<ProseRun> | null;
+  rows?: Array<Array<Array<ProseRun> | null> | null> | null;
+  align?: Array<string> | null;
+}
+
+export interface ProseRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+}
+
 export interface QuotaPlot {
   elapsed: number;
   known: boolean;
@@ -258,6 +271,7 @@ export interface Session {
   failed?: boolean;
   contextKind: string;
   text: string;
+  prose?: Array<ProseBlock> | null;
   command: string;
   workingCommand?: string;
   approvalContext?: string;

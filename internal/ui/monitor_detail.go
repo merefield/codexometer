@@ -40,6 +40,8 @@ func (line detailLine) render(colors palette) string {
 		return strings.Join(fields, "   ")
 	}
 	switch line.kind {
+	case "reply", "prose":
+		style = style.Bold(false)
 	case "heading":
 		style = style.Bold(true).Foreground(colors.primary)
 	case "metadata":
@@ -102,6 +104,9 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		if c.Kind == codex.SessionContextApproval || kind != "body" && kind != "reply" {
 			wrap = sessionWebLiteralTextLines
 		}
+		if kind == "reply" || kind == "prose" {
+			wrap = m.proseLines
+		}
 		for _, line := range wrap(text, max(width-lipgloss.Width(prefix), 1)) {
 			// A double-width glyph cannot fit a one-cell viewport. Clip that
 			// degenerate case; normal widths retain every wrapped character.
@@ -140,7 +145,7 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 	if hasWorkingCommand(c) {
 		if c.Activity.Prose != "" {
 			section(i18n.Text("COMMENTARY"))
-			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "body", "")
+			appendText(codex.SanitizeSessionContext(c.Activity.Prose), "prose", "")
 		}
 		section(m.workingCommandTitle(c.Activity))
 		prefix := "│ "
@@ -228,6 +233,8 @@ func (m Model) contextDetailDocument(width int) []detailLine {
 		kind := "body"
 		if c.Kind == codex.SessionContextReply {
 			kind = "reply"
+		} else if c.AssistantProse() != "" && c.AssistantProse() == c.Text {
+			kind = "prose"
 		}
 		appendText(text, kind, "")
 	}

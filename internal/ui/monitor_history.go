@@ -335,13 +335,17 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 			return
 		}
 		lines = append(lines, detailLine{}, detailLine{ansi.Truncate(title, width, "…"), "heading"})
-		for _, line := range sessionWebTextLines(codex.SanitizeSessionContext(text), width) {
+		wrap := sessionWebTextLines
+		if kind == "prose" || kind == "reply" {
+			wrap = m.proseLines
+		}
+		for _, line := range wrap(codex.SanitizeSessionContext(text), width) {
 			lines = append(lines, detailLine{ansi.Truncate(line, width, ""), kind})
 		}
 	}
 	appendSection(i18n.Text("TASK"), c.CurrentTask, "body")
 	appendSection(i18n.Text("LATEST GUIDANCE"), c.LatestGuidance, "body")
-	replyKind := "body"
+	replyKind := "prose"
 	if c.Kind == codex.SessionContextReply && sameHistoryTurn(c, s.preview) && c.Text == s.preview.Text {
 		replyKind = "reply"
 	}

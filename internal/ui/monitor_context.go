@@ -138,6 +138,10 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		text = i18n.Text("NO CONTEXT")
 	}
 	wrap := sessionWebTextLines
+	isProse := s.preview.AssistantProse() != "" && s.preview.Text == s.preview.AssistantProse()
+	if isProse {
+		wrap = m.proseLines
+	}
 	if s.preview.Kind == codex.SessionContextApproval {
 		wrap = sessionWebLiteralTextLines
 	}
@@ -163,7 +167,7 @@ func (m Model) renderMonitorContextRow(width, height int, metrics string, s moni
 		lines = append(lines, terminalLabel(s.preview.Source)+" // "+shortSessionID(s.preview.ThreadID)+" // "+contextAge(s.preview))
 	}
 	for i := range lines {
-		lines[i] = colors.label().Render(ansi.Truncate(lines[i], inner, ""))
+		lines[i] = colors.label().Bold(!isProse).Render(ansi.Truncate(lines[i], inner, ""))
 	}
 	if dots != "" {
 		for len(lines) < bodyRows-1 {

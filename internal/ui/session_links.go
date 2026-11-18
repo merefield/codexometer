@@ -320,31 +320,7 @@ func wrappedSessionWebText(text string, width int, cook bool) []string {
 	if width < 12 {
 		return strings.Split(ansi.Hardwrap(text, max(width, 1), true), "\n")
 	}
-	linked := formatSessionWebLinks(text, cook)
-	lines := strings.Split(ansi.Hardwrap(linked, width, true), "\n")
-	if linked == text {
-		return lines
-	}
-	var active string
-	for i, line := range lines {
-		prefix := ""
-		if active != "" {
-			prefix = ansi.SetHyperlink(active, sessionWebLinkID) + "\x1b[4m"
-		}
-		walkTerminalText(line, func(seq string, _ int, p *ansi.Parser) {
-			if ansi.HasOscPrefix(seq) && p.Command() == 8 {
-				fields := strings.SplitN(string(p.Data()), ";", 3)
-				if len(fields) == 3 {
-					active = fields[2]
-				}
-			}
-		})
-		lines[i] = prefix + line
-		if active != "" {
-			lines[i] += "\x1b[24m" + ansi.ResetHyperlink()
-		}
-	}
-	return lines
+	return wrapProse(formatSessionWebLinks(text, cook), width)
 }
 
 // The same grapheme widths as the renderer identify the clicked cell, including

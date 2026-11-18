@@ -4206,6 +4206,78 @@ test('quota graphics use viewport height and keep compact navigation accessible'
   await page.screenshot({ path: 'test-results/responsive-quota.png' });
 });
 
+test('session Markdown styles prose, preserves raw copy and scrolls wide tables locally', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(page, 'prompt');
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          document.body.dataset.copied = text;
+        },
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const cells = Array.from({ length: 12 }, (_, i) => [
+    { text: 'Column ' + (i + 1) },
+  ]);
+  const raw =
+    '**Strong** *emphasis* `<img src=x>`\n\n| ' +
+    cells.map((c) => c[0].text).join(' | ') +
+    ' |\n|' +
+    '---|'.repeat(cells.length);
+  await page.evaluate(
+    (detail) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+    {
+      ...snapshot,
+      control: false,
+      sessions: [
+        {
+          ...snapshot.sessions[0],
+          text: raw,
+          prose: [
+            {
+              runs: [
+                { bold: true, text: 'Strong' },
+                { italic: true, text: 'emphasis' },
+                { code: true, text: '<img src=x>' },
+              ],
+            },
+            { rows: [cells] },
+          ],
+        },
+      ],
+    },
+  );
+  const detail = page.locator('.full-detail');
+  const reply = detail.locator('[data-reply-text]');
+  await expect(reply.locator('strong')).toHaveText('Strong');
+  await expect(reply.locator('em')).toHaveText('emphasis');
+  await expect(reply.locator('code')).toHaveText('<img src=x>');
+  await expect(reply.locator('img')).toHaveCount(0);
+  await expect(reply.getByRole('columnheader')).toHaveCount(cells.length);
+  expect(
+    await reply
+      .locator('.table-scroll')
+      .evaluate((el) => el.scrollWidth > el.clientWidth),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await detail.getByRole('button', { name: 'Copy text' }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied', raw);
+});
+
 test('session detail deep links and responsive layout', async ({
   page,
   pairingURL,

@@ -33,3 +33,26 @@ func TestNativeReviewReadOnlyProjection(t *testing.T) {
 		t.Fatal("telemetry enabled writes")
 	}
 }
+
+func TestMarkdownWebProjectionKeepsOriginalAndExcludesRequests(t *testing.T) {
+	const raw = "**result**"
+	s := newStore()
+	for _, tc := range []struct {
+		context   codex.SessionContext
+		wantProse bool
+	}{
+		{codex.SessionContext{Kind: codex.SessionContextReply, Text: raw}, true},
+		{codex.SessionContext{Kind: codex.SessionContextActivity, Activity: codex.SessionActivity{Prose: raw, Command: "echo **stars**"}}, true},
+		{codex.SessionContext{Kind: codex.SessionContextApproval, Text: raw}, false},
+		{codex.SessionContext{Kind: codex.SessionContextActivity, Text: raw}, false},
+	} {
+		s.live(codex.LiveUsageSnapshot{Sessions: []codex.LiveUsageSession{{ID: "test", Active: true, Context: tc.context}}}, nil, time.Now())
+		row := s.state.Sessions[0]
+		if row.Text != raw || (len(row.Prose) != 0) != tc.wantProse || row.WorkingCommand != tc.context.Activity.Command {
+			t.Fatalf("incorrect classification or source changed: %#v", row)
+		}
+		if tc.wantProse && (row.Prose[0].Runs[0].Text != "result" || !row.Prose[0].Runs[0].Bold) {
+			t.Fatal(row.Prose)
+		}
+	}
+}

@@ -145,7 +145,7 @@ func (m Model) monitorPromptRows(width, height int) int {
 		if m.monitorContextDetail == "" {
 			s, ok := m.contextDetailSession()
 			textRows, _, _ := monitorContextBodyLayout(height, rows)
-			if !ok || len(expandedContextLines(width, s)) > textRows {
+			if !ok || len(m.expandedContextLines(width, s)) > textRows {
 				return 0
 			}
 		}
@@ -179,7 +179,7 @@ func (m Model) monitorPromptEditorHeight(width, height int) int {
 	extra := 1 - m.monitorPromptHeaderRows()
 	if m.monitorContextDetail == "" {
 		if s, ok := m.contextDetailSession(); ok {
-			return min(height+extra, max(8, height+3+extra-len(expandedContextLines(width, s))))
+			return min(height+extra, max(8, height+3+extra-len(m.expandedContextLines(width, s))))
 		}
 	}
 	return height + extra

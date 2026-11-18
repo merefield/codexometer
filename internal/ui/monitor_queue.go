@@ -188,7 +188,7 @@ func (m Model) monitorQueueRows(width, height, controlRows int) int {
 		textRows, _, _ := monitorContextBodyLayout(height, controlRows)
 		// Even long commentary leaves a compact queue/status line. Never
 		// take space from approval buttons or the composer.
-		available = min(available, max(1, textRows-len(expandedContextLines(width, s))))
+		available = min(available, max(1, textRows-len(m.expandedContextLines(width, s))))
 		limit = 2
 	}
 	if available < 1 {

@@ -15,6 +15,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.20.3
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/yuin/goldmark v1.8.7
 	go.starlark.net v0.0.0-20260930220527-d7438c5a85ac
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0

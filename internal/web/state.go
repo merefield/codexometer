@@ -10,6 +10,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
+	"github.com/merefield/codexometer/internal/prose"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
 	"github.com/merefield/codexometer/internal/version"
@@ -49,6 +50,7 @@ type session struct {
 	Failed                bool                          `json:"failed,omitempty"`
 	ContextKind           string                        `json:"contextKind"`
 	Text                  string                        `json:"text"`
+	Prose                 []prose.ProseBlock            `json:"prose,omitempty"`
 	Command               string                        `json:"command"`
 	WorkingCommand        string                        `json:"workingCommand,omitempty"`
 	ApprovalContext       string                        `json:"approvalContext,omitempty"`
@@ -156,6 +158,7 @@ type state struct {
 }
 
 type store struct {
+	proseCache      prose.Cache
 	profileWindow   string
 	profileRevision uint64
 	quotaSnapshot   codex.Snapshot
@@ -350,7 +353,12 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 					text = "HUMAN APPROVAL REQUIRED\nManaged policy requires approval each time.\n" + text
 				}
 			}
+			var doc []prose.ProseBlock
+			if message := row.Context.AssistantProse(); message != "" && message == text {
+				doc = s.proseCache.Get(codex.SanitizeSessionContext(message))
+			}
 			s.state.Sessions = append(s.state.Sessions, session{
+				Prose:        doc,
 				PendingModel: projectPendingModel(row.Context.PendingModel),
 				Reviewer:     codex.SanitizeSessionContext(row.Context.Reviewer), AutoReview: row.Context.ReviewAssessment(),
 				ReadStateKnown: row.ReadState.Known(), Unread: row.ReadState.Unread, ReadRevision: row.ReadState.Revision, ReplyTurn: sessionReplyTurn(row),

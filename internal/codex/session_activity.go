@@ -17,6 +17,18 @@ type SessionActivity struct {
 	CommandCompletedAt time.Time
 }
 
+// Only assistant-authored conversation text is eligible for presentation as
+// Markdown. Commands, request descriptions and approval decisions stay literal.
+func (c SessionContext) AssistantProse() string {
+	switch c.Kind {
+	case SessionContextReply:
+		return c.Text
+	case SessionContextActivity:
+		return c.Activity.Prose
+	}
+	return ""
+}
+
 // CommandTiming reports elapsed or completed duration only with valid timing
 // evidence. Running timers use the caller's snapshot time, so stale web data
 // does not keep pretending that the command is still running.
