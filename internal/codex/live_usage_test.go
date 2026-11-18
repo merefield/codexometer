@@ -698,7 +698,7 @@ func TestLiveUsageReaderRerouteCorrectionFailsClosedOnUnpriceableUsage(t *testin
 			CumulativeTotal: 130,
 		}},
 	}
-	reader.reconcilePendingModelResolutions()
+	reader.reconcilePendingModelResolutions(nil)
 	call := reader.files["rollout"].modelCalls[0]
 	if call.Model != "gpt-5.6-terra" || call.APIEqKnown || reader.apiEqUSD != 0 ||
 		reader.apiEqPricedCalls != 0 || reader.apiEqUnknownCalls != 0 || reader.apiEqInconsistentUsageCalls != 1 || call.APIEqIssue == "" {
@@ -716,7 +716,7 @@ func TestLiveUsageReaderFinalizesRequestedModelWhenDaemonHasNoReroute(t *testing
 			callSequence: 1, threadID: "thread", turnID: "turn", usage: usage, cumulativeTotal: 110,
 		}},
 	}
-	reader.reconcilePendingModelResolutions()
+	reader.reconcilePendingModelResolutions(nil)
 	want, known, _ := EstimateStandardAPIEqCost("gpt-5.6-sol", usage)
 	call := reader.files["rollout"].modelCalls[0]
 	if !known || !call.APIEqKnown || call.APIEqUSD != want || reader.apiEqUSD != want ||

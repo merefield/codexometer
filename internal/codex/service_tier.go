@@ -11,6 +11,37 @@ import (
 // Source: https://developers.openai.com/api/docs/pricing (Fast, Flex and Ultrafast).
 const FastAPIPricingRetrievedOn = "2026-11-17"
 
+const autoReviewModel = "codex-auto-review"
+
+func (c *rolloutCursor) planReviewCandidate() bool {
+	return c.guardianReviewer && c.openAIProvider && c.currentModel == autoReviewModel
+}
+
+// Known PlanType wire values from Codex. An unknown or absent plan does not
+// establish ChatGPT billing; neither does the user's current login.
+func reportsChatGPTQuota(line []byte) bool {
+	// Decode optional evidence separately: malformed limits shouldn't destroy
+	// an otherwise valid token record. Ordinary model calls don't pay this cost.
+	var event struct {
+		Payload struct {
+			Limits struct {
+				ID   string `json:"limit_id"`
+				Plan string `json:"plan_type"`
+			} `json:"rate_limits"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(line, &event) != nil || event.Payload.Limits.ID != "codex" {
+		return false
+	}
+	switch event.Payload.Limits.Plan {
+	case "free", "go", "plus", "pro", "prolite", "promax", "team", "self_serve_business_prolite",
+		"self_serve_business_usage_based", "business", "ent26", "enterprise_cbp_automation",
+		"enterprise_cbp_usage_based", "enterprise", "edu", "edu_plus", "edu_pro", "sci", "sci_plus":
+		return true
+	}
+	return false
+}
+
 // requestedTierPremium prices a single response's requested tier. It does not
 // claim that the backend delivered/billed that tier. Empty means unavailable,
 // not confirmed standard. Unknown explicit tiers fail closed.
@@ -95,7 +126,16 @@ func (r *LiveUsageReader) finalizeCallPricing(call *LiveModelCall, usage Benchma
 		r.apiEqInconsistentUsageCalls++
 		return
 	}
+	if call.planReviewEvidence && call.Model == autoReviewModel {
+		// ChatGPT plan safety checks do not consume quota. The session pulse
+		// and tokens are real, but this is neither a priced API call nor a gap.
+		call.apiEqFinalized = true
+		return
+	}
 	call.APIEqUSD, call.APIEqKnown, call.APIEqIssue = EstimateStandardAPIEqCost(call.Model, usage)
+	if !call.APIEqKnown && call.Model == autoReviewModel {
+		call.APIEqIssue = "no maintained API price for codex-auto-review; ChatGPT plan safety check not confirmed"
+	}
 	if call.APIEqKnown && usage.InputTokens > 272_000 &&
 		(strings.EqualFold(strings.TrimSpace(call.RequestedServiceTier), "fast") || strings.EqualFold(strings.TrimSpace(call.RequestedServiceTier), "priority")) &&
 		(pricedModelName(call.Model) == "gpt-5.4" || pricedModelName(call.Model) == "gpt-5.5") {

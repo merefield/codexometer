@@ -839,6 +839,17 @@ cache-write input, and output are priced separately; requests above the
 published 272,000-input-token threshold use the corresponding long-context
 rates where OpenAI publishes them. Unknown models or missing price classes fail
 closed as `UNPRICED USAGE` rather than being guessed or treated as free.
+
+**Why can Sessions show Auto-review tokens without a Quota cost?** OpenAI says
+[ChatGPT Auto-review safety checks do not use the plan allowance](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan).
+Codexometer keeps their token counts and activity, but excludes confirmed plan
+reviews from quota learning. It looks for a native Guardian thread on the OpenAI
+provider, the `codex-auto-review` model, and a matching Codex plan usage event.
+For exact responses that event must be the next rollout record by ordinal in the
+same turn, with the same token breakdown. Without that evidence, a review can
+still show `UNPRICED USAGE`. This is not a $0 API price: benchmark pricing is
+unchanged, and a reroute to a different model uses normal pricing.
+
 In the legacy reader, Codex's context-window bookkeeping updates are recognised only when the window
 and both complete, explicit zero-token-class breakdowns match its synthetic fill record.
 They rebase the local counter without adding response costs, token totals or
@@ -1948,7 +1959,8 @@ to the command only when its native identity matches. It clears as work moves to
 another command or the turn ends; an old denial can still be inspected via
 `/approve`, which shows the action fields, risk, rationale (when reported),
 and one-retry scope before you consent. Private Guardian thread output is never treated as the conversation's
-last reply. Its tokens still count, but only a native review event—not JSON
+last reply. Its tokens still appear in Sessions; confirmed ChatGPT plan reviews
+do not consume quota. Only a native review event—not JSON
 extracted from a reply—supplies a verdict. This is informational, not a request for you to click
 Approve. Actual mandatory human checkpoints keep their normal controls and pills.
 Auto-review consumes model resources and is not a guarantee that only low-risk
