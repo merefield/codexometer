@@ -1,5 +1,5 @@
 {
-  "version": "0.32.0",
+  "version": "0.32.1",
   "synthetic": true,
   "sources": {
     "internal/ui/documentation_screenshots_test.go": "c4cdff76426dc75265f2d4b3354a28c7da39354bd91ee376dd7b28d749ca4d4f",
@@ -14,56 +14,56 @@
       "caption": "Session detail: synthetic commentary, the exact command to review, and explicit approval controls.",
       "columns": 136,
       "rows": 35,
-      "frameSHA256": "1bc5c0bb1409ab0822b70bb78ff839f81b56d03ce91113424fd4023669cb9c8f",
-      "pngSHA256": "b7a7c5d3fa8c0bbb450752519302bb10fc504a2fb543a827386d92bcbf4727c1"
+      "frameSHA256": "081e67d4dfb80b2d2682457ce2f8c0e03c80a9d00d585d7209040655eea12556",
+      "pngSHA256": "113bf0eca96acf87baa7c8094321ac09ebafa579126bcf1c4cced88f007a63fd"
     },
     {
       "file": "benchmark.png",
       "caption": "Benchmark: illustrative results only, not measured model performance or price comparisons.",
       "columns": 136,
       "rows": 27,
-      "frameSHA256": "8f954b48cc95da21254d01ce25300b0513a46bb5637bf1a764c43337da92edd0",
-      "pngSHA256": "ec71d3be282d20e47d8922837ff0bd1abc18517fe38709c10acc6e34783fd70c"
+      "frameSHA256": "d3d5ebffd4cd1fb847a5b07fb9ae477089771318bb9df76d2bbc61ab93b8e209",
+      "pngSHA256": "899070f5cb945962ce5becf1ba71eb2608eecd2e2bc5629c4fb122b2f30187dc"
     },
     {
       "file": "pace.png",
       "caption": "Quota Pace: synthetic consumption plotted against time elapsed.",
       "columns": 136,
       "rows": 32,
-      "frameSHA256": "65035bae1276930ab6a26bbf4ca145b24dbd26552f0019f7480699253ba6b393",
-      "pngSHA256": "5548a482bf6a48ced264e02343cacedc787c52310cf0337425b8bf85485f87a4"
+      "frameSHA256": "630126caa6014ed675931bbf7847460558e6dc4b0ed46e7b5aed9a37334afb9a",
+      "pngSHA256": "8faa3ece7e13f5af9d97238b696e9119c0d8f5b28c1eb68022560f1980ae9160"
     },
     {
       "file": "quota.png",
       "caption": "Quota Bars: synthetic short-term and weekly allowances, with directly comparable reset-cycle gauges.",
       "columns": 136,
       "rows": 32,
-      "frameSHA256": "5a8e8df12cdd275fca91ff90ef71b9b22c7be98b516ee24cf01911baf76a7d02",
-      "pngSHA256": "95960694667cbdded445ea8618ef5584b57280c14a72db78ce480f4746212ae0"
+      "frameSHA256": "51833593b7a8136cbb0ee763d52725ddb0c3189e697ecc63485fa860e0a8d9e4",
+      "pngSHA256": "33153618545b782cfa17a796b3b902572d2c75d76c5814cf56a839effda5b14e"
     },
     {
       "file": "scheduler.png",
       "caption": "Schedule a synthetic follow-up without leaving session detail; no job is submitted.",
       "columns": 136,
       "rows": 33,
-      "frameSHA256": "c33b6c7880705443fa04969241a206ad1b6fd9906270087586cfff10c9a6bfd3",
-      "pngSHA256": "ac070abcb3aef896db75e37492d6e1ed90638836e96fc8cd3a078a6de3d106db"
+      "frameSHA256": "4cc61723a5c7c5e2de36fec5d4cbd47c4d3f890b681984b3c9b0662aa980d8c2",
+      "pngSHA256": "1d63af8d54c0b69494e9f0db2732d065616d3208d09ae2ad571c6e5593cdf788"
     },
     {
       "file": "sessions.png",
       "caption": "Sessions command centre: three synthetic sessions, live activity and an approval awaiting review.",
       "columns": 136,
       "rows": 45,
-      "frameSHA256": "09b8c52a24080506f6e2aa32651dd0c7ee976a255da8d13976ec534d2f5bef66",
-      "pngSHA256": "085e511b2e0c358a0f3c987dcc248df960c56de2d5d667d7b725c40ab91b8be6"
+      "frameSHA256": "faeadbd27a8627e8750c007a6ce1e0f4aaa8b96eb9fe21f74823c03eabbca853",
+      "pngSHA256": "ffa4c393f6fc4f7a7c1a4c2c1fc59b6ea9645ca66fba27d301276452453f497c"
     },
     {
       "file": "usage.png",
       "caption": "Usage Daily: a year of synthetic account history, with brighter cells indicating more activity.",
       "columns": 136,
       "rows": 26,
-      "frameSHA256": "0c76688a4e056d1948176c5231828f0cd434ba787c58e8f0f410d6cf70aba657",
-      "pngSHA256": "249b46966f23874a74842b08e22c1524f485278c65eb46fdd84df7fb31b243cc"
+      "frameSHA256": "a5c348f5d21d4e4c23bee74de5661a0332941540ebc69d4650d4df675bb2f662",
+      "pngSHA256": "c6e22a8dd5a61c30f1cc9e1b296b8dca2626816acaff0a8ee6c700b75b964efd"
     }
   ]
 }
