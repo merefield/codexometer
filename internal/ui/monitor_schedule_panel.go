@@ -26,7 +26,7 @@ func (m Model) pendingTrigger() (schedule.Job, bool) {
 }
 
 func (m Model) triggerReady(j schedule.Job) bool {
-	if !j.MatchesAccount(m.snapshot.AccountFingerprint) {
+	if j.ResumeGoal || !j.MatchesAccount(m.snapshot.AccountFingerprint) {
 		return false
 	}
 	o := m.monitorPromptOffer()
@@ -60,7 +60,9 @@ func (m Model) triggerSummaryAt(j schedule.Job, now time.Time) string {
 		return text + i18n.Text(" // waiting for the original account")
 	case !schedule.Covers(j, m.snapshot):
 		return text + i18n.Text(" // waiting for observed quota windows")
-	case !schedule.QuotaReady(m.snapshot, now):
+	case j.WaitingForGoalStop:
+		return text + i18n.Text(" // waiting for goal to stop for quota")
+	case j.AwaitingQuotaSample(m.snapshot) || !schedule.QuotaReady(m.snapshot, now):
 		return text + i18n.Text(" // waiting for quota")
 	case !m.triggerReady(j):
 		if i := m.monitorSessionIndex(j.Session); i >= 0 && m.monitorSessionData[i].working {
@@ -83,6 +85,9 @@ func (m Model) triggerButtons(width int) []triggerButton {
 		return nil
 	}
 	buttons := []triggerButton{{text: i18n.Text("[ Ctrl+N: SEND NOW ]"), key: "ctrl+n", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Ctrl+S: EDIT ]"), key: "ctrl+s", enabled: j.Status == "pending"}, {text: i18n.Text("[ Ctrl+D: DELETE ]"), key: "ctrl+d", enabled: j.Status != "sending"}}
+	if j.ResumeGoal {
+		return buttons[2:]
+	}
 	if m.scheduleUI.confirmID == j.ID && time.Now().Before(m.scheduleUI.confirmUntil) {
 		buttons = []triggerButton{{text: i18n.Text("[ Ctrl+Y: CONFIRM SEND ]"), key: "ctrl+y", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Esc: CANCEL ]"), key: "esc", enabled: true}}
 	}

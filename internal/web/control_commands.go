@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/schedule"
 )
 
 type commandRequest struct {
@@ -52,7 +53,29 @@ func (c *control) handleCommands(w http.ResponseWriter, r *http.Request, body ac
 		c.pending = nil
 		c.mu.Unlock()
 		q = p.request.Command
-		if err := c.commands.ExecuteSessionCommand(ctx, body.Session, q.Path, q.Revision, q.Choice); err != nil {
+		var err error
+		if q.Path == codex.ScheduleGoalResumePath {
+			err = codex.ErrSessionCommand
+			if goals, ok := c.commands.(codex.ScheduledGoalClient); ok {
+				err = c.schedules.ArmGoalResume(ctx, goals, c.scheduleSnapshot(), time.Now(), body.Session, q.Revision, q.Choice)
+			}
+			if err == schedule.ErrGoalSlotOccupied || err == schedule.ErrGoalQuotaUnavailable {
+				http.Error(w, err.Error(), 409)
+				return
+			}
+			c.publishSchedules()
+		} else {
+			disarm := ""
+			if codex.IsGoalMutation(q.Path) {
+				disarm = c.schedules.PendingGoalResumeID(body.Session)
+			}
+			err = c.commands.ExecuteSessionCommand(ctx, body.Session, q.Path, q.Revision, q.Choice)
+			if err == nil && disarm != "" {
+				c.schedules.DisarmGoalResume(disarm)
+				c.publishSchedules()
+			}
+		}
+		if err != nil {
 			http.Error(w, "Command unconfirmed; check Codex before retrying", 409)
 			return
 		}

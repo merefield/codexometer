@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "恢复目标",
+  " // waiting for goal to stop for quota": " // 等待目标因配额而停止",
   "FILTER": "筛选",
   "INCLUDE HISTORY": "包含历史记录",
   "SAVED": "已保存",

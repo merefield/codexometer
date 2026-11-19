@@ -1400,6 +1400,47 @@ test('scheduled follow-up is reviewed, visible and cancellable without sending i
   await expect(pending).toHaveCount(0);
 });
 
+test('goal resume is cancellable without replacing the composer or exposing send now', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockActions(page, 'prompt');
+  let cancelled = false;
+  await page.route('**/api/control/schedules', async (route) => {
+    if (route.request().postDataJSON().cancelId === 'goal-job')
+      cancelled = true;
+    await route.fulfill({
+      json: cancelled
+        ? []
+        : [
+            {
+              id: 'goal-job',
+              session: 'parent',
+              trigger: 'quota',
+              status: 'pending',
+              resumeGoal: true,
+              waitingForGoalStop: true,
+              waitingReason: 'waiting for goal to stop for quota',
+            },
+          ],
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/parent';
+  });
+  const pending = page.getByRole('region', { name: 'Pending follow-up' });
+  await expect(pending).toContainText('SCHEDULED GOAL RESUME');
+  await expect(pending).toContainText('waiting for goal to stop for quota');
+  await expect(pending.getByRole('button')).toHaveCount(1);
+  const draft = page.getByRole('textbox', { name: 'Follow-up message' });
+  await draft.fill('Keep this draft when disarming');
+  await pending.getByRole('button', { name: 'DELETE TRIGGER' }).click();
+  await pending.getByRole('button', { name: 'CONFIRM DELETE TRIGGER' }).click();
+  await expect(pending).toHaveCount(0);
+  await expect(draft).toHaveValue('Keep this draft when disarming');
+});
+
 test('native approval detail omits unrelated scheduled prompt', async ({
   page,
   pairingURL,

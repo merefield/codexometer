@@ -85,6 +85,15 @@ func newSessionStatusProvider(codexHome string) sessionStatusProvider {
 	return &daemonStatusProvider{socketPath: filepath.Join(codexHome, "app-server-control", "app-server-control.sock")}
 }
 
+func (p *daemonStatusProvider) subscribedConnection(thread string) *websocket.Conn {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, subscribed := p.subscribed[thread]; !subscribed {
+		return nil
+	}
+	return p.connection
+}
+
 func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (sessionDaemonSnapshot, bool) {
 	if err := p.ensureConnected(ctx); err != nil {
 		if errors.Is(err, os.ErrNotExist) {

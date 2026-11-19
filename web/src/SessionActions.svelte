@@ -68,6 +68,7 @@
       return;
     }
     if (
+      job.resumeGoal ||
       job.status !== 'pending' ||
       busy ||
       !offer?.id ||
@@ -92,6 +93,7 @@
     if (
       openScheduler &&
       pending &&
+      !pending.resumeGoal &&
       !openedScheduler &&
       offer?.id &&
       offer.kind === 'prompt' &&
@@ -136,6 +138,7 @@
       return;
     }
     deleteReview = '';
+    const goalResume = jobs.some((job) => job.id === id && job.resumeGoal);
     try {
       jobs = await controlRequest<Job[]>(
         'schedules',
@@ -145,7 +148,7 @@
       editing = false;
       confirmation = '';
       sendNowID = '';
-      answers = [];
+      if (!goalResume) answers = [];
     } catch (error) {
       notice =
         error instanceof Error ? error.message : 'Unable to cancel trigger.';
@@ -217,6 +220,9 @@
   let scheduling = $derived(
     offer?.kind === 'prompt' && !offer.questions?.length && timing !== 'now',
   );
+  $effect(() => {
+    if (pending?.resumeGoal) timing = 'now';
+  });
   let targetTime = $derived(
     timing === 'delay' ? now + delay * 60000 : Date.parse(dateTime),
   );
@@ -261,7 +267,8 @@
         event.ctrlKey &&
         event.key.toLowerCase() === 's' &&
         !review &&
-        pending
+        pending &&
+        !pending.resumeGoal
       ) {
         event.preventDefault();
         editJob(pending);
@@ -455,7 +462,9 @@
       <h3>
         {job.status === 'uncertain'
           ? 'CHECK TRIGGER — outcome uncertain; not retried'
-          : 'SCHEDULED FOLLOW-UP'}
+          : job.resumeGoal
+            ? 'SCHEDULED GOAL RESUME'
+            : 'SCHEDULED FOLLOW-UP'}
       </h3>
       <p>TARGET // {job.session}</p>
       <p>
@@ -464,20 +473,20 @@
           : `Not before ${localTime(job.at)}`}
       </p>
       <p role="status">{waitingText(job)}</p>
-      <pre class="saved-prompt">{job.text}</pre>
+      {#if !job.resumeGoal}<pre class="saved-prompt">{job.text}</pre>{/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       <p class="muted">
-        In memory only. Follows session model, reasoning and speed. Closing
-        Codexometer cancels pending work.
+        In memory only. Closing Codexometer cancels pending work.
+        {#if !job.resumeGoal}Follows session model, reasoning and speed.{/if}
       </p>
-      <button
-        disabled={busy ||
-          !offer?.id ||
-          offer.kind !== 'prompt' ||
-          !!offer.questions?.length ||
-          job.status !== 'pending'}
-        onclick={() => editJob(job)}>EDIT · Ctrl+S</button
-      >
+      {#if !job.resumeGoal}<button
+          disabled={busy ||
+            !offer?.id ||
+            offer.kind !== 'prompt' ||
+            !!offer.questions?.length ||
+            job.status !== 'pending'}
+          onclick={() => editJob(job)}>EDIT · Ctrl+S</button
+        >{/if}
       <button
         disabled={busy || job.status === 'sending'}
         onclick={() => cancelJob(job.id)}
@@ -490,7 +499,9 @@
             deleteReview = '';
           }}>CANCEL</button
         >{/if}
-      {#if confirming && sendNowID === job.id}
+      {#if job.resumeGoal}
+        <!-- A goal trigger must wait for native quota recovery. -->
+      {:else if confirming && sendNowID === job.id}
         <p>
           Send this saved prompt now? This starts Codex work and consumes quota.
         </p>
@@ -511,7 +522,7 @@
   {/each}
 {/if}
 
-{#if !followUpBlocked && (!pending || editing || review || offer?.kind !== 'prompt' || offer.questions?.length)}
+{#if !followUpBlocked && (!pending || pending.resumeGoal || editing || review || offer?.kind !== 'prompt' || offer.questions?.length)}
   <section class="session-actions" aria-label="Session controls">
     <h3>
       {review === 'profile'
@@ -615,7 +626,7 @@
             </label>
           {/each}
         {:else}
-          {#if !offer.questions?.length}
+          {#if !offer.questions?.length && !pending?.resumeGoal}
             <label class="answer"
               >Send
               <select bind:value={timing}>

@@ -4,7 +4,6 @@ package codex
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -70,10 +69,6 @@ func (p *daemonStatusProvider) sessionCommandScope(id, path string) string {
 	return commandDigest([]any{p.commandGeneration, status, transition, p.threadDirectories[id], p.threadSettings[id], p.permissionSettings[id], goalScope})
 }
 
-func commandDigest(value any) string {
-	data, _ := json.Marshal(value)
-	return fmt.Sprintf("%x", sha256.Sum256(data))
-}
 func commandText(value string) string  { return SanitizeSessionContext(value) }
 func commandSafe(value string) bool    { return value != "" && commandText(value) == value }
 func commandLabel(value string) string { return strings.Join(strings.Fields(commandText(value)), " ") }
@@ -508,13 +503,16 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 	if m.Revision != revision {
 		return ErrSessionCommand
 	}
+	if m.Path == ScheduleGoalResumePath {
+		return ErrSessionCommand // The opted-in local scheduler owns this action.
+	}
 	for _, o := range m.Choices {
 		if o.ID == choice && o.Action {
 			if m.humanWait && (m.permissions != nil || o.method == "thread/approveGuardianDeniedAction") {
 				return ErrSessionCommand
 			}
 			if strings.HasPrefix(o.method, "thread/goal/") {
-				return p.executeGoalCommand(ctx, conn, id, o)
+				return p.executeGoalCommand(ctx, conn, id, o, GoalResumeTarget{})
 			}
 			if o.method == "thread/approveGuardianDeniedAction" {
 				return p.approveAutoReview(ctx, conn, id, o)

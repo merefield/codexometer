@@ -50,6 +50,9 @@ func (m Model) followupEntries() []followupEntry {
 		}
 	}
 	if j, ok := m.pendingTrigger(); ok {
+		if j.ResumeGoal {
+			return append(entries, followupEntry{label: i18n.Text("GOAL RESUME"), text: m.triggerSummary(j), trigger: &j, removable: j.Status != "sending"})
+		}
 		label := i18n.Text("AFTER QUOTA REFRESH")
 		if j.Trigger == "at" {
 			label = i18n.Text("AT ") + scheduleDate(j.At.Local())
@@ -68,10 +71,14 @@ func followupButtons(entry followupEntry, width int) []triggerButton {
 		return nil
 	}
 	var buttons []triggerButton
-	if entry.trigger != nil {
+	goal := entry.trigger != nil && entry.trigger.ResumeGoal
+	if entry.trigger != nil && !goal {
 		buttons = append(buttons, triggerButton{text: i18n.Text("[NOW]"), key: "now", enabled: entry.now})
 	}
-	buttons = append(buttons, triggerButton{text: i18n.Text("[EDIT]"), key: "edit", enabled: entry.editable}, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
+	if !goal {
+		buttons = append(buttons, triggerButton{text: i18n.Text("[EDIT]"), key: "edit", enabled: entry.editable})
+	}
+	buttons = append(buttons, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
 	total := len(buttons) - 1
 	for _, b := range buttons {
 		total += ansi.StringWidth(b.text)

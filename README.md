@@ -1950,7 +1950,7 @@ usage and does not change token totals, quota learning or API-EQ calculations.
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
 | `/rename` | Edit the selected session’s saved name and apply it without a second confirmation by default. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
-| `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. Mutations require confirmation by default. |
+| `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. **Resume after quota recovery** arms a one-shot trigger for that goal. Mutations require confirmation by default. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Save the next-turn setting in Codex immediately, even while a turn is running. Choosing a model resets its explicit speed override to the server default. |
 | Advertised speed commands, such as `/fast` | Show the default speed and every advertised tier in one list, initially highlighting the current speed. Up/Down highlights; **Enter APPLY** or clicking a choice applies it without a second confirmation by default. IDs and descriptions come from the current model's catalogue; no tier IDs are guessed. The changed speed is verified before success is reported. |
 | `/plan` | Advertised collaboration modes, using Codex's built-in mode instructions. |
@@ -2049,6 +2049,32 @@ impose further limits. Every mutation is session-scoped, freshly revalidated and
 verified after acknowledgment, with no automatic retry. `--confirmation none` also opts
 out of goal confirmations; read-only web mode never enables goal writes.
 Older/unsupported servers omit the live `/goal` family rather than simulating it.
+
+<a id="resume-goal-after-quota"></a>
+
+**Resume after quota recovery:** Open `/goal` in Sessions and choose this option
+while the goal is **PURSUING GOAL** or **GOAL USAGE LIMITED**. Confirm to arm a
+one-shot trigger in terminal **FOLLOW-UPS** or writable web session detail. If
+the goal is still active, the trigger first waits for Codex to report a quota
+stop on that same goal, then for a newer quota reading. If Codex already
+reported that stop when you armed it, the next quota reading can release the
+trigger without another stop. In either case, resuming requires fresh quota with capacity in all observed
+windows, no reported spending block, the same signed-in account, and an eligible
+idle session connected to the shared app-server. A predicted reset time is not
+enough. The resume uses normal quota and never redeems a reset or buys credits.
+
+The trigger shares the session's one scheduled follow-up slot and cannot
+overwrite a saved message. Cancel it from its entry; it cannot be edited or
+sent early. The ordinary composer remains available when the session can accept
+text. Changes to the goal's objective or budget, clearing or replacing it,
+pausing it, manually resuming after a quota stop, completion, a stall, a goal
+budget stop, or a detected account change disarm the trigger. A stale reading
+or disconnection only defers it. Keep Codexometer running: quitting drops the
+trigger, and a stop and recovery that both happen between observations can be
+missed. Codexometer checks the goal again immediately before resuming, but the
+app-server has no atomic “resume only if unchanged” operation; avoid editing
+the same goal simultaneously in another client. If the outcome of a resume is
+uncertain, check Codex; Codexometer will not retry it.
 
 On Codex 0.166.0, `/hooks` queries the selected loaded thread, including hooks
 from its execution environments, and identifies their environment when supplied.
@@ -3457,6 +3483,10 @@ browser's date/time picker and a separate review/confirmation step by default.
 `--confirmation none` skips that extra step. Read-only web
 mode cannot create or access scheduled prompts. Both composers have a subtle
 theme-coloured background.
+
+For a goal, use **Resume after quota recovery** in `/goal` rather than scheduling
+`/goal resume` as message text. See [Resume a goal after quota recovery](#resume-goal-after-quota) for how the
+trigger arms and disarms.
 
 - **One pending follow-up per session.** Saving an edit replaces it. The
   **TRIGGER SET** label replaces **TURN COMPLETE** in the session status and terminal

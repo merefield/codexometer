@@ -17,28 +17,26 @@ type SessionQueueClient interface {
 	SessionQueueRevision() uint64
 }
 
-func (c Client) queueClient() SessionQueueClient {
+func liveSessionCapability[T any](c Client) (capability T) {
 	if c.LiveUsage != nil {
-		if p, ok := c.LiveUsage.statusProvider.(SessionQueueClient); ok {
-			return p
-		}
+		capability, _ = c.LiveUsage.statusProvider.(T)
 	}
-	return nil
+	return capability
 }
 func (c Client) SessionQueue(ctx context.Context, thread string) ([]SessionQueuedMessage, error) {
-	if p := c.queueClient(); p != nil {
+	if p := liveSessionCapability[SessionQueueClient](c); p != nil {
 		return p.SessionQueue(ctx, thread)
 	}
 	return nil, errors.New("native queue unavailable")
 }
 func (c Client) ChangeSessionQueue(ctx context.Context, thread string, item SessionQueuedMessage, text string, remove bool) error {
-	if p := c.queueClient(); p != nil {
+	if p := liveSessionCapability[SessionQueueClient](c); p != nil {
 		return p.ChangeSessionQueue(ctx, thread, item, text, remove)
 	}
 	return errors.New("native queue unavailable")
 }
 func (c Client) SessionQueueRevision() uint64 {
-	if p := c.queueClient(); p != nil {
+	if p := liveSessionCapability[SessionQueueClient](c); p != nil {
 		return p.SessionQueueRevision()
 	}
 	return 0

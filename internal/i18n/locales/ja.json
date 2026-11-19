@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "目標の再開",
+  " // waiting for goal to stop for quota": " // クォータによる目標の停止を待機中",
   "FILTER": "絞り込み",
   "INCLUDE HISTORY": "履歴を含める",
   "SAVED": "保存済み",

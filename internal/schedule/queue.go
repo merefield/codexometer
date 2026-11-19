@@ -19,15 +19,20 @@ import (
 var ErrDeferred = errors.New("trigger deferred before sending")
 
 type Job struct {
-	ID      string    `json:"id"`
-	Session string    `json:"session"`
-	Text    string    `json:"text"`
-	Trigger string    `json:"trigger"` // at or quota
-	At      time.Time `json:"at,omitempty"`
-	Zone    string    `json:"zone"`
-	Status  string    `json:"status"` // pending, sending, sent, uncertain
-	Windows []string  `json:"-"`      // Observed windows must not silently disappear.
-	account string
+	ID                 string    `json:"id"`
+	Session            string    `json:"session"`
+	Text               string    `json:"text"`
+	Trigger            string    `json:"trigger"` // at or quota
+	At                 time.Time `json:"at,omitempty"`
+	Zone               string    `json:"zone"`
+	Status             string    `json:"status"` // pending, sending, sent, uncertain
+	Windows            []string  `json:"-"`      // Observed windows must not silently disappear.
+	account            string
+	ResumeGoal         bool `json:"resumeGoal,omitempty"`
+	WaitingForGoalStop bool `json:"waitingForGoalStop,omitempty"`
+	goal               codex.GoalResumeTarget
+	stopObserved       time.Time
+	nextGoalCheck      time.Time
 }
 
 type Queue struct {
@@ -62,7 +67,11 @@ func (q *Queue) SaveIfCurrent(j Job, account string, now time.Time, expectedID s
 
 func (q *Queue) save(j Job, account string, now time.Time, expectedID *string) error {
 	j.Text = strings.TrimSpace(j.Text)
-	if account == "" || j.Session == "" || len(j.Session) > 512 || j.Text == "" || len([]rune(j.Text)) > 4096 || len(j.Zone) > 128 || codex.SanitizeSessionContext(j.Text) != j.Text || (j.Trigger == "quota" && !j.At.IsZero()) ||
+	validPayload := j.Text != "" && len([]rune(j.Text)) <= 4096 && codex.SanitizeSessionContext(j.Text) == j.Text
+	if j.ResumeGoal {
+		validPayload = j.Text == "" && j.Trigger == "quota" && j.goal.Fingerprint != ""
+	}
+	if account == "" || j.Session == "" || len(j.Session) > 512 || !validPayload || len(j.Zone) > 128 || (j.Trigger == "quota" && !j.At.IsZero()) ||
 		(j.Trigger != "at" && j.Trigger != "quota") || (j.Trigger == "at" && (!j.At.After(now) || j.At.After(now.AddDate(1, 0, 0)))) {
 		return errors.New("choose a live session, a message and a future time within one year, or quota recovery")
 	}
@@ -72,6 +81,9 @@ func (q *Queue) save(j Job, account string, now time.Time, expectedID *string) e
 	q.jobs = slices.DeleteFunc(q.jobs, func(v Job) bool { return v.Status == "sent" })
 	for i, v := range q.jobs {
 		if v.Session == j.Session {
+			if v.ResumeGoal || j.ResumeGoal {
+				return ErrGoalSlotOccupied
+			}
 			if v.Status == "sending" || v.Status == "uncertain" {
 				return errors.New("check the previous send in Codex before cancelling or replacing it")
 			}
@@ -133,6 +145,7 @@ func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady boo
 	index := -1
 	for i, j := range q.jobs {
 		if j.ID == id && j.Status == "pending" && account != "" && j.account == account &&
+			(!j.ResumeGoal || !immediate && !j.WaitingForGoalStop) &&
 			(immediate || (j.Trigger == "at" && !now.Before(j.At)) || (j.Trigger == "quota" && quotaReady)) {
 			index = i
 			break
@@ -160,6 +173,8 @@ func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady boo
 	q.jobs[index].Status = "sent"
 	if errors.Is(err, ErrDeferred) {
 		q.jobs[index].Status = "pending"
+	} else if errors.Is(err, codex.ErrScheduledGoalChanged) && j.ResumeGoal {
+		q.jobs = slices.Delete(q.jobs, index, index+1)
 	} else if err != nil {
 		q.jobs[index].Status = "uncertain"
 	}

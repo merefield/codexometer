@@ -13,6 +13,7 @@ import (
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
 	"github.com/merefield/codexometer/internal/i18n"
+	"github.com/merefield/codexometer/internal/schedule"
 	"github.com/merefield/codexometer/internal/statusline"
 )
 
@@ -359,10 +360,30 @@ func (m Model) executeMonitorCommand(o codex.SessionCommandChoice) (Model, tea.C
 	p.busy = true
 	p.request++
 	id, seq, path, rev := p.session, p.request, p.menu.Path, p.menu.Revision
+	if path == codex.ScheduleGoalResumePath && m.scheduleUI.queue == nil {
+		m.scheduleUI.queue = schedule.New()
+	}
+	q, snapshot := m.scheduleUI.queue, m.snapshot
+	goals, _ := m.fetcher.(codex.ScheduledGoalClient)
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
-		err := c.ExecuteSessionCommand(ctx, id, path, rev, o.ID)
+		var err error
+		if path == codex.ScheduleGoalResumePath {
+			err = codex.ErrSessionCommand
+			if goals != nil && m.err == nil {
+				err = q.ArmGoalResume(ctx, goals, snapshot, time.Now(), id, rev, o.ID)
+			}
+		} else {
+			disarm := ""
+			if q != nil && codex.IsGoalMutation(path) {
+				disarm = q.PendingGoalResumeID(id)
+			}
+			err = c.ExecuteSessionCommand(ctx, id, path, rev, o.ID)
+			if err == nil && disarm != "" {
+				q.DisarmGoalResume(disarm)
+			}
+		}
 		return monitorCommandsResult{session: id, path: path, request: seq, applied: true, err: err}
 	}, true
 }
@@ -429,6 +450,9 @@ func (m Model) monitorCommandRows(width, height int) []commandDisplayRow {
 			case "cd":
 				text += "\nOnly this session’s directory changes; project configuration is not reloaded. Confirm after reviewing both paths."
 			case "goal":
+				if p.menu.Path == codex.ScheduleGoalResumePath {
+					break
+				}
 				text += "\nOnly this session's goal changes."
 			case "approve":
 				text += "\nRecords consent for one exact retry, not execution. The retry still goes through Codex's native reviewer."
@@ -711,6 +735,8 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 						m.restoreCommandDraft()
 						p.restore = nil
 					}
+				} else if r.err == schedule.ErrGoalSlotOccupied || r.err == schedule.ErrGoalQuotaUnavailable {
+					p.notice = r.err.Error()
 				} else {
 					p.notice = "Command unavailable or unconfirmed. Check Codex before retrying."
 				}
