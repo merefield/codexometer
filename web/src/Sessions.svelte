@@ -368,9 +368,7 @@
       event.ctrlKey ||
       event.metaKey ||
       event.shiftKey ||
-      target.closest(
-        'input, textarea, select, [contenteditable="true"], section[aria-label="Saved sessions"]',
-      )
+      target.closest('input, textarea, select, [contenteditable="true"]')
     )
       return;
     if (event.key.toLowerCase() === 'f' && !params.id) {
@@ -378,6 +376,7 @@
       field?.focus();
       return;
     }
+    if (target.closest('section[aria-label="Saved sessions"]')) return;
     if (event.key.toLowerCase() === 'y' && !params.id) {
       event.preventDefault();
       if (!event.repeat) cycle();

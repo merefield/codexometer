@@ -657,6 +657,7 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
       json: q.get('id')
         ? { turns: [{ task: 'A previous task', reply: 'An older answer' }] }
         : {
+            next: 'page2',
             sessions: [
               row,
               {
@@ -683,7 +684,15 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   expect(reads).toBe(0);
   await page.getByLabel('Include history').check();
   const saved = page.getByRole('region', { name: 'Saved sessions' });
-  await saved.getByRole('button', { name: /Archived project notes/ }).click();
+  const result = saved.getByRole('button', { name: /Archived project notes/ });
+  for (const button of [
+    result,
+    saved.getByRole('button', { name: 'Load more saved sessions' }),
+  ]) {
+    await button.press('f');
+    await expect(filter).toBeFocused();
+  }
+  await result.click();
   await expect(saved).toContainText('An older answer');
   await expect(saved.getByRole('textbox')).toHaveCount(0);
   await filter.fill('');

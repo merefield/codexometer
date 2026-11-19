@@ -61,6 +61,22 @@ func TestFinderSavedRowsAreSeparateAndScoped(t *testing.T) {
 	}
 }
 
+func TestFinderFailedDetailShowsUnavailable(t *testing.T) {
+	m := contextTestModel()
+	m.focusFinder()
+	f := &m.finder
+	f.setScope("one")
+	f.include, f.loading = true, true
+	f.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "saved", Name: "Old title"}}}
+	f.detail = "saved"
+	f.turns = []codex.SavedTurn{{Reply: "Old reply"}}
+	f.accept(savedResult{scope: f.scope, epoch: f.epoch, id: f.detail, err: codex.ErrSavedSessions})
+	render := m.renderSessionFinder(100, 6, paletteFor(m.theme))
+	if !strings.Contains(render, "UNAVAILABLE") || strings.Contains(render, "Old title") || strings.Contains(render, "Old reply") || f.detail != "" || f.loading {
+		t.Fatal("expected visible error without stale detail:", render)
+	}
+}
+
 func TestFinderUsesComposerSurfaceOnlyForInput(t *testing.T) {
 	for theme := themeHacker; theme < themeCount; theme++ {
 		colors := paletteFor(theme)

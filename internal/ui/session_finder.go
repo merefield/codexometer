@@ -125,7 +125,9 @@ func (f *sessionFinder) accept(r savedResult) {
 	}
 	f.loading, f.failed = false, r.err != nil
 	if f.failed {
-		f.rows, f.turns, f.next = nil, nil, ""
+		f.rows, f.turns = nil, nil
+		f.detail, f.next = "", ""
+		f.index, f.scroll = 0, 0
 		return
 	}
 	if r.id != "" {
