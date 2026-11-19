@@ -541,6 +541,8 @@
   "[NOW]": "[ŞİMDİ]",
   "[EDIT]": "[DÜZENLE]",
   "FOLLOW-UPS // %d": "TAKİP MESAJLARI // %d",
+  "[ FOLLOW-UPS · %d ]": "[ TAKİP MESAJLARI · %d ]",
+  "[ CLOSE ]": "[ KAPAT ]",
   "FOLLOW-UPS // UNAVAILABLE": "TAKİP MESAJLARI // KULLANILAMIYOR",
   "EDIT QUEUED MESSAGE": "DÜZENLE // SIRADA",
   "DELETE QUEUED MESSAGE": "SİL // SIRADA",

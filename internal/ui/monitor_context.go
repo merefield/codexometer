@@ -197,6 +197,9 @@ func (m Model) contextDetailSession() (monitorSession, bool) {
 }
 
 func (m Model) renderMonitorContextDetail(width, height int, colors palette) string {
+	if m.monitorQueue.compact != "" {
+		return m.renderCompactFollowups(width, height, colors)
+	}
 	if m.monitorQueue.open {
 		return m.renderQueueEditor()
 	}
@@ -231,8 +234,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	body := strings.Join(bodyLines, "\n")
 	action := m.renderMonitorNavigation(width, m.monitorContextDetail, true, colors)
 	title := m.monitorDetailTitle(width, colors)
-	copyLabel := m.renderMonitorCopy(width, m.monitorContextDetail, colors)
-	copyLabel = m.monitorGoalFooter(width, copyLabel, colors)
+	copyLabel, _ := m.detailFollowupFooter(width, height, layout.queueRows, colors)
 	panel := frameSizedWithActions(width, rows, title, action, copyLabel, body, colors.primary, colors)
 	if m.dashboardLayout().footerSpacer {
 		return m.withMonitorStatusLine(panel, width, copyLabel, colors)
@@ -401,6 +403,9 @@ func (m Model) monitorContextAt(x, y int) string {
 	}
 	if hit := m.monitorAttentionAt(x, y); hit != "" {
 		return hit
+	}
+	if id := m.compactFollowupAt(x, y); id != "" {
+		return "followups:" + id
 	}
 	if hit := m.monitorQueueAt(x, y); hit != "" {
 		return hit

@@ -12,6 +12,9 @@ import (
 )
 
 func (m Model) monitorContextTarget() string {
+	if m.monitorQueue.compact != "" {
+		return m.monitorQueue.compact
+	}
 	if m.monitorContextDetail != "" {
 		return m.monitorContextDetail
 	}
@@ -179,6 +182,7 @@ func (m Model) contextTargetHidden() bool {
 }
 
 func (m *Model) setRowContext(id string, mode int) {
+	m.monitorQueue.compact, m.monitorQueue.compactFocus = "", ""
 	m.clearMonitorHeaderFocus()
 	m.finder.closeDetail()
 	for _, s := range m.monitorSessionData {

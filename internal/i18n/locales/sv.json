@@ -541,6 +541,8 @@
   "[NOW]": "[NU]",
   "[EDIT]": "[REDIGERA]",
   "FOLLOW-UPS // %d": "UPPFÖLJNINGAR // %d",
+  "[ FOLLOW-UPS · %d ]": "[ UPPFÖLJNINGAR · %d ]",
+  "[ CLOSE ]": "[ STÄNG ]",
   "FOLLOW-UPS // UNAVAILABLE": "UPPFÖLJNINGAR // OTILLGÄNGLIG",
   "EDIT QUEUED MESSAGE": "REDIGERA // KÖAD",
   "DELETE QUEUED MESSAGE": "RADERA // KÖAD",

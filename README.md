@@ -3502,6 +3502,13 @@ trigger arms and disarms.
   detail links. Use **Ctrl+S** or **Edit** there to amend the schedule.
   Dismissing a terminal session row does not hide its pending-trigger pill or
   cancel the request; clicking that pill restores the row and opens its detail page.
+- On narrow or short terminals, a **[ FOLLOW-UPS · n ]** badge (or **[Q:n]**
+  when space is especially tight) appears if the normal list does not fit.
+  It counts queued prompts, scheduled prompts and scheduled goal resumes, not
+  steers already sent. Click the badge or press **Alt+Q** for the selected
+  session, then use arrow keys, Page Up/Down or the mouse wheel to navigate.
+  **Esc**, **Close** or clicking the badge again closes the list without
+  cancelling anything or clearing the composer draft.
 - Terminal detail shows the saved prompt as a scheduled entry in **FOLLOW-UPS**,
   above the ordinary composer, with the local date/time and timezone or quota
   recovery condition. **EDIT** opens the existing scheduling form. Actual sending

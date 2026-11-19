@@ -14,10 +14,14 @@ import (
 )
 
 func (m Model) pendingTrigger() (schedule.Job, bool) {
-	if m.monitorContextTarget() == "" || m.scheduleUI.queue == nil {
+	return m.pendingTriggerFor(m.monitorContextTarget())
+}
+
+func (m Model) pendingTriggerFor(id string) (schedule.Job, bool) {
+	if id == "" || m.scheduleUI.queue == nil {
 		return schedule.Job{}, false
 	}
-	for _, j := range m.scheduleUI.queue.List(m.monitorContextTarget()) {
+	for _, j := range m.scheduleUI.queue.List(id) {
 		if j.Status != "sent" {
 			return j, true
 		}

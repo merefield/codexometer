@@ -541,6 +541,8 @@
   "[NOW]": "[现在]",
   "[EDIT]": "[编辑]",
   "FOLLOW-UPS // %d": "后续消息 // %d",
+  "[ FOLLOW-UPS · %d ]": "[ 后续消息 · %d ]",
+  "[ CLOSE ]": "[ 关闭 ]",
   "FOLLOW-UPS // UNAVAILABLE": "后续消息 // 不可用",
   "EDIT QUEUED MESSAGE": "编辑 // 已排队",
   "DELETE QUEUED MESSAGE": "删除 // 已排队",

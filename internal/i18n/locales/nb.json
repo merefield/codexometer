@@ -541,6 +541,8 @@
   "[NOW]": "[NÅ]",
   "[EDIT]": "[REDIGER]",
   "FOLLOW-UPS // %d": "OPPFØLGINGER // %d",
+  "[ FOLLOW-UPS · %d ]": "[ OPPFØLGINGER · %d ]",
+  "[ CLOSE ]": "[ LUKK ]",
   "FOLLOW-UPS // UNAVAILABLE": "OPPFØLGINGER // UTILGJENGELIG",
   "EDIT QUEUED MESSAGE": "REDIGER // I KØ",
   "DELETE QUEUED MESSAGE": "SLETT // I KØ",

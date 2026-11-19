@@ -541,6 +541,8 @@
   "[NOW]": "[今すぐ]",
   "[EDIT]": "[編集]",
   "FOLLOW-UPS // %d": "次のメッセージ // %d",
+  "[ FOLLOW-UPS · %d ]": "[ 次のメッセージ · %d ]",
+  "[ CLOSE ]": "[ 閉じる ]",
   "FOLLOW-UPS // UNAVAILABLE": "次のメッセージ // 利用不可",
   "EDIT QUEUED MESSAGE": "編集 // 待機中",
   "DELETE QUEUED MESSAGE": "削除 // 待機中",
