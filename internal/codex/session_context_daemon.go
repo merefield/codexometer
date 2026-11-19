@@ -13,6 +13,7 @@ import (
 // Pending requests are keyed by JSON-RPC request id, so resolving one request
 // cannot clear a different outstanding question/approval for the same thread.
 type daemonContextState struct {
+	answers                                         answerGuards
 	completedSteers                                 []string
 	steerMessageID                                  string
 	turnObserved                                    bool
@@ -43,6 +44,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	var p struct {
 		approvalRequestScope
 		Turn struct {
+			Items  []answerItem
 			ID     string          `json:"id"`
 			Status string          `json:"status"`
 			Error  json.RawMessage `json:"error"`
@@ -65,15 +67,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		Questions            []contextQuestion `json:"questions"`
 		IsBlocking           *bool             `json:"isBlocking"`
 		Item                 struct {
+			answerItem
 			Content []struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
-			ID, ClientID  string
+			ClientID      string
 			CWD           string          `json:"cwd"`
-			Type          string          `json:"type"`
-			Text          string          `json:"text"`
-			Phase         string          `json:"phase"`
 			Command       string          `json:"command"`
 			Status        string          `json:"status"`
 			ExitCode      *int            `json:"exitCode"`
@@ -93,6 +93,12 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		state = &daemonContextState{requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
 		states[p.ThreadID] = state
 	}
+	agentItem := p.Item.Type == "agentMessage" && (method == "item/completed" || method == "item/started")
+	restricted := agentItem && restrictedAnswer(p.Item.Moderation)
+	if restricted {
+		state.answers.note(p.TurnID, p.Item.ID)
+		state.answers.protect(&state.latest)
+	}
 	if (method == "item/started" || method == "item/completed" || method == "item/agentMessage/delta") &&
 		(state.ended || state.activeTurn != "" && p.TurnID != state.activeTurn) {
 		return
@@ -104,7 +110,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	}
 	switch method {
 	case "turn/started":
-		states[p.ThreadID] = &daemonContextState{activeTurn: p.Turn.ID, turnObserved: true, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
+		states[p.ThreadID] = &daemonContextState{answers: state.answers, activeTurn: p.Turn.ID, turnObserved: true, requests: map[string]SessionContext{}, commands: map[string]contextCommandItem{}}
 		return
 	case "thread/closed":
 		delete(states, p.ThreadID)
@@ -112,6 +118,16 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	case "turn/completed", "turn/interrupted":
 		if !state.acceptTurn(p.Turn.ID) {
 			return
+		}
+		// Native turn/completed may itself carry the final agent item. The
+		// last delta/item notification isn't guaranteed to have the decision.
+		for _, item := range p.Turn.Items {
+			if item.Type == "agentMessage" && restrictedAnswer(item.Moderation) {
+				state.answers.note(p.Turn.ID, item.ID)
+				c.Kind, c.TurnID, c.ItemID = SessionContextReply, p.Turn.ID, item.ID
+				c.withholdAnswer()
+				state.latest = c
+			}
 		}
 		state.finishedTurn = p.Turn.ID
 		// Keep the observed task alongside its reply until the next turn.
@@ -289,7 +305,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 					}
 				}
 			}
-			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && state.latest.Text == "" {
+			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && !state.latest.HasDisplayText() {
 				c.Kind = SessionContextActivity
 				state.latest = c
 			}
@@ -328,6 +344,13 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if state.streamItem == p.Item.ID {
 			state.streamItem, state.streamText = "", ""
 		}
+		c.ItemID = p.Item.ID
+		if state.answers.covers(p.TurnID, p.Item.ID) {
+			c.Kind = SessionContextReply
+			c.withholdAnswer()
+			state.activity = sessionActivityState{}
+			break
+		}
 		c.Kind, c.Text = SessionContextActivity, p.Item.Text
 		if p.Item.Phase == "final_answer" {
 			c.Kind = SessionContextReply
@@ -352,6 +375,12 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 		if p.Item.Type == "agentMessage" {
 			if state.activeTurn != "" && p.TurnID != state.activeTurn {
 				return
+			}
+			if state.answers.covers(p.TurnID, p.Item.ID) {
+				state.streamItem, state.streamText = "", ""
+				c.ItemID, c.Kind = p.Item.ID, SessionContextReply
+				c.withholdAnswer()
+				break
 			}
 			state.streamItem, state.streamTurn, state.streamPhase = p.Item.ID, p.TurnID, p.Item.Phase
 			state.streamText = boundedStreamText(p.Item.Text)
@@ -402,7 +431,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	} else {
 		c.Text = SanitizeSessionContext(c.Text)
 	}
-	if c.Text == "" {
+	if !c.HasDisplayText() {
 		return
 	}
 	if c.pending() {
@@ -496,7 +525,7 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			c.ThreadID, c.TurnID, c.Source = id, state.activeTurn, "LIVE"
 		}
 		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
-		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "" || c.PendingApprovalsLimited {
+		if c.HasDisplayText() || c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/prose"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
@@ -329,6 +330,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				s.samples[row.ID] = codex.CaptureUsageSample(s.samples[row.ID], row.TotalTokens, before, now, now, 120)
 				s.previous[row.ID] = row.TotalTokens
 			}
+			row.Context.Text = i18n.SessionText(row.Context.Text, row.Context.ReplyRestricted)
 			text := row.Context.Text
 			approvalContext := ""
 			if row.Context.Kind == codex.SessionContextApproval {

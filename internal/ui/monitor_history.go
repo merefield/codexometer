@@ -36,16 +36,6 @@ type monitorHistoryResult struct {
 	err     error
 }
 
-func sameHistoryTurn(a, b codex.SessionContext) bool {
-	if a.ThreadID != b.ThreadID {
-		return false
-	}
-	if a.TurnID != "" && b.TurnID != "" {
-		return a.TurnID == b.TurnID
-	}
-	return a.ItemID == b.ItemID && a.At.Equal(b.At) && a.Text == b.Text
-}
-
 func (m *Model) saveMonitorHistory(id string, h monitorTurnHistory) {
 	m.monitorHistory = maps.Clone(m.monitorHistory)
 	if m.monitorHistory == nil {
@@ -54,13 +44,24 @@ func (m *Model) saveMonitorHistory(id string, h monitorTurnHistory) {
 	m.monitorHistory[id] = h
 }
 
+func (h *monitorTurnHistory) protectPinned(c codex.SessionContext) {
+	if h.selected != nil && c.ReplyRestricted {
+		pinned := projectMonitorReply(c, *h.selected)
+		if pinned != *h.selected {
+			h.selected = &pinned
+		}
+	}
+}
+
 func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHistory {
-	if c.Kind != codex.SessionContextReply || c.Streaming || strings.TrimSpace(c.Text) == "" {
+	if c.Kind != codex.SessionContextReply || c.Streaming || !c.ReplyRestricted && strings.TrimSpace(c.Text) == "" {
 		return h
 	}
-	c = codex.HistoryExcerpt(c)
+	c = projectMonitorReply(codex.SessionContext{}, codex.HistoryExcerpt(c))
+	h.protectPinned(c)
 	for i, old := range h.turns {
-		if sameHistoryTurn(old, c) {
+		if old.SameHistoryTurn(c) {
+			c = projectMonitorReply(old, c)
 			if old == c {
 				return h
 			}
@@ -80,14 +81,18 @@ func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHis
 func (m *Model) observeMonitorHistory() {
 	cloned := false
 	for _, s := range m.monitorSessionData {
-		if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && s.preview.Text != "" {
+		if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && s.preview.HasDisplayText() {
 			h := m.monitorHistory[s.id]
+			next := h
 			if !h.observedThrough.IsZero() && !s.preview.At.After(h.observedThrough) &&
-				!slices.ContainsFunc(h.turns, func(c codex.SessionContext) bool { return sameHistoryTurn(c, s.preview) }) {
-				continue
+				!slices.ContainsFunc(h.turns, func(c codex.SessionContext) bool { return c.SameHistoryTurn(s.preview) }) {
+				// The selected excerpt can outlive the page it came from.
+				// Revoke it without putting a stale turn back on that page.
+				next.protectPinned(s.preview)
+			} else {
+				next = addHistoryTurn(h, s.preview)
 			}
-			next := addHistoryTurn(h, s.preview)
-			if slices.Equal(h.turns, next.turns) {
+			if slices.Equal(h.turns, next.turns) && h.selected == next.selected {
 				continue
 			}
 			if !cloned {
@@ -124,12 +129,12 @@ func (m *Model) moveMonitorHistory(delta int) {
 	if h.selected != nil {
 		index = -1 // pinned entry may already have fallen outside the cache
 		for i, c := range h.turns {
-			if sameHistoryTurn(c, *h.selected) {
+			if c.SameHistoryTurn(*h.selected) {
 				index = i
 				break
 			}
 		}
-	} else if s, ok := m.contextDetailSession(); ok && len(h.turns) > 0 && sameHistoryTurn(h.turns[len(h.turns)-1], s.preview) {
+	} else if s, ok := m.contextDetailSession(); ok && len(h.turns) > 0 && h.turns[len(h.turns)-1].SameHistoryTurn(s.preview) {
 		// Live already displays this completed answer; Previous means the
 		// answer before it, not a duplicate of the current screen.
 		index--
@@ -194,9 +199,19 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 			h.turns = nil
 			for _, c := range result.turns {
 				for _, previous := range old {
-					if sameHistoryTurn(c, previous) && c.LatestGuidance == "" {
-						c.LatestGuidance = previous.LatestGuidance
+					if c.SameHistoryTurn(previous) {
+						previous.ProtectReply(&c)
+						if c.LatestGuidance == "" {
+							c.LatestGuidance = previous.LatestGuidance
+						}
 						break
+					}
+				}
+				if c.ReplyRestricted {
+					if i := m.monitorSessionIndex(result.id); i >= 0 {
+						m.monitorSessionData = slices.Clone(m.monitorSessionData)
+						row := &m.monitorSessionData[i]
+						row.preview = projectMonitorReply(c, row.preview)
 					}
 				}
 				h = addHistoryTurn(h, c)
@@ -204,7 +219,7 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 			for _, c := range old {
 				found := false
 				for _, v := range h.turns {
-					if sameHistoryTurn(c, v) {
+					if c.SameHistoryTurn(v) {
 						found = true
 						break
 					}
@@ -260,12 +275,12 @@ func (m Model) historyButtonsForRows(width, textRows int) []monitorNavigationBut
 	if h.selected != nil {
 		older = false
 		for i, c := range h.turns {
-			if sameHistoryTurn(c, *h.selected) {
+			if c.SameHistoryTurn(*h.selected) {
 				older = i > 0
 				break
 			}
 		}
-	} else if s, ok := m.contextDetailSession(); ok && len(h.turns) == 1 && sameHistoryTurn(h.turns[0], s.preview) {
+	} else if s, ok := m.contextDetailSession(); ok && len(h.turns) == 1 && h.turns[0].SameHistoryTurn(s.preview) {
 		older = false
 	}
 	if !older && h.selected == nil {
@@ -369,7 +384,7 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 	h := m.monitorHistory[s.id]
 	heading := i18n.Text("PREVIOUS TURN")
 	for i, v := range h.turns {
-		if sameHistoryTurn(c, v) {
+		if c.SameHistoryTurn(v) {
 			heading += i18n.Format(" // %d OF %d", i+1, len(h.turns))
 			break
 		}
@@ -391,7 +406,7 @@ func (m Model) historyDocument(width int, s monitorSession, c codex.SessionConte
 	appendSection(i18n.Text("TASK"), c.CurrentTask, "body")
 	appendSection(i18n.Text("LATEST GUIDANCE"), c.LatestGuidance, "body")
 	replyKind := "prose"
-	if c.Kind == codex.SessionContextReply && sameHistoryTurn(c, s.preview) && c.Text == s.preview.Text {
+	if c.Kind == codex.SessionContextReply && c.SameHistoryTurn(s.preview) && c.Text == s.preview.Text {
 		replyKind = "reply"
 	}
 	appendSection(i18n.Text("LAST REPLY"), c.Text, replyKind)

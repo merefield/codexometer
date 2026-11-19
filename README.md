@@ -1665,6 +1665,11 @@ the word starts with C; otherwise they retain a separate `(C)` before the label.
 Copy exports the complete sanitized text available in the bounded session preview,
 not an unlimited transcript: it cannot recover text omitted by observation limits.
 Clipboard contents then follow your terminal and operating system's retention behaviour.
+When Codex marks an answer as hidden, blocked, or requiring a native display
+that Codexometer cannot provide, Sessions shows **View this reply in Codex.**
+The terminal, history, Copy, and read-only web view use that notice in the
+configured language instead of the original text. This applies once Codex supplies the decision; it cannot
+recall text already shown or copied while an answer was streaming.
 
 `Left` / `Right` move along **graph ↔ split ↔ expanded ↔ full detail** without
 wrapping. Each row retains its own presentation; adjusting one does not resize
@@ -4034,11 +4039,11 @@ go test -race -cover -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui
 ```
 
 An optional Unix integration check verifies the installed Codex against the
-0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0 or 0.169.0, including negotiated
+0.164.0 baseline, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0, 0.169.0 or 0.170.0, including negotiated
 compressed WebSocket RPC:
 
 ```sh
-CODEXOMETER_TEST_CODEX_VERSION=0.169.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
+CODEXOMETER_TEST_CODEX_VERSION=0.170.0 go test ./internal/codex -run '^TestNativeCodexCompression$' -count=1
 ```
 
 Use `0.164.0` when that version is on `PATH`; the existing

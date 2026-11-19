@@ -2938,10 +2938,16 @@ func refreshTick(after time.Duration) tea.Cmd {
 	return tea.Tick(after, func(now time.Time) tea.Msg { return refreshMsg(now) })
 }
 
+func projectMonitorReply(previous, current codex.SessionContext) codex.SessionContext {
+	previous.ProtectReply(&current)
+	current.Text = i18n.SessionText(current.Text, current.ReplyRestricted)
+	return current
+}
+
 func applyMonitorSessionObservation(row *monitorSession, observed codex.LiveUsageSession) {
 	row.name = observed.Name
 	row.modelSettings = observed.ModelSettings
-	row.preview = observed.Context
+	row.preview = projectMonitorReply(row.preview, observed.Context)
 	row.steerProgress = append([]codex.SessionSteerProgress(nil), observed.SteerProgress...)
 	row.goal = observed.Goal.Clone()
 	row.readState = observed.ReadState

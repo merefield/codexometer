@@ -31,6 +31,71 @@ func historyTestModel() Model {
 	return m
 }
 
+func TestRestrictedHistoryRevokesPinnedCopyAndLiveMirror(t *testing.T) {
+	m := historyTestModel()
+	m.moveMonitorHistory(-1)
+	c, ok := m.historicalContext()
+	if !ok || c.Text == "" {
+		t.Fatal("missing pinned reply")
+	}
+	restricted := c
+	restricted.ReplyRestricted = true
+	m.monitorSessionData[0].preview = c
+	m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", turns: []codex.SessionContext{restricted}})
+	check := func() {
+		t.Helper()
+		if got := m.monitorCopyText("root-one"); got != i18n.Text("View this reply in Codex.") {
+			t.Fatal("clipboard exposed original", got)
+		}
+	}
+	check()
+	m.showLiveMonitorHistory()
+	check()
+	applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: c})
+	check()
+}
+
+func TestLegacyHistoryRestrictionReplacesPlaintext(t *testing.T) {
+	for _, item := range []string{"item", ""} {
+		for _, source := range []string{"live", "history page"} {
+			t.Run(source+"/"+item, func(t *testing.T) {
+				m := historyTestModel()
+				old := historyContext(7)
+				old.TurnID, old.ItemID = "", item
+				decision := old
+				decision.TurnID, decision.ItemID, decision.Text, decision.ReplyRestricted = "turn", "item", "", true
+				if item != "" {
+					decision.At = old.At.Add(time.Second)
+				}
+				other := codex.HistoryExcerpt(historyContext(6))
+				h := monitorTurnHistory{turns: []codex.SessionContext{other, old}, selected: &old}
+				m.saveMonitorHistory("root-one", h)
+				m.monitorSessionData[0].preview = old
+				if source == "live" {
+					applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: decision})
+					m.observeMonitorHistory()
+				} else {
+					m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", turns: []codex.SessionContext{other, decision}})
+				}
+				// A lagging local observation must not restore a cached copy.
+				applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: old})
+				m.observeMonitorHistory()
+				h = m.monitorHistory["root-one"]
+				notice := i18n.Text("View this reply in Codex.")
+				if len(h.turns) != 2 || h.turns[0].Text != other.Text || !h.turns[1].ReplyRestricted || h.turns[1].Text != notice ||
+					h.selected == nil || !h.selected.ReplyRestricted || m.monitorCopyText("root-one") != notice ||
+					!strings.Contains(ansi.Strip(strings.Join(m.contextDetailLines(100), "\n")), notice) {
+					t.Fatal("legacy reply still accessible or unrelated turn lost", h)
+				}
+				m.showLiveMonitorHistory()
+				if m.monitorCopyText("root-one") != notice {
+					t.Fatal("live mirror restored plaintext")
+				}
+			})
+		}
+	}
+}
+
 func TestMonitorHistoryNavigationPinningAndCopy(t *testing.T) {
 	m := historyTestModel()
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})
@@ -68,6 +133,23 @@ func TestMonitorHistoryNavigationPinningAndCopy(t *testing.T) {
 	m.setRowContext("root-one", contextFull)
 	if c, ok := m.historicalContext(); !ok || c.TurnID != "17" {
 		t.Fatal("selection lost across navigation")
+	}
+}
+
+func TestEvictedLegacyPinStillHonoursRestriction(t *testing.T) {
+	m := historyTestModel()
+	id := "root-one"
+	pin := historyContext(1)
+	pin.TurnID, pin.ItemID = "", "item"
+	h := m.monitorHistory[id]
+	h.selected, h.turns, h.observedThrough = &pin, h.turns[1:], pin.At.Add(time.Hour)
+	m.saveMonitorHistory(id, h)
+	c := pin
+	c.TurnID, c.ReplyRestricted, c.Text = "1", true, ""
+	applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: c})
+	m.observeMonitorHistory()
+	if got := m.monitorHistory[id]; len(got.turns) != 2 || !got.selected.ReplyRestricted || m.monitorCopyText(id) != i18n.Text("View this reply in Codex.") {
+		t.Fatal("evicted plaintext still pinned, or stale turn reappeared")
 	}
 }
 

@@ -24,6 +24,7 @@ type sessionDaemonSnapshot struct {
 	Goals              map[string]*SessionGoal
 	UsageCoverage      map[string]string
 	Contexts           map[string]SessionContext
+	AnswerGuards       map[string]answerGuards
 	WorkingDirectories map[string]string
 	Statuses           map[string]sessionRuntimeStatus
 	ModelObservations  []resolvedModelObservation
