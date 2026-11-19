@@ -1407,7 +1407,8 @@ sessions still use Codex’s local name index.
 
 **Include history** is off by default. With a local, shared Codex **0.170.0+**
 app-server signed in to ChatGPT, enable it under the **All** sessions category
-to browse non-archived saved sessions. In the terminal use **Tab** to focus
+to browse this account’s non-archived saved sessions across model providers,
+including providers you no longer use. In the terminal use **Tab** to focus
 the checkbox, **Space** to toggle it, then **Tab** to the results. Use **↑/↓**
 and **Enter** to open a result or load more; **Esc** or **[←]** returns from
 the saved detail. The filter searches metadata in the pages loaded so far,

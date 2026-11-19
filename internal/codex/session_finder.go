@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ type SavedSessionClient interface {
 var ErrSavedSessions = errors.New("account-scoped saved sessions unavailable")
 
 type savedSessionProvider interface {
-	listSaved(context.Context, string, string) (SavedPage, string, error)
+	listSaved(ctx context.Context, scope, cursor, sortKey string) (SavedPage, error)
 	savedAccount(context.Context, string) (string, error)
 }
 
@@ -52,19 +53,20 @@ func (c Client) BrowseSavedSessions(ctx context.Context, scope, cursor, id strin
 	if !ok {
 		return SavedPage{}, ErrSavedSessions
 	}
-	page, account, err := p.listSaved(ctx, scope, cursor)
+	account, err := p.savedAccount(ctx, scope)
+	if err != nil || account == "" {
+		return SavedPage{}, ErrSavedSessions
+	}
+	sameAccount := func() bool {
+		current, err := p.savedAccount(ctx, scope)
+		return err == nil && current == account
+	}
+	page, err := savedPageFor(ctx, p, scope, cursor, id)
 	if err != nil {
 		return SavedPage{}, ErrSavedSessions
 	}
 	if id != "" {
-		found := false
-		for _, row := range page.Sessions {
-			if row.ID == id {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !sameAccount() {
 			return SavedPage{}, ErrSavedSessions
 		}
 		turns, err := c.SessionHistory(ctx, id)
@@ -77,8 +79,34 @@ func (c Client) BrowseSavedSessions(ctx context.Context, scope, cursor, id strin
 			page.Turns = append(page.Turns, SavedTurn{Task: t.CurrentTask, Reply: t.Text, Restricted: t.ReplyRestricted})
 		}
 	}
-	if current, err := p.savedAccount(ctx, scope); err != nil || current != account {
+	if !sameAccount() {
 		return SavedPage{}, ErrSavedSessions
 	}
 	return page, nil
+}
+
+// The cursor is a fast path, not an authorization grant: updated_at ordering
+// can change between list and click. On a miss or a stale cursor, walk fresh
+// account-scoped pages in creation order so activity cannot move our target.
+func savedPageFor(ctx context.Context, p savedSessionProvider, scope, cursor, id string) (SavedPage, error) {
+	page, err := p.listSaved(ctx, scope, cursor, "updated_at")
+	matches := func(row SavedSession) bool { return row.ID == id }
+	if id == "" || (err == nil && slices.ContainsFunc(page.Sessions, matches)) || (err != nil && cursor == "") {
+		return page, err
+	}
+	seen := map[string]bool{}
+	for cursor = ""; ctx.Err() == nil && !seen[cursor]; cursor = page.Next {
+		seen[cursor] = true
+		page, err = p.listSaved(ctx, scope, cursor, "created_at")
+		if err != nil {
+			break
+		}
+		if slices.ContainsFunc(page.Sessions, matches) {
+			return page, nil
+		}
+		if page.Next == "" {
+			break
+		}
+	}
+	return SavedPage{}, ErrSavedSessions
 }

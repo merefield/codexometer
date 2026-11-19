@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestSavedBrowserOnlyReadsBoundedAccountHistory(t *testing.T) {
@@ -16,7 +17,8 @@ func TestSavedBrowserOnlyReadsBoundedAccountHistory(t *testing.T) {
 		"thread/list":       {"data": []any{map[string]any{"id": "saved", "name": "Two\nlines", "cwd": "/work", "preview": "not exported"}}, "nextCursor": "page2"},
 		"thread/turns/list": {"data": []any{map[string]any{"id": "turn", "status": "completed", "items": []any{map[string]any{"id": "reply", "type": "agentMessage", "phase": "final_answer", "text": "withheld", "moderation": map[string]any{"moderated": true}}}}}},
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
 	if err := p.ensureConnected(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -32,16 +34,40 @@ func TestSavedBrowserOnlyReadsBoundedAccountHistory(t *testing.T) {
 	if err != nil || page.Next != "page2" || len(page.Sessions) != 1 || page.Sessions[0].Name != "Two lines" {
 		t.Fatal(page, err)
 	}
+	// Reopening on the original page is cheap. Next, move the same thread
+	// out of that page and also try a cursor that the server no longer accepts.
+	assertDetail := func(cursor string) {
+		t.Helper()
+		page, err := read(cursor, "saved")
+		if err != nil || len(page.Turns) != 1 || !page.Turns[0].Restricted || page.Turns[0].Reply != "" {
+			t.Fatal(cursor, page, err)
+		}
+	}
+	assertDetail("")
+	f.mu.Lock()
+	if len(f.savedReads) != 2 {
+		t.Errorf("fast path listed %d pages for listing plus detail", len(f.savedReads))
+	}
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", ""}:     {"data": []any{map[string]string{"id": "recent"}}, "nextCursor": "old-position"},
+		{"created_at", ""}:     {"data": []any{map[string]string{"id": "recent"}}, "nextCursor": "next"},
+		{"created_at", "next"}: {"data": []any{map[string]string{"id": "saved"}}},
+	}
+	f.mu.Unlock()
+	assertDetail("")
+	assertDetail("expired-cursor")
 	if _, err := read("", "not-listed"); !errors.Is(err, ErrSavedSessions) {
 		t.Fatal("unknown id accepted", err)
 	}
-	page, err = read("page1", "saved")
-	if err != nil || len(page.Turns) != 1 || !page.Turns[0].Restricted || page.Turns[0].Reply != "" {
-		t.Fatal(page, err)
-	}
 	f.mu.Lock()
-	if len(f.savedReads) != 3 || f.savedReads[2]["cursor"] != "page1" || f.savedReads[0]["currentAccountOnly"] != true || f.savedReads[0]["useStateDbOnly"] != true || f.savedReads[0]["limit"] != float64(40) || len(f.historyReads) != 1 || len(f.resumeReads)+len(f.readUpdates)+len(f.writes) != 0 {
-		t.Errorf("unexpected RPCs: %+v / %d", f.savedReads, len(f.historyReads))
+	for _, params := range f.savedReads {
+		providers, ok := params["modelProviders"].([]any)
+		if !ok || len(providers) != 0 || params["currentAccountOnly"] != true || params["useStateDbOnly"] != true || params["limit"] != float64(40) {
+			t.Errorf("incorrect saved-page filters: %+v", params)
+		}
+	}
+	if len(f.historyReads) != 3 || len(f.resumeReads)+len(f.readUpdates)+len(f.writes) != 0 {
+		t.Errorf("unexpected turn reads or writes: %+v", f.historyReads)
 	}
 	f.historyReadHook = func() { p.mu.Lock(); defer p.mu.Unlock(); p.finderNotificationLocked("account/updated", nil) }
 	f.mu.Unlock()

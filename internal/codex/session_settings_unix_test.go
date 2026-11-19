@@ -18,6 +18,7 @@ import (
 
 type quotaDaemonFixture struct {
 	savedReads        []map[string]any
+	savedPages        map[[2]string]map[string]any // keyed by sort order and cursor
 	approvalPolicies  map[string]any
 	reviewers         map[string]string
 	ignorePermissions bool
@@ -345,6 +346,15 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					failureDetail = fixture.hookError
 					failure = failureDetail != nil
 				}
+			case "thread/list":
+				fixture.savedReads = append(fixture.savedReads, req.Params)
+				result = fixture.catalogues[req.Method]
+				if fixture.savedPages != nil {
+					order, _ := req.Params["sortKey"].(string)
+					cursor, _ := req.Params["cursor"].(string)
+					result = fixture.savedPages[[2]string{order, cursor}]
+				}
+				failure = result == nil
 			default:
 				if req.Method == "thread/items/read" {
 					fixture.itemReads = append(fixture.itemReads, req.Params)
@@ -352,9 +362,6 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 						fixture.itemReadHook()
 					}
 					noReply = fixture.itemNoReply
-				}
-				if req.Method == "thread/list" {
-					fixture.savedReads = append(fixture.savedReads, req.Params)
 				}
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)

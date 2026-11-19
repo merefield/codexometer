@@ -78,12 +78,14 @@ func (p *daemonStatusProvider) savedAccount(ctx context.Context, scope string) (
 	return account, nil
 }
 
-func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor string) (SavedPage, string, error) {
-	account, err := p.savedAccount(ctx, scope)
-	if err != nil {
-		return SavedPage{}, "", err
+func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sortKey string) (SavedPage, error) {
+	p.mu.Lock()
+	conn, valid := p.connection, scope != "" && scope == p.savedScope
+	p.mu.Unlock()
+	if !valid {
+		return SavedPage{}, ErrSavedSessions
 	}
-	params := map[string]any{"currentAccountOnly": true, "archived": false, "limit": 40, "sortKey": "updated_at", "sortDirection": "desc", "useStateDbOnly": true}
+	params := map[string]any{"currentAccountOnly": true, "modelProviders": []string{}, "archived": false, "limit": 40, "sortKey": sortKey, "sortDirection": "desc", "useStateDbOnly": true}
 	if cursor != "" {
 		params["cursor"] = cursor
 	}
@@ -91,8 +93,8 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor stri
 		Data       []struct{ ID, Name, Cwd string }
 		NextCursor string
 	}
-	if err := p.request(ctx, "thread/list", params, &result); err != nil {
-		return SavedPage{}, "", err
+	if err := p.requestOn(ctx, conn, "thread/list", params, &result); err != nil {
+		return SavedPage{}, err
 	}
 	page := SavedPage{Next: result.NextCursor}
 	for _, t := range result.Data {
@@ -100,5 +102,5 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor stri
 			page.Sessions = append(page.Sessions, SavedSession{t.ID, singleLine(t.Name), singleLine(t.Cwd)})
 		}
 	}
-	return page, account, nil
+	return page, nil
 }
