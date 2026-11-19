@@ -32,6 +32,12 @@ type commandThread struct {
 	}
 }
 
+func threadAcceptsModelSettings(kind string) bool {
+	// This changes the defaults for subsequent turns, so an active turn is
+	// not a blocker. Unknown or unloaded threads cannot be targeted.
+	return kind == "active" || threadAcceptsFollowup(kind)
+}
+
 func (p *daemonStatusProvider) bumpCommandTransitionLocked(id string) {
 	if p.commandTransitions == nil {
 		p.commandTransitions = make(map[string]uint64)
@@ -203,8 +209,8 @@ func (p *daemonStatusProvider) finalizeCommandMenu(thread commandThread, path st
 	p.mu.Unlock()
 	status := thread.Status.Type
 	if menu.Picker || strings.HasPrefix(path, "model/") || path == "goal" || strings.HasPrefix(path, "goal/") {
-		// Speed overrides target future turns, so starting/completing a turn
-		// does not invalidate confirmation. Effective settings still do.
+		// Model and speed settings target future turns. A turn transition is
+		// not a settings conflict; changes to effective settings still are.
 		status = ""
 	}
 	menu.Revision = commandDigest([]any{connection, thread.ID, thread.Cwd, status, thread.Name, menu.Revision})
@@ -323,7 +329,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 		}
 		m.Title = "/ COMMANDS"
-		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Model/reasoning changes queue during work for the next idle turn stop. Speed and permission changes target subsequent turns and can be sent during work; Plan changes require idle. Browse-only catalogues do not execute tools or change global configuration."
+		m.Help = "Choose a command. Options/help are discovered live. Reversible session settings apply on explicit selection; permission and directory changes require confirmation by default. Model, reasoning, speed and permission settings target subsequent turns and can be sent during work; Plan changes require idle. Browse-only catalogues do not execute tools or change global configuration."
 		return m, nil
 	}
 	switch parts[0] {
@@ -369,7 +375,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 		m.settings = &current
 		setting := func(label, help string, params map[string]any) {
 			params["threadId"] = t.ID
-			if parts[0] == "model" && t.Status.Type != "active" && !threadAcceptsFollowup(t.Status.Type) {
+			if parts[0] == "model" && !threadAcceptsModelSettings(t.Status.Type) {
 				m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: help, Unavailable: "Session state unavailable; refresh before changing model."})
 				return
 			}
@@ -401,7 +407,7 @@ func (p *daemonStatusProvider) commandMenu(ctx context.Context, t commandThread,
 			}
 			for _, model := range models {
 				if parts[0] == "model" && model.Model == target {
-					m.Help = model.Description + "\nSelect reasoning effort. During work, the change queues until the next idle turn stop. Existing speed will be reset to the server default to avoid carrying an unsupported tier to another model."
+					m.Help = model.Description + "\nSelect reasoning effort. Codex applies this setting to subsequent turns without changing the running turn. Existing speed will be reset to the server default to avoid carrying an unsupported tier to another model."
 					for _, effort := range model.SupportedReasoningEfforts {
 						if commandSafe(effort.ReasoningEffort) {
 							setting(effort.ReasoningEffort, effort.Description, map[string]any{"model": model.Model, "effort": effort.ReasoningEffort, "serviceTier": nil})
@@ -594,7 +600,15 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 					current.Tier = &tier
 				}
 				if changingModel {
-					return p.setOrQueueModel(ctx, conn, *m.settings, current, o.params)
+					// Discovery can outlive the original thread state. Active is
+					// valid: the native RPC sets defaults for subsequent turns.
+					thread, err := p.commandThread(ctx, id)
+					if err != nil {
+						return err
+					}
+					if !threadAcceptsModelSettings(thread.Status.Type) {
+						return ErrSessionCommand
+					}
 				}
 				return p.writeQuotaSettingsOn(ctx, conn, current, o.params)
 			}

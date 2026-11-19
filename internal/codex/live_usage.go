@@ -1646,7 +1646,6 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 	activeCount := 0
 	anyWorking := false
 	for _, session := range groups {
-		session.Context.PendingModel = r.daemonContexts[session.ID].PendingModel
 		session.Context.Reviewer = r.daemonContexts[session.ID].Reviewer
 		// /approve routes to this root thread. Do not project another thread's
 		// assessment here until command routing can preserve its ownership too.

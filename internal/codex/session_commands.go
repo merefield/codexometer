@@ -175,7 +175,7 @@ func SessionCommandSuccess(path string, speed bool) string {
 	family, _, _ := strings.Cut(path, "/")
 	switch family {
 	case "model":
-		return "Model change accepted. Queued during work; applies at the next idle turn stop."
+		return "MODEL SET // NEXT TURN"
 	case "rename":
 		return "Session renamed."
 	case "cd":

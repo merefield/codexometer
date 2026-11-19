@@ -1105,46 +1105,6 @@ test('goal objective, budget and lifecycle commands retain explicit confirmation
 
 // Browser contract tests use synthetic actions. The Go tests exercise the real
 // authorization/confirmation endpoints with fake Codex clients, never live work.
-test('queued model changes stay visible without queue edit or cancel actions', async ({
-  page,
-  pairingURL,
-}) => {
-  const { snapshot } = await mockActions(page, 'prompt');
-  await page.goto(pairingURL);
-  await page.evaluate(() => {
-    location.hash = '/sessions/parent';
-  });
-  const updated = {
-    ...snapshot,
-    sessions: snapshot.sessions.map((row) => ({
-      ...row,
-      pendingModel:
-        row.id === 'parent'
-          ? { summary: 'small // medium // DEFAULT', state: 'queued' }
-          : undefined,
-    })),
-  };
-  await page.evaluate(
-    (snapshot) =>
-      window.dispatchEvent(
-        new CustomEvent('test-snapshot', { detail: snapshot }),
-      ),
-    updated,
-  );
-  const pending = page.getByRole('region', { name: 'Queued model change' });
-  await expect(pending).toContainText('MODEL CHANGE // QUEUED');
-  await expect(pending).toContainText('small // medium // DEFAULT');
-  await expect(pending.getByRole('button')).toHaveCount(0);
-  await page.evaluate(
-    (snapshot) =>
-      window.dispatchEvent(
-        new CustomEvent('test-snapshot', { detail: snapshot }),
-      ),
-    snapshot,
-  );
-  await expect(pending).toHaveCount(0);
-});
-
 async function mockActions(
   page: Page,
   kind = 'approval',
@@ -2213,7 +2173,7 @@ test('slash commands discover help and require a separate confirmation', async (
       }
       revision = 'r1';
       result = {
-        message: 'Change requested. Codex will apply it to subsequent turns.',
+        message: 'MODEL SET // NEXT TURN',
       };
     } else
       result =
@@ -2372,7 +2332,7 @@ test('slash commands discover help and require a separate confirmation', async (
   await review.press('Enter');
   expect(commands.filter((c) => c === 'commit')).toHaveLength(0);
   await review.press('c');
-  await expect(panel).toContainText('Change requested.');
+  await expect(panel).toContainText('MODEL SET // NEXT TURN');
   expect(commands.filter((c) => c === 'commit')).toHaveLength(1);
   expect(calls.filter((c) => c.action === 'commit')).toHaveLength(0);
   await expect(text).toHaveValue('');

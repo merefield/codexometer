@@ -228,7 +228,7 @@ func TestMonitorCommandsSuccessfulChangesDiscardOldCatalogues(t *testing.T) {
 		if m.monitorCommands.open || m.monitorCommands.detail || m.monitorCommands.menu.Revision != "" || len(m.monitorCommands.menu.Choices) > 0 || m.monitorSuggestions.active || len(m.monitorSuggestions.menu.Choices) > 0 {
 			t.Fatal("successful change retained old menus")
 		}
-		if m.monitorPrompt.input.Value() != "" || !m.monitorPrompt.input.Focused() || !strings.Contains(ansi.Strip(m.render()), "Model change accepted.") {
+		if m.monitorPrompt.input.Value() != "" || !m.monitorPrompt.input.Focused() || !strings.Contains(ansi.Strip(m.render()), "MODEL SET // NEXT TURN") {
 			t.Fatal("success did not clear and focus composer with a visible notice")
 		}
 		m, _ = approvalEvent(m, monitorSuggestionResult{session: "root-one", request: 42, menu: codex.SessionCommandMenu{Revision: "stale"}})
