@@ -150,7 +150,9 @@ func (q *Queue) resumeGoal(ctx context.Context, c codex.ScheduledGoalClient, j J
 	}
 	call, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	_ = q.Dispatch(call, j.ID, s.AccountFingerprint, true, clock(), func(ctx context.Context, j Job) error {
+	_, _ = q.dispatch(call, j.ID, s.AccountFingerprint, func(j Job) bool {
+		return j.ResumeGoal && !j.WaitingForGoalStop
+	}, func(ctx context.Context, j Job) error {
 		if !ready(quota()) {
 			return ErrDeferred
 		}

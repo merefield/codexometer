@@ -150,10 +150,14 @@ func TestGoalResumeSlotAndUncertainty(t *testing.T) {
 	if err := q.SaveIfCurrent(text, s.AccountFingerprint, now, j.ID); !errors.Is(err, ErrGoalSlotOccupied) {
 		t.Fatal("ordinary edit overwrote a goal resume", err)
 	}
-	if err := q.DispatchNow(ctx, j.ID, s.AccountFingerprint, now, func(context.Context, Job) error {
-		t.Fatal("goal was sent early")
+	unexpected := func(context.Context, Job) error {
+		t.Fatal("ordinary prompt dispatch claimed a goal trigger")
 		return nil
-	}); err == nil {
+	}
+	if err := q.Dispatch(ctx, j.ID, s.AccountFingerprint, true, now, unexpected); err != nil || !q.HasPendingGoalResume() {
+		t.Fatal("ordinary automatic dispatch did not leave the goal trigger pending", err)
+	}
+	if err := q.DispatchNow(ctx, j.ID, s.AccountFingerprint, unexpected); err == nil {
 		t.Fatal("manual send-now accepted a goal trigger")
 	}
 	poll := func() {

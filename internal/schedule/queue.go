@@ -128,35 +128,38 @@ func (q *Queue) Cancel(session, id string) error {
 	return errors.New("schedule changed; refresh")
 }
 
-// Dispatch is called only after the UI adapter has checked freshness, session
-// readiness and pending reviews. Claim sending before network IO. This is
-// intentionally at-most-one attempt, not a claim of exactly-once delivery.
+// Dispatch sends an ordinary scheduled prompt after the adapter has checked
+// quota freshness, session readiness and pending reviews.
 func (q *Queue) Dispatch(ctx context.Context, id, account string, quotaReady bool, now time.Time, send func(context.Context, Job) error) error {
-	return q.dispatch(ctx, id, account, quotaReady, now, false, send)
+	_, err := q.dispatch(ctx, id, account, func(j Job) bool {
+		return !j.ResumeGoal && ((j.Trigger == "at" && !now.Before(j.At)) || (j.Trigger == "quota" && quotaReady))
+	}, send)
+	return err
 }
 
-// DispatchNow shares the automatic dispatch claim; only the time rule is bypassed.
-func (q *Queue) DispatchNow(ctx context.Context, id, account string, now time.Time, send func(context.Context, Job) error) error {
-	return q.dispatch(ctx, id, account, true, now, true, send)
+// DispatchNow bypasses the trigger time for an ordinary prompt, never for a goal.
+func (q *Queue) DispatchNow(ctx context.Context, id, account string, send func(context.Context, Job) error) error {
+	claimed, err := q.dispatch(ctx, id, account, func(j Job) bool { return !j.ResumeGoal }, send)
+	if !claimed {
+		return errors.New("trigger changed or already dispatched; refresh")
+	}
+	return err
 }
 
-func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady bool, now time.Time, immediate bool, send func(context.Context, Job) error) error {
+// Claim sending under the lock, before network I/O. This gives at most one
+// attempt after preflight, not a guarantee of exactly-once delivery.
+func (q *Queue) dispatch(ctx context.Context, id, account string, eligible func(Job) bool, send func(context.Context, Job) error) (bool, error) {
 	q.mu.Lock()
 	index := -1
 	for i, j := range q.jobs {
-		if j.ID == id && j.Status == "pending" && account != "" && j.account == account &&
-			(!j.ResumeGoal || !immediate && !j.WaitingForGoalStop) &&
-			(immediate || (j.Trigger == "at" && !now.Before(j.At)) || (j.Trigger == "quota" && quotaReady)) {
+		if j.ID == id && j.Status == "pending" && j.MatchesAccount(account) && eligible(j) {
 			index = i
 			break
 		}
 	}
 	if index < 0 {
 		q.mu.Unlock()
-		if immediate {
-			return errors.New("trigger changed or already dispatched; refresh")
-		}
-		return nil
+		return false, nil
 	}
 	j := q.jobs[index]
 	q.jobs[index].Status = "sending"
@@ -178,5 +181,5 @@ func (q *Queue) dispatch(ctx context.Context, id, account string, quotaReady boo
 	} else if err != nil {
 		q.jobs[index].Status = "uncertain"
 	}
-	return err
+	return true, err
 }

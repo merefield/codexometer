@@ -203,7 +203,7 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 			defer cancel()
-			err := q.DispatchNow(ctx, j.ID, account, time.Now(), func(ctx context.Context, j schedule.Job) error {
+			err := q.DispatchNow(ctx, j.ID, account, func(ctx context.Context, j schedule.Job) error {
 				return client.SendSessionPrompt(ctx, token, []string{j.Text})
 			})
 			return scheduleDone{err: err}
