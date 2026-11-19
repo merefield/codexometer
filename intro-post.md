@@ -128,6 +128,8 @@ Want to know whether your favourite CLI command works here? The [slash-command s
 
 Running low? In `/goal`, choose **Resume after quota recovery** while a goal is active or usage-limited. Keep Codexometer open and it can resume that same goal once Codex has reported a quota stop and fresh quota is available. It’s a one-shot trigger you can cancel from session detail; it never spends a reset credit.
 
+Short on terminal space? Click the **Follow-ups** badge to see that session’s queued prompts, scheduled prompts and goal resume. Press **Esc** or click **Close** to go back without touching your draft or queue.
+
 **Choose your confirmation policy:**
 
 | Setting | Behaviour |
