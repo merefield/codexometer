@@ -26,8 +26,28 @@
   import FileDiff from './FileDiff.svelte';
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
+  import SavedSessions from './SavedSessions.svelte';
+  import { matchesSession } from './session-filter';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
+  let query = $state('');
+  let status = $state('');
+  let includeScope = $state('');
+  let field = $state<HTMLInputElement>();
+  let scope = $derived(
+    live.connected && !live.data?.sessionsError
+      ? live.data?.savedScope || ''
+      : '',
+  );
+  let liveIDs = $derived(new Set(sessions.map((s) => s.id)));
+  let shown = $derived(
+    sessions.filter(
+      (s) => matchesSession(query, s) && (!status || s.status === status),
+    ),
+  );
+  $effect(() => {
+    if (!scope || includeScope !== scope) includeScope = '';
+  });
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
   let triggers = $derived(
     (live.data?.triggers || []).filter((t) =>
@@ -71,9 +91,9 @@
       profiles.some((p) => p.session === params.id && p.pending),
   );
   let selectedID = $derived(
-    sessions.some((s) => s.id === preferences.selected)
+    shown.some((s) => s.id === preferences.selected)
       ? preferences.selected
-      : sessions[0]?.id,
+      : shown[0]?.id,
   );
   let stale = $derived(!live.connected || !!live.data?.sessionsError);
   function isFailure(session: Session) {
@@ -309,6 +329,9 @@
     }
   });
   function select(id: string, review = true) {
+    const target = sessions.find((row) => row.id === id);
+    if (target && !matchesSession(query, target)) query = '';
+    if (target && status && target.status !== status) status = '';
     if (id !== selectedID) cancelReadDwell();
     preferences.selected = id;
     void tick().then(() => {
@@ -336,7 +359,7 @@
   }
   function cycle() {
     cancelReadDwell();
-    if (!params.id) cycleDetailLevels(sessions.map((session) => session.id));
+    if (!params.id) cycleDetailLevels(shown.map((session) => session.id));
   }
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
@@ -345,9 +368,16 @@
       event.ctrlKey ||
       event.metaKey ||
       event.shiftKey ||
-      target.closest('input, textarea, select, [contenteditable="true"]')
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], section[aria-label="Saved sessions"]',
+      )
     )
       return;
+    if (event.key.toLowerCase() === 'f' && !params.id) {
+      event.preventDefault();
+      field?.focus();
+      return;
+    }
     if (event.key.toLowerCase() === 'y' && !params.id) {
       event.preventDefault();
       if (!event.repeat) cycle();
@@ -363,16 +393,16 @@
     } else if (
       !params.id &&
       ['ArrowUp', 'ArrowDown'].includes(event.key) &&
-      sessions.length
+      shown.length
     ) {
       event.preventDefault();
-      const index = sessions.findIndex((s) => s.id === selectedID);
+      const index = shown.findIndex((s) => s.id === selectedID);
       select(
-        sessions[
+        shown[
           Math.max(
             0,
             Math.min(
-              sessions.length - 1,
+              shown.length - 1,
               index + (event.key === 'ArrowUp' ? -1 : 1),
             ),
           )
@@ -499,6 +529,53 @@
 {#if readNotice}<p class="notice" role="status">{readNotice}</p>{/if}
 <div class="spread">
   <h1>SESSION TOTALS</h1>
+  {#if !params.id}<div class="finder-controls">
+      <label class="composer-surface session-search"
+        ><span aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          aria-label="Filter sessions"
+          placeholder="Filter sessions (F)"
+          maxlength="160"
+          bind:this={field}
+          bind:value={query}
+          onkeydown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              query = '';
+              field?.blur();
+            }
+            if (e.key === 'Enter' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              if (shown[0]) {
+                select(shown[0].id, false);
+                document
+                  .querySelector<HTMLElement>(
+                    '.session-row button,.session-row a',
+                  )
+                  ?.focus();
+              }
+            }
+          }}
+        /></label
+      >
+      <select aria-label="Session status filter" bind:value={status}
+        ><option value="">All statuses</option>
+        {#each [...new Set( [...sessions.map((s) => s.status), ...(status ? [status] : [])] )].sort() as value}<option
+            {value}>{value}</option
+          >{/each}</select
+      >
+      <label
+        title="Requires a shared Codex 0.170+ app-server with ChatGPT authentication"
+        ><input
+          type="checkbox"
+          checked={!!scope && includeScope === scope}
+          disabled={!scope}
+          onchange={(e) =>
+            (includeScope = e.currentTarget.checked ? scope : '')}
+        /> Include history</label
+      >
+    </div>{/if}
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
 </div>
 <dl class="session-totals" aria-label="Session totals" class:stale>
@@ -703,13 +780,21 @@
     <div>
       <button
         onclick={cycle}
-        disabled={!sessions.length}
+        disabled={!shown.length}
         title="Match the most detailed row, then cycle graph, split and wide views"
         >C(Y)CLE</button
       >
     </div>
   </div>
-  {#each sessions as session (session.id)}
+  {#if scope && includeScope === scope && !status}{#key scope}<SavedSessions
+        {scope}
+        {query}
+        {liveIDs}
+      />{/key}{/if}
+  {#if !shown.length && sessions.length}<p class="empty">
+      No live sessions match the filter.
+    </p>{/if}
+  {#each shown as session (session.id)}
     {@const level = detailLevel(session.id)}
     <section
       class="session-row"
@@ -850,6 +935,35 @@
 {/if}
 
 <style>
+  .finder-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .session-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 100%;
+  }
+  .session-search:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .session-search > span {
+    color: var(--accent);
+  }
+  .session-search input {
+    min-width: 0;
+    max-width: 100%;
+    border: 0;
+    outline: 0;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+  }
   .reviewed {
     color: var(--muted);
     font-weight: normal;

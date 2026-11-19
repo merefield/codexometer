@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "TA MED HISTORIKK",
+  "SAVED": "LAGRET",
+  "MORE": "FLERE",
+  "NO COMPLETED TURNS": "INGEN FULLFØRTE RUNDER",
   "View this reply in Codex.": "Se dette svaret i Codex.",
   "%s ago": "for %s siden",
   "COMMAND REVIEW": "KOMMANDOVURDERING",

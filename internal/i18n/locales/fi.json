@@ -1,4 +1,9 @@
 {
+  "FILTER": "SUODATA",
+  "INCLUDE HISTORY": "SISÄLLYTÄ HISTORIA",
+  "SAVED": "TALLENNETTU",
+  "MORE": "LISÄÄ",
+  "NO COMPLETED TURNS": "EI VALMIITA VUOROJA",
   "View this reply in Codex.": "Katso tämä vastaus Codexissa.",
   "%s ago": "%s sitten",
   "COMMAND REVIEW": "KOMENNON ARVIOINTI",

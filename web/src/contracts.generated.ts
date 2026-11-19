@@ -295,6 +295,7 @@ export interface SessionGoal {
 }
 
 export interface Snapshot {
+  savedScope?: string;
   usageDiagnostic?: string;
   statusLineFields: Array<Field> | null;
   triggers?: Array<TriggerSummary> | null;

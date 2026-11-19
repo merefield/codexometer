@@ -533,6 +533,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			return m.monitorApprovalAction(m.monitorContextHover)
 		}
 		switch m.monitorContextHover {
+		case "finder":
+			cmd := m.focusFinder()
+			return m, cmd, true
 		case "navigation-disabled":
 			return m, nil, true
 		case "session-up":

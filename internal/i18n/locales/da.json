@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "MEDTAG HISTORIK",
+  "SAVED": "GEMT",
+  "MORE": "FLERE",
+  "NO COMPLETED TURNS": "INGEN AFSLUTTEDE RUNDER",
   "View this reply in Codex.": "Se dette svar i Codex.",
   "%s ago": "for %s siden",
   "COMMAND REVIEW": "KOMMANDOVURDERING",

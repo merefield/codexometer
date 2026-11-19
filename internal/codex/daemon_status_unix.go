@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,8 @@ const (
 )
 
 type daemonStatusProvider struct {
+	savedScope         string
+	names              map[string]threadTitle
 	pendingModels      map[string]*pendingModelChange
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
@@ -124,11 +127,12 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		p.mu.Lock()
-		connection, readVersion := p.connection, p.readStates[threadID].version
+		connection, readVersion, titleVersion := p.connection, p.readStates[threadID].version, p.names[threadID].version
 		p.mu.Unlock()
 		var result struct {
 			ReadState *wireReadState `json:"readState"`
 			Thread    struct {
+				Name               json.RawMessage
 				ID                 string `json:"id"`
 				AttachedToThreadID string `json:"attachedToThreadId"`
 				Status             struct {
@@ -143,6 +147,9 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 			continue
 		}
 		p.mu.Lock()
+		if p.connection == connection && result.Thread.ID == threadID {
+			p.hydrateTitleLocked(threadID, result.Thread.Name, titleVersion)
+		}
 		if p.connection == connection && p.readStates[threadID].version == readVersion && result.Thread.ID == threadID {
 			p.observeReadStateLocked(threadID, result.ReadState.snapshot())
 			p.threadAttachments[threadID] = result.Thread.AttachedToThreadID
@@ -156,16 +163,9 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 
 	p.mu.Lock()
 	wanted := stringStructSet(threadIDs)
-	for id := range p.threadAttachments {
-		if _, keep := wanted[id]; !keep {
-			delete(p.threadAttachments, id)
-		}
-	}
-	for id := range p.readStates {
-		if _, keep := wanted[id]; !keep {
-			delete(p.readStates, id)
-		}
-	}
+	retainThreadIDs(p.names, wanted)
+	retainThreadIDs(p.threadAttachments, wanted)
+	retainThreadIDs(p.readStates, wanted)
 	p.usageCoverage = coverage
 	p.lastStatusAt = time.Now()
 	p.statusThreads = stringStructSet(threadIDs)
@@ -196,7 +196,11 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
 	attachments := make(map[string]string)
+	names := make(map[string]string)
 	for _, id := range threadIDs {
+		if title, ok := p.names[id]; ok {
+			names[id] = title.name
+		}
 		if parent := p.threadAttachments[id]; parent != "" {
 			attachments[id] = parent
 		}
@@ -256,6 +260,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		contexts[id] = c
 	}
 	return sessionDaemonSnapshot{
+		Names: names, SavedScope: p.savedScope,
 		AttachedThreads:    attachments,
 		ReadStates:         readStates,
 		Goals:              goals,
@@ -266,6 +271,14 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		Statuses:           statuses,
 		ModelObservations:  append([]resolvedModelObservation(nil), p.observations...),
 		SubscribedThreads:  subscribed,
+	}
+}
+
+func retainThreadIDs[V any](values map[string]V, wanted map[string]struct{}) {
+	for id := range values {
+		if _, keep := wanted[id]; !keep {
+			delete(values, id)
+		}
 	}
 }
 
@@ -378,6 +391,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.autoReviews = make(map[string]*autoReviewState)
 	p.permissionSettings = make(map[string]string)
 	p.threadDirectories = make(map[string]string)
+	p.names = make(map[string]threadTitle)
 	p.threadAttachments = make(map[string]string)
 	p.settingsVersions = make(map[string]uint64)
 	p.settingsSignal = make(chan struct{})
@@ -398,6 +412,11 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 		p.disconnect(connection)
 		return err
 	}
+	p.mu.Lock()
+	if p.connection == connection && supportsSavedScope(initialized.UserAgent) {
+		p.savedScope = rand.Text()
+	}
+	p.mu.Unlock()
 	return nil
 }
 
@@ -572,6 +591,7 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 		p.goalNotificationLocked(envelope.Method, envelope.Params)
 		p.autoReviewNotificationLocked(envelope.Method, envelope.Params)
 		p.readStateNotificationLocked(envelope.Method, envelope.Params)
+		p.finderNotificationLocked(envelope.Method, envelope.Params)
 		if p.contexts == nil {
 			p.contexts = map[string]*daemonContextState{}
 		}
@@ -738,6 +758,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.permissionSettings = nil
 	p.usageCoverage = nil
 	p.threadDirectories = nil
+	p.names, p.savedScope = nil, ""
 	p.threadAttachments = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)

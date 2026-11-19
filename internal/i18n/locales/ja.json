@@ -1,4 +1,9 @@
 {
+  "FILTER": "絞り込み",
+  "INCLUDE HISTORY": "履歴を含める",
+  "SAVED": "保存済み",
+  "MORE": "さらに表示",
+  "NO COMPLETED TURNS": "完了したターンはありません",
   "View this reply in Codex.": "この返信は Codex で確認してください。",
   "%s ago": "%s前",
   "COMMAND REVIEW": "コマンド審査",

@@ -21,6 +21,20 @@ export class ControlRejected extends Error {}
 let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
+export type SavedRow = { id: string; name: string; directory: string };
+export type SavedPage = {
+  sessions?: SavedRow[];
+  next?: string;
+  turns?: { task: string; reply: string; restricted?: boolean }[];
+};
+export let browseSaved:
+  | ((
+      scope: string,
+      cursor: string,
+      id: string,
+      signal: AbortSignal,
+    ) => Promise<SavedPage>)
+  | undefined;
 export async function controlRequest<T>(
   action: 'offer' | 'prepare' | 'commit' | 'schedules' | 'commands' | 'read',
   body: unknown,
@@ -43,6 +57,24 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
+  browseSaved = async (scope, cursor, id, signal) => {
+    if (!live.connected || live.data?.savedScope !== scope)
+      throw new Error('History unavailable');
+    const response = await fetch(
+      '/api/sessions/saved?' + new URLSearchParams({ scope, cursor, id }),
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.any([
+          controller.signal,
+          signal,
+          AbortSignal.timeout(8000),
+        ]),
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) throw new Error('Saved history unavailable');
+    return response.json();
+  };
   sendControl = async (action, body, signal) => {
     const response = await fetch('/api/control/' + action, {
       method: 'POST',
@@ -166,6 +198,7 @@ export function connect(): () => void {
   void start();
   return () => {
     sendControl = undefined;
+    browseSaved = undefined;
     controller.abort();
     clearTimeout(retry);
     live.connected = false;

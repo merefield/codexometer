@@ -1,4 +1,9 @@
 {
+  "FILTER": "FİLTRE",
+  "INCLUDE HISTORY": "GEÇMİŞİ DAHİL ET",
+  "SAVED": "KAYITLI",
+  "MORE": "DAHA FAZLA",
+  "NO COMPLETED TURNS": "TAMAMLANMIŞ TUR YOK",
   "View this reply in Codex.": "Bu yanıtı Codex’te görüntüleyin.",
   "%s ago": "%s önce",
   "COMMAND REVIEW": "KOMUT İNCELEMESİ",

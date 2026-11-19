@@ -17,6 +17,7 @@ import (
 )
 
 type quotaDaemonFixture struct {
+	savedReads        []map[string]any
 	approvalPolicies  map[string]any
 	reviewers         map[string]string
 	ignorePermissions bool
@@ -149,6 +150,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			case "initialize":
 				fixture.initializeParams = req.Params
 				result["userAgent"] = "test"
+				if value, ok := fixture.catalogues["initialize"]; ok {
+					result = value
+				}
 			case "model/list":
 				fixture.modelReads = append(fixture.modelReads, req.Params)
 				result["data"] = []any{map[string]any{"model": "small", "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium"}}, "serviceTiers": []any{map[string]any{"id": "flex", "name": "Fast"}, map[string]any{"id": "priority", "name": "Slow"}}}}
@@ -348,6 +352,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 						fixture.itemReadHook()
 					}
 					noReply = fixture.itemNoReply
+				}
+				if req.Method == "thread/list" {
+					fixture.savedReads = append(fixture.savedReads, req.Params)
 				}
 				if req.Method == "thread/turns/list" {
 					fixture.historyReads = append(fixture.historyReads, req.Params)

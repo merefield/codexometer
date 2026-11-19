@@ -35,6 +35,7 @@ type monitorView struct {
 type monitorGeometry struct {
 	attention     []monitorNavigationButton
 	attentionRows int
+	finderRows    int
 	width         int
 	height        int
 	gap           int
@@ -127,6 +128,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	parts := []string{top}
 	if layout.attentionRows > 0 {
 		parts = append(parts, m.renderMonitorAttention(width, layout.attentionRows, layout.attention, colors))
+	}
+	if layout.finderRows > 0 {
+		parts = append(parts, m.renderSessionFinder(width, layout.finderRows, colors))
 	}
 	parts = append(parts, graph)
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
@@ -226,7 +230,7 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 	visible, rowHeights, pageLabel := m.monitorSessionPage(height)
 	if len(visible) == 0 {
-		if m.monitorFilter != monitorFilterAll {
+		if m.monitorFilter != monitorFilterAll || m.finder.query() != "" {
 			message := ansi.Truncate(i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER"), max(width-4, 1), "…")
 			return frameSized(width, max(height-2, 1), i18n.Text("SESSIONS"), colors.dimmed().Render(message), colors.primary, colors)
 		}

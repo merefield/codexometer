@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "GESCHIEDENIS TONEN",
+  "SAVED": "OPGESLAGEN",
+  "MORE": "MEER",
+  "NO COMPLETED TURNS": "GEEN VOLTOOIDE BEURTEN",
   "View this reply in Codex.": "Bekijk dit antwoord in Codex.",
   "%s ago": "%s geleden",
   "COMMAND REVIEW": "COMMANDOCONTROLE",

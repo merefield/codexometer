@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "INKLUDERA HISTORIK",
+  "SAVED": "SPARAD",
+  "MORE": "FLER",
+  "NO COMPLETED TURNS": "INGA AVSLUTADE TURER",
   "View this reply in Codex.": "Visa det här svaret i Codex.",
   "%s ago": "för %s sedan",
   "COMMAND REVIEW": "KOMMANDOGRANSKNING",

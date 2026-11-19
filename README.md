@@ -1396,6 +1396,26 @@ SESSION` is only an inactivity inference, fresh activity anywhere in the group
 suppresses a stale sibling's check; definite input and approval are never
 suppressed this way.
 
+**Finding a session:** press **F** (or click **FILTER** in Session Totals) and
+type part of its name, directory or session ID. Matching is immediate and
+case-insensitive, and combines with the selected status category. **Enter/↓**
+returns to the matching live rows; **Esc** in the field clears the filter.
+Totals and attention pills still cover all live sessions. Selecting a pill
+reveals its session even if it was filtered out. On a shared app-server, names
+follow Codex rename events and are refreshed on reconnection; ordinary CLI
+sessions still use Codex’s local name index.
+
+**Include history** is off by default. With a local, shared Codex **0.170.0+**
+app-server signed in to ChatGPT, enable it under the **All** sessions category
+to browse non-archived saved sessions. In the terminal use **Tab** to focus
+the checkbox, **Space** to toggle it, then **Tab** to the results. Use **↑/↓**
+and **Enter** to open a result or load more; **Esc** or **[←]** returns from
+the saved detail. The filter searches metadata in the pages loaded so far,
+not message text. Each saved result can show up to ten completed turns,
+newest first. Browsing never resumes a session, marks it as read, changes
+the totals, or enables a write action. There is no new on-disk index; without
+a compatible shared server, the live filter still works.
+
 Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when
 space permits. Names come from the local
@@ -3298,6 +3318,10 @@ polls are not known. Account-change isolation depends on the account identity
 available from the existing reader.
 
 ### Browser Sessions command centre
+
+The same **Filter sessions** field, status filter and opt-in **Include history**
+are available in the browser, including in read-only mode. Saved results are
+separate from live command controls and are not added to Session Totals.
 
 - **SESSION TOTALS** shows observed tokens and the number of currently listed
   sessions, plus separate working, awaiting-approval, awaiting-input and inferred

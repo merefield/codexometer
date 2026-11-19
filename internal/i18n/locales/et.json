@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "KAASA AJALUGU",
+  "SAVED": "SALVESTATUD",
+  "MORE": "ROHKEM",
+  "NO COMPLETED TURNS": "LÕPETATUD VOORE POLE",
   "View this reply in Codex.": "Vaata seda vastust Codexis.",
   "%s ago": "%s tagasi",
   "COMMAND REVIEW": "KÄSU HINDAMINE",

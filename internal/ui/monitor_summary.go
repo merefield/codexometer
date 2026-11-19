@@ -423,6 +423,9 @@ func (m Model) monitorArea(width, height int) monitorGeometry {
 	}
 	a.gap += a.attentionRows
 	a.graphHeight -= a.attentionRows
+	a.finderRows = m.finderHeight(a.graphHeight)
+	a.gap += a.finderRows
+	a.graphHeight -= a.finderRows
 	if m.geometry != nil {
 		if m.geometry.areas == nil {
 			m.geometry.areas = make(map[[2]int]monitorGeometry)

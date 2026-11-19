@@ -37,6 +37,7 @@ const (
 // unavailable pricing. AccountingAdjustments counts recognised synthetic context
 // fills; those are excluded from observed tokens, activity and response graphs.
 type LiveUsageSnapshot struct {
+	SavedScope                  string
 	TotalTokens                 int64
 	LastActivity                time.Time
 	SessionCount                int
@@ -436,6 +437,8 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 
 	exactStatuses := map[string]sessionRuntimeStatus(nil)
 	var daemonCoverage map[string]string
+	var names map[string]string
+	var savedScope string
 	r.daemonContexts = nil
 	r.daemonDirectories = nil
 	r.daemonAttachments = nil
@@ -446,6 +449,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	if r.statusProvider != nil {
 		if daemonSnapshot, exact := r.statusProvider.Fetch(ctx, r.observedThreadIDs(now)); exact {
 			appServerUp = true
+			names, savedScope = daemonSnapshot.Names, daemonSnapshot.SavedScope
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
 			if len(daemonSnapshot.AnswerGuards) != 0 {
@@ -531,6 +535,9 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	r.refreshSessionNames()
 	for i := range sessions {
 		sessions[i].Name = r.sessionNames[sessions[i].ID]
+		if name, ok := names[sessions[i].ID]; ok {
+			sessions[i].Name = name
+		}
 	}
 	coverageIssue := r.usageCoverage(ctx, sessions, daemonCoverage)
 	if firstReadErr != nil {
@@ -541,6 +548,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	)
 	return LiveUsageSnapshot{
 		TotalTokens: r.totalTokens, LastActivity: r.lastActivity,
+		SavedScope:   savedScope,
 		SessionCount: activeSessions, Sessions: sessions,
 		CodexStatusKnown: codexStatusKnown,
 		CodexUp:          codexUp,
