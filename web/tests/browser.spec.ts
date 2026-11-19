@@ -670,8 +670,10 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   });
   await page.goto(pairingURL);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.keyboard.press('f');
   const filter = page.getByRole('searchbox', { name: 'Filter sessions' });
+  // The Sessions route mounts asynchronously after the navigation click.
+  await expect(filter).toBeVisible();
+  await page.keyboard.press('f');
   await expect(filter).toBeFocused();
   await filter.fill('notes');
   await expect(page.locator('.session-row')).toHaveCount(0);
