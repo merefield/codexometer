@@ -78,11 +78,34 @@ func (c *rolloutCursor) inheritAnswerGuards(guards answerGuards) {
 	c.answers.protect(&c.preview)
 }
 
+// SameHistoryTurn compares observations, not their displayed text. Legacy
+// mirrors can lack a turn ID: use a shared item ID, or as a last resort
+// the same nonzero observation time. Never match conflicting known IDs.
+func (a SessionContext) SameHistoryTurn(b SessionContext) bool {
+	if a.ThreadID != b.ThreadID {
+		return false
+	}
+	if a.TurnID != "" && b.TurnID != "" {
+		return a.TurnID == b.TurnID
+	}
+	if a.ItemID != "" && b.ItemID != "" {
+		return a.ItemID == b.ItemID
+	}
+	return !a.At.IsZero() && a.At.Equal(b.At)
+}
+
 // ProtectReply updates an already-delivered excerpt when a matching decision
 // arrives via another source. It never matches another thread or a command.
 func (decision SessionContext) ProtectReply(c *SessionContext) {
-	if decision.ReplyRestricted && c.ThreadID == decision.ThreadID {
-		answerGuards{{decision.TurnID, decision.ItemID}}.protect(c)
+	if decision.ReplyRestricted && c.Kind == SessionContextReply && decision.SameHistoryTurn(*c) &&
+		(decision.ItemID == "" || c.ItemID == "" || decision.ItemID == c.ItemID) {
+		c.withholdAnswer()
+		if c.TurnID == "" {
+			c.TurnID = decision.TurnID
+		}
+		if c.ItemID == "" {
+			c.ItemID = decision.ItemID
+		}
 	}
 }
 

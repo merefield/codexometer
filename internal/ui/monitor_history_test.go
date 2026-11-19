@@ -55,6 +55,45 @@ func TestRestrictedHistoryRevokesPinnedCopyAndLiveMirror(t *testing.T) {
 	check()
 }
 
+func TestLegacyHistoryRestrictionReplacesPlaintext(t *testing.T) {
+	for _, item := range []string{"item", ""} {
+		for _, source := range []string{"live", "history page"} {
+			t.Run(source+"/"+item, func(t *testing.T) {
+				m := historyTestModel()
+				old := historyContext(7)
+				old.TurnID, old.ItemID = "", item
+				decision := old
+				decision.TurnID, decision.ItemID, decision.Text, decision.ReplyRestricted = "turn", "item", "View this reply in Codex.", true
+				if item != "" {
+					decision.At = old.At.Add(time.Second)
+				}
+				other := codex.HistoryExcerpt(historyContext(6))
+				h := monitorTurnHistory{turns: []codex.SessionContext{other, old}, selected: &old}
+				m.saveMonitorHistory("root-one", h)
+				m.monitorSessionData[0].preview = old
+				if source == "live" {
+					applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: decision})
+					m.observeMonitorHistory()
+				} else {
+					m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", turns: []codex.SessionContext{other, decision}})
+				}
+				// A lagging local observation must not restore a cached copy.
+				applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: old})
+				m.observeMonitorHistory()
+				h = m.monitorHistory["root-one"]
+				if len(h.turns) != 2 || h.turns[0].Text != other.Text || !h.turns[1].ReplyRestricted || h.turns[1].Text == old.Text ||
+					h.selected == nil || !h.selected.ReplyRestricted || m.monitorCopyText("root-one") == old.Text {
+					t.Fatal("legacy reply still accessible or unrelated turn lost", h)
+				}
+				m.showLiveMonitorHistory()
+				if m.monitorCopyText("root-one") == old.Text {
+					t.Fatal("live mirror restored plaintext")
+				}
+			})
+		}
+	}
+}
+
 func TestMonitorHistoryNavigationPinningAndCopy(t *testing.T) {
 	m := historyTestModel()
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})

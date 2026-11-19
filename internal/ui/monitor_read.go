@@ -116,7 +116,7 @@ func (m Model) monitorUnreadResult(id string) (monitorSession, bool) {
 				return monitorSession{}, false
 			}
 		}
-		if h := m.monitorHistory[id]; h.selected != nil && !sameHistoryTurn(*h.selected, c) {
+		if h := m.monitorHistory[id]; h.selected != nil && !h.selected.SameHistoryTurn(c) {
 			return monitorSession{}, false
 		}
 		return row, true
