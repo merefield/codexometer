@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
-	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/confirmation"
+	"github.com/merefield/codexometer/internal/i18n"
 	"github.com/merefield/codexometer/internal/prose"
 	"github.com/merefield/codexometer/internal/quotagraph"
 	"github.com/merefield/codexometer/internal/statusline"
