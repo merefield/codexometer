@@ -129,11 +129,6 @@ export interface Meter {
   plot: QuotaPlot;
 }
 
-export interface PendingModelChange {
-  summary?: string;
-  state?: string;
-}
-
 export interface PlanUsageBreakdown {
   dimension: string;
   rows: Array<PlanUsageValue> | null;
@@ -246,7 +241,6 @@ export interface Segment {
 }
 
 export interface Session {
-  pendingModel?: PendingModelChange | null;
   reviewer?: string;
   autoReview?: ReviewAssessment | null;
   approvalReview?: ApprovalReview | null;

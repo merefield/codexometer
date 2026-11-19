@@ -286,7 +286,7 @@ func TestNonTerminalErrorsDoNotUnlockRecovery(t *testing.T) {
 	}
 }
 
-func TestModelCommandsRecoverErrorsQueueDuringWorkAndRejectUnknownSessions(t *testing.T) {
+func TestModelCommandsRecoverErrorsApplyDuringWorkAndRejectUnknownSessions(t *testing.T) {
 	for _, status := range []string{"systemError", "active", "notLoaded", "unknown"} {
 		t.Run(status, func(t *testing.T) {
 			p, f := newQuotaDaemon(t)
@@ -306,7 +306,7 @@ func TestModelCommandsRecoverErrorsQueueDuringWorkAndRejectUnknownSessions(t *te
 			}
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			if status == "systemError" {
+			if status == "systemError" || status == "active" {
 				if len(f.writes) != 1 || f.writes[0]["threadId"] != "one" || f.writes[0]["model"] != "small" || f.sessions["two"].Model != "large" {
 					t.Fatal("model recovery changed the wrong session", f.writes)
 				}

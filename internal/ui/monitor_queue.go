@@ -36,10 +36,6 @@ func (entry followupEntry) key() string {
 
 func (m Model) followupEntries() []followupEntry {
 	var entries []followupEntry
-	if s, ok := m.contextDetailSession(); ok && s.preview.PendingModel.Summary != "" {
-		pending := s.preview.PendingModel
-		entries = append(entries, followupEntry{label: i18n.Text("MODEL") + " // " + i18n.Text(strings.ToUpper(pending.State)), text: pending.Summary, receipt: "model:" + s.id, readOnly: true})
-	}
 	if m.monitorQueue.session == m.monitorContextTarget() {
 		for _, item := range m.monitorQueue.items {
 			entries = append(entries, followupEntry{label: i18n.Text("QUEUED"), text: item.Text, native: &item, editable: item.Editable && !m.monitorQueue.stale, removable: !m.monitorQueue.stale})

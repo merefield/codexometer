@@ -66,11 +66,14 @@ func TestSettingsCompatibilityAcrossClientsAndReconnect(t *testing.T) {
 	}
 }
 
-func TestQueuedModelAndPermissionAcknowledgementsAreNotApplied(t *testing.T) {
+func TestUnverifiedModelAndPermissionAcknowledgementsAreNotApplied(t *testing.T) {
 	for _, path := range []string{"model/small", "permissions"} {
 		t.Run(path, func(t *testing.T) {
 			p, f := newQuotaDaemonTransport(t, true)
 			f.queued = true
+			if path == "model/small" {
+				f.commandStatus = "active"
+			}
 			f.catalogues = map[string]map[string]any{"permissionProfile/list": {"data": []any{map[string]any{"id": "restricted", "description": "Workspace access only", "allowed": true}}}}
 			menu, err := p.SessionCommands(context.Background(), "one", path)
 			if err != nil || len(menu.Choices) != 1 {
@@ -81,7 +84,7 @@ func TestQueuedModelAndPermissionAcknowledgementsAreNotApplied(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, menu.Choices[0].ID) }()
 			// State updates for another attached session and approval state remain
-			// responsive while the selected thread's queued write is being verified.
+			// responsive while the selected thread's write is being verified.
 			p.handleNotification("thread/settings/updated", json.RawMessage(`{"threadId":"two","threadSettings":{"model":"other","effort":"high","serviceTier":"priority"}}`))
 			responsive := make(chan struct{})
 			go func() { p.SessionPrompt("two"); close(responsive) }()
@@ -92,7 +95,7 @@ func TestQueuedModelAndPermissionAcknowledgementsAreNotApplied(t *testing.T) {
 			}
 			err = <-done
 			if err == nil {
-				t.Fatal("queued acknowledgement reported as applied")
+				t.Fatal("unverified acknowledgement reported as applied")
 			}
 			if path == "model/small" && !errors.Is(err, ErrQuotaProfileUnverified) {
 				t.Fatal("model failure lost unverified result", err)

@@ -27,7 +27,6 @@ const (
 type daemonStatusProvider struct {
 	savedScope         string
 	names              map[string]threadTitle
-	pendingModels      map[string]*pendingModelChange
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
 	readStates         map[string]readStateObservation
@@ -87,7 +86,6 @@ func newSessionStatusProvider(codexHome string) sessionStatusProvider {
 }
 
 func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (sessionDaemonSnapshot, bool) {
-	defer p.flushModelChanges()
 	if err := p.ensureConnected(ctx); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			diagnostics.Debug("daemon", "not available; using local fallback", diagnostics.Fields{Path: p.socketPath})
@@ -249,9 +247,6 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 				guards = make(map[string]answerGuards)
 			}
 			guards[id] = s.answers
-		}
-		if pending := p.pendingModels[id]; pending != nil {
-			c.PendingModel = pending.display
 		}
 		c.Reviewer = p.permissionSettings[id]
 		if review := p.autoReviews[id]; review != nil {
@@ -611,9 +606,6 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 			p.mu.Lock()
 			p.bumpCommandTransitionLocked(event.ThreadID)
 			p.mu.Unlock()
-			if method != "turn/started" {
-				p.flushModelChanges(event.ThreadID)
-			}
 		}
 	}
 	switch method {
@@ -754,7 +746,6 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.commandTransitions = nil
 	p.threadSettings = nil
 	p.autoReviews = nil
-	p.pendingModels = nil
 	p.permissionSettings = nil
 	p.usageCoverage = nil
 	p.threadDirectories = nil

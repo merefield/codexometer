@@ -414,30 +414,58 @@ func TestSessionSpeedPickerDoesNotTreatQueuedWriteAsApplied(t *testing.T) {
 	}
 }
 
-func TestSessionCommandAvailabilityQueuesModelDuringWork(t *testing.T) {
-	p, f := newQuotaDaemon(t)
-	f.mu.Lock()
-	f.commandStatus = "active"
-	f.sessions["one"] = QuotaSession{ID: "one", Model: "small", Effort: "medium"}
-	f.mu.Unlock()
-	menu, err := p.SessionCommands(context.Background(), "one", "model/small")
-	if err != nil || len(menu.Choices) == 0 {
-		t.Fatal(menu, err)
+func TestSessionModelWritesImmediatelyDuringAnActiveTurn(t *testing.T) {
+	for _, tc := range []struct{ name, flag string }{{"working", ""}, {"approval", "waitingOnApproval"}, {"input", "waitingOnUserInput"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			f.commandStatus = "active"
+			if tc.flag != "" {
+				f.commandFlags = []string{tc.flag}
+			}
+			menu, err := p.SessionCommands(t.Context(), "one", "model/small")
+			if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action {
+				t.Fatal(menu, err)
+			}
+			if err := p.ExecuteSessionCommand(t.Context(), "one", menu.Path, menu.Revision, menu.Choices[0].ID); err != nil {
+				t.Fatal("failed to commit model before the turn ended", err)
+			}
+			// Simulate reopening Codexometer while the original turn is still active.
+			p.disconnect(nil)
+			reopened, err := p.SessionCommands(t.Context(), "one", "model")
+			if err != nil || reopened.settings == nil || reopened.settings.Model != "small" || reopened.settings.Effort != "medium" {
+				t.Fatal("the setting was not already on the server", reopened.settings, err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.writes) != 1 || f.writes[0]["threadId"] != "one" || f.writes[0]["model"] != "small" ||
+				f.writes[0]["effort"] != "medium" || f.sessions["two"].Model != "large" || f.commandStatus != "active" {
+				t.Fatal("expected one native settings write without ending the active turn", f.writes)
+			}
+		})
 	}
-	for _, choice := range menu.Choices {
-		if !choice.Action || choice.Unavailable != "" {
-			t.Fatalf("working model selection should be queueable: %+v", choice)
-		}
-		if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, choice.ID); err != nil {
-			t.Fatal("could not queue model selection", err)
-		}
-	}
-	f.mu.Lock()
-	f.commandStatus = "idle"
-	f.mu.Unlock()
-	menu, err = p.SessionCommands(context.Background(), "one", "fast")
-	if err != nil || !menu.Choices[0].Action || menu.Choices[0].Unavailable != "" {
-		t.Fatal("refreshed idle setting remains blocked", menu, err)
+}
+
+func TestModelRechecksThreadAfterDiscovery(t *testing.T) {
+	for _, status := range []string{"active", "notLoaded"} {
+		t.Run(status, func(t *testing.T) {
+			p, f := newQuotaDaemon(t)
+			menu, err := p.SessionCommands(t.Context(), "one", "model/small")
+			if err != nil || len(menu.Choices) != 1 {
+				t.Fatal(menu, err)
+			}
+			f.mu.Lock()
+			f.modelReadHook = func() { f.commandStatus = status; f.modelReadHook = nil }
+			f.mu.Unlock()
+			err = p.ExecuteSessionCommand(t.Context(), "one", menu.Path, menu.Revision, menu.Choices[0].ID)
+			if (err == nil) != (status == "active") {
+				t.Fatalf("status %s: %v", status, err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if (len(f.writes) == 1) != (status == "active") || len(f.writes) > 1 {
+				t.Fatal("unexpected number of writes", f.writes)
+			}
+		})
 	}
 }
 

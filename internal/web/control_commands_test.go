@@ -117,8 +117,10 @@ func TestConfirmationNoneDoesNotBypassServerCommandTickets(t *testing.T) {
 		t.Fatal("preparation wrote a command or failed", r.Code)
 	}
 	b.Command.Mode, b.Confirmation = "commit", prepared.Confirmation
-	if w := actionCall(s, token, "commands", b); w.Code != 200 || f.calls != 1 {
-		t.Fatal("prepared command could not commit")
+	w := actionCall(s, token, "commands", b)
+	var result struct{ Message string }
+	if w.Code != 200 || f.calls != 1 || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Message != "MODEL SET // NEXT TURN" {
+		t.Fatal("prepared command did not return the next-turn acknowledgement", w.Code, w.Body.String())
 	}
 	if w := actionCall(s, token, "commands", b); w.Code != 409 || f.calls != 1 {
 		t.Fatal("no-confirm allowed a replay")
