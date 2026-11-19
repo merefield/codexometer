@@ -136,6 +136,23 @@ func TestMonitorHistoryNavigationPinningAndCopy(t *testing.T) {
 	}
 }
 
+func TestEvictedLegacyPinStillHonoursRestriction(t *testing.T) {
+	m := historyTestModel()
+	id := "root-one"
+	pin := historyContext(1)
+	pin.TurnID, pin.ItemID = "", "item"
+	h := m.monitorHistory[id]
+	h.selected, h.turns, h.observedThrough = &pin, h.turns[1:], pin.At.Add(time.Hour)
+	m.saveMonitorHistory(id, h)
+	c := pin
+	c.TurnID, c.ReplyRestricted, c.Text = "1", true, ""
+	applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: c})
+	m.observeMonitorHistory()
+	if got := m.monitorHistory[id]; len(got.turns) != 2 || !got.selected.ReplyRestricted || m.monitorCopyText(id) != i18n.Text("View this reply in Codex.") {
+		t.Fatal("evicted plaintext still pinned, or stale turn reappeared")
+	}
+}
+
 func TestMonitorHistoryRejectsStreamingAndRemovesCapabilities(t *testing.T) {
 	m := historyTestModel()
 	c := historyContext(4)

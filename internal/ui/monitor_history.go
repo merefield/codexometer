@@ -44,17 +44,21 @@ func (m *Model) saveMonitorHistory(id string, h monitorTurnHistory) {
 	m.monitorHistory[id] = h
 }
 
-func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHistory {
-	if c.Kind != codex.SessionContextReply || c.Streaming || !c.ReplyRestricted && strings.TrimSpace(c.Text) == "" {
-		return h
-	}
-	c = projectMonitorReply(codex.SessionContext{}, codex.HistoryExcerpt(c))
+func (h *monitorTurnHistory) protectPinned(c codex.SessionContext) {
 	if h.selected != nil && c.ReplyRestricted {
 		pinned := projectMonitorReply(c, *h.selected)
 		if pinned != *h.selected {
 			h.selected = &pinned
 		}
 	}
+}
+
+func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHistory {
+	if c.Kind != codex.SessionContextReply || c.Streaming || !c.ReplyRestricted && strings.TrimSpace(c.Text) == "" {
+		return h
+	}
+	c = projectMonitorReply(codex.SessionContext{}, codex.HistoryExcerpt(c))
+	h.protectPinned(c)
 	for i, old := range h.turns {
 		if old.SameHistoryTurn(c) {
 			c = projectMonitorReply(old, c)
@@ -77,13 +81,17 @@ func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHis
 func (m *Model) observeMonitorHistory() {
 	cloned := false
 	for _, s := range m.monitorSessionData {
-		if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && s.preview.Text != "" {
+		if s.preview.Kind == codex.SessionContextReply && !s.preview.Streaming && s.preview.HasDisplayText() {
 			h := m.monitorHistory[s.id]
+			next := h
 			if !h.observedThrough.IsZero() && !s.preview.At.After(h.observedThrough) &&
 				!slices.ContainsFunc(h.turns, func(c codex.SessionContext) bool { return c.SameHistoryTurn(s.preview) }) {
-				continue
+				// The selected excerpt can outlive the page it came from.
+				// Revoke it without putting a stale turn back on that page.
+				next.protectPinned(s.preview)
+			} else {
+				next = addHistoryTurn(h, s.preview)
 			}
-			next := addHistoryTurn(h, s.preview)
 			if slices.Equal(h.turns, next.turns) && h.selected == next.selected {
 				continue
 			}
