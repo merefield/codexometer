@@ -305,7 +305,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 					}
 				}
 			}
-			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && state.latest.Text == "" {
+			if state.observeUserMessage(p.Item.ID, p.TurnID, userMessageText(p.Item.Content)) && !state.latest.HasDisplayText() {
 				c.Kind = SessionContextActivity
 				state.latest = c
 			}
@@ -431,7 +431,7 @@ func daemonContextEvent(states map[string]*daemonContextState, method string, id
 	} else {
 		c.Text = SanitizeSessionContext(c.Text)
 	}
-	if c.Text == "" {
+	if !c.HasDisplayText() {
 		return
 	}
 	if c.pending() {
@@ -525,7 +525,7 @@ func daemonContextSnapshot(states map[string]*daemonContextState, ids []string, 
 			c.ThreadID, c.TurnID, c.Source = id, state.activeTurn, "LIVE"
 		}
 		c.PendingApprovalsLimited = state.approvalsLimited && statuses[id] == sessionRuntimeApproval
-		if c.Text != "" || c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "" || c.PendingApprovalsLimited {
+		if c.HasDisplayText() || c.CurrentTask != "" || c.LatestGuidance != "" || c.CompletedSteerIDs != "" || c.PendingApprovalsLimited {
 			out[id] = c
 		}
 	}

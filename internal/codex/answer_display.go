@@ -5,15 +5,13 @@ import (
 	"slices"
 )
 
-// The companion cannot implement native replacements, annotations or trusted
-// contact checks. Only an explicit plain show (or no restriction) is renderable.
-const nativeAnswerNotice = "View this reply in Codex."
-
 type answerItem struct {
 	ID, Type, Text, Phase string
 	Moderation            json.RawMessage
 }
 
+// The companion cannot implement native replacements, annotations or trusted
+// contact checks. Only an explicit plain show (or no restriction) is renderable.
 func restrictedAnswer(raw json.RawMessage) bool {
 	if len(raw) == 0 || string(raw) == "null" {
 		return false
@@ -110,6 +108,10 @@ func (decision SessionContext) ProtectReply(c *SessionContext) {
 }
 
 func (c *SessionContext) withholdAnswer() {
-	c.Text, c.ReplyRestricted, c.Streaming = nativeAnswerNotice, true, false
+	c.Text, c.ReplyRestricted, c.Streaming = "", true, false
 	c.Activity = SessionActivity{}
 }
+
+// HasDisplayText includes restricted answers: observers carry only the flag;
+// presenters supply the localised notice instead of assistant-authored text.
+func (c SessionContext) HasDisplayText() bool { return c.ReplyRestricted || c.Text != "" }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type actionSource struct {
@@ -417,7 +418,7 @@ func TestRestrictedRolloutAbsentFromReadOnlyBrowserPayload(t *testing.T) {
 	s := newStore()
 	s.live(live, nil, now)
 	raw, _ := s.snapshot()
-	if !strings.Contains(string(raw), "View this reply in Codex.") || strings.Contains(string(raw), "fixture plaintext") {
+	if !strings.Contains(string(raw), i18n.Text("View this reply in Codex.")) || strings.Contains(string(raw), "fixture plaintext") {
 		t.Fatalf("unsafe or empty browser state: %s", raw)
 	}
 }

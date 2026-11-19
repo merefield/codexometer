@@ -44,7 +44,7 @@ func TestRestrictedHistoryRevokesPinnedCopyAndLiveMirror(t *testing.T) {
 	m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", turns: []codex.SessionContext{restricted}})
 	check := func() {
 		t.Helper()
-		if got := m.monitorCopyText("root-one"); got != "View this reply in Codex." {
+		if got := m.monitorCopyText("root-one"); got != i18n.Text("View this reply in Codex.") {
 			t.Fatal("clipboard exposed original", got)
 		}
 	}
@@ -63,7 +63,7 @@ func TestLegacyHistoryRestrictionReplacesPlaintext(t *testing.T) {
 				old := historyContext(7)
 				old.TurnID, old.ItemID = "", item
 				decision := old
-				decision.TurnID, decision.ItemID, decision.Text, decision.ReplyRestricted = "turn", "item", "View this reply in Codex.", true
+				decision.TurnID, decision.ItemID, decision.Text, decision.ReplyRestricted = "turn", "item", "", true
 				if item != "" {
 					decision.At = old.At.Add(time.Second)
 				}
@@ -81,12 +81,14 @@ func TestLegacyHistoryRestrictionReplacesPlaintext(t *testing.T) {
 				applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: old})
 				m.observeMonitorHistory()
 				h = m.monitorHistory["root-one"]
-				if len(h.turns) != 2 || h.turns[0].Text != other.Text || !h.turns[1].ReplyRestricted || h.turns[1].Text == old.Text ||
-					h.selected == nil || !h.selected.ReplyRestricted || m.monitorCopyText("root-one") == old.Text {
+				notice := i18n.Text("View this reply in Codex.")
+				if len(h.turns) != 2 || h.turns[0].Text != other.Text || !h.turns[1].ReplyRestricted || h.turns[1].Text != notice ||
+					h.selected == nil || !h.selected.ReplyRestricted || m.monitorCopyText("root-one") != notice ||
+					!strings.Contains(ansi.Strip(strings.Join(m.contextDetailLines(100), "\n")), notice) {
 					t.Fatal("legacy reply still accessible or unrelated turn lost", h)
 				}
 				m.showLiveMonitorHistory()
-				if m.monitorCopyText("root-one") == old.Text {
+				if m.monitorCopyText("root-one") != notice {
 					t.Fatal("live mirror restored plaintext")
 				}
 			})

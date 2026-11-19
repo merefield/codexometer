@@ -71,6 +71,14 @@ func (t *Translator) Format(key string, args ...any) string {
 func Text(key string) string                { return current.Text(key) }
 func Format(key string, args ...any) string { return current.Format(key, args...) }
 
+// SessionText translates only the application's notice, never user or model prose.
+func SessionText(text string, restricted bool) string {
+	if restricted {
+		return Text("View this reply in Codex.")
+	}
+	return text
+}
+
 // WindowName translates only the app's canonical quota-window names, not
 // arbitrary server-provided model names or identifiers.
 func WindowName(name string) string { return current.WindowName(name) }

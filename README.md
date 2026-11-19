@@ -1667,8 +1667,8 @@ not an unlimited transcript: it cannot recover text omitted by observation limit
 Clipboard contents then follow your terminal and operating system's retention behaviour.
 When Codex marks an answer as hidden, blocked, or requiring a native display
 that Codexometer cannot provide, Sessions shows **View this reply in Codex.**
-The terminal, history, Copy, and read-only web view use that notice instead of
-the original text. This applies once Codex supplies the decision; it cannot
+The terminal, history, Copy, and read-only web view use that notice in the
+configured language instead of the original text. This applies once Codex supplies the decision; it cannot
 recall text already shown or copied while an answer was streaming.
 
 `Left` / `Right` move along **graph ↔ split ↔ expanded ↔ full detail** without

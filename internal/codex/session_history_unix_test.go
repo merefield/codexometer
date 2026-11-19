@@ -17,12 +17,12 @@ func TestHistoryDecisionProtectsLocalMirrorAfterDisconnect(t *testing.T) {
 	cursor := &rolloutCursor{threadID: "one", currentTurnID: "turn", preview: SessionContext{Kind: SessionContextReply, ThreadID: "one", TurnID: "turn", Text: "fixture plaintext"}}
 	r := &LiveUsageReader{statusProvider: p, files: map[string]*rolloutCursor{"path": cursor}}
 	turns, err := (Client{LiveUsage: r}).SessionHistory(context.Background(), "one")
-	if err != nil || len(turns) != 1 || !turns[0].ReplyRestricted || turns[0].Text != nativeAnswerNotice || cursor.preview.Text != nativeAnswerNotice {
+	if err != nil || len(turns) != 1 || !turns[0].ReplyRestricted || turns[0].Text != "" || !cursor.preview.ReplyRestricted || cursor.preview.Text != "" {
 		t.Fatal(turns, cursor.preview, err)
 	}
 	r.statusProvider = nil
 	c, ok := rolloutContextRecord([]byte(`{"type":"event_msg","payload":{"type":"task_complete","turn_id":"turn","last_agent_message":"fixture plaintext"}}`), cursor)
-	if !ok || c.Text != nativeAnswerNotice {
+	if !ok || !c.ReplyRestricted || c.Text != "" {
 		t.Fatal("disconnect revived text", c)
 	}
 }

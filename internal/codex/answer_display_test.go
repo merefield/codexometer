@@ -50,7 +50,7 @@ func TestRestrictedLiveAnswerStopsStreamingAndCannotReplay(t *testing.T) {
 	for _, e := range [][2]string{{"item/completed", blocked}, {"item/started", blocked}, {"item/agentMessage/delta", delta}, {"item/completed", plain}} {
 		emit(e[0], e[1])
 		got := states["s"].latest
-		if !got.ReplyRestricted || got.Text != nativeAnswerNotice || got.Streaming || states["s"].streamText != "" {
+		if !got.ReplyRestricted || got.Text != "" || got.Streaming || states["s"].streamText != "" {
 			t.Fatalf("%s retained restricted text: %+v", e[0], got)
 		}
 	}
@@ -85,7 +85,7 @@ func TestRestrictedRolloutMirrorsAndRestart(t *testing.T) {
 				t.Fatal(u, err)
 			}
 			c := u.Sessions[0].Context
-			if c.Text != nativeAnswerNotice || !c.ReplyRestricted || c.TurnID != "t" {
+			if c.Text != "" || !c.ReplyRestricted || c.TurnID != "t" {
 				t.Fatal("restart exposed mirrored text", c)
 			}
 			for _, cursor := range r.files {
@@ -109,7 +109,7 @@ func TestTurnSummaryRestrictsAlreadyStreamedAnswer(t *testing.T) {
 		daemonContextEvent(states, e[0], nil, json.RawMessage(e[1]), time.Now())
 	}
 	c := daemonContextSnapshot(states, []string{"s"}, nil)["s"]
-	if !c.ReplyRestricted || c.Text != nativeAnswerNotice || c.Streaming || states["s"].streamText != "" {
+	if !c.ReplyRestricted || c.Text != "" || c.Streaming || states["s"].streamText != "" {
 		t.Fatal(c)
 	}
 }

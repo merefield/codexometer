@@ -63,7 +63,7 @@ func (p *daemonStatusProvider) SessionHistory(ctx context.Context, id string) ([
 			}
 		}
 		c = HistoryExcerpt(c)
-		if c.Text != "" {
+		if c.HasDisplayText() {
 			result = append(result, c)
 		}
 		if len(result) == SessionHistoryLimit {

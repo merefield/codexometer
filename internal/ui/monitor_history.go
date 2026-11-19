@@ -45,20 +45,19 @@ func (m *Model) saveMonitorHistory(id string, h monitorTurnHistory) {
 }
 
 func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHistory {
-	if c.Kind != codex.SessionContextReply || c.Streaming || strings.TrimSpace(c.Text) == "" {
+	if c.Kind != codex.SessionContextReply || c.Streaming || !c.ReplyRestricted && strings.TrimSpace(c.Text) == "" {
 		return h
 	}
-	c = codex.HistoryExcerpt(c)
+	c = projectMonitorReply(codex.SessionContext{}, codex.HistoryExcerpt(c))
 	if h.selected != nil && c.ReplyRestricted {
-		pinned := *h.selected
-		c.ProtectReply(&pinned)
+		pinned := projectMonitorReply(c, *h.selected)
 		if pinned != *h.selected {
 			h.selected = &pinned
 		}
 	}
 	for i, old := range h.turns {
 		if old.SameHistoryTurn(c) {
-			old.ProtectReply(&c)
+			c = projectMonitorReply(old, c)
 			if old == c {
 				return h
 			}
@@ -203,7 +202,8 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 				if c.ReplyRestricted {
 					if i := m.monitorSessionIndex(result.id); i >= 0 {
 						m.monitorSessionData = slices.Clone(m.monitorSessionData)
-						c.ProtectReply(&m.monitorSessionData[i].preview)
+						row := &m.monitorSessionData[i]
+						row.preview = projectMonitorReply(c, row.preview)
 					}
 				}
 				h = addHistoryTurn(h, c)

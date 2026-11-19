@@ -19,6 +19,22 @@ import (
 	"golang.org/x/text/language"
 )
 
+func TestRestrictedReplyNoticeInEveryLocale(t *testing.T) {
+	const key = "View this reply in Codex."
+	if got := SessionText(key, false); got != key {
+		t.Fatalf("translated ordinary assistant text %q", got)
+	}
+	for _, code := range codes {
+		got := New(code).Text(key)
+		if got == "" || (got == key) != (code == "en-GB") {
+			t.Errorf("%s: missing or unexpected translation %q", code, got)
+		}
+	}
+	if got := New("fr").Text(key); got != "Voir cette réponse dans Codex." {
+		t.Fatal(got)
+	}
+}
+
 func TestPresentationKeysHaveCatalogueEntries(t *testing.T) {
 	data, err := files.ReadFile("locales/en-GB.json")
 	if err != nil {

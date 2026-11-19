@@ -166,7 +166,7 @@ func (c SessionContext) pending() bool {
 }
 
 func preferSessionContext(a, b SessionContext) SessionContext {
-	if b.Text == "" && b.CurrentTask == "" && b.LatestGuidance == "" {
+	if !b.HasDisplayText() && b.CurrentTask == "" && b.LatestGuidance == "" {
 		return a
 	}
 	priority := func(c SessionContext) int {
@@ -189,7 +189,7 @@ func preferSessionContext(a, b SessionContext) SessionContext {
 		tie = b.At.Equal(a.At) && (b.ThreadID < a.ThreadID ||
 			b.ThreadID == a.ThreadID && b.RequestID < a.RequestID)
 	}
-	if a.Text == "" && a.CurrentTask == "" && a.LatestGuidance == "" || pb > pa || pb == pa && (newer || tie) {
+	if !a.HasDisplayText() && a.CurrentTask == "" && a.LatestGuidance == "" || pb > pa || pb == pa && (newer || tie) {
 		return b
 	}
 	return a
