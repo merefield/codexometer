@@ -71,16 +71,14 @@ func TestGuardianPlanQuotaAccounting(t *testing.T) {
 				}
 			}
 			if tc.limits != "" {
-				checkpoint := richTokenCountLine(now, 110, 100, 20, 0, 10)
+				cached := int64(20)
 				if tc.otherTurn {
 					appendRollout(t, path, turnContextWithTurnIDLine(now, "other", autoReviewModel)+"\n")
 				}
 				if tc.mismatchedUsage {
-					checkpoint = richTokenCountLine(now, 110, 100, 19, 0, 10)
+					cached--
 				}
-				checkpoint = strings.Replace(checkpoint, `"info":`, `"rate_limits":`+tc.limits+`,"info":`, 1)
-				checkpoint = strings.Replace(checkpoint, `"output_tokens":`, `"reasoning_output_tokens":0,"output_tokens":`, 1)
-				appendRollout(t, path, fmt.Sprintf(`{"ordinal":%d,`, tc.ordinal)+checkpoint[1:]+"\n")
+				appendRollout(t, path, guardianCheckpoint(now, tc.ordinal, 110, cached, tc.limits))
 			}
 			first := fetch()
 			if tc.reroute != "" {
@@ -118,5 +116,52 @@ func TestGuardianPlanQuotaAccounting(t *testing.T) {
 	}
 	if _, known, _ := EstimateStandardAPIEqCost(autoReviewModel, u); known {
 		t.Fatal("quota exemption must not publish a zero-dollar benchmark/API price")
+	}
+}
+
+func guardianCheckpoint(now time.Time, ordinal int, total, cached int64, limits string) string {
+	s := richTokenCountLine(now, total, 100, cached, 0, 10)
+	s = strings.Replace(s, `"info":`, `"rate_limits":`+limits+`,"info":`, 1)
+	s = strings.Replace(s, `"output_tokens":`, `"reasoning_output_tokens":0,"output_tokens":`, 1)
+	return fmt.Sprintf(`{"ordinal":%d,`, ordinal) + s[1:] + "\n"
+}
+
+func TestReusedGuardianThreadAcrossReconnect(t *testing.T) {
+	now, home := time.Now(), t.TempDir()
+	path := testRolloutPath(t, home, now, "review")
+	meta := sessionMetaLine("review", `{"subagent":{"other":"guardian"}}`, "/synthetic", nil)
+	writeRollout(t, path, strings.Replace(meta, `"source":`, `"model_provider":"openai","source":`, 1)+"\n")
+	r, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connected := stubSessionStatusProvider{subscribed: map[string]struct{}{"review": {}}}
+	r.statusProvider = connected
+	check := func(want int64) {
+		t.Helper()
+		s, err := r.FetchTokenUsage(context.Background())
+		if err != nil || s.TotalTokens != want*110 || s.APIEqUSD != 0 || s.APIEqPricedCalls+s.APIEqUnpricedCalls+s.APIEqPendingCalls != 0 || int64(len(r.files[path].modelCalls)) != want {
+			t.Fatalf("want %d distinct, accounted plan reviews: %+v %v", want, s, err)
+		}
+		for _, row := range s.Sessions {
+			if row.Context.Text != "" {
+				t.Fatal("private Guardian prose became a session reply", row.Context)
+			}
+		}
+	}
+	check(0)
+	for i, turn := range []string{"first", "second"} {
+		u := BenchmarkUsage{InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10, TotalTokens: 110}
+		exact := exactLine(t, now, "review", turn, "response-"+turn, u)
+		ordinal := 10 + i*3
+		record := fmt.Sprintf(`{"ordinal":%d,`, ordinal) + exact[1:] + "\n"
+		checkpoint := guardianCheckpoint(now, ordinal+1, int64(i+1)*110, 20, `{"limit_id":"codex","plan_type":"pro"}`)
+		appendRollout(t, path, turnContextWithTurnIDLine(now, turn, autoReviewModel)+"\n"+record+checkpoint+
+			`{"type":"event_msg","payload":{"type":"agent_message","phase":"final_answer","message":"private reviewer prose"}}`+"\n")
+		r.statusProvider = nil
+		check(int64(i + 1))
+		r.statusProvider = connected
+		appendRollout(t, path, record+checkpoint)
+		check(int64(i + 1))
 	}
 }

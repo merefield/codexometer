@@ -12,8 +12,8 @@ type historyTurn struct {
 	ID, Status  string
 	CompletedAt *int64
 	Items       []struct {
-		ID, Type, Text, Phase string
-		Content               []struct{ Type, Text string }
+		answerItem
+		Content []struct{ Type, Text string }
 	}
 }
 
@@ -58,6 +58,7 @@ func (p *daemonStatusProvider) SessionHistory(ctx context.Context, id string) ([
 			case "agentMessage":
 				if item.Phase == "final_answer" || item.Phase == "" {
 					c.Text, c.ItemID = item.Text, item.ID
+					c.ReplyRestricted = restrictedAnswer(item.Moderation)
 				}
 			}
 		}

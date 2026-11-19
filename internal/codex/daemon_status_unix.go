@@ -237,8 +237,15 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	if contexts == nil {
 		contexts = map[string]SessionContext{}
 	}
+	var guards map[string]answerGuards
 	for _, id := range threadIDs {
 		c := contexts[id]
+		if s := p.contexts[id]; s != nil && len(s.answers) != 0 {
+			if guards == nil {
+				guards = make(map[string]answerGuards)
+			}
+			guards[id] = s.answers
+		}
 		if pending := p.pendingModels[id]; pending != nil {
 			c.PendingModel = pending.display
 		}
@@ -254,6 +261,7 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		Goals:              goals,
 		UsageCoverage:      coverage,
 		Contexts:           contexts,
+		AnswerGuards:       guards,
 		WorkingDirectories: directories,
 		Statuses:           statuses,
 		ModelObservations:  append([]resolvedModelObservation(nil), p.observations...),

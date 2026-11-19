@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -387,6 +389,36 @@ func TestReplyIsNotHiddenByPreviousApprovalJustification(t *testing.T) {
 	}
 	if s.state.Sessions[0].ApprovalContext != "" {
 		t.Fatal("approval context leaked into reply")
+	}
+}
+
+func TestRestrictedRolloutAbsentFromReadOnlyBrowserPayload(t *testing.T) {
+	home, now := t.TempDir(), time.Now()
+	dir := filepath.Join(home, "sessions", now.Format("2006/01/02"))
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	log := `{"type":"session_meta","payload":{"id":"session","source":"cli","cwd":"/example"}}
+{"type":"event_msg","payload":{"type":"task_started","turn_id":"t"}}
+{"type":"event_msg","payload":{"type":"agent_message","phase":"final_answer","message":"fixture plaintext","moderation":{"item_id":"a","moderated":true}}}
+{"type":"event_msg","payload":{"type":"task_complete","turn_id":"t","last_agent_message":"fixture plaintext"}}
+`
+	if err := os.WriteFile(filepath.Join(dir, "rollout-"+now.Format("2006-01-02T15-04-05")+"-session.jsonl"), []byte(log), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := codex.NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := r.FetchTokenUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newStore()
+	s.live(live, nil, now)
+	raw, _ := s.snapshot()
+	if !strings.Contains(string(raw), "View this reply in Codex.") || strings.Contains(string(raw), "fixture plaintext") {
+		t.Fatalf("unsafe or empty browser state: %s", raw)
 	}
 }
 

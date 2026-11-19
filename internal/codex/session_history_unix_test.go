@@ -9,6 +9,24 @@ import (
 	"testing"
 )
 
+func TestHistoryDecisionProtectsLocalMirrorAfterDisconnect(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{"thread/turns/list": {"data": []any{map[string]any{"id": "turn", "status": "completed", "items": []any{
+		map[string]any{"id": "a", "type": "agentMessage", "phase": "final_answer", "text": "fixture plaintext", "moderation": map[string]any{"moderated": true}},
+	}}}}}
+	cursor := &rolloutCursor{threadID: "one", currentTurnID: "turn", preview: SessionContext{Kind: SessionContextReply, ThreadID: "one", TurnID: "turn", Text: "fixture plaintext"}}
+	r := &LiveUsageReader{statusProvider: p, files: map[string]*rolloutCursor{"path": cursor}}
+	turns, err := (Client{LiveUsage: r}).SessionHistory(context.Background(), "one")
+	if err != nil || len(turns) != 1 || !turns[0].ReplyRestricted || turns[0].Text != nativeAnswerNotice || cursor.preview.Text != nativeAnswerNotice {
+		t.Fatal(turns, cursor.preview, err)
+	}
+	r.statusProvider = nil
+	c, ok := rolloutContextRecord([]byte(`{"type":"event_msg","payload":{"type":"task_complete","turn_id":"turn","last_agent_message":"fixture plaintext"}}`), cursor)
+	if !ok || c.Text != nativeAnswerNotice {
+		t.Fatal("disconnect revived text", c)
+	}
+}
+
 func TestSessionHistoryBoundedReadOnlyCompletedTurns(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	rows := []any{map[string]any{"id": "active", "status": "inProgress", "items": []any{map[string]any{"type": "agentMessage", "text": "Not finished"}}}}

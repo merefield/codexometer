@@ -1,0 +1,92 @@
+package codex
+
+import (
+	"encoding/json"
+	"slices"
+)
+
+// The companion cannot implement native replacements, annotations or trusted
+// contact checks. Only an explicit plain show (or no restriction) is renderable.
+const nativeAnswerNotice = "View this reply in Codex."
+
+type answerItem struct {
+	ID, Type, Text, Phase string
+	Moderation            json.RawMessage
+}
+
+func restrictedAnswer(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var m struct {
+		Moderated *bool
+		Display   *struct {
+			Version         int
+			Mode            string
+			TrustedContacts string
+			Annotation      json.RawMessage
+		}
+	}
+	if json.Unmarshal(raw, &m) != nil || m.Moderated == nil {
+		return true
+	}
+	d := m.Display
+	if d == nil {
+		return *m.Moderated
+	}
+	return d.Version != 1 || d.Mode != "show" || d.TrustedContacts != "skip" ||
+		(len(d.Annotation) != 0 && string(d.Annotation) != "null")
+}
+
+// Scoped to one thread. Keep identities, never message contents. Copy on
+// append so a daemon snapshot can be read after releasing the provider lock.
+type answerID struct{ turn, item string }
+type answerGuards []answerID
+
+func (g *answerGuards) note(turn, item string) {
+	key := answerID{turn, item}
+	if slices.Contains(*g, key) {
+		return
+	}
+	const limit = 4 * SessionHistoryLimit
+	start := max(0, len(*g)-limit+1)
+	*g = append(slices.Clone((*g)[start:]), key)
+}
+
+func (g answerGuards) covers(turn, item string) bool {
+	for _, k := range g {
+		// Completion mirrors omit item IDs. Only use that fallback within
+		// the same turn; a positive item identity also works without a turn.
+		if k.turn == turn && (item == "" || k.item == "" || k.item == item) ||
+			k.item != "" && k.item == item && (k.turn == "" || turn == "") {
+			return true
+		}
+	}
+	return false
+}
+
+func (g answerGuards) protect(c *SessionContext) {
+	if c.Kind == SessionContextReply && g.covers(c.TurnID, c.ItemID) {
+		c.withholdAnswer()
+	}
+}
+
+func (c *rolloutCursor) inheritAnswerGuards(guards answerGuards) {
+	for _, k := range guards {
+		c.answers.note(k.turn, k.item)
+	}
+	c.answers.protect(&c.preview)
+}
+
+// ProtectReply updates an already-delivered excerpt when a matching decision
+// arrives via another source. It never matches another thread or a command.
+func (decision SessionContext) ProtectReply(c *SessionContext) {
+	if decision.ReplyRestricted && c.ThreadID == decision.ThreadID {
+		answerGuards{{decision.TurnID, decision.ItemID}}.protect(c)
+	}
+}
+
+func (c *SessionContext) withholdAnswer() {
+	c.Text, c.ReplyRestricted, c.Streaming = nativeAnswerNotice, true, false
+	c.Activity = SessionActivity{}
+}

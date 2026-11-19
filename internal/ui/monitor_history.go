@@ -59,8 +59,16 @@ func addHistoryTurn(h monitorTurnHistory, c codex.SessionContext) monitorTurnHis
 		return h
 	}
 	c = codex.HistoryExcerpt(c)
+	if h.selected != nil && c.ReplyRestricted {
+		pinned := *h.selected
+		c.ProtectReply(&pinned)
+		if pinned != *h.selected {
+			h.selected = &pinned
+		}
+	}
 	for i, old := range h.turns {
 		if sameHistoryTurn(old, c) {
+			old.ProtectReply(&c)
 			if old == c {
 				return h
 			}
@@ -87,7 +95,7 @@ func (m *Model) observeMonitorHistory() {
 				continue
 			}
 			next := addHistoryTurn(h, s.preview)
-			if slices.Equal(h.turns, next.turns) {
+			if slices.Equal(h.turns, next.turns) && h.selected == next.selected {
 				continue
 			}
 			if !cloned {
@@ -194,9 +202,18 @@ func (m Model) updateMonitorHistory(msg tea.Msg) (Model, tea.Cmd, bool) {
 			h.turns = nil
 			for _, c := range result.turns {
 				for _, previous := range old {
-					if sameHistoryTurn(c, previous) && c.LatestGuidance == "" {
-						c.LatestGuidance = previous.LatestGuidance
+					if sameHistoryTurn(c, previous) {
+						previous.ProtectReply(&c)
+						if c.LatestGuidance == "" {
+							c.LatestGuidance = previous.LatestGuidance
+						}
 						break
+					}
+				}
+				if c.ReplyRestricted {
+					if i := m.monitorSessionIndex(result.id); i >= 0 {
+						m.monitorSessionData = slices.Clone(m.monitorSessionData)
+						c.ProtectReply(&m.monitorSessionData[i].preview)
 					}
 				}
 				h = addHistoryTurn(h, c)

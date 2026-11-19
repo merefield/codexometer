@@ -181,6 +181,8 @@ type LiveUsageReader struct {
 }
 
 type rolloutCursor struct {
+	answers                     answerGuards
+	partialAnswerHistory        bool
 	activity                    sessionActivityState
 	preview                     SessionContext
 	offset                      int64
@@ -446,6 +448,11 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			exactStatuses = daemonSnapshot.Statuses
 			r.daemonContexts = daemonSnapshot.Contexts
+			if len(daemonSnapshot.AnswerGuards) != 0 {
+				for _, cursor := range r.files {
+					cursor.inheritAnswerGuards(daemonSnapshot.AnswerGuards[cursor.threadID])
+				}
+			}
 			daemonCoverage = daemonSnapshot.UsageCoverage
 			r.daemonDirectories = daemonSnapshot.WorkingDirectories
 			r.daemonAttachments = daemonSnapshot.AttachedThreads
@@ -725,6 +732,7 @@ func (r *LiveUsageReader) addFile(ctx context.Context, path string, info os.File
 	// Replacing this path changes the historical baseline, not the activity
 	// already observed by this process. Keep it only for the same thread.
 	if previous := r.files[path]; previous != nil && cursor.threadID != "" && previous.threadID == cursor.threadID {
+		cursor.inheritAnswerGuards(previous.answers)
 		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = previous.observedTokens, previous.modelCalls, previous.turnTimings
 		cursor.lastGrowthAt = previous.lastGrowthAt
 	}
@@ -1575,6 +1583,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 				preview.CompletedSteerIDs, preview.TurnID = live.CompletedSteerIDs, live.TurnID
 			}
 		}
+		cursor.answers.protect(&preview)
 		if cursor.guardianReviewer && !preview.pending() {
 			// A private reviewer's reply (streaming or final) is not the
 			// conversation. Its tokens above still belong to this group; the

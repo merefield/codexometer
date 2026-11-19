@@ -2939,6 +2939,7 @@ func refreshTick(after time.Duration) tea.Cmd {
 }
 
 func applyMonitorSessionObservation(row *monitorSession, observed codex.LiveUsageSession) {
+	row.preview.ProtectReply(&observed.Context)
 	row.name = observed.Name
 	row.modelSettings = observed.ModelSettings
 	row.preview = observed.Context

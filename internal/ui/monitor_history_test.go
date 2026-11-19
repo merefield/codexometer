@@ -31,6 +31,30 @@ func historyTestModel() Model {
 	return m
 }
 
+func TestRestrictedHistoryRevokesPinnedCopyAndLiveMirror(t *testing.T) {
+	m := historyTestModel()
+	m.moveMonitorHistory(-1)
+	c, ok := m.historicalContext()
+	if !ok || c.Text == "" {
+		t.Fatal("missing pinned reply")
+	}
+	restricted := c
+	restricted.ReplyRestricted = true
+	m.monitorSessionData[0].preview = c
+	m, _, _ = m.updateMonitorHistory(monitorHistoryResult{id: "root-one", turns: []codex.SessionContext{restricted}})
+	check := func() {
+		t.Helper()
+		if got := m.monitorCopyText("root-one"); got != "View this reply in Codex." {
+			t.Fatal("clipboard exposed original", got)
+		}
+	}
+	check()
+	m.showLiveMonitorHistory()
+	check()
+	applyMonitorSessionObservation(&m.monitorSessionData[0], codex.LiveUsageSession{Context: c})
+	check()
+}
+
 func TestMonitorHistoryNavigationPinningAndCopy(t *testing.T) {
 	m := historyTestModel()
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt})

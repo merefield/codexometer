@@ -42,6 +42,7 @@ func (r *LiveUsageReader) addCompressedFile(ctx context.Context, path string, in
 		return fmt.Errorf("read compressed rollout: %w", err)
 	}
 	if old != nil && old.threadID == cursor.threadID {
+		cursor.inheritAnswerGuards(old.answers)
 		cursor.observedTokens, cursor.modelCalls, cursor.turnTimings = old.observedTokens, old.modelCalls, old.turnTimings
 		cursor.lastGrowthAt = old.lastGrowthAt
 		if old.offset != cursor.offset {
@@ -104,6 +105,11 @@ func compressedRolloutBaseline(ctx context.Context, path string, info os.FileInf
 			cursor.compressedTail = append(cursor.compressedTail[:0], tail...)
 			if !oversized {
 				baselineRolloutRecord(cursor, line)
+			} else {
+				cursor.partialAnswerHistory = true
+				if cursor.preview.Kind == SessionContextReply {
+					cursor.preview = SessionContext{}
+				}
 			}
 			line = line[:0]
 			oversized = false

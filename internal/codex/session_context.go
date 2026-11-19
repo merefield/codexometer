@@ -41,6 +41,7 @@ type SessionContext struct {
 	// not that the model followed an instruction. No message text is retained.
 	CompletedSteerIDs string
 	Streaming         bool
+	ReplyRestricted   bool // original answer must not be displayed, exported or restored from a mirror
 	Activity          SessionActivity
 	// ApprovalContext is preceding same-thread/turn prose captured when the
 	// request arrived. Display-only: never part of the authorised action.
@@ -241,6 +242,9 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 		Timestamp time.Time `json:"timestamp"`
 		Ordinal   *uint64   `json:"ordinal"`
 		Payload   struct {
+			ID         string
+			Moderation json.RawMessage
+			Item       answerItem
 			Error      json.RawMessage   `json:"error"`
 			Code       json.RawMessage   `json:"codex_error_info"`
 			WillRetry  *bool             `json:"will_retry"`
@@ -267,6 +271,9 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 	}
 	c := SessionContext{At: event.Timestamp, ThreadID: cursor.threadID, TurnID: event.Payload.TurnID, Source: "LOCAL"}
 	p := event.Payload
+	if c.TurnID == "" {
+		c.TurnID = cursor.currentTurnID
+	}
 	if (p.Type == "error" || p.Type == "task_complete" || p.Type == "turn_complete") && p.TurnID != "" && cursor.currentTurnID != "" && p.TurnID != cursor.currentTurnID {
 		return c, false
 	}
@@ -274,7 +281,7 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 		if p.Phase != "commentary" && p.Phase != "final_answer" {
 			return c, false
 		}
-		c.Kind = SessionContextActivity
+		c.ItemID, c.Kind = p.ID, SessionContextActivity
 		if p.Phase == "final_answer" {
 			c.Kind = SessionContextReply
 		}
@@ -285,8 +292,24 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 		}
 	} else if event.Type == "event_msg" {
 		switch p.Type {
+		case "item_started", "item_completed":
+			if p.Item.Type != "AgentMessage" {
+				return c, false
+			}
+			if p.Type == "item_completed" && p.Item.Phase == "final_answer" {
+				cursor.partialAnswerHistory = false
+			}
+			if !restrictedAnswer(p.Item.Moderation) {
+				return c, false
+			}
+			c.ItemID = p.Item.ID
+			cursor.answers.note(c.TurnID, c.ItemID)
+			c.Kind = SessionContextReply
 		case "task_started", "turn_started", "user_message":
 			cursor.activity = sessionActivityState{}
+			if p.Type != "user_message" {
+				cursor.partialAnswerHistory = false
+			}
 			return SessionContext{}, true
 		case "task_complete", "turn_complete":
 			cursor.activity = sessionActivityState{}
@@ -311,8 +334,20 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 			failure := sessionFailureContext(c, raw)
 			return failure, failureAffectsTurn(failure)
 		case "agent_message":
-			c.Kind, c.Text = SessionContextActivity, p.Message
 			if p.Phase == "final_answer" {
+				cursor.partialAnswerHistory = false
+			}
+			restricted := restrictedAnswer(p.Moderation)
+			if restricted {
+				var target struct {
+					ID string `json:"item_id"`
+				}
+				_ = json.Unmarshal(p.Moderation, &target)
+				c.ItemID = target.ID
+				cursor.answers.note(c.TurnID, c.ItemID)
+			}
+			c.Kind, c.Text = SessionContextActivity, p.Message
+			if restricted || p.Phase == "final_answer" || p.Phase == "" && cursor.answers.covers(c.TurnID, c.ItemID) {
 				c.Kind = SessionContextReply
 			}
 		case "request_user_input":
@@ -357,6 +392,13 @@ func rolloutContextRecord(line []byte, cursor *rolloutCursor) (SessionContext, b
 	}
 	if c.Kind == SessionContextReply {
 		cursor.activity = sessionActivityState{}
+		cursor.answers.protect(&c)
+		// A truncated bootstrap can start after the authoritative item but
+		// before a raw response/completion mirror. That mirror alone cannot
+		// establish that the omitted decision permitted display.
+		if cursor.partialAnswerHistory && !c.ReplyRestricted {
+			c = SessionContext{}
+		}
 	}
 	if c.Kind == SessionContextActivity && cursor.preview.pending() && p.Type != "exec_command_begin" {
 		return cursor.preview, true
@@ -394,14 +436,20 @@ func latestSessionContext(path string, cursor *rolloutCursor) SessionContext {
 	}
 	var latest SessionContext
 	copyCursor := *cursor
+	copyCursor.partialAnswerHistory = start > 0
 	copyCursor.preview = SessionContext{}
 	copyCursor.activity = sessionActivityState{}
 	for _, line := range lines[:max(len(lines)-1, 0)] {
+		if turn, ordinal, at, ok := rolloutTurnIDRecord(line); ok && tokenRecordIsOwned(ordinal, copyCursor.subagentHistoryStartOrdinal, at, copyCursor.nonRoot, copyCursor.startedAt) {
+			copyCursor.currentTurnID = turn
+		}
 		if c, ok := rolloutContextRecord(line, &copyCursor); ok {
 			latest = c
 			copyCursor.preview = c
 		}
 	}
 	cursor.activity = copyCursor.activity
+	cursor.answers = copyCursor.answers
+	cursor.partialAnswerHistory = copyCursor.partialAnswerHistory
 	return latest
 }
