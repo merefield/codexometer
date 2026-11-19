@@ -229,6 +229,8 @@ export interface ScheduledJob {
   at?: string;
   zone: string;
   status: string;
+  resumeGoal?: boolean;
+  waitingForGoalStop?: boolean;
   canSend: boolean;
   waitingReason: string;
 }

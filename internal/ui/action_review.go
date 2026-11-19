@@ -67,7 +67,8 @@ func layoutActionReview(width, height int) (buttons []monitorNavigationButton, r
 }
 
 func (m Model) actionReviewButtons() []monitorNavigationButton {
-	g := m.monitorDashboardLayout()
+	// The review replaces the whole monitor area, including the detail header.
+	g := m.dashboardLayout()
 	buttons, _, _ := layoutActionReview(g.contentWidth, g.meterHeight)
 	return buttons
 }
@@ -128,7 +129,7 @@ func (m Model) updateActionReview(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if event.Button != tea.MouseLeft {
 			return m, nil, true
 		}
-		g := m.monitorDashboardLayout()
+		g := m.dashboardLayout()
 		action = monitorNavigationButtonsHit(m.actionReviewButtons(), event.X-2, event.Y-g.meterY)
 	case tea.MouseWheelMsg:
 		if event.Button == tea.MouseWheelUp {

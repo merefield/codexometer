@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "JATKA TAVOITETTA",
+  " // waiting for goal to stop for quota": " // odotetaan tavoitteen pysähtymistä kiintiön vuoksi",
   "FILTER": "SUODATA",
   "INCLUDE HISTORY": "SISÄLLYTÄ HISTORIA",
   "SAVED": "TALLENNETTU",
@@ -539,6 +541,8 @@
   "[NOW]": "[NYT]",
   "[EDIT]": "[MUOKKAA]",
   "FOLLOW-UPS // %d": "JATKOVIESTIT // %d",
+  "[ FOLLOW-UPS · %d ]": "[ JATKOVIESTIT · %d ]",
+  "[ CLOSE ]": "[ SULJE ]",
   "FOLLOW-UPS // UNAVAILABLE": "JATKOVIESTIT // EI SAATAVILLA",
   "EDIT QUEUED MESSAGE": "MUOKKAA // JONOSSA",
   "DELETE QUEUED MESSAGE": "POISTA // JONOSSA",

@@ -26,6 +26,53 @@ type cachedCommandsFake struct {
 	fresh int
 }
 
+type scheduledGoalCommandsFake struct {
+	*commandsFake
+	prepared int
+}
+
+func (f *scheduledGoalCommandsFake) PrepareGoalResume(_ context.Context, id, account, revision, choice string) (codex.GoalResumeTarget, error) {
+	if id != "parent" || account != "test-account" || revision != f.revision || choice != "choice" {
+		return codex.GoalResumeTarget{}, codex.ErrSessionCommand
+	}
+	f.prepared++
+	return codex.NewGoalResumeTarget(&codex.SessionGoal{ThreadID: id, Status: "active", Objective: "Verify the release"}), nil
+}
+
+func (f *scheduledGoalCommandsFake) ObserveScheduledGoal(context.Context, string) (*codex.SessionGoal, error) {
+	return nil, codex.ErrScheduledGoalNotReady
+}
+
+func (f *scheduledGoalCommandsFake) ResumeScheduledGoal(context.Context, string, string, codex.GoalResumeTarget) error {
+	return codex.ErrScheduledGoalNotReady
+}
+
+func TestGoalResumeWebCommitOnlyArmsTheTrigger(t *testing.T) {
+	s, _, token := controlServer(t)
+	f := &scheduledGoalCommandsFake{commandsFake: &commandsFake{revision: "current"}}
+	s.control.commands = f
+	s.store.scheduleQuota = codex.Snapshot{AccountFingerprint: "test-account", FetchedAt: time.Now(), RateLimits: codex.RateLimitSnapshot{Primary: &codex.Window{UsedPercent: 60}}}
+	b := actionRequest{Session: "parent", Command: &commandRequest{Mode: "prepare", Path: codex.ScheduleGoalResumePath, Revision: "current", Choice: "choice"}}
+	w := actionCall(s, token, "commands", b)
+	var result struct{ Confirmation string }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Confirmation == "" || f.prepared != 0 {
+		t.Fatal("review did not produce consent without arming", w.Code, w.Body)
+	}
+	b.Command = &commandRequest{Mode: "commit"}
+	b.Confirmation = result.Confirmation
+	if w := actionCall(s, token, "commands", b); w.Code != 200 || !strings.Contains(w.Body.String(), "GOAL RESUME SCHEDULED") || f.prepared != 1 || f.calls != 0 {
+		t.Fatal("confirmation ran an ordinary command or did not arm", w.Code, w.Body)
+	}
+	w = actionCall(s, token, "schedules", actionRequest{Session: "parent"})
+	var jobs []scheduledJob
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &jobs) != nil || len(jobs) != 1 || !jobs[0].ResumeGoal || !jobs[0].WaitingForGoalStop || jobs[0].CanSend {
+		t.Fatal("unexpected job", w.Code, w.Body)
+	}
+	if w := actionCall(s, token, "commands", b); w.Code != 409 || f.prepared != 1 {
+		t.Fatal("replayed goal confirmation was accepted", w.Code, w.Body)
+	}
+}
+
 func (f *cachedCommandsFake) CachedSessionCommands(string, string) (codex.SessionCommandMenu, bool) {
 	return codex.SessionCommandMenu{}, false
 }

@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "REANUDAR OBJETIVO",
+  " // waiting for goal to stop for quota": " // esperando que el objetivo se detenga por la cuota",
   "FILTER": "FILTRAR",
   "INCLUDE HISTORY": "INCLUIR HISTORIAL",
   "SAVED": "GUARDADA",
@@ -539,6 +541,8 @@
   "[NOW]": "[AHORA]",
   "[EDIT]": "[EDITAR]",
   "FOLLOW-UPS // %d": "MENSAJES SIGUIENTES // %d",
+  "[ FOLLOW-UPS · %d ]": "[ MENSAJES SIGUIENTES · %d ]",
+  "[ CLOSE ]": "[ CERRAR ]",
   "FOLLOW-UPS // UNAVAILABLE": "MENSAJES SIGUIENTES // NO DISPONIBLE",
   "EDIT QUEUED MESSAGE": "EDITAR // EN COLA",
   "DELETE QUEUED MESSAGE": "ELIMINAR // EN COLA",

@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "HEDEFİ SÜRDÜR",
+  " // waiting for goal to stop for quota": " // hedefin kota nedeniyle durması bekleniyor",
   "FILTER": "FİLTRE",
   "INCLUDE HISTORY": "GEÇMİŞİ DAHİL ET",
   "SAVED": "KAYITLI",
@@ -539,6 +541,8 @@
   "[NOW]": "[ŞİMDİ]",
   "[EDIT]": "[DÜZENLE]",
   "FOLLOW-UPS // %d": "TAKİP MESAJLARI // %d",
+  "[ FOLLOW-UPS · %d ]": "[ TAKİP MESAJLARI · %d ]",
+  "[ CLOSE ]": "[ KAPAT ]",
   "FOLLOW-UPS // UNAVAILABLE": "TAKİP MESAJLARI // KULLANILAMIYOR",
   "EDIT QUEUED MESSAGE": "DÜZENLE // SIRADA",
   "DELETE QUEUED MESSAGE": "SİL // SIRADA",

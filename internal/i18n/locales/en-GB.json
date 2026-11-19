@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "GOAL RESUME",
+  " // waiting for goal to stop for quota": " // waiting for goal to stop for quota",
   "FILTER": "FILTER",
   "INCLUDE HISTORY": "INCLUDE HISTORY",
   "SAVED": "SAVED",
@@ -539,6 +541,8 @@
   "[NOW]": "[NOW]",
   "[EDIT]": "[EDIT]",
   "FOLLOW-UPS // %d": "FOLLOW-UPS // %d",
+  "[ FOLLOW-UPS · %d ]": "[ FOLLOW-UPS · %d ]",
+  "[ CLOSE ]": "[ CLOSE ]",
   "FOLLOW-UPS // UNAVAILABLE": "FOLLOW-UPS // UNAVAILABLE",
   "EDIT QUEUED MESSAGE": "EDIT QUEUED MESSAGE",
   "DELETE QUEUED MESSAGE": "DELETE QUEUED MESSAGE",

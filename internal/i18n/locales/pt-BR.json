@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "RETOMAR OBJETIVO",
+  " // waiting for goal to stop for quota": " // aguardando o objetivo parar por causa da cota",
   "FILTER": "FILTRAR",
   "INCLUDE HISTORY": "INCLUIR HISTÓRICO",
   "SAVED": "SALVA",
@@ -539,6 +541,8 @@
   "[NOW]": "[AGORA]",
   "[EDIT]": "[EDITAR]",
   "FOLLOW-UPS // %d": "MENSAGENS SEGUINTES // %d",
+  "[ FOLLOW-UPS · %d ]": "[ MENSAGENS SEGUINTES · %d ]",
+  "[ CLOSE ]": "[ FECHAR ]",
   "FOLLOW-UPS // UNAVAILABLE": "MENSAGENS SEGUINTES // INDISPONÍVEL",
   "EDIT QUEUED MESSAGE": "EDITAR // NA FILA",
   "DELETE QUEUED MESSAGE": "EXCLUIR // NA FILA",

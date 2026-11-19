@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "JÄTKA EESMÄRKI",
+  " // waiting for goal to stop for quota": " // ootab, kuni kvoot eesmärgi peatab",
   "FILTER": "FILTER",
   "INCLUDE HISTORY": "KAASA AJALUGU",
   "SAVED": "SALVESTATUD",
@@ -539,6 +541,8 @@
   "[NOW]": "[KOHE]",
   "[EDIT]": "[MUUDA]",
   "FOLLOW-UPS // %d": "JÄRELSÕNUMID // %d",
+  "[ FOLLOW-UPS · %d ]": "[ JÄRELSÕNUMID · %d ]",
+  "[ CLOSE ]": "[ SULGE ]",
   "FOLLOW-UPS // UNAVAILABLE": "JÄRELSÕNUMID // POLE SAADAVAL",
   "EDIT QUEUED MESSAGE": "MUUDA // JÄRJEKORRAS",
   "DELETE QUEUED MESSAGE": "KUSTUTA // JÄRJEKORRAS",

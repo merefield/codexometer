@@ -84,6 +84,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	if m.actionReview != nil {
 		return monitorView{view: m.renderActionReview(width, height, colors)}
 	}
+	if m.monitorQueue.compact != "" && m.monitorContextDetail == "" {
+		return monitorView{view: m.renderCompactFollowups(width, height, colors)}
+	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		summary, rows, buttons := m.monitorDetailHeader(width, height)
 		var parts []string
@@ -439,6 +442,12 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 			lines[len(lines)-1] = colors.dimmed().Render(ansi.Truncate(pageLabel+" // PGUP/PGDN", innerWidth, ""))
 		} else {
 			pageAction = colors.dimmed().Render(ansi.Truncate(pageLabel, max(width-4, 0), "…"))
+		}
+	}
+	if m.compactFollowups() {
+		_, rightWidth, _ := monitorSessionColumnWidths(m.dashboardLayout().contentWidth)
+		if label := m.rowFollowupBadge(width, height, rightWidth, session); label != "" {
+			pageAction = m.renderFollowupBadge(session.id, label, colors)
 		}
 	}
 	borderColor := colors.primary

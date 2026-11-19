@@ -56,11 +56,19 @@ func (m Model) hasSchedule(id string) bool {
 	return false
 }
 
+func (m Model) hasGoalResume() bool {
+	j, ok := m.pendingTrigger()
+	return ok && j.ResumeGoal
+}
+
 func (m *Model) openSchedule() tea.Cmd {
 	if m.meterView != viewMonitor || m.monitorContextDetail == "" {
 		return nil
 	}
 	id := m.monitorContextDetail
+	if m.hasGoalResume() {
+		return nil
+	}
 	o := m.monitorPromptOffer()
 	if !m.hasSchedule(id) && (o.Token == "" || o.TurnID != "" || o.ThreadID != id || len(o.Questions) > 0) {
 		return nil
@@ -109,11 +117,18 @@ func (m *Model) openSchedule() tea.Cmd {
 func (m *Model) dispatchSchedules() tea.Cmd {
 	q := m.scheduleUI.queue
 	client, ok := m.fetcher.(codex.SessionPromptClient)
-	if q == nil || !ok || m.scheduleUI.polling || m.err != nil || m.monitorError != "" || !schedule.QuotaReady(m.snapshot, time.Now()) {
+	goals, _ := m.fetcher.(codex.ScheduledGoalClient)
+	now := time.Now()
+	quotaReady := schedule.QuotaReady(m.snapshot, now)
+	if q == nil || m.scheduleUI.polling || m.err != nil || m.monitorError != "" ||
+		!schedule.Fresh(m.snapshot, now) {
 		return nil
 	}
 	// Do not compete with a draft, manual confirmation or profile transition.
-	if m.scheduleUI.open || (m.scheduleUI.confirmID != "" && time.Now().Before(m.scheduleUI.confirmUntil)) || m.monitorPrompt.input.Focused() || m.monitorPrompt.busy || m.quota.busySession != "" {
+	blocked := m.scheduleUI.open || (m.scheduleUI.confirmID != "" && now.Before(m.scheduleUI.confirmUntil)) || m.monitorPrompt.busy || m.quota.busySession != ""
+	promptsReady := ok && quotaReady && !blocked && !m.monitorPrompt.input.Focused()
+	goalsPending := goals != nil && q.HasPendingGoalResume()
+	if !promptsReady && !goalsPending {
 		return nil
 	}
 	ready := map[string]bool{}
@@ -125,10 +140,23 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 	}
 	account := m.snapshot.AccountFingerprint
 	snapshot := m.snapshot
+	goalBlocked := blocked || m.monitorCommands.open
+	draftID := ""
+	if strings.TrimSpace(m.monitorPrompt.input.Value()) != "" {
+		draftID = m.monitorPrompt.session
+	}
 	m.scheduleUI.polling = true
 	return func() tea.Msg {
+		if goalsPending {
+			q.PollGoalResumes(context.Background(), goals, func() codex.Snapshot { return snapshot }, time.Now, func(id string) bool {
+				return goalBlocked || id == draftID || !ready[id]
+			})
+		}
+		if !promptsReady {
+			return scheduleDone{}
+		}
 		for _, j := range q.List("") {
-			if !ready[j.Session] || j.Status != "pending" || !schedule.Covers(j, snapshot) || !schedule.Fresh(snapshot, time.Now()) {
+			if j.ResumeGoal || !ready[j.Session] || j.Status != "pending" || !schedule.Covers(j, snapshot) || !schedule.Fresh(snapshot, time.Now()) {
 				continue
 			}
 			o := client.SessionPrompt(j.Session)

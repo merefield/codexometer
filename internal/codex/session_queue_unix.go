@@ -26,11 +26,8 @@ func (p *daemonStatusProvider) SessionQueueRevision() uint64 {
 }
 
 func (p *daemonStatusProvider) SessionQueue(ctx context.Context, thread string) ([]SessionQueuedMessage, error) {
-	p.mu.Lock()
-	connection := p.connection
-	_, subscribed := p.subscribed[thread]
-	p.mu.Unlock()
-	if connection == nil || !subscribed {
+	connection := p.subscribedConnection(thread)
+	if connection == nil {
 		return nil, errors.New("session unavailable")
 	}
 	var out []SessionQueuedMessage

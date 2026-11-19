@@ -278,7 +278,7 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 		hintStyle = colors.dimmed()
 	}
 	footer := hintStyle.Render(ansi.Truncate(hint, max(width-4, 1), "…"))
-	if scheduling {
+	if scheduling && !m.hasGoalResume() {
 		footer = m.renderScheduleToggleHint(width, hint, false, hintStyle, colors)
 	}
 	body := strings.Join(inputLines, "\n") + "\n" + footer

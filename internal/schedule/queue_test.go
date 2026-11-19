@@ -254,7 +254,7 @@ func TestManualAndAutomaticDispatchShareClaim(t *testing.T) {
 	var wg sync.WaitGroup
 	send := func(context.Context, Job) error { calls.Add(1); return nil }
 	for range 20 {
-		wg.Go(func() { _ = q.DispatchNow(context.Background(), id, "account", now, send) })
+		wg.Go(func() { _ = q.DispatchNow(context.Background(), id, "account", send) })
 		wg.Go(func() { _ = q.Dispatch(context.Background(), id, "account", true, now.Add(time.Hour), send) })
 	}
 	wg.Wait()
@@ -264,7 +264,7 @@ func TestManualAndAutomaticDispatchShareClaim(t *testing.T) {
 	if err := q.Save(j, "account", now); err != nil {
 		t.Fatal(err)
 	}
-	if q.DispatchNow(context.Background(), id, "account", now, send) == nil {
+	if q.DispatchNow(context.Background(), id, "account", send) == nil {
 		t.Fatal("old confirmation accepted")
 	}
 }

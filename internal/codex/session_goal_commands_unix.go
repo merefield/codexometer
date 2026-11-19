@@ -45,6 +45,9 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 			} else {
 				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Resume goal", Help: "Restart pursuit; may immediately consume quota.", Next: "goal/resume"})
 			}
+			if goal.Status == "active" || goal.Status == "usageLimited" {
+				menu.Choices = append(menu.Choices, SessionCommandChoice{Label: "Resume after quota recovery", Help: "Arm a one-shot resume if this goal stops for quota.", Next: ScheduleGoalResumePath})
+			}
 			menu.Choices = append(menu.Choices,
 				SessionCommandChoice{Label: "Replace goal", Help: "Use a new objective and start pursuit; keep the budget.", Next: "goal/set"},
 				SessionCommandChoice{Label: "Clear goal", Help: "Remove the goal; keep the conversation and current turn.", Next: "goal/clear"})
@@ -129,6 +132,14 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 	params := map[string]any{"threadId": thread.ID, "origin": "user"}
 	method, label, detail := "thread/goal/set", "", ""
 	switch path {
+	case ScheduleGoalResumePath:
+		if goal.Status != "active" && goal.Status != "usageLimited" {
+			return menu, ErrSessionCommand
+		}
+		menu.goalResume = NewGoalResumeTarget(goal)
+		// The local adapters intercept this reviewed action. It is never an RPC.
+		method, label = "local/goal/resume-after-quota", "Schedule resume"
+		detail = "Wait until this goal stops for quota (if still active), quota is available, and the session is idle. Keep Codexometer open; resuming uses quota."
 	case "goal/pause":
 		label, params["status"] = "Pause goal", "paused"
 		detail = "Pause pursuit. The current turn continues."
@@ -145,7 +156,7 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 	return menu, nil
 }
 
-func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *websocket.Conn, id string, choice SessionCommandChoice) error {
+func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *websocket.Conn, id string, choice SessionCommandChoice, target GoalResumeTarget) error {
 	p.mu.Lock()
 	_, subscribed := p.subscribed[id]
 	current := p.connection == conn
@@ -165,7 +176,7 @@ func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *web
 			return errors.New("goal clear acknowledgement unavailable; check Codex")
 		}
 	} else {
-		if result.Goal == nil || validateSessionGoal(result.Goal, id) != nil {
+		if result.Goal == nil || validateSessionGoal(result.Goal, id) != nil || target.Fingerprint != "" && !target.Matches(result.Goal) {
 			return errors.New("goal change acknowledgement unavailable; check Codex")
 		}
 		if status, ok := choice.params["status"].(string); ok && result.Goal.Status != status {
@@ -182,7 +193,7 @@ func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *web
 		}
 		return nil
 	}
-	if goal == nil {
+	if goal == nil || target.Fingerprint != "" && !target.Matches(goal) {
 		return errors.New("goal change unconfirmed; check Codex")
 	}
 	if objective, ok := choice.params["objective"].(string); ok && goal.Objective != objective {

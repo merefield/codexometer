@@ -230,6 +230,8 @@ func goalCommandPath(path string) string {
 		}
 	}
 	switch strings.ToLower(input) {
+	case "resume-after-quota":
+		return ScheduleGoalResumePath
 	case "pause", "resume", "clear", "edit", "budget":
 		return "goal/" + strings.ToLower(input)
 	}

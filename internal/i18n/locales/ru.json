@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "ВОЗОБНОВИТЬ ЦЕЛЬ",
+  " // waiting for goal to stop for quota": " // ожидание остановки цели из-за квоты",
   "FILTER": "ФИЛЬТР",
   "INCLUDE HISTORY": "ВКЛЮЧИТЬ ИСТОРИЮ",
   "SAVED": "СОХРАНЕНО",
@@ -539,6 +541,8 @@
   "[NOW]": "[СЕЙЧАС]",
   "[EDIT]": "[ИЗМЕНИТЬ]",
   "FOLLOW-UPS // %d": "СЛЕДУЮЩИЕ СООБЩЕНИЯ // %d",
+  "[ FOLLOW-UPS · %d ]": "[ СЛЕДУЮЩИЕ СООБЩЕНИЯ · %d ]",
+  "[ CLOSE ]": "[ ЗАКРЫТЬ ]",
   "FOLLOW-UPS // UNAVAILABLE": "СЛЕДУЮЩИЕ СООБЩЕНИЯ // НЕДОСТУПНО",
   "EDIT QUEUED MESSAGE": "ИЗМЕНИТЬ // В ОЧЕРЕДИ",
   "DELETE QUEUED MESSAGE": "УДАЛИТЬ // В ОЧЕРЕДИ",

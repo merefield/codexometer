@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "ÅTERUPPTA MÅL",
+  " // waiting for goal to stop for quota": " // väntar på att målet stoppas av kvoten",
   "FILTER": "FILTER",
   "INCLUDE HISTORY": "INKLUDERA HISTORIK",
   "SAVED": "SPARAD",
@@ -539,6 +541,8 @@
   "[NOW]": "[NU]",
   "[EDIT]": "[REDIGERA]",
   "FOLLOW-UPS // %d": "UPPFÖLJNINGAR // %d",
+  "[ FOLLOW-UPS · %d ]": "[ UPPFÖLJNINGAR · %d ]",
+  "[ CLOSE ]": "[ STÄNG ]",
   "FOLLOW-UPS // UNAVAILABLE": "UPPFÖLJNINGAR // OTILLGÄNGLIG",
   "EDIT QUEUED MESSAGE": "REDIGERA // KÖAD",
   "DELETE QUEUED MESSAGE": "RADERA // KÖAD",

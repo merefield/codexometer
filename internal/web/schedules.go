@@ -96,7 +96,9 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 			reason = "waiting for the original account"
 		case !schedule.Covers(j, q):
 			reason = "waiting for observed quota windows"
-		case !schedule.QuotaReady(q, now):
+		case j.WaitingForGoalStop:
+			reason = "waiting for goal to stop for quota"
+		case j.AwaitingQuotaSample(q) || !schedule.QuotaReady(q, now):
 			reason = "waiting for quota"
 		case c.scheduleBlocked(j.Session):
 			reason = "waiting for profile review or verification"
@@ -114,7 +116,7 @@ func (c *control) sendNowJob(session, id string) (schedule.Job, bool) {
 		return schedule.Job{}, false
 	}
 	for _, j := range c.schedules.List(session) {
-		if j.ID == id && j.Status == "pending" && j.MatchesAccount(q.AccountFingerprint) && schedule.Covers(j, q) {
+		if !j.ResumeGoal && j.ID == id && j.Status == "pending" && j.MatchesAccount(q.AccountFingerprint) && schedule.Covers(j, q) {
 			return j, true
 		}
 	}
@@ -138,21 +140,23 @@ func (c *control) collectSchedules(ctx context.Context) func() {
 	return func() { <-done }
 }
 func (c *control) dispatchSchedules(ctx context.Context) {
-	if c.prompts == nil {
-		return
+	if goals, ok := c.commands.(codex.ScheduledGoalClient); ok && c.schedules.HasPendingGoalResume() {
+		c.schedules.PollGoalResumes(ctx, goals, c.scheduleSnapshot, time.Now, func(id string) bool {
+			c.store.mu.Lock()
+			preview, exists := c.store.contexts[id]
+			unavailable := !exists || c.store.state.SessionsError
+			c.store.mu.Unlock()
+			return unavailable || preview.Kind == codex.SessionContextApproval || preview.Kind == codex.SessionContextQuestion ||
+				c.scheduleConfirming() || c.scheduleBlocked(id)
+		})
+		c.publishSchedules()
 	}
 	q := c.scheduleSnapshot()
-	if !schedule.QuotaReady(q, time.Now()) {
-		return
-	}
-	c.mu.Lock()
-	confirming := c.pending != nil && time.Now().Before(c.pending.until)
-	c.mu.Unlock()
-	if confirming {
+	if c.prompts == nil || c.scheduleConfirming() || !schedule.QuotaReady(q, time.Now()) {
 		return
 	}
 	for _, j := range c.schedules.List("") {
-		if j.Status != "pending" || c.scheduleBlocked(j.Session) || !schedule.Covers(j, q) || !schedule.Fresh(q, time.Now()) {
+		if j.ResumeGoal || j.Status != "pending" || c.scheduleBlocked(j.Session) || !schedule.Covers(j, q) || !schedule.Fresh(q, time.Now()) {
 			continue
 		}
 		o, err := c.offer(j.Session)
@@ -170,4 +174,10 @@ func (c *control) dispatchSchedules(ctx context.Context) {
 		cancel()
 	}
 	c.publishSchedules()
+}
+
+func (c *control) scheduleConfirming() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pending != nil && time.Now().Before(c.pending.until)
 }

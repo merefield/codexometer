@@ -14,10 +14,14 @@ import (
 )
 
 func (m Model) pendingTrigger() (schedule.Job, bool) {
-	if m.monitorContextTarget() == "" || m.scheduleUI.queue == nil {
+	return m.pendingTriggerFor(m.monitorContextTarget())
+}
+
+func (m Model) pendingTriggerFor(id string) (schedule.Job, bool) {
+	if id == "" || m.scheduleUI.queue == nil {
 		return schedule.Job{}, false
 	}
-	for _, j := range m.scheduleUI.queue.List(m.monitorContextTarget()) {
+	for _, j := range m.scheduleUI.queue.List(id) {
 		if j.Status != "sent" {
 			return j, true
 		}
@@ -26,7 +30,7 @@ func (m Model) pendingTrigger() (schedule.Job, bool) {
 }
 
 func (m Model) triggerReady(j schedule.Job) bool {
-	if !j.MatchesAccount(m.snapshot.AccountFingerprint) {
+	if j.ResumeGoal || !j.MatchesAccount(m.snapshot.AccountFingerprint) {
 		return false
 	}
 	o := m.monitorPromptOffer()
@@ -60,7 +64,9 @@ func (m Model) triggerSummaryAt(j schedule.Job, now time.Time) string {
 		return text + i18n.Text(" // waiting for the original account")
 	case !schedule.Covers(j, m.snapshot):
 		return text + i18n.Text(" // waiting for observed quota windows")
-	case !schedule.QuotaReady(m.snapshot, now):
+	case j.WaitingForGoalStop:
+		return text + i18n.Text(" // waiting for goal to stop for quota")
+	case j.AwaitingQuotaSample(m.snapshot) || !schedule.QuotaReady(m.snapshot, now):
 		return text + i18n.Text(" // waiting for quota")
 	case !m.triggerReady(j):
 		if i := m.monitorSessionIndex(j.Session); i >= 0 && m.monitorSessionData[i].working {
@@ -83,6 +89,9 @@ func (m Model) triggerButtons(width int) []triggerButton {
 		return nil
 	}
 	buttons := []triggerButton{{text: i18n.Text("[ Ctrl+N: SEND NOW ]"), key: "ctrl+n", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Ctrl+S: EDIT ]"), key: "ctrl+s", enabled: j.Status == "pending"}, {text: i18n.Text("[ Ctrl+D: DELETE ]"), key: "ctrl+d", enabled: j.Status != "sending"}}
+	if j.ResumeGoal {
+		return buttons[2:]
+	}
 	if m.scheduleUI.confirmID == j.ID && time.Now().Before(m.scheduleUI.confirmUntil) {
 		buttons = []triggerButton{{text: i18n.Text("[ Ctrl+Y: CONFIRM SEND ]"), key: "ctrl+y", enabled: m.triggerReady(j)}, {text: i18n.Text("[ Esc: CANCEL ]"), key: "esc", enabled: true}}
 	}
@@ -194,7 +203,7 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 			defer cancel()
-			err := q.DispatchNow(ctx, j.ID, account, time.Now(), func(ctx context.Context, j schedule.Job) error {
+			err := q.DispatchNow(ctx, j.ID, account, func(ctx context.Context, j schedule.Job) error {
 				return client.SendSessionPrompt(ctx, token, []string{j.Text})
 			})
 			return scheduleDone{err: err}

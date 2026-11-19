@@ -346,7 +346,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		}
 		if body.SendID != "" {
 			q := c.scheduleSnapshot()
-			err = c.schedules.DispatchNow(ctx, body.SendID, q.AccountFingerprint, time.Now(), func(ctx context.Context, j schedule.Job) error {
+			err = c.schedules.DispatchNow(ctx, body.SendID, q.AccountFingerprint, func(ctx context.Context, j schedule.Job) error {
 				return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
 			})
 			c.publishSchedules()

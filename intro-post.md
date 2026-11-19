@@ -126,6 +126,8 @@ Want to know whether your favourite CLI command works here? The [slash-command s
 
 **Keep your goals in sight:** `/goal` inspects, sets, edits, pauses, resumes or clears a session’s goal and manages its total token budget. Goal status sits below session-row statusline fields and before COPY in the full-detail footer: **PURSUING GOAL**, **GOAL STALLED**, paused, limited or complete. These are official Codex states, separate from whether a turn is working or waiting for input; stale observations are labelled. Goal-capable shared app-server required; writable web mode is needed for browser changes. Creating/resuming a goal can start work and spend quota immediately. Pause/clear do not interrupt an already-running turn. Changes are reviewed by default (`--confirmation none` skips the extra review), freshly checked and never automatically retried.
 
+Running low? In `/goal`, choose **Resume after quota recovery** while a goal is active or usage-limited. Keep Codexometer open and it can resume that same goal once Codex has reported a quota stop and fresh quota is available. It’s a one-shot trigger you can cancel from session detail; it never spends a reset credit.
+
 **Choose your confirmation policy:**
 
 | Setting | Behaviour |

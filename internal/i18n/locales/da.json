@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "GENOPTAG MÅL",
+  " // waiting for goal to stop for quota": " // venter på, at målet stopper på grund af kvoten",
   "FILTER": "FILTER",
   "INCLUDE HISTORY": "MEDTAG HISTORIK",
   "SAVED": "GEMT",
@@ -539,6 +541,8 @@
   "[NOW]": "[NU]",
   "[EDIT]": "[REDIGER]",
   "FOLLOW-UPS // %d": "OPFØLGNINGER // %d",
+  "[ FOLLOW-UPS · %d ]": "[ OPFØLGNINGER · %d ]",
+  "[ CLOSE ]": "[ LUK ]",
   "FOLLOW-UPS // UNAVAILABLE": "OPFØLGNINGER // UTILGÆNGELIG",
   "EDIT QUEUED MESSAGE": "REDIGER // I KØ",
   "DELETE QUEUED MESSAGE": "SLET // I KØ",

@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -34,6 +35,76 @@ func applyGoalCommand(t *testing.T, p *daemonStatusProvider, path string) {
 	}
 	if err := p.ExecuteSessionCommand(context.Background(), "one", menu.Path, menu.Revision, menu.Choices[0].ID); err != nil {
 		t.Fatal("goal mutation failed", path, err)
+	}
+}
+
+func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
+	p, f := goalFixture(t)
+	ctx := context.Background()
+	raw := json.RawMessage(`{"account":{"type":"chatgpt","email":"example@example.test"}}`)
+	account := fingerprintAccount(raw)
+	var reply map[string]any
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.catalogues = map[string]map[string]any{"account/read": reply}
+	f.mu.Unlock()
+	root, err := p.SessionCommands(ctx, "one", "goal")
+	found := false
+	for _, choice := range root.Choices {
+		found = found || choice.Next == ScheduleGoalResumePath
+	}
+	if err != nil || !found {
+		t.Fatal("cannot prearm an active goal", root, err)
+	}
+	menu, err := p.SessionCommands(ctx, "one", ScheduleGoalResumePath)
+	if err != nil || len(menu.Choices) != 1 || !menu.Choices[0].Action || menu.Choices[0].Reversible {
+		t.Fatal("schedule review is not available or wrongly classified", menu, err)
+	}
+	choice := menu.Choices[0].ID
+	if _, err := p.PrepareGoalResume(ctx, "one", account, "old", choice); err == nil {
+		t.Fatal("stale consent was accepted")
+	}
+	if err := p.ExecuteSessionCommand(ctx, "one", menu.Path, menu.Revision, choice); err == nil {
+		t.Fatal("ordinary slash execution accepted a virtual scheduler action")
+	}
+	target, err := p.PrepareGoalResume(ctx, "one", account, menu.Revision, choice)
+	if err != nil || target.Stopped {
+		t.Fatal("active goal not armed", err)
+	}
+	f.mu.Lock()
+	f.goals["one"].Status = "usageLimited"
+	f.goals["one"].TokensUsed += 42
+	f.commandStatus = "active"
+	f.mu.Unlock()
+	if err := p.ResumeScheduledGoal(ctx, "one", account, target); !errors.Is(err, ErrScheduledGoalNotReady) {
+		t.Fatal("never write to an active turn", err)
+	}
+	f.mu.Lock()
+	f.commandStatus = "idle"
+	f.mu.Unlock()
+	if err := p.ResumeScheduledGoal(ctx, "one", "wrong account", target); !errors.Is(err, ErrScheduledGoalChanged) {
+		t.Fatal("accepted a different account", err)
+	}
+	f.mu.Lock()
+	original := f.goals["one"].Objective
+	f.goals["one"].Objective = "different task"
+	f.mu.Unlock()
+	if err := p.ResumeScheduledGoal(ctx, "one", account, target); !errors.Is(err, ErrScheduledGoalChanged) {
+		t.Fatal("attempted to resume a different goal", err)
+	}
+	f.mu.Lock()
+	f.goals["one"].Objective = original
+	f.mu.Unlock()
+	if err := p.ResumeScheduledGoal(ctx, "one", account, target); err != nil {
+		t.Fatal("native goal resume failed", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.goalWrites) != 1 || len(f.goalWrites[0]) != 3 || f.goalWrites[0]["threadId"] != "one" ||
+		f.goalWrites[0]["status"] != "active" || f.goalWrites[0]["origin"] != "user" || f.goals["two"].Status != "paused" {
+		t.Fatal("unexpected RPC writes or cross-session goal changes", f.goalWrites)
 	}
 }
 

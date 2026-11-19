@@ -2,8 +2,10 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"unicode"
@@ -115,6 +117,7 @@ type sessionPermissionSnapshot struct {
 }
 
 type SessionCommandMenu struct {
+	goalResume      GoalResumeTarget
 	humanWait       bool
 	permissions     *sessionPermissionSnapshot
 	settings        *QuotaSession // Fresh execution snapshot; never part of the wire menu.
@@ -172,6 +175,9 @@ var ErrSessionCommand = errors.New("command unavailable or session/options chang
 // Shared acknowledgements describe the native operation, not inferred execution
 // of an approved action. Keep terminal and browser wording aligned.
 func SessionCommandSuccess(path string, speed bool) string {
+	if path == ScheduleGoalResumePath {
+		return "GOAL RESUME SCHEDULED"
+	}
 	family, _, _ := strings.Cut(path, "/")
 	switch family {
 	case "model":
@@ -189,6 +195,11 @@ func SessionCommandSuccess(path string, speed bool) string {
 		return "Session speed changed. Applies to subsequent turns."
 	}
 	return "Change requested. Codex will apply it to subsequent turns."
+}
+
+func commandDigest(value any) string {
+	data, _ := json.Marshal(value)
+	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
 func IsSessionCommand(text string) bool {

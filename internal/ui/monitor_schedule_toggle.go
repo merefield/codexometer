@@ -34,7 +34,7 @@ func (m Model) renderScheduleToggleHint(width int, hint string, open bool, hintS
 }
 
 func (m Model) scheduleToggleAt(x, y int) bool {
-	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() {
+	if m.meterView != viewMonitor || m.monitorContextDetail == "" || m.contextTargetHidden() || m.hasGoalResume() {
 		return false
 	}
 	g := m.monitorDashboardLayout()

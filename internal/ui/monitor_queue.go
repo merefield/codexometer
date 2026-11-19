@@ -35,21 +35,32 @@ func (entry followupEntry) key() string {
 }
 
 func (m Model) followupEntries() []followupEntry {
+	return m.followupEntriesFor(m.monitorContextTarget(), m.monitorQueue.compact == "")
+}
+
+func (m Model) followupEntriesFor(id string, receipts bool) []followupEntry {
 	var entries []followupEntry
-	if m.monitorQueue.session == m.monitorContextTarget() {
+	if m.monitorQueue.session == id {
 		for _, item := range m.monitorQueue.items {
 			entries = append(entries, followupEntry{label: i18n.Text("QUEUED"), text: item.Text, native: &item, editable: item.Editable && !m.monitorQueue.stale, removable: !m.monitorQueue.stale})
 		}
-		for i, text := range m.monitorQueue.submitted {
-			entries = append(entries, followupEntry{label: i18n.Text("ACCEPTED // CHECKING QUEUE"), text: text, receipt: "receipt:" + strconv.Itoa(i)})
+		if receipts {
+			for i, text := range m.monitorQueue.submitted {
+				entries = append(entries, followupEntry{label: i18n.Text("ACCEPTED // CHECKING QUEUE"), text: text, receipt: "receipt:" + strconv.Itoa(i)})
+			}
 		}
 	}
-	for _, steer := range m.monitorSteers {
-		if steer.session == m.monitorContextTarget() {
-			entries = append(entries, followupEntry{label: i18n.Text("STEER SENT"), text: steer.text, receipt: "steer:" + strconv.FormatUint(steer.id, 10), readOnly: true})
+	if receipts {
+		for _, steer := range m.monitorSteers {
+			if steer.session == id {
+				entries = append(entries, followupEntry{label: i18n.Text("STEER SENT"), text: steer.text, receipt: "steer:" + strconv.FormatUint(steer.id, 10), readOnly: true})
+			}
 		}
 	}
-	if j, ok := m.pendingTrigger(); ok {
+	if j, ok := m.pendingTriggerFor(id); ok {
+		if j.ResumeGoal {
+			return append(entries, followupEntry{label: i18n.Text("GOAL RESUME"), text: m.triggerSummary(j), trigger: &j, removable: j.Status != "sending"})
+		}
 		label := i18n.Text("AFTER QUOTA REFRESH")
 		if j.Trigger == "at" {
 			label = i18n.Text("AT ") + scheduleDate(j.At.Local())
@@ -68,13 +79,28 @@ func followupButtons(entry followupEntry, width int) []triggerButton {
 		return nil
 	}
 	var buttons []triggerButton
-	if entry.trigger != nil {
+	goal := entry.trigger != nil && entry.trigger.ResumeGoal
+	if entry.trigger != nil && !goal {
 		buttons = append(buttons, triggerButton{text: i18n.Text("[NOW]"), key: "now", enabled: entry.now})
 	}
-	buttons = append(buttons, triggerButton{text: i18n.Text("[EDIT]"), key: "edit", enabled: entry.editable}, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
+	if !goal {
+		buttons = append(buttons, triggerButton{text: i18n.Text("[EDIT]"), key: "edit", enabled: entry.editable})
+	}
+	buttons = append(buttons, triggerButton{text: "[×]", key: "delete", enabled: entry.removable})
 	total := len(buttons) - 1
 	for _, b := range buttons {
 		total += ansi.StringWidth(b.text)
+	}
+	if width < 34 && total >= width-4 {
+		for i := range buttons {
+			switch buttons[i].key {
+			case "now":
+				buttons[i].text = "[→]"
+			case "edit":
+				buttons[i].text = "[✎]"
+			}
+		}
+		total = 4*len(buttons) - 1
 	}
 	x := max(width-4-total, 0)
 	for i := range buttons {
@@ -85,6 +111,7 @@ func followupButtons(entry followupEntry, width int) []triggerButton {
 }
 
 type monitorQueueState struct {
+	compact, compactFocus                         string
 	hover                                         string
 	focusSession                                  string
 	session                                       string
@@ -133,11 +160,8 @@ func (m Model) queueUnavailable() bool {
 func (m *Model) pollMonitorQueue() tea.Cmd {
 	q := &m.monitorQueue
 	c, ok := m.fetcher.(codex.SessionQueueClient)
-	id := m.monitorContextTarget()
-	if !ok || m.meterView != viewMonitor || id == "" || m.contextTargetHidden() || q.open || q.busy || q.loading || m.scheduleUI.open {
-		return nil
-	}
-	if m.monitorContextDetail == "" && (m.monitorSelectedID != id || m.rowContextMode(id) != contextWide) {
+	id := m.monitorQueueTarget()
+	if !ok || m.meterView != viewMonitor || id == "" || q.open || q.busy || q.loading || m.scheduleUI.open {
 		return nil
 	}
 	revision := c.SessionQueueRevision()
@@ -149,7 +173,7 @@ func (m *Model) pollMonitorQueue() tea.Cmd {
 		q.submitted = nil
 		q.stale = false
 		q.offset = 0
-		q.focused = false
+		q.focused = q.compact != ""
 	}
 	q.session = id
 	q.loading = true
@@ -222,7 +246,10 @@ func (m Model) renderMonitorQueue(width, rows int, colors palette) string {
 	if spare := inner - ansi.StringWidth(header); spare > 1 {
 		header += " " + strings.Repeat("─", spare-1)
 	}
-	lines := []string{colors.label().Bold(false).Foreground(colors.primary).Background(tint).Width(inner).Render(header)}
+	var lines []string
+	if q.compact == "" {
+		lines = append(lines, colors.label().Bold(false).Foreground(colors.primary).Background(tint).Width(inner).Render(header))
+	}
 	for i := start; i < min(start+rows-1, len(entries)); i++ {
 		entry := entries[i]
 		buttons := followupButtons(entry, width)
@@ -268,6 +295,10 @@ func (m Model) monitorQueueAction(width, height, controls, x, y int) string {
 	if m.monitorQueueActivityFirst(width, height, controls) {
 		top++ // the task's existing activity row now precedes the queue
 	}
+	return m.monitorQueueHit(width, rows, top, x, y)
+}
+
+func (m Model) monitorQueueHit(width, rows, top, x, y int) string {
 	if x < 2 || x >= width-2 || y < top || y >= top+rows {
 		return ""
 	}
@@ -336,15 +367,38 @@ func (m Model) monitorQueueAt(x, y int) string {
 		base := m.layoutDetailControlsBase(g.contentWidth, g.meterHeight)
 		return m.monitorQueueAction(g.contentWidth, g.meterHeight, base.rows, x, y)
 	}
+	return m.monitorFollowupRowAt(g, x, y, false)
+}
+
+func (m Model) monitorFollowupRowAt(g dashboardGeometry, x, y int, badge bool) string {
 	a := m.monitorArea(g.contentWidth, g.meterHeight)
 	sessions, heights, _ := m.monitorSessionPage(a.graphHeight)
 	rowY := a.topHeight + a.gap - 1
 	mw, cw, _ := monitorSessionColumnWidths(a.width)
 	for i, s := range sessions {
-		if s.id == m.monitorSelectedID && m.rowContextMode(s.id) == contextWide {
-			return m.monitorQueueAction(cw, heights[i], m.expandedControlRows(cw, heights[i], s), x-mw-1, y-rowY)
+		if y >= rowY && y < rowY+heights[i] {
+			if badge {
+				label := m.rowFollowupBadge(mw, heights[i], cw, s)
+				w := ansi.StringWidth(label)
+				if y == rowY+heights[i]-1 && x >= mw-w-2 && x < mw-2 {
+					return s.id
+				}
+			} else if s.id == m.monitorSelectedID && m.rowContextMode(s.id) == contextWide {
+				return m.monitorQueueAction(cw, heights[i], m.expandedControlRows(cw, heights[i], s), x-mw-1, y-rowY)
+			}
+			return ""
 		}
 		rowY += heights[i]
+	}
+	return ""
+}
+
+func followupKeyAction(key string) string {
+	switch key {
+	case "enter", "e":
+		return "edit"
+	case "delete", "x":
+		return "delete"
 	}
 	return ""
 }
@@ -476,6 +530,14 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 			q.next = time.Time{}
 		}
 		return m, nil, true
+	}
+	if m.monitorQueue.compact != "" || !m.scheduleUI.open && !q.open {
+		next, cmd, handled := m.updateCompactFollowups(msg)
+		if handled {
+			return next, cmd, true
+		}
+		m = next
+		q = &m.monitorQueue
 	}
 	if m.scheduleUI.open {
 		q.focused = false
@@ -626,12 +688,11 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 				q.offset = max(q.offset-5, 0)
 			case "pgdown":
 				q.offset = min(q.offset+5, max(len(m.followupEntries())-1, 0))
-			case "enter", "e":
-				cmd := m.followupAction(q.offset, "edit")
-				return m, cmd, true
-			case "delete", "x":
-				cmd := m.followupAction(q.offset, "delete")
-				return m, cmd, true
+			default:
+				if action := followupKeyAction(key.String()); action != "" {
+					cmd := m.followupAction(q.offset, action)
+					return m, cmd, true
+				}
 			}
 			return m, nil, true
 		}

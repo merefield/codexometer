@@ -1,4 +1,6 @@
 {
+  "GOAL RESUME": "DOEL HERVATTEN",
+  " // waiting for goal to stop for quota": " // wacht tot het quotum het doel stilzet",
   "FILTER": "FILTER",
   "INCLUDE HISTORY": "GESCHIEDENIS TONEN",
   "SAVED": "OPGESLAGEN",
@@ -539,6 +541,8 @@
   "[NOW]": "[NU]",
   "[EDIT]": "[BEWERKEN]",
   "FOLLOW-UPS // %d": "VERVOLGBERICHTEN // %d",
+  "[ FOLLOW-UPS · %d ]": "[ VERVOLGBERICHTEN · %d ]",
+  "[ CLOSE ]": "[ SLUITEN ]",
   "FOLLOW-UPS // UNAVAILABLE": "VERVOLGBERICHTEN // NIET BESCHIKBAAR",
   "EDIT QUEUED MESSAGE": "BEWERKEN // IN WACHTRIJ",
   "DELETE QUEUED MESSAGE": "VERWIJDEREN // IN WACHTRIJ",
