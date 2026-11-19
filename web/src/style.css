@@ -162,6 +162,14 @@ button:disabled {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
+.composer-surface {
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, var(--bg));
+  color: inherit;
+  font: inherit;
+  padding: 0.5rem;
+}
 .secondary {
   margin-bottom: 8px;
 }

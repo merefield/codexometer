@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "VERLAUF EINBEZIEHEN",
+  "SAVED": "GESPEICHERT",
+  "MORE": "MEHR",
+  "NO COMPLETED TURNS": "KEINE ABGESCHLOSSENEN RUNDEN",
   "View this reply in Codex.": "Diese Antwort in Codex ansehen.",
   "%s ago": "vor %s",
   "COMMAND REVIEW": "BEFEHLSPRÜFUNG",

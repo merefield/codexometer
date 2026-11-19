@@ -12,6 +12,7 @@ It is useful when you want to:
 
 - keep quota and reset timing visible without interrupting your current task;
 - see whether local Codex sessions are active, waiting for input, or awaiting approval;
+- find a live session by name, directory or ID, or opt in to browse saved sessions read-only on a compatible shared app-server;
 - answer supported questions, approve commands deliberately, and send follow-ups from one session command centre;
 - keep track of completed replies that still need reviewing, with shared read state where Codex supports it;
 - understand locally observed token activity and API-equivalent cost;

@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTRER",
+  "INCLUDE HISTORY": "INCLURE L’HISTORIQUE",
+  "SAVED": "ENREGISTRÉE",
+  "MORE": "PLUS",
+  "NO COMPLETED TURNS": "AUCUN TOUR TERMINÉ",
   "View this reply in Codex.": "Voir cette réponse dans Codex.",
   "%s ago": "il y a %s",
   "COMMAND REVIEW": "EXAMEN DE LA COMMANDE",

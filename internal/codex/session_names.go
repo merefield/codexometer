@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Codex's append-only name index stores renames as later entries. Metadata is
@@ -38,7 +37,7 @@ func (r *LiveUsageReader) refreshSessionNames() {
 		if json.Unmarshal(scanner.Bytes(), &entry) != nil || entry.ID == "" {
 			continue
 		}
-		names[entry.ID] = strings.Join(strings.Fields(SanitizeSessionContext(entry.Name)), " ")
+		names[entry.ID] = singleLine(entry.Name)
 	}
 	if scanner.Err() != nil {
 		return

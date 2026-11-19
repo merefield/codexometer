@@ -1,4 +1,9 @@
 {
+  "FILTER": "FILTER",
+  "INCLUDE HISTORY": "INCLUDE HISTORY",
+  "SAVED": "SAVED",
+  "MORE": "MORE",
+  "NO COMPLETED TURNS": "NO COMPLETED TURNS",
   "View this reply in Codex.": "View this reply in Codex.",
   "%s ago": "%s ago",
   "COMMAND REVIEW": "COMMAND REVIEW",

@@ -44,6 +44,7 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
+	finder     sessionFinder
 	proseCache *prose.Cache
 	startup    startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
@@ -490,7 +491,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// immutable model forward even when it does not consume the message.
 	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
 		Model.updateStartup, Model.updateActionReview, Model.updateMonitorHistory,
-		Model.updateMonitorSuggestions, Model.updateMonitorCommands,
+		Model.updateMonitorSuggestions, Model.updateMonitorCommands, Model.updateSessionFinder,
 	} {
 		next, cmd, handled := update(m, message)
 		m = next
@@ -2361,6 +2362,7 @@ func (m Model) monitorFetch(kind monitorFetchKind, sequence uint64) tea.Cmd {
 func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd, bool) {
 	if message.err != nil {
 		m.monitorError = message.err.Error()
+		m.finder.setScope("")
 		if message.kind == monitorFetchStart {
 			m.monitorState = monitorIdle
 			m.monitorAutoStart = true
@@ -2393,6 +2395,11 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	}
 	if accepted {
 		m.reconcileMonitorSteers()
+		if id := m.finder.detail; id != "" {
+			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionVisible(m.monitorSessionData[i]) {
+				m.finder.closeDetail()
+			}
+		}
 	}
 	if accepted && message.kind != monitorFetchSample && message.kind != monitorFetchBoundary {
 		m.refreshMonitorRates(message.at, true)
@@ -2401,6 +2408,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 }
 
 func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
+	m.finder.setScope(usage.SavedScope)
 	m.monitorCodexStatusKnown = usage.CodexStatusKnown
 	m.monitorCodexUp = usage.CodexUp
 	m.monitorCodexWorking = usage.CodexWorking

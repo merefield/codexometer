@@ -1,4 +1,9 @@
 {
+  "FILTER": "ФИЛЬТР",
+  "INCLUDE HISTORY": "ВКЛЮЧИТЬ ИСТОРИЮ",
+  "SAVED": "СОХРАНЕНО",
+  "MORE": "ЕЩЁ",
+  "NO COMPLETED TURNS": "НЕТ ЗАВЕРШЁННЫХ ХОДОВ",
   "View this reply in Codex.": "Посмотрите этот ответ в Codex.",
   "%s ago": "%s назад",
   "COMMAND REVIEW": "ПРОВЕРКА КОМАНДЫ",

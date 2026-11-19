@@ -32,15 +32,17 @@ import (
 var assets embed.FS
 
 type server struct {
-	store      *store
-	host       string
-	mu         sync.Mutex
-	pairSecret string
-	pairUntil  time.Time
-	token      string
-	tokenUntil time.Time
-	streams    chan struct{}
-	control    *control
+	finder        codex.SavedSessionClient
+	savedRequests chan struct{}
+	store         *store
+	host          string
+	mu            sync.Mutex
+	pairSecret    string
+	pairUntil     time.Time
+	token         string
+	tokenUntil    time.Time
+	streams       chan struct{}
+	control       *control
 }
 
 type Options struct {
@@ -58,6 +60,8 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	}
 	defer listener.Close()
 	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
+	s.finder, _ = source.(codex.SavedSessionClient)
+	s.savedRequests = make(chan struct{}, 2)
 	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
 		s.store.configureThresholds(policy.QuotaStepPolicy())
 	}
@@ -139,6 +143,9 @@ func (s *server) handler() http.Handler {
 		_, _ = w.Write(data)
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
+	if s.finder != nil {
+		mux.Handle("GET /api/sessions/saved", s.authorize(http.HandlerFunc(s.savedSessions)))
+	}
 	if s.control != nil {
 		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands", "read"} {
 			mux.Handle("POST /api/control/"+action, s.authorize(http.HandlerFunc(s.control.handle(action, "http://"+s.host))))

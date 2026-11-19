@@ -40,7 +40,7 @@ func monitorSessionStatus(s monitorSession) monitorStatusFilter {
 }
 
 func (m Model) monitorSessionInList(s monitorSession) bool {
-	if !m.monitorSessionVisible(s) {
+	if !m.monitorSessionVisible(s) || !codex.SessionMatches(m.finder.query(), s.id, s.name, s.workingDirectory) {
 		return false
 	}
 	if m.monitorFilter == monitorFilterActive {

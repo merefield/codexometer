@@ -711,6 +711,7 @@
                 >
               {:else}
                 <textarea
+                  class="composer-surface"
                   bind:this={composer}
                   onkeydown={(event) => {
                     if (offer?.kind === 'prompt' && !offer.questions?.length)
@@ -826,7 +827,6 @@
     margin: 0.3rem 0 0.3rem 1.5rem;
     overflow-wrap: anywhere;
   }
-  textarea,
   .answer input,
   .answer select {
     display: block;
@@ -840,8 +840,10 @@
     padding: 0.5rem;
   }
   textarea {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
     resize: vertical;
-    background: color-mix(in srgb, currentColor 8%, var(--bg));
   }
   button {
     margin: 0.3rem 0.5rem 0.3rem 0;

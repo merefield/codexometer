@@ -620,6 +620,96 @@ test('Thresholds navigation stays hidden without a launch policy', async ({
   ).toHaveCount(0);
 });
 
+test('Sessions finder keeps attention global and saved history opt-in and read-only', async ({
+  page,
+  pairingURL,
+}) => {
+  const row = {
+    id: 'live-a',
+    name: 'Patch release',
+    directory: '/work/tools',
+    status: 'APPROVAL NEEDED',
+    tokens: 15,
+    agents: 0,
+    contextKind: 'LAST REPLY',
+    text: '',
+    command: '',
+    source: 'LIVE',
+    activity: '',
+    samples: [],
+  };
+  const snapshot = {
+    control: false,
+    savedScope: 'scope',
+    sessionsAt: new Date().toISOString(),
+    meters: [],
+    credits: [],
+    sessions: [row],
+  };
+  await mockStream(page, snapshot);
+  let reads = 0;
+  await page.route('**/api/sessions/saved?**', async (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    expect(q.get('scope')).toBe('scope');
+    expect(route.request().headers().authorization).toMatch(/^Bearer /);
+    reads++;
+    await route.fulfill({
+      json: q.get('id')
+        ? { turns: [{ task: 'A previous task', reply: 'An older answer' }] }
+        : {
+            next: 'page2',
+            sessions: [
+              row,
+              {
+                id: 'old-one',
+                name: 'Archived project notes',
+                directory: '/old',
+              },
+            ],
+          },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  const filter = page.getByRole('searchbox', { name: 'Filter sessions' });
+  // The Sessions route mounts asynchronously after the navigation click.
+  await expect(filter).toBeVisible();
+  await page.keyboard.press('f');
+  await expect(filter).toBeFocused();
+  await filter.fill('notes');
+  await expect(page.locator('.session-row')).toHaveCount(0);
+  await expect(
+    page.getByRole('navigation', { name: 'Sessions needing attention' }),
+  ).toContainText('Patch release');
+  expect(reads).toBe(0);
+  await page.getByLabel('Include history').check();
+  const saved = page.getByRole('region', { name: 'Saved sessions' });
+  const result = saved.getByRole('button', { name: /Archived project notes/ });
+  for (const button of [
+    result,
+    saved.getByRole('button', { name: 'Load more saved sessions' }),
+  ]) {
+    await button.press('f');
+    await expect(filter).toBeFocused();
+  }
+  await result.click();
+  await expect(saved).toContainText('An older answer');
+  await expect(saved.getByRole('textbox')).toHaveCount(0);
+  await filter.fill('');
+  await expect(
+    saved.getByRole('button', { name: /Patch release/ }),
+  ).toHaveCount(0);
+  await expect(page.locator('.session-row')).toHaveCount(1);
+  expect(reads).toBe(2);
+  await page.evaluate(
+    (s) =>
+      window.dispatchEvent(new CustomEvent('test-snapshot', { detail: s })),
+    { ...snapshot, savedScope: 'another' },
+  );
+  await expect(saved).toHaveCount(0);
+  await expect(page.getByLabel('Include history')).not.toBeChecked();
+});
+
 test('read-only session copy captures working prose in every detail level without server writes', async ({
   page,
   pairingURL,

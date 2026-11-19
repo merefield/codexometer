@@ -26,13 +26,19 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 				count++
 			}
 		}
-		if len(m.monitorSessionData) == 0 || width < 16 {
+		if width < 16 {
 			return nil
 		}
 		buttons = []monitorNavigationButton{
 			{label: "[↑]", action: "session-up", enabled: count > 0 && !m.monitorSummaryFocused},
 			{label: "[↓]", action: "session-down", enabled: count > 0 && (m.monitorAttentionFocused || m.monitorSummaryFocused || selected < 0 || selected < count-1)},
 			{label: m.monitorCycleLabel(width - 8), action: "cycle", enabled: count > 0},
+		}
+		search := monitorNavigationButton{label: "[(F) " + finderLabel() + "]", action: "finder", enabled: true}
+		if len(m.monitorSessionData) == 0 {
+			buttons = []monitorNavigationButton{search}
+		} else if width >= 48+lipgloss.Width(search.label) {
+			buttons = append(buttons, search)
 		}
 	} else {
 		mode := m.rowContextMode(id)

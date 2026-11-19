@@ -17,6 +17,8 @@ import (
 )
 
 type quotaDaemonFixture struct {
+	savedReads        []map[string]any
+	savedPages        map[[2]string]map[string]any // keyed by sort order and cursor
 	approvalPolicies  map[string]any
 	reviewers         map[string]string
 	ignorePermissions bool
@@ -149,6 +151,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			case "initialize":
 				fixture.initializeParams = req.Params
 				result["userAgent"] = "test"
+				if value, ok := fixture.catalogues["initialize"]; ok {
+					result = value
+				}
 			case "model/list":
 				fixture.modelReads = append(fixture.modelReads, req.Params)
 				result["data"] = []any{map[string]any{"model": "small", "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium"}}, "serviceTiers": []any{map[string]any{"id": "flex", "name": "Fast"}, map[string]any{"id": "priority", "name": "Slow"}}}}
@@ -341,6 +346,15 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					failureDetail = fixture.hookError
 					failure = failureDetail != nil
 				}
+			case "thread/list":
+				fixture.savedReads = append(fixture.savedReads, req.Params)
+				result = fixture.catalogues[req.Method]
+				if fixture.savedPages != nil {
+					order, _ := req.Params["sortKey"].(string)
+					cursor, _ := req.Params["cursor"].(string)
+					result = fixture.savedPages[[2]string{order, cursor}]
+				}
+				failure = result == nil
 			default:
 				if req.Method == "thread/items/read" {
 					fixture.itemReads = append(fixture.itemReads, req.Params)
