@@ -1381,6 +1381,13 @@ twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
 
+Select the **AGENTS** count or use **`/subagents`** to inspect the selected
+session's linked workers. The picker shows each known agent's status; open
+one to read its completed transcript without switching the parent composer,
+moving approvals, or changing token totals. Transcript reads require a
+connected shared app-server and omit turns that cannot be attributed to the
+child (including inherited parent history).
+
 Attention detection reads only content-free lifecycle metadata, per-thread
 writer-lock state, and—when available—the shared app-server's runtime thread
 status. A held writer lock plus a completed turn reliably identifies an open
@@ -1412,7 +1419,8 @@ starts with recent non-archived saved sessions and sends searches to Codex when
 you type. **↑/↓** and **Enter** select a result. Previewing up to ten completed
 turns is read-only; to load the conversation in the live detail pane, choose
 **Resume** (or press **Enter** on its preview). A resumed idle session has a
-composer; a turn only starts if you then send a prompt. The read-only web
+composer. Codexometer does not send a prompt as part of resume; existing Codex
+automation, such as an active goal, still follows Codex's rules. The read-only web
 app offers the same search under **Saved sessions** without the Resume action.
 This does not build a separate on-disk index or change the live Filter box.
 

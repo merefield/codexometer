@@ -35,6 +35,7 @@ type server struct {
 	finder        codex.SavedSessionClient
 	searcher      codex.SavedSessionSearchClient
 	resumer       codex.SavedSessionResumeClient
+	agents        codex.SessionAgentClient
 	savedRequests chan struct{}
 	store         *store
 	host          string
@@ -64,6 +65,7 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
 	s.finder, _ = source.(codex.SavedSessionClient)
 	s.searcher, _ = source.(codex.SavedSessionSearchClient)
+	s.agents, _ = source.(codex.SessionAgentClient)
 	if writable {
 		s.resumer, _ = source.(codex.SavedSessionResumeClient)
 	}
@@ -154,6 +156,9 @@ func (s *server) handler() http.Handler {
 	}
 	if s.resumer != nil {
 		mux.Handle("POST /api/sessions/resume", s.authorize(http.HandlerFunc(s.resumeSession)))
+	}
+	if s.agents != nil {
+		mux.Handle("GET /api/sessions/inspect", s.authorize(http.HandlerFunc(s.inspectSession)))
 	}
 	if s.control != nil {
 		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands", "read"} {

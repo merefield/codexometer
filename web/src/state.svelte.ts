@@ -28,6 +28,18 @@ export type SavedPage = {
   turns?: { task: string; reply: string; restricted?: boolean }[];
 };
 export const resumePicker = $state({ open: false });
+export const sessionInspector = $state({ root: '', kind: 'agents' as string });
+export type AgentInspection = {
+  agents?: { id: string; name: string; status: string }[];
+  turns?: SavedPage['turns'];
+};
+export let inspectSession:
+  | ((
+      root: string,
+      child: string,
+      signal: AbortSignal,
+    ) => Promise<AgentInspection>)
+  | undefined;
 export let resumeSaved:
   ((scope: string, cursor: string, id: string) => Promise<void>) | undefined;
 export let browseSaved:
@@ -61,6 +73,24 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
+  inspectSession = async (root, agent, signal) => {
+    if (!live.connected || live.data?.sessionsError)
+      throw new Error('Session unavailable');
+    const response = await fetch(
+      '/api/sessions/inspect?' + new URLSearchParams({ root, agent }),
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.any([
+          controller.signal,
+          signal,
+          AbortSignal.timeout(6500),
+        ]),
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) throw new Error('Session unavailable');
+    return response.json();
+  };
   browseSaved = async (scope, cursor, id, signal, query = '') => {
     if (!live.connected || live.data?.savedScope !== scope)
       throw new Error('History unavailable');
@@ -225,6 +255,8 @@ export function connect(): () => void {
     browseSaved = undefined;
     resumeSaved = undefined;
     resumePicker.open = false;
+    inspectSession = undefined;
+    sessionInspector.root = '';
     controller.abort();
     clearTimeout(retry);
     live.connected = false;

@@ -140,6 +140,7 @@ type SessionCommandMenu struct {
 func LocalSessionCommands() []SessionCommandChoice {
 	return []SessionCommandChoice{
 		{ID: "local-resume", Label: "/resume", Help: "Search saved Codex sessions, preview, or explicitly resume one in Sessions.", Next: "resume"},
+		{ID: "local-subagents", Label: "/subagents", Help: "Inspect the selected session’s linked agents and their read-only transcripts.", Next: "subagents"},
 		{ID: "local-statusline", Label: "/statusline", Help: "Choose fields for Codexometer’s detail footer. Saved display preferences only.", Next: "statusline"},
 		{ID: "local-usage", Label: "/usage", Help: "Open Codexometer’s usage history. Existing quota and reset views remain available.", Next: "usage"},
 		{ID: "local-copy", Label: "/copy", Help: "Copy the selected session’s observed reply or activity using Codexometer’s copy control.", Next: "copy"},

@@ -19,24 +19,28 @@ func (c Client) SessionHistory(ctx context.Context, id string) ([]SessionContext
 		if p, ok := c.LiveUsage.statusProvider.(SessionHistoryClient); ok {
 			turns, err := p.SessionHistory(ctx, id)
 			if err == nil {
-				c.LiveUsage.mu.Lock()
-				for _, cursor := range c.LiveUsage.files {
-					if cursor.threadID == id {
-						for i := range turns {
-							if turns[i].ReplyRestricted {
-								cursor.answers.note(turns[i].TurnID, turns[i].ItemID)
-							}
-							cursor.answers.protect(&turns[i])
-						}
-						cursor.answers.protect(&cursor.preview)
-					}
-				}
-				c.LiveUsage.mu.Unlock()
+				c.LiveUsage.protectSessionHistory(id, turns)
 			}
 			return turns, err
 		}
 	}
 	return nil, ErrSessionHistory
+}
+
+func (r *LiveUsageReader) protectSessionHistory(id string, turns []SessionContext) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, cursor := range r.files {
+		if cursor.threadID == id {
+			for i := range turns {
+				if turns[i].ReplyRestricted {
+					cursor.answers.note(turns[i].TurnID, turns[i].ItemID)
+				}
+				cursor.answers.protect(&turns[i])
+			}
+			cursor.answers.protect(&cursor.preview)
+		}
+	}
 }
 
 // Restrict excerpts to display fields even when supplied by another reader.

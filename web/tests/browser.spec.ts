@@ -716,6 +716,44 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   ).toHaveAttribute('aria-expanded', 'false');
 });
 
+test('linked agents open a read-only child transcript without navigating away', async ({
+  page,
+  pairingURL,
+}) => {
+  await mockStream(page, {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    sessions: [
+      {
+        id: 'parent',
+        directory: '/work',
+        tokens: 20,
+        agents: 2,
+        status: 'WORKING',
+        samples: [],
+      },
+    ],
+  });
+  await page.route('**/api/sessions/inspect?**', async (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    expect(route.request().method()).toBe('GET');
+    expect(q.get('root')).toBe('parent');
+    await route.fulfill({
+      json: q.get('agent')
+        ? { turns: [{ task: 'Child task', reply: 'Child reply' }] }
+        : { agents: [{ id: 'child', name: 'Worker', status: 'WORKING' }] },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: '2 LINKED AGENTS' }).click();
+  const inspector = page.getByRole('region', { name: 'Linked agents' });
+  await inspector.getByRole('button', { name: 'Worker // WORKING' }).click();
+  await expect(inspector).toContainText('Child reply');
+  await expect(inspector.getByRole('textbox')).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/sessions$/);
+});
+
 test('read-only session copy captures working prose in every detail level without server writes', async ({
   page,
   pairingURL,

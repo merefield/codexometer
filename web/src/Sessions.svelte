@@ -7,6 +7,7 @@
     number,
     controlRequest,
     resumePicker,
+    sessionInspector,
     type Session,
   } from './state.svelte';
   import {
@@ -28,6 +29,7 @@
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
   import SavedSessions from './SavedSessions.svelte';
+  import SessionInspector from './SessionInspector.svelte';
   import { matchesSession } from './session-filter';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
@@ -380,7 +382,12 @@
       field?.focus();
       return;
     }
-    if (target.closest('section[aria-label="Saved sessions"]')) return;
+    if (
+      target.closest(
+        'section[aria-label="Saved sessions"], [data-session-inspector]',
+      )
+    )
+      return;
     if (event.key.toLowerCase() === 'y' && !params.id) {
       event.preventDefault();
       if (!event.repeat) cycle();
@@ -585,6 +592,11 @@
       <dd>{value}</dd>
     </div>{/each}
 </dl>
+{#if sessionInspector.root && (!params.id || params.id === sessionInspector.root) && sessions.some((row) => row.id === sessionInspector.root)}
+  {#key sessionInspector.root}<SessionInspector
+      root={sessionInspector.root}
+    />{/key}
+{/if}
 <p class="muted">
   {stale ? 'LAST KNOWN TOTALS — live state counts unavailable. ' : ''}Tokens
   observed since this server started for currently listed sessions; linked
@@ -840,7 +852,13 @@
         {#if session.name && session.directory}<p class="muted">
             {session.directory}
           </p>{/if}
-        <p>{session.agents} LINKED AGENTS</p>
+        {#if session.agents > 0}<button
+            type="button"
+            onclick={() => {
+              sessionInspector.kind = 'agents';
+              sessionInspector.root = session.id;
+            }}>{session.agents} LINKED AGENTS</button
+          >{/if}
         <p class="muted">ACTIVE // {date(session.activity)}</p>
         <GoalStatus goal={session.goal} {stale} />
         <div class="detail-controls">

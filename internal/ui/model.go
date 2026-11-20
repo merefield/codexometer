@@ -46,6 +46,7 @@ type BenchmarkTaskProvider interface {
 
 type Model struct {
 	finder     sessionFinder
+	inspector  sessionInspector
 	proseCache *prose.Cache
 	startup    startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
@@ -491,7 +492,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// Priority handlers run before editor updates; each carries the resulting
 	// immutable model forward even when it does not consume the message.
 	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
-		Model.updateStartup, Model.updateActionReview, Model.updateMonitorHistory,
+		Model.updateStartup, Model.updateActionReview, Model.updateSessionInspector, Model.updateMonitorHistory,
 		Model.updateMonitorSuggestions, Model.updateMonitorCommands, Model.updateSessionFinder,
 	} {
 		next, cmd, handled := update(m, message)
@@ -2416,6 +2417,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 }
 
 func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
+	if m.finder.scope != "" && m.finder.scope != usage.SavedScope {
+		m.inspector = sessionInspector{request: m.inspector.request + 1}
+	}
 	m.finder.setScope(usage.SavedScope)
 	m.monitorCodexStatusKnown = usage.CodexStatusKnown
 	m.monitorCodexUp = usage.CodexUp

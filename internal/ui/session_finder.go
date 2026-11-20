@@ -271,8 +271,12 @@ func (m Model) savedLines(width int) []string {
 	if f.loading {
 		return []string{"…"}
 	}
+	return savedTranscriptLines(f.turns, width)
+}
+
+func savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
 	var lines []string
-	for _, turn := range slices.Backward(f.turns) {
+	for _, turn := range slices.Backward(turns) {
 		for _, text := range []string{turn.Task, i18n.SessionText(turn.Reply, turn.Restricted)} {
 			if text != "" {
 				lines = append(lines, wrapProse(text, max(width, 1))...)

@@ -371,6 +371,12 @@ export const localCommands: CommandChoice[] = [
     "next": "resume"
   },
   {
+    "id": "local-subagents",
+    "label": "/subagents",
+    "help": "Inspect the selected session’s linked agents and their read-only transcripts.",
+    "next": "subagents"
+  },
+  {
     "id": "local-statusline",
     "label": "/statusline",
     "help": "Choose fields for Codexometer’s detail footer. Saved display preferences only.",

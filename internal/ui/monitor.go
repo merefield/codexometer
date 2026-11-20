@@ -84,6 +84,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	if m.actionReview != nil {
 		return monitorView{view: m.renderActionReview(width, height, colors)}
 	}
+	if m.inspector.root != "" {
+		return monitorView{view: m.renderSessionInspector(width, height, colors)}
+	}
 	if m.monitorQueue.compact != "" && m.monitorContextDetail == "" {
 		return monitorView{view: m.renderCompactFollowups(width, height, colors)}
 	}
@@ -346,6 +349,10 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 }
 
 func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	return m.renderSessionMetrics(width, height, session, pageLabel, colors, nil)
+}
+
+func (m Model) renderSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette, target *monitorRect) string {
 	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
 		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
@@ -376,6 +383,8 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		memberLabel = "UNLINKED ACTIVITY"
 	}
 	bodyRows := max(height-2, 1)
+	_, canInspect := m.fetcher.(codex.SessionAgentClient)
+	inspectAgents := canInspect && !session.unattributed && session.agentCount > 0 && m.monitorError == "" && m.monitorState == monitorRunning && innerWidth >= lipgloss.Width(memberLabel)+2
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
@@ -386,9 +395,24 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(status, innerWidth, "")))
 	}
 	fields, selectedFields := m.monitorPriorityFields(session)
+	agentField := fmt.Sprintf("%d agents", session.agentCount)
+	appendAgentTarget := func() {
+		if len(lines) >= bodyRows {
+			return
+		}
+		label := "[" + memberLabel + "]"
+		if target != nil {
+			*target = monitorRect{x: 2, y: len(lines) + 1, width: lipgloss.Width(label), height: 1}
+		}
+		lines = append(lines, colors.label().Foreground(colors.primary).Render(label))
+	}
 	for _, field := range fields {
 		if len(lines) < bodyRows {
-			lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(field, innerWidth, "…")))
+			if inspectAgents && field == agentField {
+				appendAgentTarget()
+			} else {
+				lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(field, innerWidth, "…")))
+			}
 		}
 	}
 	if goal := m.monitorGoalStatus(session, innerWidth, colors); goal != "" && len(lines) < bodyRows {
@@ -411,6 +435,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !selectedFields["model"] && !selectedFields["model-with-reasoning"] {
 		appendPriority(model)
 	}
+	if inspectAgents && !selectedFields["agents"] {
+		appendAgentTarget()
+	}
 	priorityRows := len(lines)
 	if reviewer := session.preview.Reviewer; reviewer != "" {
 		label := "REVIEW // HUMAN"
@@ -425,7 +452,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.name != "" && !selectedFields["current-dir"] {
 		appendLine(terminalLabel(session.workingDirectory))
 	}
-	if !selectedFields["agents"] {
+	if !inspectAgents && !selectedFields["agents"] {
 		appendLine(memberLabel)
 	}
 	appendLine(formatMonitorCallActivity(session, time.Now()))

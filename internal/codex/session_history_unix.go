@@ -10,6 +10,7 @@ import (
 
 type historyTurn struct {
 	ID, Status  string
+	StartedAt   *int64
 	CompletedAt *int64
 	Items       []struct {
 		answerItem
@@ -24,17 +25,35 @@ func (p *daemonStatusProvider) SessionHistory(ctx context.Context, id string) ([
 	if err := p.ensureConnected(ctx); err != nil {
 		return nil, err
 	}
+	return p.readSessionHistory(ctx, id, time.Time{})
+}
+
+func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string, ownedSince time.Time) ([]SessionContext, error) {
+	p.mu.Lock()
+	conn, generation := p.connection, p.commandGeneration
+	p.mu.Unlock()
 	// Bounded, newest-first history reads neither resume nor change a session.
 	// Do not fall back to an unbounded includeTurns read on older servers.
 	var response struct{ Data []historyTurn }
-	if err := p.request(ctx, "thread/turns/list", map[string]any{
+	if err := p.requestOn(ctx, conn, "thread/turns/list", map[string]any{
 		"threadId": id, "limit": SessionHistoryLimit + 2, "sortDirection": "desc", "itemsView": "summary",
 	}, &response); err != nil {
 		return nil, err
 	}
+	p.mu.Lock()
+	current := p.connection == conn && p.commandGeneration == generation
+	p.mu.Unlock()
+	if !current {
+		return nil, ErrSessionHistory
+	}
 	var result []SessionContext
 	for _, turn := range response.Data {
 		if turn.Status != "completed" || turn.ID == "" {
+			continue
+		}
+		// Child history can contain the parent's pre-spawn prefix. Only show
+		// turns whose start time proves they belong to the child interval.
+		if !ownedSince.IsZero() && (turn.StartedAt == nil || *turn.StartedAt < ownedSince.Unix()) {
 			continue
 		}
 		c := SessionContext{ThreadID: id, TurnID: turn.ID, Kind: SessionContextReply, Source: "HISTORY"}

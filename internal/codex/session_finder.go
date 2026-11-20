@@ -106,16 +106,21 @@ func (c Client) BrowseSavedSessions(ctx context.Context, scope, cursor, id strin
 		if err != nil {
 			return SavedPage{}, ErrSavedSessions
 		}
-		page = SavedPage{}
-		for _, t := range turns {
-			t = HistoryExcerpt(t)
-			page.Turns = append(page.Turns, SavedTurn{Task: t.CurrentTask, Reply: t.Text, Restricted: t.ReplyRestricted})
-		}
+		page = SavedPage{Turns: savedTurns(turns)}
 	}
 	if !sameAccount() {
 		return SavedPage{}, ErrSavedSessions
 	}
 	return page, nil
+}
+
+func savedTurns(turns []SessionContext) []SavedTurn {
+	var result []SavedTurn
+	for _, t := range turns {
+		t = HistoryExcerpt(t)
+		result = append(result, SavedTurn{Task: t.CurrentTask, Reply: t.Text, Restricted: t.ReplyRestricted})
+	}
+	return result
 }
 
 // The cursor is a fast path, not an authorization grant: updated_at ordering
