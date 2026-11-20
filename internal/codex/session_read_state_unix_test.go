@@ -44,15 +44,35 @@ func TestReadStateAndApprovalSurviveEarlierTurnCompletingLate(t *testing.T) {
 	emit("turn/started", "", `{"threadId":"one","turn":{"id":"t1"}}`)
 	emit("turn/started", "", `{"threadId":"one","turn":{"id":"t2"}}`)
 	emit("item/commandExecution/requestApproval", "5", `{"threadId":"one","turnId":"t2","itemId":"cmd","command":"pwd","cwd":"/work","availableDecisions":["accept","decline"]}`)
-	emit("thread/readState/changed", "", `{"threadId":"one","readState":{"revision":"keep","firstUnread":{"type":"turn","turnId":"t2"}}}`)
+	// firstUnread can remain on an older turn while the revision advances.
+	emit("thread/readState/changed", "", `{"threadId":"one","readState":{"revision":"keep","firstUnread":{"type":"turn","turnId":"t1"}}}`)
 	emit("turn/completed", "", `{"threadId":"one","turn":{"id":"t1","status":"completed"}}`)
 	state := p.contexts["one"]
 	if state.activeTurn != "t2" || len(state.requests) != 1 || p.statuses["one"] != sessionRuntimeWorking || p.readStates["one"].state.Revision != "keep" {
 		t.Fatal("late completion cleared current turn, approval, runtime, or receipt")
 	}
-	emit("turn/completed", "", `{"threadId":"one","turn":{"id":"t2","status":"completed"}}`)
-	if len(state.requests) != 0 || p.readStates["one"].state.Known() {
-		t.Fatal("current completion did not invalidate approval and receipt")
+	// A poll returning the same receipt between the broadcast and completion
+	// must not discard the fact that the receipt was just published.
+	latest := p.readStates["one"].state
+	p.observeReadStateLocked("one", latest)
+	version := p.readStates["one"].version
+	const finished = `{"threadId":"one","turn":{"id":"t2","status":"completed"}}`
+	for range 2 { // Includes a duplicate completion.
+		emit("turn/completed", "", finished)
+		if len(state.requests) != 0 || p.readStates["one"].state != latest || !latest.Unread || p.readStates["one"].version <= version {
+			t.Fatal("completion did not clear approval and preserve the fresh unread receipt")
+		}
+	}
+	// A later turn with no broadcast must not reuse the previous turn's receipt.
+	emit("turn/started", "", `{"threadId":"one","turn":{"id":"t3"}}`)
+	emit("turn/completed", "", `{"threadId":"one","turn":{"id":"t3","status":"completed"}}`)
+	if p.readStates["one"].state.Known() {
+		t.Fatal("completion without a fresh broadcast reused a stale receipt")
+	}
+	emit("thread/readState/changed", "", `{"threadId":"one","readState":{"revision":"closed","firstUnread":null}}`)
+	emit("thread/closed", "", `{"threadId":"one"}`)
+	if p.readStates["one"].state.Known() {
+		t.Fatal("closed thread retained its receipt")
 	}
 }
 

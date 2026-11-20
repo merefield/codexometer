@@ -34,20 +34,28 @@ func (p *daemonStatusProvider) verifyQuotaAccount(ctx context.Context, conn *web
 	if account == "" {
 		return ErrScheduledQuotaUnverified
 	}
+	scoped := IsWorkspaceQuotaAccount(expected)
+	if !scoped && account != expected {
+		return errQuotaAccountChanged
+	}
 	workspace := workspaceRoutingID(raw)
-	if IsWorkspaceQuotaAccount(expected) && workspace == "" {
+	if workspace == "" {
 		var limits struct {
-			AccountID string `json:"accountId"`
+			AccountID  string             `json:"accountId"`
+			RateLimits *RateLimitSnapshot `json:"rateLimits"`
 		}
-		if p.requestOn(ctx, conn, "account/rateLimits/read", map[string]bool{"excludeResetCreditDetails": true}, &limits) != nil || limits.AccountID == "" {
+		if p.requestOn(ctx, conn, "account/rateLimits/read", map[string]bool{"excludeResetCreditDetails": true}, &limits) != nil {
 			return ErrScheduledQuotaUnverified
 		}
 		workspace = limits.AccountID
+		if workspace == "" && (scoped || limits.RateLimits == nil) {
+			return ErrScheduledQuotaUnverified
+		}
 	}
 	if quotaAccount(account, workspace) != expected {
 		// Don't upgrade an older email-only authorisation to a newly known
 		// workspace. Wait for the scheduler's next workspace-aware sample.
-		if workspace != "" && !IsWorkspaceQuotaAccount(expected) && account == expected {
+		if !scoped {
 			return ErrScheduledQuotaUnverified
 		}
 		return errQuotaAccountChanged
