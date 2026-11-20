@@ -6,14 +6,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
 )
 
-type startSessionProbe struct{ prompt string }
+type startSessionProbe struct {
+	prompt string
+	err    error
+}
 
 func (p *startSessionProbe) StartSession(_ context.Context, _, _, prompt string) (string, error) {
 	p.prompt = prompt
-	return "new-thread", nil
+	return "new-thread", p.err
 }
 
 func TestNewSessionRouteRequiresWriteModePairingAndExactConsent(t *testing.T) {
@@ -60,5 +64,28 @@ func TestNewSessionRouteRequiresWriteModePairingAndExactConsent(t *testing.T) {
 	post(token, body, 409)
 	if probe.prompt != "first" {
 		t.Fatal("confirmed prompt did not reach backend", probe.prompt)
+	}
+	for _, tc := range []struct {
+		err              error
+		code             int
+		firstMessageOnly bool
+	}{
+		{codex.ErrSessionStartTrust, 400, false},
+		{codex.ErrSessionStartRejected, 400, false},
+		{codex.ErrSessionStartUncertain, 502, false},
+		{codex.ErrSessionFirstPrompt, 200, true},
+	} {
+		probe.err = tc.err
+		prepare()
+		reply := post(token, body, tc.code)
+		if tc.firstMessageOnly {
+			var result struct {
+				ID                   string
+				FirstMessageRejected bool
+			}
+			if err := json.Unmarshal(reply, &result); err != nil || result.ID != "new-thread" || !result.FirstMessageRejected {
+				t.Fatal("definite first prompt rejection must preserve the known session ID", string(reply))
+			}
+		}
 	}
 }

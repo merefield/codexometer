@@ -507,7 +507,11 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	return p.requestOnChecked(ctx, connection, method, params, target, nil)
 }
 
-func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) (resultErr error) {
+func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) error {
+	return p.requestOnWithin(ctx, connection, method, params, target, generation, daemonStatusTimeout)
+}
+
+func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64, timeout time.Duration) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
 			return
@@ -549,7 +553,7 @@ func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection 
 		}
 		return err
 	}
-	timer := time.NewTimer(daemonStatusTimeout)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case envelope := <-response:

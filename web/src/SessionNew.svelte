@@ -21,11 +21,18 @@
   let notice = $state('');
   let confirmation = $state('');
   let pendingID = $state('');
+  let firstMessageRejected = $state(false);
   let timeout: ReturnType<typeof setTimeout>;
   let available = $derived(
-    live.connected && live.data?.control && live.data.savedScope === scope,
+    live.connected &&
+      live.data?.control &&
+      !live.data.sessionsError &&
+      live.data.savedScope === scope,
   );
   let locked = $derived(busy || !!pendingID || !!confirmation || uncertainty);
+  let readyToOpen = $derived(
+    !!pendingID && available && liveIDs.has(pendingID),
+  );
 
   onMount(() => {
     draft?.focus();
@@ -35,11 +42,12 @@
     if (!resumePicker.open) void tick().then(() => draft?.focus());
   });
   $effect(() => {
-    if (pendingID && available && liveIDs.has(pendingID)) {
-      location.hash = '/sessions/' + encodeURIComponent(pendingID);
-      onclose();
-    }
+    if (readyToOpen && !firstMessageRejected) openSession();
   });
+  function openSession() {
+    location.hash = '/sessions/' + encodeURIComponent(pendingID);
+    onclose();
+  }
   async function send() {
     if (!available || !startSession || busy || pendingID || uncertainty) return;
     const value = prompt.trim();
@@ -74,13 +82,18 @@
       if (preparing && result.confirmation) {
         confirmation = result.confirmation;
       } else if (result.id) {
+        firstMessageRejected = result.firstMessageRejected === true;
         pendingID = result.id;
-        notice = 'Opening the new session…';
-        timeout = setTimeout(() => {
-          pendingID = '';
-          uncertainty = true;
-          notice = 'New session did not appear in the live list. Check Codex.';
-        }, 15000);
+        if (firstMessageRejected) {
+          notice =
+            'Session created, but Codex rejected the first message. Copy your draft before opening the session to try again.';
+        } else {
+          notice = 'Opening the new session…';
+          timeout = setTimeout(() => {
+            notice =
+              'First message sent; still waiting for the session to appear.';
+          }, 15000);
+        }
       } else {
         throw new Error('Could not verify the new session. Check Codex.');
       }
@@ -107,7 +120,7 @@
     Working directory
     <input
       bind:value={directory}
-      disabled={locked}
+      readonly={locked}
       placeholder="Absolute path on the Codex machine"
     />
   </label>
@@ -118,8 +131,9 @@
       bind:this={draft}
       bind:value={prompt}
       maxlength={4096}
-      disabled={locked}
+      readonly={locked}
       onkeydown={(event) => {
+        if (locked) return;
         if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
           event.preventDefault();
           if (!event.repeat) void send();
@@ -141,6 +155,9 @@
       disabled={locked || !available}
       onclick={() => (resumePicker.open = true)}>Saved sessions</button
     >
+  {/if}
+  {#if firstMessageRejected && readyToOpen}
+    <button onclick={openSession}>Open session</button>
   {/if}
   {#if notice}<p role="status">{notice}</p>{/if}
 </section>

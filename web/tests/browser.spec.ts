@@ -785,7 +785,7 @@ test('/resume searches conversation text and opens the resumed composer', async 
   expect(calls.some(({ action }) => action === 'commit')).toBe(false);
 });
 
-test('new session is a draft until the first message is sent', async ({
+test('new session keeps the draft and opens its row even after slow telemetry', async ({
   page,
   pairingURL,
 }) => {
@@ -837,8 +837,14 @@ test('new session is a draft until the first message is sent', async ({
   await picker.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(composer).toHaveValue('Unsent message');
   expect(starts).toBe(0);
+  await page.clock.install();
   await composer.press('Enter');
   await expect(draft).toContainText('Opening the new session');
+  await page.clock.fastForward(15_500);
+  await expect(draft).toContainText('First message sent; still waiting');
+  await expect(
+    draft.getByRole('button', { name: 'Send first message' }),
+  ).toBeDisabled();
   await publish({
     ...initial,
     sessions: [...initial.sessions, { ...initial.sessions[0], id: 'created' }],

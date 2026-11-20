@@ -162,14 +162,15 @@ func (s *server) handler() http.Handler {
 	for _, route := range []struct {
 		pattern string
 		enabled bool
+		timeout time.Duration
 		handle  http.HandlerFunc
 	}{
-		{"GET /api/sessions/saved", s.finder != nil, s.savedSessions},
-		{"POST /api/sessions/resume", s.resumer != nil, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
-		{"POST /api/sessions/new", s.starter != nil, sessionMutationHandler(s, "new-session", 48<<10, s.startSession)},
+		{"GET /api/sessions/saved", s.finder != nil, 7 * time.Second, s.savedSessions},
+		{"POST /api/sessions/resume", s.resumer != nil, 7 * time.Second, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
+		{"POST /api/sessions/new", s.starter != nil, codex.SessionStartTimeout, sessionMutationHandler(s, "new-session", 48<<10, s.startSession)},
 	} {
 		if route.enabled {
-			mux.Handle(route.pattern, s.sessionRoute(7*time.Second, route.handle))
+			mux.Handle(route.pattern, s.sessionRoute(route.timeout, route.handle))
 		}
 	}
 	if s.agents != nil || s.terminals != nil {

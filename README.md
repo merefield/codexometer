@@ -1436,7 +1436,10 @@ This does not build a separate on-disk index or change the live Filter box.
 In write-enabled web mode, choose **New session** beside **Saved sessions**.
 With the same shared server, this opens a blank composer without creating a
 Codex thread. Check the working directory, then send the first message to
-start it using Codex's normal defaults. Type **`/resume`** or choose
+start it using Codex's normal defaults. The selected directory must already
+be explicitly trusted in Codex's user configuration; use the same directory
+where you approved folder trust in Codex (usually the repository root).
+Codexometer does not grant trust. Type **`/resume`** or choose
 **Saved sessions** in the draft to open an existing conversation instead.
 Closing the picker returns to your draft. Closing the draft before sending
 creates nothing. If Codexometer cannot verify a send, it will not retry it.

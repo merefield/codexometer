@@ -108,14 +108,20 @@ func (t sessionStartTarget) fields() []string { return []string{t.Directory, t.P
 
 func (s *server) startSession(w http.ResponseWriter, r *http.Request, target sessionStartTarget) {
 	id, err := s.starter.StartSession(r.Context(), target.Scope, target.Directory, target.Prompt)
-	if err != nil {
+	firstMessageRejected := id != "" && errors.Is(err, codex.ErrSessionFirstPrompt)
+	if err != nil && !firstMessageRejected {
 		status := http.StatusBadGateway
-		if errors.Is(err, codex.ErrSessionStartDirectory) || errors.Is(err, codex.ErrSessionStartPrompt) || errors.Is(err, codex.ErrSessionStartUnavailable) {
+		switch err {
+		case codex.ErrSessionStartDirectory, codex.ErrSessionStartPrompt, codex.ErrSessionStartCommand,
+			codex.ErrSessionStartUnavailable, codex.ErrSessionStartTrust, codex.ErrSessionStartRejected:
 			status = http.StatusBadRequest
 		}
 		http.Error(w, err.Error(), status)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+	_ = json.NewEncoder(w).Encode(struct {
+		ID                   string `json:"id"`
+		FirstMessageRejected bool   `json:"firstMessageRejected,omitempty"`
+	}{id, firstMessageRejected})
 }

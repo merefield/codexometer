@@ -20,6 +20,8 @@ type quotaDaemonFixture struct {
 	savedReads        []map[string]any
 	starts            []map[string]any
 	turnStarts        []map[string]any
+	startDelay        time.Duration
+	turnStartError    map[string]any
 	savedPages        map[[2]string]map[string]any // keyed by sort order and cursor
 	approvalPolicies  map[string]any
 	reviewers         map[string]string
@@ -147,6 +149,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			result := map[string]any{}
 			failure := false
 			noReply := false
+			delay := time.Duration(0)
 			var failureDetail map[string]any
 			var settingsNotification map[string]any
 			id, _ := req.Params["threadId"].(string)
@@ -180,11 +183,13 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 			case "thread/start", "turn/start":
 				if req.Method == "thread/start" {
 					fixture.starts = append(fixture.starts, req.Params)
+					delay = fixture.startDelay
 				} else {
 					fixture.turnStarts = append(fixture.turnStarts, req.Params)
+					failureDetail = fixture.turnStartError
 				}
 				result = fixture.catalogues[req.Method]
-				failure = result == nil
+				failure = result == nil || failureDetail != nil
 			case "thread/resume":
 				if fixture.resumeReadHook != nil {
 					fixture.resumeReadHook()
@@ -390,6 +395,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 			}
 			fixture.mu.Unlock()
+			if delay > 0 {
+				time.Sleep(delay)
+			}
 			if noReply {
 				continue // Keep serving other RPCs while this goal read stalls.
 			}

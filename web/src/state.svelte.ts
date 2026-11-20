@@ -59,7 +59,11 @@ export let startSession:
       directory: string,
       prompt: string,
       review?: SessionReview,
-    ) => Promise<{ id?: string; confirmation?: string }>)
+    ) => Promise<{
+      id?: string;
+      confirmation?: string;
+      firstMessageRejected?: boolean;
+    }>)
   | undefined;
 export let resumeSaved:
   | ((
@@ -118,7 +122,12 @@ export function connect(): () => void {
     if (!response.ok) throw new Error('Session information unavailable');
     return response.json();
   }
-  function postJSON(path: string, body: unknown, signal?: AbortSignal) {
+  function postJSON(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+    timeout = 8000,
+  ) {
     return fetch(path, {
       method: 'POST',
       headers: {
@@ -128,7 +137,7 @@ export function connect(): () => void {
       body: JSON.stringify(body),
       signal: AbortSignal.any([
         controller.signal,
-        AbortSignal.timeout(8000),
+        AbortSignal.timeout(timeout),
         ...(signal ? [signal] : []),
       ]),
       cache: 'no-store',
@@ -175,17 +184,23 @@ export function connect(): () => void {
     if (
       !live.connected ||
       !live.data?.control ||
-      live.data.savedScope !== scope
+      live.data.savedScope !== scope ||
+      live.data.sessionsError
     )
       throw new ControlRejected(
         'New sessions unavailable. Check the Codex connection.',
       );
-    const response = await postJSON('/api/sessions/new', {
-      scope,
-      directory,
-      prompt,
-      ...review,
-    });
+    const response = await postJSON(
+      '/api/sessions/new',
+      {
+        scope,
+        directory,
+        prompt,
+        ...review,
+      },
+      undefined,
+      14000,
+    );
     if (!response.ok) {
       if (response.status >= 500)
         throw new Error(
