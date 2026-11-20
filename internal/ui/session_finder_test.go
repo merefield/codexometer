@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
@@ -113,5 +115,55 @@ func TestResumePickerIsSeparateFromLiveFilter(t *testing.T) {
 	next, _, _ = next.updateSessionFinder(specialKey(tea.KeyEscape))
 	if next.finder.include || next.finder.query() != "live query" {
 		t.Fatal("closing the picker changed the live filter", next.finder)
+	}
+}
+
+type resumeFinderProbe struct {
+	Fetcher
+	resumed string
+}
+
+func (p *resumeFinderProbe) ResumeSavedSession(_ context.Context, scope, cursor, id string) error {
+	if scope != "scope" || cursor != "" {
+		return codex.ErrSavedSessions
+	}
+	p.resumed = id
+	return nil
+}
+
+func TestResumePickerReturnOpensLiveDetail(t *testing.T) {
+	m := contextTestModel()
+	probe := &resumeFinderProbe{}
+	m.fetcher = probe
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	m.finder.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "cold"}}}
+	m, cmd, _ := m.updateSessionFinder(specialKey(tea.KeyEnter))
+	if cmd == nil || !m.finder.loading || probe.resumed != "" {
+		t.Fatal("Enter did not stage a resume of the selected saved row")
+	}
+	m, _, _ = m.updateSessionFinder(cmd())
+	if m.finder.resumeID != "cold" || probe.resumed != "cold" || m.monitorContextDetail != "" {
+		t.Fatal("resume did not wait for the session's live observation")
+	}
+	next, _, _ := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchSample, at: time.Now(), usage: codex.LiveUsageSnapshot{
+		SavedScope: "scope", TotalTokens: m.monitorLatest, Sessions: []codex.LiveUsageSession{{ID: "cold", Active: true}},
+	}})
+	if m = next.(Model); m.monitorContextDetail != "cold" || m.finder.include {
+		t.Fatal("resumed session did not take over the detail pane")
+	}
+}
+
+func TestResumePickerCanOpenWithNoLiveSessions(t *testing.T) {
+	m := contextTestModel()
+	m.monitorSessionData = nil
+	m.finder.setScope("scope")
+	x, y := renderedTextStart(t, m, "[/resume]")
+	for _, msg := range []tea.Msg{key('/'), tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}} {
+		next, _ := m.Update(msg)
+		if !next.(Model).finder.include {
+			t.Fatalf("%T could not open the saved picker without a live session", msg)
+		}
 	}
 }

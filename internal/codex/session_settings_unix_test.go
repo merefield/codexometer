@@ -68,6 +68,7 @@ type quotaDaemonFixture struct {
 	goalReadHook     func()
 	goalNoReply      map[string]bool
 	threadReads      int
+	terminalReads    []map[string]any
 }
 
 func TestQuotaEffortDefaultFallback(t *testing.T) {
@@ -356,6 +357,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				failure = result == nil
 			default:
+				if req.Method == "thread/backgroundTerminals/list" {
+					fixture.terminalReads = append(fixture.terminalReads, req.Params)
+				}
 				if req.Method == "thread/items/read" {
 					fixture.itemReads = append(fixture.itemReads, req.Params)
 					if fixture.itemReadHook != nil {

@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"encoding/json"
-	"mime"
 	"net/http"
 	"time"
 
@@ -12,15 +11,7 @@ import (
 
 // Authenticated observation only, including in read-only web mode.
 func (s *server) savedSessions(w http.ResponseWriter, r *http.Request) {
-	select {
-	case s.savedRequests <- struct{}{}:
-		defer func() { <-s.savedRequests }()
-	default:
-		http.Error(w, "Busy", http.StatusTooManyRequests)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 7*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	q := r.URL.Query()
 	var page codex.SavedPage
 	var err error
@@ -38,8 +29,7 @@ func (s *server) savedSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) resumeSession(w http.ResponseWriter, r *http.Request) {
-	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if r.Header.Get("Origin") != "http://"+s.host || media != "application/json" {
+	if !sameOriginJSON(r, "http://"+s.host) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -49,18 +39,24 @@ func (s *server) resumeSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid resume target", http.StatusBadRequest)
 		return
 	}
-	select {
-	case s.savedRequests <- struct{}{}:
-		defer func() { <-s.savedRequests }()
-	default:
-		http.Error(w, "Busy", http.StatusTooManyRequests)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 7*time.Second)
-	defer cancel()
-	if err := s.resumer.ResumeSavedSession(ctx, target.Scope, target.Cursor, target.ID); err != nil {
+	if err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID); err != nil {
 		http.Error(w, "Resume not confirmed", http.StatusConflict)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) sessionRoute(timeout time.Duration, handler http.HandlerFunc) http.Handler {
+	return s.authorize(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case s.savedRequests <- struct{}{}:
+			defer func() { <-s.savedRequests }()
+		default:
+			http.Error(w, "Busy", http.StatusTooManyRequests)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		handler(w, r.WithContext(ctx))
+	}))
 }

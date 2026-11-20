@@ -64,13 +64,13 @@ func (m *Model) finishLocalMonitorCommand() tea.Cmd {
 
 func (m Model) runLocalMonitorCommand(path string) (Model, tea.Cmd, bool) {
 	switch path {
-	case "subagents":
+	case "subagents", "ps":
 		id := m.monitorContextTarget()
 		if id == "" {
 			id = m.monitorSelectedID
 		}
 		m.finishLocalMonitorCommand()
-		cmd := m.requestAgentInspection(id, "")
+		cmd := m.requestSessionInspection(path, id, "")
 		return m, cmd, true
 	case "resume":
 		m.finishLocalMonitorCommand()

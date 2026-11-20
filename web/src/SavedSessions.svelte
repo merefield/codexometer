@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import SessionSearch from './SessionSearch.svelte';
+  import SessionTranscript from './SessionTranscript.svelte';
   import {
     browseSaved,
     live,
@@ -111,17 +113,12 @@
 
 <section class="panel" aria-label="Saved sessions">
   <h2>SAVED SESSIONS</h2>
-  <label class="composer-surface session-search"
-    ><span aria-hidden="true">⌕</span>
-    <input
-      type="search"
-      aria-label="Search saved sessions"
-      placeholder="Search saved conversations"
-      maxlength="160"
-      bind:this={search}
-      bind:value={query}
-    /></label
-  >
+  <SessionSearch
+    label="Search saved sessions"
+    placeholder="Search saved conversations"
+    bind:field={search}
+    bind:value={query}
+  />
   <button onclick={() => (resumePicker.open = false)}>Close</button>
   {#if resuming}<p role="status">
       Opening the resumed session…
@@ -141,12 +138,7 @@
         row.directory}</button
     >
     {#if id === row.id && turns}
-      {#each [...turns].reverse() as turn}
-        {#if turn.task}<p class="muted">{turn.task}</p>{/if}
-        <p class="saved-reply">
-          {turn.restricted ? 'View this reply in Codex.' : turn.reply}
-        </p>
-      {:else}<p>No completed turns available.</p>{/each}
+      <SessionTranscript {turns} />
       {#if live.data?.control}<button
           disabled={resumeBusy || !!resuming}
           onclick={() => void resume(row)}>Resume</button
@@ -164,10 +156,3 @@
       >Load more saved sessions</button
     >{/if}
 </section>
-
-<style>
-  .saved-reply {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-</style>

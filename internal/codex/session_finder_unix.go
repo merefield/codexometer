@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"go/version"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -93,7 +92,7 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sor
 		params["cursor"] = cursor
 	}
 	var result struct {
-		Data       []struct{ ID, Name, Cwd string }
+		Data       []savedWireThread
 		NextCursor string
 	}
 	if err := p.requestOn(ctx, conn, "thread/list", params, &result); err != nil {
@@ -101,11 +100,17 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sor
 	}
 	page := SavedPage{Next: result.NextCursor}
 	for _, t := range result.Data {
-		if t.ID != "" && singleLine(t.ID) == t.ID {
-			page.Sessions = append(page.Sessions, SavedSession{t.ID, singleLine(t.Name), singleLine(t.Cwd)})
-		}
+		page.addWireThread(t)
 	}
 	return page, nil
+}
+
+type savedWireThread struct{ ID, Name, Cwd string }
+
+func (page *SavedPage) addWireThread(t savedWireThread) {
+	if t.ID != "" && singleLine(t.ID) == t.ID {
+		page.Sessions = append(page.Sessions, SavedSession{t.ID, singleLine(t.Name), singleLine(t.Cwd)})
+	}
 }
 
 func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, query string) (SavedPage, error) {
@@ -125,7 +130,7 @@ func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, q
 	}
 	var result struct {
 		Data []struct {
-			Thread struct{ ID, Name, Cwd string }
+			Thread savedWireThread
 		}
 		NextCursor string
 	}
@@ -137,10 +142,7 @@ func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, q
 	}
 	page := SavedPage{Next: result.NextCursor}
 	for _, match := range result.Data {
-		t := match.Thread
-		if t.ID != "" && singleLine(t.ID) == t.ID {
-			page.Sessions = append(page.Sessions, SavedSession{t.ID, singleLine(t.Name), singleLine(t.Cwd)})
-		}
+		page.addWireThread(match.Thread)
 	}
 	return page, nil
 }
@@ -185,11 +187,7 @@ func (p *daemonStatusProvider) resumeSaved(ctx context.Context, scope, cursor, i
 		delete(p.resumedThreads, oldest)
 	}
 	p.resumedThreads[id] = time.Now()
-	p.subscribed[id] = struct{}{}
-	p.permissionSettings[id] = result.ApprovalsReviewer
-	if filepath.IsAbs(result.Cwd) {
-		p.threadDirectories[id] = result.Cwd
-	}
+	p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
 	p.lastStatusAt = time.Time{}
 	return nil
 }

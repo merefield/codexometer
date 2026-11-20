@@ -1388,6 +1388,11 @@ moving approvals, or changing token totals. Transcript reads require a
 connected shared app-server and omit turns that cannot be attributed to the
 child (including inherited parent history).
 
+Use **`/ps`** from a live session's command browser to list the background
+terminals reported by its shared app-server. The read-only panel shows the
+command and directory, plus a PID only when Codex provides one. Refresh with
+**R** in the terminal or **Refresh** in the browser. It never stops a process.
+
 Attention detection reads only content-free lifecycle metadata, per-thread
 writer-lock state, and—when available—the shared app-server's runtime thread
 status. A held writer lock plus a completed turn reliably identifies an open
@@ -1413,12 +1418,14 @@ follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
 **Finding an older conversation:** choose **`/resume`** in the slash-command
-browser, or click **`/resume`** on the Sessions page in write-enabled web mode.
+browser. In the terminal Sessions list, press **/** or click **`/resume`**,
+even with no live session to select. The write-enabled web Sessions page also
+has a **`/resume`** button.
 With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
 starts with recent non-archived saved sessions and sends searches to Codex when
-you type. **↑/↓** and **Enter** select a result. Previewing up to ten completed
-turns is read-only; to load the conversation in the live detail pane, choose
-**Resume** (or press **Enter** on its preview). A resumed idle session has a
+you type. In the TUI, use **↑/↓** to select a match and **Enter** to resume.
+Use **→** or click a match to preview up to ten completed turns without
+resuming. The browser provides a **Resume** button on the preview. A resumed idle session has a
 composer. Codexometer does not send a prompt as part of resume; existing Codex
 automation, such as an active goal, still follows Codex's rules. The read-only web
 app offers the same search under **Saved sessions** without the Resume action.
@@ -4007,9 +4014,9 @@ temporary.
 The [slash-command support audit](docs/slash-command-support.md#recommended-delivery-order)
 is the canonical prioritised backlog. Native reviewer controls and exact-action
 retry consent are delivered in v0.30.0, not pending work. Recommended next
-increments are read-only `/ps`, `/status` and `/warnings` views, followed by
-compaction, linked-agent navigation and reviewed background-terminal stopping.
-Thread creation/resume/fork and full project-context transitions need their own
+increments are read-only `/status` and `/warnings` views, followed by
+compaction and reviewed background-terminal stopping. Thread creation/fork
+and full project-context transitions need their own
 lifecycle foundation. These are proposals, not delivery commitments.
 
 ### Go 1.27 follow-ups

@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import SessionTranscript from './SessionTranscript.svelte';
   import {
     inspectSession,
     sessionInspector,
-    type AgentInspection,
+    type SessionInspection,
+    type InspectionKind,
   } from './state.svelte';
-  let { root }: { root: string } = $props();
-  let page = $state<AgentInspection>({});
+  let { root, kind }: { root: string; kind: InspectionKind } = $props();
+  let page = $state<SessionInspection>({});
   let child = $state('');
   let busy = $state(false);
   let failed = $state(false);
@@ -22,7 +24,7 @@
     busy = true;
     try {
       if (!inspectSession) throw new Error();
-      const result = await inspectSession(root, id, controller.signal);
+      const result = await inspectSession(root, id, kind, controller.signal);
       if (!controller.signal.aborted) page = result;
     } catch {
       if (!controller.signal.aborted) failed = true;
@@ -37,9 +39,24 @@
   });
 </script>
 
-<section class="panel" aria-label="Linked agents" data-session-inspector>
+<section
+  class="panel"
+  aria-label={kind === 'terminals' ? 'Background terminals' : 'Linked agents'}
+  data-session-inspector
+>
   <div class="spread">
-    <h2>{child ? 'Agent transcript' : 'Linked agents'} // {root.slice(-5)}</h2>
+    <h2>
+      {kind === 'terminals'
+        ? 'Background terminals'
+        : child
+          ? 'Agent transcript'
+          : 'Linked agents'} // {root.slice(-5)}
+    </h2>
+    {#if kind === 'terminals'}<button
+        type="button"
+        disabled={busy}
+        onclick={() => void load('')}>Refresh</button
+      >{/if}
     <button
       type="button"
       bind:this={close}
@@ -49,13 +66,18 @@
   </div>
   {#if busy}<p role="status">Loading…</p>
   {:else if failed}<p role="status">Session information unavailable.</p>
-  {:else if child}
-    {#each [...(page.turns || [])].reverse() as turn}
-      {#if turn.task}<p class="muted transcript">{turn.task}</p>{/if}
-      <p class="transcript">
-        {turn.restricted ? 'View this reply in Codex.' : turn.reply}
+  {:else if kind === 'terminals'}
+    {#each page.terminals || [] as process}
+      <p class="muted">
+        {process.id}{process.pid
+          ? ` // PID ${process.pid}`
+          : ''}{process.directory ? ` // ${process.directory}` : ''}
       </p>
-    {:else}<p>No completed turns available.</p>{/each}
+      <p class="transcript"><code>{process.command}</code></p>
+    {:else}<p>No background terminals reported.</p>{/each}
+    {#if page.more}<p>Additional background terminals are not shown.</p>{/if}
+  {:else if child}
+    <SessionTranscript turns={page.turns} />
   {:else}
     {#each page.agents || [] as agent (agent.id)}
       <button type="button" onclick={() => void load(agent.id)}

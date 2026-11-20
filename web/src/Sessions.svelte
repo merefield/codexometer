@@ -30,6 +30,7 @@
   import ActionApproval from './ActionApproval.svelte';
   import SavedSessions from './SavedSessions.svelte';
   import SessionInspector from './SessionInspector.svelte';
+  import SessionSearch from './SessionSearch.svelte';
   import { matchesSession } from './session-filter';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
@@ -540,35 +541,30 @@
 <div class="spread">
   <h1>SESSION TOTALS</h1>
   {#if !params.id}<div class="finder-controls">
-      <label class="composer-surface session-search"
-        ><span aria-hidden="true">⌕</span>
-        <input
-          type="search"
-          aria-label="Filter sessions"
-          placeholder="Filter sessions (F)"
-          maxlength="160"
-          bind:this={field}
-          bind:value={query}
-          onkeydown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              query = '';
-              field?.blur();
+      <SessionSearch
+        label="Filter sessions"
+        placeholder="Filter sessions (F)"
+        bind:field
+        bind:value={query}
+        onkeydown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            query = '';
+            field?.blur();
+          }
+          if (e.key === 'Enter' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (shown[0]) {
+              select(shown[0].id, false);
+              document
+                .querySelector<HTMLElement>(
+                  '.session-row button,.session-row a',
+                )
+                ?.focus();
             }
-            if (e.key === 'Enter' || e.key === 'ArrowDown') {
-              e.preventDefault();
-              if (shown[0]) {
-                select(shown[0].id, false);
-                document
-                  .querySelector<HTMLElement>(
-                    '.session-row button,.session-row a',
-                  )
-                  ?.focus();
-              }
-            }
-          }}
-        /></label
-      >
+          }
+        }}
+      />
       <select aria-label="Session status filter" bind:value={status}
         ><option value="">All statuses</option>
         {#each [...new Set( [...sessions.map((s) => s.status), ...(status ? [status] : [])] )].sort() as value}<option
@@ -593,8 +589,9 @@
     </div>{/each}
 </dl>
 {#if sessionInspector.root && (!params.id || params.id === sessionInspector.root) && sessions.some((row) => row.id === sessionInspector.root)}
-  {#key sessionInspector.root}<SessionInspector
+  {#key sessionInspector.root + ':' + sessionInspector.kind}<SessionInspector
       root={sessionInspector.root}
+      kind={sessionInspector.kind}
     />{/key}
 {/if}
 <p class="muted">
@@ -956,29 +953,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
-  }
-  .session-search {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    max-width: 100%;
-  }
-  .session-search:focus-within {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .session-search > span {
-    color: var(--accent);
-  }
-  .session-search input {
-    min-width: 0;
-    max-width: 100%;
-    border: 0;
-    outline: 0;
-    padding: 0;
-    color: inherit;
-    background: transparent;
-    font: inherit;
   }
   .reviewed {
     color: var(--muted);

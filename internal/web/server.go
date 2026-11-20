@@ -36,6 +36,7 @@ type server struct {
 	searcher      codex.SavedSessionSearchClient
 	resumer       codex.SavedSessionResumeClient
 	agents        codex.SessionAgentClient
+	terminals     codex.SessionTerminalClient
 	savedRequests chan struct{}
 	store         *store
 	host          string
@@ -62,14 +63,13 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		return err
 	}
 	defer listener.Close()
-	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16)}
-	s.finder, _ = source.(codex.SavedSessionClient)
-	s.searcher, _ = source.(codex.SavedSessionSearchClient)
-	s.agents, _ = source.(codex.SessionAgentClient)
+	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16),
+		finder: readerCapability[codex.SavedSessionClient](source), searcher: readerCapability[codex.SavedSessionSearchClient](source),
+		agents: readerCapability[codex.SessionAgentClient](source), terminals: readerCapability[codex.SessionTerminalClient](source),
+		savedRequests: make(chan struct{}, 2)}
 	if writable {
 		s.resumer, _ = source.(codex.SavedSessionResumeClient)
 	}
-	s.savedRequests = make(chan struct{}, 2)
 	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
 		s.store.configureThresholds(policy.QuotaStepPolicy())
 	}
@@ -114,6 +114,11 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	return err
 }
 
+func readerCapability[T any](source Source) T {
+	reader, _ := source.(T)
+	return reader
+}
+
 // Keep pipes, files and non-terminal writers free of terminal control sequences.
 func terminalOutput(output io.Writer) bool {
 	file, ok := output.(interface{ Fd() uintptr })
@@ -152,13 +157,13 @@ func (s *server) handler() http.Handler {
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
 	if s.finder != nil {
-		mux.Handle("GET /api/sessions/saved", s.authorize(http.HandlerFunc(s.savedSessions)))
+		mux.Handle("GET /api/sessions/saved", s.sessionRoute(7*time.Second, s.savedSessions))
 	}
 	if s.resumer != nil {
-		mux.Handle("POST /api/sessions/resume", s.authorize(http.HandlerFunc(s.resumeSession)))
+		mux.Handle("POST /api/sessions/resume", s.sessionRoute(7*time.Second, s.resumeSession))
 	}
-	if s.agents != nil {
-		mux.Handle("GET /api/sessions/inspect", s.authorize(http.HandlerFunc(s.inspectSession)))
+	if s.agents != nil || s.terminals != nil {
+		mux.Handle("GET /api/sessions/inspect", s.sessionRoute(5*time.Second, s.inspectSession))
 	}
 	if s.control != nil {
 		for _, action := range []string{"offer", "prepare", "commit", "schedules", "commands", "read"} {
@@ -205,8 +210,7 @@ func (s *server) handler() http.Handler {
 }
 
 func (s *server) pair(w http.ResponseWriter, r *http.Request) {
-	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if r.Header.Get("Origin") != "http://"+s.host || media != "application/json" {
+	if !sameOriginJSON(r, "http://"+s.host) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -231,6 +235,11 @@ func (s *server) pair(w http.ResponseWriter, r *http.Request) {
 	s.tokenUntil = time.Now().Add(8 * time.Hour)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": s.token})
+}
+
+func sameOriginJSON(r *http.Request, origin string) bool {
+	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return r.Header.Get("Origin") == origin && media == "application/json"
 }
 
 func (s *server) authorized(r *http.Request) bool {

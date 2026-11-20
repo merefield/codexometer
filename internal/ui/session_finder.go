@@ -222,7 +222,7 @@ func (m Model) savedMatches() []savedRow {
 	}
 	return out
 }
-func (m *Model) activateSaved() tea.Cmd {
+func (m *Model) activateSaved(resume bool) tea.Cmd {
 	f := &m.finder
 	if f.loading {
 		return nil
@@ -233,6 +233,11 @@ func (m *Model) activateSaved() tea.Cmd {
 		f.detail = r.ID
 		f.scroll = 0
 		f.turns = nil
+		if resume {
+			if cmd := m.resumeSaved(); cmd != nil {
+				return cmd
+			}
+		}
 		return m.requestSaved(r.cursor, r.ID)
 	}
 	if f.index == len(rows) && f.next != "" {
@@ -265,13 +270,20 @@ func (m *Model) resumeSaved() tea.Cmd {
 }
 func (m Model) savedLines(width int) []string {
 	f := m.finder
-	if f.failed {
-		return []string{i18n.Text("UNAVAILABLE")}
-	}
-	if f.loading {
-		return []string{"…"}
+	if status := inspectionStatus(f.failed, f.loading); status != nil {
+		return status
 	}
 	return savedTranscriptLines(f.turns, width)
+}
+
+func inspectionStatus(failed, loading bool) []string {
+	if failed {
+		return []string{i18n.Text("UNAVAILABLE")}
+	}
+	if loading {
+		return []string{"…"}
+	}
+	return nil
 }
 
 func savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
@@ -444,7 +456,7 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			f.focus = findResults
 			if f.detail == "" {
 				f.index = m.finderStart(a.finderRows-1) + y - 1
-				cmd := m.activateSaved()
+				cmd := m.activateSaved(false)
 				return m, cmd, true
 			}
 			if y == 1 {
@@ -461,6 +473,10 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	key, pressed := message.(tea.KeyPressMsg)
 	if f.focus == findNone {
+		if pressed && key.String() == "/" && !key.IsRepeat && !m.monitorPrompt.input.Focused() && f.scope != "" {
+			cmd := m.openResumePicker()
+			return m, cmd, true
+		}
 		if pressed && key.String() == "f" && !m.monitorPrompt.input.Focused() {
 			cmd := m.focusFinder()
 			return m, cmd, true
@@ -498,10 +514,15 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			f.editInput().Blur()
 			return m, nil, true
+		case "right":
+			if f.include && f.focus == findResults && f.detail == "" {
+				cmd := m.activateSaved(false)
+				return m, cmd, true
+			}
 		case "enter", "space", " ":
 			if f.focus == findResults {
 				if f.detail == "" {
-					cmd := m.activateSaved()
+					cmd := m.activateSaved(key.String() == "enter")
 					return m, cmd, true
 				}
 				if key.String() == "enter" {
@@ -520,7 +541,7 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 				if f.include {
 					f.focus = findResults
 					if key.String() == "enter" {
-						cmd := m.activateSaved()
+						cmd := m.activateSaved(true)
 						return m, cmd, true
 					}
 				} else {

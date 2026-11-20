@@ -86,8 +86,8 @@
       else if (path === 'resume') {
         resumePicker.open = true;
         location.hash = '/sessions';
-      } else if (path === 'subagents') {
-        sessionInspector.kind = 'agents';
+      } else if (path === 'subagents' || path === 'ps') {
+        sessionInspector.kind = path === 'ps' ? 'terminals' : 'agents';
         sessionInspector.root = session;
       } else if (path === 'theme') themeUI.requests++;
       else if (path === 'statusline') statusLineUI.open = true;

@@ -28,17 +28,29 @@ export type SavedPage = {
   turns?: { task: string; reply: string; restricted?: boolean }[];
 };
 export const resumePicker = $state({ open: false });
-export const sessionInspector = $state({ root: '', kind: 'agents' as string });
-export type AgentInspection = {
+export type InspectionKind = 'agents' | 'terminals';
+export const sessionInspector = $state<{ root: string; kind: InspectionKind }>({
+  root: '',
+  kind: 'agents',
+});
+export type SessionInspection = {
   agents?: { id: string; name: string; status: string }[];
   turns?: SavedPage['turns'];
+  terminals?: {
+    id: string;
+    command: string;
+    directory: string;
+    pid?: number;
+  }[];
+  more?: boolean;
 };
 export let inspectSession:
   | ((
       root: string,
       child: string,
+      kind: InspectionKind,
       signal: AbortSignal,
-    ) => Promise<AgentInspection>)
+    ) => Promise<SessionInspection>)
   | undefined;
 export let resumeSaved:
   ((scope: string, cursor: string, id: string) => Promise<void>) | undefined;
@@ -73,64 +85,26 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
-  inspectSession = async (root, agent, signal) => {
-    if (!live.connected || live.data?.sessionsError)
-      throw new Error('Session unavailable');
-    const response = await fetch(
-      '/api/sessions/inspect?' + new URLSearchParams({ root, agent }),
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.any([
-          controller.signal,
-          signal,
-          AbortSignal.timeout(6500),
-        ]),
-        cache: 'no-store',
-      },
-    );
-    if (!response.ok) throw new Error('Session unavailable');
-    return response.json();
-  };
-  browseSaved = async (scope, cursor, id, signal, query = '') => {
-    if (!live.connected || live.data?.savedScope !== scope)
-      throw new Error('History unavailable');
-    const response = await fetch(
-      '/api/sessions/saved?' +
-        new URLSearchParams({ scope, cursor, id, q: query }),
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.any([
-          controller.signal,
-          signal,
-          AbortSignal.timeout(8000),
-        ]),
-        cache: 'no-store',
-      },
-    );
-    if (!response.ok) throw new Error('Saved history unavailable');
-    return response.json();
-  };
-  resumeSaved = async (scope, cursor, id) => {
-    if (
-      !live.connected ||
-      !live.data?.control ||
-      live.data.savedScope !== scope
-    )
-      throw new Error('Resume unavailable');
-    const response = await fetch('/api/sessions/resume', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ scope, cursor, id }),
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
+  async function sessionRead(
+    path: string,
+    params: Record<string, string>,
+    signal: AbortSignal,
+    timeout: number,
+  ) {
+    const response = await fetch(path + '?' + new URLSearchParams(params), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.any([
+        controller.signal,
+        signal,
+        AbortSignal.timeout(timeout),
+      ]),
       cache: 'no-store',
     });
-    if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
-  };
-  sendControl = async (action, body, signal) => {
-    const response = await fetch('/api/control/' + action, {
+    if (!response.ok) throw new Error('Session information unavailable');
+    return response.json();
+  }
+  function postJSON(path: string, body: unknown, signal?: AbortSignal) {
+    return fetch(path, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -144,6 +118,43 @@ export function connect(): () => void {
       ]),
       cache: 'no-store',
     });
+  }
+  inspectSession = async (root, agent, kind, signal) => {
+    if (!live.connected || live.data?.sessionsError)
+      throw new Error('Session unavailable');
+    return sessionRead(
+      '/api/sessions/inspect',
+      { root, agent, kind },
+      signal,
+      6500,
+    );
+  };
+  browseSaved = async (scope, cursor, id, signal, query = '') => {
+    if (!live.connected || live.data?.savedScope !== scope)
+      throw new Error('History unavailable');
+    return sessionRead(
+      '/api/sessions/saved',
+      { scope, cursor, id, q: query },
+      signal,
+      8000,
+    );
+  };
+  resumeSaved = async (scope, cursor, id) => {
+    if (
+      !live.connected ||
+      !live.data?.control ||
+      live.data.savedScope !== scope
+    )
+      throw new Error('Resume unavailable');
+    const response = await postJSON('/api/sessions/resume', {
+      scope,
+      cursor,
+      id,
+    });
+    if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
+  };
+  sendControl = async (action, body, signal) => {
+    const response = await postJSON('/api/control/' + action, body, signal);
     if (!response.ok) {
       if (response.status !== 502)
         throw new ControlRejected(

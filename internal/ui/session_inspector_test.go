@@ -44,3 +44,38 @@ func TestSessionAgentButtonAndKeyboardDrillDown(t *testing.T) {
 		t.Fatal("drill-down retargeted the parent composer", got)
 	}
 }
+
+type terminalInspectionProbe struct {
+	Fetcher
+	reads int
+}
+
+func (p *terminalInspectionProbe) InspectSessionTerminals(_ context.Context, id string) (codex.TerminalInspection, error) {
+	p.reads++
+	return codex.TerminalInspection{Terminals: []codex.SessionTerminal{{ID: id, Command: "go test", Directory: "/work"}}}, nil
+}
+
+func TestSessionTerminalSlashAndRefreshLeaveDetailInPlace(t *testing.T) {
+	m := contextTestModel()
+	probe := &terminalInspectionProbe{}
+	m.fetcher = probe
+	m.setRowContext("root-one", contextFull)
+	m, cmd, ok := m.runLocalMonitorCommand("ps")
+	if !ok || cmd == nil || m.inspector.root != "root-one" {
+		t.Fatal("/ps did not open the selected session")
+	}
+	m, _, _ = m.updateSessionInspector(cmd())
+	if lines := m.inspectorLines(80); lines[0] != "root-one // /work" || lines[1] != "go test" {
+		t.Fatal(lines)
+	}
+	x, y := renderedTextStart(t, m, "[R]")
+	m, cmd, ok = m.updateSessionInspector(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if !ok || cmd == nil || m.inspector.root != "root-one" {
+		t.Fatalf("rendered Refresh control did not refresh at %d,%d in %+v (root %q)", x, y, m.monitorDashboardLayout(), m.inspector.root)
+	}
+	m, _, _ = m.updateSessionInspector(cmd())
+	m, _, _ = m.updateSessionInspector(specialKey(tea.KeyEscape))
+	if probe.reads != 2 || m.inspector.root != "" || m.monitorContextDetail != "root-one" {
+		t.Fatal("process inspection changed the selected detail")
+	}
+}

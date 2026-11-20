@@ -141,11 +141,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 				continue
 			}
 			p.mu.Lock()
-			p.subscribed[threadID] = struct{}{}
-			p.permissionSettings[threadID] = resumed.ApprovalsReviewer
-			if filepath.IsAbs(resumed.Cwd) {
-				p.threadDirectories[threadID] = resumed.Cwd
-			}
+			p.recordThreadSubscriptionLocked(threadID, resumed.Cwd, resumed.ApprovalsReviewer)
 			p.mu.Unlock()
 		}
 	}
@@ -221,6 +217,14 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 		return sessionDaemonSnapshot{}, false
 	}
 	return p.statusSnapshotLocked(threadIDs), true
+}
+
+func (p *daemonStatusProvider) recordThreadSubscriptionLocked(id, cwd, reviewer string) {
+	p.subscribed[id] = struct{}{}
+	p.permissionSettings[id] = reviewer
+	if filepath.IsAbs(cwd) {
+		p.threadDirectories[id] = cwd
+	}
 }
 
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {

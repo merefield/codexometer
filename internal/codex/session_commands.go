@@ -136,28 +136,35 @@ type SessionCommandMenu struct {
 	Choices    []SessionCommandChoice `json:"choices"`
 }
 
+var localSessionCommandHelp = map[string]string{
+	"resume":     "Search saved Codex sessions, preview, or explicitly resume one in Sessions.",
+	"subagents":  "Inspect the selected session’s linked agents and their read-only transcripts.",
+	"ps":         "List the selected session’s background terminals without stopping anything.",
+	"statusline": "Choose fields for Codexometer’s detail footer. Saved display preferences only.",
+	"usage":      "Open Codexometer’s usage history. Existing quota and reset views remain available.",
+	"copy":       "Copy the selected session’s observed reply or activity using Codexometer’s copy control.",
+	"theme":      "Choose a Codexometer display theme. Saved local display preferences only.",
+	"exit":       "Leave this Codexometer interface. Codex sessions continue running.",
+	"quit":       "Alias for /exit. Codex sessions continue running.",
+}
+
+// Retain the usual commands at the top on cramped terminal popups. Less
+// common commands can still be reached by typing their names or scrolling.
+var localSessionCommandPaths = [...]string{"statusline", "usage", "copy", "theme", "exit", "quit", "resume", "subagents", "ps"}
+
 // LocalSessionCommands are owned by the interface and never become app-server RPCs.
 func LocalSessionCommands() []SessionCommandChoice {
-	return []SessionCommandChoice{
-		{ID: "local-resume", Label: "/resume", Help: "Search saved Codex sessions, preview, or explicitly resume one in Sessions.", Next: "resume"},
-		{ID: "local-subagents", Label: "/subagents", Help: "Inspect the selected session’s linked agents and their read-only transcripts.", Next: "subagents"},
-		{ID: "local-statusline", Label: "/statusline", Help: "Choose fields for Codexometer’s detail footer. Saved display preferences only.", Next: "statusline"},
-		{ID: "local-usage", Label: "/usage", Help: "Open Codexometer’s usage history. Existing quota and reset views remain available.", Next: "usage"},
-		{ID: "local-copy", Label: "/copy", Help: "Copy the selected session’s observed reply or activity using Codexometer’s copy control.", Next: "copy"},
-		{ID: "local-theme", Label: "/theme", Help: "Choose a Codexometer display theme. Saved local display preferences only.", Next: "theme"},
-		{ID: "local-exit", Label: "/exit", Help: "Leave this Codexometer interface. Codex sessions continue running.", Next: "exit"},
-		{ID: "local-quit", Label: "/quit", Help: "Alias for /exit. Codex sessions continue running.", Next: "quit"},
+	choices := make([]SessionCommandChoice, len(localSessionCommandPaths))
+	for i, path := range localSessionCommandPaths {
+		choices[i] = SessionCommandChoice{ID: "local-" + path, Label: "/" + path, Help: localSessionCommandHelp[path], Next: path}
 	}
+	return choices
 }
 
 func IsLocalSessionCommand(path string) bool {
 	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
-	for _, choice := range LocalSessionCommands() {
-		if choice.Next == path {
-			return true
-		}
-	}
-	return false
+	_, ok := localSessionCommandHelp[path]
+	return ok
 }
 
 type SessionCommandsClient interface {

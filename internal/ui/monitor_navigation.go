@@ -35,10 +35,17 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 			{label: m.monitorCycleLabel(width - 8), action: "cycle", enabled: count > 0},
 		}
 		search := monitorNavigationButton{label: "[(F) " + finderLabel() + "]", action: "finder", enabled: true}
+		resume := monitorNavigationButton{label: "[/resume]", action: "resume-picker", enabled: true}
 		if len(m.monitorSessionData) == 0 {
 			buttons = []monitorNavigationButton{search}
+			if m.finder.scope != "" {
+				buttons = []monitorNavigationButton{resume}
+			}
 		} else if width >= 48+lipgloss.Width(search.label) {
 			buttons = append(buttons, search)
+			if m.finder.scope != "" && width >= 49+lipgloss.Width(search.label)+lipgloss.Width(resume.label) {
+				buttons = append(buttons, resume)
+			}
 		}
 	} else {
 		mode := m.rowContextMode(id)

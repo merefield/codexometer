@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"mime"
 	"net/http"
 	"strings"
 	"sync"
@@ -231,8 +230,7 @@ func validAction(o offeredAction, r actionRequest) bool {
 
 func (c *control) handle(action, origin string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if r.Header.Get("Origin") != origin || media != "application/json" {
+		if !sameOriginJSON(r, origin) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}

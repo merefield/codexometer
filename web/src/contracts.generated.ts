@@ -365,18 +365,6 @@ export interface UsageReports {
 
 export const localCommands: CommandChoice[] = [
   {
-    "id": "local-resume",
-    "label": "/resume",
-    "help": "Search saved Codex sessions, preview, or explicitly resume one in Sessions.",
-    "next": "resume"
-  },
-  {
-    "id": "local-subagents",
-    "label": "/subagents",
-    "help": "Inspect the selected session’s linked agents and their read-only transcripts.",
-    "next": "subagents"
-  },
-  {
     "id": "local-statusline",
     "label": "/statusline",
     "help": "Choose fields for Codexometer’s detail footer. Saved display preferences only.",
@@ -411,6 +399,24 @@ export const localCommands: CommandChoice[] = [
     "label": "/quit",
     "help": "Alias for /exit. Codex sessions continue running.",
     "next": "quit"
+  },
+  {
+    "id": "local-resume",
+    "label": "/resume",
+    "help": "Search saved Codex sessions, preview, or explicitly resume one in Sessions.",
+    "next": "resume"
+  },
+  {
+    "id": "local-subagents",
+    "label": "/subagents",
+    "help": "Inspect the selected session’s linked agents and their read-only transcripts.",
+    "next": "subagents"
+  },
+  {
+    "id": "local-ps",
+    "label": "/ps",
+    "help": "List the selected session’s background terminals without stopping anything.",
+    "next": "ps"
   }
 ];
 

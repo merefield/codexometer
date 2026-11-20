@@ -1,31 +1,33 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
-	"time"
 )
 
 func (s *server) inspectSession(w http.ResponseWriter, r *http.Request) {
-	root, child := r.URL.Query().Get("root"), r.URL.Query().Get("agent")
+	query := r.URL.Query()
+	root, child := query.Get("root"), query.Get("agent")
 	if !s.inspectableSession(root) {
 		http.Error(w, "Session unavailable", http.StatusNotFound)
 		return
 	}
-	select {
-	case s.savedRequests <- struct{}{}:
-		defer func() { <-s.savedRequests }()
-	default:
-		http.Error(w, "Busy", http.StatusTooManyRequests)
-		return
+	ctx := r.Context()
+	var page any
+	var err error
+	switch query.Get("kind") {
+	case "", "agents":
+		if s.agents != nil {
+			page, err = s.agents.InspectSessionAgents(ctx, root, child)
+		}
+	case "terminals":
+		if s.terminals != nil && child == "" {
+			page, err = s.terminals.InspectSessionTerminals(ctx, root)
+		}
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	page, err := s.agents.InspectSessionAgents(ctx, root, child)
-	if err != nil || !s.inspectableSession(root) {
-		http.Error(w, "Linked agents unavailable", http.StatusServiceUnavailable)
+	if page == nil || err != nil || !s.inspectableSession(root) {
+		http.Error(w, "Session information unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
