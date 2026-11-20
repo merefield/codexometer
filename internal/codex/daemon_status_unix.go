@@ -24,6 +24,8 @@ const (
 	daemonStatusRefreshEvery = 5 * time.Second
 )
 
+var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sending")
+
 type daemonStatusProvider struct {
 	savedScope         string
 	names              map[string]threadTitle
@@ -471,7 +473,11 @@ func (p *daemonStatusProvider) request(ctx context.Context, method string, param
 	return p.requestOn(ctx, connection, method, params, target)
 }
 
-func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) (resultErr error) {
+func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {
+	return p.requestOnChecked(ctx, connection, method, params, target, nil)
+}
+
+func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
 			return
@@ -495,6 +501,9 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	p.mu.Lock()
 	if connection == nil || p.connection != connection {
 		p.mu.Unlock()
+		if generation != nil {
+			return errDaemonWriteGuardRejected
+		}
 		return errors.New("daemon connection is closed")
 	}
 	p.nextRequestID++
@@ -503,11 +512,11 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	p.pending[id] = response
 	p.mu.Unlock()
 
-	if err := p.write(connection, map[string]any{"id": id, "method": method, "params": params}); err != nil {
-		p.mu.Lock()
-		delete(p.pending, id)
-		p.mu.Unlock()
-		p.disconnect(connection)
+	if err := p.writeChecked(connection, map[string]any{"id": id, "method": method, "params": params}, generation); err != nil {
+		p.dropPending(id)
+		if !errors.Is(err, errDaemonWriteGuardRejected) {
+			p.disconnect(connection)
+		}
 		return err
 	}
 	timer := time.NewTimer(daemonStatusTimeout)
@@ -544,13 +553,26 @@ func (p *daemonStatusProvider) notify(method string, params any) error {
 }
 
 func (p *daemonStatusProvider) write(connection *websocket.Conn, value any) error {
+	return p.writeChecked(connection, value, nil)
+}
+
+func (p *daemonStatusProvider) writeChecked(connection *websocket.Conn, value any, generation *uint64) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
 	p.mu.Lock()
-	wire := p.wire
-	current := p.connection
-	p.mu.Unlock()
+	wire, current := p.wire, p.connection
+	if generation != nil {
+		// Keep account/updated and reconnects out between the check and socket
+		// write. The deadline bounds this critical section; never wait for the
+		// RPC response under this lock.
+		defer p.mu.Unlock()
+		if current != connection || p.commandGeneration != *generation {
+			return errDaemonWriteGuardRejected
+		}
+	} else {
+		p.mu.Unlock()
+	}
+	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
 	if wire != nil && current == connection {
 		return wire.writeJSON(value)
 	}

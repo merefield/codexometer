@@ -36,7 +36,7 @@ func (q *Queue) ArmGoalResume(ctx context.Context, c codex.ScheduledGoalClient, 
 		return err
 	}
 	job := Job{Session: id, Trigger: "quota", Windows: windows,
-		ResumeGoal: true, WaitingForGoalStop: !target.Stopped, goal: target}
+		ResumeGoal: true, WaitingForGoalStop: !target.Stopped, goal: target, baseAccount: quota.AccountFingerprint}
 	if target.Stopped {
 		// A sample taken before consent may predate the quota stop as well.
 		job.stopObserved = now
@@ -108,7 +108,7 @@ func (q *Queue) PollGoalResumes(ctx context.Context, c codex.ScheduledGoalClient
 			continue
 		}
 		if !j.MatchesAccount(s.QuotaAccount()) {
-			if codex.IsWorkspaceQuotaAccount(j.account) && !codex.IsWorkspaceQuotaAccount(s.QuotaAccount()) {
+			if s.AccountFingerprint == j.baseAccount && codex.IsWorkspaceQuotaAccount(j.account) && !codex.IsWorkspaceQuotaAccount(s.QuotaAccount()) {
 				continue // Missing workspace evidence is not an account switch.
 			}
 			q.disarmGoal(j.ID)

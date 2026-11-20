@@ -28,6 +28,7 @@ type Job struct {
 	Status             string    `json:"status"` // pending, sending, sent, uncertain
 	Windows            []string  `json:"-"`      // Observed windows must not silently disappear.
 	account            string
+	baseAccount        string
 	ResumeGoal         bool `json:"resumeGoal,omitempty"`
 	WaitingForGoalStop bool `json:"waitingForGoalStop,omitempty"`
 	goal               codex.GoalResumeTarget

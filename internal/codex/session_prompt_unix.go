@@ -204,7 +204,7 @@ func (p *daemonStatusProvider) sendSessionPrompt(ctx context.Context, token stri
 			// the editor forever. Fresh runtime observations still gate its return.
 			p.mu.Lock()
 			if p.connection == connection && p.contexts[offer.ThreadID] == state && state.promptAttempt == token {
-				state.promptSpent, state.promptAttempt = false, ""
+				state.promptSpent, state.promptDispatched, state.promptAttempt = false, false, ""
 			}
 			p.mu.Unlock()
 		}
@@ -241,8 +241,17 @@ func (p *daemonStatusProvider) sendSessionPrompt(ctx context.Context, token stri
 	if !unchanged {
 		return errors.New("session changed; reply in Codex")
 	}
-	return p.requestOn(ctx, connection, "turn/start", map[string]any{
+	var guard *uint64
+	if account != "" {
+		guard = &generation
+	}
+	err := p.requestOnChecked(ctx, connection, "turn/start", map[string]any{
 		"threadId": offer.ThreadID,
 		"input":    []any{map[string]any{"type": "text", "text": literalSessionText(answers[0])}},
-	}, nil)
+	}, nil, guard)
+	if errors.Is(err, errDaemonWriteGuardRejected) {
+		dispatched = false
+		return ErrScheduledQuotaUnverified
+	}
+	return err
 }

@@ -512,7 +512,7 @@ func (p *daemonStatusProvider) ExecuteSessionCommand(ctx context.Context, id, pa
 				return ErrSessionCommand
 			}
 			if strings.HasPrefix(o.method, "thread/goal/") {
-				return p.executeGoalCommand(ctx, conn, id, o, GoalResumeTarget{})
+				return p.executeGoalCommand(ctx, conn, id, o, GoalResumeTarget{}, nil)
 			}
 			if o.method == "thread/approveGuardianDeniedAction" {
 				return p.approveAutoReview(ctx, conn, id, o)

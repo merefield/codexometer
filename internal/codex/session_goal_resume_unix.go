@@ -94,8 +94,12 @@ func (p *daemonStatusProvider) ResumeScheduledGoal(ctx context.Context, id, acco
 	if !ready || ctx.Err() != nil {
 		return ErrScheduledGoalNotReady
 	}
-	return p.executeGoalCommand(ctx, conn, id, SessionCommandChoice{
+	err = p.executeGoalCommand(ctx, conn, id, SessionCommandChoice{
 		method: "thread/goal/set",
 		params: map[string]any{"threadId": id, "origin": "user", "status": "active"},
-	}, target)
+	}, target, &generation)
+	if errors.Is(err, errDaemonWriteGuardRejected) {
+		return ErrScheduledGoalNotReady
+	}
+	return err
 }
