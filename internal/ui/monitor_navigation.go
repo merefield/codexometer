@@ -35,7 +35,7 @@ func (m Model) monitorNavigationButtons(width int, id string, full bool) []monit
 			{label: m.monitorCycleLabel(width - 8), action: "cycle", enabled: count > 0},
 		}
 		search := monitorNavigationButton{label: "[(F) " + finderLabel() + "]", action: "finder", enabled: true}
-		resume := monitorNavigationButton{label: "[Saved sessions]", action: "resume-picker", enabled: true}
+		resume := monitorNavigationButton{label: resumeLabel(), action: "resume-picker", enabled: true}
 		if len(m.monitorSessionData) == 0 {
 			buttons = []monitorNavigationButton{search}
 			if m.finder.scope != "" {

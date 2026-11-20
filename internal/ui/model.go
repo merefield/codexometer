@@ -778,6 +778,9 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			return m.pressMainTab(m.adjacentMainTab(-1))
 		case "r":
+			if m.meterView == viewMonitor {
+				return m, nil // The Sessions finder owns R; no hidden quota refresh.
+			}
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
@@ -1589,7 +1592,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView)
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+lipgloss.Width(button.label) {
@@ -2218,13 +2221,17 @@ func (m Model) contentWidth() int {
 	return max(width-4, 1)
 }
 
-func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
+func footerButtonLayout(width int, view meterViewID) ([]footerButton, string) {
 	definitions := footerButtonDefinitions
-	if quota {
+	if view.isQuota() || view == viewUsage {
 		definitions = quotaFooterButtonDefinitions
 	}
-	buttons := make([]footerButton, len(definitions))
-	copy(buttons, definitions)
+	buttons := make([]footerButton, 0, len(definitions))
+	for _, button := range definitions {
+		if view != viewMonitor || button.id != footerButtonRefresh {
+			buttons = append(buttons, button)
+		}
+	}
 	separator := "  "
 	total := len(separator) * (len(buttons) - 1)
 	for _, button := range buttons {
@@ -2240,13 +2247,13 @@ func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
 	return buttons, separator
 }
 
-func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]footerButton, string) {
+func footerButtonLayoutWithTheme(width int, themeName string, view meterViewID) ([]footerButton, string) {
 	themeWidth := lipgloss.Width(i18n.Text("THEME // ")) + lipgloss.Width(themeName)
 	available := width - themeWidth - 1
 	if available <= 0 {
 		return nil, " "
 	}
-	buttons, separator := footerButtonLayout(available, quota)
+	buttons, separator := footerButtonLayout(available, view)
 	visible := buttons[:0]
 	used := 0
 	for _, button := range buttons {

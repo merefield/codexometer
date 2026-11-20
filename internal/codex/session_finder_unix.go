@@ -47,13 +47,21 @@ func (p *daemonStatusProvider) finderNotificationLocked(method string, params js
 	case "account/updated":
 		if p.savedScope != "" && !workspaceRoutingReady(params) {
 			p.savedScope = rand.Text()
+			p.clearSavedCatalogLocked()
 			clear(p.resumedThreads)
 		}
+	case "thread/started":
+		if p.savedCatalog != nil {
+			p.savedCatalog.refreshHead = true // Refresh on the next browse, not on every agent spawn.
+		}
+	case "thread/archived", "thread/unarchived":
+		p.clearSavedCatalogLocked()
 	case "thread/name/updated":
 		var n struct{ ThreadID, ThreadName string }
 		if json.Unmarshal(params, &n) != nil {
 			return
 		}
+		p.clearSavedCatalogLocked()
 		_, tracked := p.statusThreads[n.ThreadID]
 		_, subscribed := p.subscribed[n.ThreadID]
 		if tracked || subscribed {
@@ -87,6 +95,8 @@ func (p *daemonStatusProvider) savedAccount(ctx context.Context, scope string) (
 	return quotaAccount(account, workspaceRoutingID(raw)), nil
 }
 
+const savedPageSize = 40
+
 func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sortKey string) (SavedPage, error) {
 	p.mu.Lock()
 	conn, valid := p.connection, scope != "" && scope == p.savedScope
@@ -94,7 +104,7 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sor
 	if !valid {
 		return SavedPage{}, ErrSavedSessions
 	}
-	params := map[string]any{"currentAccountOnly": true, "modelProviders": []string{}, "archived": false, "limit": 40, "sortKey": sortKey, "sortDirection": "desc", "useStateDbOnly": true}
+	params := map[string]any{"currentAccountOnly": true, "modelProviders": []string{}, "archived": false, "limit": savedPageSize, "sortKey": sortKey, "sortDirection": "desc", "useStateDbOnly": true}
 	if cursor != "" {
 		params["cursor"] = cursor
 	}
@@ -112,46 +122,15 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sor
 	return page, nil
 }
 
-type savedWireThread struct{ ID, Name, Cwd string }
+type savedWireThread struct {
+	ID, Name, Cwd string
+	UpdatedAt     int64
+}
 
 func (page *SavedPage) addWireThread(t savedWireThread) {
 	if t.ID != "" && singleLine(t.ID) == t.ID {
-		page.Sessions = append(page.Sessions, SavedSession{t.ID, singleLine(t.Name), singleLine(t.Cwd)})
+		page.Sessions = append(page.Sessions, SavedSession{ID: t.ID, Name: singleLine(t.Name), Directory: singleLine(t.Cwd), UpdatedAt: t.UpdatedAt})
 	}
-}
-
-func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, query string) (SavedPage, error) {
-	account, err := p.savedAccount(ctx, scope)
-	if err != nil {
-		return SavedPage{}, err
-	}
-	p.mu.Lock()
-	conn, valid := p.connection, p.savedScope == scope
-	p.mu.Unlock()
-	if !valid {
-		return SavedPage{}, ErrSavedSessions
-	}
-	params := map[string]any{"currentAccountOnly": true, "searchTerm": query, "archived": false, "limit": 40, "sortKey": "updated_at", "sortDirection": "desc"}
-	if cursor != "" {
-		params["cursor"] = cursor
-	}
-	var result struct {
-		Data []struct {
-			Thread savedWireThread
-		}
-		NextCursor string
-	}
-	if err := p.requestOn(ctx, conn, "thread/search", params, &result); err != nil {
-		return SavedPage{}, ErrSavedSessions
-	}
-	if current, err := p.savedAccount(ctx, scope); err != nil || current != account {
-		return SavedPage{}, ErrSavedSessions
-	}
-	page := SavedPage{Next: result.NextCursor}
-	for _, match := range result.Data {
-		page.addWireThread(match.Thread)
-	}
-	return page, nil
 }
 
 func (p *daemonStatusProvider) savedSessionAction(ctx context.Context, scope string) (*websocket.Conn, uint64, string, error) {

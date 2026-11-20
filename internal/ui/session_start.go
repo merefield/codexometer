@@ -97,11 +97,11 @@ func (m *Model) startDraftSession() tea.Cmd {
 func newSessionControls(width int) []monitorNavigationButton {
 	buttons := []monitorNavigationButton{
 		{label: "[ Send ]", action: "send", enabled: true},
-		{label: "[ Saved sessions ]", action: "saved", enabled: true},
+		{label: "[ RESUME ]", action: "saved", enabled: true},
 		{label: "[ Esc Close ]", action: "close", enabled: true},
 	}
 	if width < 47 {
-		buttons[1].label, buttons[2].label = "[ /resume ]", "[ Esc ]"
+		buttons[2].label = "[ Esc ]"
 	}
 	if width < 34 {
 		buttons = buttons[:2]

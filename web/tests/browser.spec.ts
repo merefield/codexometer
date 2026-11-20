@@ -656,7 +656,25 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
     reads++;
     await route.fulfill({
       json: q.get('id')
-        ? { turns: [{ task: 'A previous task', reply: 'An older answer' }] }
+        ? {
+            turns: [
+              {
+                task: '**A previous task**',
+                reply: 'An **older** answer',
+                prose: [
+                  {
+                    runs: [
+                      { text: 'An ' },
+                      { text: 'older', bold: true },
+                      { text: ' answer' },
+                    ],
+                  },
+                  { rows: [[[{ text: 'Status' }]], [[{ text: 'Pass' }]]] },
+                ],
+              },
+              { reply: 'Private answer', restricted: true },
+            ],
+          }
         : {
             next: 'page2',
             sessions: [
@@ -688,6 +706,12 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
     .click();
   const saved = page.getByRole('region', { name: 'Saved sessions' });
   const result = saved.getByRole('button', { name: /Archived project notes/ });
+  await expect(
+    saved.getByRole('heading', { name: 'SAVED // SESSIONS' }),
+  ).toBeVisible();
+  await expect(result.locator('.saved-session-name')).toHaveText(
+    'D-ONE // Archived project notes',
+  );
   for (const button of [
     result,
     saved.getByRole('button', { name: 'Load more saved sessions' }),
@@ -697,6 +721,11 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   }
   await result.click();
   await expect(saved).toContainText('An older answer');
+  await expect(saved).toContainText('**A previous task**');
+  await expect(saved.locator('strong', { hasText: 'older' })).toBeVisible();
+  await expect(saved.getByRole('table')).toContainText('Pass');
+  await expect(saved).toContainText('View this reply in Codex.');
+  await expect(saved).not.toContainText('Private answer');
   await expect(
     saved.getByRole('button', { name: 'Resume', exact: true }),
   ).toHaveCount(0);
@@ -717,30 +746,39 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   ).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('/resume searches conversation text and opens the resumed composer', async ({
+test('/resume searches names, shows age, and opens the resumed composer', async ({
   page,
   pairingURL,
 }) => {
   const { snapshot, calls } = await mockActions(page, 'prompt', false, false);
   const initial = { ...snapshot, savedScope: 'scope' };
   let resumed = 0;
-  const term = 'words from the prompt';
+  const term = 'aRcHiVeD';
+  const updatedAt = Math.floor(Date.now() / 1000) - 2 * 3600 - 120;
   await page.route('**/api/sessions/saved?**', async (route) => {
     const q = new URL(route.request().url()).searchParams;
     await route.fulfill({
       json: q.get('id')
-        ? { turns: [{ task: term, reply: 'Saved answer' }] }
-        : {
-            sessions:
-              q.get('q') === term
-                ? [{ id: 'cold', name: 'Unrelated title', directory: '/work' }]
-                : [],
-          },
+        ? { turns: [{ task: 'Different prompt text', reply: 'Saved answer' }] }
+        : q.get('q') !== term
+          ? {}
+          : q.get('cursor') === 'older'
+            ? {
+                sessions: [
+                  {
+                    id: 'cold',
+                    name: 'Archived work',
+                    directory: '/work',
+                    updatedAt,
+                  },
+                ],
+              }
+            : { next: 'older' },
     });
   });
   await page.route('**/api/sessions/resume', async (route) => {
     const body = route.request().postDataJSON();
-    expect(body).toMatchObject({ scope: 'scope', cursor: '', id: 'cold' });
+    expect(body).toMatchObject({ scope: 'scope', cursor: 'older', id: 'cold' });
     if (body.mode === 'prepare') {
       await route.fulfill({ json: { confirmation: 'review-token' } });
     } else {
@@ -764,7 +802,14 @@ test('/resume searches conversation text and opens the resumed composer', async 
     .click();
   const picker = page.getByRole('region', { name: 'Saved sessions' });
   await picker.getByRole('searchbox').fill(term);
-  await picker.getByRole('button', { name: /Unrelated title/ }).click();
+  const more = picker.getByRole('button', { name: 'Search older sessions' });
+  await expect(more).toBeVisible();
+  await expect(picker).not.toContainText('No saved session names match');
+  await more.click();
+  const row = picker.getByRole('button', { name: /Archived work/ });
+  await expect(picker).toContainText('Time ago');
+  await expect(row).toContainText('2h ago');
+  await row.click();
   await expect(picker).toContainText('Saved answer');
   expect(resumed).toBe(0);
   await picker.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -775,7 +820,7 @@ test('/resume searches conversation text and opens the resumed composer', async 
     ...initial,
     sessions: [
       ...initial.sessions,
-      { ...initial.sessions[0], id: 'cold', name: 'Unrelated title' },
+      { ...initial.sessions[0], id: 'cold', name: 'Archived work' },
     ],
   });
   await expect(page).toHaveURL(/#\/sessions\/cold$/);

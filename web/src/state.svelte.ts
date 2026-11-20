@@ -1,5 +1,5 @@
 import { homeRoute } from './preferences.svelte';
-import type { Snapshot } from './contracts.generated';
+import type { ProseBlock, Snapshot } from './contracts.generated';
 export type * from './contracts.generated';
 
 export const live = $state<{
@@ -21,11 +21,22 @@ export class ControlRejected extends Error {}
 let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
-export type SavedRow = { id: string; name: string; directory: string };
+export type SavedRow = {
+  id: string;
+  name: string;
+  directory: string;
+  updatedAt?: number;
+  listCursor?: string;
+};
 export type SavedPage = {
   sessions?: SavedRow[];
   next?: string;
-  turns?: { task: string; reply: string; restricted?: boolean }[];
+  turns?: {
+    task: string;
+    reply: string;
+    restricted?: boolean;
+    prose?: ProseBlock[];
+  }[];
 };
 export const resumePicker = $state({ open: false });
 export type InspectionKind = 'agents' | 'terminals';

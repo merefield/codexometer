@@ -24,12 +24,13 @@
   let resuming = $state('');
   let resumeNotice = $state('');
   let review = $state<{ id: string; token: string } | null>(null);
+  let now = $state(Date.now());
   let resumeTimer: ReturnType<typeof setTimeout>;
   let controller: AbortController | undefined;
   let matches = $derived(
     rows.filter((row) => !liveIDs.has(row.id) || row.id === resuming),
   );
-  async function load(cursor: string, detail = '') {
+  async function load(cursor: string, detail = '', term = query.trim()) {
     controller?.abort();
     const request = new AbortController();
     controller = request;
@@ -44,7 +45,7 @@
         cursor,
         detail,
         request.signal,
-        query.trim(),
+        term,
       );
       if (request.signal.aborted) return;
       if (detail) turns = page.turns || [];
@@ -54,7 +55,7 @@
           ...rows,
           ...(page.sessions || [])
             .filter((r) => !seen.has(r.id) && seen.add(r.id))
-            .map((r) => ({ ...r, cursor })),
+            .map((r) => ({ ...r, cursor: r.listCursor || cursor })),
         ];
         next = page.next !== cursor ? page.next || '' : '';
       }
@@ -71,23 +72,37 @@
   }
   onMount(() => {
     search?.focus();
+    const clock = setInterval(() => (now = Date.now()), 15000);
     return () => {
       controller?.abort();
       clearTimeout(resumeTimer);
+      clearInterval(clock);
     };
   });
+  function age(updatedAt: number | undefined, now: number) {
+    if (!updatedAt || updatedAt < 0) return '—';
+    const minutes = Math.floor(Math.max(now / 1000 - updatedAt, 0) / 60);
+    if (minutes >= 1440) return `${Math.floor(minutes / 1440)}d ago`;
+    if (minutes >= 60) return `${Math.floor(minutes / 60)}h ago`;
+    if (minutes) return `${minutes}m ago`;
+    return 'Just now';
+  }
   $effect(() => {
     const term = query.trim();
-    const timer = setTimeout(() => void load(''), term ? 180 : 0);
+    // Coalesce simultaneous input events within a frame, not with a typing
+    // delay. The loopback request reads Codexometer's in-memory name index.
+    const frame = requestAnimationFrame(() => void load('', '', term));
     untrack(() => {
       controller?.abort();
+      busy = true;
+      failed = false;
       rows = [];
       id = '';
       review = null;
       turns = undefined;
       next = '';
     });
-    return () => clearTimeout(timer);
+    return () => cancelAnimationFrame(frame);
   });
   $effect(() => {
     if (resuming && liveIDs.has(resuming)) {
@@ -133,10 +148,10 @@
 </script>
 
 <section class="panel" aria-label="Saved sessions">
-  <h2>SAVED SESSIONS</h2>
+  <h2>SAVED // SESSIONS</h2>
   <SessionSearch
     label="Search saved sessions"
-    placeholder="Search saved conversations"
+    placeholder="Search by session name"
     bind:field={search}
     bind:value={query}
   />
@@ -144,8 +159,14 @@
   {#if resuming}<p role="status">
       Opening the resumed session…
     </p>{:else if resumeNotice}<p role="status">{resumeNotice}</p>{/if}
+  {#if matches.length}
+    <div class="saved-columns muted">
+      <span>Session</span><span>Time ago</span>
+    </div>
+  {/if}
   {#each matches as row (row.id)}
     <button
+      class="saved-columns saved-row"
       aria-expanded={id === row.id}
       onclick={() => {
         review = null;
@@ -156,9 +177,12 @@
           failed = false;
         } else void load(row.cursor, row.id);
       }}
-      >SAVED {row.id.slice(-5).toUpperCase()} // {row.name ||
-        row.directory}</button
     >
+      <span class="saved-session-name"
+        >{row.id.slice(-5).toUpperCase()} // {row.name || row.directory}</span
+      >
+      <span class="muted saved-age">{age(row.updatedAt, now)}</span>
+    </button>
     {#if id === row.id && turns}
       <SessionTranscript {turns} />
       {#if live.data?.control}
@@ -191,10 +215,38 @@
       role="status"
     >
       Saved history unavailable. Live filtering still works.
-    </p>{:else if !matches.length}<p>
-      No saved sessions match this search.
+    </p>{:else if !matches.length && !next}<p>
+      {query.trim()
+        ? 'No saved session names match this search.'
+        : 'No saved sessions to show.'}
     </p>{/if}
   {#if next}<button disabled={busy} onclick={() => load(next)}
-      >Load more saved sessions</button
+      >{query.trim()
+        ? 'Search older sessions'
+        : 'Load more saved sessions'}</button
     >{/if}
 </section>
+
+<style>
+  .saved-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    column-gap: 0.75em;
+    align-items: baseline;
+    text-align: left;
+  }
+  .saved-columns:not(button) {
+    padding-inline: 0.5em;
+  }
+  .saved-row {
+    width: 100%;
+  }
+  .saved-session-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-age {
+    white-space: nowrap;
+  }
+</style>

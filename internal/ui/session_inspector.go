@@ -132,7 +132,7 @@ func (m Model) inspectorLines(width int) []string {
 		}
 		return lines
 	}
-	return savedTranscriptLines(s.page.Turns, width)
+	return m.savedTranscriptLines(s.page.Turns, width)
 }
 
 func (m Model) inspectorOffset(total, rows int) int {

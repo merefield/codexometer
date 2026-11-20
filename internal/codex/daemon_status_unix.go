@@ -28,6 +28,7 @@ var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sen
 
 type daemonStatusProvider struct {
 	savedScope         string
+	savedCatalog       *savedMetadataIndex
 	resumedThreads     map[string]resumedThread
 	names              map[string]threadTitle
 	autoReviews        map[string]*autoReviewState
@@ -827,6 +828,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.usageCoverage = nil
 	p.threadDirectories = nil
 	p.names, p.savedScope = nil, ""
+	p.clearSavedCatalogLocked()
 	p.resumedThreads = nil
 	p.threadAttachments = nil
 	if p.settingsSignal != nil {

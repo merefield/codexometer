@@ -18,6 +18,8 @@ import (
 
 type quotaDaemonFixture struct {
 	savedReads        []map[string]any
+	savedReadDelay    time.Duration
+	accountReads      int
 	starts            []map[string]any
 	turnStarts        []map[string]any
 	startDelay        time.Duration
@@ -364,6 +366,7 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 			case "thread/list":
 				fixture.savedReads = append(fixture.savedReads, req.Params)
+				delay = fixture.savedReadDelay
 				result = fixture.catalogues[req.Method]
 				if fixture.savedPages != nil {
 					order, _ := req.Params["sortKey"].(string)
@@ -372,6 +375,9 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 				}
 				failure = result == nil
 			default:
+				if req.Method == "account/read" {
+					fixture.accountReads++
+				}
 				if req.Method == "thread/backgroundTerminals/list" {
 					fixture.terminalReads = append(fixture.terminalReads, req.Params)
 				}

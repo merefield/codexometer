@@ -589,7 +589,7 @@ codexometer --codex /path/to/codex
 | `t` | Cycle color themes |
 | `Tab` | Select the next top-level tab: Quota, Sessions, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
-| `r` | Refresh account history in Usage; otherwise refresh quota data |
+| `r` | Open Resume from the Sessions list; refresh account history in Usage or quota data on other tabs |
 | `v` | Cycle views within Quota or Usage |
 | `z` | Zero the Sessions baseline |
 | `s` | Open Benchmark Scope (Benchmark view only) |
@@ -1418,14 +1418,25 @@ follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
 **Finding an older conversation:** choose **`/resume`** in the slash-command
-browser. In the terminal Sessions list, press **/** or click **Saved sessions**,
+browser. In the terminal Sessions list, press **R** or **/** or click **Resume**,
 even with no live session to select. The web Sessions page also has a
 **Saved sessions** button.
 With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
-starts with recent non-archived saved sessions and sends searches to Codex when
-you type. In the TUI, use **↑/↓** to select a match and **Enter** to resume.
-Use **→** or click a match to preview up to ten completed turns without
-resuming. The browser provides a **Resume** button on the preview. A resumed idle session has a
+starts with recent non-archived saved sessions. Type part of a session name to
+filter, regardless of case; Resume does not search paths, IDs or conversation
+text. Codexometer loads saved-session metadata in the background and filters
+it in memory, so typing does not rescan Codex history. The index is cleared
+when the shared connection or account changes. Transcripts load only when
+you open a preview, and preview and resume still verify the target with Codex.
+Leave the field empty to browse unnamed sessions too. If the search has
+not reached the end of the saved list, choose **Search older sessions** to
+continue. **Time ago** shows when Codex last updated each session; a dash means
+Codex did not report a timestamp. In the **SAVED // SESSIONS** box, use **↑/↓** to move the cursor
+through the results and **Enter** or **R** to resume the highlighted session.
+While the search field is focused, **R** types normally. Use **→** or click a
+match to preview up to ten completed turns without resuming. Saved replies
+and linked-agent transcripts use the same Markdown formatting as live replies.
+The browser provides a **Resume** button on the preview. A resumed idle session has a
 composer. Codexometer does not send a prompt as part of resume; existing Codex
 automation, such as an active goal, still follows Codex's rules. The read-only web
 app offers the same search under **Saved sessions** without the Resume action.
@@ -1439,8 +1450,8 @@ Codex thread. Check the working directory, then send the first message to
 start it using Codex's normal defaults. The selected directory must already
 be explicitly trusted in Codex's user configuration; use the same directory
 where you approved folder trust in Codex (usually the repository root).
-Codexometer does not grant trust. Type **`/resume`** or choose
-**Saved sessions** in the draft to open an existing conversation instead.
+Codexometer does not grant trust. Type **`/resume`** or choose **Resume**
+(**Saved sessions** in web mode) in the draft to open an existing conversation instead.
 Closing the picker returns to your draft. Closing the draft before sending
 creates nothing. If Codexometer cannot verify a send, it will not retry it.
 

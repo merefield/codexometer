@@ -155,7 +155,6 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)
 		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
 	}
-	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	parts := []string{top}
 	if layout.attentionRows > 0 {
 		parts = append(parts, m.renderMonitorAttention(width, layout.attentionRows, layout.attention, colors))
@@ -163,7 +162,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	if layout.finderRows > 0 {
 		parts = append(parts, m.renderSessionFinder(width, layout.finderRows, colors))
 	}
-	parts = append(parts, graph)
+	if layout.graphHeight > 0 {
+		parts = append(parts, m.renderMonitorSessions(layout.width, layout.graphHeight, colors))
+	}
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
@@ -283,6 +284,9 @@ func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 }
 
 func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) {
+	if height <= 0 {
+		return nil, nil, ""
+	}
 	visible := make([]monitorSession, 0, len(m.monitorSessionData))
 	for _, session := range m.monitorSessionData {
 		if m.monitorSessionInList(session) {

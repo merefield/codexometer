@@ -211,7 +211,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 					}
 				}
 			}
-			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
+			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView)
 			x := 2
 			for _, b := range buttons {
 				for col := 0; col < lipgloss.Width(b.label); col++ {

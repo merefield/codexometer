@@ -610,13 +610,9 @@ func (m Model) updateMonitorQueue(msg tea.Msg) (Model, tea.Cmd, bool) {
 					return m, q.input.Focus(), true
 				}
 				return m, nil, true
-			case "t", "r":
+			case "t":
 				if q.editorFocus != 0 {
-					button := footerButtonTheme
-					if key.String() == "r" {
-						button = footerButtonRefresh
-					}
-					next, cmd := m.pressFooterButton(button)
+					next, cmd := m.pressFooterButton(footerButtonTheme)
 					return next.(Model), cmd, true
 				}
 			}

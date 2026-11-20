@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+
+	"github.com/merefield/codexometer/internal/codex"
 )
 
 func (s *server) inspectSession(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +31,9 @@ func (s *server) inspectSession(w http.ResponseWriter, r *http.Request) {
 	if page == nil || err != nil || !s.inspectableSession(root) {
 		http.Error(w, "Session information unavailable", http.StatusServiceUnavailable)
 		return
+	}
+	if agents, ok := page.(codex.AgentInspection); ok {
+		page = transcriptPage{Agents: agents.Agents, Turns: s.store.projectTranscript(agents.Turns)}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(page)

@@ -2,11 +2,13 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
 )
@@ -160,11 +162,112 @@ func TestResumePickerCanOpenWithNoLiveSessions(t *testing.T) {
 	m := contextTestModel()
 	m.monitorSessionData = nil
 	m.finder.setScope("scope")
-	x, y := renderedTextStart(t, m, "[Saved sessions]")
-	for _, msg := range []tea.Msg{key('/'), tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}} {
+	x, y := renderedTextStart(t, m, "[ (R)ESUME ]")
+	for _, msg := range []tea.Msg{key('r'), key('/'), tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}} {
 		next, _ := m.Update(msg)
-		if !next.(Model).finder.include {
+		if n := next.(Model); !n.finder.include || n.loading != m.loading {
 			t.Fatalf("%T could not open the saved picker without a live session", msg)
+		}
+	}
+	if _, ok := footerButtonByID(m, footerButtonRefresh); ok {
+		t.Fatal("Sessions should not show a quota Refresh button")
+	}
+	next, _ := m.Update(key('r'))
+	next, _ = next.(Model).Update(key('r'))
+	if got := next.(Model).finder.query(); got != "r" {
+		t.Fatalf("R in the search field should be typed, got %q", got)
+	}
+}
+
+func TestSavedFinderFrameAndCursorFollowResults(t *testing.T) {
+	m := contextTestModel()
+	m.fetcher = &resumeFinderProbe{}
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	for i := range 30 {
+		m.finder.rows = append(m.finder.rows, savedRow{SavedSession: codex.SavedSession{ID: fmt.Sprintf("row-%02d", i), Name: fmt.Sprintf("Conversation %02d", i)}})
+	}
+	m.finder.next = "page-two"
+	m.finder.selectIndex(m.savedMatches(), 0)
+	send := func(msg tea.Msg) tea.Cmd {
+		next, cmd := m.Update(msg)
+		m = next.(Model)
+		return cmd
+	}
+	send(specialKey(tea.KeyDown))
+	send(specialKey(tea.KeyDown))
+	d := m.dashboardLayout()
+	a := m.monitorArea(d.contentWidth, d.meterHeight)
+	g := m.finder.layout(d.contentWidth, a.finderRows)
+	rendered := ansi.Strip(m.renderSessionFinder(d.contentWidth, a.finderRows, paletteFor(m.theme)))
+	if m.finder.selected != "row-01" || !strings.Contains(rendered, "› OW-01 // Conversation 01") {
+		t.Fatal("expected cursor on the second saved row", rendered)
+	}
+	if !strings.HasPrefix(rendered, "╭─ SAVED // SESSIONS") || strings.Count(rendered, "SAVED //") != 1 {
+		t.Fatal("expected a single framed heading", rendered)
+	}
+	y := d.meterY + a.topHeight + a.attentionRows
+	down := m.savedListButtons(g, d.contentWidth)[1].rect
+	if strings.Index(strings.Split(rendered, "\n")[0], "[↓]") < 0 ||
+		ansi.StringWidth(strings.SplitN(rendered, "[↓]", 2)[0]) != down.x {
+		t.Fatal("framed down arrow's rendered column and hit target differ", rendered)
+	}
+	send(tea.MouseClickMsg{X: 2 + down.x, Y: y + down.y, Button: tea.MouseLeft})
+	if m.finder.selected != "row-02" {
+		t.Fatal("frame down arrow did not move the saved cursor", m.finder.selected)
+	}
+	for range 28 {
+		send(specialKey(tea.KeyDown))
+	}
+	rendered = ansi.Strip(m.renderSessionFinder(d.contentWidth, a.finderRows, paletteFor(m.theme)))
+	if !strings.Contains(rendered, "› [+] MORE") {
+		t.Fatal("cursor did not scroll the pagination row into view", rendered)
+	}
+	send(specialKey(tea.KeyUp))
+	cmd := send(key('r'))
+	if cmd == nil || m.finder.detail != "row-29" || m.loading {
+		t.Fatal("R did not select the same saved row for resume")
+	}
+}
+
+func TestSavedFinderNameOnlyAndAlignedAgeColumn(t *testing.T) {
+	m := contextTestModel()
+	m.openResumePicker()
+	m.finder.failed = false
+	m.finder.input.SetValue("blUE")
+	now := time.Now()
+	m.finder.rows = []savedRow{
+		{SavedSession: codex.SavedSession{ID: "first", Name: "Blue dashboard", Directory: strings.Repeat("/very-long", 14), UpdatedAt: now.Add(-3*time.Hour - time.Minute).Unix()}},
+		{SavedSession: codex.SavedSession{ID: "no-time", Name: "BLUE inventory"}},
+		{SavedSession: codex.SavedSession{ID: "blue", Name: "Other", Directory: "/blue"}},
+		{SavedSession: codex.SavedSession{ID: "untitled", Directory: "/blue"}},
+	}
+	if rows := m.savedMatches(); len(rows) != 2 || rows[0].ID != "first" || rows[1].ID != "no-time" {
+		t.Fatal("saved results should only match names", rows)
+	}
+	render := func(width int) string {
+		return ansi.Strip(m.renderSessionFinder(width, 9, paletteFor(m.theme)))
+	}
+	lines := strings.Split(render(56), "\n")
+	for _, tc := range []struct {
+		row  int
+		text string
+	}{{1, "TIME AGO"}, {2, "3h ago"}, {3, "—"}} {
+		line := lines[tc.row]
+		if !strings.HasSuffix(line, tc.text+" │") || ansi.StringWidth(line) != 56 {
+			t.Fatalf("age column misplaced: %q", line)
+		}
+	}
+	if !strings.Contains(lines[2], "…") || strings.Contains(render(28), "3h ago") {
+		t.Fatal("long and narrow views did not preserve space for the names")
+	}
+	for _, tc := range []struct {
+		updated int64
+		want    string
+	}{{0, "—"}, {now.Unix() + 5, "JUST NOW"}, {now.Unix() - 95, "1m ago"}, {now.Unix() - 2*86400, "2d ago"}} {
+		if got := savedSessionAge(tc.updated, now); got != tc.want {
+			t.Fatalf("age for %d = %q, want %q", tc.updated, got, tc.want)
 		}
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,7 +17,7 @@ func TestSavedBrowserOnlyReadsBoundedAccountHistory(t *testing.T) {
 	f.catalogues = map[string]map[string]any{
 		"initialize":        {"userAgent": "codexometer/0.170.0 (Linux)"},
 		"account/read":      {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
-		"thread/list":       {"data": []any{map[string]any{"id": "saved", "name": "Two\nlines", "cwd": "/work", "preview": "not exported"}}, "nextCursor": "page2"},
+		"thread/list":       {"data": []any{map[string]any{"id": "saved", "name": "Two\nlines", "cwd": "/work", "updatedAt": 1_730_000_000, "preview": "not exported"}}, "nextCursor": "page2"},
 		"thread/turns/list": {"data": []any{map[string]any{"id": "turn", "status": "completed", "items": []any{map[string]any{"id": "reply", "type": "agentMessage", "phase": "final_answer", "text": "withheld", "moderation": map[string]any{"moderated": true}}}}}},
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -32,7 +34,7 @@ func TestSavedBrowserOnlyReadsBoundedAccountHistory(t *testing.T) {
 	client := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
 	read := func(cursor, id string) (SavedPage, error) { return client.BrowseSavedSessions(ctx, scope, cursor, id) }
 	page, err := read("", "")
-	if err != nil || page.Next != "page2" || len(page.Sessions) != 1 || page.Sessions[0].Name != "Two lines" {
+	if err != nil || page.Next != "page2" || len(page.Sessions) != 1 || page.Sessions[0].Name != "Two lines" || page.Sessions[0].UpdatedAt != 1_730_000_000 {
 		t.Fatal(page, err)
 	}
 	// Reopening on the original page is cheap. Next, move the same thread
@@ -116,10 +118,15 @@ func TestFinderVersionAndRenames(t *testing.T) {
 func TestSavedSearchAndExplicitResume(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	f.catalogues = map[string]map[string]any{
-		"initialize":    {"userAgent": "codex/0.171.0 (Linux)"},
-		"account/read":  {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
-		"thread/search": {"data": []any{map[string]any{"thread": map[string]string{"id": "one", "name": "Found"}, "snippet": "private match"}}},
-		"thread/list":   {"data": []any{map[string]string{"id": "one"}}},
+		"initialize":   {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read": {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+	}
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", ""}: {"data": []any{
+			map[string]string{"id": "strasse", "name": "Unrelated", "cwd": "/work/STRASSE", "preview": "STRASSE"},
+		}, "nextCursor": "older"},
+		{"updated_at", "older"}: {"data": []any{map[string]string{"id": "one", "name": "Straße Review"}}},
+		{"created_at", ""}:      {"data": []any{map[string]string{"id": "one"}}},
 	}
 	ctx := t.Context()
 	if err := p.ensureConnected(ctx); err != nil {
@@ -129,19 +136,24 @@ func TestSavedSearchAndExplicitResume(t *testing.T) {
 	scope := p.savedScope
 	p.mu.Unlock()
 	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
-	page, err := c.SearchSavedSessions(ctx, scope, "", "not in the title")
-	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].Name != "Found" {
+	page, err := c.SearchSavedSessions(ctx, scope, "", "stRASSE")
+	if err != nil || page.Next != "" || len(page.Sessions) != 1 || page.Sessions[0].Name != "Straße Review" || page.Sessions[0].ListCursor != "older" {
 		t.Fatal(page, err)
 	}
 	if err := c.ResumeSavedSession(ctx, scope, "", "two"); !errors.Is(err, ErrSavedSessions) {
 		t.Fatal("thread outside the saved selection was accepted", err)
 	}
 	f.mu.Lock()
-	if len(f.resumeReads) != 0 {
-		t.Fatal("search or rejected resume loaded a thread", f.resumeReads)
+	if len(f.resumeReads) != 0 || len(f.historyReads) != 0 {
+		t.Fatal("name search or rejected resume accessed a transcript", f.resumeReads, f.historyReads)
+	}
+	for _, req := range f.savedReads {
+		if _, ok := req["searchTerm"]; ok {
+			t.Fatal("name search used Codex's case-sensitive metadata filter", req)
+		}
 	}
 	f.mu.Unlock()
-	if err := c.ResumeSavedSession(ctx, scope, "", "one"); err != nil {
+	if err := c.ResumeSavedSession(ctx, scope, page.Sessions[0].ListCursor, "one"); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, ok := p.Fetch(ctx, nil)
@@ -152,6 +164,102 @@ func TestSavedSearchAndExplicitResume(t *testing.T) {
 	defer f.mu.Unlock()
 	if len(f.resumeReads) != 1 || len(f.writes) != 0 || f.resumeReads[0]["excludeTurns"] != true {
 		t.Fatal("resume sent unexpected mutations", f.resumeReads, f.writes)
+	}
+}
+
+func TestSavedNameSearchContinuesAfterBoundedEmptyPages(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":   {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read": {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+	}
+	f.savedPages = map[[2]string]map[string]any{}
+	position := ""
+	for i := 1; i <= 12; i++ {
+		next := strconv.Itoa(i)
+		f.savedPages[[2]string{"updated_at", position}] = map[string]any{"nextCursor": next}
+		position = next
+	}
+	f.savedPages[[2]string{"updated_at", position}] = map[string]any{
+		"data": []any{map[string]string{"id": "older", "name": "Résumé"}},
+	}
+	ctx := t.Context()
+	if err := p.ensureConnected(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	p.savedIndex(scope, false).warm.Do(func() {}) // Exercise the foreground cold-page budget deterministically.
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	page, err := c.SearchSavedSessions(ctx, scope, "", "RÉSUMÉ")
+	if err != nil || len(page.Sessions) != 0 || page.Next != position {
+		t.Fatal("did not preserve continuation past empty pages", page, err)
+	}
+	page, err = c.SearchSavedSessions(ctx, scope, page.Next, "RÉSUMÉ")
+	if err != nil || page.Next != "" || len(page.Sessions) != 1 || page.Sessions[0].ID != "older" {
+		t.Fatal("did not match older title with a different Unicode form", page, err)
+	}
+}
+
+func TestSavedMetadataIndexPreloadsAndReusesPagesAcrossQueries(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":   {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read": {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+	}
+	f.savedReadDelay = 30 * time.Millisecond
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", ""}:      {"data": []any{map[string]string{"id": "new", "name": "Release plan"}}, "nextCursor": "older"},
+		{"updated_at", "older"}: {"data": []any{map[string]string{"id": "old", "name": "Résumé notes"}}},
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := p.ensureConnected(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	head, err := c.SearchSavedSessions(ctx, scope, "", "")
+	if err != nil || len(head.Sessions) != 1 || head.Next != "older" {
+		t.Fatal(head, err)
+	}
+	wait := time.NewTicker(time.Millisecond)
+	defer wait.Stop()
+	for {
+		if _, ready := p.savedIndex(scope, false).cached("older"); ready {
+			break
+		}
+		select {
+		case <-wait.C:
+		case <-ctx.Done():
+			t.Fatal("the picker did not preload the older page")
+		}
+	}
+	var group sync.WaitGroup
+	for _, term := range []string{"ré", "RÉS", "RÉSUMÉ", "release", "nothing", ""} {
+		group.Go(func() {
+			results, err := c.SearchSavedSessions(ctx, scope, "", term)
+			if err != nil || (term == "nothing") != (len(results.Sessions) == 0) {
+				t.Errorf("%q: %v, %v", term, results, err)
+			}
+		})
+	}
+	group.Wait()
+	f.mu.Lock()
+	list, account, transcript := len(f.savedReads), f.accountReads, len(f.historyReads)
+	f.mu.Unlock()
+	if list != 2 || account != 4 || transcript != 0 {
+		t.Fatalf("typing should reuse two verified metadata pages: list=%d account=%d transcript=%d", list, account, transcript)
+	}
+
+	p.mu.Lock()
+	p.finderNotificationLocked("account/updated", nil)
+	p.mu.Unlock()
+	if results, err := c.SearchSavedSessions(ctx, scope, "", "RÉSUMÉ"); !errors.Is(err, ErrSavedSessions) || len(results.Sessions) != 0 {
+		t.Fatal("old scope was able to read cached names", results, err)
 	}
 }
 

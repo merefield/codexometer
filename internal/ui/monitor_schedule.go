@@ -224,12 +224,8 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 			return next.(Model), cmd, true
 		}
 	}
-	if m.scheduleUI.open && isKey && m.scheduleUI.focus != 0 && (key.String() == "t" || key.String() == "r") {
-		button := footerButtonTheme
-		if key.String() == "r" {
-			button = footerButtonRefresh
-		}
-		next, cmd := m.pressFooterButton(button)
+	if m.scheduleUI.open && isKey && m.scheduleUI.focus != 0 && key.String() == "t" {
+		next, cmd := m.pressFooterButton(footerButtonTheme)
 		return next.(Model), cmd, true
 	}
 	if m.scheduleUI.open && isKey && (key.String() == "ctrl+c" || key.String() == "q" && m.scheduleUI.focus != 0) {
@@ -293,7 +289,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		if click.Button == tea.MouseLeft {
 			button := m.footerButtonAt(click.X, click.Y)
-			if button == footerButtonTheme || button == footerButtonRefresh || button == footerButtonQuit {
+			if button == footerButtonTheme || button == footerButtonQuit {
 				next, cmd := m.pressFooterButton(button)
 				return next.(Model), cmd, true
 			}

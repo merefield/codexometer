@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -15,17 +16,22 @@ func (s *server) savedSessions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var page codex.SavedPage
 	var err error
-	if term := q.Get("q"); term != "" && q.Get("id") == "" && s.searcher != nil {
+	term, id := q.Get("q"), q.Get("id")
+	if id == "" && s.searcher != nil {
 		page, err = s.searcher.SearchSavedSessions(ctx, q.Get("scope"), q.Get("cursor"), term)
 	} else {
-		page, err = s.finder.BrowseSavedSessions(ctx, q.Get("scope"), q.Get("cursor"), q.Get("id"))
+		page, err = s.finder.BrowseSavedSessions(ctx, q.Get("scope"), q.Get("cursor"), id)
+		if term != "" && id == "" {
+			keep := codex.SavedSessionNameFilter(term)
+			page.Sessions = slices.DeleteFunc(slices.Clone(page.Sessions), func(row codex.SavedSession) bool { return !keep(row) })
+		}
 	}
 	if err != nil {
 		http.Error(w, "Saved sessions unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(page)
+	_ = json.NewEncoder(w).Encode(transcriptPage{Sessions: page.Sessions, Next: page.Next, Turns: s.store.projectTranscript(page.Turns)})
 }
 
 type sessionResumeTarget struct {

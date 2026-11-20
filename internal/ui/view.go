@@ -206,7 +206,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
-	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused && !m.monitorAttentionFocused {
+	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused && !m.monitorAttentionFocused && !m.finder.include {
 		hint := i18n.Text("←/→ DETAIL")
 		if lipgloss.Width(status)+2+lipgloss.Width(hint) <= width {
 			status = joinRight(status, colors.dimmed().Render(hint), width)
@@ -215,7 +215,7 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if m.meterView == viewBenchmark || (m.meterView.isQuota() && m.meterView != viewResets && m.meterView != viewThresholds) {
 		status = renderPricingFooter(status, width, colors)
 	}
-	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView.isQuota() || m.meterView == viewUsage)
+	buttons, separator := footerButtonLayoutWithTheme(width, colors.name, m.meterView)
 	controls := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		controls = append(controls, footerButtonAppearance(

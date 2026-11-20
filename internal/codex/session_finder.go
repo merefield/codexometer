@@ -5,14 +5,19 @@ import (
 	"errors"
 	"slices"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Saved sessions are deliberately a separate, display-only type. A thread
 // discovered in history must never become a live control or telemetry target.
 type SavedSession struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Directory string `json:"directory"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Directory  string `json:"directory"`
+	UpdatedAt  int64  `json:"updatedAt,omitempty"`  // Unix seconds, from Codex.
+	ListCursor string `json:"listCursor,omitempty"` // Origin page of a search result.
 }
 
 type SavedTurn struct {
@@ -46,7 +51,7 @@ type savedSessionNavigation interface {
 
 func (c Client) SearchSavedSessions(ctx context.Context, scope, cursor, query string) (SavedPage, error) {
 	query = strings.TrimSpace(query)
-	if c.LiveUsage == nil || scope == "" || len(scope) > 128 || len(cursor) > 4096 || query == "" || len(query) > 1024 || SanitizeSessionContext(query) != query {
+	if c.LiveUsage == nil || scope == "" || len(scope) > 128 || len(cursor) > 4096 || len(query) > 1024 || SanitizeSessionContext(query) != query {
 		return SavedPage{}, ErrSavedSessions
 	}
 	if p, ok := c.LiveUsage.statusProvider.(savedSessionNavigation); ok {
@@ -76,6 +81,25 @@ func singleLine(s string) string { return strings.Join(strings.Fields(SanitizeSe
 func SessionMatches(query, id, name, directory string) bool {
 	q := strings.ToLower(strings.TrimSpace(query))
 	return q == "" || strings.Contains(strings.ToLower(name), q) || strings.Contains(strings.ToLower(directory), q) || strings.Contains(strings.ToLower(id), q)
+}
+
+var savedNameFold = cases.Fold()
+
+func savedNameKey(text string) string {
+	return savedNameFold.String(norm.NFC.String(text))
+}
+
+func savedNameQuery(query string) string {
+	return savedNameKey(strings.Join(strings.Fields(query), " "))
+}
+
+// SavedSessionNameFilter is deliberately narrower than the live filter. Fold
+// Unicode case and normalise accents without replacing an accent with ASCII.
+func SavedSessionNameFilter(query string) func(SavedSession) bool {
+	needle := savedNameQuery(query)
+	return func(row SavedSession) bool {
+		return needle == "" || strings.Contains(savedNameKey(row.Name), needle)
+	}
 }
 
 func (c Client) BrowseSavedSessions(ctx context.Context, scope, cursor, id string) (SavedPage, error) {

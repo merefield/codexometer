@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -41,6 +42,10 @@ type sessionFinder struct {
 }
 
 func finderLabel() string { return i18n.Text("FILTER") }
+func resumeLabel() string { return i18n.Text("[ (R)ESUME ]") }
+func savedFinderTitle() string {
+	return i18n.Text("SAVED") + " // " + i18n.Text("SESSIONS")
+}
 func (f sessionFinder) query() string {
 	if f.input == nil {
 		return ""
@@ -119,7 +124,7 @@ func (f *sessionFinder) editInput() *textinput.Model {
 		input.Prompt = ""
 		input.Placeholder = finderLabel()
 		if f.include {
-			input.Placeholder = "/resume"
+			input.Placeholder = i18n.Text("SEARCH BY NAME")
 		}
 	} else {
 		input = *f.input
@@ -133,7 +138,12 @@ func (m Model) finderHeight(available int) int {
 		return 0
 	}
 	if f.include {
-		return min(16, max(available*2/3, 1))
+		// Keep the frame, search and at least one result on short panes before
+		// spending rows on the ordinary live-session list below it.
+		if available < 7 {
+			return available
+		}
+		return min(16, min(available-3, available*2/3))
 	}
 	return min(1, max(available-1, 0))
 }
@@ -145,7 +155,6 @@ type savedResult struct {
 	err               error
 	resume            bool
 }
-type savedQueryReady struct{ epoch uint64 }
 type savedResumeDeadline struct{ savedResult }
 
 func (m *Model) requestSaved(cursor, id string) tea.Cmd {
@@ -169,7 +178,7 @@ func (m *Model) requestSaved(cursor, id string) tea.Cmd {
 		defer stop()
 		ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
 		defer cancel()
-		if id == "" && query != "" && search != nil {
+		if id == "" && search != nil {
 			msg.page, msg.err = search.SearchSavedSessions(ctx, msg.scope, cursor, query)
 		} else {
 			msg.page, msg.err = client.BrowseSavedSessions(ctx, msg.scope, cursor, id)
@@ -192,13 +201,20 @@ func (f *sessionFinder) accept(r savedResult) {
 		f.turns = r.page.Turns
 		return
 	}
+	if r.cursor == "" {
+		f.rows = nil // A new query replaces the first page, never merges it.
+	}
 	seen := make(map[string]bool, len(f.rows))
 	for _, row := range f.rows {
 		seen[row.ID] = true
 	}
 	for _, row := range r.page.Sessions {
 		if !seen[row.ID] {
-			f.rows = append(f.rows, savedRow{row, r.cursor})
+			cursor := row.ListCursor
+			if cursor == "" {
+				cursor = r.cursor
+			}
+			f.rows = append(f.rows, savedRow{row, cursor})
 			seen[row.ID] = true
 		}
 	}
@@ -218,9 +234,9 @@ func (m Model) savedMatches() []savedRow {
 		}
 	}
 	var out []savedRow
-	_, hasSearch := m.fetcher.(codex.SavedSessionSearchClient)
+	matches := codex.SavedSessionNameFilter(m.finder.query())
 	for _, r := range m.finder.rows {
-		if !live[r.ID] && (hasSearch || codex.SessionMatches(m.finder.query(), r.ID, r.Name, r.Directory)) {
+		if !live[r.ID] && matches(r.SavedSession) {
 			out = append(out, r)
 		}
 	}
@@ -304,7 +320,7 @@ func (m Model) savedLines(width int) []string {
 	if status := inspectionStatus(f.failed, f.loading); status != nil {
 		return status
 	}
-	return savedTranscriptLines(f.turns, width)
+	return m.savedTranscriptLines(f.turns, width)
 }
 
 func inspectionStatus(failed, loading bool) []string {
@@ -317,14 +333,17 @@ func inspectionStatus(failed, loading bool) []string {
 	return nil
 }
 
-func savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
+func (m Model) savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
+	width = max(width, 1)
 	var lines []string
 	for _, turn := range slices.Backward(turns) {
-		for _, text := range []string{turn.Task, i18n.SessionText(turn.Reply, turn.Restricted)} {
-			if text != "" {
-				lines = append(lines, wrapProse(text, max(width, 1))...)
-				lines = append(lines, "")
-			}
+		if task := codex.SanitizeSessionContext(turn.Task); task != "" {
+			lines = append(lines, wrapProse(task, width)...)
+			lines = append(lines, "")
+		}
+		if reply := i18n.SessionText(turn.Reply, turn.Restricted); reply != "" {
+			lines = append(lines, m.proseLines(codex.SanitizeSessionContext(reply), width)...)
+			lines = append(lines, "")
 		}
 	}
 	if len(lines) == 0 {
@@ -332,13 +351,38 @@ func savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
 	}
 	return lines
 }
-func (m Model) finderStart(n int) int {
-	return max(0, m.finder.savedIndex(m.savedMatches())-max(n-1, 0))
+
+type finderGeometry struct {
+	x, search, rows, width, ageWidth int
+	framed                           bool
 }
+
+func (g finderGeometry) firstResult() int { return g.search + 1 }
+func (g finderGeometry) nameWidth() int {
+	if g.ageWidth != 0 {
+		return g.width - g.ageWidth - 2
+	}
+	return g.width
+}
+
+func (f sessionFinder) layout(w, h int) finderGeometry {
+	g := finderGeometry{rows: max(h-1, 0), width: w}
+	if f.include && h >= 4 && w >= 8 {
+		g.x, g.search, g.rows, g.width, g.framed = 2, 1, h-3, w-4, true
+	}
+	if f.include && f.detail == "" && g.width >= 30 {
+		g.ageWidth = min(16, max(10, lipgloss.Width(i18n.Text("TIME AGO"))))
+	}
+	return g
+}
+
+func finderStart(index, n int) int { return max(0, index-max(n-1, 0)) }
+
 func (f sessionFinder) inputWidth(w int) int { return max(1, w-1) }
 func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	f := m.finder
-	inputWidth := f.inputWidth(w)
+	g := f.layout(w, h)
+	inputWidth := f.inputWidth(g.nameWidth())
 	tint := monitorComposerBackground(colors)
 	input := *f.input // Render-only styling and viewport adjustments.
 	styles := input.Styles()
@@ -352,56 +396,148 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	input.SetCursor(input.Position())
 	line := ansi.Truncate(colors.label().Foreground(colors.primary).Render("⌕ ")+input.View(), inputWidth, "…")
 	line = withDefaultBackground(line+strings.Repeat(" ", max(0, inputWidth-lipgloss.Width(line))), tint)
-	lines := []string{line + strings.Repeat(" ", max(0, w-inputWidth))}
-	rows := m.savedMatches()
-	index := f.savedIndex(rows)
-	var body []string
-	if f.detail != "" {
-		for _, r := range rows {
-			if r.ID == f.detail {
-				header := "[←] " + i18n.Text("SAVED") + " // " + shortSessionID(r.ID) + " // " + r.Name
-				if _, ok := m.fetcher.(codex.SavedSessionResumeClient); ok && !f.loading && !f.failed && f.resumeID == "" {
-					header = "[←] [/resume ↵] " + strings.TrimPrefix(header, "[←] ")
-				}
-				body = append(body, header)
-				text := m.savedLines(w)
-				body = append(body, text[min(f.scroll, max(0, len(text)-max(h-2, 1))):]...)
-				break
-			}
-		}
-	} else if h > 1 {
-		for i := m.finderStart(h - 1); i < len(rows); i++ {
-			row := rows[i]
-			text := i18n.Text("SAVED") + " // " + shortSessionID(row.ID) + " // " + strings.TrimSpace(row.Name+"  "+row.Directory)
-			if i == index && f.focus == findResults {
-				text = "› " + text
-			}
-			body = append(body, text)
-			if len(body) >= h-1 {
-				break
-			}
-		}
-		if f.loading {
-			body = append(body, "…")
-		} else if f.failed {
-			body = append(body, i18n.Text("UNAVAILABLE"))
-		} else if f.next != "" {
-			more := "[+] " + i18n.Text("MORE")
-			if f.focus == findResults && index == len(rows) {
-				more = "› " + more
-			}
-			body = append(body, more)
-		} else if len(rows) == 0 {
-			body = append(body, i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER"))
-		}
+	if g.ageWidth != 0 {
+		heading := ansi.Truncate(i18n.Text("TIME AGO"), g.ageWidth, "…")
+		line = joinRight(line, colors.dimmed().Render(heading), g.width)
+	} else {
+		line += strings.Repeat(" ", max(0, g.width-inputWidth))
 	}
-	for _, text := range body[:min(len(body), h-1)] {
-		lines = append(lines, colors.label().Render(ansi.Truncate(text, w, "…")))
+	lines := []string{line}
+	if f.include && g.rows > 0 {
+		lines = append(lines, m.renderSavedResults(g, colors)...)
+	}
+	if g.framed {
+		arrows := m.renderMonitorNavigationButtons(m.savedListButtons(g, w), colors)
+		return frameSizedWithTitleAction(w, h-2, savedFinderTitle(), arrows, strings.Join(lines, "\n"), colors.primary, colors)
 	}
 	for len(lines) < h {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func savedIdentity(row savedRow) string {
+	identity := strings.TrimSpace(row.Name + "  " + row.Directory)
+	if identity == "" {
+		return shortSessionID(row.ID)
+	}
+	return shortSessionID(row.ID) + " // " + identity
+}
+
+func savedSessionAge(updatedAt int64, now time.Time) string {
+	if updatedAt <= 0 {
+		return "—"
+	}
+	minutes := max(now.Unix()-updatedAt, 0) / 60
+	switch {
+	case minutes >= 24*60:
+		return i18n.Format("%s ago", fmt.Sprintf("%dd", minutes/(24*60)))
+	case minutes >= 60:
+		return i18n.Format("%s ago", fmt.Sprintf("%dh", minutes/60))
+	case minutes > 0:
+		return i18n.Format("%s ago", fmt.Sprintf("%dm", minutes))
+	default:
+		return i18n.Text("JUST NOW")
+	}
+}
+
+func (m Model) savedListButtons(g finderGeometry, width int) []monitorNavigationButton {
+	const actionWidth = 7 // [↑] [↓]
+	if !g.framed || m.finder.detail != "" || width < lipgloss.Width(savedFinderTitle())+actionWidth+6 {
+		return nil
+	}
+	rows := m.savedMatches()
+	index := m.finder.savedIndex(rows)
+	last := len(rows) - 1
+	if m.finder.next != "" {
+		last++
+	}
+	buttons := []monitorNavigationButton{
+		{label: "[↑]", action: "saved-up", enabled: index > 0},
+		{label: "[↓]", action: "saved-down", enabled: index < last},
+	}
+	layoutNavigationButtons(buttons, width-actionWidth-2, 0)
+	return buttons
+}
+
+func (m Model) savedPreviewButtons(g finderGeometry) []monitorNavigationButton {
+	if g.rows == 0 || g.width < 3 {
+		return nil
+	}
+	buttons := []monitorNavigationButton{{label: "[←]", action: "saved-back", enabled: true}}
+	f := m.finder
+	if _, ok := m.fetcher.(codex.SavedSessionResumeClient); ok && !f.loading && !f.failed && f.resumeID == "" {
+		label := resumeLabel()
+		if lipgloss.Width(buttons[0].label)+1+lipgloss.Width(label) <= g.width {
+			buttons = append(buttons, monitorNavigationButton{label: label, action: "saved-resume", enabled: true})
+		}
+	}
+	layoutNavigationButtons(buttons, g.x, g.firstResult())
+	return buttons
+}
+
+func (m Model) renderSavedResults(g finderGeometry, colors palette) []string {
+	f := m.finder
+	rows := m.savedMatches()
+	index := f.savedIndex(rows)
+	var body []string
+	label := colors.label()
+	appendRow := func(text, age string, selected bool) {
+		marker, style := "  ", label
+		if selected && f.focus == findResults {
+			marker, style = "› ", style.Bold(true)
+		}
+		if g.ageWidth != 0 && age != "" {
+			left := style.Render(ansi.Truncate(marker+text, g.nameWidth(), "…"))
+			right := colors.dimmed().Render(ansi.Truncate(age, g.ageWidth, "…"))
+			body = append(body, joinRight(left, right, g.width))
+			return
+		}
+		body = append(body, style.Render(ansi.Truncate(marker+text, g.width, "…")))
+	}
+	if f.detail != "" {
+		for _, r := range rows {
+			if r.ID == f.detail {
+				header := m.renderMonitorNavigationButtons(m.savedPreviewButtons(g), colors)
+				separator := ""
+				if header != "" {
+					separator = " "
+				}
+				if space := g.width - lipgloss.Width(header) - len(separator); space > 0 {
+					header += separator + label.Render(ansi.Truncate(savedIdentity(r), space, "…"))
+				}
+				body = append(body, header)
+				text := m.savedLines(g.width)
+				start := min(f.scroll, max(0, len(text)-max(g.rows-1, 1)))
+				for _, line := range text[start:min(len(text), start+g.rows-1)] {
+					body = append(body, label.Render(ansi.Truncate(line, g.width, "…")))
+				}
+				break
+			}
+		}
+		return body
+	}
+	now := time.Now()
+	for i := finderStart(index, g.rows); i < len(rows) && len(body) < g.rows; i++ {
+		appendRow(savedIdentity(rows[i]), savedSessionAge(rows[i].UpdatedAt, now), i == index)
+	}
+	if len(body) < g.rows {
+		switch {
+		case f.loading:
+			appendRow("…", "", false)
+		case f.failed:
+			appendRow(i18n.Text("UNAVAILABLE"), "", false)
+		case f.next != "":
+			label := i18n.Text("MORE")
+			if strings.TrimSpace(f.query()) != "" {
+				label = i18n.Text("SEARCH OLDER SESSIONS")
+			}
+			appendRow("[+] "+label, "", index == len(rows))
+		case len(rows) == 0:
+			appendRow(i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER"), "", false)
+		}
+	}
+	return body
 }
 func (m *Model) leaveFinder() {
 	m.finder.focus = findNone
@@ -426,7 +562,8 @@ func (f *sessionFinder) closeDetail() {
 func (m *Model) scrollFinder(delta, width, height int) {
 	f := &m.finder
 	if f.detail != "" {
-		f.scroll = max(0, min(f.scroll+delta, len(m.savedLines(width))-max(1, height-2)))
+		g := f.layout(width, height)
+		f.scroll = max(0, min(f.scroll+delta, len(m.savedLines(g.width))-max(1, g.rows-1)))
 		return
 	}
 	rows := m.savedMatches()
@@ -471,61 +608,16 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
-	if r, ok := message.(savedQueryReady); ok {
-		if f.include && r.epoch == f.epoch {
-			cmd := m.requestSaved("", "")
-			return m, cmd, true
-		}
-		return m, nil, true
-	}
-	if m.meterView != viewMonitor || m.monitorContextDetail != "" || m.scheduleUI.open || m.monitorCommands.open || m.monitorQueue.open {
+	if m.meterView != viewMonitor || m.monitorContextDetail != "" || m.scheduleUI.open || m.monitorCommands.open || m.monitorQueue.open || m.monitorQueue.compact != "" {
 		return m, nil, false
 	}
-	if wheel, ok := message.(tea.MouseWheelMsg); ok && f.include {
-		g := m.dashboardLayout()
-		a := m.monitorArea(g.contentWidth, g.meterHeight)
-		y := wheel.Y - g.meterY - a.topHeight - a.attentionRows
-		if wheel.X >= 2 && wheel.X < 2+g.contentWidth && y > 0 && y < a.finderRows {
-			d := 1
-			if wheel.Button == tea.MouseWheelUp {
-				d = -1
-			}
-			f.focus = findResults
-			m.scrollFinder(d, g.contentWidth, a.finderRows)
-			return m, nil, true
-		}
-	}
-	if click, ok := message.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-		g := m.dashboardLayout()
-		a := m.monitorArea(g.contentWidth, g.meterHeight)
-		y := click.Y - g.meterY - a.topHeight - a.attentionRows
-		x := click.X - 2
-		if x >= 0 && x < g.contentWidth && y >= 0 && y < a.finderRows {
-			if y == 0 {
-				cmd := m.focusFinder()
-				return m, cmd, true
-			}
-			f.focus = findResults
-			if f.detail == "" {
-				f.selectIndex(m.savedMatches(), m.finderStart(a.finderRows-1)+y-1)
-				cmd := m.activateSaved(false)
-				return m, cmd, true
-			}
-			if y == 1 {
-				if x < 3 {
-					f.closeDetail()
-				} else if x < lipgloss.Width("[←] [/resume ↵]") {
-					cmd := m.resumeSaved()
-					return m, cmd, true
-				}
-			}
-			return m, nil, true
-		}
-		m.leaveFinder()
+	if mouse, ok := message.(tea.MouseMsg); ok && f.open {
+		cmd, handled := m.updateFinderMouse(mouse)
+		return m, cmd, handled
 	}
 	key, pressed := message.(tea.KeyPressMsg)
 	if f.focus == findNone {
-		if pressed && key.String() == "/" && !key.IsRepeat && !m.monitorPrompt.input.Focused() && f.scope != "" {
+		if pressed && (key.String() == "/" || key.String() == "r") && !key.IsRepeat && !m.monitorPrompt.input.Focused() && f.scope != "" && !f.include {
 			cmd := m.openResumePicker()
 			return m, cmd, true
 		}
@@ -533,10 +625,18 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			cmd := m.focusFinder()
 			return m, cmd, true
 		}
-		return m, nil, false
+		if !pressed || !f.include {
+			return m, nil, false
+		}
+		switch key.String() {
+		case "esc", "up", "down", "pgup", "pgdown":
+			m.focusFinderResults()
+		default:
+			return m, nil, false
+		}
 	}
 	if pressed {
-		if key.IsRepeat && key.String() == "enter" && f.include {
+		if key.IsRepeat && (key.String() == "enter" || key.String() == "r") && f.include && f.focus == findResults {
 			return m, nil, true
 		}
 		switch key.String() {
@@ -562,25 +662,31 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 				return m, nil, false
 			}
 			f.closeDetail()
-			f.focus = f.focus%findResults + 1
-			if f.focus == findText {
+			if f.focus != findText {
+				f.focus = findText
 				cmd := f.editInput().Focus()
 				return m, cmd, true
 			}
-			f.editInput().Blur()
+			m.focusFinderResults()
 			return m, nil, true
+		case "left":
+			if f.include && f.detail != "" && f.focus == findResults {
+				f.closeDetail()
+				return m, nil, true
+			}
 		case "right":
 			if f.include && f.focus == findResults && f.detail == "" {
 				cmd := m.activateSaved(false)
 				return m, cmd, true
 			}
-		case "enter", "space", " ":
+		case "enter", "r", "space", " ":
 			if f.focus == findResults {
+				resume := key.String() == "enter" || key.String() == "r"
 				if f.detail == "" {
-					cmd := m.activateSaved(key.String() == "enter")
+					cmd := m.activateSaved(resume)
 					return m, cmd, true
 				}
-				if key.String() == "enter" {
+				if resume {
 					cmd := m.resumeSaved()
 					return m, cmd, true
 				}
@@ -592,14 +698,17 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			fallthrough
 		case "down", "up", "pgdown", "pgup":
 			if f.focus == findText {
-				m.leaveFinder()
 				if f.include {
-					f.focus = findResults
+					m.focusFinderResults()
+					if key.IsRepeat {
+						return m, nil, true
+					}
 					if key.String() == "enter" {
 						cmd := m.activateSaved(true)
 						return m, cmd, true
 					}
 				} else {
+					m.leaveFinder()
 					m.returnFromMonitorHeader()
 				}
 				return m, nil, true
@@ -622,16 +731,20 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 		if f.focus == findText {
 			old := f.query()
 			input := *f.input
-			input.SetWidth(max(1, f.inputWidth(m.dashboardLayout().contentWidth)-3))
+			g := m.dashboardLayout()
+			area := m.monitorArea(g.contentWidth, g.meterHeight)
+			input.SetWidth(max(1, f.inputWidth(f.layout(g.contentWidth, area.finderRows).nameWidth())-3))
 			input, cmd := input.Update(message)
 			f.input = &input
 			if old != f.query() {
 				if f.include {
-					f.stopRequest()
-					f.rows, f.next, f.index, f.loading, f.failed, f.selected = nil, "", 0, false, false, ""
-					f.epoch++
-					epoch := f.epoch
-					return m, tea.Batch(cmd, tea.Tick(180*time.Millisecond, func(time.Time) tea.Msg { return savedQueryReady{epoch} })), true
+					f.index, f.selected = 0, ""
+					if _, cachedSearch := m.fetcher.(codex.SavedSessionSearchClient); cachedSearch {
+						f.stopRequest()
+						f.next, f.loading = "", false
+						return m, tea.Batch(cmd, m.requestSaved("", "")), true
+					}
+					return m, cmd, true
 				}
 				f.index, m.monitorScroll = 0, 0
 				m.reconcileMonitorFilterSelection()
@@ -642,4 +755,83 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 	}
 	return m, nil, false
 }
+
+func (m *Model) focusFinderResults() {
+	m.leaveFinder()
+	m.finder.focus = findResults
+}
+
+func (m *Model) updateFinderMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
+	f := &m.finder
+	d := m.dashboardLayout()
+	area := m.monitorArea(d.contentWidth, d.meterHeight)
+	g := f.layout(d.contentWidth, area.finderRows)
+	mouse := msg.Mouse()
+	x, y := mouse.X-2, mouse.Y-d.meterY-area.topHeight-area.attentionRows
+	inFrame := x >= 0 && x < d.contentWidth && y >= 0 && y < area.finderRows
+	inBody := x >= g.x && x < g.x+g.width
+	results := inBody && y >= g.firstResult() && y < g.firstResult()+g.rows
+	hit := ""
+	if f.detail != "" && results {
+		hit = monitorNavigationButtonsHit(m.savedPreviewButtons(g), x, y)
+	} else if inFrame && y == 0 && f.include {
+		hit = monitorNavigationButtonsHit(m.savedListButtons(g, d.contentWidth), x, y)
+	}
+	switch msg.(type) {
+	case tea.MouseMotionMsg:
+		if hit != "" {
+			m.monitorContextHover = hit
+			return nil, true
+		}
+	case tea.MouseWheelMsg:
+		if f.include && results {
+			delta := 1
+			if mouse.Button == tea.MouseWheelUp {
+				delta = -1
+			}
+			m.focusFinderResults()
+			m.scrollFinder(delta, d.contentWidth, area.finderRows)
+			return nil, true
+		}
+	case tea.MouseClickMsg:
+		if mouse.Button != tea.MouseLeft {
+			break
+		}
+		if !inFrame {
+			m.leaveFinder()
+			break
+		}
+		if inBody && x < g.x+g.nameWidth() && y == g.search {
+			return m.focusFinder(), true
+		}
+		if hit == "saved-up" || hit == "saved-down" {
+			m.focusFinderResults()
+			delta := 1
+			if hit == "saved-up" {
+				delta = -1
+			}
+			m.scrollFinder(delta, d.contentWidth, area.finderRows)
+			return nil, true
+		}
+		if results {
+			m.focusFinderResults()
+			switch {
+			case hit == "saved-back":
+				f.closeDetail()
+			case hit == "saved-resume":
+				return m.resumeSaved(), true
+			case f.detail == "":
+				rows := m.savedMatches()
+				i := finderStart(f.savedIndex(rows), g.rows) + y - g.firstResult()
+				if i < len(rows) || (i == len(rows) && f.next != "") {
+					f.selectIndex(rows, i)
+					return m.activateSaved(false), true
+				}
+			}
+		}
+		return nil, true
+	}
+	return nil, false
+}
+
 func isFinderPaste(msg tea.Msg) bool { _, ok := msg.(tea.PasteMsg); return ok }
