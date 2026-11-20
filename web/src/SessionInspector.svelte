@@ -77,7 +77,11 @@
     {:else}<p>No background terminals reported.</p>{/each}
     {#if page.more}<p>Additional background terminals are not shown.</p>{/if}
   {:else if child}
-    <SessionTranscript turns={page.turns} />
+    {#if !page.turns?.length && page.unverifiedTurns}
+      <p>Could not verify which completed turns belong to this agent.</p>
+    {:else}
+      <SessionTranscript turns={page.turns} />
+    {/if}
   {:else}
     {#each page.agents || [] as agent (agent.id)}
       <button type="button" onclick={() => void load(agent.id)}

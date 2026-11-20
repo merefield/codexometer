@@ -14,10 +14,11 @@ type transcriptTurn struct {
 // live session replies. Prompts and the fallback remain plain text. A
 // restricted reply never leaves the server in either form.
 type transcriptPage struct {
-	Sessions []codex.SavedSession `json:"sessions,omitempty"`
-	Next     string               `json:"next,omitempty"`
-	Agents   []codex.SessionAgent `json:"agents,omitempty"`
-	Turns    []transcriptTurn     `json:"turns,omitempty"`
+	Sessions        []codex.SavedSession `json:"sessions,omitempty"`
+	Next            string               `json:"next,omitempty"`
+	Agents          []codex.SessionAgent `json:"agents,omitempty"`
+	Turns           []transcriptTurn     `json:"turns,omitempty"`
+	UnverifiedTurns bool                 `json:"unverifiedTurns,omitempty"`
 }
 
 func (s *store) projectTranscript(turns []codex.SavedTurn) []transcriptTurn {

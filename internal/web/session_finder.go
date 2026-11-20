@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -46,11 +47,14 @@ func (t sessionResumeTarget) valid() bool {
 func (t sessionResumeTarget) fields() []string { return []string{t.Cursor, t.ID} }
 
 func (s *server) resumeSession(w http.ResponseWriter, r *http.Request, target sessionResumeTarget) {
-	switch s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID) {
-	case nil:
+	err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID)
+	switch {
+	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, codex.ErrSavedSessions):
+		http.Error(w, "Codex did not accept the resume.", http.StatusConflict)
 	default:
-		http.Error(w, "Resume not confirmed", http.StatusConflict)
+		http.Error(w, "Resume outcome unknown. Check Codex before trying again.", http.StatusBadGateway)
 	}
 }
 

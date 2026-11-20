@@ -14,8 +14,9 @@ type SessionAgent struct {
 }
 
 type AgentInspection struct {
-	Agents []SessionAgent `json:"agents,omitempty"`
-	Turns  []SavedTurn    `json:"turns,omitempty"`
+	Agents          []SessionAgent `json:"agents,omitempty"`
+	Turns           []SavedTurn    `json:"turns,omitempty"`
+	UnverifiedTurns bool           `json:"unverifiedTurns,omitempty"`
 }
 
 type SessionAgentClient interface {
@@ -23,7 +24,7 @@ type SessionAgentClient interface {
 }
 
 type agentHistoryProvider interface {
-	readSessionHistory(context.Context, string, time.Time) ([]SessionContext, error)
+	readSessionHistory(context.Context, string, time.Time) ([]SessionContext, bool, error)
 }
 
 func (r *LiveUsageReader) linkedAgents(parent, child string) ([]SessionAgent, time.Time) {
@@ -82,9 +83,9 @@ func (c Client) InspectSessionAgents(ctx context.Context, parent, child string) 
 	if !ok || since.IsZero() {
 		return AgentInspection{}, ErrSessionHistory
 	}
-	turns, err := p.readSessionHistory(ctx, child, since)
+	turns, unverified, err := p.readSessionHistory(ctx, child, since)
 	if err == nil {
 		c.LiveUsage.protectSessionHistory(child, turns)
 	}
-	return AgentInspection{Turns: savedTurns(turns)}, err
+	return AgentInspection{Turns: savedTurns(turns), UnverifiedTurns: unverified}, err
 }

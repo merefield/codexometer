@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -48,6 +49,20 @@ func TestSessionAgentButtonAndKeyboardDrillDown(t *testing.T) {
 type terminalInspectionProbe struct {
 	Fetcher
 	reads int
+}
+
+func TestAgentTranscriptEmptyStateExplainsUnverifiedOwnership(t *testing.T) {
+	m := contextTestModel()
+	m.inspector = sessionInspector{
+		kind: "subagents", child: "child", page: codex.AgentInspection{UnverifiedTurns: true},
+	}
+	if got := strings.Join(m.inspectorLines(100), " "); !strings.Contains(got, "Could not verify which completed turns") {
+		t.Fatal("unverified transcript presented as empty", got)
+	}
+	m.inspector.page.UnverifiedTurns = false
+	if got := m.inspectorLines(100); got[0] != "NO COMPLETED TURNS" {
+		t.Fatal("genuinely empty transcript did not keep its original notice", got)
+	}
 }
 
 func (p *terminalInspectionProbe) InspectSessionTerminals(_ context.Context, id string) (codex.TerminalInspection, error) {

@@ -54,6 +54,7 @@ export type SessionInspection = {
     pid?: number;
   }[];
   more?: boolean;
+  unverifiedTurns?: boolean;
 };
 export let inspectSession:
   | ((
@@ -178,16 +179,22 @@ export function connect(): () => void {
     if (
       !live.connected ||
       !live.data?.control ||
+      live.data.sessionsError ||
       live.data.savedScope !== scope
     )
-      throw new Error('Resume unavailable');
-    const response = await postJSON('/api/sessions/resume', {
-      scope,
-      cursor,
-      id,
-      ...review,
-    });
-    if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
+      throw new ControlRejected(
+        'Resume unavailable. Check the live connection.',
+      );
+    const response = await postJSON(
+      '/api/sessions/resume',
+      { scope, cursor, id, ...review },
+      undefined,
+      14000,
+    );
+    if (!response.ok) {
+      if (response.status >= 500) throw new Error('Resume outcome unknown.');
+      throw new ControlRejected((await response.text()).trim());
+    }
     if (review?.mode === 'prepare') return (await response.json()).confirmation;
     return '';
   };

@@ -166,7 +166,7 @@ func (s *server) handler() http.Handler {
 		handle  http.HandlerFunc
 	}{
 		{"GET /api/sessions/saved", s.finder != nil, 7 * time.Second, s.savedSessions},
-		{"POST /api/sessions/resume", s.resumer != nil, 7 * time.Second, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
+		{"POST /api/sessions/resume", s.resumer != nil, codex.SavedResumeTimeout, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
 		{"POST /api/sessions/new", s.starter != nil, codex.SessionStartTimeout, sessionMutationHandler(s, "new-session", 48<<10, s.startSession)},
 	} {
 		if route.enabled {

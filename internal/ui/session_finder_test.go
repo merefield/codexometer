@@ -298,7 +298,50 @@ func TestResumePickerSelectionAndStrictConfirmation(t *testing.T) {
 		t.Fatal("confirmed resume changed target")
 	}
 	m, _, _ = m.updateSessionFinder(savedResumeDeadline{savedResult{id: "wanted", scope: "scope", epoch: m.finder.epoch}})
-	if m.finder.resumeID != "" || m.finder.resumeNotice == "" {
-		t.Fatal("missing row did not clear the pending handoff")
+	if m.finder.resumeID != "wanted" || !strings.Contains(m.finder.resumeNotice, "still waiting") || m.resumeSaved() != nil {
+		t.Fatal("late observation should not discard the handoff or enable retry")
+	}
+	next, _, _ := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchSample, at: time.Now(), usage: codex.LiveUsageSnapshot{
+		SavedScope: "scope", Sessions: []codex.LiveUsageSession{{ID: "wanted", Active: true}},
+	}})
+	if m = next.(Model); m.monitorContextDetail != "wanted" || m.finder.include {
+		t.Fatal("late observation did not open the accepted session")
+	}
+}
+
+func TestSavedResumeFailureDistinguishesUnknownOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+		held string
+	}{
+		{codex.ErrSavedSessions, "did not accept", ""},
+		{codex.ErrSavedResumeUncertain, "outcome unknown", "cold"},
+	} {
+		m := contextTestModel()
+		m.fetcher = &resumeFinderProbe{}
+		m.finder.setScope("scope")
+		m.openResumePicker()
+		m.finder.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "cold"}}}
+		m.finder.focus = findResults
+		m.finder.detail = "cold"
+		m, _, _ = m.updateSessionFinder(savedResult{
+			id: "cold", scope: "scope", epoch: m.finder.epoch, resume: true, err: tc.err,
+		})
+		if !strings.Contains(m.finder.resumeNotice, tc.want) || m.finder.resumeID != tc.held {
+			t.Fatalf("outcome %v displayed as %q, pending %q", tc.err, m.finder.resumeNotice, m.finder.resumeID)
+		}
+		if allowed := m.resumeSaved() != nil; allowed != (tc.held == "") {
+			t.Fatalf("outcome %v had wrong retry behaviour", tc.err)
+		}
+	}
+}
+
+func TestSavedPaginationFailureKeepsResultsAndRetryCursor(t *testing.T) {
+	f := sessionFinder{include: true, scope: "scope", next: "older"}
+	f.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "verified"}}}
+	f.accept(savedResult{scope: "scope", cursor: "older", err: codex.ErrSavedSessions})
+	if !f.failed || len(f.rows) != 1 || f.rows[0].ID != "verified" || f.next != "older" {
+		t.Fatal("a failed pagination request discarded verified results", f)
 	}
 }

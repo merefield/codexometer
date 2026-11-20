@@ -132,6 +132,9 @@ func (m Model) inspectorLines(width int) []string {
 		}
 		return lines
 	}
+	if len(s.page.Turns) == 0 && s.page.UnverifiedTurns {
+		return wrapProse(i18n.Text("Could not verify which completed turns belong to this agent."), width)
+	}
 	return m.savedTranscriptLines(s.page.Turns, width)
 }
 

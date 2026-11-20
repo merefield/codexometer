@@ -170,17 +170,19 @@ func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, q
 		position := page.Next
 		entry, ok := i.cached(position)
 		if !ok {
-			if cold == savedSearchColdPages {
+			// Never make a verified match wait for a cold page. Prefetch
+			// continues independently; this cursor lets the caller look further.
+			if len(page.Sessions) != 0 || cold == savedSearchColdPages {
 				break
 			}
 			cold++
 			var err error
 			entry, err = p.savedIndexPage(scan, i, position)
 			if err != nil {
-				if len(seen) == 0 || scan.Err() == nil {
+				if len(seen) == 0 {
 					return SavedPage{}, err
 				}
-				break // preserve the continuation if the index is still warming
+				break // keep the continuation even if an older read failed
 			}
 		}
 		seen[position] = true

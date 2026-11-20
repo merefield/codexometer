@@ -25,10 +25,11 @@ func (p *daemonStatusProvider) SessionHistory(ctx context.Context, id string) ([
 	if err := p.ensureConnected(ctx); err != nil {
 		return nil, err
 	}
-	return p.readSessionHistory(ctx, id, time.Time{})
+	turns, _, err := p.readSessionHistory(ctx, id, time.Time{})
+	return turns, err
 }
 
-func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string, ownedSince time.Time) ([]SessionContext, error) {
+func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string, ownedSince time.Time) ([]SessionContext, bool, error) {
 	p.mu.Lock()
 	conn, generation := p.connection, p.commandGeneration
 	p.mu.Unlock()
@@ -38,23 +39,30 @@ func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string
 	if err := p.requestOn(ctx, conn, "thread/turns/list", map[string]any{
 		"threadId": id, "limit": SessionHistoryLimit + 2, "sortDirection": "desc", "itemsView": "summary",
 	}, &response); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	p.mu.Lock()
 	current := p.connection == conn && p.commandGeneration == generation
 	p.mu.Unlock()
 	if !current {
-		return nil, ErrSessionHistory
+		return nil, false, ErrSessionHistory
 	}
 	var result []SessionContext
+	var unverified bool
 	for _, turn := range response.Data {
 		if turn.Status != "completed" || turn.ID == "" {
 			continue
 		}
 		// Summary timestamps are whole seconds. A turn in the spawn second
 		// could be part of the parent's prefix, so only accept later seconds.
-		if !ownedSince.IsZero() && (turn.StartedAt == nil || *turn.StartedAt <= ownedSince.Unix()) {
-			continue
+		if !ownedSince.IsZero() {
+			if turn.StartedAt == nil || *turn.StartedAt == ownedSince.Unix() {
+				unverified = true
+				continue
+			}
+			if *turn.StartedAt < ownedSince.Unix() {
+				continue // Known inherited history.
+			}
 		}
 		c := SessionContext{ThreadID: id, TurnID: turn.ID, Kind: SessionContextReply, Source: "HISTORY"}
 		if turn.CompletedAt != nil {
@@ -93,5 +101,5 @@ func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string
 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
 		result[i], result[j] = result[j], result[i]
 	}
-	return result, nil
+	return result, unverified, nil
 }

@@ -1425,9 +1425,10 @@ With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
 starts with recent non-archived saved sessions. Type part of a session name to
 filter, regardless of case; Resume does not search paths, IDs or conversation
 text. Codexometer loads saved-session metadata in the background and filters
-it in memory, so typing does not rescan Codex history. The index is cleared
-when the shared connection or account changes. Transcripts load only when
-you open a preview, and preview and resume still verify the target with Codex.
+it in memory. Verified matches appear without waiting for older pages. The
+index is cleared when the shared connection or account changes. Transcripts
+load only when you open a preview, and preview and resume still verify the
+target with Codex.
 Leave the field empty to browse unnamed sessions too. If the search has
 not reached the end of the saved list, choose **Search older sessions** to
 continue. **Time ago** shows when Codex last updated each session; a dash means
@@ -1437,7 +1438,9 @@ While the search field is focused, **R** types normally. Use **→** or click a
 match to preview up to ten completed turns without resuming. Saved replies
 and linked-agent transcripts use the same Markdown formatting as live replies.
 The browser provides a **Resume** button on the preview. A resumed idle session has a
-composer. Codexometer does not send a prompt as part of resume; existing Codex
+composer. If the live session takes longer to appear, the picker keeps waiting.
+If the outcome is unknown, check Codex before trying again; Codexometer does
+not automatically resend the request. Resume does not send a prompt; existing
 automation, such as an active goal, still follows Codex's rules. The read-only web
 app offers the same search under **Saved sessions** without the Resume action.
 This does not build a separate on-disk index or change the live Filter box.

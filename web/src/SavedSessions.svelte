@@ -5,6 +5,7 @@
   import SessionTranscript from './SessionTranscript.svelte';
   import {
     browseSaved,
+    ControlRejected,
     live,
     resumePicker,
     resumeSaved,
@@ -27,6 +28,8 @@
   let now = $state(Date.now());
   let resumeTimer: ReturnType<typeof setTimeout>;
   let controller: AbortController | undefined;
+  let disposed = false;
+  let resumeLocked = $derived(resumeBusy || !!resuming);
   let matches = $derived(
     rows.filter((row) => !liveIDs.has(row.id) || row.id === resuming),
   );
@@ -62,8 +65,10 @@
     } catch {
       if (!request.signal.aborted) {
         failed = true;
-        rows = [];
-        next = '';
+        if (!cursor || detail) {
+          rows = [];
+          next = '';
+        }
         turns = undefined;
       }
     } finally {
@@ -74,6 +79,7 @@
     search?.focus();
     const clock = setInterval(() => (now = Date.now()), 15000);
     return () => {
+      disposed = true;
       controller?.abort();
       clearTimeout(resumeTimer);
       clearInterval(clock);
@@ -111,19 +117,18 @@
     }
   });
   async function resume(row: SavedRow & { cursor: string }) {
-    if (!resumeSaved || resumeBusy || resuming) return;
+    if (!resumeSaved || resumeLocked) return;
+    const preparing =
+      requiresConfirmation(live.data?.confirmationMode, true) &&
+      review?.id !== row.id;
     resumeNotice = '';
     resumeBusy = true;
     try {
-      if (
-        requiresConfirmation(live.data?.confirmationMode, true) &&
-        review?.id !== row.id
-      ) {
+      if (preparing) {
         const token = await resumeSaved(scope, row.cursor, row.id, {
           mode: 'prepare',
         });
-        if (window.location.hash.startsWith('#/sessions') && id === row.id)
-          review = { id: row.id, token };
+        if (!disposed && id === row.id) review = { id: row.id, token };
         return;
       }
       const confirmation = review?.id === row.id ? review.token : '';
@@ -134,13 +139,24 @@
         row.id,
         confirmation ? { confirmation } : undefined,
       );
+      if (disposed) return;
       resuming = row.id;
       resumeTimer = setTimeout(() => {
-        resumeNotice = 'Session did not appear in the live list. Check Codex.';
-        resuming = '';
+        resumeNotice =
+          'Resume accepted; still waiting for the session to appear.';
       }, 15000);
-    } catch {
-      resumeNotice = 'Resume not confirmed. Check Codex.';
+    } catch (error) {
+      if (disposed) return;
+      if (!preparing && !(error instanceof ControlRejected)) {
+        resuming = row.id;
+        resumeNotice =
+          'Resume outcome unknown. Check Codex before trying again.';
+      } else {
+        resumeNotice =
+          error instanceof ControlRejected
+            ? error.message
+            : 'Could not prepare the resume.';
+      }
     } finally {
       resumeBusy = false;
     }
@@ -152,13 +168,16 @@
   <SessionSearch
     label="Search saved sessions"
     placeholder="Search by session name"
+    disabled={resumeLocked}
     bind:field={search}
     bind:value={query}
   />
-  <button onclick={() => (resumePicker.open = false)}>Close</button>
-  {#if resuming}<p role="status">
-      Opening the resumed session…
-    </p>{:else if resumeNotice}<p role="status">{resumeNotice}</p>{/if}
+  <button disabled={resumeBusy} onclick={() => (resumePicker.open = false)}
+    >Close</button
+  >
+  {#if resuming || resumeNotice}
+    <p role="status">{resumeNotice || 'Opening the resumed session…'}</p>
+  {/if}
   {#if matches.length}
     <div class="saved-columns muted">
       <span>Session</span><span>Time ago</span>
@@ -167,6 +186,7 @@
   {#each matches as row (row.id)}
     <button
       class="saved-columns saved-row"
+      disabled={resumeLocked}
       aria-expanded={id === row.id}
       onclick={() => {
         review = null;
@@ -203,9 +223,8 @@
             <button onclick={() => (review = null)}>Cancel</button>
           </div>
         {:else}
-          <button
-            disabled={resumeBusy || !!resuming}
-            onclick={() => void resume(row)}>Resume</button
+          <button disabled={resumeLocked} onclick={() => void resume(row)}
+            >Resume</button
           >
         {/if}
       {/if}
@@ -214,13 +233,15 @@
   {#if busy}<p role="status">Loading saved sessions…</p>{:else if failed}<p
       role="status"
     >
-      Saved history unavailable. Live filtering still works.
+      {next
+        ? 'Could not load older sessions. Try again.'
+        : 'Saved history unavailable. Live filtering still works.'}
     </p>{:else if !matches.length && !next}<p>
       {query.trim()
         ? 'No saved session names match this search.'
         : 'No saved sessions to show.'}
     </p>{/if}
-  {#if next}<button disabled={busy} onclick={() => load(next)}
+  {#if next}<button disabled={busy || resumeLocked} onclick={() => load(next)}
       >{query.trim()
         ? 'Search older sessions'
         : 'Load more saved sessions'}</button

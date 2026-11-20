@@ -33,7 +33,7 @@ func (s *server) inspectSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if agents, ok := page.(codex.AgentInspection); ok {
-		page = transcriptPage{Agents: agents.Agents, Turns: s.store.projectTranscript(agents.Turns)}
+		page = transcriptPage{Agents: agents.Agents, Turns: s.store.projectTranscript(agents.Turns), UnverifiedTurns: agents.UnverifiedTurns}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(page)

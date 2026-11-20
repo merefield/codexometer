@@ -45,11 +45,36 @@ func TestSavedRouteFiltersNamesEvenWithListOnlySource(t *testing.T) {
 	}
 }
 
-type resumeProbe struct{ calls int }
+type resumeProbe struct {
+	calls int
+	err   error
+}
 
 func (p *resumeProbe) ResumeSavedSession(context.Context, string, string, string) error {
 	p.calls++
-	return nil
+	return p.err
+}
+
+func TestSavedResumeRouteReportsDefiniteAndUncertainOutcomes(t *testing.T) {
+	s := testServer()
+	p := &resumeProbe{}
+	s.resumer = p
+	s.savedRequests = make(chan struct{}, 2)
+	token := pairBrowser(t, s)
+	for _, tc := range []struct {
+		err  error
+		code int
+	}{
+		{codex.ErrSavedSessions, 409},
+		{codex.ErrSavedResumeUncertain, 502},
+	} {
+		p.err = tc.err
+		w := httptest.NewRecorder()
+		s.handler().ServeHTTP(w, request(s, "POST", "/api/sessions/resume", `{"scope":"scope","id":"one"}`, token))
+		if w.Code != tc.code {
+			t.Fatalf("resume error %v mapped to %d: %s", tc.err, w.Code, w.Body.String())
+		}
+	}
 }
 
 func TestStrictResumeRequiresExactOneUseConsent(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"go/version"
 	"strings"
 	"time"
@@ -159,21 +160,47 @@ func (p *daemonStatusProvider) resumeSaved(ctx context.Context, scope, cursor, i
 		Cwd, ApprovalsReviewer string
 		Thread                 struct{ ID string }
 	}
-	if err := p.requestOnChecked(ctx, conn, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &result, &generation); err != nil || result.Thread.ID != id {
+	if ctx.Err() != nil {
 		return ErrSavedSessions
 	}
+	err = p.requestOnWithin(ctx, conn, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &result, &generation, 9*time.Second)
+	if errors.Is(err, errDaemonWriteGuardRejected) {
+		return ErrSavedSessions
+	}
+	var rejected *daemonResponseError
+	var wire struct{ Code int }
+	if errors.As(err, &rejected) && json.Unmarshal([]byte(rejected.payload), &wire) == nil {
+		switch wire.Code {
+		case -32600, -32601, -32602: // Invalid request, method or parameters.
+			return ErrSavedSessions
+		}
+	}
+	if err != nil || result.Thread.ID != id {
+		return ErrSavedResumeUncertain
+	}
+	p.mu.Lock()
+	if p.connection != conn || p.savedScope != scope || p.commandGeneration != generation {
+		p.mu.Unlock()
+		return ErrSavedResumeUncertain
+	}
+	p.rememberResumedThreadLocked(id, SessionContext{})
+	p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
+	p.lastStatusAt = time.Time{}
+	p.mu.Unlock()
+
 	var previous SessionContext
-	if turns, err := p.readSessionHistory(ctx, id, time.Time{}); err == nil && len(turns) != 0 {
+	if turns, _, err := p.readSessionHistory(ctx, id, time.Time{}); err == nil && len(turns) != 0 {
 		previous = HistoryExcerpt(turns[len(turns)-1])
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.connection != conn || p.savedScope != scope || p.commandGeneration != generation {
-		return ErrSavedSessions
+		return ErrSavedResumeUncertain
 	}
-	p.rememberResumedThreadLocked(id, previous)
-	p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
-	p.lastStatusAt = time.Time{}
+	if retained, ok := p.resumedThreads[id]; ok {
+		retained.context = previous
+		p.resumedThreads[id] = retained
+	}
 	return nil
 }
 

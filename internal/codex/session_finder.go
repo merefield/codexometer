@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
@@ -69,7 +70,14 @@ func (c Client) ResumeSavedSession(ctx context.Context, scope, cursor, id string
 	return ErrSavedSessions
 }
 
-var ErrSavedSessions = errors.New("account-scoped saved sessions unavailable")
+// A cold resume can load history and project settings. Give it a separate
+// action budget from routine observation requests.
+const SavedResumeTimeout = 12 * time.Second
+
+var (
+	ErrSavedSessions        = errors.New("account-scoped saved sessions unavailable")
+	ErrSavedResumeUncertain = errors.New("resume outcome unknown")
+)
 
 type savedSessionProvider interface {
 	listSaved(ctx context.Context, scope, cursor, sortKey string) (SavedPage, error)

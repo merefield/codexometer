@@ -2417,7 +2417,7 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed && m.newSession.scope == m.finder.scope {
 				m.openLiveSessionDetail(id)
 			}
-		} else if id := m.finder.resumeID; id != "" {
+		} else if id := m.finder.resumeID; id != "" && !m.finder.loading {
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed {
 				m.openLiveSessionDetail(id)
 			}

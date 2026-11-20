@@ -202,6 +202,85 @@ func TestSavedNameSearchContinuesAfterBoundedEmptyPages(t *testing.T) {
 	}
 }
 
+func TestSavedSearchReturnsCachedMatchesWithoutWaitingForOlderHistory(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":   {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read": {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+	}
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", "older"}: {"data": []any{map[string]string{"id": "earlier", "name": "Earlier match"}}},
+	}
+	f.savedReadDelay = time.Second
+	if err := p.ensureConnected(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	i := p.savedIndex(scope, false)
+	i.mu.Lock()
+	i.pages[""] = indexedSavedPage{
+		page: SavedPage{Sessions: []SavedSession{{ID: "cached", Name: "Cached match"}}, Next: "older"},
+		keys: []string{"cached match"},
+	}
+	i.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	defer cancel()
+	page, err := p.searchSaved(ctx, scope, "", "match")
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].ID != "cached" || page.Next != "older" {
+		t.Fatal("cached match should be immediate, with older sessions separately available", page, err)
+	}
+	page, err = p.searchSaved(t.Context(), scope, page.Next, "match")
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].ID != "earlier" || page.Next != "" {
+		t.Fatal("continuation did not find the cold match", page, err)
+	}
+}
+
+func TestSavedResumeWaitsForColdAcknowledgementAndDistinguishesUncertainty(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":        {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read":      {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+		"thread/turns/list": {"data": []any{}},
+	}
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", ""}: {"data": []any{map[string]string{"id": "cold"}, map[string]string{"id": "uncertain"}}},
+	}
+	f.sessions["cold"], f.sessions["uncertain"] = QuotaSession{}, QuotaSession{}
+	f.resumeReadHook = func() { time.Sleep(daemonStatusTimeout + 250*time.Millisecond) }
+	if err := p.ensureConnected(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	if err := p.resumeSaved(t.Context(), scope, "", "cold"); err != nil {
+		t.Fatal("a cold acknowledgement should outlast the status timeout", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	release := make(chan struct{})
+	f.mu.Lock()
+	f.resumeReadHook = func() {
+		cancel() // Request arrived; the caller lost its response.
+		<-release
+	}
+	f.mu.Unlock()
+	err := p.resumeSaved(ctx, scope, "", "uncertain")
+	close(release)
+	if !errors.Is(err, ErrSavedResumeUncertain) {
+		t.Fatal("a lost response to a submitted resume was not reported as uncertain", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.resumeReads) != 2 {
+		t.Fatal("resume was retried automatically", f.resumeReads)
+	}
+}
+
 func TestSavedMetadataIndexPreloadsAndReusesPagesAcrossQueries(t *testing.T) {
 	p, f := newQuotaDaemon(t)
 	f.catalogues = map[string]map[string]any{

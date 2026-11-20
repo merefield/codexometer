@@ -746,89 +746,136 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   ).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('/resume searches names, shows age, and opens the resumed composer', async ({
-  page,
-  pairingURL,
-}) => {
-  const { snapshot, calls } = await mockActions(page, 'prompt', false, false);
-  const initial = { ...snapshot, savedScope: 'scope' };
-  let resumed = 0;
-  const term = 'aRcHiVeD';
-  const updatedAt = Math.floor(Date.now() / 1000) - 2 * 3600 - 120;
-  await page.route('**/api/sessions/saved?**', async (route) => {
-    const q = new URL(route.request().url()).searchParams;
-    await route.fulfill({
-      json: q.get('id')
-        ? { turns: [{ task: 'Different prompt text', reply: 'Saved answer' }] }
-        : q.get('q') !== term
-          ? {}
-          : q.get('cursor') === 'older'
-            ? {
-                sessions: [
-                  {
-                    id: 'cold',
-                    name: 'Archived work',
-                    directory: '/work',
-                    updatedAt,
-                  },
-                ],
-              }
-            : { next: 'older' },
+for (const outcome of ['accepted', 'unknown'] as const) {
+  test(`/resume searches names and tracks a delayed composer when the outcome is ${outcome}`, async ({
+    page,
+    pairingURL,
+  }) => {
+    const { snapshot, calls } = await mockActions(page, 'prompt', false, false);
+    const initial = { ...snapshot, savedScope: 'scope' };
+    let resumed = 0;
+    let olderReads = 0;
+    const term = 'aRcHiVeD';
+    const updatedAt = Math.floor(Date.now() / 1000) - 2 * 3600 - 120;
+    await page.route('**/api/sessions/saved?**', async (route) => {
+      const q = new URL(route.request().url()).searchParams;
+      if (!q.get('id') && q.get('cursor') === 'older' && ++olderReads === 1) {
+        await route.fulfill({ status: 503 });
+        return;
+      }
+      await route.fulfill({
+        json: q.get('id')
+          ? {
+              turns: [{ task: 'Different prompt text', reply: 'Saved answer' }],
+            }
+          : q.get('q') !== term
+            ? {}
+            : q.get('cursor') === 'older'
+              ? {
+                  sessions: [
+                    {
+                      id: 'cold',
+                      name: 'Archived work',
+                      directory: '/work',
+                      updatedAt,
+                    },
+                  ],
+                }
+              : {
+                  sessions: [
+                    {
+                      id: 'cached',
+                      name: 'Recent archived work',
+                      directory: '/work',
+                    },
+                  ],
+                  next: 'older',
+                },
+      });
     });
-  });
-  await page.route('**/api/sessions/resume', async (route) => {
-    const body = route.request().postDataJSON();
-    expect(body).toMatchObject({ scope: 'scope', cursor: 'older', id: 'cold' });
-    if (body.mode === 'prepare') {
-      await route.fulfill({ json: { confirmation: 'review-token' } });
-    } else {
-      expect(body.confirmation).toBe('review-token');
-      resumed++;
-      await route.fulfill({ status: 204 });
-    }
-  });
-  await page.goto(pairingURL);
-  await expect(page.locator('html')).toHaveAttribute('data-test-streams', '1');
-  const send = (value: object) =>
-    page.evaluate(
-      (detail) =>
-        window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
-      value,
+    await page.route('**/api/sessions/resume', async (route) => {
+      const body = route.request().postDataJSON();
+      expect(body).toMatchObject({
+        scope: 'scope',
+        cursor: 'older',
+        id: 'cold',
+      });
+      if (body.mode === 'prepare') {
+        await route.fulfill({ json: { confirmation: 'review-token' } });
+      } else {
+        expect(body.confirmation).toBe('review-token');
+        resumed++;
+        await route.fulfill({ status: outcome === 'accepted' ? 204 : 502 });
+      }
+    });
+    await page.goto(pairingURL);
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-test-streams',
+      '1',
     );
-  await send(initial);
-  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'Saved sessions', exact: true })
-    .click();
-  const picker = page.getByRole('region', { name: 'Saved sessions' });
-  await picker.getByRole('searchbox').fill(term);
-  const more = picker.getByRole('button', { name: 'Search older sessions' });
-  await expect(more).toBeVisible();
-  await expect(picker).not.toContainText('No saved session names match');
-  await more.click();
-  const row = picker.getByRole('button', { name: /Archived work/ });
-  await expect(picker).toContainText('Time ago');
-  await expect(row).toContainText('2h ago');
-  await row.click();
-  await expect(picker).toContainText('Saved answer');
-  expect(resumed).toBe(0);
-  await picker.getByRole('button', { name: 'Resume', exact: true }).click();
-  expect(resumed).toBe(0);
-  await picker.getByRole('button', { name: /confirm/i }).click();
-  await expect.poll(() => resumed).toBe(1);
-  await send({
-    ...initial,
-    sessions: [
-      ...initial.sessions,
-      { ...initial.sessions[0], id: 'cold', name: 'Archived work' },
-    ],
+    const send = (value: object) =>
+      page.evaluate(
+        (detail) =>
+          window.dispatchEvent(new CustomEvent('test-snapshot', { detail })),
+        value,
+      );
+    await send(initial);
+    await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Saved sessions', exact: true })
+      .click();
+    const picker = page.getByRole('region', { name: 'Saved sessions' });
+    await picker.getByRole('searchbox').fill(term);
+    const more = picker.getByRole('button', { name: 'Search older sessions' });
+    await expect(more).toBeVisible();
+    await expect(picker).not.toContainText('No saved session names match');
+    await more.click();
+    await expect(picker).toContainText('Could not load older sessions');
+    await expect(
+      picker.getByRole('button', { name: /Recent archived work/i }),
+    ).toBeVisible();
+    await more.click();
+    const row = picker.getByRole('button', { name: /COLD \/\/ Archived work/ });
+    await expect(picker).toContainText('Time ago');
+    await expect(row).toContainText('2h ago');
+    await row.click();
+    await expect(picker).toContainText('Saved answer');
+    expect(resumed).toBe(0);
+    await picker.getByRole('button', { name: 'Resume', exact: true }).click();
+    expect(resumed).toBe(0);
+    await page.clock.install();
+    await picker.getByRole('button', { name: /confirm/i }).click();
+    await expect.poll(() => resumed).toBe(1);
+    await expect(picker).toContainText(
+      outcome === 'accepted'
+        ? 'Opening the resumed session'
+        : 'Resume outcome unknown',
+    );
+    await page.clock.fastForward(15_500);
+    await expect(picker).toContainText(
+      outcome === 'accepted'
+        ? 'Resume accepted; still waiting'
+        : 'Resume outcome unknown',
+    );
+    await expect(
+      picker.getByRole('button', { name: 'Resume', exact: true }),
+    ).toBeDisabled();
+    await expect(picker.getByRole('searchbox')).toBeDisabled();
+    await send({
+      ...initial,
+      sessions: [
+        ...initial.sessions,
+        { ...initial.sessions[0], id: 'cold', name: 'Archived work' },
+      ],
+    });
+    await expect(page).toHaveURL(/#\/sessions\/cold$/);
+    await expect(
+      page.getByRole('textbox', { name: 'Follow-up message' }),
+    ).toBeVisible();
+    expect(calls.some(({ action }) => action === 'commit')).toBe(false);
+    expect(resumed).toBe(1);
   });
-  await expect(page).toHaveURL(/#\/sessions\/cold$/);
-  await expect(
-    page.getByRole('textbox', { name: 'Follow-up message' }),
-  ).toBeVisible();
-  expect(calls.some(({ action }) => action === 'commit')).toBe(false);
-});
+}
 
 test('new session keeps the draft and opens its row even after slow telemetry', async ({
   page,
@@ -921,9 +968,17 @@ test('linked agents open a read-only child transcript without navigating away', 
     expect(route.request().method()).toBe('GET');
     expect(q.get('root')).toBe('parent');
     await route.fulfill({
-      json: q.get('agent')
-        ? { turns: [{ task: 'Child task', reply: 'Child reply' }] }
-        : { agents: [{ id: 'child', name: 'Worker', status: 'WORKING' }] },
+      json:
+        q.get('agent') === 'ambiguous'
+          ? { unverifiedTurns: true }
+          : q.get('agent')
+            ? { turns: [{ task: 'Child task', reply: 'Child reply' }] }
+            : {
+                agents: [
+                  { id: 'child', name: 'Worker', status: 'WORKING' },
+                  { id: 'ambiguous', name: 'Another worker', status: 'IDLE' },
+                ],
+              },
     });
   });
   await page.goto(pairingURL);
@@ -933,6 +988,14 @@ test('linked agents open a read-only child transcript without navigating away', 
   await inspector.getByRole('button', { name: 'Worker // WORKING' }).click();
   await expect(inspector).toContainText('Child reply');
   await expect(inspector.getByRole('textbox')).toHaveCount(0);
+  await inspector.getByRole('button', { name: 'Back to agents' }).click();
+  await inspector
+    .getByRole('button', { name: 'Another worker // IDLE' })
+    .click();
+  await expect(inspector).toContainText(
+    'Could not verify which completed turns belong to this agent.',
+  );
+  await expect(inspector).not.toContainText('No completed turns');
   await expect(page).toHaveURL(/#\/sessions$/);
 });
 

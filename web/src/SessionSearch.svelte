@@ -4,12 +4,14 @@
     placeholder,
     field = $bindable(),
     value = $bindable(''),
+    disabled = false,
     onkeydown,
   }: {
     label: string;
     placeholder: string;
     field?: HTMLInputElement;
     value?: string;
+    disabled?: boolean;
     onkeydown?: (event: KeyboardEvent) => void;
   } = $props();
 </script>
@@ -20,6 +22,7 @@
     type="search"
     aria-label={label}
     {placeholder}
+    {disabled}
     maxlength="160"
     bind:this={field}
     bind:value

@@ -39,7 +39,7 @@ func TestSessionAgentsOnlyReadVerifiedDescendantHistory(t *testing.T) {
 		}
 	}
 	page, err = c.InspectSessionAgents(t.Context(), "root", "child")
-	if err != nil || len(page.Turns) != 1 || page.Turns[0].Reply != "child answer" {
+	if err != nil || len(page.Turns) != 1 || page.Turns[0].Reply != "child answer" || !page.UnverifiedTurns {
 		t.Fatal(page, err)
 	}
 	f.mu.Lock()
