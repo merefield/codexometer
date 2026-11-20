@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 )
@@ -151,5 +152,52 @@ func TestSavedSearchAndExplicitResume(t *testing.T) {
 	defer f.mu.Unlock()
 	if len(f.resumeReads) != 1 || len(f.writes) != 0 || f.resumeReads[0]["excludeTurns"] != true {
 		t.Fatal("resume sent unexpected mutations", f.resumeReads, f.writes)
+	}
+}
+
+func TestColdResumeKeepsReplyAndCountsFreshUsage(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":   {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read": {"account": map[string]string{"type": "chatgpt", "email": "test@example.test"}},
+		"thread/list":  {"data": []any{map[string]string{"id": "one"}}},
+		"thread/turns/list": {"data": []any{map[string]any{
+			"id": "previous", "status": "completed",
+			"items": []any{map[string]string{"type": "agentMessage", "phase": "final_answer", "text": "Last saved reply"}},
+		}}},
+	}
+	home := t.TempDir()
+	now := time.Now()
+	created := now.Add(-72 * time.Hour)
+	path := testRolloutPath(t, home, created, "one")
+	writeRollout(t, path, sessionMetaLine("one", `"cli"`, "/work", nil)+"\n"+tokenCountLine(created, 1000)+"\n")
+	if err := os.Chtimes(path, created, created); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewLiveUsageReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.now = func() time.Time { return now }
+	r.statusProvider = p
+	initial, err := r.FetchTokenUsage(t.Context())
+	if err != nil || initial.SavedScope == "" {
+		t.Fatal(initial, err)
+	}
+	if err := (Client{LiveUsage: r}).ResumeSavedSession(t.Context(), initial.SavedScope, "", "one"); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := r.FetchTokenUsage(t.Context())
+	if err != nil || len(resumed.Sessions) != 1 || resumed.Sessions[0].Context.Text != "Last saved reply" {
+		t.Fatal(resumed, err)
+	}
+	appendRollout(t, path, tokenCountLine(now, 1075)+"\n")
+	if err := os.Chtimes(path, now, now); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Second)
+	next, err := r.FetchTokenUsage(t.Context())
+	if err != nil || len(next.Sessions) != 1 || next.Sessions[0].ID != "one" || next.TotalTokens != 75 {
+		t.Fatal(next, err)
 	}
 }

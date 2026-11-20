@@ -739,13 +739,15 @@ test('/resume searches conversation text and opens the resumed composer', async 
     });
   });
   await page.route('**/api/sessions/resume', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({
-      scope: 'scope',
-      cursor: '',
-      id: 'cold',
-    });
-    resumed++;
-    await route.fulfill({ status: 204 });
+    const body = route.request().postDataJSON();
+    expect(body).toMatchObject({ scope: 'scope', cursor: '', id: 'cold' });
+    if (body.mode === 'prepare') {
+      await route.fulfill({ json: { confirmation: 'review-token' } });
+    } else {
+      expect(body.confirmation).toBe('review-token');
+      resumed++;
+      await route.fulfill({ status: 204 });
+    }
   });
   await page.goto(pairingURL);
   await expect(page.locator('html')).toHaveAttribute('data-test-streams', '1');
@@ -757,13 +759,17 @@ test('/resume searches conversation text and opens the resumed composer', async 
     );
   await send(initial);
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
-  await page.getByRole('button', { name: '/resume', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Saved sessions', exact: true })
+    .click();
   const picker = page.getByRole('region', { name: 'Saved sessions' });
   await picker.getByRole('searchbox').fill(term);
   await picker.getByRole('button', { name: /Unrelated title/ }).click();
   await expect(picker).toContainText('Saved answer');
   expect(resumed).toBe(0);
   await picker.getByRole('button', { name: 'Resume', exact: true }).click();
+  expect(resumed).toBe(0);
+  await picker.getByRole('button', { name: /confirm/i }).click();
   await expect.poll(() => resumed).toBe(1);
   await send({
     ...initial,

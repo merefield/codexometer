@@ -47,6 +47,7 @@ type server struct {
 	tokenUntil    time.Time
 	streams       chan struct{}
 	control       *control
+	lifecycle     sessionMutationReview
 }
 
 type Options struct {

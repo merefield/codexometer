@@ -53,7 +53,13 @@ export let inspectSession:
     ) => Promise<SessionInspection>)
   | undefined;
 export let resumeSaved:
-  ((scope: string, cursor: string, id: string) => Promise<void>) | undefined;
+  | ((
+      scope: string,
+      cursor: string,
+      id: string,
+      review?: { mode?: string; confirmation?: string },
+    ) => Promise<string>)
+  | undefined;
 export let browseSaved:
   | ((
       scope: string,
@@ -139,7 +145,7 @@ export function connect(): () => void {
       8000,
     );
   };
-  resumeSaved = async (scope, cursor, id) => {
+  resumeSaved = async (scope, cursor, id, review) => {
     if (
       !live.connected ||
       !live.data?.control ||
@@ -150,8 +156,11 @@ export function connect(): () => void {
       scope,
       cursor,
       id,
+      ...review,
     });
     if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
+    if (review?.mode === 'prepare') return (await response.json()).confirmation;
+    return '';
   };
   sendControl = async (action, body, signal) => {
     const response = await postJSON('/api/control/' + action, body, signal);

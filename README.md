@@ -1418,9 +1418,9 @@ follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
 **Finding an older conversation:** choose **`/resume`** in the slash-command
-browser. In the terminal Sessions list, press **/** or click **`/resume`**,
-even with no live session to select. The write-enabled web Sessions page also
-has a **`/resume`** button.
+browser. In the terminal Sessions list, press **/** or click **Saved sessions**,
+even with no live session to select. The web Sessions page also has a
+**Saved sessions** button.
 With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
 starts with recent non-archived saved sessions and sends searches to Codex when
 you type. In the TUI, use **↑/↓** to select a match and **Enter** to resume.

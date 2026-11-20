@@ -16,6 +16,11 @@ type threadTitle struct {
 	version uint64
 }
 
+type resumedThread struct {
+	at      time.Time
+	context SessionContext
+}
+
 // A rename (including an explicit clear) received during thread/read wins.
 // With no live rename evidence, a missing server title leaves the local
 // session_index.jsonl fallback intact for an ordinary CLI session.
@@ -168,26 +173,34 @@ func (p *daemonStatusProvider) resumeSaved(ctx context.Context, scope, cursor, i
 	if err := p.requestOnChecked(ctx, conn, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &result, &generation); err != nil || result.Thread.ID != id {
 		return ErrSavedSessions
 	}
+	var previous SessionContext
+	if turns, err := p.readSessionHistory(ctx, id, time.Time{}); err == nil && len(turns) != 0 {
+		previous = HistoryExcerpt(turns[len(turns)-1])
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.connection != conn || p.savedScope != scope || p.commandGeneration != generation {
 		return ErrSavedSessions
 	}
+	p.rememberResumedThreadLocked(id, previous)
+	p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
+	p.lastStatusAt = time.Time{}
+	return nil
+}
+
+func (p *daemonStatusProvider) rememberResumedThreadLocked(id string, previous SessionContext) {
 	if p.resumedThreads == nil {
-		p.resumedThreads = map[string]time.Time{}
+		p.resumedThreads = make(map[string]resumedThread)
 	}
 	// Bound the extra subscriptions retained solely by explicit resumes.
-	if len(p.resumedThreads) >= 32 {
+	if _, known := p.resumedThreads[id]; !known && len(p.resumedThreads) >= 32 {
 		var oldest string
-		for thread, at := range p.resumedThreads {
-			if oldest == "" || at.Before(p.resumedThreads[oldest]) {
+		for thread, retained := range p.resumedThreads {
+			if oldest == "" || retained.at.Before(p.resumedThreads[oldest].at) {
 				oldest = thread
 			}
 		}
 		delete(p.resumedThreads, oldest)
 	}
-	p.resumedThreads[id] = time.Now()
-	p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
-	p.lastStatusAt = time.Time{}
-	return nil
+	p.resumedThreads[id] = resumedThread{at: time.Now(), context: previous}
 }

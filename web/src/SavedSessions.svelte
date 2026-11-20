@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { requiresConfirmation } from './confirmation';
   import SessionSearch from './SessionSearch.svelte';
   import SessionTranscript from './SessionTranscript.svelte';
   import {
@@ -22,6 +23,7 @@
   let resumeBusy = $state(false);
   let resuming = $state('');
   let resumeNotice = $state('');
+  let review = $state<{ id: string; token: string } | null>(null);
   let resumeTimer: ReturnType<typeof setTimeout>;
   let controller: AbortController | undefined;
   let matches = $derived(
@@ -81,6 +83,7 @@
       controller?.abort();
       rows = [];
       id = '';
+      review = null;
       turns = undefined;
       next = '';
     });
@@ -97,7 +100,25 @@
     resumeNotice = '';
     resumeBusy = true;
     try {
-      await resumeSaved(scope, row.cursor, row.id);
+      if (
+        requiresConfirmation(live.data?.confirmationMode, true) &&
+        review?.id !== row.id
+      ) {
+        const token = await resumeSaved(scope, row.cursor, row.id, {
+          mode: 'prepare',
+        });
+        if (window.location.hash.startsWith('#/sessions') && id === row.id)
+          review = { id: row.id, token };
+        return;
+      }
+      const confirmation = review?.id === row.id ? review.token : '';
+      review = null;
+      await resumeSaved(
+        scope,
+        row.cursor,
+        row.id,
+        confirmation ? { confirmation } : undefined,
+      );
       resuming = row.id;
       resumeTimer = setTimeout(() => {
         resumeNotice = 'Session did not appear in the live list. Check Codex.';
@@ -127,6 +148,7 @@
     <button
       aria-expanded={id === row.id}
       onclick={() => {
+        review = null;
         if (id === row.id) {
           controller?.abort();
           id = '';
@@ -139,10 +161,30 @@
     >
     {#if id === row.id && turns}
       <SessionTranscript {turns} />
-      {#if live.data?.control}<button
-          disabled={resumeBusy || !!resuming}
-          onclick={() => void resume(row)}>Resume</button
-        >{/if}
+      {#if live.data?.control}
+        <p class="muted">
+          If this session has an active goal, Codex may continue it
+          automatically.
+        </p>
+        {#if review?.id === row.id}
+          <div
+            class="profile-review"
+            role="group"
+            aria-label="Review resume session"
+          >
+            <p>Resume {row.name || row.directory || row.id}?</p>
+            <button disabled={resumeBusy} onclick={() => void resume(row)}
+              >Confirm resume</button
+            >
+            <button onclick={() => (review = null)}>Cancel</button>
+          </div>
+        {:else}
+          <button
+            disabled={resumeBusy || !!resuming}
+            onclick={() => void resume(row)}>Resume</button
+          >
+        {/if}
+      {/if}
     {/if}
   {/each}
   {#if busy}<p role="status">Loading saved sessions…</p>{:else if failed}<p

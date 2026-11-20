@@ -28,7 +28,7 @@ var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sen
 
 type daemonStatusProvider struct {
 	savedScope         string
-	resumedThreads     map[string]time.Time
+	resumedThreads     map[string]resumedThread
 	names              map[string]threadTitle
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
@@ -277,6 +277,11 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	var guards map[string]answerGuards
 	for _, id := range threadIDs {
 		c := contexts[id]
+		if !c.HasDisplayText() && !c.pending() && statuses[id] == sessionRuntimeIdle {
+			if saved := p.resumedThreads[id].context; saved.HasDisplayText() {
+				c = saved
+			}
+		}
 		if s := p.contexts[id]; s != nil && len(s.answers) != 0 {
 			if guards == nil {
 				guards = make(map[string]answerGuards)
@@ -357,7 +362,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 	p.mu.Lock()
 	stale := make([]string, 0)
 	for threadID := range p.subscribed {
-		if _, ok := wanted[threadID]; !ok && p.resumedThreads[threadID].IsZero() {
+		if _, ok := wanted[threadID]; !ok && p.resumedThreads[threadID].at.IsZero() {
 			stale = append(stale, threadID)
 		}
 	}

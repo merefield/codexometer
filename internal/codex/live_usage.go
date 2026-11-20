@@ -506,7 +506,8 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			}
 			cursor = r.files[path]
 		}
-		if now.Sub(cursor.activityTime()) > activeRolloutHorizon {
+		_, resumed := r.daemonResumed[cursor.threadID]
+		if !resumed && now.Sub(cursor.activityTime()) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
@@ -1589,7 +1590,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			if !unattributed && live.ThreadID == cursor.threadID && live.TurnID != "" {
 				group.SteerProgress = append(group.SteerProgress, live.SteerProgress())
 			}
-			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
+			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited || !preview.HasDisplayText() && live.HasDisplayText() {
 				preview = live
 			} else if (preview.Kind == SessionContextReply || preview.Kind == SessionContextFailure) && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
 				// The local task_complete record can be newer than the live

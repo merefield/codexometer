@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -33,10 +34,15 @@ func (s *server) resumeSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	var target struct{ Scope, Cursor, ID string }
+	var target struct{ Scope, Cursor, ID, Mode, Confirmation string }
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
-	if json.NewDecoder(r.Body).Decode(&target) != nil || target.ID == "" {
+	d := json.NewDecoder(r.Body)
+	d.DisallowUnknownFields()
+	if d.Decode(&target) != nil || d.Decode(new(any)) != io.EOF || target.ID == "" || target.Scope == "" || len(target.ID) > 512 || len(target.Scope) > 128 || len(target.Cursor) > 4096 {
 		http.Error(w, "Invalid resume target", http.StatusBadRequest)
+		return
+	}
+	if !s.allowSessionMutation(w, "resume", target.Mode, target.Confirmation, target.Scope, target.Cursor, target.ID) {
 		return
 	}
 	if err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID); err != nil {

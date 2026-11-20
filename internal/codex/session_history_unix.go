@@ -51,9 +51,9 @@ func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string
 		if turn.Status != "completed" || turn.ID == "" {
 			continue
 		}
-		// Child history can contain the parent's pre-spawn prefix. Only show
-		// turns whose start time proves they belong to the child interval.
-		if !ownedSince.IsZero() && (turn.StartedAt == nil || *turn.StartedAt < ownedSince.Unix()) {
+		// Summary timestamps are whole seconds. A turn in the spawn second
+		// could be part of the parent's prefix, so only accept later seconds.
+		if !ownedSince.IsZero() && (turn.StartedAt == nil || *turn.StartedAt <= ownedSince.Unix()) {
 			continue
 		}
 		c := SessionContext{ThreadID: id, TurnID: turn.ID, Kind: SessionContextReply, Source: "HISTORY"}

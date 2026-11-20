@@ -31,6 +31,8 @@ type sessionFinder struct {
 	filterOpen                     bool
 	scope, next, detail            string
 	resumeID                       string
+	selected                       string
+	resumeNotice                   string
 	epoch                          uint64
 	focus, index, scroll           int
 	rows                           []savedRow
@@ -72,6 +74,7 @@ func (f *sessionFinder) clearHistory() {
 	f.detail, f.next = "", ""
 	f.rows, f.turns = nil, nil
 	f.resumeID = ""
+	f.selected, f.resumeNotice = "", ""
 	f.index, f.scroll = 0, 0
 }
 func (f *sessionFinder) stopRequest() {
@@ -143,6 +146,7 @@ type savedResult struct {
 	resume            bool
 }
 type savedQueryReady struct{ epoch uint64 }
+type savedResumeDeadline struct{ savedResult }
 
 func (m *Model) requestSaved(cursor, id string) tea.Cmd {
 	f := &m.finder
@@ -228,22 +232,38 @@ func (m *Model) activateSaved(resume bool) tea.Cmd {
 		return nil
 	}
 	rows := m.savedMatches()
-	if f.index >= 0 && f.index < len(rows) {
-		r := rows[f.index]
+	index := f.savedIndex(rows)
+	if index >= 0 && index < len(rows) {
+		r := rows[index]
+		f.selected = r.ID
 		f.detail = r.ID
 		f.scroll = 0
 		f.turns = nil
 		if resume {
-			if cmd := m.resumeSaved(); cmd != nil {
+			if cmd := m.resumeSaved(); cmd != nil || m.actionReview != nil {
 				return cmd
 			}
 		}
 		return m.requestSaved(r.cursor, r.ID)
 	}
-	if f.index == len(rows) && f.next != "" {
+	if index == len(rows) && f.next != "" {
 		return m.requestSaved(f.next, "")
 	}
 	return nil
+}
+
+func (f sessionFinder) savedIndex(rows []savedRow) int {
+	if f.selected != "" {
+		return slices.IndexFunc(rows, func(row savedRow) bool { return row.ID == f.selected })
+	}
+	return f.index
+}
+
+func (f *sessionFinder) selectIndex(rows []savedRow, index int) {
+	f.index, f.selected = index, ""
+	if index >= 0 && index < len(rows) {
+		f.selected = rows[index].ID
+	}
 }
 
 func (m *Model) resumeSaved() tea.Cmd {
@@ -256,7 +276,12 @@ func (m *Model) resumeSaved() tea.Cmd {
 		if row.ID != f.detail {
 			continue
 		}
+		identity := strings.TrimSpace(row.Name + "  " + row.Directory)
+		if m.reviewMonitorAction("resume-saved", row.ID+" // "+identity, "RESUME SAVED SESSION", "Codex may automatically continue an active goal in this session.", []string{f.scope, row.cursor, row.ID}) {
+			return nil
+		}
 		f.loading = true
+		f.resumeNotice = ""
 		f.epoch++
 		msg := savedResult{epoch: f.epoch, scope: f.scope, id: row.ID, cursor: row.cursor, resume: true}
 		return func() tea.Msg {
@@ -270,6 +295,12 @@ func (m *Model) resumeSaved() tea.Cmd {
 }
 func (m Model) savedLines(width int) []string {
 	f := m.finder
+	if f.resumeNotice != "" {
+		return []string{f.resumeNotice}
+	}
+	if f.resumeID != "" {
+		return []string{"Opening the resumed session…"}
+	}
 	if status := inspectionStatus(f.failed, f.loading); status != nil {
 		return status
 	}
@@ -301,7 +332,9 @@ func savedTranscriptLines(turns []codex.SavedTurn, width int) []string {
 	}
 	return lines
 }
-func (m Model) finderStart(n int) int        { return max(0, m.finder.index-max(n-1, 0)) }
+func (m Model) finderStart(n int) int {
+	return max(0, m.finder.savedIndex(m.savedMatches())-max(n-1, 0))
+}
 func (f sessionFinder) inputWidth(w int) int { return max(1, w-1) }
 func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	f := m.finder
@@ -321,6 +354,7 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	line = withDefaultBackground(line+strings.Repeat(" ", max(0, inputWidth-lipgloss.Width(line))), tint)
 	lines := []string{line + strings.Repeat(" ", max(0, w-inputWidth))}
 	rows := m.savedMatches()
+	index := f.savedIndex(rows)
 	var body []string
 	if f.detail != "" {
 		for _, r := range rows {
@@ -339,7 +373,7 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 		for i := m.finderStart(h - 1); i < len(rows); i++ {
 			row := rows[i]
 			text := i18n.Text("SAVED") + " // " + shortSessionID(row.ID) + " // " + strings.TrimSpace(row.Name+"  "+row.Directory)
-			if i == f.index && f.focus == findResults {
+			if i == index && f.focus == findResults {
 				text = "› " + text
 			}
 			body = append(body, text)
@@ -353,7 +387,7 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 			body = append(body, i18n.Text("UNAVAILABLE"))
 		} else if f.next != "" {
 			more := "[+] " + i18n.Text("MORE")
-			if f.focus == findResults && f.index == len(rows) {
+			if f.focus == findResults && index == len(rows) {
 				more = "› " + more
 			}
 			body = append(body, more)
@@ -381,9 +415,11 @@ func (f *sessionFinder) closeDetail() {
 	}
 	f.detail = ""
 	f.turns = nil
+	f.resumeID = ""
 	f.epoch++
 	f.loading = false
 	f.failed = false
+	f.resumeNotice = ""
 	f.scroll = 0
 }
 
@@ -393,30 +429,46 @@ func (m *Model) scrollFinder(delta, width, height int) {
 		f.scroll = max(0, min(f.scroll+delta, len(m.savedLines(width))-max(1, height-2)))
 		return
 	}
-	last := len(m.savedMatches()) - 1
+	rows := m.savedMatches()
+	last := len(rows) - 1
 	if f.next != "" {
 		last++
 	}
-	f.index = max(0, min(f.index+delta, last))
+	f.selectIndex(rows, max(0, min(f.savedIndex(rows)+delta, last)))
 }
 
 func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 	f := &m.finder
+	if deadline, ok := message.(savedResumeDeadline); ok {
+		if f.resumeID == deadline.id && f.scope == deadline.scope && f.epoch == deadline.epoch {
+			f.resumeID = ""
+			f.failed = true
+			f.resumeNotice = "Session did not appear in the live list. Check Codex."
+		}
+		return m, nil, true
+	}
 	if r, ok := message.(savedResult); ok {
 		if r.resume {
 			if f.include && r.epoch == f.epoch && r.scope == f.scope {
 				f.loading, f.failed = false, r.err != nil
 				if r.err == nil {
 					f.resumeID = r.id
+					deadline := tea.Tick(15*time.Second, func(time.Time) tea.Msg { return savedResumeDeadline{r} })
 					if !m.monitorFetchActive {
 						next, cmd := m.beginMonitorFetch(monitorFetchSample)
-						return next, cmd, true
+						return next, tea.Batch(cmd, deadline), true
 					}
+					return m, deadline, true
+				} else {
+					f.resumeNotice = "Resume not confirmed. Check Codex before retrying."
 				}
 			}
 			return m, nil, true
 		}
 		f.accept(r)
+		if f.include && f.selected == "" && r.scope == f.scope && r.epoch == f.epoch && r.id == "" {
+			f.selectIndex(m.savedMatches(), f.index)
+		}
 		return m, nil, true
 	}
 	if r, ok := message.(savedQueryReady); ok {
@@ -455,7 +507,7 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			f.focus = findResults
 			if f.detail == "" {
-				f.index = m.finderStart(a.finderRows-1) + y - 1
+				f.selectIndex(m.savedMatches(), m.finderStart(a.finderRows-1)+y-1)
 				cmd := m.activateSaved(false)
 				return m, cmd, true
 			}
@@ -484,6 +536,9 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	if pressed {
+		if key.IsRepeat && key.String() == "enter" && f.include {
+			return m, nil, true
+		}
 		switch key.String() {
 		case "ctrl+c":
 			m.leaveFinder()
@@ -573,7 +628,7 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			if old != f.query() {
 				if f.include {
 					f.stopRequest()
-					f.rows, f.next, f.index, f.loading, f.failed = nil, "", 0, false, false
+					f.rows, f.next, f.index, f.loading, f.failed, f.selected = nil, "", 0, false, false, ""
 					f.epoch++
 					epoch := f.epoch
 					return m, tea.Batch(cmd, tea.Tick(180*time.Millisecond, func(time.Time) tea.Msg { return savedQueryReady{epoch} })), true

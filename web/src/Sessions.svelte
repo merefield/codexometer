@@ -574,8 +574,7 @@
       <button
         disabled={!scope}
         onclick={() => (resumePicker.open = !resumePicker.open)}
-        aria-expanded={resumePicker.open && !!scope}
-        >{live.data?.control ? '/resume' : 'Saved sessions'}</button
+        aria-expanded={resumePicker.open && !!scope}>Saved sessions</button
       >
     </div>{/if}
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>

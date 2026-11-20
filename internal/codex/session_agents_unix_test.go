@@ -13,7 +13,7 @@ func TestSessionAgentsOnlyReadVerifiedDescendantHistory(t *testing.T) {
 	answer := func(id string, started time.Time) map[string]any {
 		return map[string]any{"id": id, "status": "completed", "startedAt": started.Unix(), "items": []any{map[string]any{"type": "agentMessage", "phase": "final_answer", "text": id}}}
 	}
-	f.catalogues = map[string]map[string]any{"thread/turns/list": {"data": []any{answer("child answer", now.Add(time.Second)), answer("parent prefix", now.Add(-time.Minute))}}}
+	f.catalogues = map[string]map[string]any{"thread/turns/list": {"data": []any{answer("child answer", now.Add(time.Second)), answer("ambiguous spawn second", now), answer("parent prefix", now.Add(-time.Minute))}}}
 	if err := p.ensureConnected(t.Context()); err != nil {
 		t.Fatal(err)
 	}

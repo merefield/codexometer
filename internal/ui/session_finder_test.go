@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 func TestFinderCombinesFiltersWithoutHidingAttention(t *testing.T) {
@@ -159,11 +160,42 @@ func TestResumePickerCanOpenWithNoLiveSessions(t *testing.T) {
 	m := contextTestModel()
 	m.monitorSessionData = nil
 	m.finder.setScope("scope")
-	x, y := renderedTextStart(t, m, "[/resume]")
+	x, y := renderedTextStart(t, m, "[Saved sessions]")
 	for _, msg := range []tea.Msg{key('/'), tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}} {
 		next, _ := m.Update(msg)
 		if !next.(Model).finder.include {
 			t.Fatalf("%T could not open the saved picker without a live session", msg)
 		}
+	}
+}
+
+func TestResumePickerSelectionAndStrictConfirmation(t *testing.T) {
+	m := contextTestModel()
+	probe := &resumeFinderProbe{}
+	m.fetcher, m.confirmations = probe, confirmation.Policy{Mode: confirmation.Require}
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	for _, id := range []string{"first", "wanted", "other"} {
+		m.finder.rows = append(m.finder.rows, savedRow{SavedSession: codex.SavedSession{ID: id}})
+	}
+	m.finder.focus = findResults
+	m.scrollFinder(1, 80, 12)
+	m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: "first", displayed: true})
+	m, cmd, _ := m.updateSessionFinder(specialKey(tea.KeyEnter))
+	if cmd != nil || m.finder.detail != "wanted" || m.actionReview == nil || probe.resumed != "" {
+		t.Fatal("resume target changed or bypassed review")
+	}
+	m, cmd, _ = m.updateActionReview(key('c'))
+	if cmd == nil {
+		t.Fatal("confirmed resume unavailable")
+	}
+	m, _, _ = m.updateSessionFinder(cmd())
+	if m.finder.resumeID != "wanted" || probe.resumed != "wanted" {
+		t.Fatal("confirmed resume changed target")
+	}
+	m, _, _ = m.updateSessionFinder(savedResumeDeadline{savedResult{id: "wanted", scope: "scope", epoch: m.finder.epoch}})
+	if m.finder.resumeID != "" || m.finder.resumeNotice == "" {
+		t.Fatal("missing row did not clear the pending handoff")
 	}
 }

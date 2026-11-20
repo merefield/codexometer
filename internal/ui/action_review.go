@@ -159,6 +159,9 @@ func (m Model) updateActionReview(msg tea.Msg) (Model, tea.Cmd, bool) {
 	switch review.action {
 	case "reply":
 		next, cmd, _ = m.submitMonitorPrompt()
+	case "resume-saved":
+		cmd = m.resumeSaved()
+		next = m
 	case "steer", "queue", "interrupt":
 		next, cmd, _ = m.submitMonitorTurn(review.action)
 	case "queue-edit":
