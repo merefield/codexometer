@@ -92,13 +92,13 @@ func (c *control) handleSchedules(w http.ResponseWriter, r *http.Request, b acti
 		switch {
 		case !schedule.Fresh(q, now):
 			reason = "waiting for fresh quota"
-		case !j.MatchesAccount(q.AccountFingerprint):
+		case !j.MatchesAccount(q.QuotaAccount()):
 			reason = "waiting for the original account"
 		case !schedule.Covers(j, q):
 			reason = "waiting for observed quota windows"
 		case j.WaitingForGoalStop:
 			reason = "waiting for goal to stop for quota"
-		case j.AwaitingQuotaSample(q) || !schedule.QuotaReady(q, now):
+		case j.AwaitingQuotaSample(q) || j.WaitingForConfirmedQuota(q) || !schedule.QuotaReady(q, now):
 			reason = "waiting for quota"
 		case c.scheduleBlocked(j.Session):
 			reason = "waiting for profile review or verification"
@@ -116,12 +116,19 @@ func (c *control) sendNowJob(session, id string) (schedule.Job, bool) {
 		return schedule.Job{}, false
 	}
 	for _, j := range c.schedules.List(session) {
-		if !j.ResumeGoal && j.ID == id && j.Status == "pending" && j.MatchesAccount(q.AccountFingerprint) && schedule.Covers(j, q) {
+		if !j.ResumeGoal && j.ID == id && j.Status == "pending" && j.MatchesAccount(q.QuotaAccount()) && schedule.Covers(j, q) {
 			return j, true
 		}
 	}
 	return schedule.Job{}, false
 }
+
+func (c *control) scheduledPromptReady(j schedule.Job, automatic bool) bool {
+	q := c.scheduleSnapshot()
+	return j.MatchesAccount(q.QuotaAccount()) && (!automatic || !j.WaitingForConfirmedQuota(q)) &&
+		schedule.QuotaReady(q, time.Now()) && schedule.Covers(j, q) && !c.scheduleBlocked(j.Session)
+}
+
 func (c *control) collectSchedules(ctx context.Context) func() {
 	done := make(chan struct{})
 	go func() {
@@ -156,7 +163,7 @@ func (c *control) dispatchSchedules(ctx context.Context) {
 		return
 	}
 	for _, j := range c.schedules.List("") {
-		if j.ResumeGoal || j.Status != "pending" || c.scheduleBlocked(j.Session) || !schedule.Covers(j, q) || !schedule.Fresh(q, time.Now()) {
+		if j.ResumeGoal || j.Status != "pending" || j.WaitingForConfirmedQuota(q) || c.scheduleBlocked(j.Session) || !schedule.Covers(j, q) || !schedule.Fresh(q, time.Now()) {
 			continue
 		}
 		o, err := c.offer(j.Session)
@@ -164,12 +171,11 @@ func (c *control) dispatchSchedules(ctx context.Context) {
 			continue
 		}
 		call, cancel := context.WithTimeout(ctx, 6*time.Second)
-		_ = c.schedules.Dispatch(call, j.ID, q.AccountFingerprint, true, time.Now(), func(ctx context.Context, j schedule.Job) error {
-			latest := c.scheduleSnapshot()
-			if latest.AccountFingerprint != q.AccountFingerprint || !schedule.QuotaReady(latest, time.Now()) || !schedule.Covers(j, latest) || c.scheduleBlocked(j.Session) {
+		_ = c.schedules.Dispatch(call, j.ID, q.QuotaAccount(), true, time.Now(), func(ctx context.Context, j schedule.Job) error {
+			if !c.scheduledPromptReady(j, true) {
 				return schedule.ErrDeferred
 			}
-			return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
+			return schedule.SendPrompt(ctx, c.prompts, o.token, j)
 		})
 		cancel()
 	}

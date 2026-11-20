@@ -9,11 +9,20 @@ import (
 )
 
 type Snapshot struct {
-	RateLimits            RateLimitSnapshot            `json:"rateLimits"`
-	RateLimitsByLimitID   map[string]RateLimitSnapshot `json:"rateLimitsByLimitId"`
-	RateLimitResetCredits *ResetCredits                `json:"rateLimitResetCredits"`
-	AccountFingerprint    string                       `json:"-"`
-	FetchedAt             time.Time                    `json:"-"`
+	RateLimits              RateLimitSnapshot            `json:"rateLimits"`
+	RateLimitsByLimitID     map[string]RateLimitSnapshot `json:"rateLimitsByLimitId"`
+	RateLimitResetCredits   *ResetCredits                `json:"rateLimitResetCredits"`
+	AccountFingerprint      string                       `json:"-"`
+	OrdinaryUsageAllowed    *bool                        `json:"-"`
+	QuotaPermissionReported bool                         `json:"-"`
+	quotaWorkspace          string
+	FetchedAt               time.Time `json:"-"`
+}
+
+// QuotaAccount is the identity for a quota-triggered write, not for display.
+// A known workspace must never match an email-only snapshot.
+func (s Snapshot) QuotaAccount() string {
+	return quotaAccount(s.AccountFingerprint, s.quotaWorkspace)
 }
 
 type RateLimitSnapshot struct {

@@ -31,17 +31,17 @@ func (q *Queue) ArmGoalResume(ctx context.Context, c codex.ScheduledGoalClient, 
 	if !Fresh(quota, now) || len(windows) == 0 {
 		return ErrGoalQuotaUnavailable
 	}
-	target, err := c.PrepareGoalResume(ctx, id, quota.AccountFingerprint, revision, choice)
+	target, err := c.PrepareGoalResume(ctx, id, quota.QuotaAccount(), revision, choice)
 	if err != nil {
 		return err
 	}
 	job := Job{Session: id, Trigger: "quota", Windows: windows,
-		ResumeGoal: true, WaitingForGoalStop: !target.Stopped, goal: target}
+		ResumeGoal: true, WaitingForGoalStop: !target.Stopped, goal: target, baseAccount: quota.AccountFingerprint}
 	if target.Stopped {
 		// A sample taken before consent may predate the quota stop as well.
 		job.stopObserved = now
 	}
-	return q.save(job, quota.AccountFingerprint, now, nil)
+	return q.save(job, quota.QuotaAccount(), now, nil)
 }
 
 func (q *Queue) PendingGoalResumeID(session string) string {
@@ -107,7 +107,10 @@ func (q *Queue) PollGoalResumes(ctx context.Context, c codex.ScheduledGoalClient
 		if !Fresh(s, clock()) {
 			continue
 		}
-		if !j.MatchesAccount(s.AccountFingerprint) {
+		if !j.MatchesAccount(s.QuotaAccount()) {
+			if s.AccountFingerprint == j.baseAccount && codex.IsWorkspaceQuotaAccount(j.account) && !codex.IsWorkspaceQuotaAccount(s.QuotaAccount()) {
+				continue // Missing workspace evidence is not an account switch.
+			}
 			q.disarmGoal(j.ID)
 			continue
 		}
@@ -141,8 +144,8 @@ func (q *Queue) PollGoalResumes(ctx context.Context, c codex.ScheduledGoalClient
 
 func (q *Queue) resumeGoal(ctx context.Context, c codex.ScheduledGoalClient, j Job, quota func() codex.Snapshot, clock func() time.Time, blocked func(string) bool) {
 	ready := func(s codex.Snapshot) bool {
-		return j.MatchesAccount(s.AccountFingerprint) && !j.AwaitingQuotaSample(s) &&
-			Covers(j, s) && QuotaReady(s, clock()) && !blocked(j.Session)
+		return j.MatchesAccount(s.QuotaAccount()) && !j.AwaitingQuotaSample(s) &&
+			Covers(j, s) && QuotaReady(s, clock()) && QuotaRecoveryConfirmed(s) && !blocked(j.Session)
 	}
 	s := quota()
 	if !ready(s) {
@@ -150,13 +153,13 @@ func (q *Queue) resumeGoal(ctx context.Context, c codex.ScheduledGoalClient, j J
 	}
 	call, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	_, _ = q.dispatch(call, j.ID, s.AccountFingerprint, func(j Job) bool {
+	_, _ = q.dispatch(call, j.ID, s.QuotaAccount(), func(j Job) bool {
 		return j.ResumeGoal && !j.WaitingForGoalStop
 	}, func(ctx context.Context, j Job) error {
 		if !ready(quota()) {
 			return ErrDeferred
 		}
-		err := c.ResumeScheduledGoal(ctx, j.Session, s.AccountFingerprint, j.goal)
+		err := c.ResumeScheduledGoal(ctx, j.Session, s.QuotaAccount(), j.goal)
 		if errors.Is(err, codex.ErrScheduledGoalNotReady) {
 			return ErrDeferred
 		}

@@ -346,8 +346,11 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 		}
 		if body.SendID != "" {
 			q := c.scheduleSnapshot()
-			err = c.schedules.DispatchNow(ctx, body.SendID, q.AccountFingerprint, func(ctx context.Context, j schedule.Job) error {
-				return c.prompts.SendSessionPrompt(ctx, o.token, []string{j.Text})
+			err = c.schedules.DispatchNow(ctx, body.SendID, q.QuotaAccount(), func(ctx context.Context, j schedule.Job) error {
+				if !c.scheduledPromptReady(j, false) {
+					return schedule.ErrDeferred
+				}
+				return schedule.SendPrompt(ctx, c.prompts, o.token, j)
 			})
 			c.publishSchedules()
 		} else if o.Kind == "profile" {
@@ -360,7 +363,7 @@ func (c *control) handle(action, origin string) http.HandlerFunc {
 				http.Error(w, errUnavailable.Error(), 409)
 				return
 			}
-			err = c.schedules.SaveIfCurrent(schedule.Job{Session: body.Session, Text: body.Answers[0], Trigger: body.Schedule.Trigger, At: body.Schedule.At, Zone: body.Schedule.Zone, Windows: schedule.WindowKeys(q)}, q.AccountFingerprint, time.Now(), body.EditID)
+			err = c.schedules.SaveIfCurrent(schedule.Job{Session: body.Session, Text: body.Answers[0], Trigger: body.Schedule.Trigger, At: body.Schedule.At, Zone: body.Schedule.Zone, Windows: schedule.WindowKeys(q)}, q.QuotaAccount(), time.Now(), body.EditID)
 			if err != nil {
 				http.Error(w, err.Error(), 409)
 				return

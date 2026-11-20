@@ -138,7 +138,7 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 			ready[s.id] = true
 		}
 	}
-	account := m.snapshot.AccountFingerprint
+	account := m.snapshot.QuotaAccount()
 	snapshot := m.snapshot
 	goalBlocked := blocked || m.monitorCommands.open
 	draftID := ""
@@ -156,7 +156,7 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 			return scheduleDone{}
 		}
 		for _, j := range q.List("") {
-			if j.ResumeGoal || !ready[j.Session] || j.Status != "pending" || !schedule.Covers(j, snapshot) || !schedule.Fresh(snapshot, time.Now()) {
+			if j.ResumeGoal || !ready[j.Session] || j.Status != "pending" || j.WaitingForConfirmedQuota(snapshot) || !schedule.Covers(j, snapshot) || !schedule.Fresh(snapshot, time.Now()) {
 				continue
 			}
 			o := client.SessionPrompt(j.Session)
@@ -165,7 +165,7 @@ func (m *Model) dispatchSchedules() tea.Cmd {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 			_ = q.Dispatch(ctx, j.ID, account, true, time.Now(), func(ctx context.Context, j schedule.Job) error {
-				return client.SendSessionPrompt(ctx, o.Token, []string{j.Text})
+				return schedule.SendPrompt(ctx, client, o.Token, j)
 			})
 			cancel()
 		}
@@ -395,7 +395,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 					j.Trigger = "at"
 					j.At = p.date
 				}
-				if err := p.queue.SaveIfCurrent(j, m.snapshot.AccountFingerprint, time.Now(), p.id); err != nil {
+				if err := p.queue.SaveIfCurrent(j, m.snapshot.QuotaAccount(), time.Now(), p.id); err != nil {
 					p.notice = err.Error()
 				} else {
 					p.open = false

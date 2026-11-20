@@ -71,6 +71,14 @@ func TestGoalResumeWaitsForNativeStopAndNewQuota(t *testing.T) {
 	s.RateLimits.Primary = nil
 	poll()
 	s.RateLimits.Primary = original
+	s.QuotaPermissionReported = true
+	poll() // Explicit null is not recovered even when percentages are low.
+	s.OrdinaryUsageAllowed = new(false)
+	poll()
+	if f.writes != 0 {
+		t.Fatal("backend did not confirm quota recovery")
+	}
+	s.OrdinaryUsageAllowed = new(true)
 	blocked = true
 	poll()
 	if f.writes != 0 {
@@ -122,6 +130,26 @@ func TestGoalResumeDisarmsOrDefersWithoutWriting(t *testing.T) {
 			q.PollGoalResumes(ctx, f, func() codex.Snapshot { return s }, func() time.Time { return now }, func(string) bool { return false })
 			if f.writes != 0 || q.HasPendingGoalResume() != tc.remain {
 				t.Fatalf("writes = %d, remaining = %v", f.writes, q.List(""))
+			}
+		})
+	}
+}
+
+func TestWorkspaceResumeDisarmsOnlyOnKnownAccountChange(t *testing.T) {
+	for _, account := range []string{"original-account", "different-account"} {
+		t.Run(account, func(t *testing.T) {
+			q, now := New(), time.Now()
+			s := goalQuota(now)
+			s.AccountFingerprint = account // Neither snapshot supplies a workspace ID.
+			goal := &codex.SessionGoal{ThreadID: "session", Status: "usageLimited", Objective: "Continue this goal"}
+			f := &goalSchedulerFake{goal: goal}
+			j := Job{ResumeGoal: true, Session: goal.ThreadID, Trigger: "quota", baseAccount: "original-account", goal: codex.NewGoalResumeTarget(goal)}
+			if err := q.save(j, "workspace:original", now, nil); err != nil {
+				t.Fatal(err)
+			}
+			q.PollGoalResumes(context.Background(), f, func() codex.Snapshot { return s }, func() time.Time { return now }, func(string) bool { return false })
+			if f.writes != 0 || q.HasPendingGoalResume() != (account == j.baseAccount) {
+				t.Fatalf("wrong outcome with no workspace ID: writes = %d, jobs = %v", f.writes, q.List(""))
 			}
 		})
 	}

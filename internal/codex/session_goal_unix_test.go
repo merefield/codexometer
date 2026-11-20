@@ -41,8 +41,8 @@ func applyGoalCommand(t *testing.T, p *daemonStatusProvider, path string) {
 func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
 	p, f := goalFixture(t)
 	ctx := context.Background()
-	raw := json.RawMessage(`{"account":{"type":"chatgpt","email":"example@example.test"}}`)
-	account := fingerprintAccount(raw)
+	raw := json.RawMessage(`{"account":{"type":"chatgpt","email":"example@example.test"},"workspaceRouting":{"chatgptAccountId":"original"}}`)
+	account := quotaAccount(fingerprintAccount(raw), "original")
 	var reply map[string]any
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		t.Fatal(err)
@@ -86,6 +86,10 @@ func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
 	f.mu.Unlock()
 	if err := p.ResumeScheduledGoal(ctx, "one", "wrong account", target); !errors.Is(err, ErrScheduledGoalChanged) {
 		t.Fatal("accepted a different account", err)
+	}
+	otherWorkspace := quotaAccount(fingerprintAccount(raw), "other")
+	if err := p.ResumeScheduledGoal(ctx, "one", otherWorkspace, target); !errors.Is(err, ErrScheduledGoalChanged) {
+		t.Fatal("accepted a different workspace with the same email", err)
 	}
 	f.mu.Lock()
 	original := f.goals["one"].Objective

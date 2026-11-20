@@ -9,11 +9,17 @@ import (
 )
 
 type readStateObservation struct {
-	state   SessionReadState
-	version uint64
+	state                 SessionReadState
+	version               uint64
+	publishedBeforeFinish bool
 }
 
 func (p *daemonStatusProvider) observeReadStateLocked(id string, state SessionReadState) {
+	previous := p.readStates[id]
+	p.storeReadStateLocked(id, state, previous.state == state && previous.publishedBeforeFinish)
+}
+
+func (p *daemonStatusProvider) storeReadStateLocked(id string, state SessionReadState, publishedBeforeFinish bool) {
 	if p.readStates == nil {
 		p.readStates = make(map[string]readStateObservation)
 	}
@@ -23,7 +29,7 @@ func (p *daemonStatusProvider) observeReadStateLocked(id string, state SessionRe
 		}
 	}
 	p.readStateVersion++
-	p.readStates[id] = readStateObservation{state: state, version: p.readStateVersion}
+	p.readStates[id] = readStateObservation{state: state, version: p.readStateVersion, publishedBeforeFinish: publishedBeforeFinish}
 }
 
 func (p *daemonStatusProvider) readStateNotificationLocked(method string, raw json.RawMessage) {
@@ -33,16 +39,47 @@ func (p *daemonStatusProvider) readStateNotificationLocked(method string, raw js
 			ThreadID  string
 			ReadState *wireReadState
 		}
-		if json.Unmarshal(raw, &notification) == nil && notification.ThreadID != "" {
-			p.observeReadStateLocked(notification.ThreadID, notification.ReadState.snapshot())
+		if json.Unmarshal(raw, &notification) == nil && p.tracksReadState(notification.ThreadID) {
+			state := notification.ReadState.snapshot()
+			p.storeReadStateLocked(notification.ThreadID, state, state.Known())
 		}
-	case "turn/completed", "thread/closed", "thread/archived", "thread/deleted":
-		var notification struct{ ThreadID string }
-		if json.Unmarshal(raw, &notification) == nil && notification.ThreadID != "" {
-			p.observeReadStateLocked(notification.ThreadID, SessionReadState{})
-			p.lastStatusAt = time.Time{}
+	case "turn/started", "turn/completed", "thread/closed", "thread/archived", "thread/deleted":
+		var notification struct {
+			ThreadID string
+			Turn     struct{ ID string }
 		}
+		if json.Unmarshal(raw, &notification) != nil || !p.tracksReadState(notification.ThreadID) {
+			return
+		}
+		id, turn := notification.ThreadID, notification.Turn.ID
+		previous, thread := p.readStates[id], p.contexts[id]
+		var next SessionReadState
+		switch method {
+		case "turn/started":
+			if previous.publishedBeforeFinish && (thread == nil || turn == "" || thread.activeTurn != turn) {
+				previous.publishedBeforeFinish = false
+				p.readStates[id] = previous
+			}
+			return
+		case "turn/completed":
+			if thread != nil && (!thread.acceptTurn(turn) || turn != "" && thread.ended && thread.finishedTurn == turn) {
+				return
+			}
+			// Codex broadcasts the committed receipt before the completion.
+			// Keep it (firstUnread may point to an earlier turn), but still
+			// advance the version to reject an in-flight pre-completion poll.
+			if previous.publishedBeforeFinish {
+				next = previous.state
+			}
+		}
+		p.storeReadStateLocked(id, next, false)
+		p.lastStatusAt = time.Time{}
 	}
+}
+
+func (p *daemonStatusProvider) tracksReadState(id string) bool {
+	_, tracked := p.readStateThreads[id]
+	return id != "" && tracked
 }
 
 func (p *daemonStatusProvider) AcknowledgeSessionResult(ctx context.Context, id, turn, revision string) (SessionReadState, error) {

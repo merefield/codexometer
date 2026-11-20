@@ -4,22 +4,18 @@ package codex
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 
 	"github.com/gorilla/websocket"
 )
 
 func (p *daemonStatusProvider) checkScheduledGoalAccount(ctx context.Context, conn *websocket.Conn, account string) error {
-	var raw json.RawMessage
-	if conn == nil || account == "" || p.requestOn(ctx, conn, "account/read", map[string]bool{"refreshToken": false}, &raw) != nil {
-		return ErrScheduledGoalNotReady
-	}
-	observed := fingerprintAccount(raw)
-	if observed == "" {
-		return ErrScheduledGoalNotReady
-	}
-	if observed != account {
+	err := p.verifyQuotaAccount(ctx, conn, account)
+	if errors.Is(err, errQuotaAccountChanged) {
 		return ErrScheduledGoalChanged
+	}
+	if err != nil {
+		return ErrScheduledGoalNotReady
 	}
 	return nil
 }
@@ -98,8 +94,12 @@ func (p *daemonStatusProvider) ResumeScheduledGoal(ctx context.Context, id, acco
 	if !ready || ctx.Err() != nil {
 		return ErrScheduledGoalNotReady
 	}
-	return p.executeGoalCommand(ctx, conn, id, SessionCommandChoice{
+	err = p.executeGoalCommand(ctx, conn, id, SessionCommandChoice{
 		method: "thread/goal/set",
 		params: map[string]any{"threadId": id, "origin": "user", "status": "active"},
-	}, target)
+	}, target, &generation)
+	if errors.Is(err, errDaemonWriteGuardRejected) {
+		return ErrScheduledGoalNotReady
+	}
+	return err
 }

@@ -24,12 +24,15 @@ const (
 	daemonStatusRefreshEvery = 5 * time.Second
 )
 
+var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sending")
+
 type daemonStatusProvider struct {
 	savedScope         string
 	names              map[string]threadTitle
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
 	readStates         map[string]readStateObservation
+	readStateThreads   map[string]struct{}
 	readStateVersion   uint64
 	humanApprovals     bool
 	commandGeneration  uint64
@@ -107,6 +110,11 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		return snapshot, true
 	}
 
+	wanted := stringStructSet(threadIDs)
+	p.mu.Lock()
+	p.readStateThreads = wanted
+	retainThreadIDs(p.readStates, wanted)
+	p.mu.Unlock()
 	loaded, err := p.loadedThreads(ctx)
 	if err == nil {
 		p.unsubscribeMissing(ctx, threadIDs)
@@ -134,7 +142,8 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	statuses := make(map[string]sessionRuntimeStatus, len(threadIDs))
 	for _, threadID := range threadIDs {
 		p.mu.Lock()
-		connection, readVersion, titleVersion := p.connection, p.readStates[threadID].version, p.names[threadID].version
+		connection, generation := p.connection, p.commandGeneration
+		readVersion, titleVersion := p.readStates[threadID].version, p.names[threadID].version
 		p.mu.Unlock()
 		var result struct {
 			ReadState *wireReadState `json:"readState"`
@@ -157,9 +166,11 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		if p.connection == connection && result.Thread.ID == threadID {
 			p.hydrateTitleLocked(threadID, result.Thread.Name, titleVersion)
 		}
-		if p.connection == connection && p.readStates[threadID].version == readVersion && result.Thread.ID == threadID {
-			p.observeReadStateLocked(threadID, result.ReadState.snapshot())
+		if p.connection == connection && result.Thread.ID == threadID {
 			p.threadAttachments[threadID] = result.Thread.AttachedToThreadID
+			if p.commandGeneration == generation && p.readStates[threadID].version == readVersion {
+				p.observeReadStateLocked(threadID, result.ReadState.snapshot())
+			}
 		}
 		p.mu.Unlock()
 		status := parseSessionRuntimeStatus(result.Thread.Status.Type, result.Thread.Status.ActiveFlags)
@@ -169,13 +180,12 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 	}
 
 	p.mu.Lock()
-	wanted := stringStructSet(threadIDs)
 	retainThreadIDs(p.names, wanted)
 	retainThreadIDs(p.threadAttachments, wanted)
 	retainThreadIDs(p.readStates, wanted)
 	p.usageCoverage = coverage
 	p.lastStatusAt = time.Now()
-	p.statusThreads = stringStructSet(threadIDs)
+	p.statusThreads = wanted
 	for id, status := range statuses {
 		if p.statuses[id] != status {
 			p.bumpCommandTransitionLocked(id)
@@ -463,7 +473,11 @@ func (p *daemonStatusProvider) request(ctx context.Context, method string, param
 	return p.requestOn(ctx, connection, method, params, target)
 }
 
-func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) (resultErr error) {
+func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {
+	return p.requestOnChecked(ctx, connection, method, params, target, nil)
+}
+
+func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
 			return
@@ -487,6 +501,9 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	p.mu.Lock()
 	if connection == nil || p.connection != connection {
 		p.mu.Unlock()
+		if generation != nil {
+			return errDaemonWriteGuardRejected
+		}
 		return errors.New("daemon connection is closed")
 	}
 	p.nextRequestID++
@@ -495,11 +512,11 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	p.pending[id] = response
 	p.mu.Unlock()
 
-	if err := p.write(connection, map[string]any{"id": id, "method": method, "params": params}); err != nil {
-		p.mu.Lock()
-		delete(p.pending, id)
-		p.mu.Unlock()
-		p.disconnect(connection)
+	if err := p.writeChecked(connection, map[string]any{"id": id, "method": method, "params": params}, generation); err != nil {
+		p.dropPending(id)
+		if !errors.Is(err, errDaemonWriteGuardRejected) {
+			p.disconnect(connection)
+		}
 		return err
 	}
 	timer := time.NewTimer(daemonStatusTimeout)
@@ -536,13 +553,26 @@ func (p *daemonStatusProvider) notify(method string, params any) error {
 }
 
 func (p *daemonStatusProvider) write(connection *websocket.Conn, value any) error {
+	return p.writeChecked(connection, value, nil)
+}
+
+func (p *daemonStatusProvider) writeChecked(connection *websocket.Conn, value any, generation *uint64) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
 	p.mu.Lock()
-	wire := p.wire
-	current := p.connection
-	p.mu.Unlock()
+	wire, current := p.wire, p.connection
+	if generation != nil {
+		// Keep account/updated and reconnects out between the check and socket
+		// write. The deadline bounds this critical section; never wait for the
+		// RPC response under this lock.
+		defer p.mu.Unlock()
+		if current != connection || p.commandGeneration != *generation {
+			return errDaemonWriteGuardRejected
+		}
+	} else {
+		p.mu.Unlock()
+	}
+	_ = connection.SetWriteDeadline(time.Now().Add(daemonStatusTimeout))
 	if wire != nil && current == connection {
 		return wire.writeJSON(value)
 	}
@@ -589,6 +619,11 @@ func (p *daemonStatusProvider) readLoop(connection *websocket.Conn, wires ...*da
 			p.mu.Unlock()
 			return
 		}
+		if envelope.Method == "account/updated" {
+			p.accountNotificationLocked(envelope.Params)
+			p.mu.Unlock()
+			continue
+		}
 		if envelope.Method == "thread/queue/changed" {
 			p.queueRevision++
 		}
@@ -620,8 +655,7 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 	switch method {
 	case "account/updated":
 		p.mu.Lock()
-		p.commandGeneration++
-		p.lastStatusAt = time.Time{}
+		p.accountNotificationLocked(params)
 		p.mu.Unlock()
 	case "thread/settings/updated":
 		var notification struct {
@@ -750,7 +784,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.goalGeneration++
 	p.reroutedTurns = nil
 	p.lastStatusAt = time.Time{}
-	p.statusThreads = nil
+	p.statusThreads, p.readStateThreads = nil, nil
 	p.statuses = nil
 	p.commandTransitions = nil
 	p.threadSettings = nil

@@ -29,7 +29,7 @@ func Covers(j Job, s codex.Snapshot) bool {
 // every reported limit is conservative: never assume an exhausted bucket is
 // irrelevant. No inference, reset redemption, or timestamp-only release.
 func QuotaReady(s codex.Snapshot, now time.Time) bool {
-	if !Fresh(s, now) {
+	if !Fresh(s, now) || s.OrdinaryUsageAllowed != nil && !*s.OrdinaryUsageAllowed {
 		return false
 	}
 	meters := s.Meters()
@@ -54,6 +54,16 @@ func QuotaReady(s codex.Snapshot, now time.Time) bool {
 		}
 	}
 	return true
+}
+
+// A modern server can explicitly report that availability is unknown (null).
+// Only servers/fixtures that omit the field retain the old meter-based fallback.
+func QuotaRecoveryConfirmed(s codex.Snapshot) bool {
+	return !s.QuotaPermissionReported || s.OrdinaryUsageAllowed != nil && *s.OrdinaryUsageAllowed
+}
+
+func (j Job) WaitingForConfirmedQuota(s codex.Snapshot) bool {
+	return j.Trigger == "quota" && !QuotaRecoveryConfirmed(s)
 }
 
 func Fresh(s codex.Snapshot, now time.Time) bool {

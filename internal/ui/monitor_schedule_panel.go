@@ -30,7 +30,7 @@ func (m Model) pendingTriggerFor(id string) (schedule.Job, bool) {
 }
 
 func (m Model) triggerReady(j schedule.Job) bool {
-	if j.ResumeGoal || !j.MatchesAccount(m.snapshot.AccountFingerprint) {
+	if j.ResumeGoal || !j.MatchesAccount(m.snapshot.QuotaAccount()) {
 		return false
 	}
 	o := m.monitorPromptOffer()
@@ -60,13 +60,13 @@ func (m Model) triggerSummaryAt(j schedule.Job, now time.Time) string {
 		return text + " // " + i18n.Text(j.Status)
 	case m.err != nil || !schedule.Fresh(m.snapshot, now):
 		return text + i18n.Text(" // waiting for fresh quota")
-	case !j.MatchesAccount(m.snapshot.AccountFingerprint):
+	case !j.MatchesAccount(m.snapshot.QuotaAccount()):
 		return text + i18n.Text(" // waiting for the original account")
 	case !schedule.Covers(j, m.snapshot):
 		return text + i18n.Text(" // waiting for observed quota windows")
 	case j.WaitingForGoalStop:
 		return text + i18n.Text(" // waiting for goal to stop for quota")
-	case j.AwaitingQuotaSample(m.snapshot) || !schedule.QuotaReady(m.snapshot, now):
+	case j.AwaitingQuotaSample(m.snapshot) || j.WaitingForConfirmedQuota(m.snapshot) || !schedule.QuotaReady(m.snapshot, now):
 		return text + i18n.Text(" // waiting for quota")
 	case !m.triggerReady(j):
 		if i := m.monitorSessionIndex(j.Session); i >= 0 && m.monitorSessionData[i].working {
@@ -197,14 +197,14 @@ func (m *Model) triggerAction(key string) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		token, account, q := p.confirmToken, m.snapshot.AccountFingerprint, p.queue
+		token, account, q := p.confirmToken, m.snapshot.QuotaAccount(), p.queue
 		p.confirmID = ""
 		p.polling = true
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 			defer cancel()
 			err := q.DispatchNow(ctx, j.ID, account, func(ctx context.Context, j schedule.Job) error {
-				return client.SendSessionPrompt(ctx, token, []string{j.Text})
+				return schedule.SendPrompt(ctx, client, token, j)
 			})
 			return scheduleDone{err: err}
 		}

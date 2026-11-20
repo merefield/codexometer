@@ -63,6 +63,17 @@ type SessionPromptClient interface {
 	SendSessionPrompt(context.Context, string, []string) error
 }
 
+type ScheduledPromptClient interface {
+	SendScheduledPrompt(ctx context.Context, token, text, account string) error
+}
+
+func (c Client) SendScheduledPrompt(ctx context.Context, token, text, account string) error {
+	if p := liveSessionCapability[ScheduledPromptClient](c); p != nil {
+		return p.SendScheduledPrompt(ctx, token, text, account)
+	}
+	return ErrScheduledQuotaUnverified
+}
+
 func (c Client) SessionPrompt(thread string) SessionPromptOffer {
 	if c.LiveUsage != nil {
 		if p, ok := c.LiveUsage.statusProvider.(SessionPromptClient); ok {
