@@ -47,8 +47,7 @@ func (t sessionResumeTarget) valid() bool {
 func (t sessionResumeTarget) fields() []string { return []string{t.Cursor, t.ID} }
 
 func (s *server) resumeSession(w http.ResponseWriter, r *http.Request, target sessionResumeTarget) {
-	err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID)
-	switch {
+	switch err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID); {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, codex.ErrSavedSessions):
