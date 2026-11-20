@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"time"
 
@@ -29,27 +28,24 @@ func (s *server) savedSessions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(page)
 }
 
-func (s *server) resumeSession(w http.ResponseWriter, r *http.Request) {
-	if !sameOriginJSON(r, "http://"+s.host) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	var target struct{ Scope, Cursor, ID, Mode, Confirmation string }
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
-	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
-	if d.Decode(&target) != nil || d.Decode(new(any)) != io.EOF || target.ID == "" || target.Scope == "" || len(target.ID) > 512 || len(target.Scope) > 128 || len(target.Cursor) > 4096 {
-		http.Error(w, "Invalid resume target", http.StatusBadRequest)
-		return
-	}
-	if !s.allowSessionMutation(w, "resume", target.Mode, target.Confirmation, target.Scope, target.Cursor, target.ID) {
-		return
-	}
-	if err := s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID); err != nil {
+type sessionResumeTarget struct {
+	sessionMutationConsent
+	Cursor, ID string
+}
+
+func (t sessionResumeTarget) valid() bool {
+	return t.ID != "" && len(t.ID) <= 512 && len(t.Cursor) <= 4096
+}
+
+func (t sessionResumeTarget) fields() []string { return []string{t.Cursor, t.ID} }
+
+func (s *server) resumeSession(w http.ResponseWriter, r *http.Request, target sessionResumeTarget) {
+	switch s.resumer.ResumeSavedSession(r.Context(), target.Scope, target.Cursor, target.ID) {
+	case nil:
+		w.WriteHeader(http.StatusNoContent)
+	default:
 		http.Error(w, "Resume not confirmed", http.StatusConflict)
-		return
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) sessionRoute(timeout time.Duration, handler http.HandlerFunc) http.Handler {

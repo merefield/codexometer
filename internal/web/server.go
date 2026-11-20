@@ -35,6 +35,7 @@ type server struct {
 	finder        codex.SavedSessionClient
 	searcher      codex.SavedSessionSearchClient
 	resumer       codex.SavedSessionResumeClient
+	starter       codex.SessionStartClient
 	agents        codex.SessionAgentClient
 	terminals     codex.SessionTerminalClient
 	savedRequests chan struct{}
@@ -70,6 +71,7 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 		savedRequests: make(chan struct{}, 2)}
 	if writable {
 		s.resumer, _ = source.(codex.SavedSessionResumeClient)
+		s.starter, _ = source.(codex.SessionStartClient)
 	}
 	if policy, ok := source.(codex.QuotaStepPolicyProvider); ok {
 		s.store.configureThresholds(policy.QuotaStepPolicy())
@@ -157,11 +159,18 @@ func (s *server) handler() http.Handler {
 		_, _ = w.Write(data)
 	})))
 	mux.Handle("GET /api/events", s.authorize(http.HandlerFunc(s.events)))
-	if s.finder != nil {
-		mux.Handle("GET /api/sessions/saved", s.sessionRoute(7*time.Second, s.savedSessions))
-	}
-	if s.resumer != nil {
-		mux.Handle("POST /api/sessions/resume", s.sessionRoute(7*time.Second, s.resumeSession))
+	for _, route := range []struct {
+		pattern string
+		enabled bool
+		handle  http.HandlerFunc
+	}{
+		{"GET /api/sessions/saved", s.finder != nil, s.savedSessions},
+		{"POST /api/sessions/resume", s.resumer != nil, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
+		{"POST /api/sessions/new", s.starter != nil, sessionMutationHandler(s, "new-session", 48<<10, s.startSession)},
+	} {
+		if route.enabled {
+			mux.Handle(route.pattern, s.sessionRoute(7*time.Second, route.handle))
+		}
 	}
 	if s.agents != nil || s.terminals != nil {
 		mux.Handle("GET /api/sessions/inspect", s.sessionRoute(5*time.Second, s.inspectSession))

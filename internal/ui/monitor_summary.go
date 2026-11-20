@@ -410,7 +410,7 @@ func (m Model) monitorArea(width, height int) monitorGeometry {
 			return a
 		}
 	}
-	a := layoutMonitorArea(width, height)
+	a := layoutMonitorArea(width, height, m.canStartNewSession() && !m.newSession.open())
 	// Reserve one stable navigation row, even when no session needs attention.
 	// Overflow is paged rather than shifting the session content downwards.
 	a.attentionRows = min(1, max(a.graphHeight-3, 0))

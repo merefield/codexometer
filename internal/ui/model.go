@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +45,7 @@ type BenchmarkTaskProvider interface {
 
 type Model struct {
 	finder     sessionFinder
+	newSession newSessionDraft
 	inspector  sessionInspector
 	proseCache *prose.Cache
 	startup    startupState
@@ -397,6 +397,7 @@ const (
 	footerButtonQuit
 	footerButtonMonitorReset
 	footerButtonMonitorCloseAll
+	footerButtonMonitorNew
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
 	footerButtonBenchmarkSelected
@@ -492,7 +493,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// Priority handlers run before editor updates; each carries the resulting
 	// immutable model forward even when it does not consume the message.
 	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
-		Model.updateStartup, Model.updateActionReview, Model.updateSessionInspector, Model.updateMonitorHistory,
+		Model.updateStartup, Model.updateActionReview, Model.updateNewSession, Model.updateSessionInspector, Model.updateMonitorHistory,
 		Model.updateMonitorSuggestions, Model.updateMonitorCommands, Model.updateSessionFinder,
 	} {
 		next, cmd, handled := update(m, message)
@@ -658,6 +659,9 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 					return m.pressFooterButton(footerButtonMonitorCloseAll)
 				}
 				return m, nil
+			}
+			if strings.EqualFold(message.String(), "n") && !message.IsRepeat && m.monitorContextDetail == "" && !m.monitorPrompt.input.Focused() {
+				return m.pressFooterButton(footerButtonMonitorNew)
 			}
 			if message.String() == "esc" && len(m.monitorCloseAllConfirm) > 0 {
 				m.clearMonitorCloseAllConfirmation()
@@ -1468,6 +1472,11 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonMonitorCloseAll:
 		if m.meterView == viewMonitor && m.monitorCloseAllEnabled() {
 			m.requestMonitorCloseAll()
+		}
+	case footerButtonMonitorNew:
+		if m.meterView == viewMonitor {
+			cmd := m.openNewSession()
+			return m, cmd
 		}
 	case footerButtonBenchmarkPrevious:
 		if !m.benchmarkRunActive() {
@@ -2397,12 +2406,13 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	}
 	if accepted {
 		m.reconcileMonitorSteers()
-		if id := m.finder.resumeID; id != "" {
+		if id := m.newSession.pendingID; id != "" {
+			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed && m.newSession.scope == m.finder.scope {
+				m.openLiveSessionDetail(id)
+			}
+		} else if id := m.finder.resumeID; id != "" {
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed {
-				m.finder.clearHistory()
-				m.monitorDismissed = maps.Clone(m.monitorDismissed)
-				delete(m.monitorDismissed, id)
-				m.setRowContext(id, contextFull)
+				m.openLiveSessionDetail(id)
 			}
 		} else if id := m.finder.detail; id != "" {
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionVisible(m.monitorSessionData[i]) {

@@ -18,6 +18,8 @@ import (
 
 type quotaDaemonFixture struct {
 	savedReads        []map[string]any
+	starts            []map[string]any
+	turnStarts        []map[string]any
 	savedPages        map[[2]string]map[string]any // keyed by sort order and cursor
 	approvalPolicies  map[string]any
 	reviewers         map[string]string
@@ -175,6 +177,14 @@ func newQuotaDaemonTransport(t *testing.T, compressed bool) (*daemonStatusProvid
 					ids = append(ids, id)
 				}
 				result["data"] = ids
+			case "thread/start", "turn/start":
+				if req.Method == "thread/start" {
+					fixture.starts = append(fixture.starts, req.Params)
+				} else {
+					fixture.turnStarts = append(fixture.turnStarts, req.Params)
+				}
+				result = fixture.catalogues[req.Method]
+				failure = result == nil
 			case "thread/resume":
 				if fixture.resumeReadHook != nil {
 					fixture.resumeReadHook()

@@ -29,6 +29,7 @@
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
   import SavedSessions from './SavedSessions.svelte';
+  import SessionNew from './SessionNew.svelte';
   import SessionInspector from './SessionInspector.svelte';
   import SessionSearch from './SessionSearch.svelte';
   import { matchesSession } from './session-filter';
@@ -42,6 +43,10 @@
       ? live.data?.savedScope || ''
       : '',
   );
+  let newScope = $state('');
+  $effect(() => {
+    if (params.id) newScope = '';
+  });
   let pickerScope = '';
   $effect(() => {
     if (!resumePicker.open) pickerScope = '';
@@ -371,6 +376,7 @@
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (
+      newScope ||
       event.altKey ||
       event.ctrlKey ||
       event.metaKey ||
@@ -540,7 +546,7 @@
 {#if readNotice}<p class="notice" role="status">{readNotice}</p>{/if}
 <div class="spread">
   <h1>SESSION TOTALS</h1>
-  {#if !params.id}<div class="finder-controls">
+  {#if !params.id && !newScope}<div class="finder-controls">
       <SessionSearch
         label="Filter sessions"
         placeholder="Filter sessions (F)"
@@ -576,6 +582,14 @@
         onclick={() => (resumePicker.open = !resumePicker.open)}
         aria-expanded={resumePicker.open && !!scope}>Saved sessions</button
       >
+      {#if live.data?.control && scope}
+        <button
+          onclick={() => {
+            resumePicker.open = false;
+            newScope = scope;
+          }}>New session</button
+        >
+      {/if}
     </div>{/if}
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
 </div>
@@ -779,6 +793,12 @@
         >Return to sessions</a
       >.
     </p>{/if}
+{:else if newScope}
+  <SessionNew scope={newScope} {liveIDs} onclose={() => (newScope = '')} />
+  {#if scope && resumePicker.open}{#key scope}<SavedSessions
+        {scope}
+        {liveIDs}
+      />{/key}{/if}
 {:else}
   <div class="spread session-controls">
     <p class="muted">

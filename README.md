@@ -1431,6 +1431,16 @@ automation, such as an active goal, still follows Codex's rules. The read-only w
 app offers the same search under **Saved sessions** without the Resume action.
 This does not build a separate on-disk index or change the live Filter box.
 
+**Starting a conversation:** in the terminal Sessions list, choose
+**New session** next to **Zero** and **Close all** (or press **N**).
+In write-enabled web mode, choose **New session** beside **Saved sessions**.
+With the same shared server, this opens a blank composer without creating a
+Codex thread. Check the working directory, then send the first message to
+start it using Codex's normal defaults. Type **`/resume`** or choose
+**Saved sessions** in the draft to open an existing conversation instead.
+Closing the picker returns to your draft. Closing the draft before sending
+creates nothing. If Codexometer cannot verify a send, it will not retry it.
+
 Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when
 space permits. Names come from the local

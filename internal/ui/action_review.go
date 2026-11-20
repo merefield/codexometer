@@ -162,6 +162,9 @@ func (m Model) updateActionReview(msg tea.Msg) (Model, tea.Cmd, bool) {
 	case "resume-saved":
 		cmd = m.resumeSaved()
 		next = m
+	case "new-session":
+		cmd = m.startDraftSession()
+		next = m
 	case "steer", "queue", "interrupt":
 		next, cmd, _ = m.submitMonitorTurn(review.action)
 	case "queue-edit":

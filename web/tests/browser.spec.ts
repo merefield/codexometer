@@ -785,6 +785,68 @@ test('/resume searches conversation text and opens the resumed composer', async 
   expect(calls.some(({ action }) => action === 'commit')).toBe(false);
 });
 
+test('new session is a draft until the first message is sent', async ({
+  page,
+  pairingURL,
+}) => {
+  const { snapshot } = await mockActions(
+    page,
+    'prompt',
+    false,
+    false,
+    'balanced',
+  );
+  const initial = { ...snapshot, savedScope: 'scope' };
+  const publish = (detail: object) =>
+    page.evaluate(
+      (data) =>
+        window.dispatchEvent(
+          new CustomEvent('test-snapshot', { detail: data }),
+        ),
+      detail,
+    );
+  let starts = 0;
+  await page.route('**/api/sessions/saved?**', (route) =>
+    route.fulfill({ json: {} }),
+  );
+  await page.route('**/api/sessions/new', async (route) => {
+    starts++;
+    expect(route.request().postDataJSON()).toEqual({
+      scope: 'scope',
+      directory: '/work',
+      prompt: 'Unsent message',
+    });
+    await route.fulfill({ json: { id: 'created' } });
+  });
+  await page.goto(pairingURL);
+  await expect(page.locator('html')).toHaveAttribute('data-test-streams', '1');
+  await publish(initial);
+  await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
+  await page.getByRole('button', { name: 'New session' }).click();
+  const draft = page.getByRole('region', { name: 'New session' });
+  const composer = draft.getByRole('textbox', { name: 'First message' });
+  await composer.fill('/resume');
+  await composer.press('Enter');
+  const picker = page.getByRole('region', { name: 'Saved sessions' });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(composer).toHaveValue('/resume');
+  await draft.getByRole('textbox', { name: 'Working directory' }).fill('/work');
+  await composer.fill('Unsent message');
+  await draft.getByRole('button', { name: 'Saved sessions' }).click();
+  await picker.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(composer).toHaveValue('Unsent message');
+  expect(starts).toBe(0);
+  await composer.press('Enter');
+  await expect(draft).toContainText('Opening the new session');
+  await publish({
+    ...initial,
+    sessions: [...initial.sessions, { ...initial.sessions[0], id: 'created' }],
+  });
+  await expect(page).toHaveURL(/#\/sessions\/created$/);
+  expect(starts).toBe(1);
+});
+
 test('linked agents open a read-only child transcript without navigating away', async ({
   page,
   pairingURL,

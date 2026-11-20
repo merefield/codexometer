@@ -44,11 +44,12 @@ type monitorGeometry struct {
 	readoutWidth  int
 	resetRect     monitorRect
 	closeAllRect  monitorRect
+	newRect       monitorRect
 }
 
 const monitorDismissLabel = "[×]"
 
-func layoutMonitorArea(width, height int) monitorGeometry {
+func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
@@ -61,9 +62,18 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	// Keep the summary usable on narrow terminals; compact both controls when
 	// their full translated labels cannot fit.
 	controlsWidth := min(max(width/4, 22), max(width*2/5, 3))
+	newWidth := 0
+	if len(newButton) > 0 && newButton[0] && width >= 27 {
+		total := min(max(width/3, 30), max(width/2, 13))
+		newWidth = max((total-2*gap)/3, 1)
+		controlsWidth = total - newWidth - gap
+	}
 	resetWidth := max((controlsWidth-gap)/2, 1)
 	closeAllWidth := max(controlsWidth-resetWidth-gap, 1)
 	readoutWidth := max(width-controlsWidth-gap, 1)
+	if newWidth > 0 {
+		readoutWidth -= newWidth + gap
+	}
 	if height >= 12 {
 		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
@@ -77,12 +87,16 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 		readoutWidth: readoutWidth,
 		resetRect:    monitorRect{x: readoutWidth + gap, width: resetWidth, height: topHeight},
 		closeAllRect: monitorRect{x: readoutWidth + gap + resetWidth + gap, width: closeAllWidth, height: topHeight},
+		newRect:      monitorRect{x: width - newWidth, width: newWidth, height: topHeight},
 	}
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
 	if m.actionReview != nil {
 		return monitorView{view: m.renderActionReview(width, height, colors)}
+	}
+	if m.newSession.open() && !m.finder.include {
+		return monitorView{view: m.renderNewSession(width, height, colors)}
 	}
 	if m.inspector.root != "" {
 		return monitorView{view: m.renderSessionInspector(width, height, colors)}
@@ -130,6 +144,17 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	}
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
+	if layout.newRect.width > 0 {
+		label := "(N)EW SESSION"
+		if layout.newRect.width < lipgloss.Width(label)+2 {
+			label = "(N)EW\nSESSION"
+		}
+		if layout.newRect.width < lipgloss.Width(label)+2 {
+			label = "(N)"
+		}
+		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)
+		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
+	}
 	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
 	parts := []string{top}
 	if layout.attentionRows > 0 {
@@ -855,7 +880,7 @@ func renderMonitorBarRow(cells []rune, colors palette) string {
 }
 
 func (m Model) monitorButtonAt(x, y int) footerButtonID {
-	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
+	if (m.newSession.open() && !m.finder.include) || (m.monitorContextDetail != "" && !m.contextTargetHidden()) {
 		return footerButtonNone
 	}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
@@ -869,6 +894,9 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	}
 	if m.monitorCloseAllEnabled() && area.closeAllRect.contains(localX, localY) {
 		return footerButtonMonitorCloseAll
+	}
+	if area.newRect.contains(localX, localY) {
+		return footerButtonMonitorNew
 	}
 	return footerButtonNone
 }

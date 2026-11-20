@@ -6,9 +6,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"go/version"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type threadTitle struct {
@@ -152,12 +156,20 @@ func (p *daemonStatusProvider) searchSaved(ctx context.Context, scope, cursor, q
 	return page, nil
 }
 
-func (p *daemonStatusProvider) resumeSaved(ctx context.Context, scope, cursor, id string) error {
+func (p *daemonStatusProvider) savedSessionAction(ctx context.Context, scope string) (*websocket.Conn, uint64, string, error) {
 	p.mu.Lock()
 	conn, generation := p.connection, p.commandGeneration
 	p.mu.Unlock()
+	if conn == nil {
+		return nil, 0, "", ErrSavedSessions
+	}
 	account, err := p.savedAccount(ctx, scope)
-	if conn == nil || err != nil {
+	return conn, generation, account, err
+}
+
+func (p *daemonStatusProvider) resumeSaved(ctx context.Context, scope, cursor, id string) error {
+	conn, generation, account, err := p.savedSessionAction(ctx, scope)
+	if err != nil {
 		return ErrSavedSessions
 	}
 	if _, err := savedPageFor(ctx, p, scope, cursor, id); err != nil {
@@ -203,4 +215,46 @@ func (p *daemonStatusProvider) rememberResumedThreadLocked(id string, previous S
 		delete(p.resumedThreads, oldest)
 	}
 	p.resumedThreads[id] = resumedThread{at: time.Now(), context: previous}
+}
+
+func (p *daemonStatusProvider) StartSession(ctx context.Context, scope, cwd, prompt string) (string, error) {
+	conn, generation, account, err := p.savedSessionAction(ctx, scope)
+	if err != nil {
+		return "", ErrSessionStartUnavailable
+	}
+	var result struct {
+		Cwd, ApprovalsReviewer string
+		Thread                 struct{ ID string }
+	}
+	// Inherit Codex's configured model, sandbox and approval defaults.
+	err = p.requestOnChecked(ctx, conn, "thread/start", map[string]string{"cwd": cwd}, &result, &generation)
+	if errors.Is(err, errDaemonWriteGuardRejected) {
+		return "", ErrSessionStartUnavailable
+	}
+	id := result.Thread.ID
+	if err != nil || id == "" || len(id) > 512 || singleLine(id) != id || filepath.Clean(result.Cwd) != cwd {
+		return "", ErrSessionStartUncertain
+	}
+	if current, err := p.savedAccount(ctx, scope); err != nil || current != account {
+		return "", ErrSessionStartUncertain
+	}
+	p.mu.Lock()
+	valid := p.connection == conn && p.savedScope == scope && p.commandGeneration == generation
+	if valid {
+		p.rememberResumedThreadLocked(id, SessionContext{})
+		p.recordThreadSubscriptionLocked(id, result.Cwd, result.ApprovalsReviewer)
+		p.lastStatusAt = time.Time{}
+	}
+	p.mu.Unlock()
+	if !valid {
+		return "", ErrSessionStartUncertain
+	}
+	err = p.requestOnChecked(ctx, conn, "turn/start", map[string]any{
+		"threadId": id,
+		"input":    []any{map[string]string{"type": "text", "text": literalSessionText(prompt)}},
+	}, nil, &generation)
+	if err != nil {
+		return id, ErrSessionStartUncertain
+	}
+	return id, nil
 }

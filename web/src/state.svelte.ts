@@ -52,12 +52,21 @@ export let inspectSession:
       signal: AbortSignal,
     ) => Promise<SessionInspection>)
   | undefined;
+type SessionReview = { mode?: 'prepare'; confirmation?: string };
+export let startSession:
+  | ((
+      scope: string,
+      directory: string,
+      prompt: string,
+      review?: SessionReview,
+    ) => Promise<{ id?: string; confirmation?: string }>)
+  | undefined;
 export let resumeSaved:
   | ((
       scope: string,
       cursor: string,
       id: string,
-      review?: { mode?: string; confirmation?: string },
+      review?: SessionReview,
     ) => Promise<string>)
   | undefined;
 export let browseSaved:
@@ -161,6 +170,30 @@ export function connect(): () => void {
     if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
     if (review?.mode === 'prepare') return (await response.json()).confirmation;
     return '';
+  };
+  startSession = async (scope, directory, prompt, review) => {
+    if (
+      !live.connected ||
+      !live.data?.control ||
+      live.data.savedScope !== scope
+    )
+      throw new ControlRejected(
+        'New sessions unavailable. Check the Codex connection.',
+      );
+    const response = await postJSON('/api/sessions/new', {
+      scope,
+      directory,
+      prompt,
+      ...review,
+    });
+    if (!response.ok) {
+      if (response.status >= 500)
+        throw new Error(
+          'Could not verify the new session. Check Codex before trying again.',
+        );
+      throw new ControlRejected((await response.text()).trim());
+    }
+    return response.json();
   };
   sendControl = async (action, body, signal) => {
     const response = await postJSON('/api/control/' + action, body, signal);
