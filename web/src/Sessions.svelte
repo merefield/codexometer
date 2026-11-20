@@ -6,6 +6,7 @@
     date,
     number,
     controlRequest,
+    resumePicker,
     type Session,
   } from './state.svelte';
   import {
@@ -32,22 +33,25 @@
   let sessions = $derived(live.data?.sessions || []);
   let query = $state('');
   let status = $state('');
-  let includeScope = $state('');
   let field = $state<HTMLInputElement>();
   let scope = $derived(
     live.connected && !live.data?.sessionsError
       ? live.data?.savedScope || ''
       : '',
   );
+  let pickerScope = '';
+  $effect(() => {
+    if (!resumePicker.open) pickerScope = '';
+    else if (!scope || (pickerScope && pickerScope !== scope))
+      resumePicker.open = false;
+    else pickerScope = scope;
+  });
   let liveIDs = $derived(new Set(sessions.map((s) => s.id)));
   let shown = $derived(
     sessions.filter(
       (s) => matchesSession(query, s) && (!status || s.status === status),
     ),
   );
-  $effect(() => {
-    if (!scope || includeScope !== scope) includeScope = '';
-  });
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
   let triggers = $derived(
     (live.data?.triggers || []).filter((t) =>
@@ -564,15 +568,11 @@
             {value}>{value}</option
           >{/each}</select
       >
-      <label
-        title="Requires a shared Codex 0.170+ app-server with ChatGPT authentication"
-        ><input
-          type="checkbox"
-          checked={!!scope && includeScope === scope}
-          disabled={!scope}
-          onchange={(e) =>
-            (includeScope = e.currentTarget.checked ? scope : '')}
-        /> Include history</label
+      <button
+        disabled={!scope}
+        onclick={() => (resumePicker.open = !resumePicker.open)}
+        aria-expanded={resumePicker.open && !!scope}
+        >{live.data?.control ? '/resume' : 'Saved sessions'}</button
       >
     </div>{/if}
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
@@ -785,9 +785,8 @@
       >
     </div>
   </div>
-  {#if scope && includeScope === scope && !status}{#key scope}<SavedSessions
+  {#if scope && resumePicker.open}{#key scope}<SavedSessions
         {scope}
-        {query}
         {liveIDs}
       />{/key}{/if}
   {#if !shown.length && sessions.length}<p class="empty">

@@ -99,3 +99,19 @@ func TestFinderUsesComposerSurfaceOnlyForInput(t *testing.T) {
 		}
 	}
 }
+
+func TestResumePickerIsSeparateFromLiveFilter(t *testing.T) {
+	m := contextTestModel()
+	m.focusFinder()
+	m.finder.input.SetValue("live query")
+	m.finder.setScope("scope")
+	next, _, ok := m.runLocalMonitorCommand("resume")
+	if !ok || !next.finder.include || next.finder.query() != "" || next.finder.liveQuery() != "live query" {
+		t.Fatal("/resume did not open an independent search picker", next.finder)
+	}
+	next.finder.input.SetValue("older conversation")
+	next, _, _ = next.updateSessionFinder(specialKey(tea.KeyEscape))
+	if next.finder.include || next.finder.query() != "live query" {
+		t.Fatal("closing the picker changed the live filter", next.finder)
+	}
+}

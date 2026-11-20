@@ -40,7 +40,7 @@ func TestLocalSlashCatalogueWithoutDaemon(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("local catalogue requested the daemon")
 	}
-	for _, path := range []string{"usage", "copy", "theme", "exit", "quit", "statusline"} {
+	for _, path := range []string{"resume", "usage", "copy", "theme", "exit", "quit", "statusline"} {
 		found := false
 		for _, choice := range m.monitorCommands.menu.Choices {
 			if choice.Next == path {
@@ -164,7 +164,7 @@ func TestLocalSlashFallbackAndThemeBackUseVisitedCatalogue(t *testing.T) {
 	m, cmd, _ := m.openMonitorCommands("")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
-	if spy.reads != 1 || len(m.monitorCommands.menu.Choices) != 6 {
+	if spy.reads != 1 || len(m.monitorCommands.menu.Choices) != len(codex.LocalSessionCommands()) {
 		t.Fatal("failed remote discovery hid local commands")
 	}
 	for i, choice := range m.monitorCommands.menu.Choices {

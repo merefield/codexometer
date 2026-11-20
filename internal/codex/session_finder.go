@@ -31,6 +31,39 @@ type SavedSessionClient interface {
 	BrowseSavedSessions(ctx context.Context, scope, cursor, id string) (SavedPage, error)
 }
 
+type SavedSessionSearchClient interface {
+	SearchSavedSessions(ctx context.Context, scope, cursor, query string) (SavedPage, error)
+}
+
+type SavedSessionResumeClient interface {
+	ResumeSavedSession(ctx context.Context, scope, cursor, id string) error
+}
+
+type savedSessionNavigation interface {
+	searchSaved(context.Context, string, string, string) (SavedPage, error)
+	resumeSaved(context.Context, string, string, string) error
+}
+
+func (c Client) SearchSavedSessions(ctx context.Context, scope, cursor, query string) (SavedPage, error) {
+	query = strings.TrimSpace(query)
+	if c.LiveUsage == nil || scope == "" || len(scope) > 128 || len(cursor) > 4096 || query == "" || len(query) > 1024 || SanitizeSessionContext(query) != query {
+		return SavedPage{}, ErrSavedSessions
+	}
+	if p, ok := c.LiveUsage.statusProvider.(savedSessionNavigation); ok {
+		return p.searchSaved(ctx, scope, cursor, query)
+	}
+	return SavedPage{}, ErrSavedSessions
+}
+
+func (c Client) ResumeSavedSession(ctx context.Context, scope, cursor, id string) error {
+	if c.LiveUsage != nil && scope != "" && len(scope) <= 128 && len(cursor) <= 4096 && id != "" && len(id) <= 512 && singleLine(id) == id {
+		if p, ok := c.LiveUsage.statusProvider.(savedSessionNavigation); ok {
+			return p.resumeSaved(ctx, scope, cursor, id)
+		}
+	}
+	return ErrSavedSessions
+}
+
 var ErrSavedSessions = errors.New("account-scoped saved sessions unavailable")
 
 type savedSessionProvider interface {

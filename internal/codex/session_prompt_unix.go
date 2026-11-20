@@ -51,6 +51,7 @@ func (p *daemonStatusProvider) promptLifecycleLocked(method string, raw json.Raw
 	case "thread/status/changed":
 		status = parseSessionRuntimeStatus(event.Status.Type, event.Status.ActiveFlags)
 	case "thread/closed":
+		delete(p.resumedThreads, event.ThreadID)
 		delete(p.statuses, event.ThreadID)
 		delete(p.subscribed, event.ThreadID)
 		delete(p.goals, event.ThreadID)

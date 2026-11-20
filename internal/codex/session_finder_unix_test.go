@@ -111,3 +111,45 @@ func TestFinderVersionAndRenames(t *testing.T) {
 		t.Fatal(title)
 	}
 }
+
+func TestSavedSearchAndExplicitResume(t *testing.T) {
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":    {"userAgent": "codex/0.171.0 (Linux)"},
+		"account/read":  {"account": map[string]string{"type": "chatgpt", "email": "example@example.test"}},
+		"thread/search": {"data": []any{map[string]any{"thread": map[string]string{"id": "one", "name": "Found"}, "snippet": "private match"}}},
+		"thread/list":   {"data": []any{map[string]string{"id": "one"}}},
+	}
+	ctx := t.Context()
+	if err := p.ensureConnected(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	page, err := c.SearchSavedSessions(ctx, scope, "", "not in the title")
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].Name != "Found" {
+		t.Fatal(page, err)
+	}
+	if err := c.ResumeSavedSession(ctx, scope, "", "two"); !errors.Is(err, ErrSavedSessions) {
+		t.Fatal("thread outside the saved selection was accepted", err)
+	}
+	f.mu.Lock()
+	if len(f.resumeReads) != 0 {
+		t.Fatal("search or rejected resume loaded a thread", f.resumeReads)
+	}
+	f.mu.Unlock()
+	if err := c.ResumeSavedSession(ctx, scope, "", "one"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := p.Fetch(ctx, nil)
+	if _, resumed := snapshot.ResumedThreads["one"]; !ok || !resumed || p.SessionPrompt("one").Token == "" {
+		t.Fatal("cold session did not become live and prompt-capable", snapshot)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.resumeReads) != 1 || len(f.writes) != 0 || f.resumeReads[0]["excludeTurns"] != true {
+		t.Fatal("resume sent unexpected mutations", f.resumeReads, f.writes)
+	}
+}

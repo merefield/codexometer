@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -2395,7 +2396,14 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	}
 	if accepted {
 		m.reconcileMonitorSteers()
-		if id := m.finder.detail; id != "" {
+		if id := m.finder.resumeID; id != "" {
+			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed {
+				m.finder.clearHistory()
+				m.monitorDismissed = maps.Clone(m.monitorDismissed)
+				delete(m.monitorDismissed, id)
+				m.setRowContext(id, contextFull)
+			}
+		} else if id := m.finder.detail; id != "" {
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionVisible(m.monitorSessionData[i]) {
 				m.finder.closeDetail()
 			}

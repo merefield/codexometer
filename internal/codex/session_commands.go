@@ -139,6 +139,7 @@ type SessionCommandMenu struct {
 // LocalSessionCommands are owned by the interface and never become app-server RPCs.
 func LocalSessionCommands() []SessionCommandChoice {
 	return []SessionCommandChoice{
+		{ID: "local-resume", Label: "/resume", Help: "Search saved Codex sessions, preview, or explicitly resume one in Sessions.", Next: "resume"},
 		{ID: "local-statusline", Label: "/statusline", Help: "Choose fields for Codexometer’s detail footer. Saved display preferences only.", Next: "statusline"},
 		{ID: "local-usage", Label: "/usage", Help: "Open Codexometer’s usage history. Existing quota and reset views remain available.", Next: "usage"},
 		{ID: "local-copy", Label: "/copy", Help: "Copy the selected session’s observed reply or activity using Codexometer’s copy control.", Next: "copy"},

@@ -233,7 +233,7 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 	visible, rowHeights, pageLabel := m.monitorSessionPage(height)
 	if len(visible) == 0 {
-		if m.monitorFilter != monitorFilterAll || m.finder.query() != "" {
+		if m.monitorFilter != monitorFilterAll || m.finder.liveQuery() != "" {
 			message := ansi.Truncate(i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER"), max(width-4, 1), "…")
 			return frameSized(width, max(height-2, 1), i18n.Text("SESSIONS"), colors.dimmed().Render(message), colors.primary, colors)
 		}

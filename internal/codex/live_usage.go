@@ -151,6 +151,7 @@ type LiveUsageReader struct {
 	daemonAttachments      map[string]string
 	daemonReadStates       map[string]SessionReadState
 	daemonGoals            map[string]*SessionGoal
+	daemonResumed          map[string]struct{}
 	SessionsRoot           string
 	WriterLocksRoot        string
 	statusProvider         sessionStatusProvider
@@ -444,6 +445,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	r.daemonAttachments = nil
 	r.daemonGoals = nil
 	r.daemonReadStates = nil
+	r.daemonResumed = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
@@ -462,6 +464,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			r.daemonAttachments = daemonSnapshot.AttachedThreads
 			r.daemonGoals = daemonSnapshot.Goals
 			r.daemonReadStates = daemonSnapshot.ReadStates
+			r.daemonResumed = daemonSnapshot.ResumedThreads
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -1642,6 +1645,16 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		}
 	}
 
+	// A cold thread may not have a recent rollout yet. A verified explicit
+	// resume is enough to show its live row, never to invent token usage.
+	for id := range r.daemonResumed {
+		if groups[id] == nil {
+			status := exactStatuses[id]
+			groupWorking[id] = status == sessionRuntimeWorking
+			groups[id] = &LiveUsageSession{ID: id, Active: true, Context: r.daemonContexts[id],
+				Attention: sessionAttention(0, false, false, 0, status, true)}
+		}
+	}
 	sessions := make([]LiveUsageSession, 0, len(groups))
 	activeCount := 0
 	anyWorking := false

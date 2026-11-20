@@ -682,7 +682,9 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
     page.getByRole('navigation', { name: 'Sessions needing attention' }),
   ).toContainText('Patch release');
   expect(reads).toBe(0);
-  await page.getByLabel('Include history').check();
+  await page
+    .getByRole('button', { name: 'Saved sessions', exact: true })
+    .click();
   const saved = page.getByRole('region', { name: 'Saved sessions' });
   const result = saved.getByRole('button', { name: /Archived project notes/ });
   for (const button of [
@@ -694,7 +696,9 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
   }
   await result.click();
   await expect(saved).toContainText('An older answer');
-  await expect(saved.getByRole('textbox')).toHaveCount(0);
+  await expect(
+    saved.getByRole('button', { name: 'Resume', exact: true }),
+  ).toHaveCount(0);
   await filter.fill('');
   await expect(
     saved.getByRole('button', { name: /Patch release/ }),
@@ -707,7 +711,9 @@ test('Sessions finder keeps attention global and saved history opt-in and read-o
     { ...snapshot, savedScope: 'another' },
   );
   await expect(saved).toHaveCount(0);
-  await expect(page.getByLabel('Include history')).not.toBeChecked();
+  await expect(
+    page.getByRole('button', { name: 'Saved sessions', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false');
 });
 
 test('read-only session copy captures working prose in every detail level without server writes', async ({

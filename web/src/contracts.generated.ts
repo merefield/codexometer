@@ -365,6 +365,12 @@ export interface UsageReports {
 
 export const localCommands: CommandChoice[] = [
   {
+    "id": "local-resume",
+    "label": "/resume",
+    "help": "Search saved Codex sessions, preview, or explicitly resume one in Sessions.",
+    "next": "resume"
+  },
+  {
     "id": "local-statusline",
     "label": "/statusline",
     "help": "Choose fields for Codexometer’s detail footer. Saved display preferences only.",

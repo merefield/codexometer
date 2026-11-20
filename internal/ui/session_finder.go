@@ -17,7 +17,6 @@ import (
 const (
 	findNone = iota
 	findText
-	findHistory
 	findResults
 )
 
@@ -27,12 +26,16 @@ type savedRow struct {
 }
 type sessionFinder struct {
 	input                          *textinput.Model
+	filterInput                    *textinput.Model
 	open, include, loading, failed bool
+	filterOpen                     bool
 	scope, next, detail            string
+	resumeID                       string
 	epoch                          uint64
 	focus, index, scroll           int
 	rows                           []savedRow
 	turns                          []codex.SavedTurn
+	cancel                         context.CancelFunc
 }
 
 func finderLabel() string { return i18n.Text("FILTER") }
@@ -42,6 +45,15 @@ func (f sessionFinder) query() string {
 	}
 	return f.input.Value()
 }
+func (f sessionFinder) liveQuery() string {
+	if f.include {
+		if f.filterInput == nil {
+			return ""
+		}
+		return f.filterInput.Value()
+	}
+	return f.query()
+}
 func (f *sessionFinder) clearQuery() {
 	if f.input != nil {
 		f.editInput().SetValue("")
@@ -49,11 +61,24 @@ func (f *sessionFinder) clearQuery() {
 	f.index = 0
 }
 func (f *sessionFinder) clearHistory() {
+	f.stopRequest()
+	if f.include {
+		f.open, f.input = f.filterOpen, f.filterInput
+		f.focus = findNone
+	}
+	f.filterInput = nil
 	f.epoch++
 	f.include, f.loading, f.failed = false, false, false
 	f.detail, f.next = "", ""
 	f.rows, f.turns = nil, nil
+	f.resumeID = ""
 	f.index, f.scroll = 0, 0
+}
+func (f *sessionFinder) stopRequest() {
+	if f.cancel != nil {
+		f.cancel()
+		f.cancel = nil
+	}
 }
 func (f *sessionFinder) setScope(scope string) {
 	if f.scope != scope {
@@ -71,6 +96,17 @@ func (m *Model) focusFinder() tea.Cmd {
 	return f.editInput().Focus()
 }
 
+func (m *Model) openResumePicker() tea.Cmd {
+	m.stashMonitorDraft()
+	m.monitorContextDetail = ""
+	m.monitorPrompt.input.Blur()
+	m.finder.clearHistory()
+	f := &m.finder
+	f.filterOpen, f.filterInput = f.open, f.input
+	f.open, f.include, f.input = true, true, nil
+	return tea.Batch(m.focusFinder(), m.requestSaved("", ""))
+}
+
 // Keep the inactive finder cheap in Bubble Tea's frequently copied model.
 func (f *sessionFinder) editInput() *textinput.Model {
 	var input textinput.Model
@@ -79,6 +115,9 @@ func (f *sessionFinder) editInput() *textinput.Model {
 		input.CharLimit = 160
 		input.Prompt = ""
 		input.Placeholder = finderLabel()
+		if f.include {
+			input.Placeholder = "/resume"
+		}
 	} else {
 		input = *f.input
 	}
@@ -90,8 +129,8 @@ func (m Model) finderHeight(available int) int {
 	if !f.open {
 		return 0
 	}
-	if f.include && m.monitorFilter == monitorFilterAll {
-		return min(9, max(available/2, 1))
+	if f.include {
+		return min(16, max(available*2/3, 1))
 	}
 	return min(1, max(available-1, 0))
 }
@@ -101,21 +140,36 @@ type savedResult struct {
 	scope, cursor, id string
 	page              codex.SavedPage
 	err               error
+	resume            bool
 }
+type savedQueryReady struct{ epoch uint64 }
 
 func (m *Model) requestSaved(cursor, id string) tea.Cmd {
 	f := &m.finder
 	client, ok := m.fetcher.(codex.SavedSessionClient)
-	if !ok || f.scope == "" || f.loading {
+	if !ok || f.scope == "" {
+		f.failed = true
+		return nil
+	}
+	if f.loading {
 		return nil
 	}
 	f.loading, f.failed = true, false
 	f.epoch++
 	msg := savedResult{epoch: f.epoch, scope: f.scope, cursor: cursor, id: id}
+	query := strings.TrimSpace(f.query())
+	search, _ := m.fetcher.(codex.SavedSessionSearchClient)
+	ctx, stop := context.WithCancel(context.Background())
+	f.cancel = stop
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+		defer stop()
+		ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
 		defer cancel()
-		msg.page, msg.err = client.BrowseSavedSessions(ctx, msg.scope, msg.cursor, msg.id)
+		if id == "" && query != "" && search != nil {
+			msg.page, msg.err = search.SearchSavedSessions(ctx, msg.scope, cursor, query)
+		} else {
+			msg.page, msg.err = client.BrowseSavedSessions(ctx, msg.scope, cursor, id)
+		}
 		return msg
 	}
 }
@@ -150,7 +204,7 @@ func (f *sessionFinder) accept(r savedResult) {
 	}
 }
 func (m Model) savedMatches() []savedRow {
-	if !m.finder.include || m.monitorFilter != monitorFilterAll {
+	if !m.finder.include {
 		return nil
 	}
 	live := make(map[string]bool, len(m.monitorSessionData))
@@ -160,22 +214,13 @@ func (m Model) savedMatches() []savedRow {
 		}
 	}
 	var out []savedRow
+	_, hasSearch := m.fetcher.(codex.SavedSessionSearchClient)
 	for _, r := range m.finder.rows {
-		if !live[r.ID] && codex.SessionMatches(m.finder.query(), r.ID, r.Name, r.Directory) {
+		if !live[r.ID] && (hasSearch || codex.SessionMatches(m.finder.query(), r.ID, r.Name, r.Directory)) {
 			out = append(out, r)
 		}
 	}
 	return out
-}
-func (m *Model) historyToggle() tea.Cmd {
-	f := &m.finder
-	wasIncluded := f.include
-	f.clearHistory()
-	if !wasIncluded && f.scope != "" {
-		f.include = true
-		return m.requestSaved("", "")
-	}
-	return nil
 }
 func (m *Model) activateSaved() tea.Cmd {
 	f := &m.finder
@@ -192,6 +237,29 @@ func (m *Model) activateSaved() tea.Cmd {
 	}
 	if f.index == len(rows) && f.next != "" {
 		return m.requestSaved(f.next, "")
+	}
+	return nil
+}
+
+func (m *Model) resumeSaved() tea.Cmd {
+	f := &m.finder
+	client, ok := m.fetcher.(codex.SavedSessionResumeClient)
+	if !ok || f.detail == "" || f.loading || f.failed || f.resumeID != "" {
+		return nil
+	}
+	for _, row := range f.rows {
+		if row.ID != f.detail {
+			continue
+		}
+		f.loading = true
+		f.epoch++
+		msg := savedResult{epoch: f.epoch, scope: f.scope, id: row.ID, cursor: row.cursor, resume: true}
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+			defer cancel()
+			msg.err = client.ResumeSavedSession(ctx, msg.scope, msg.cursor, msg.id)
+			return msg
+		}
 	}
 	return nil
 }
@@ -217,18 +285,10 @@ func (m Model) savedLines(width int) []string {
 	}
 	return lines
 }
-func (f sessionFinder) historyLabel() string {
-	mark := "□"
-	if f.include {
-		mark = "☑"
-	}
-	return "[" + mark + " " + i18n.Text("INCLUDE HISTORY") + "]"
-}
 func (m Model) finderStart(n int) int        { return max(0, m.finder.index-max(n-1, 0)) }
-func (f sessionFinder) inputWidth(w int) int { return max(1, w-lipgloss.Width(f.historyLabel())-2) }
+func (f sessionFinder) inputWidth(w int) int { return max(1, w-1) }
 func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	f := m.finder
-	label := f.historyLabel()
 	inputWidth := f.inputWidth(w)
 	tint := monitorComposerBackground(colors)
 	input := *f.input // Render-only styling and viewport adjustments.
@@ -243,20 +303,17 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 	input.SetCursor(input.Position())
 	line := ansi.Truncate(colors.label().Foreground(colors.primary).Render("⌕ ")+input.View(), inputWidth, "…")
 	line = withDefaultBackground(line+strings.Repeat(" ", max(0, inputWidth-lipgloss.Width(line))), tint)
-	line += strings.Repeat(" ", max(1, w-lipgloss.Width(label)-inputWidth))
-	style := colors.label()
-	if f.scope == "" {
-		style = colors.dimmed()
-	} else if f.focus == findHistory {
-		style = style.Reverse(true)
-	}
-	lines := []string{ansi.Truncate(line+style.Render(label), w, "")}
+	lines := []string{line + strings.Repeat(" ", max(0, w-inputWidth))}
 	rows := m.savedMatches()
 	var body []string
 	if f.detail != "" {
 		for _, r := range rows {
 			if r.ID == f.detail {
-				body = append(body, "[←] "+i18n.Text("SAVED")+" // "+shortSessionID(r.ID)+" // "+r.Name)
+				header := "[←] " + i18n.Text("SAVED") + " // " + shortSessionID(r.ID) + " // " + r.Name
+				if _, ok := m.fetcher.(codex.SavedSessionResumeClient); ok && !f.loading && !f.failed && f.resumeID == "" {
+					header = "[←] [/resume ↵] " + strings.TrimPrefix(header, "[←] ")
+				}
+				body = append(body, header)
 				text := m.savedLines(w)
 				body = append(body, text[min(f.scroll, max(0, len(text)-max(h-2, 1))):]...)
 				break
@@ -330,7 +387,27 @@ func (m *Model) scrollFinder(delta, width, height int) {
 func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 	f := &m.finder
 	if r, ok := message.(savedResult); ok {
+		if r.resume {
+			if f.include && r.epoch == f.epoch && r.scope == f.scope {
+				f.loading, f.failed = false, r.err != nil
+				if r.err == nil {
+					f.resumeID = r.id
+					if !m.monitorFetchActive {
+						next, cmd := m.beginMonitorFetch(monitorFetchSample)
+						return next, cmd, true
+					}
+				}
+			}
+			return m, nil, true
+		}
 		f.accept(r)
+		return m, nil, true
+	}
+	if r, ok := message.(savedQueryReady); ok {
+		if f.include && r.epoch == f.epoch {
+			cmd := m.requestSaved("", "")
+			return m, cmd, true
+		}
 		return m, nil, true
 	}
 	if m.meterView != viewMonitor || m.monitorContextDetail != "" || m.scheduleUI.open || m.monitorCommands.open || m.monitorQueue.open {
@@ -357,11 +434,6 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 		x := click.X - 2
 		if x >= 0 && x < g.contentWidth && y >= 0 && y < a.finderRows {
 			if y == 0 {
-				if x >= g.contentWidth-lipgloss.Width(f.historyLabel()) {
-					f.focus = findHistory
-					cmd := m.historyToggle()
-					return m, cmd, true
-				}
 				cmd := m.focusFinder()
 				return m, cmd, true
 			}
@@ -372,7 +444,12 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 				return m, cmd, true
 			}
 			if y == 1 {
-				f.closeDetail()
+				if x < 3 {
+					f.closeDetail()
+				} else if x < lipgloss.Width("[←] [/resume ↵]") {
+					cmd := m.resumeSaved()
+					return m, cmd, true
+				}
 			}
 			return m, nil, true
 		}
@@ -395,6 +472,8 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			if f.detail != "" {
 				f.closeDetail()
 				f.focus = findResults
+			} else if f.include {
+				f.clearHistory()
 			} else {
 				f.clearQuery()
 				f.clearHistory()
@@ -403,16 +482,12 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			}
 			return m, nil, true
 		case "tab", "shift+tab":
+			if !f.include {
+				m.leaveFinder()
+				return m, nil, false
+			}
 			f.closeDetail()
-			limit := findHistory
-			if f.include && m.monitorFilter == monitorFilterAll {
-				limit = findResults
-			}
-			if key.String() == "tab" {
-				f.focus = f.focus%limit + 1
-			} else {
-				f.focus = (f.focus+limit-2)%limit + 1
-			}
+			f.focus = f.focus%findResults + 1
 			if f.focus == findText {
 				cmd := f.editInput().Focus()
 				return m, cmd, true
@@ -420,13 +495,13 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			f.editInput().Blur()
 			return m, nil, true
 		case "enter", "space", " ":
-			if f.focus == findHistory {
-				cmd := m.historyToggle()
-				return m, cmd, true
-			}
 			if f.focus == findResults {
 				if f.detail == "" {
 					cmd := m.activateSaved()
+					return m, cmd, true
+				}
+				if key.String() == "enter" {
+					cmd := m.resumeSaved()
 					return m, cmd, true
 				}
 				return m, nil, true
@@ -438,9 +513,14 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 		case "down", "up", "pgdown", "pgup":
 			if f.focus == findText {
 				m.leaveFinder()
-				m.returnFromMonitorHeader()
-				if m.monitorSelectedID == "" && f.include && m.monitorFilter == monitorFilterAll {
+				if f.include {
 					f.focus = findResults
+					if key.String() == "enter" {
+						cmd := m.activateSaved()
+						return m, cmd, true
+					}
+				} else {
+					m.returnFromMonitorHeader()
 				}
 				return m, nil, true
 			}
@@ -466,6 +546,13 @@ func (m Model) updateSessionFinder(message tea.Msg) (Model, tea.Cmd, bool) {
 			input, cmd := input.Update(message)
 			f.input = &input
 			if old != f.query() {
+				if f.include {
+					f.stopRequest()
+					f.rows, f.next, f.index, f.loading, f.failed = nil, "", 0, false, false
+					f.epoch++
+					epoch := f.epoch
+					return m, tea.Batch(cmd, tea.Tick(180*time.Millisecond, func(time.Time) tea.Msg { return savedQueryReady{epoch} })), true
+				}
 				f.index, m.monitorScroll = 0, 0
 				m.reconcileMonitorFilterSelection()
 			}

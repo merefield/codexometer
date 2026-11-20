@@ -1,21 +1,29 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { browseSaved, type SavedRow, type SavedPage } from './state.svelte';
-  import { matchesSession } from './session-filter';
-  let {
-    scope,
-    query,
-    liveIDs,
-  }: { scope: string; query: string; liveIDs: Set<string> } = $props();
+  import { onMount, untrack } from 'svelte';
+  import {
+    browseSaved,
+    live,
+    resumePicker,
+    resumeSaved,
+    type SavedRow,
+    type SavedPage,
+  } from './state.svelte';
+  let { scope, liveIDs }: { scope: string; liveIDs: Set<string> } = $props();
+  let query = $state('');
+  let search = $state<HTMLInputElement>();
   let rows = $state<(SavedRow & { cursor: string })[]>([]);
   let next = $state('');
   let id = $state('');
   let turns = $state<SavedPage['turns']>();
   let busy = $state(false);
   let failed = $state(false);
+  let resumeBusy = $state(false);
+  let resuming = $state('');
+  let resumeNotice = $state('');
+  let resumeTimer: ReturnType<typeof setTimeout>;
   let controller: AbortController | undefined;
   let matches = $derived(
-    rows.filter((row) => !liveIDs.has(row.id) && matchesSession(query, row)),
+    rows.filter((row) => !liveIDs.has(row.id) || row.id === resuming),
   );
   async function load(cursor: string, detail = '') {
     controller?.abort();
@@ -27,7 +35,13 @@
     failed = false;
     try {
       if (!browseSaved) throw new Error();
-      const page = await browseSaved(scope, cursor, detail, request.signal);
+      const page = await browseSaved(
+        scope,
+        cursor,
+        detail,
+        request.signal,
+        query.trim(),
+      );
       if (request.signal.aborted) return;
       if (detail) turns = page.turns || [];
       else {
@@ -52,13 +66,66 @@
     }
   }
   onMount(() => {
-    void load('');
-    return () => controller?.abort();
+    search?.focus();
+    return () => {
+      controller?.abort();
+      clearTimeout(resumeTimer);
+    };
   });
+  $effect(() => {
+    const term = query.trim();
+    const timer = setTimeout(() => void load(''), term ? 180 : 0);
+    untrack(() => {
+      controller?.abort();
+      rows = [];
+      id = '';
+      turns = undefined;
+      next = '';
+    });
+    return () => clearTimeout(timer);
+  });
+  $effect(() => {
+    if (resuming && liveIDs.has(resuming)) {
+      location.hash = '/sessions/' + encodeURIComponent(resuming);
+      resumePicker.open = false;
+    }
+  });
+  async function resume(row: SavedRow & { cursor: string }) {
+    if (!resumeSaved || resumeBusy || resuming) return;
+    resumeNotice = '';
+    resumeBusy = true;
+    try {
+      await resumeSaved(scope, row.cursor, row.id);
+      resuming = row.id;
+      resumeTimer = setTimeout(() => {
+        resumeNotice = 'Session did not appear in the live list. Check Codex.';
+        resuming = '';
+      }, 15000);
+    } catch {
+      resumeNotice = 'Resume not confirmed. Check Codex.';
+    } finally {
+      resumeBusy = false;
+    }
+  }
 </script>
 
 <section class="panel" aria-label="Saved sessions">
-  <h2>SAVED SESSIONS // READ ONLY</h2>
+  <h2>SAVED SESSIONS</h2>
+  <label class="composer-surface session-search"
+    ><span aria-hidden="true">⌕</span>
+    <input
+      type="search"
+      aria-label="Search saved sessions"
+      placeholder="Search saved conversations"
+      maxlength="160"
+      bind:this={search}
+      bind:value={query}
+    /></label
+  >
+  <button onclick={() => (resumePicker.open = false)}>Close</button>
+  {#if resuming}<p role="status">
+      Opening the resumed session…
+    </p>{:else if resumeNotice}<p role="status">{resumeNotice}</p>{/if}
   {#each matches as row (row.id)}
     <button
       aria-expanded={id === row.id}
@@ -80,6 +147,10 @@
           {turn.restricted ? 'View this reply in Codex.' : turn.reply}
         </p>
       {:else}<p>No completed turns available.</p>{/each}
+      {#if live.data?.control}<button
+          disabled={resumeBusy || !!resuming}
+          onclick={() => void resume(row)}>Resume</button
+        >{/if}
     {/if}
   {/each}
   {#if busy}<p role="status">Loading saved sessions…</p>{:else if failed}<p
@@ -87,7 +158,7 @@
     >
       Saved history unavailable. Live filtering still works.
     </p>{:else if !matches.length}<p>
-      No matches in the saved sessions loaded so far.
+      No saved sessions match this search.
     </p>{/if}
   {#if next}<button disabled={busy} onclick={() => load(next)}
       >Load more saved sessions</button

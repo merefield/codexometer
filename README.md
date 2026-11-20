@@ -1405,17 +1405,16 @@ reveals its session even if it was filtered out. On a shared app-server, names
 follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
-**Include history** is off by default. With a local, shared Codex **0.170.0+**
-app-server signed in to ChatGPT, enable it under the **All** sessions category
-to browse this account’s non-archived saved sessions across model providers,
-including providers you no longer use. In the terminal use **Tab** to focus
-the checkbox, **Space** to toggle it, then **Tab** to the results. Use **↑/↓**
-and **Enter** to open a result or load more; **Esc** or **[←]** returns from
-the saved detail. The filter searches metadata in the pages loaded so far,
-not message text. Each saved result can show up to ten completed turns,
-newest first. Browsing never resumes a session, marks it as read, changes
-the totals, or enables a write action. There is no new on-disk index; without
-a compatible shared server, the live filter still works.
+**Finding an older conversation:** choose **`/resume`** in the slash-command
+browser, or click **`/resume`** on the Sessions page in write-enabled web mode.
+With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
+starts with recent non-archived saved sessions and sends searches to Codex when
+you type. **↑/↓** and **Enter** select a result. Previewing up to ten completed
+turns is read-only; to load the conversation in the live detail pane, choose
+**Resume** (or press **Enter** on its preview). A resumed idle session has a
+composer; a turn only starts if you then send a prompt. The read-only web
+app offers the same search under **Saved sessions** without the Resume action.
+This does not build a separate on-disk index or change the live Filter box.
 
 Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when

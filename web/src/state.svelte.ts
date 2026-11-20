@@ -27,12 +27,16 @@ export type SavedPage = {
   next?: string;
   turns?: { task: string; reply: string; restricted?: boolean }[];
 };
+export const resumePicker = $state({ open: false });
+export let resumeSaved:
+  ((scope: string, cursor: string, id: string) => Promise<void>) | undefined;
 export let browseSaved:
   | ((
       scope: string,
       cursor: string,
       id: string,
       signal: AbortSignal,
+      query?: string,
     ) => Promise<SavedPage>)
   | undefined;
 export async function controlRequest<T>(
@@ -57,11 +61,12 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
-  browseSaved = async (scope, cursor, id, signal) => {
+  browseSaved = async (scope, cursor, id, signal, query = '') => {
     if (!live.connected || live.data?.savedScope !== scope)
       throw new Error('History unavailable');
     const response = await fetch(
-      '/api/sessions/saved?' + new URLSearchParams({ scope, cursor, id }),
+      '/api/sessions/saved?' +
+        new URLSearchParams({ scope, cursor, id, q: query }),
       {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.any([
@@ -74,6 +79,25 @@ export function connect(): () => void {
     );
     if (!response.ok) throw new Error('Saved history unavailable');
     return response.json();
+  };
+  resumeSaved = async (scope, cursor, id) => {
+    if (
+      !live.connected ||
+      !live.data?.control ||
+      live.data.savedScope !== scope
+    )
+      throw new Error('Resume unavailable');
+    const response = await fetch('/api/sessions/resume', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ scope, cursor, id }),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Resume not confirmed. Check Codex.');
   };
   sendControl = async (action, body, signal) => {
     const response = await fetch('/api/control/' + action, {
@@ -199,6 +223,8 @@ export function connect(): () => void {
   return () => {
     sendControl = undefined;
     browseSaved = undefined;
+    resumeSaved = undefined;
+    resumePicker.open = false;
     controller.abort();
     clearTimeout(retry);
     live.connected = false;

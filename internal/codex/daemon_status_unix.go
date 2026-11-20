@@ -28,6 +28,7 @@ var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sen
 
 type daemonStatusProvider struct {
 	savedScope         string
+	resumedThreads     map[string]time.Time
 	names              map[string]threadTitle
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
@@ -106,6 +107,17 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 		return sessionDaemonSnapshot{}, false
 	}
+	p.mu.Lock()
+	if len(p.resumedThreads) != 0 {
+		known := stringStructSet(threadIDs)
+		threadIDs = append([]string(nil), threadIDs...)
+		for id := range p.resumedThreads {
+			if _, ok := known[id]; !ok {
+				threadIDs = append(threadIDs, id)
+			}
+		}
+	}
+	p.mu.Unlock()
 	if snapshot, ok := p.cachedStatusSnapshot(threadIDs, time.Now()); ok {
 		return snapshot, true
 	}
@@ -273,8 +285,17 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		}
 		contexts[id] = c
 	}
+	var resumed map[string]struct{}
+	if len(p.resumedThreads) != 0 {
+		resumed = make(map[string]struct{}, len(p.resumedThreads))
+		for id := range p.resumedThreads {
+			if _, connected := subscribed[id]; connected && statuses[id] != sessionRuntimeUnknown {
+				resumed[id] = struct{}{}
+			}
+		}
+	}
 	return sessionDaemonSnapshot{
-		Names: names, SavedScope: p.savedScope,
+		Names: names, SavedScope: p.savedScope, ResumedThreads: resumed,
 		AttachedThreads:    attachments,
 		ReadStates:         readStates,
 		Goals:              goals,
@@ -332,7 +353,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 	p.mu.Lock()
 	stale := make([]string, 0)
 	for threadID := range p.subscribed {
-		if _, ok := wanted[threadID]; !ok {
+		if _, ok := wanted[threadID]; !ok && p.resumedThreads[threadID].IsZero() {
 			stale = append(stale, threadID)
 		}
 	}
@@ -793,6 +814,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.usageCoverage = nil
 	p.threadDirectories = nil
 	p.names, p.savedScope = nil, ""
+	p.resumedThreads = nil
 	p.threadAttachments = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)
