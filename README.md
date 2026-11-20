@@ -2059,9 +2059,13 @@ the goal is still active, the trigger first waits for Codex to report a quota
 stop on that same goal, then for a newer quota reading. If Codex already
 reported that stop when you armed it, the next quota reading can release the
 trigger without another stop. In either case, resuming requires fresh quota with capacity in all observed
-windows, no reported spending block, the same signed-in account, and an eligible
+windows, no reported spending block, the same signed-in account and workspace
+(when Codex reports a workspace ID), and an eligible
 idle session connected to the shared app-server. A predicted reset time is not
-enough. The resume uses normal quota and never redeems a reset or buys credits.
+enough. When Codex returns its ordinary-usage signal, an explicit allowance is
+required; a blocked or unknown result keeps the trigger waiting. Older responses
+that omit the signal use the quota windows and limit flags. The resume uses
+normal quota and never redeems a reset or buys credits.
 
 The trigger shares the session's one scheduled follow-up slot and cannot
 overwrite a saved message. Cancel it from its entry; it cannot be edited or
@@ -3540,14 +3544,17 @@ trigger arms and disarms.
   crashing cancels its queue; it is not a durable background scheduler. Separate
   Codexometer processes have separate queues. Closing a browser tab alone does
   not stop the web server or its pending requests.
-- Sending requires a fresh quota snapshot, the same account and an authoritative
+- Sending requires a fresh quota snapshot, the same account and workspace
+  (when a workspace ID is reported), and an authoritative
   idle follow-up capability from the connected shared app-server. Approval,
   question and quota-threshold reviews are not bypassed. Closed/unavailable
   sessions wait until eligible or until you cancel them. A due request can send
   late after the session becomes idle or the computer resumes.
 - **After quota refresh** checks actual quota recovery; reaching a predicted reset
   time alone is insufficient. All reported quota windows must have capacity, with
-  no reported spend-control/limit block. This can conservatively wait for a bucket
+  no reported spend-control/limit block. If Codex reports its ordinary-usage
+  signal, it must explicitly allow usage before this automatic trigger fires.
+  An unknown result keeps it waiting. This can conservatively wait for a bucket
   unrelated to the selected model. No reset credit is redeemed automatically.
   Choosing this trigger when quota is already available sends when next eligible.
 - Requests follow the session's model, reasoning and speed settings at dispatch;

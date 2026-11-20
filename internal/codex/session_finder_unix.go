@@ -37,7 +37,7 @@ func (p *daemonStatusProvider) hydrateTitleLocked(id string, raw json.RawMessage
 func (p *daemonStatusProvider) finderNotificationLocked(method string, params json.RawMessage) {
 	switch method {
 	case "account/updated":
-		if p.savedScope != "" {
+		if p.savedScope != "" && !workspaceRoutingReady(params) {
 			p.savedScope = rand.Text()
 		}
 	case "thread/name/updated":

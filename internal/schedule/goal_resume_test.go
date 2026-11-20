@@ -71,6 +71,14 @@ func TestGoalResumeWaitsForNativeStopAndNewQuota(t *testing.T) {
 	s.RateLimits.Primary = nil
 	poll()
 	s.RateLimits.Primary = original
+	s.QuotaPermissionReported = true
+	poll() // Explicit null is not recovered even when percentages are low.
+	s.OrdinaryUsageAllowed = new(false)
+	poll()
+	if f.writes != 0 {
+		t.Fatal("backend did not confirm quota recovery")
+	}
+	s.OrdinaryUsageAllowed = new(true)
 	blocked = true
 	poll()
 	if f.writes != 0 {

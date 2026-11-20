@@ -33,16 +33,27 @@ func (p *daemonStatusProvider) readStateNotificationLocked(method string, raw js
 			ThreadID  string
 			ReadState *wireReadState
 		}
-		if json.Unmarshal(raw, &notification) == nil && notification.ThreadID != "" {
+		if json.Unmarshal(raw, &notification) == nil && p.tracksReadState(notification.ThreadID) {
 			p.observeReadStateLocked(notification.ThreadID, notification.ReadState.snapshot())
 		}
 	case "turn/completed", "thread/closed", "thread/archived", "thread/deleted":
-		var notification struct{ ThreadID string }
-		if json.Unmarshal(raw, &notification) == nil && notification.ThreadID != "" {
+		var notification struct {
+			ThreadID string
+			Turn     struct{ ID string }
+		}
+		if json.Unmarshal(raw, &notification) == nil && p.tracksReadState(notification.ThreadID) {
+			if state := p.contexts[notification.ThreadID]; method == "turn/completed" && state != nil && !state.acceptTurn(notification.Turn.ID) {
+				return
+			}
 			p.observeReadStateLocked(notification.ThreadID, SessionReadState{})
 			p.lastStatusAt = time.Time{}
 		}
 	}
+}
+
+func (p *daemonStatusProvider) tracksReadState(id string) bool {
+	_, tracked := p.readStateThreads[id]
+	return id != "" && tracked
 }
 
 func (p *daemonStatusProvider) AcknowledgeSessionResult(ctx context.Context, id, turn, revision string) (SessionReadState, error) {

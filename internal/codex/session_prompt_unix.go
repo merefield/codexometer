@@ -119,11 +119,33 @@ func (p *daemonStatusProvider) SessionPrompt(thread string) SessionPromptOffer {
 }
 
 func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token string, answers []string) error {
+	return p.sendSessionPrompt(ctx, token, answers, "")
+}
+
+func (p *daemonStatusProvider) SendScheduledPrompt(ctx context.Context, token, text, account string) error {
+	if account == "" {
+		return ErrScheduledQuotaUnverified
+	}
+	return p.sendSessionPrompt(ctx, token, []string{text}, account)
+}
+
+func (p *daemonStatusProvider) sendSessionPrompt(ctx context.Context, token string, answers []string, account string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	p.mu.Lock()
-	connection := p.connection
+	connection, generation := p.connection, p.commandGeneration
+	if account != "" {
+		p.mu.Unlock()
+		if p.verifyQuotaAccount(ctx, connection, account) != nil {
+			return ErrScheduledQuotaUnverified
+		}
+		p.mu.Lock()
+		if p.connection != connection || p.commandGeneration != generation {
+			p.mu.Unlock()
+			return ErrScheduledQuotaUnverified
+		}
+	}
 	var offer SessionPromptOffer
 	var requestID string
 	var state *daemonContextState
@@ -137,7 +159,7 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 				state = s
 				break
 			}
-			if len(s.requests) == 1 {
+			if account == "" && len(s.requests) == 1 {
 				for id, c := range s.requests {
 					if c.InputToken == token {
 						offer = inputOffer(c)
@@ -205,12 +227,17 @@ func (p *daemonStatusProvider) SendSessionPrompt(ctx context.Context, token stri
 	p.mu.Lock()
 	unchanged := p.connection == connection && p.contexts[offer.ThreadID] == state &&
 		state.promptSpent && state.promptAttempt == token && len(state.requests) == 0
+	accountChanged := account != "" && p.commandGeneration != generation
+	unchanged = unchanged && !accountChanged
 	if unchanged {
 		// Commit the phase while holding the same lock as runtime invalidation.
 		// Once this boundary is crossed, status notifications cannot release it.
 		state.promptDispatched, dispatched = true, true
 	}
 	p.mu.Unlock()
+	if accountChanged {
+		return ErrScheduledQuotaUnverified
+	}
 	if !unchanged {
 		return errors.New("session changed; reply in Codex")
 	}

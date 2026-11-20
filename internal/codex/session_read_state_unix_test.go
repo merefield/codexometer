@@ -5,11 +5,55 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
+	"time"
 )
 
 func unreadReceipt(revision, turn string) map[string]any {
 	return map[string]any{"revision": revision, "firstUnread": map[string]any{"type": "turn", "turnId": turn}}
+}
+
+func TestReadStateBroadcastDoesNotFillTrackedCache(t *testing.T) {
+	p := &daemonStatusProvider{readStateThreads: map[string]struct{}{"newly-watched": {}}}
+	for i := range 300 {
+		p.readStateNotificationLocked("thread/readState/changed", rawJSON(map[string]any{
+			"threadId": "untracked-" + strconv.Itoa(i), "readState": unreadReceipt("discard", "old"),
+		}))
+	}
+	p.readStateNotificationLocked("thread/readState/changed", rawJSON(map[string]any{
+		"threadId": "newly-watched", "readState": unreadReceipt("keep", "t2"),
+	}))
+	if len(p.readStates) != 1 || p.readStates["newly-watched"].state.Revision != "keep" {
+		t.Fatal("broadcast receipts displaced or starved the tracked result", len(p.readStates))
+	}
+}
+
+func TestReadStateAndApprovalSurviveEarlierTurnCompletingLate(t *testing.T) {
+	p := &daemonStatusProvider{
+		readStateThreads: map[string]struct{}{"one": {}},
+		contexts:         make(map[string]*daemonContextState),
+	}
+	now := time.Now()
+	emit := func(method, id, body string) {
+		raw := json.RawMessage(body)
+		p.readStateNotificationLocked(method, raw)
+		daemonContextEvent(p.contexts, method, json.RawMessage(id), raw, now)
+		p.promptLifecycleLocked(method, raw)
+	}
+	emit("turn/started", "", `{"threadId":"one","turn":{"id":"t1"}}`)
+	emit("turn/started", "", `{"threadId":"one","turn":{"id":"t2"}}`)
+	emit("item/commandExecution/requestApproval", "5", `{"threadId":"one","turnId":"t2","itemId":"cmd","command":"pwd","cwd":"/work","availableDecisions":["accept","decline"]}`)
+	emit("thread/readState/changed", "", `{"threadId":"one","readState":{"revision":"keep","firstUnread":{"type":"turn","turnId":"t2"}}}`)
+	emit("turn/completed", "", `{"threadId":"one","turn":{"id":"t1","status":"completed"}}`)
+	state := p.contexts["one"]
+	if state.activeTurn != "t2" || len(state.requests) != 1 || p.statuses["one"] != sessionRuntimeWorking || p.readStates["one"].state.Revision != "keep" {
+		t.Fatal("late completion cleared current turn, approval, runtime, or receipt")
+	}
+	emit("turn/completed", "", `{"threadId":"one","turn":{"id":"t2","status":"completed"}}`)
+	if len(state.requests) != 0 || p.readStates["one"].state.Known() {
+		t.Fatal("current completion did not invalidate approval and receipt")
+	}
 }
 
 func readStateDaemon(t *testing.T) (*daemonStatusProvider, *quotaDaemonFixture) {

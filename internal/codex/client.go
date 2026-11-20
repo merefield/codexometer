@@ -150,10 +150,15 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 	encoder := json.NewEncoder(stdin)
 	decoder := json.NewDecoder(bufio.NewReader(stdout))
 
+	initialize := map[string]any{"clientInfo": codexometerClientInfo()}
+	if reset == nil && history == nil {
+		// workspaceRouting on account/read is an optional app-server capability.
+		initialize["capabilities"] = map[string]bool{"experimentalApi": true}
+	}
 	if err := encoder.Encode(map[string]any{
 		"method": "initialize",
 		"id":     1,
-		"params": map[string]any{"clientInfo": codexometerClientInfo()},
+		"params": initialize,
 	}); err != nil {
 		return Snapshot{}, fmt.Errorf("initialize Codex app-server: %w", err)
 	}
@@ -166,6 +171,7 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 	}
 	accountFingerprint := ""
 	accountEmail := ""
+	routedWorkspace := ""
 	if err := encoder.Encode(map[string]any{
 		"method": "account/read",
 		"id":     2,
@@ -175,6 +181,7 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 	}
 	if accountResult, accountErr := responseFor(decoder, 2); accountErr == nil {
 		accountFingerprint = fingerprintAccount(accountResult)
+		routedWorkspace = workspaceRoutingID(accountResult)
 		var identity struct {
 			Account struct {
 				Email string `json:"email"`
@@ -255,11 +262,14 @@ func (c Client) fetch(ctx context.Context, reset *resetAttempt, history *Account
 		return Snapshot{}, withServerError("read Codex quotas", err, stderr.String())
 	}
 
-	var snapshot Snapshot
-	if err := json.Unmarshal(result, &snapshot); err != nil {
+	var response quotaResponse
+	if err := json.Unmarshal(result, &response); err != nil {
 		return Snapshot{}, fmt.Errorf("decode Codex quotas: %w", err)
 	}
-	snapshot.AccountFingerprint = accountFingerprint
+	snapshot, err := response.snapshot(accountFingerprint, routedWorkspace)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("decode Codex quotas: %w", err)
+	}
 	snapshot.FetchedAt = time.Now()
 	return snapshot, nil
 }

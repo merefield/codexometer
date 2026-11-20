@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,8 @@ type promptTestFault struct {
 	method     string
 	beforeRead func()
 }
+
+const scheduledPromptAccount = `{"account":{"type":"chatgpt","email":"test@example.test"},"workspaceRouting":{"chatgptAccountId":"original"}}`
 
 func promptProvider(t *testing.T, runtime string, faults ...promptTestFault) (*daemonStatusProvider, <-chan daemonEnvelope) {
 	t.Helper()
@@ -46,6 +49,9 @@ func promptProvider(t *testing.T, runtime string, faults ...promptTestFault) (*d
 					continue
 				}
 				result := map[string]any{}
+				if e.Method == "account/read" {
+					_ = json.Unmarshal([]byte(scheduledPromptAccount), &result)
+				}
 				if e.Method == "thread/read" {
 					result = map[string]any{"thread": map[string]any{"status": map[string]any{"type": runtime}}}
 				}
@@ -63,6 +69,43 @@ func promptProvider(t *testing.T, runtime string, faults ...promptTestFault) (*d
 	go p.readLoop(conn)
 	t.Cleanup(func() { p.disconnect(conn); server.Close() })
 	return p, received
+}
+
+func TestScheduledPromptRejectsWorkspaceSwitchBeforeSending(t *testing.T) {
+	for _, event := range []struct {
+		name, wire string
+		send       bool
+	}{
+		{name: "same email, different workspace"},
+		{name: "routing ready", wire: `{"reason":"workspaceRoutingReady"}`, send: true},
+		{name: "switch after preflight", wire: `{"reason":null}`},
+	} {
+		t.Run(event.name, func(t *testing.T) {
+			var p *daemonStatusProvider
+			p, received := promptProvider(t, "idle", promptTestFault{beforeRead: func() {
+				if event.wire != "" {
+					p.handleNotification("account/updated", json.RawMessage(event.wire))
+				}
+			}})
+			workspace := "original"
+			if event.wire == "" {
+				workspace = "different"
+			}
+			account := quotaAccount(fingerprintAccount(json.RawMessage(scheduledPromptAccount)), workspace)
+			token := p.SessionPrompt("root").Token
+			err := p.SendScheduledPrompt(context.Background(), token, "Continue", account)
+			if event.send && err != nil || !event.send && !errors.Is(err, ErrScheduledQuotaUnverified) {
+				t.Fatal("wrong preflight result", err)
+			}
+			sent := false
+			for len(received) > 0 {
+				sent = (<-received).Method == "turn/start" || sent
+			}
+			if sent != event.send {
+				t.Fatal("incorrect prompt dispatch", sent)
+			}
+		})
+	}
 }
 
 func TestSessionPromptIdleWireAndOneUse(t *testing.T) {
