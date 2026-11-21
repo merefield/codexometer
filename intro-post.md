@@ -12,7 +12,7 @@ It is useful when you want to:
 
 - keep quota and reset timing visible without interrupting your current task;
 - see whether local Codex sessions are active, waiting for input, or awaiting approval;
-- press **F** in Sessions to find a live session by name, directory or ID, or opt in to browse saved sessions read-only on a shared Codex **0.170.0+** app-server signed in to ChatGPT;
+- press **F** in Sessions to filter live sessions by name, directory or ID, or **R** to search saved sessions by name on a shared app-server;
 - answer supported questions, approve commands deliberately, and send follow-ups from one session command centre;
 - keep track of completed replies that still need reviewing, with shared read state where Codex supports it;
 - understand locally observed token activity and API-equivalent cost;
@@ -53,6 +53,10 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 **Keep track of unread results:** on supported shared app-servers, **TURN COMPLETE** stays bright and its completion pill remains until you review the reply. Deliberately select a row in **wide detail** and keep its reply visible for **three seconds** to mark it read. Selecting another row, leaving wide mode, hiding the reply or receiving a newer result cancels the timer. Split previews, bulk Cycle, restored layouts and hover leave results unread. Explicitly opening full-screen Detail marks the visible latest completed reply read immediately; a result arriving while Detail is already open still needs a fresh review gesture. Reading an older turn cannot acknowledge a newer one. Codex saves these receipts and shares them with supported native clients, so they survive restarts. Read-only web mode displays this state without changing it. Older setups retain their existing completion behaviour.
 
 **Zero or clear the list:** `(Z)ERO` (`z`) starts a fresh measurement baseline and restores dismissed rows. `CL(O)SE ALL` (`o`) dismisses every currently listed row, including off-page rows matching the current filter, without stopping sessions or resetting measurements. Later activity can restore a dismissed row. Close All is immediate by default; strict confirmation mode adds a second action.
+
+**Start or pick up a conversation:** in Sessions, press **N** for a blank draft or **R** (or use `/resume`) to find an older conversation. Saved names are searchable regardless of case, with last-updated ages and Markdown previews. Sending the first message creates a thread in a folder you already trust in Codex, using its normal defaults. These controls need a shared Codex **0.170.0+** app-server signed in to ChatGPT. The browser can browse and preview saved sessions in read-only mode; starting or resuming one needs opt-in write mode.
+
+**Look inside a session:** click its **Agents** count or use `/subagents` to read linked workers’ attributable completed turns without switching the parent composer or approval target. Use `/ps` to see background terminals and refresh the list without stopping any process.
 
 Optional quota step-down profiles are available in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
@@ -122,7 +126,7 @@ On a shared-server session ready for input, the selected full-width detail row a
 
 You can also rename a working session or change its speed for subsequent turns. Plan and directory changes need an idle session; native permission changes are blocked while Codex is waiting for human approval or input. Name, model, speed and Plan changes need no extra confirmation by default; strict mode adds one. Permission, directory and goal changes remain guarded by default. Skills, apps, MCP tools, hooks and experimental flags are browse-only where available.
 
-Want to know whether your favourite CLI command works here? The [slash-command support guide](https://github.com/merefield/codexometer/blob/main/docs/slash-command-support.md) separates working commands such as `/approve` from proposals such as `/ps` and `/status`.
+Want to know whether your favourite CLI command works here? The [slash-command support guide](https://github.com/merefield/codexometer/blob/main/docs/slash-command-support.md) separates working commands such as `/approve`, `/resume` and `/ps` from proposals such as `/status`.
 
 **Keep your goals in sight:** `/goal` inspects, sets, edits, pauses, resumes or clears a session’s goal and manages its total token budget. Goal status sits below session-row statusline fields and before COPY in the full-detail footer: **PURSUING GOAL**, **GOAL STALLED**, paused, limited or complete. These are official Codex states, separate from whether a turn is working or waiting for input; stale observations are labelled. Goal-capable shared app-server required; writable web mode is needed for browser changes. Creating/resuming a goal can start work and spend quota immediately. Pause/clear do not interrupt an already-running turn. Changes are reviewed by default (`--confirmation none` skips the extra review), freshly checked and never automatically retried.
 
