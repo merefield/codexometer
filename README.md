@@ -382,6 +382,10 @@ telemetry on macOS, Linux, and WSL:
 - **Better multi-session visibility** — every connected CLI tab or pane remains
   a separate session while sharing the same accurate status source;
   explicitly linked subagents are still folded into their root session.
+- **Start, resume and inspect sessions** — open a blank draft or search saved
+  conversations on a shared Codex **0.170.0+** app-server signed in to ChatGPT.
+  Inspect linked-agent transcripts and background terminals when the connected
+  server supplies them. Browser start and resume need opt-in write mode.
 - **No extra Codexometer authentication** — the server, CLI clients, and
   Codexometer continue to use the prevailing Codex login under the same
   `CODEX_HOME`.
@@ -1417,6 +1421,8 @@ reveals its session even if it was filtered out. On a shared app-server, names
 follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
+<a id="finding-an-older-conversation"></a>
+
 **Finding an older conversation:** choose **`/resume`** in the slash-command
 browser. In the terminal Sessions list, press **R** or **/** or click **Resume**,
 even with no live session to select. The web Sessions page also has a
@@ -1437,8 +1443,8 @@ through the results and **Enter** or **R** to resume the highlighted session.
 While the search field is focused, **R** types normally. Use **→** or click a
 match to preview up to ten completed turns without resuming. Saved replies
 and linked-agent transcripts use the same Markdown formatting as live replies.
-The browser provides a **Resume** button on the preview. A resumed idle session has a
-composer. If the live session takes longer to appear, the picker keeps waiting.
+**Resume** is available in the writable browser preview. A resumed idle session
+has a composer. If the live session takes longer to appear, the picker keeps waiting.
 If the outcome is unknown, check Codex before trying again; Codexometer does
 not automatically resend the request. Resume does not send a prompt; existing
 automation, such as an active goal, still follows Codex's rules. The read-only web
@@ -1456,7 +1462,9 @@ where you approved folder trust in Codex (usually the repository root).
 Codexometer does not grant trust. Type **`/resume`** or choose **Resume**
 (**Saved sessions** in web mode) in the draft to open an existing conversation instead.
 Closing the picker returns to your draft. Closing the draft before sending
-creates nothing. If Codexometer cannot verify a send, it will not retry it.
+creates nothing. Strict confirmation mode reviews the exact folder and first
+message before sending. If Codexometer cannot verify a send, it will not retry it.
+This is a Sessions control; there is no `/new` slash command in Codexometer yet.
 
 Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when
@@ -1990,6 +1998,9 @@ usage and does not change token totals, quota learning or API-EQ calculations.
 | --- | --- |
 | `/cd` | Change the selected session’s directory after review and confirmation while idle and with no queued messages. Absolute, session-relative and `~/` paths are supported; success is verified from running configuration. Retains thread ID/history; does not reproduce native project-config reload/fork. |
 | `/cwd`, `/pwd` | Read-only aliases showing the running session’s current directory, including during active turns. |
+| `/resume` | Search saved session names, preview completed turns and open the selected conversation on a shared Codex 0.170.0+ app-server signed in to ChatGPT. Browser preview is read-only; resuming requires write mode. |
+| `/subagents` | Inspect linked agents and their attributable completed turns without changing the parent composer or approval target. |
+| `/ps` | Show and refresh the connected session’s background terminals. This is read-only and does not stop processes. |
 | `/rename` | Edit the selected session’s saved name and apply it without a second confirmation by default. Uses Codex’s name API; works during an active turn and does not send a prompt or change model settings. |
 | `/goal` | Inspect this session’s objective, official goal state and token budget/usage. Set an objective, edit it, pause, resume or clear it. Native forms `/goal <objective>`, `/goal edit`, `/goal pause`, `/goal resume` and `/goal clear` are supported. The Budget option (also `/goal budget <positive integer\|unlimited>`) changes the total goal-token budget. **Resume after quota recovery** arms a one-shot trigger for that goal. Mutations require confirmation by default. |
 | `/model` | Advertised models, their descriptions and supported reasoning levels. Save the next-turn setting in Codex immediately, even while a turn is running. Choosing a model resets its explicit speed override to the server default. |
@@ -2250,13 +2261,11 @@ old `--no-confirm` flag has been removed; replace it with `--confirmation none`.
 Use `--confirmation balanced` to select the default explicitly.
 
 **Slash-command audit and roadmap:** the [support inventory](docs/slash-command-support.md)
-compares Codexometer's commands with a pinned Codex CLI registry and identifies
-both versions used for the comparison. It separates
-delivered controls (including `/permissions` and `/approve`) from prioritised
-future work, and includes the missing `/presets` and `/config` interfaces.
-Several missing commands already have
-server APIs (`/compact`, `/fork`, `/review`, `/ps`, `/stop`); they need
-Codexometer workflows. Native display commands need local UI implementations.
+compares Codexometer v0.34.0 with the pinned Codex CLI 0.171.0 registry.
+It separates delivered controls from proposed work. For example, `/ps` lists
+background terminals, but `/stop` is not implemented. Commands such as
+`/compact`, `/fork` and `/review` have server APIs but still need Codexometer
+workflows. Native display commands need local UI implementations.
 The pinned native registry, rather than an assumed exhaustive published list,
 defines the inventory; actual visibility also depends on platform and features.
 
@@ -3389,9 +3398,12 @@ available from the existing reader.
 
 ### Browser Sessions command centre
 
-The same **Filter sessions** field, status filter and opt-in **Include history**
-are available in the browser, including in read-only mode. Saved results are
-separate from live command controls and are not added to Session Totals.
+Use **Filter sessions** and the status selector for live rows. **Saved sessions**
+opens a separate, name-only search with last-updated ages and Markdown previews,
+including in read-only mode. Browsing does not load a live thread or affect
+Session Totals. Turn on `--web-control` to resume a saved session from its
+preview or use **New session** to send a first message. See
+[Finding an older conversation](#finding-an-older-conversation) for server requirements.
 
 - **SESSION TOTALS** shows observed tokens and the number of currently listed
   sessions, plus separate working, awaiting-approval, awaiting-input and inferred
@@ -3457,8 +3469,9 @@ windows or with many quota windows, content scrolls without hiding the footer
 controls or shrinking plots below a readable minimum.
 
 Benchmark execution and quota-reset redemption are **not exposed by the web
-server**. Session approvals and prompts require the explicit opt-in described
-below. Use Codex or the terminal interface for other actions. Quota API-equivalent
+server**. Starting and resuming sessions, approvals and prompts require the
+explicit opt-in described below. Use Codex or the terminal interface for other
+actions. Quota API-equivalent
 learning, status scoring, pricing readouts and other terminal-only controls
 are intentionally deferred; the web interface does not invent replacements.
 
@@ -4019,7 +4032,7 @@ appear until its next telemetry event.
 
 ## Roadmap
 
-Potential Sessions follow-ups (not implemented):
+Potential terminal Sessions follow-ups (not implemented):
 
 - **Remember session visibility across restarts.** Persist dismissed rows using
   durable activity markers, not connection-local counters or approval tokens.
@@ -4032,26 +4045,28 @@ Potential Sessions follow-ups (not implemented):
   would become persisted data and the saved-preferences documentation would
   need updating accordingly.
 
-Currently, the main tab, Quota view and global Sessions detail level are
-saved, but session selection, per-session detail levels and dismissals remain
-temporary.
+The terminal saves the main tab, Quota view and global Sessions detail level,
+but not session selection, per-session detail levels or dismissals. The browser
+already remembers the selected session and up to 100 per-session row layouts
+on the same origin.
 
 ### Session-command roadmap
 
 The [slash-command support audit](docs/slash-command-support.md#recommended-delivery-order)
-is the canonical prioritised backlog. Native reviewer controls and exact-action
-retry consent are delivered in v0.30.0, not pending work. Recommended next
-increments are read-only `/status` and `/warnings` views, followed by
-compaction and reviewed background-terminal stopping. Thread creation/fork
-and full project-context transitions need their own
-lifecycle foundation. These are proposals, not delivery commitments.
+is the canonical prioritised backlog. Basic thread creation, saved-session resume,
+linked-agent inspection and read-only background terminal listing shipped in
+v0.34.0. The next proposals are read-only `/status` and `/warnings`, followed
+by compaction and reviewed background-terminal stopping. A native-style
+`/new` command and a reviewed `/fork` can build on the shipped draft and handoff
+workflow; full project-context transitions still need a separate design.
+These are proposals, not delivery commitments.
 
 ### Go 1.27 follow-ups
 
-The Go 1.27.1 toolchain upgrade does not implement the work below. These are
+The Go 1.27 toolchain upgrades do not implement the work below. These are
 potential follow-ups, prioritised for reliability and maintainability rather
 than changing the dashboard's behaviour. The underlying capabilities arrived
-in [Go 1.27](https://go.dev/doc/go1.27); 1.27.1 adds maintenance fixes.
+in [Go 1.27](https://go.dev/doc/go1.27); the project uses Go 1.27.4.
 
 1. **Measure and optimise session JSON processing.** Benchmark representative
    large rollout histories and live app-server event streams, including CPU,

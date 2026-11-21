@@ -54,7 +54,7 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 
 **Zero or clear the list:** `(Z)ERO` (`z`) starts a fresh measurement baseline and restores dismissed rows. `CL(O)SE ALL` (`o`) dismisses every currently listed row, including off-page rows matching the current filter, without stopping sessions or resetting measurements. Later activity can restore a dismissed row. Close All is immediate by default; strict confirmation mode adds a second action.
 
-**Start or pick up a conversation:** in Sessions, press **N** for a blank draft or **R** (or use `/resume`) to find an older conversation. Saved names are searchable regardless of case, with last-updated ages and Markdown previews. Sending the first message creates a thread in a folder you already trust in Codex, using its normal defaults. These controls need a shared Codex **0.170.0+** app-server signed in to ChatGPT. The browser can browse and preview saved sessions in read-only mode; starting or resuming one needs opt-in write mode.
+**Start or pick up a conversation:** in Sessions, press **N** for a blank draft or **R** (or use `/resume`) to find an older conversation. Saved names are searchable regardless of case, with last-updated ages and Markdown previews. Sending the first message creates a thread in a folder you already trust in Codex, using its normal defaults; closing an unsent draft creates nothing. These controls need a shared Codex **0.170.0+** app-server signed in to ChatGPT on macOS, Linux or WSL. New session is a Sessions button, not a `/new` slash command.
 
 **Look inside a session:** click its **Agents** count or use `/subagents` to read linked workers’ attributable completed turns without switching the parent composer or approval target. Use `/ps` to see background terminals and refresh the list without stopping any process.
 
@@ -130,7 +130,7 @@ Want to know whether your favourite CLI command works here? The [slash-command s
 
 **Keep your goals in sight:** `/goal` inspects, sets, edits, pauses, resumes or clears a session’s goal and manages its total token budget. Goal status sits below session-row statusline fields and before COPY in the full-detail footer: **PURSUING GOAL**, **GOAL STALLED**, paused, limited or complete. These are official Codex states, separate from whether a turn is working or waiting for input; stale observations are labelled. Goal-capable shared app-server required; writable web mode is needed for browser changes. Creating/resuming a goal can start work and spend quota immediately. Pause/clear do not interrupt an already-running turn. Changes are reviewed by default (`--confirmation none` skips the extra review), freshly checked and never automatically retried.
 
-Running low? In `/goal`, choose **Resume after quota recovery** while a goal is active or usage-limited. Keep Codexometer open and it can resume that same goal once Codex has reported a quota stop and fresh quota is available. It’s a one-shot trigger you can cancel from session detail; it never spends a reset credit.
+Running low? In `/goal`, choose **Resume after quota recovery** while a goal is active or usage-limited. Keep Codexometer open and it can resume that same goal once Codex has reported a quota stop and fresh quota is available in the same account and, when reported, the same workspace. If Codex reports that ordinary usage is blocked or unknown, the trigger waits. It’s a one-shot trigger you can cancel from session detail; it never spends a reset credit.
 
 Short on terminal space? Click the **Follow-ups** badge to see that session’s queued prompts, scheduled prompts and goal resume. Press **Esc** or click **Close** to go back without touching your draft or queue.
 
@@ -146,7 +146,7 @@ The setting applies to that launch only. **Quota-reset redemption always require
 
 **Your own status line:** full session detail has a configurable footer for model/reasoning, speed, tokens and directory. `/statusline` offers checkboxes, ordering and a live preview; choose multiple fields or hide it entirely. The settings belong to Codexometer and persist as display preferences. Web's footer configuration also works in read-only mode.
 
-**Schedule the next move:** experimental full-detail scheduling (Ctrl+S, also in writable web mode) offers a delay, a calendar date/time, or confirmed quota recovery. A clickable **TRIGGER SET** pill and session label open the scheduler. While queued, the saved prompt and timing replace the ordinary composer: edit with Ctrl+S, delete with Ctrl+D, or request Send now with Ctrl+N and confirm with Ctrl+Y under the default policy. `--confirmation none` skips that extra review; strict mode also reviews trigger deletion and ordinary reply/queue actions. The scheduling form retains its explicit Confirm Schedule / Save Changes action. It is fully keyboard navigable; buttons work too. Requests follow session settings and wait for an eligible idle session with quota available. Keep Codexometer running: the queue is memory-only, closing the process cancels it, and uncertain sends are never automatically retried. It does not redeem reset credits.
+**Schedule the next move:** experimental full-detail scheduling (Ctrl+S, also in writable web mode) offers a delay, a calendar date/time, or confirmed quota recovery. A clickable **TRIGGER SET** pill and session label open session detail with the saved prompt, timing and controls. Edit with Ctrl+S, delete with Ctrl+D, or request Send now with Ctrl+N and confirm with Ctrl+Y under the default policy. `--confirmation none` skips that extra review; strict mode also reviews trigger deletion and ordinary reply/queue actions. The scheduling form retains its explicit Confirm Schedule / Save Changes action. It is fully keyboard navigable; buttons work too. Requests follow session settings and wait for an eligible idle session with quota available. Keep Codexometer running: the queue is memory-only, closing the process cancels it, and uncertain sends are never automatically retried. It does not redeem reset credits.
 
 ## Quota estimates, resets, and session attention
 
@@ -186,12 +186,14 @@ while working and in read-only mode. It writes only to the browser's clipboard,
 without enabling server actions or requesting clipboard-read access; browser denial
 shows a manual-copy suggestion. The same bounded-observation limits apply.
 Prominent attention links distinguish observed requests from inferred inactivity,
-and commands are separated from the explanation when available. Add
-`--web-control` to opt into supported session approvals, input questions and
-follow-up messages from full-page detail. One-time decisions and ordinary replies
-apply directly by default; broader changes retain review and confirmation.
-The launch confirmation policy also applies to these browser controls. These actions
-require live capabilities from connected shared-daemon sessions; local-only observations remain best-effort viewing.
+and commands are separated from the explanation when available. **Saved sessions**
+opens a separate name search with Markdown previews in read-only mode. Add
+`--web-control` to start or resume a conversation, or handle supported session
+approvals, input questions and follow-ups from full-page detail. One-time
+decisions and ordinary replies apply directly by default; broader changes retain
+review and confirmation. The launch confirmation policy also applies to browser
+controls. Writes require a connected shared app-server; local-only observations
+remain best-effort viewing.
 
 Your theme, tab, quota view and session layouts are remembered in the browser;
 use a fixed `--web-port` to retain preferences across launches. Trails live only
