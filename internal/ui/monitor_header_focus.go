@@ -75,7 +75,7 @@ func (m *Model) monitorHeaderBlocksAction(key string) bool {
 	case "q", "ctrl+c", "tab", "shift+tab":
 		m.clearMonitorHeaderFocus()
 		return false
-	case "t", "r", "h", "z", "o":
+	case "t", "h", "z", "o":
 		return false
 	default:
 		return true
@@ -84,7 +84,7 @@ func (m *Model) monitorHeaderBlocksAction(key string) bool {
 
 func (m *Model) monitorAttentionKey(key string) bool {
 	switch key {
-	case "q", "ctrl+c", "tab", "shift+tab", "t", "r", "h", "z", "o":
+	case "q", "ctrl+c", "tab", "shift+tab", "t", "h", "z", "o":
 		return m.monitorHeaderBlocksAction(key)
 	}
 	_, buttons := m.visibleMonitorHeader()

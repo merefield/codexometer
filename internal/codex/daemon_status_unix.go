@@ -28,6 +28,8 @@ var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sen
 
 type daemonStatusProvider struct {
 	savedScope         string
+	savedCatalog       *savedMetadataIndex
+	resumedThreads     map[string]resumedThread
 	names              map[string]threadTitle
 	autoReviews        map[string]*autoReviewState
 	permissionSettings map[string]string
@@ -106,6 +108,17 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 		}
 		return sessionDaemonSnapshot{}, false
 	}
+	p.mu.Lock()
+	if len(p.resumedThreads) != 0 {
+		known := stringStructSet(threadIDs)
+		threadIDs = append([]string(nil), threadIDs...)
+		for id := range p.resumedThreads {
+			if _, ok := known[id]; !ok {
+				threadIDs = append(threadIDs, id)
+			}
+		}
+	}
+	p.mu.Unlock()
 	if snapshot, ok := p.cachedStatusSnapshot(threadIDs, time.Now()); ok {
 		return snapshot, true
 	}
@@ -129,11 +142,7 @@ func (p *daemonStatusProvider) Fetch(ctx context.Context, threadIDs []string) (s
 				continue
 			}
 			p.mu.Lock()
-			p.subscribed[threadID] = struct{}{}
-			p.permissionSettings[threadID] = resumed.ApprovalsReviewer
-			if filepath.IsAbs(resumed.Cwd) {
-				p.threadDirectories[threadID] = resumed.Cwd
-			}
+			p.recordThreadSubscriptionLocked(threadID, resumed.Cwd, resumed.ApprovalsReviewer)
 			p.mu.Unlock()
 		}
 	}
@@ -211,6 +220,14 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 	return p.statusSnapshotLocked(threadIDs), true
 }
 
+func (p *daemonStatusProvider) recordThreadSubscriptionLocked(id, cwd, reviewer string) {
+	p.subscribed[id] = struct{}{}
+	p.permissionSettings[id] = reviewer
+	if filepath.IsAbs(cwd) {
+		p.threadDirectories[id] = cwd
+	}
+}
+
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
 	attachments := make(map[string]string)
 	names := make(map[string]string)
@@ -261,6 +278,11 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 	var guards map[string]answerGuards
 	for _, id := range threadIDs {
 		c := contexts[id]
+		if !c.HasDisplayText() && !c.pending() && statuses[id] == sessionRuntimeIdle {
+			if saved := p.resumedThreads[id].context; saved.HasDisplayText() {
+				c = saved
+			}
+		}
 		if s := p.contexts[id]; s != nil && len(s.answers) != 0 {
 			if guards == nil {
 				guards = make(map[string]answerGuards)
@@ -273,8 +295,17 @@ func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionD
 		}
 		contexts[id] = c
 	}
+	var resumed map[string]struct{}
+	if len(p.resumedThreads) != 0 {
+		resumed = make(map[string]struct{}, len(p.resumedThreads))
+		for id := range p.resumedThreads {
+			if _, connected := subscribed[id]; connected && statuses[id] != sessionRuntimeUnknown {
+				resumed[id] = struct{}{}
+			}
+		}
+	}
 	return sessionDaemonSnapshot{
-		Names: names, SavedScope: p.savedScope,
+		Names: names, SavedScope: p.savedScope, ResumedThreads: resumed,
 		AttachedThreads:    attachments,
 		ReadStates:         readStates,
 		Goals:              goals,
@@ -332,7 +363,7 @@ func (p *daemonStatusProvider) unsubscribeMissing(ctx context.Context, threadIDs
 	p.mu.Lock()
 	stale := make([]string, 0)
 	for threadID := range p.subscribed {
-		if _, ok := wanted[threadID]; !ok {
+		if _, ok := wanted[threadID]; !ok && p.resumedThreads[threadID].at.IsZero() {
 			stale = append(stale, threadID)
 		}
 	}
@@ -477,7 +508,11 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	return p.requestOnChecked(ctx, connection, method, params, target, nil)
 }
 
-func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) (resultErr error) {
+func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) error {
+	return p.requestOnWithin(ctx, connection, method, params, target, generation, daemonStatusTimeout)
+}
+
+func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64, timeout time.Duration) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
 			return
@@ -519,7 +554,7 @@ func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection 
 		}
 		return err
 	}
-	timer := time.NewTimer(daemonStatusTimeout)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case envelope := <-response:
@@ -793,6 +828,8 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.usageCoverage = nil
 	p.threadDirectories = nil
 	p.names, p.savedScope = nil, ""
+	p.clearSavedCatalogLocked()
+	p.resumedThreads = nil
 	p.threadAttachments = nil
 	if p.settingsSignal != nil {
 		close(p.settingsSignal)

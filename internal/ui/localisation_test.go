@@ -69,6 +69,9 @@ func TestLocalisedScreensHelper(t *testing.T) {
 	t.Run("network_approval_controls", TestNetworkApprovalButtonsAndPolicy)
 	t.Run("stdin_approval_controls", TestStdinApprovalControlsAndEscapedReview)
 	t.Run("monitor_control_shortcuts", TestMonitorCompactControlsKeepShortcutHints)
+	t.Run("new_session_labels_and_errors", TestNewSessionLocalisedLabelsAndErrors)
+	t.Run("new_session_click_surfaces", TestNewSessionFitsShortTerminalsAndSharesHitTargets)
+	t.Run("inspector_localised_presentation", TestSessionInspectorLocalisedPresentation)
 	t.Run("schedule_click_surfaces", TestScheduleRenderedControlSurfaces)
 	t.Run("schedule_status_labels", TestScheduleLocalisedStatusAndHint)
 	t.Run("queue_editor_surfaces", TestQueueEditorButtonsAndKeyboardFocus)
@@ -211,7 +214,7 @@ func TestLocalisedScreensHelper(t *testing.T) {
 					}
 				}
 			}
-			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
+			buttons, sep := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView)
 			x := 2
 			for _, b := range buttons {
 				for col := 0; col < lipgloss.Width(b.label); col++ {

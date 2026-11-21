@@ -589,7 +589,7 @@ codexometer --codex /path/to/codex
 | `t` | Cycle color themes |
 | `Tab` | Select the next top-level tab: Quota, Sessions, Usage, or Benchmark |
 | `Shift+Tab` | Select the previous top-level tab |
-| `r` | Refresh account history in Usage; otherwise refresh quota data |
+| `r` | Open Resume from the Sessions list; refresh account history in Usage or quota data on other tabs |
 | `v` | Cycle views within Quota or Usage |
 | `z` | Zero the Sessions baseline |
 | `s` | Open Benchmark Scope (Benchmark view only) |
@@ -1381,6 +1381,18 @@ twice. Legacy spawned-agent rollouts without an ordinal boundary are separated
 at the child session timestamp: inherited cumulative totals establish the child
 counter baseline but are not reported as new usage.
 
+Select the **AGENTS** count or use **`/subagents`** to inspect the selected
+session's linked workers. The picker shows each known agent's status; open
+one to read its completed transcript without switching the parent composer,
+moving approvals, or changing token totals. Transcript reads require a
+connected shared app-server and omit turns that cannot be attributed to the
+child (including inherited parent history).
+
+Use **`/ps`** from a live session's command browser to list the background
+terminals reported by its shared app-server. The read-only panel shows the
+command and directory, plus a PID only when Codex provides one. Refresh with
+**R** in the terminal or **Refresh** in the browser. It never stops a process.
+
 Attention detection reads only content-free lifecycle metadata, per-thread
 writer-lock state, and—when available—the shared app-server's runtime thread
 status. A held writer lock plus a completed turn reliably identifies an open
@@ -1405,17 +1417,46 @@ reveals its session even if it was filtered out. On a shared app-server, names
 follow Codex rename events and are refreshed on reconnection; ordinary CLI
 sessions still use Codex’s local name index.
 
-**Include history** is off by default. With a local, shared Codex **0.170.0+**
-app-server signed in to ChatGPT, enable it under the **All** sessions category
-to browse this account’s non-archived saved sessions across model providers,
-including providers you no longer use. In the terminal use **Tab** to focus
-the checkbox, **Space** to toggle it, then **Tab** to the results. Use **↑/↓**
-and **Enter** to open a result or load more; **Esc** or **[←]** returns from
-the saved detail. The filter searches metadata in the pages loaded so far,
-not message text. Each saved result can show up to ten completed turns,
-newest first. Browsing never resumes a session, marks it as read, changes
-the totals, or enables a write action. There is no new on-disk index; without
-a compatible shared server, the live filter still works.
+**Finding an older conversation:** choose **`/resume`** in the slash-command
+browser. In the terminal Sessions list, press **R** or **/** or click **Resume**,
+even with no live session to select. The web Sessions page also has a
+**Saved sessions** button.
+With a shared Codex **0.170.0+** app-server signed in to ChatGPT, the picker
+starts with recent non-archived saved sessions. Type part of a session name to
+filter, regardless of case; Resume does not search paths, IDs or conversation
+text. Codexometer loads saved-session metadata in the background and filters
+it in memory. Verified matches appear without waiting for older pages. The
+index is cleared when the shared connection or account changes. Transcripts
+load only when you open a preview, and preview and resume still verify the
+target with Codex.
+Leave the field empty to browse unnamed sessions too. If the search has
+not reached the end of the saved list, choose **Search older sessions** to
+continue. **Time ago** shows when Codex last updated each session; a dash means
+Codex did not report a timestamp. In the **SAVED // SESSIONS** box, use **↑/↓** to move the cursor
+through the results and **Enter** or **R** to resume the highlighted session.
+While the search field is focused, **R** types normally. Use **→** or click a
+match to preview up to ten completed turns without resuming. Saved replies
+and linked-agent transcripts use the same Markdown formatting as live replies.
+The browser provides a **Resume** button on the preview. A resumed idle session has a
+composer. If the live session takes longer to appear, the picker keeps waiting.
+If the outcome is unknown, check Codex before trying again; Codexometer does
+not automatically resend the request. Resume does not send a prompt; existing
+automation, such as an active goal, still follows Codex's rules. The read-only web
+app offers the same search under **Saved sessions** without the Resume action.
+This does not build a separate on-disk index or change the live Filter box.
+
+**Starting a conversation:** in the terminal Sessions list, choose
+**New session** next to **Zero** and **Close all** (or press **N**).
+In write-enabled web mode, choose **New session** beside **Saved sessions**.
+With the same shared server, this opens a blank composer without creating a
+Codex thread. Check the working directory, then send the first message to
+start it using Codex's normal defaults. The selected directory must already
+be explicitly trusted in Codex's user configuration; use the same directory
+where you approved folder trust in Codex (usually the repository root).
+Codexometer does not grant trust. Type **`/resume`** or choose **Resume**
+(**Saved sessions** in web mode) in the draft to open an existing conversation instead.
+Closing the picker returns to your draft. Closing the draft before sending
+creates nothing. If Codexometer cannot verify a send, it will not retry it.
 
 Named sessions show `<short session ID> // <name>` in the left telemetry panel's border
 title, with the directory path inside the box beneath model information when
@@ -4000,9 +4041,9 @@ temporary.
 The [slash-command support audit](docs/slash-command-support.md#recommended-delivery-order)
 is the canonical prioritised backlog. Native reviewer controls and exact-action
 retry consent are delivered in v0.30.0, not pending work. Recommended next
-increments are read-only `/ps`, `/status` and `/warnings` views, followed by
-compaction, linked-agent navigation and reviewed background-terminal stopping.
-Thread creation/resume/fork and full project-context transitions need their own
+increments are read-only `/status` and `/warnings` views, followed by
+compaction and reviewed background-terminal stopping. Thread creation/fork
+and full project-context transitions need their own
 lifecycle foundation. These are proposals, not delivery commitments.
 
 ### Go 1.27 follow-ups

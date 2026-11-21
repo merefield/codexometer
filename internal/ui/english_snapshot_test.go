@@ -38,9 +38,10 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	got := fmt.Sprintf("%x", hash.Sum(nil))
 	// Baseline includes Pace graph controls, explicit panel/border
 	// backgrounds, Sessions Zero/Close All, ACTIVE/ERRORS categories and responsive
-	// summary filters and Sessions finder button; every theme, view and size
-	// remains covered. The displayed pricing review date is now 2026-11-17.
-	const want = "1fadc0f34572e7821d7d7afab40852bee66122e1d99a2e44d5bd4b7c761ea324"
+	// summary filters and Sessions finder button. Refresh no longer occupies
+	// the Sessions footer. Every theme, view and size remains covered.
+	// The displayed pricing review date is now 2026-11-17.
+	const want = "1a2fe9c38672f5869df1cf76fe81d62bcbc54fd74da8c114f5265f73fb52f4df"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

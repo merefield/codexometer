@@ -51,16 +51,20 @@ func (e *monitorEditor) editPassword() *textinput.Model {
 }
 
 func (e *monitorEditor) configure(width, height int) {
+	e.configureViewport(width, max(height-8, 1))
+}
+
+func (e *monitorEditor) configureViewport(width, rows int) {
 	if !e.ready {
 		return
 	}
-	if e.width == width && e.height == height {
+	if e.width == width && e.height == rows {
 		return
 	}
-	e.width, e.height = width, height
+	e.width, e.height = width, rows
 	e.editArea()
 	e.editPassword()
-	e.area.MaxHeight = max(height-8, 1)
+	e.area.MaxHeight = rows
 	e.area.SetWidth(max(width-4, 1))
 	e.password.SetWidth(max(width-6, 1))
 }

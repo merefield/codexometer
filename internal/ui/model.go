@@ -45,6 +45,8 @@ type BenchmarkTaskProvider interface {
 
 type Model struct {
 	finder     sessionFinder
+	newSession newSessionDraft
+	inspector  sessionInspector
 	proseCache *prose.Cache
 	startup    startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
@@ -395,6 +397,7 @@ const (
 	footerButtonQuit
 	footerButtonMonitorReset
 	footerButtonMonitorCloseAll
+	footerButtonMonitorNew
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
 	footerButtonBenchmarkSelected
@@ -490,7 +493,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// Priority handlers run before editor updates; each carries the resulting
 	// immutable model forward even when it does not consume the message.
 	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
-		Model.updateStartup, Model.updateActionReview, Model.updateMonitorHistory,
+		Model.updateStartup, Model.updateActionReview, Model.updateNewSession, Model.updateSessionInspector, Model.updateMonitorHistory,
 		Model.updateMonitorSuggestions, Model.updateMonitorCommands, Model.updateSessionFinder,
 	} {
 		next, cmd, handled := update(m, message)
@@ -657,6 +660,9 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if strings.EqualFold(message.String(), "n") && !message.IsRepeat && m.monitorContextDetail == "" && !m.monitorPrompt.input.Focused() {
+				return m.pressFooterButton(footerButtonMonitorNew)
+			}
 			if message.String() == "esc" && len(m.monitorCloseAllConfirm) > 0 {
 				m.clearMonitorCloseAllConfirmation()
 				return m, nil
@@ -772,6 +778,9 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			return m.pressMainTab(m.adjacentMainTab(-1))
 		case "r":
+			if m.meterView == viewMonitor {
+				return m, nil // The Sessions finder owns R; no hidden quota refresh.
+			}
 			return m.pressFooterButton(footerButtonRefresh)
 		case "q":
 			return m.pressFooterButton(footerButtonQuit)
@@ -1467,6 +1476,11 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 		if m.meterView == viewMonitor && m.monitorCloseAllEnabled() {
 			m.requestMonitorCloseAll()
 		}
+	case footerButtonMonitorNew:
+		if m.meterView == viewMonitor {
+			cmd := m.openNewSession()
+			return m, cmd
+		}
 	case footerButtonBenchmarkPrevious:
 		if !m.benchmarkRunActive() {
 			m.selectBenchmarkSuite(-1)
@@ -1578,7 +1592,7 @@ func (m Model) footerButtonAt(x, y int) footerButtonID {
 		return footerButtonNone
 	}
 	localX := x - 2
-	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView.isQuota() || m.meterView == viewUsage)
+	buttons, separator := footerButtonLayoutWithTheme(layout.contentWidth, paletteFor(m.theme).name, m.meterView)
 	buttonX := 0
 	for _, button := range buttons {
 		if localX >= buttonX && localX < buttonX+lipgloss.Width(button.label) {
@@ -2207,13 +2221,17 @@ func (m Model) contentWidth() int {
 	return max(width-4, 1)
 }
 
-func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
+func footerButtonLayout(width int, view meterViewID) ([]footerButton, string) {
 	definitions := footerButtonDefinitions
-	if quota {
+	if view.isQuota() || view == viewUsage {
 		definitions = quotaFooterButtonDefinitions
 	}
-	buttons := make([]footerButton, len(definitions))
-	copy(buttons, definitions)
+	buttons := make([]footerButton, 0, len(definitions))
+	for _, button := range definitions {
+		if view != viewMonitor || button.id != footerButtonRefresh {
+			buttons = append(buttons, button)
+		}
+	}
 	separator := "  "
 	total := len(separator) * (len(buttons) - 1)
 	for _, button := range buttons {
@@ -2229,13 +2247,13 @@ func footerButtonLayout(width int, quota bool) ([]footerButton, string) {
 	return buttons, separator
 }
 
-func footerButtonLayoutWithTheme(width int, themeName string, quota bool) ([]footerButton, string) {
+func footerButtonLayoutWithTheme(width int, themeName string, view meterViewID) ([]footerButton, string) {
 	themeWidth := lipgloss.Width(i18n.Text("THEME // ")) + lipgloss.Width(themeName)
 	available := width - themeWidth - 1
 	if available <= 0 {
 		return nil, " "
 	}
-	buttons, separator := footerButtonLayout(available, quota)
+	buttons, separator := footerButtonLayout(available, view)
 	visible := buttons[:0]
 	used := 0
 	for _, button := range buttons {
@@ -2395,7 +2413,15 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 	}
 	if accepted {
 		m.reconcileMonitorSteers()
-		if id := m.finder.detail; id != "" {
+		if id := m.newSession.pendingID; id != "" {
+			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed && m.newSession.scope == m.finder.scope {
+				m.openLiveSessionDetail(id)
+			}
+		} else if id := m.finder.resumeID; id != "" && !m.finder.loading {
+			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionData[i].displayed {
+				m.openLiveSessionDetail(id)
+			}
+		} else if id := m.finder.detail; id != "" {
 			if i := m.monitorSessionIndex(id); i >= 0 && m.monitorSessionVisible(m.monitorSessionData[i]) {
 				m.finder.closeDetail()
 			}
@@ -2408,6 +2434,9 @@ func (m Model) applyMonitorFetch(message monitorFetchedMsg) (tea.Model, tea.Cmd,
 }
 
 func (m *Model) syncMonitorCodexStatus(usage codex.LiveUsageSnapshot) {
+	if m.finder.scope != "" && m.finder.scope != usage.SavedScope {
+		m.inspector = sessionInspector{request: m.inspector.request + 1}
+	}
 	m.finder.setScope(usage.SavedScope)
 	m.monitorCodexStatusKnown = usage.CodexStatusKnown
 	m.monitorCodexUp = usage.CodexUp

@@ -44,11 +44,12 @@ type monitorGeometry struct {
 	readoutWidth  int
 	resetRect     monitorRect
 	closeAllRect  monitorRect
+	newRect       monitorRect
 }
 
 const monitorDismissLabel = "[×]"
 
-func layoutMonitorArea(width, height int) monitorGeometry {
+func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 	width = max(width, 1)
 	height = max(height, 1)
 	gap := 1
@@ -61,9 +62,18 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 	// Keep the summary usable on narrow terminals; compact both controls when
 	// their full translated labels cannot fit.
 	controlsWidth := min(max(width/4, 22), max(width*2/5, 3))
+	newWidth := 0
+	if len(newButton) > 0 && newButton[0] && width >= 27 {
+		total := min(max(width/3, 30), max(width/2, 13))
+		newWidth = max((total-2*gap)/3, 1)
+		controlsWidth = total - newWidth - gap
+	}
 	resetWidth := max((controlsWidth-gap)/2, 1)
 	closeAllWidth := max(controlsWidth-resetWidth-gap, 1)
 	readoutWidth := max(width-controlsWidth-gap, 1)
+	if newWidth > 0 {
+		readoutWidth -= newWidth + gap
+	}
 	if height >= 12 {
 		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
@@ -77,12 +87,19 @@ func layoutMonitorArea(width, height int) monitorGeometry {
 		readoutWidth: readoutWidth,
 		resetRect:    monitorRect{x: readoutWidth + gap, width: resetWidth, height: topHeight},
 		closeAllRect: monitorRect{x: readoutWidth + gap + resetWidth + gap, width: closeAllWidth, height: topHeight},
+		newRect:      monitorRect{x: width - newWidth, width: newWidth, height: topHeight},
 	}
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
 	if m.actionReview != nil {
 		return monitorView{view: m.renderActionReview(width, height, colors)}
+	}
+	if m.newSession.open() && !m.finder.include {
+		return monitorView{view: m.renderNewSession(width, height, colors)}
+	}
+	if m.inspector.root != "" {
+		return monitorView{view: m.renderSessionInspector(width, height, colors)}
 	}
 	if m.monitorQueue.compact != "" && m.monitorContextDetail == "" {
 		return monitorView{view: m.renderCompactFollowups(width, height, colors)}
@@ -127,7 +144,17 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	}
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
-	graph := m.renderMonitorSessions(layout.width, layout.graphHeight, colors)
+	if layout.newRect.width > 0 {
+		label := i18n.Text("(N)EW SESSION")
+		if layout.newRect.width < lipgloss.Width(label)+2 {
+			label = strings.Replace(label, " ", "\n", 1)
+		}
+		if layout.newRect.width < lipgloss.Width(label)+2 || layout.topHeight < lipgloss.Height(label)+2 {
+			label = "(N)"
+		}
+		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)
+		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
+	}
 	parts := []string{top}
 	if layout.attentionRows > 0 {
 		parts = append(parts, m.renderMonitorAttention(width, layout.attentionRows, layout.attention, colors))
@@ -135,7 +162,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	if layout.finderRows > 0 {
 		parts = append(parts, m.renderSessionFinder(width, layout.finderRows, colors))
 	}
-	parts = append(parts, graph)
+	if layout.graphHeight > 0 {
+		parts = append(parts, m.renderMonitorSessions(layout.width, layout.graphHeight, colors))
+	}
 	view := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	if padding := layout.height - lipgloss.Height(view); padding > 0 {
 		view += strings.Repeat("\n", padding)
@@ -233,7 +262,7 @@ func (m Model) renderMonitorGraph(width, height int, colors palette) string {
 func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 	visible, rowHeights, pageLabel := m.monitorSessionPage(height)
 	if len(visible) == 0 {
-		if m.monitorFilter != monitorFilterAll || m.finder.query() != "" {
+		if m.monitorFilter != monitorFilterAll || m.finder.liveQuery() != "" {
 			message := ansi.Truncate(i18n.Text("NO RESULTS MATCH THE ACTIVE FILTER"), max(width-4, 1), "…")
 			return frameSized(width, max(height-2, 1), i18n.Text("SESSIONS"), colors.dimmed().Render(message), colors.primary, colors)
 		}
@@ -255,6 +284,9 @@ func (m Model) renderMonitorSessions(width, height int, colors palette) string {
 }
 
 func (m Model) monitorSessionPage(height int) ([]monitorSession, []int, string) {
+	if height <= 0 {
+		return nil, nil, ""
+	}
 	visible := make([]monitorSession, 0, len(m.monitorSessionData))
 	for _, session := range m.monitorSessionData {
 		if m.monitorSessionInList(session) {
@@ -346,6 +378,10 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 }
 
 func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette) string {
+	return m.renderSessionMetrics(width, height, session, pageLabel, colors, nil)
+}
+
+func (m Model) renderSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette, target *monitorRect) string {
 	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
 		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
@@ -376,6 +412,8 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		memberLabel = "UNLINKED ACTIVITY"
 	}
 	bodyRows := max(height-2, 1)
+	_, canInspect := m.fetcher.(codex.SessionAgentClient)
+	inspectAgents := canInspect && !session.unattributed && session.agentCount > 0 && m.monitorError == "" && m.monitorState == monitorRunning && innerWidth >= lipgloss.Width(memberLabel)+2
 	share := m.monitorSessionShare(total)
 	usageLine := i18n.Format("%s TOKENS // %.0f%% LOCAL", formatTokens(total), share*100)
 	lines := make([]string, 0, bodyRows)
@@ -386,9 +424,24 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 		lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(status, innerWidth, "")))
 	}
 	fields, selectedFields := m.monitorPriorityFields(session)
+	agentField := fmt.Sprintf("%d agents", session.agentCount)
+	appendAgentTarget := func() {
+		if len(lines) >= bodyRows {
+			return
+		}
+		label := "[" + memberLabel + "]"
+		if target != nil {
+			*target = monitorRect{x: 2, y: len(lines) + 1, width: lipgloss.Width(label), height: 1}
+		}
+		lines = append(lines, colors.label().Foreground(colors.primary).Render(label))
+	}
 	for _, field := range fields {
 		if len(lines) < bodyRows {
-			lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(field, innerWidth, "…")))
+			if inspectAgents && field == agentField {
+				appendAgentTarget()
+			} else {
+				lines = append(lines, colors.label().Bold(true).Render(ansi.Truncate(field, innerWidth, "…")))
+			}
 		}
 	}
 	if goal := m.monitorGoalStatus(session, innerWidth, colors); goal != "" && len(lines) < bodyRows {
@@ -411,6 +464,9 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if !selectedFields["model"] && !selectedFields["model-with-reasoning"] {
 		appendPriority(model)
 	}
+	if inspectAgents && !selectedFields["agents"] {
+		appendAgentTarget()
+	}
 	priorityRows := len(lines)
 	if reviewer := session.preview.Reviewer; reviewer != "" {
 		label := "REVIEW // HUMAN"
@@ -425,7 +481,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 	if session.name != "" && !selectedFields["current-dir"] {
 		appendLine(terminalLabel(session.workingDirectory))
 	}
-	if !selectedFields["agents"] {
+	if !inspectAgents && !selectedFields["agents"] {
 		appendLine(memberLabel)
 	}
 	appendLine(formatMonitorCallActivity(session, time.Now()))
@@ -828,7 +884,7 @@ func renderMonitorBarRow(cells []rune, colors palette) string {
 }
 
 func (m Model) monitorButtonAt(x, y int) footerButtonID {
-	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
+	if (m.newSession.open() && !m.finder.include) || (m.monitorContextDetail != "" && !m.contextTargetHidden()) {
 		return footerButtonNone
 	}
 	if m.loading && len(m.snapshot.Meters()) == 0 {
@@ -842,6 +898,9 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	}
 	if m.monitorCloseAllEnabled() && area.closeAllRect.contains(localX, localY) {
 		return footerButtonMonitorCloseAll
+	}
+	if area.newRect.contains(localX, localY) {
+		return footerButtonMonitorNew
 	}
 	return footerButtonNone
 }

@@ -1,7 +1,12 @@
 <script lang="ts">
   import { requiresConfirmation } from './confirmation';
   import { onDestroy, tick, untrack } from 'svelte';
-  import { controlRequest, live } from './state.svelte';
+  import {
+    controlRequest,
+    live,
+    resumePicker,
+    sessionInspector,
+  } from './state.svelte';
   import { statusLineUI, themeUI } from './preferences.svelte';
   import { sessionCopyText } from './session-copy';
   let {
@@ -78,7 +83,13 @@
     } else {
       finishLocal();
       if (path === 'usage') location.hash = '/usage';
-      else if (path === 'theme') themeUI.requests++;
+      else if (path === 'resume') {
+        resumePicker.open = true;
+        location.hash = '/sessions';
+      } else if (path === 'subagents' || path === 'ps') {
+        sessionInspector.kind = path === 'ps' ? 'terminals' : 'agents';
+        sessionInspector.root = session;
+      } else if (path === 'theme') themeUI.requests++;
       else if (path === 'statusline') statusLineUI.open = true;
       else location.hash = '/sessions';
     }

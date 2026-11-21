@@ -1,11 +1,16 @@
 package ui
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/confirmation"
 )
 
 func TestFinderCombinesFiltersWithoutHidingAttention(t *testing.T) {
@@ -97,5 +102,246 @@ func TestFinderUsesComposerSurfaceOnlyForInput(t *testing.T) {
 			assertBackground(t, line[end].Style.Bg, colors.background)
 			m.leaveFinder()
 		}
+	}
+}
+
+func TestResumePickerIsSeparateFromLiveFilter(t *testing.T) {
+	m := contextTestModel()
+	m.focusFinder()
+	m.finder.input.SetValue("live query")
+	m.finder.setScope("scope")
+	next, _, ok := m.runLocalMonitorCommand("resume")
+	if !ok || !next.finder.include || next.finder.query() != "" || next.finder.liveQuery() != "live query" {
+		t.Fatal("/resume did not open an independent search picker", next.finder)
+	}
+	next.finder.input.SetValue("older conversation")
+	next, _, _ = next.updateSessionFinder(specialKey(tea.KeyEscape))
+	if next.finder.include || next.finder.query() != "live query" {
+		t.Fatal("closing the picker changed the live filter", next.finder)
+	}
+}
+
+type resumeFinderProbe struct {
+	Fetcher
+	resumed string
+}
+
+func (p *resumeFinderProbe) ResumeSavedSession(_ context.Context, scope, cursor, id string) error {
+	if scope != "scope" || cursor != "" {
+		return codex.ErrSavedSessions
+	}
+	p.resumed = id
+	return nil
+}
+
+func TestResumePickerReturnOpensLiveDetail(t *testing.T) {
+	m := contextTestModel()
+	probe := &resumeFinderProbe{}
+	m.fetcher = probe
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	m.finder.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "cold"}}}
+	m, cmd, _ := m.updateSessionFinder(specialKey(tea.KeyEnter))
+	if cmd == nil || !m.finder.loading || probe.resumed != "" {
+		t.Fatal("Enter did not stage a resume of the selected saved row")
+	}
+	m, _, _ = m.updateSessionFinder(cmd())
+	if m.finder.resumeID != "cold" || probe.resumed != "cold" || m.monitorContextDetail != "" {
+		t.Fatal("resume did not wait for the session's live observation")
+	}
+	next, _, _ := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchSample, at: time.Now(), usage: codex.LiveUsageSnapshot{
+		SavedScope: "scope", TotalTokens: m.monitorLatest, Sessions: []codex.LiveUsageSession{{ID: "cold", Active: true}},
+	}})
+	if m = next.(Model); m.monitorContextDetail != "cold" || m.finder.include {
+		t.Fatal("resumed session did not take over the detail pane")
+	}
+}
+
+func TestResumePickerCanOpenWithNoLiveSessions(t *testing.T) {
+	m := contextTestModel()
+	m.monitorSessionData = nil
+	m.finder.setScope("scope")
+	x, y := renderedTextStart(t, m, "[ (R)ESUME ]")
+	for _, msg := range []tea.Msg{key('r'), key('/'), tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}} {
+		next, _ := m.Update(msg)
+		if n := next.(Model); !n.finder.include || n.loading != m.loading {
+			t.Fatalf("%T could not open the saved picker without a live session", msg)
+		}
+	}
+	if _, ok := footerButtonByID(m, footerButtonRefresh); ok {
+		t.Fatal("Sessions should not show a quota Refresh button")
+	}
+	next, _ := m.Update(key('r'))
+	next, _ = next.(Model).Update(key('r'))
+	if got := next.(Model).finder.query(); got != "r" {
+		t.Fatalf("R in the search field should be typed, got %q", got)
+	}
+}
+
+func TestSavedFinderFrameAndCursorFollowResults(t *testing.T) {
+	m := contextTestModel()
+	m.fetcher = &resumeFinderProbe{}
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	for i := range 30 {
+		m.finder.rows = append(m.finder.rows, savedRow{SavedSession: codex.SavedSession{ID: fmt.Sprintf("row-%02d", i), Name: fmt.Sprintf("Conversation %02d", i)}})
+	}
+	m.finder.next = "page-two"
+	m.finder.selectIndex(m.savedMatches(), 0)
+	send := func(msg tea.Msg) tea.Cmd {
+		next, cmd := m.Update(msg)
+		m = next.(Model)
+		return cmd
+	}
+	send(specialKey(tea.KeyDown))
+	send(specialKey(tea.KeyDown))
+	d := m.dashboardLayout()
+	a := m.monitorArea(d.contentWidth, d.meterHeight)
+	g := m.finder.layout(d.contentWidth, a.finderRows)
+	rendered := ansi.Strip(m.renderSessionFinder(d.contentWidth, a.finderRows, paletteFor(m.theme)))
+	if m.finder.selected != "row-01" || !strings.Contains(rendered, "› OW-01 // Conversation 01") {
+		t.Fatal("expected cursor on the second saved row", rendered)
+	}
+	if !strings.HasPrefix(rendered, "╭─ SAVED // SESSIONS") || strings.Count(rendered, "SAVED //") != 1 {
+		t.Fatal("expected a single framed heading", rendered)
+	}
+	y := d.meterY + a.topHeight + a.attentionRows
+	down := m.savedListButtons(g, d.contentWidth)[1].rect
+	if strings.Index(strings.Split(rendered, "\n")[0], "[↓]") < 0 ||
+		ansi.StringWidth(strings.SplitN(rendered, "[↓]", 2)[0]) != down.x {
+		t.Fatal("framed down arrow's rendered column and hit target differ", rendered)
+	}
+	send(tea.MouseClickMsg{X: 2 + down.x, Y: y + down.y, Button: tea.MouseLeft})
+	if m.finder.selected != "row-02" {
+		t.Fatal("frame down arrow did not move the saved cursor", m.finder.selected)
+	}
+	for range 28 {
+		send(specialKey(tea.KeyDown))
+	}
+	rendered = ansi.Strip(m.renderSessionFinder(d.contentWidth, a.finderRows, paletteFor(m.theme)))
+	if !strings.Contains(rendered, "› [+] MORE") {
+		t.Fatal("cursor did not scroll the pagination row into view", rendered)
+	}
+	send(specialKey(tea.KeyUp))
+	cmd := send(key('r'))
+	if cmd == nil || m.finder.detail != "row-29" || m.loading {
+		t.Fatal("R did not select the same saved row for resume")
+	}
+}
+
+func TestSavedFinderNameOnlyAndAlignedAgeColumn(t *testing.T) {
+	m := contextTestModel()
+	m.openResumePicker()
+	m.finder.failed = false
+	m.finder.input.SetValue("blUE")
+	now := time.Now()
+	m.finder.rows = []savedRow{
+		{SavedSession: codex.SavedSession{ID: "first", Name: "Blue dashboard", Directory: strings.Repeat("/very-long", 14), UpdatedAt: now.Add(-3*time.Hour - time.Minute).Unix()}},
+		{SavedSession: codex.SavedSession{ID: "no-time", Name: "BLUE inventory"}},
+		{SavedSession: codex.SavedSession{ID: "blue", Name: "Other", Directory: "/blue"}},
+		{SavedSession: codex.SavedSession{ID: "untitled", Directory: "/blue"}},
+	}
+	if rows := m.savedMatches(); len(rows) != 2 || rows[0].ID != "first" || rows[1].ID != "no-time" {
+		t.Fatal("saved results should only match names", rows)
+	}
+	render := func(width int) string {
+		return ansi.Strip(m.renderSessionFinder(width, 9, paletteFor(m.theme)))
+	}
+	lines := strings.Split(render(56), "\n")
+	for _, tc := range []struct {
+		row  int
+		text string
+	}{{1, "TIME AGO"}, {2, "3h ago"}, {3, "—"}} {
+		line := lines[tc.row]
+		if !strings.HasSuffix(line, tc.text+" │") || ansi.StringWidth(line) != 56 {
+			t.Fatalf("age column misplaced: %q", line)
+		}
+	}
+	if !strings.Contains(lines[2], "…") || strings.Contains(render(28), "3h ago") {
+		t.Fatal("long and narrow views did not preserve space for the names")
+	}
+	for _, tc := range []struct {
+		updated int64
+		want    string
+	}{{0, "—"}, {now.Unix() + 5, "JUST NOW"}, {now.Unix() - 95, "1m ago"}, {now.Unix() - 2*86400, "2d ago"}} {
+		if got := savedSessionAge(tc.updated, now); got != tc.want {
+			t.Fatalf("age for %d = %q, want %q", tc.updated, got, tc.want)
+		}
+	}
+}
+
+func TestResumePickerSelectionAndStrictConfirmation(t *testing.T) {
+	m := contextTestModel()
+	probe := &resumeFinderProbe{}
+	m.fetcher, m.confirmations = probe, confirmation.Policy{Mode: confirmation.Require}
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	for _, id := range []string{"first", "wanted", "other"} {
+		m.finder.rows = append(m.finder.rows, savedRow{SavedSession: codex.SavedSession{ID: id}})
+	}
+	m.finder.focus = findResults
+	m.scrollFinder(1, 80, 12)
+	m.monitorSessionData = append(m.monitorSessionData, monitorSession{id: "first", displayed: true})
+	m, cmd, _ := m.updateSessionFinder(specialKey(tea.KeyEnter))
+	if cmd != nil || m.finder.detail != "wanted" || m.actionReview == nil || probe.resumed != "" {
+		t.Fatal("resume target changed or bypassed review")
+	}
+	m, cmd, _ = m.updateActionReview(key('c'))
+	if cmd == nil {
+		t.Fatal("confirmed resume unavailable")
+	}
+	m, _, _ = m.updateSessionFinder(cmd())
+	if m.finder.resumeID != "wanted" || probe.resumed != "wanted" {
+		t.Fatal("confirmed resume changed target")
+	}
+	m, _, _ = m.updateSessionFinder(savedResumeDeadline{savedResult{id: "wanted", scope: "scope", epoch: m.finder.epoch}})
+	if m.finder.resumeID != "wanted" || !strings.Contains(m.finder.resumeNotice, "still waiting") || m.resumeSaved() != nil {
+		t.Fatal("late observation should not discard the handoff or enable retry")
+	}
+	next, _, _ := m.applyMonitorFetch(monitorFetchedMsg{kind: monitorFetchSample, at: time.Now(), usage: codex.LiveUsageSnapshot{
+		SavedScope: "scope", Sessions: []codex.LiveUsageSession{{ID: "wanted", Active: true}},
+	}})
+	if m = next.(Model); m.monitorContextDetail != "wanted" || m.finder.include {
+		t.Fatal("late observation did not open the accepted session")
+	}
+}
+
+func TestSavedResumeFailureDistinguishesUnknownOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+		held string
+	}{
+		{codex.ErrSavedSessions, "did not accept", ""},
+		{codex.ErrSavedResumeUncertain, "outcome unknown", "cold"},
+	} {
+		m := contextTestModel()
+		m.fetcher = &resumeFinderProbe{}
+		m.finder.setScope("scope")
+		m.openResumePicker()
+		m.finder.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "cold"}}}
+		m.finder.focus = findResults
+		m.finder.detail = "cold"
+		m, _, _ = m.updateSessionFinder(savedResult{
+			id: "cold", scope: "scope", epoch: m.finder.epoch, resume: true, err: tc.err,
+		})
+		if !strings.Contains(m.finder.resumeNotice, tc.want) || m.finder.resumeID != tc.held {
+			t.Fatalf("outcome %v displayed as %q, pending %q", tc.err, m.finder.resumeNotice, m.finder.resumeID)
+		}
+		if allowed := m.resumeSaved() != nil; allowed != (tc.held == "") {
+			t.Fatalf("outcome %v had wrong retry behaviour", tc.err)
+		}
+	}
+}
+
+func TestSavedPaginationFailureKeepsResultsAndRetryCursor(t *testing.T) {
+	f := sessionFinder{include: true, scope: "scope", next: "older"}
+	f.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "verified"}}}
+	f.accept(savedResult{scope: "scope", cursor: "older", err: codex.ErrSavedSessions})
+	if !f.failed || len(f.rows) != 1 || f.rows[0].ID != "verified" || f.next != "older" {
+		t.Fatal("a failed pagination request discarded verified results", f)
 	}
 }

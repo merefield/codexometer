@@ -80,6 +80,55 @@ func TestMonitorProseWrapsWithStylesAndResponsiveTable(t *testing.T) {
 	}
 }
 
+func TestSessionTranscriptPreviewsRenderOnlyVisibleAssistantMarkdown(t *testing.T) {
+	m := contextTestModel()
+	m.finder.setScope("scope")
+	m.openResumePicker()
+	m.finder.failed = false
+	m.finder.detail = "saved"
+	m.finder.rows = []savedRow{{SavedSession: codex.SavedSession{ID: "saved"}}}
+	m.finder.turns = []codex.SavedTurn{
+		{Reply: "**private answer**", Restricted: true},
+		{Task: "**literal prompt**", Reply: "**βold** *εmphasis* and `**literal code**`\n\n| Name | Count |\n| --- | ---: |\n| Items | 2 |"},
+	}
+	m.inspector = sessionInspector{kind: "subagents", root: "parent", child: "child", page: codex.AgentInspection{Turns: m.finder.turns}}
+	p := paletteFor(m.theme)
+	for pane, view := range map[string]string{
+		"saved": m.renderSessionFinder(76, 18, p),
+		"agent": m.renderSessionInspector(76, 18, p),
+	} {
+		plain := ansi.Strip(view)
+		for _, want := range []string{"**literal prompt**", "βold εmphasis and **literal code**", "Items", "Count", "View this reply in Codex."} {
+			if !strings.Contains(plain, want) {
+				t.Fatalf("%s preview missing %q:\n%s", pane, want, plain)
+			}
+		}
+		if strings.Contains(plain, "private answer") || strings.Contains(plain, "| --- |") {
+			t.Fatalf("%s preview leaked restricted content or showed raw table markup", pane)
+		}
+		found := 0
+		for _, row := range backgroundTestLines(view) {
+			for _, cell := range row {
+				switch cell.Content {
+				case "β":
+					if cell.Style.Attrs&uv.AttrBold == 0 {
+						t.Fatalf("%s preview lost bold", pane)
+					}
+					found++
+				case "ε":
+					if cell.Style.Attrs&uv.AttrItalic == 0 {
+						t.Fatalf("%s preview lost italic", pane)
+					}
+					found++
+				}
+			}
+		}
+		if found != 2 {
+			t.Fatalf("%s preview did not show both marked characters", pane)
+		}
+	}
+}
+
 func TestMonitorMarkdownDoesNotChangeApprovalCommandsOrCopiedHistory(t *testing.T) {
 	const raw = "**Passed**: use `**literal**`."
 	m := historyTestModel()

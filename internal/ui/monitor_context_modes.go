@@ -187,7 +187,7 @@ func (m *Model) setRowContext(id string, mode int) {
 	m.finder.closeDetail()
 	for _, s := range m.monitorSessionData {
 		if s.id == id && !m.monitorSessionInList(s) {
-			if !codex.SessionMatches(m.finder.query(), s.id, s.name, s.workingDirectory) {
+			if !codex.SessionMatches(m.finder.liveQuery(), s.id, s.name, s.workingDirectory) {
 				m.finder.clearQuery()
 			}
 			m.monitorFilter, m.monitorScroll = monitorFilterAll, 0

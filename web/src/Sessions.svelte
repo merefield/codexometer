@@ -6,6 +6,8 @@
     date,
     number,
     controlRequest,
+    resumePicker,
+    sessionInspector,
     type Session,
   } from './state.svelte';
   import {
@@ -27,27 +29,37 @@
   import MCPApproval from './MCPApproval.svelte';
   import ActionApproval from './ActionApproval.svelte';
   import SavedSessions from './SavedSessions.svelte';
+  import SessionNew from './SessionNew.svelte';
+  import SessionInspector from './SessionInspector.svelte';
+  import SessionSearch from './SessionSearch.svelte';
   import { matchesSession } from './session-filter';
   let { params = {} }: { params?: { id?: string } } = $props();
   let sessions = $derived(live.data?.sessions || []);
   let query = $state('');
   let status = $state('');
-  let includeScope = $state('');
   let field = $state<HTMLInputElement>();
   let scope = $derived(
     live.connected && !live.data?.sessionsError
       ? live.data?.savedScope || ''
       : '',
   );
+  let newScope = $state('');
+  $effect(() => {
+    if (params.id) newScope = '';
+  });
+  let pickerScope = '';
+  $effect(() => {
+    if (!resumePicker.open) pickerScope = '';
+    else if (!scope || (pickerScope && pickerScope !== scope))
+      resumePicker.open = false;
+    else pickerScope = scope;
+  });
   let liveIDs = $derived(new Set(sessions.map((s) => s.id)));
   let shown = $derived(
     sessions.filter(
       (s) => matchesSession(query, s) && (!status || s.status === status),
     ),
   );
-  $effect(() => {
-    if (!scope || includeScope !== scope) includeScope = '';
-  });
   let profiles = $derived(live.data?.control ? live.data.profiles || [] : []);
   let triggers = $derived(
     (live.data?.triggers || []).filter((t) =>
@@ -364,6 +376,7 @@
   function keydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (
+      newScope ||
       event.altKey ||
       event.ctrlKey ||
       event.metaKey ||
@@ -376,7 +389,12 @@
       field?.focus();
       return;
     }
-    if (target.closest('section[aria-label="Saved sessions"]')) return;
+    if (
+      target.closest(
+        'section[aria-label="Saved sessions"], [data-session-inspector]',
+      )
+    )
+      return;
     if (event.key.toLowerCase() === 'y' && !params.id) {
       event.preventDefault();
       if (!event.repeat) cycle();
@@ -528,52 +546,50 @@
 {#if readNotice}<p class="notice" role="status">{readNotice}</p>{/if}
 <div class="spread">
   <h1>SESSION TOTALS</h1>
-  {#if !params.id}<div class="finder-controls">
-      <label class="composer-surface session-search"
-        ><span aria-hidden="true">⌕</span>
-        <input
-          type="search"
-          aria-label="Filter sessions"
-          placeholder="Filter sessions (F)"
-          maxlength="160"
-          bind:this={field}
-          bind:value={query}
-          onkeydown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              query = '';
-              field?.blur();
+  {#if !params.id && !newScope}<div class="finder-controls">
+      <SessionSearch
+        label="Filter sessions"
+        placeholder="Filter sessions (F)"
+        bind:field
+        bind:value={query}
+        onkeydown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            query = '';
+            field?.blur();
+          }
+          if (e.key === 'Enter' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (shown[0]) {
+              select(shown[0].id, false);
+              document
+                .querySelector<HTMLElement>(
+                  '.session-row button,.session-row a',
+                )
+                ?.focus();
             }
-            if (e.key === 'Enter' || e.key === 'ArrowDown') {
-              e.preventDefault();
-              if (shown[0]) {
-                select(shown[0].id, false);
-                document
-                  .querySelector<HTMLElement>(
-                    '.session-row button,.session-row a',
-                  )
-                  ?.focus();
-              }
-            }
-          }}
-        /></label
-      >
+          }
+        }}
+      />
       <select aria-label="Session status filter" bind:value={status}
         ><option value="">All statuses</option>
         {#each [...new Set( [...sessions.map((s) => s.status), ...(status ? [status] : [])] )].sort() as value}<option
             {value}>{value}</option
           >{/each}</select
       >
-      <label
-        title="Requires a shared Codex 0.170+ app-server with ChatGPT authentication"
-        ><input
-          type="checkbox"
-          checked={!!scope && includeScope === scope}
-          disabled={!scope}
-          onchange={(e) =>
-            (includeScope = e.currentTarget.checked ? scope : '')}
-        /> Include history</label
+      <button
+        disabled={!scope}
+        onclick={() => (resumePicker.open = !resumePicker.open)}
+        aria-expanded={resumePicker.open && !!scope}>Saved sessions</button
       >
+      {#if live.data?.control && scope}
+        <button
+          onclick={() => {
+            resumePicker.open = false;
+            newScope = scope;
+          }}>New session</button
+        >
+      {/if}
     </div>{/if}
   <span class="eyebrow">OBSERVED {date(live.data?.sessionsAt)}</span>
 </div>
@@ -585,6 +601,12 @@
       <dd>{value}</dd>
     </div>{/each}
 </dl>
+{#if sessionInspector.root && (!params.id || params.id === sessionInspector.root) && sessions.some((row) => row.id === sessionInspector.root)}
+  {#key sessionInspector.root + ':' + sessionInspector.kind}<SessionInspector
+      root={sessionInspector.root}
+      kind={sessionInspector.kind}
+    />{/key}
+{/if}
 <p class="muted">
   {stale ? 'LAST KNOWN TOTALS — live state counts unavailable. ' : ''}Tokens
   observed since this server started for currently listed sessions; linked
@@ -771,6 +793,12 @@
         >Return to sessions</a
       >.
     </p>{/if}
+{:else if newScope}
+  <SessionNew scope={newScope} {liveIDs} onclose={() => (newScope = '')} />
+  {#if scope && resumePicker.open}{#key scope}<SavedSessions
+        {scope}
+        {liveIDs}
+      />{/key}{/if}
 {:else}
   <div class="spread session-controls">
     <p class="muted">
@@ -785,9 +813,8 @@
       >
     </div>
   </div>
-  {#if scope && includeScope === scope && !status}{#key scope}<SavedSessions
+  {#if scope && resumePicker.open}{#key scope}<SavedSessions
         {scope}
-        {query}
         {liveIDs}
       />{/key}{/if}
   {#if !shown.length && sessions.length}<p class="empty">
@@ -841,7 +868,13 @@
         {#if session.name && session.directory}<p class="muted">
             {session.directory}
           </p>{/if}
-        <p>{session.agents} LINKED AGENTS</p>
+        {#if session.agents > 0}<button
+            type="button"
+            onclick={() => {
+              sessionInspector.kind = 'agents';
+              sessionInspector.root = session.id;
+            }}>{session.agents} LINKED AGENTS</button
+          >{/if}
         <p class="muted">ACTIVE // {date(session.activity)}</p>
         <GoalStatus goal={session.goal} {stale} />
         <div class="detail-controls">
@@ -939,29 +972,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
-  }
-  .session-search {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    max-width: 100%;
-  }
-  .session-search:focus-within {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .session-search > span {
-    color: var(--accent);
-  }
-  .session-search input {
-    min-width: 0;
-    max-width: 100%;
-    border: 0;
-    outline: 0;
-    padding: 0;
-    color: inherit;
-    background: transparent;
-    font: inherit;
   }
   .reviewed {
     color: var(--muted);

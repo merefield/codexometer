@@ -28,7 +28,7 @@ func TestMonitorDetailKeepsVisibleGlobalShortcuts(t *testing.T) {
 	for _, tc := range []struct {
 		key    rune
 		button footerButtonID
-	}{{'t', footerButtonTheme}, {'r', footerButtonRefresh}, {'q', footerButtonQuit}} {
+	}{{'t', footerButtonTheme}, {'q', footerButtonQuit}} {
 		m := approvalTestModel()
 		updated, cmd := m.Update(key(tc.key))
 		next := updated.(Model)
@@ -41,9 +41,12 @@ func TestMonitorDetailKeepsVisibleGlobalShortcuts(t *testing.T) {
 		if tc.key == 't' && next.theme != m.theme.next() {
 			t.Fatal("theme did not change")
 		}
-		if tc.key == 'r' && !next.loading {
-			t.Fatal("refresh not requested")
-		}
+	}
+	m := approvalTestModel()
+	m.finder.setScope("scope")
+	next, cmd := m.Update(key('r'))
+	if n := next.(Model); cmd != nil || n.loading != m.loading || n.finder.include || n.monitorContextDetail != m.monitorContextDetail {
+		t.Fatal("R should not refresh quota or leave live detail")
 	}
 	for _, code := range []rune{tea.KeyTab} {
 		m := approvalTestModel()

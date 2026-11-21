@@ -151,6 +151,8 @@ type LiveUsageReader struct {
 	daemonAttachments      map[string]string
 	daemonReadStates       map[string]SessionReadState
 	daemonGoals            map[string]*SessionGoal
+	daemonResumed          map[string]struct{}
+	daemonRuntime          map[string]sessionRuntimeStatus
 	SessionsRoot           string
 	WriterLocksRoot        string
 	statusProvider         sessionStatusProvider
@@ -197,6 +199,7 @@ type rolloutCursor struct {
 	parentThreadID              string
 	workingDirectory            string
 	startedAt                   time.Time
+	agentName                   string
 	currentModel                string
 	modelSettings               SessionModelSettings
 	currentServiceTier          string
@@ -338,6 +341,7 @@ type rolloutMetadata struct {
 	ParentThreadID              string
 	WorkingDirectory            string
 	StartedAt                   time.Time
+	AgentName                   string
 	NonRoot                     bool
 	GuardianReviewer            bool
 	OpenAIProvider              bool
@@ -353,6 +357,7 @@ type rolloutMetadataEvent struct {
 func (c *rolloutCursor) setMetadata(m rolloutMetadata) {
 	c.threadID, c.parentThreadID, c.workingDirectory = m.ID, m.ParentThreadID, m.WorkingDirectory
 	c.startedAt, c.nonRoot, c.guardianReviewer = m.StartedAt, m.NonRoot, m.GuardianReviewer
+	c.agentName = m.AgentName
 	c.openAIProvider = m.OpenAIProvider
 	c.subagentHistoryStartOrdinal = m.SubagentHistoryStartOrdinal
 }
@@ -364,6 +369,8 @@ type rolloutMetadataPayload struct {
 	WorkingDirectory            string          `json:"cwd"`
 	Source                      json.RawMessage `json:"source"`
 	ThreadSource                string          `json:"thread_source"`
+	AgentNickname               string          `json:"agent_nickname"`
+	AgentRole                   string          `json:"agent_role"`
 	ModelProvider               json.RawMessage `json:"model_provider"`
 	SubagentHistoryStartOrdinal *uint64         `json:"subagent_history_start_ordinal"`
 }
@@ -444,6 +451,8 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 	r.daemonAttachments = nil
 	r.daemonGoals = nil
 	r.daemonReadStates = nil
+	r.daemonResumed = nil
+	r.daemonRuntime = nil
 	appServerUp := false
 	r.daemonSubscribedThreads = nil
 	if r.statusProvider != nil {
@@ -451,6 +460,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			appServerUp = true
 			names, savedScope = daemonSnapshot.Names, daemonSnapshot.SavedScope
 			exactStatuses = daemonSnapshot.Statuses
+			r.daemonRuntime = exactStatuses
 			r.daemonContexts = daemonSnapshot.Contexts
 			if len(daemonSnapshot.AnswerGuards) != 0 {
 				for _, cursor := range r.files {
@@ -462,6 +472,7 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			r.daemonAttachments = daemonSnapshot.AttachedThreads
 			r.daemonGoals = daemonSnapshot.Goals
 			r.daemonReadStates = daemonSnapshot.ReadStates
+			r.daemonResumed = daemonSnapshot.ResumedThreads
 			r.ingestResolvedModelObservations(daemonSnapshot.ModelObservations)
 			r.daemonSubscribedThreads = daemonSnapshot.SubscribedThreads
 		}
@@ -495,7 +506,8 @@ func (r *LiveUsageReader) fetchTokenUsage(ctx context.Context, forceFullDiscover
 			}
 			cursor = r.files[path]
 		}
-		if now.Sub(cursor.activityTime()) > activeRolloutHorizon {
+		_, resumed := r.daemonResumed[cursor.threadID]
+		if !resumed && now.Sub(cursor.activityTime()) > activeRolloutHorizon {
 			continue
 		}
 		if err := r.consume(path, cursor); err != nil {
@@ -1440,9 +1452,14 @@ func rolloutMetadataRecord(line []byte) (rolloutMetadata, bool) {
 				if guardian || payload.ThreadSource == "subagent" {
 					nonRoot = true
 				}
+				name := payload.AgentNickname
+				if name == "" {
+					name = payload.AgentRole
+				}
 				return rolloutMetadata{
 					ID: payload.ID, ParentThreadID: parent,
 					WorkingDirectory: payload.WorkingDirectory, NonRoot: nonRoot,
+					AgentName:                   singleLine(name),
 					GuardianReviewer:            guardian,
 					OpenAIProvider:              bytes.Equal(payload.ModelProvider, []byte(`"openai"`)),
 					StartedAt:                   firstNonZeroTime(payload.Timestamp, event.Timestamp),
@@ -1573,7 +1590,7 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 			if !unattributed && live.ThreadID == cursor.threadID && live.TurnID != "" {
 				group.SteerProgress = append(group.SteerProgress, live.SteerProgress())
 			}
-			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited {
+			if live.At.After(preview.At) || live.pending() || live.PendingApprovalsLimited || !preview.HasDisplayText() && live.HasDisplayText() {
 				preview = live
 			} else if (preview.Kind == SessionContextReply || preview.Kind == SessionContextFailure) && live.ThreadID == cursor.threadID && live.TurnID != "" && live.TurnID == cursor.currentTurnID {
 				// The local task_complete record can be newer than the live
@@ -1642,6 +1659,16 @@ func (r *LiveUsageReader) sessionSnapshots(now time.Time, liveWriters map[string
 		}
 	}
 
+	// A cold thread may not have a recent rollout yet. A verified explicit
+	// resume is enough to show its live row, never to invent token usage.
+	for id := range r.daemonResumed {
+		if groups[id] == nil {
+			status := exactStatuses[id]
+			groupWorking[id] = status == sessionRuntimeWorking
+			groups[id] = &LiveUsageSession{ID: id, Active: true, Context: r.daemonContexts[id],
+				Attention: sessionAttention(0, false, false, 0, status, true)}
+		}
+	}
 	sessions := make([]LiveUsageSession, 0, len(groups))
 	activeCount := 0
 	anyWorking := false

@@ -1,5 +1,5 @@
 import { homeRoute } from './preferences.svelte';
-import type { Snapshot } from './contracts.generated';
+import type { ProseBlock, Snapshot } from './contracts.generated';
 export type * from './contracts.generated';
 
 export const live = $state<{
@@ -21,18 +21,77 @@ export class ControlRejected extends Error {}
 let sendControl:
   | ((action: string, body: unknown, signal?: AbortSignal) => Promise<unknown>)
   | undefined;
-export type SavedRow = { id: string; name: string; directory: string };
+export type SavedRow = {
+  id: string;
+  name: string;
+  directory: string;
+  updatedAt?: number;
+  listCursor?: string;
+};
 export type SavedPage = {
   sessions?: SavedRow[];
   next?: string;
-  turns?: { task: string; reply: string; restricted?: boolean }[];
+  turns?: {
+    task: string;
+    reply: string;
+    restricted?: boolean;
+    prose?: ProseBlock[];
+  }[];
 };
+export const resumePicker = $state({ open: false });
+export type InspectionKind = 'agents' | 'terminals';
+export const sessionInspector = $state<{ root: string; kind: InspectionKind }>({
+  root: '',
+  kind: 'agents',
+});
+export type SessionInspection = {
+  agents?: { id: string; name: string; status: string }[];
+  turns?: SavedPage['turns'];
+  terminals?: {
+    id: string;
+    command: string;
+    directory: string;
+    pid?: number;
+  }[];
+  more?: boolean;
+  unverifiedTurns?: boolean;
+};
+export let inspectSession:
+  | ((
+      root: string,
+      child: string,
+      kind: InspectionKind,
+      signal: AbortSignal,
+    ) => Promise<SessionInspection>)
+  | undefined;
+type SessionReview = { mode?: 'prepare'; confirmation?: string };
+export let startSession:
+  | ((
+      scope: string,
+      directory: string,
+      prompt: string,
+      review?: SessionReview,
+    ) => Promise<{
+      id?: string;
+      confirmation?: string;
+      firstMessageRejected?: boolean;
+    }>)
+  | undefined;
+export let resumeSaved:
+  | ((
+      scope: string,
+      cursor: string,
+      id: string,
+      review?: SessionReview,
+    ) => Promise<string>)
+  | undefined;
 export let browseSaved:
   | ((
       scope: string,
       cursor: string,
       id: string,
       signal: AbortSignal,
+      query?: string,
     ) => Promise<SavedPage>)
   | undefined;
 export async function controlRequest<T>(
@@ -57,26 +116,31 @@ export function connect(): () => void {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout>;
   let token = '';
-  browseSaved = async (scope, cursor, id, signal) => {
-    if (!live.connected || live.data?.savedScope !== scope)
-      throw new Error('History unavailable');
-    const response = await fetch(
-      '/api/sessions/saved?' + new URLSearchParams({ scope, cursor, id }),
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.any([
-          controller.signal,
-          signal,
-          AbortSignal.timeout(8000),
-        ]),
-        cache: 'no-store',
-      },
-    );
-    if (!response.ok) throw new Error('Saved history unavailable');
+  async function sessionRead(
+    path: string,
+    params: Record<string, string>,
+    signal: AbortSignal,
+    timeout: number,
+  ) {
+    const response = await fetch(path + '?' + new URLSearchParams(params), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.any([
+        controller.signal,
+        signal,
+        AbortSignal.timeout(timeout),
+      ]),
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Session information unavailable');
     return response.json();
-  };
-  sendControl = async (action, body, signal) => {
-    const response = await fetch('/api/control/' + action, {
+  }
+  function postJSON(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+    timeout = 8000,
+  ) {
+    return fetch(path, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -85,11 +149,87 @@ export function connect(): () => void {
       body: JSON.stringify(body),
       signal: AbortSignal.any([
         controller.signal,
-        AbortSignal.timeout(8000),
+        AbortSignal.timeout(timeout),
         ...(signal ? [signal] : []),
       ]),
       cache: 'no-store',
     });
+  }
+  inspectSession = async (root, agent, kind, signal) => {
+    if (!live.connected || live.data?.sessionsError)
+      throw new Error('Session unavailable');
+    return sessionRead(
+      '/api/sessions/inspect',
+      { root, agent, kind },
+      signal,
+      6500,
+    );
+  };
+  browseSaved = async (scope, cursor, id, signal, query = '') => {
+    if (!live.connected || live.data?.savedScope !== scope)
+      throw new Error('History unavailable');
+    return sessionRead(
+      '/api/sessions/saved',
+      { scope, cursor, id, q: query },
+      signal,
+      8000,
+    );
+  };
+  resumeSaved = async (scope, cursor, id, review) => {
+    if (
+      !live.connected ||
+      !live.data?.control ||
+      live.data.sessionsError ||
+      live.data.savedScope !== scope
+    )
+      throw new ControlRejected(
+        'Resume unavailable. Check the live connection.',
+      );
+    const response = await postJSON(
+      '/api/sessions/resume',
+      { scope, cursor, id, ...review },
+      undefined,
+      14000,
+    );
+    if (!response.ok) {
+      if (response.status >= 500) throw new Error('Resume outcome unknown.');
+      throw new ControlRejected((await response.text()).trim());
+    }
+    if (review?.mode === 'prepare') return (await response.json()).confirmation;
+    return '';
+  };
+  startSession = async (scope, directory, prompt, review) => {
+    if (
+      !live.connected ||
+      !live.data?.control ||
+      live.data.savedScope !== scope ||
+      live.data.sessionsError
+    )
+      throw new ControlRejected(
+        'New sessions unavailable. Check the Codex connection.',
+      );
+    const response = await postJSON(
+      '/api/sessions/new',
+      {
+        scope,
+        directory,
+        prompt,
+        ...review,
+      },
+      undefined,
+      14000,
+    );
+    if (!response.ok) {
+      if (response.status >= 500)
+        throw new Error(
+          'Could not verify the new session. Check Codex before trying again.',
+        );
+      throw new ControlRejected((await response.text()).trim());
+    }
+    return response.json();
+  };
+  sendControl = async (action, body, signal) => {
+    const response = await postJSON('/api/control/' + action, body, signal);
     if (!response.ok) {
       if (response.status !== 502)
         throw new ControlRejected(
@@ -199,6 +339,10 @@ export function connect(): () => void {
   return () => {
     sendControl = undefined;
     browseSaved = undefined;
+    resumeSaved = undefined;
+    resumePicker.open = false;
+    inspectSession = undefined;
+    sessionInspector.root = '';
     controller.abort();
     clearTimeout(retry);
     live.connected = false;

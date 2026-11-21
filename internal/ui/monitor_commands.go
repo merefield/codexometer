@@ -922,7 +922,7 @@ func (m Model) updateMonitorCommands(msg tea.Msg) (Model, tea.Cmd, bool) {
 		case "q", "ctrl+c", "tab", "shift+tab":
 			m.closeMonitorCommands()
 			return m, nil, false
-		case "t", "r":
+		case "t":
 			return m, nil, false
 		case "left", "backspace":
 			cmd := m.backMonitorCommands()

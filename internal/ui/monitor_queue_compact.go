@@ -227,12 +227,8 @@ func (m Model) updateCompactFollowups(msg tea.Msg) (Model, tea.Cmd, bool) {
 			scroll(-max(rows-1, 1))
 		case "pgdown":
 			scroll(max(rows-1, 1))
-		case "t", "r":
-			button := footerButtonTheme
-			if key == "r" {
-				button = footerButtonRefresh
-			}
-			next, cmd := m.pressFooterButton(button)
+		case "t":
+			next, cmd := m.pressFooterButton(footerButtonTheme)
 			return next.(Model), cmd, true
 		case "tab", "shift+tab", "q", "ctrl+c":
 			m.closeCompactFollowups()

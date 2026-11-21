@@ -345,8 +345,8 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 	}
 	if m.monitorContextDetail != "" && !m.contextTargetHidden() {
 		switch key {
-		case "t", "r":
-			// These controls remain visible in the global footer. Keep detail
+		case "t":
+			// Theme remains visible in the global footer. Keep detail
 			// open and let the standard handler apply the action and flash.
 			return m, nil, false
 		case "enter":
@@ -538,6 +538,9 @@ func (m Model) updateMonitorContextMouse(msg tea.MouseMsg) (Model, tea.Cmd, bool
 			return m.monitorApprovalAction(m.monitorContextHover)
 		}
 		switch m.monitorContextHover {
+		case "resume-picker":
+			cmd := m.openResumePicker()
+			return m, cmd, true
 		case "finder":
 			cmd := m.focusFinder()
 			return m, cmd, true
