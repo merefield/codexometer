@@ -300,7 +300,7 @@ func (m *Model) resumeSaved() tea.Cmd {
 			continue
 		}
 		identity := strings.TrimSpace(row.Name + "  " + row.Directory)
-		if m.reviewMonitorAction("resume-saved", row.ID+" // "+identity, "RESUME SAVED SESSION", "Codex may automatically continue an active goal in this session.", []string{f.scope, row.cursor, row.ID}) {
+		if m.reviewMonitorAction("resume-saved", row.ID+" // "+identity, i18n.Text("RESUME SAVED SESSION"), i18n.Text("Codex may automatically continue an active goal in this session."), []string{f.scope, row.cursor, row.ID}) {
 			return nil
 		}
 		f.loading = true

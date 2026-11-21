@@ -108,10 +108,10 @@ func (m Model) inspectorLines(width int) []string {
 			lines = append(lines, "")
 		}
 		if len(lines) == 0 {
-			lines = append(lines, "No background terminals reported.")
+			lines = append(lines, wrapProse(i18n.Text("No background terminals reported."), width)...)
 		}
 		if s.terminals.More {
-			lines = append(lines, "Additional background terminals are not shown.")
+			lines = append(lines, wrapProse(i18n.Text("Additional background terminals are not shown."), width)...)
 		}
 		return lines
 	}
@@ -128,7 +128,7 @@ func (m Model) inspectorLines(width int) []string {
 			lines = append(lines, prefix+name+" // "+i18n.Text(row.Status))
 		}
 		if len(lines) == 0 {
-			lines = append(lines, "No linked agents observed.")
+			lines = append(lines, wrapProse(i18n.Text("No linked agents observed."), width)...)
 		}
 		return lines
 	}
@@ -148,14 +148,14 @@ func (m Model) inspectorOffset(total, rows int) int {
 
 func (m Model) renderSessionInspector(width, height int, colors palette) string {
 	s := m.inspector
-	title := "LINKED AGENTS // " + shortSessionID(s.root)
+	title := i18n.Text("LINKED AGENTS") + " // " + shortSessionID(s.root)
 	action := "[ESC]"
 	if s.kind == "ps" {
-		title = "BACKGROUND TERMINALS // " + shortSessionID(s.root)
+		title = i18n.Text("BACKGROUND TERMINALS") + " // " + shortSessionID(s.root)
 		action = "[R] [ESC]"
 	}
 	if s.child != "" {
-		title = "AGENT TRANSCRIPT // " + shortSessionID(s.child)
+		title = i18n.Text("AGENT TRANSCRIPT") + " // " + shortSessionID(s.child)
 	}
 	rows := max(height-2, 1)
 	inner := max(width-4, 1)

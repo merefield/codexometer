@@ -145,11 +145,11 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
 	if layout.newRect.width > 0 {
-		label := "(N)EW SESSION"
+		label := i18n.Text("(N)EW SESSION")
 		if layout.newRect.width < lipgloss.Width(label)+2 {
-			label = "(N)EW\nSESSION"
+			label = strings.Replace(label, " ", "\n", 1)
 		}
-		if layout.newRect.width < lipgloss.Width(label)+2 {
+		if layout.newRect.width < lipgloss.Width(label)+2 || layout.topHeight < lipgloss.Height(label)+2 {
 			label = "(N)"
 		}
 		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)

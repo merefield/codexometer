@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/confirmation"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type newSessionProbe struct {
@@ -136,5 +138,43 @@ func TestNewSessionFitsShortTerminalsAndSharesHitTargets(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestNewSessionLocalisedLabelsAndErrors(t *testing.T) {
+	for _, cause := range newSessionKnownErrors {
+		key := cause.Error()
+		if got := newSessionErrorText(cause); got == "" || got != i18n.Text(key) || i18n.Code() != "en-GB" && got == key {
+			t.Errorf("%s: missing translation for %q: %q", i18n.Code(), key, got)
+		}
+	}
+	m := contextTestModel()
+	m.fetcher = &newSessionProbe{}
+	m.finder.setScope("account")
+	m.openNewSession()
+	m.startDraftSession() // No first message yet.
+	view := ansi.Strip(m.renderNewSession(160, 20, paletteFor(m.theme)))
+	for _, key := range []string{"NEW SESSION", "WORKING DIRECTORY", "FIRST MESSAGE", "[ Send ]", "[ RESUME ]", "[ Esc Close ]", "Type a first message, or use /resume to open a saved session."} {
+		if translated := i18n.Text(key); !strings.Contains(view, translated) {
+			t.Errorf("draft missing %q: %s", translated, view)
+		}
+	}
+	m.confirmations.Mode = confirmation.Require
+	const prompt = "Literal /goal text from the user"
+	m.newSession.prompt.SetValue(prompt)
+	m.startDraftSession()
+	if m.actionReview == nil || m.actionReview.title != i18n.Text("START NEW SESSION") || m.actionReview.text != prompt {
+		t.Fatal("confirmation should localise its title without changing the prompt", m.actionReview)
+	}
+	const key = "Codex has not verified this folder as trusted; choose an already-trusted folder or open it in Codex to review folder trust"
+	want := i18n.Text(key)
+	m, _, _ = m.updateNewSession(newSessionResult{generation: m.newSession.generation, err: fmt.Errorf("private diagnostics: %w", codex.ErrSessionStartTrust)})
+	if m.newSession.notice != want || i18n.Code() != "en-GB" && want == key {
+		t.Fatal("backend error did not map to a translated notice", m.newSession.notice)
+	}
+	m, _, _ = m.updateNewSession(newSessionResult{generation: m.newSession.generation, id: "created", err: codex.ErrSessionFirstPrompt})
+	m.openLiveSessionDetail("created")
+	if want := i18n.Text("session created, but Codex rejected the first message; open the session to try again"); m.monitorPrompt.notice != want {
+		t.Fatal("handed-off rejection lost its localisation", m.monitorPrompt.notice)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type newSessionDraft struct {
@@ -69,7 +70,7 @@ func (m *Model) startDraftSession() tea.Cmd {
 		return nil
 	}
 	if !m.canStartNewSession() || d.scope != m.finder.scope {
-		d.notice = "Codex connection changed. Close this draft and open a new one."
+		d.notice = i18n.Text("Codex connection changed. Close this draft and open a new one.")
 		return nil
 	}
 	value := d.prompt.Value()
@@ -77,14 +78,14 @@ func (m *Model) startDraftSession() tea.Cmd {
 	case strings.EqualFold(strings.TrimSpace(value), "/resume"):
 		return m.openResumePicker()
 	case strings.TrimSpace(value) == "" || codex.IsSessionCommand(value):
-		d.notice = "Type a first message, or use /resume to open a saved session."
+		d.notice = i18n.Text("Type a first message, or use /resume to open a saved session.")
 		return nil
 	}
 	cwd, scope, generation := d.directory.Value(), d.scope, d.generation
-	if m.reviewMonitorAction("new-session", cwd, "START NEW SESSION", value, []string{scope, cwd, value}) {
+	if m.reviewMonitorAction("new-session", cwd, i18n.Text("START NEW SESSION"), value, []string{scope, cwd, value}) {
 		return nil
 	}
-	d.sending, d.notice = true, "Starting session…"
+	d.sending, d.notice = true, i18n.Text("Starting session…")
 	starter := m.fetcher.(codex.SessionStartClient)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), codex.SessionStartTimeout)
@@ -96,14 +97,23 @@ func (m *Model) startDraftSession() tea.Cmd {
 
 func newSessionControls(width int) []monitorNavigationButton {
 	buttons := []monitorNavigationButton{
-		{label: "[ Send ]", action: "send", enabled: true},
-		{label: "[ RESUME ]", action: "saved", enabled: true},
-		{label: "[ Esc Close ]", action: "close", enabled: true},
+		{label: i18n.Text("[ Send ]"), action: "send", enabled: true},
+		{label: i18n.Text("[ RESUME ]"), action: "saved", enabled: true},
+		{label: i18n.Text("[ Esc Close ]"), action: "close", enabled: true},
 	}
-	if width < 47 {
+	available := width - 4
+	firstTwo := ansi.StringWidth(buttons[0].label) + 1 + ansi.StringWidth(buttons[1].label)
+	if firstTwo > available {
+		buttons[1].label = "[/resume]"
+		firstTwo = ansi.StringWidth(buttons[0].label) + 1 + ansi.StringWidth(buttons[1].label)
+	}
+	if firstTwo > available {
+		return buttons[:1] // /resume is still available from the composer.
+	}
+	if width < 47 || firstTwo+1+ansi.StringWidth(buttons[2].label) > available {
 		buttons[2].label = "[ Esc ]"
 	}
-	if width < 34 {
+	if width < 34 || firstTwo+1+ansi.StringWidth(buttons[2].label) > available {
 		buttons = buttons[:2]
 	}
 	return buttons
@@ -156,12 +166,13 @@ func (m Model) renderNewSession(width, height int, colors palette) string {
 	g := layoutNewSession(width, height, d.directory.Focused(), d.notice != "")
 	innerWidth := max(width-4, 1)
 	label := colors.label()
-	title := "NEW SESSION"
+	title := i18n.Text("NEW SESSION")
+	directoryLabel, promptLabel := i18n.Text("WORKING DIRECTORY"), i18n.Text("FIRST MESSAGE")
 	if height <= 3 {
 		if d.directory.Focused() {
-			title += " // WORKING DIRECTORY"
+			title += " // " + directoryLabel
 		} else {
-			title += " // FIRST MESSAGE"
+			title += " // " + promptLabel
 		}
 	}
 	if d.notice != "" && g.notice < 0 {
@@ -169,14 +180,14 @@ func (m Model) renderNewSession(width, height int, colors palette) string {
 	}
 	rows := make([]string, height)
 	if g.labels {
-		rows[1], rows[g.prompt-1] = label.Render("WORKING DIRECTORY"), label.Render("FIRST MESSAGE")
+		rows[1], rows[g.prompt-1] = label.Render(directoryLabel), label.Render(promptLabel)
 	}
 	if g.folder >= 0 {
 		folder := *d.directory
 		if !g.labels && height > 3 {
-			folder.Prompt = "DIR "
+			folder.Prompt = i18n.Text("DIR") + " "
 		}
-		folder.SetWidth(max(innerWidth-len(folder.Prompt)-1, 1))
+		folder.SetWidth(max(innerWidth-ansi.StringWidth(folder.Prompt)-1, 1))
 		rows[g.folder] = folder.View()
 	}
 	for _, button := range g.buttons {
@@ -189,7 +200,7 @@ func (m Model) renderNewSession(width, height int, colors palette) string {
 	if g.notice >= 0 {
 		notice := d.notice
 		if notice == "" {
-			notice = "Enter sends · Tab changes field · Shift+Enter adds a line"
+			notice = i18n.Text("Enter sends · Tab changes field · Shift+Enter adds a line")
 		}
 		rows[g.notice] = label.Foreground(colors.dim).Render(notice)
 	}
@@ -209,6 +220,28 @@ func (m Model) renderNewSession(width, height int, colors palette) string {
 	return frameSized(width, height-2, title, strings.Join(rows[1:height-1], "\n"), colors.primary, colors)
 }
 
+// Only these fixed sentinel messages are catalogue keys. Never translate or
+// display a raw protocol/diagnostic error. UI locale tests cover every key.
+var newSessionKnownErrors = [...]error{
+	codex.ErrSessionStartUnavailable,
+	codex.ErrSessionStartDirectory,
+	codex.ErrSessionStartTrust,
+	codex.ErrSessionStartPrompt,
+	codex.ErrSessionStartCommand,
+	codex.ErrSessionStartRejected,
+	codex.ErrSessionFirstPrompt,
+	codex.ErrSessionStartUncertain,
+}
+
+func newSessionErrorText(err error) string {
+	for _, known := range newSessionKnownErrors {
+		if errors.Is(err, known) {
+			return i18n.Text(known.Error())
+		}
+	}
+	return i18n.Text("Could not start the new session.")
+}
+
 func (m Model) updateNewSession(message tea.Msg) (Model, tea.Cmd, bool) {
 	d := &m.newSession
 	switch event := message.(type) {
@@ -219,13 +252,13 @@ func (m Model) updateNewSession(message tea.Msg) (Model, tea.Cmd, bool) {
 		d.sending = false
 		d.rejected = errors.Is(event.err, codex.ErrSessionFirstPrompt) && event.id != ""
 		if event.err != nil && !d.rejected {
-			d.notice = event.err.Error()
+			d.notice = newSessionErrorText(event.err)
 			d.uncertain = errors.Is(event.err, codex.ErrSessionStartUncertain)
 			return m, nil, true
 		}
-		d.pendingID, d.notice = event.id, "Opening the new session…"
+		d.pendingID, d.notice = event.id, i18n.Text("Opening the new session…")
 		if d.rejected {
-			d.notice = event.err.Error()
+			d.notice = newSessionErrorText(event.err)
 		}
 		generation := d.generation
 		deadline := tea.Tick(15*time.Second, func(time.Time) tea.Msg { return newSessionDeadline(generation) })
@@ -237,7 +270,7 @@ func (m Model) updateNewSession(message tea.Msg) (Model, tea.Cmd, bool) {
 	case newSessionDeadline:
 		if d.open() && uint64(event) == d.generation && d.pendingID != "" {
 			if !d.rejected {
-				d.notice = "First message sent; still waiting for the session to appear."
+				d.notice = i18n.Text("First message sent; still waiting for the session to appear.")
 			}
 		}
 		return m, nil, true
@@ -367,7 +400,7 @@ func (m *Model) openLiveSessionDetail(id string) {
 	delete(m.monitorDismissed, id)
 	m.setRowContext(id, contextFull)
 	if rejected {
-		m.monitorPrompt.notice = codex.ErrSessionFirstPrompt.Error()
+		m.monitorPrompt.notice = newSessionErrorText(codex.ErrSessionFirstPrompt)
 		m.monitorPrompt.noticeUntil = time.Now().Add(15 * time.Second)
 	}
 }

@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
+	"github.com/merefield/codexometer/internal/i18n"
 )
 
 type agentInspectionProbe struct {
@@ -63,6 +65,27 @@ func TestAgentTranscriptEmptyStateExplainsUnverifiedOwnership(t *testing.T) {
 	if got := m.inspectorLines(100); got[0] != "NO COMPLETED TURNS" {
 		t.Fatal("genuinely empty transcript did not keep its original notice", got)
 	}
+}
+
+func TestSessionInspectorLocalisedPresentation(t *testing.T) {
+	m := contextTestModel()
+	check := func(want ...string) {
+		t.Helper()
+		view := ansi.Strip(m.renderSessionInspector(120, 12, paletteFor(m.theme)))
+		for _, label := range want {
+			if !strings.Contains(view, label) {
+				t.Errorf("inspector missing %q: %s", label, view)
+			}
+		}
+	}
+	m.inspector = sessionInspector{kind: "ps", root: "root-one", terminals: codex.TerminalInspection{More: true}}
+	check(i18n.Text("BACKGROUND TERMINALS"), i18n.Text("No background terminals reported."), i18n.Text("Additional background terminals are not shown."))
+	m.inspector.terminals.Terminals = []codex.SessionTerminal{{ID: "process-1", Command: "go test ./...", Directory: "/work/project", PID: 42}}
+	check("process-1 // PID 42 // /work/project", "go test ./...")
+	m.inspector = sessionInspector{kind: "subagents", root: "root-one"}
+	check(i18n.Text("LINKED AGENTS"), i18n.Text("No linked agents observed."))
+	m.inspector.child = "child"
+	check(i18n.Text("AGENT TRANSCRIPT"), i18n.Text("NO COMPLETED TURNS"))
 }
 
 func (p *terminalInspectionProbe) InspectSessionTerminals(_ context.Context, id string) (codex.TerminalInspection, error) {
