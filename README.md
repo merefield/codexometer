@@ -980,7 +980,9 @@ choose one of these five views with its sub-tab or `v`:
    diagonal steady-consumption line and a red/amber/green background. Above
    the diagonal means over pace; below it means headroom.
 3. **Pie** — clockwise-filled circles rendered on a 2×4 sub-cell Braille canvas
-   for clean curves at any size.
+   with a two-tone reset-cycle ring around each pie. Both start at 12 o'clock
+   and fill clockwise. Look for **PIE // … USED** and **RING // … ELAPSED**,
+   or a compact **RING … ELAPSED** label beside the countdown on narrow cards.
 4. **Fuel Tank** — a reverse gauge whose bright segment shows remaining range
    and whose dark segment shows consumed capacity, labelled from Empty to Full;
    one full-width tank appears per row. Its reset-cycle comparison also drains
@@ -1340,17 +1342,17 @@ space above the footer instead of stretching one quota block more than another.
 Pie uses at least two columns when multiple limits exist, adding rows when that
 preserves more radial detail and adding columns when the terminal is wide
 enough. Pace uses as many graph columns as remain readable and scales
-both axes to each card's remaining space. Bars, Pie and Fuel Tank
-also show a `RESET CYCLE` comparison:
-its label and countdown occupy one line, while its progress bar occupies a
-separate line with the same width and active colour as the main visualization.
+both axes to each card's remaining space. Bars and Fuel Tank show a
+`RESET CYCLE` bar with the same width and active colour as the main display.
+Pie uses the same colours in its outer ring instead. The label and countdown
+stay separate; very short pie cards keep the text when the ring will not fit.
 Its percentage is elapsed time from the calculated window start
 (`reset - duration`) to the next reset. When Codex supplies a monthly reset but
 not a cycle start, the card says `CYCLE START UNAVAILABLE`, shows the known
-countdown, and leaves the comparison bar unfilled. Pace instead
-shows elapsed time on its X axis and retains a separate reset countdown.
-Every visualization
-receives its card's remaining width and height, and resizing the terminal
+countdown, and leaves the comparison bar unfilled or omits the pie ring.
+Pace instead shows elapsed time on its X axis and retains a separate reset
+countdown. Every visualization receives its card's remaining width and height,
+and resizing the terminal
 immediately reflows and rescales it. The underlying values and reset information
 never change with presentation.
 

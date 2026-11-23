@@ -296,6 +296,35 @@ a {
 .gauge.timeline {
   height: 14px;
 }
+.pie-graphic {
+  display: flex;
+  flex: 1;
+  gap: 0.75rem;
+  min-height: 100px;
+}
+.pie-legend {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.pie-stats,
+.pie-compact-cycle {
+  display: none;
+}
+@container (max-width: 420px) {
+  .pie-legend {
+    display: none;
+  }
+  .pie-stats {
+    display: flex;
+  }
+  .pie-compact-cycle {
+    display: inline;
+  }
+}
 .pie-wrap {
   flex: 1;
   position: relative;
@@ -315,6 +344,17 @@ a {
 }
 .pie-fill {
   fill: var(--accent);
+}
+.pie-cycle-track,
+.pie-cycle-elapsed {
+  fill: none;
+  stroke-width: 6;
+}
+.pie-cycle-track {
+  stroke: var(--edge);
+}
+.pie-cycle-elapsed {
+  stroke: var(--accent);
 }
 .readout {
   overflow-wrap: anywhere;

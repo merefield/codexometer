@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "PIE  // %d%% USED",
+  "RING // %d%% ELAPSED": "RING // %d%% ELAPSED",
+  "RING %d%% ELAPSED": "RING %d%% ELAPSED",
   "Starting session…": "Starting session…",
   "Opening the new session…": "Opening the new session…",
   "First message sent; still waiting for the session to appear.": "First message sent; still waiting for the session to appear.",

@@ -2,11 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"image"
+	imagecolor "image/color"
 	"strings"
 	"testing"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/merefield/codexometer/internal/codex"
@@ -21,7 +24,7 @@ func TestEveryMeterViewHasDistinctiveOutput(t *testing.T) {
 		want string
 	}{
 		{viewBars, "█"},
-		{viewPie, "BRAILLE PIE"},
+		{viewPie, "PIE  // 62% USED"},
 		{viewPace, "GRAPH DATA UNAVAILABLE"},
 		{viewFuel, "RANGE"},
 	}
@@ -46,7 +49,7 @@ func TestEveryMeterViewUsesAllocatedRectangle(t *testing.T) {
 	}
 }
 
-func TestEveryViewIncludesResetCycleGauge(t *testing.T) {
+func TestHorizontalViewsIncludeAlignedResetCycleGauge(t *testing.T) {
 	colors := paletteFor(themeHacker)
 	duration := int64(60)
 	reset := time.Now().Add(30 * time.Minute).Unix()
@@ -55,7 +58,7 @@ func TestEveryViewIncludesResetCycleGauge(t *testing.T) {
 		Name:   "1 HOUR",
 		Window: codex.Window{UsedPercent: 40, WindowDurationMins: &duration, ResetsAt: &reset},
 	}
-	for _, view := range []meterViewID{viewBars, viewPie, viewFuel} {
+	for _, view := range []meterViewID{viewBars, viewFuel} {
 		output := ansi.Strip(renderMeterArea(80, 18, meter, view, colors))
 		if !strings.Contains(output, "RESET CYCLE  50%") {
 			t.Errorf("%s missing reset-cycle comparison gauge:\n%s", view.name(), output)
@@ -314,9 +317,72 @@ func TestBraillePieHasSmoothPartialEdgesAndEndStates(t *testing.T) {
 	}
 	for _, used := range []int{0, 100} {
 		output := ansi.Strip(renderPie(52, used, colors.primary, colors))
-		if !strings.Contains(output, fmt.Sprintf("%3d%%", used)) {
+		if !strings.Contains(output, fmt.Sprintf("PIE  // %d%% USED", used)) {
 			t.Fatalf("pie end state %d missing percentage: %q", used, output)
 		}
+	}
+}
+
+func TestPieResetRingUsesItsOwnClockwiseProgress(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	const width, height = 18, 9 // No side legend; the canvas fills the allocation.
+	for _, tc := range []struct {
+		elapsed              int
+		northEast, southEast imagecolor.Color
+	}{
+		{0, colors.dim, colors.dim},
+		{25, colors.warning, colors.dim},
+		{100, colors.warning, colors.warning},
+	} {
+		output := renderPieSized(width, height, 50, &tc.elapsed, colors.warning, colors)
+		cells := uv.NewScreenBuffer(width, height)
+		uv.NewStyledString(output).Draw(&cells, image.Rect(0, 0, width, height))
+		for _, spot := range []struct {
+			x, y int
+			want imagecolor.Color
+		}{
+			{16, 3, tc.northEast}, {16, 5, tc.southEast}, // Outer band.
+			{12, 5, colors.warning}, {5, 5, colors.dim}, // Pie remains 50% used.
+		} {
+			cell := cells.CellAt(spot.x, spot.y)
+			if cell == nil || cell.Content == " " || cell.Style.Fg == nil {
+				t.Fatalf("cycle %d: missing dot at %d,%d", tc.elapsed, spot.x, spot.y)
+			}
+			r, g, b, _ := cell.Style.Fg.RGBA()
+			wr, wg, wb, _ := spot.want.RGBA()
+			if r != wr || g != wg || b != wb {
+				t.Errorf("cycle %d: wrong tone at %d,%d", tc.elapsed, spot.x, spot.y)
+			}
+		}
+	}
+}
+
+func TestPieCycleHasTextButNoHorizontalBar(t *testing.T) {
+	colors := paletteFor(themeHacker)
+	duration, reset := int64(60), time.Now().Add(45*time.Minute).Unix()
+	meter := codex.Meter{Bucket: "codex", Name: "1 HOUR", Window: codex.Window{
+		UsedPercent: 50, WindowDurationMins: &duration, ResetsAt: &reset,
+	}}
+	for _, tc := range []struct {
+		width, height int
+		cycle, reset  string
+	}{
+		{80, 6, "RESET CYCLE  25%", "RESET T-"},
+		{80, 22, "RING // 25% ELAPSED", "RESET T-"},
+		{34, 16, "RING 25% ELAPSED", "T-"},
+	} {
+		got := ansi.Strip(renderMeterArea(tc.width, tc.height, meter, viewPie, colors))
+		if strings.ContainsAny(got, "█░") || !strings.Contains(got, tc.cycle) || !strings.Contains(got, tc.reset) {
+			t.Fatalf("%dx%d: expected cycle label and countdown without horizontal bar:\n%s", tc.width, tc.height, got)
+		}
+		if tc.width == 80 && tc.height == 22 && (!strings.Contains(got, "PIE  // 50% USED") || strings.Contains(got, "RESET CYCLE")) {
+			t.Fatalf("wide Pie should label both shapes without repeating the cycle percentage:\n%s", got)
+		}
+	}
+	meter.Window.WindowDurationMins = nil
+	unknown := ansi.Strip(renderMeterArea(80, 18, meter, viewPie, colors))
+	if !strings.Contains(unknown, "CYCLE START UNAVAILABLE // RESET T-") || strings.ContainsAny(unknown, "█░") {
+		t.Fatalf("missing cycle start should not look like 0%% elapsed:\n%s", unknown)
 	}
 }
 

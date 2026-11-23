@@ -544,7 +544,7 @@ func TestVisualizationClampsAndFallbacks(t *testing.T) {
 	if output := ansi.Strip(renderVisualization(20, 0, meterViewID(999), colors.primary, colors)); !strings.Contains(output, "░") {
 		t.Fatalf("unknown view did not fall back to bars: %q", output)
 	}
-	if output := ansi.Strip(renderPie(20, 100, colors.primary, colors)); !strings.Contains(output, "100%") {
+	if output := ansi.Strip(renderPie(40, 100, colors.primary, colors)); !strings.Contains(output, "100%") {
 		t.Fatalf("full pie missing percentage: %q", output)
 	}
 }

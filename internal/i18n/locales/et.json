@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "SEKTOR  // %d%% KASUTATUD",
+  "RING // %d%% ELAPSED": "RÕNGAS // %d%% MÖÖDUNUD",
+  "RING %d%% ELAPSED": "RÕNGAS %d%% MÖÖDUNUD",
   "Starting session…": "Seanssi käivitatakse…",
   "Opening the new session…": "Avatakse uut seanssi…",
   "First message sent; still waiting for the session to appear.": "Esimene sõnum saadetud. Ootame seansi ilmumist.",

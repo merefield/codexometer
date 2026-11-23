@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "CÍRCULO  // %d%% USADO",
+  "RING // %d%% ELAPSED": "ANEL // %d%% DECORRIDO",
+  "RING %d%% ELAPSED": "ANEL %d%% DECORRIDO",
   "Starting session…": "Iniciando a sessão…",
   "Opening the new session…": "Abrindo a nova sessão…",
   "First message sent; still waiting for the session to appear.": "Primeira mensagem enviada. Ainda aguardando a sessão aparecer.",

@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "YMPYRÄ  // %d%% KÄYTETTY",
+  "RING // %d%% ELAPSED": "RENGAS // %d%% KULUNUT",
+  "RING %d%% ELAPSED": "RENGAS %d%% KULUNUT",
   "Starting session…": "Käynnistetään istuntoa…",
   "Opening the new session…": "Avataan uutta istuntoa…",
   "First message sent; still waiting for the session to appear.": "Ensimmäinen viesti lähetettiin. Odotetaan yhä istunnon ilmestymistä.",

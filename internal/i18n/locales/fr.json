@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "DISQUE  // %d%% UTILISÉS",
+  "RING // %d%% ELAPSED": "ANNEAU // %d%% ÉCOULÉS",
+  "RING %d%% ELAPSED": "ANNEAU %d%% ÉCOULÉS",
   "Starting session…": "Démarrage de la session…",
   "Opening the new session…": "Ouverture de la nouvelle session…",
   "First message sent; still waiting for the session to appear.": "Premier message envoyé. La session n’est pas encore visible.",

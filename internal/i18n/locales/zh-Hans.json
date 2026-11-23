@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "圆内  // %d%% 已用",
+  "RING // %d%% ELAPSED": "外环 // %d%% 已过",
+  "RING %d%% ELAPSED": "外环 %d%% 已过",
   "Starting session…": "正在启动会话…",
   "Opening the new session…": "正在打开新会话…",
   "First message sent; still waiting for the session to appear.": "首条消息已发送，仍在等待会话显示。",

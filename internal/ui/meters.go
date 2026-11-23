@@ -4,6 +4,7 @@ import (
 	"fmt"
 	imagecolor "image/color"
 	"math"
+	"math/bits"
 	"strings"
 	"time"
 
@@ -95,12 +96,16 @@ func meterGridColumns(width, height, meterCount int, view meterViewID) int {
 		cellHeight := max((height-(rows-1))/rows, 1)
 		innerWidth := max(cellWidth-4, 1)
 		visualChrome := 6
+		if view == viewPie {
+			visualChrome-- // The reset comparison is part of the canvas.
+		}
 		visualHeight := max(cellHeight-visualChrome, 1)
 		detail := innerWidth * visualHeight
 		switch view {
 		case viewPie:
-			canvasWidth, canvasHeight := radialCanvasSize(innerWidth, visualHeight, 11)
-			detail = canvasWidth * canvasHeight
+			fullCycle := 100
+			pie := layoutPie(innerWidth, visualHeight, 100, &fullCycle)
+			detail = pie.width * pie.height
 		}
 		if detail > bestDetail || detail == bestDetail && columns > bestColumns {
 			bestDetail = detail
@@ -158,11 +163,13 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	stats = ansi.Truncate(stats, innerWidth, "")
 
 	reset := i18n.Text("RESET DATA UNAVAILABLE")
+	remaining := ""
 	if meter.Window.ResetsAt != nil {
 		at := time.Unix(*meter.Window.ResetsAt, 0)
-		reset = i18n.Format("RESET T-%s  //  %s", countdown(at), formatResetDeadline(at))
+		remaining = countdown(at)
+		reset = i18n.Format("RESET T-%s  //  %s", remaining, formatResetDeadline(at))
 		if lipgloss.Width(reset) > innerWidth {
-			reset = i18n.Format("RESET T-%s", countdown(at))
+			reset = i18n.Format("RESET T-%s", remaining)
 		}
 	}
 	reset = ansi.Truncate(reset, innerWidth, "")
@@ -173,32 +180,54 @@ func renderMeterArea(width, height int, meter codex.Meter, view meterViewID, col
 	if isQuotaGraph(view) && height > 0 {
 		// Preserve the plot before optional API-equivalent telemetry.
 		detailLines = detailLines[:min(len(detailLines), max(height-10, 0))]
+	} else if view == viewPie && height > 0 {
+		// Leave room for the ring before adding optional telemetry.
+		detailLines = detailLines[:min(len(detailLines), max(height-8, 0))]
 	}
 	if height > 0 {
 		bodyHeight = max(height-2, 1)
 		chromeHeight := 3 + len(detailLines)
-		if isQuotaGraph(view) {
+		if view == viewPie || isQuotaGraph(view) {
 			chromeHeight = 2 + len(detailLines)
 		}
 		visualHeight = max(bodyHeight-chromeHeight, 1)
 	}
 	now := time.Now()
-	visual := renderVisualizationSized(innerWidth, visualHeight, used, view, color, colors)
-	if isQuotaGraph(view) {
+	var visual, resetGauge string
+	switch {
+	case view == viewPie:
+		progress, known := resetProgress(meter.Window, now)
+		var cycle *int
+		if known {
+			cycle = &progress
+		}
+		pie := layoutPie(innerWidth, visualHeight, used, cycle)
+		visual = renderPieCanvas(innerWidth, visualHeight, used, cycle, pie, color, colors)
+		if len(pie.legend) > 0 {
+			// The legend already shows usage; keep only the free capacity up top.
+			stats = lipgloss.PlaceHorizontal(innerWidth, lipgloss.Right, freeText)
+		}
+		label := reset
+		if !pie.ring {
+			label = resetCycleLabel(meter.Window, progress, known, reset, false)
+		} else if len(pie.legend) == 0 {
+			label = compactPieCycleLabel(progress, reset, remaining, innerWidth)
+		}
+		resetGauge = colors.dimmed().Render(ansi.Truncate(label, innerWidth, ""))
+	case isQuotaGraph(view):
 		options := quotaPlotOptions{}
 		if len(graphs) > 0 {
 			options = graphs[0]
 		}
 		visual = renderQuotaPlot(innerWidth, visualHeight, meter.Window, now, options, colors)
-	}
-	gaugeWidth := min(max(lipgloss.Width(visual), 1), innerWidth)
-	resetGauge := renderResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
-	if isQuotaGraph(view) {
 		resetGauge = colors.dimmed().Render(reset)
-	}
-	if view == viewFuel {
-		gaugeWidth = max(innerWidth-6, 1)
-		resetGauge = renderReverseResetGauge(innerWidth, gaugeWidth, meter.Window, now, reset, color, colors)
+	default:
+		visual = renderVisualizationSized(innerWidth, visualHeight, used, view, color, colors)
+		if view == viewFuel {
+			resetGauge = renderReverseResetGauge(innerWidth, max(innerWidth-6, 1), meter.Window, now, reset, color, colors)
+		} else {
+			resetGauge = renderResetGauge(innerWidth, lipgloss.Width(visual), meter.Window, now, reset, color, colors)
+		}
 	}
 	bodyParts := []string{stats}
 	for _, detail := range detailLines {
@@ -264,25 +293,32 @@ func renderReverseResetGauge(width, gaugeWidth int, window codex.Window, now tim
 func renderResetGaugeWithOptions(width, gaugeWidth int, window codex.Window, now time.Time, resetLabel string, color imagecolor.Color, colors palette, reverse bool, alignment lipgloss.Position) string {
 	gaugeWidth = min(max(gaugeWidth, 1), max(width, 1))
 	progress, ok := resetProgress(window, now)
-	if !ok {
-		message := i18n.Text("RESET CYCLE // RESET DATA UNAVAILABLE")
-		if window.ResetsAt != nil {
-			message = i18n.Text("CYCLE START UNAVAILABLE // ") + resetLabel
-		}
-		label := colors.dimmed().Render(ansi.Truncate(message, width, ""))
-		bar := lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", gaugeWidth))
-		return label + "\n" + lipgloss.PlaceHorizontal(width, alignment, bar)
-	}
-	qualifier := ""
 	if reverse {
 		progress = 100 - progress
-		qualifier = " LEFT"
 	}
-	label := ansi.Truncate(i18n.Format("RESET CYCLE %3d%%%s // %s", progress, qualifier, resetLabel), width, "")
+	label := colors.dimmed().Render(ansi.Truncate(resetCycleLabel(window, progress, ok, resetLabel, reverse), width, ""))
+	if !ok {
+		bar := colors.dimmed().Render(strings.Repeat("░", gaugeWidth))
+		return label + "\n" + lipgloss.PlaceHorizontal(width, alignment, bar)
+	}
 	filled := int(math.Round(float64(gaugeWidth) * float64(progress) / 100))
 	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) +
 		lipgloss.NewStyle().Foreground(colors.dim).Render(strings.Repeat("░", gaugeWidth-filled))
-	return colors.dimmed().Render(label) + "\n" + lipgloss.PlaceHorizontal(width, alignment, bar)
+	return label + "\n" + lipgloss.PlaceHorizontal(width, alignment, bar)
+}
+
+func resetCycleLabel(window codex.Window, progress int, known bool, resetLabel string, reverse bool) string {
+	if !known {
+		if window.ResetsAt != nil {
+			return i18n.Text("CYCLE START UNAVAILABLE // ") + resetLabel
+		}
+		return i18n.Text("RESET CYCLE // RESET DATA UNAVAILABLE")
+	}
+	qualifier := ""
+	if reverse {
+		qualifier = " LEFT"
+	}
+	return i18n.Format("RESET CYCLE %3d%%%s // %s", progress, qualifier, resetLabel)
 }
 
 func resetProgress(window codex.Window, now time.Time) (int, bool) {
@@ -307,7 +343,7 @@ func renderVisualization(width, used int, view meterViewID, color imagecolor.Col
 func renderVisualizationSized(width, height, used int, view meterViewID, color imagecolor.Color, colors palette) string {
 	switch view {
 	case viewPie:
-		return renderPieSized(width, height, used, color, colors)
+		return renderPieSized(width, height, used, nil, color, colors)
 	case viewPace:
 		return renderQuotaPlot(width, height, codex.Window{}, time.Now(), quotaPlotOptions{}, colors)
 	case viewFuel:
@@ -343,68 +379,132 @@ func renderClassicBarSized(width, height, used int, color imagecolor.Color, colo
 }
 
 func renderPie(width, used int, color imagecolor.Color, colors palette) string {
-	return renderPieSized(width, 0, used, color, colors)
+	return renderPieSized(width, 0, used, nil, color, colors)
 }
 
-func renderPieSized(width, height, used int, color imagecolor.Color, colors palette) string {
-	legendWidth := max(11, lipgloss.Width(i18n.Text("BRAILLE PIE")))
-	showLegend := width >= legendWidth+8
-	reservedLegendWidth := 0
-	if showLegend {
-		reservedLegendWidth = legendWidth
+type pieLayout struct {
+	width, height int
+	ring          bool
+	legend        []string
+}
+
+func layoutPie(width, height, used int, cycle *int) pieLayout {
+	canvasWidth, canvasHeight := radialCanvasSize(width, height, 0)
+	layout := pieLayout{width: canvasWidth, height: canvasHeight, ring: pieRingFits(canvasWidth, canvasHeight, cycle)}
+	labels := []string{i18n.Format("PIE  // %d%% USED", used)}
+	if layout.ring {
+		labels = append(labels, i18n.Format("RING // %d%% ELAPSED", *cycle))
 	}
-	cellWidth, cellHeight := radialCanvasSize(width, height, reservedLegendWidth)
+	legendWidth := 0
+	for _, label := range labels {
+		legendWidth = max(legendWidth, lipgloss.Width(label))
+	}
+	const minCanvasWidth = 8
+	if width < legendWidth+radialLegendOverhead+minCanvasWidth {
+		return layout
+	}
+	w, h := radialCanvasSize(width, height, legendWidth)
+	ring := pieRingFits(w, h, cycle)
+	if h >= len(labels) && (!layout.ring || ring) {
+		layout = pieLayout{width: w, height: h, ring: ring, legend: labels}
+	}
+	return layout
+}
+
+func pieRingFits(width, height int, cycle *int) bool {
+	return cycle != nil && min(width, height*2) >= 8
+}
+
+func compactPieCycleLabel(progress int, reset, countdown string, width int) string {
+	ring := i18n.Format("RING %d%% ELAPSED", progress)
+	for _, deadline := range []string{reset, "T-" + countdown} {
+		if label := ring + " // " + deadline; lipgloss.Width(label) <= width {
+			return label
+		}
+	}
+	return ring
+}
+
+// cycle is nil when the elapsed percentage is unknown.
+func renderPieSized(width, height, used int, cycle *int, color imagecolor.Color, colors palette) string {
+	return renderPieCanvas(width, height, used, cycle, layoutPie(width, height, used, cycle), color, colors)
+}
+
+func renderPieCanvas(width, height, used int, cycle *int, layout pieLayout, color imagecolor.Color, colors palette) string {
+	cellWidth, cellHeight := layout.width, layout.height
 	pixelWidth := cellWidth * 2
 	pixelHeight := cellHeight * 4
 	centerX := float64(pixelWidth-1) / 2
 	centerY := float64(pixelHeight-1) / 2
 	radius := float64(min(pixelWidth, pixelHeight))/2 - 1
+	sliceRadius, ringInner := radius, radius
+	percent := [2]int{used}
+	if layout.ring {
+		// Tiny cards keep the quota slice and textual cycle readout instead
+		// of forcing two shapes into the same handful of Braille cells.
+		percent[1] = *cycle
+		ringInner = radius - max(2, radius*0.14)
+		sliceRadius = ringInner - max(2, radius*0.07)
+	}
+	sliceSquared, ringSquared, outerSquared := sliceRadius*sliceRadius, ringInner*ringInner, radius*radius
+	styles := [2]lipgloss.Style{lipgloss.NewStyle().Foreground(colors.dim), lipgloss.NewStyle().Foreground(color)}
 
 	rows := make([]string, 0, cellHeight)
 	for cellY := 0; cellY < cellHeight; cellY++ {
 		var row strings.Builder
 		for cellX := 0; cellX < cellWidth; cellX++ {
-			mask := 0
-			usedDots := 0
-			freeDots := 0
+			var masks, activeDots [2]int // Inner slice and reset band.
 			for subY := 0; subY < 4; subY++ {
 				for subX := 0; subX < 2; subX++ {
 					x := float64(cellX*2+subX) - centerX
 					y := float64(cellY*4+subY) - centerY
-					if math.Hypot(x, y) > radius {
+					distance := x*x + y*y
+					if radius < 0 || distance > outerSquared {
 						continue
 					}
-					mask |= brailleDot(subX, subY)
+					layer := 0
+					if distance > sliceSquared {
+						if distance < ringSquared {
+							continue
+						}
+						layer = 1
+					}
+					masks[layer] |= brailleDot(subX, subY)
 					angle := math.Atan2(x, -y)
 					if angle < 0 {
 						angle += 2 * math.Pi
 					}
-					if angle/(2*math.Pi)*100 < float64(used) {
-						usedDots++
-					} else {
-						freeDots++
+					if angle/(2*math.Pi)*100 < float64(percent[layer]) {
+						activeDots[layer]++
 					}
 				}
 			}
-			if mask == 0 {
+			layer := 0
+			dots := bits.OnesCount8(uint8(masks[0]))
+			if ringDots := bits.OnesCount8(uint8(masks[1])); ringDots > 0 && ringDots >= dots {
+				layer, dots = 1, ringDots
+			}
+			if dots == 0 {
 				row.WriteByte(' ')
 				continue
 			}
-			cellColor := colors.dim
-			if usedDots >= freeDots {
-				cellColor = color
+			tone := 0
+			if activeDots[layer]*2 >= dots {
+				tone = 1
 			}
-			row.WriteString(lipgloss.NewStyle().Foreground(cellColor).Render(string(rune(0x2800 + mask))))
+			// A terminal cell has one foreground. Keep one layer per cell
+			// rather than connecting the band to the pie through the gap.
+			row.WriteString(styles[tone].Render(string(rune(0x2800 + masks[layer]))))
 		}
 		rows = append(rows, row.String())
 	}
 	pie := strings.Join(rows, "\n")
 	visual := pie
-	if showLegend {
-		label := []string{
-			colors.dimmed().Render(i18n.Text("BRAILLE PIE")),
-			lipgloss.NewStyle().Bold(true).Foreground(color).Render(fmt.Sprintf("  %3d%%", used)),
-			colors.dimmed().Render("CLOCKWISE"),
+	if len(layout.legend) != 0 {
+		style := lipgloss.NewStyle().Foreground(color)
+		label := make([]string, len(layout.legend))
+		for i, line := range layout.legend {
+			label[i] = style.Render(line)
 		}
 		label = verticallyCenterLines(label, cellHeight)
 		legend := strings.Join(label, "\n")
@@ -423,10 +523,12 @@ func brailleDot(x, y int) int {
 	}[x][y]
 }
 
+const radialLegendOverhead = 5
+
 func radialCanvasSize(width, height, legendWidth int) (int, int) {
 	overhead := 0
 	if legendWidth > 0 {
-		overhead = legendWidth + 5
+		overhead = legendWidth + radialLegendOverhead
 	}
 	availableWidth := max(width-overhead, 2)
 	if height <= 0 {

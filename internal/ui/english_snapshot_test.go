@@ -40,8 +40,9 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	// backgrounds, Sessions Zero/Close All, ACTIVE/ERRORS categories and responsive
 	// summary filters and Sessions finder button. Refresh no longer occupies
 	// the Sessions footer. Every theme, view and size remains covered.
+	// Pie labels usage and the reset ring without a horizontal reset bar.
 	// The displayed pricing review date is now 2026-11-17.
-	const want = "1a2fe9c38672f5869df1cf76fe81d62bcbc54fd74da8c114f5265f73fb52f4df"
+	const want = "034bbb1b4ece977142f93978ee5a8d19f34b5ecbf4bd3866c468ab19aceeac10"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}
