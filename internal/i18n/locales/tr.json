@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "DAİRE  // %d%% KULLANILDI",
+  "RING // %d%% ELAPSED": "HALKA // %d%% GEÇTİ",
+  "RING %d%% ELAPSED": "HALKA %d%% GEÇTİ",
   "Starting session…": "Oturum başlatılıyor…",
   "Opening the new session…": "Yeni oturum açılıyor…",
   "First message sent; still waiting for the session to appear.": "İlk mesaj gönderildi. Oturumun görünmesi bekleniyor.",

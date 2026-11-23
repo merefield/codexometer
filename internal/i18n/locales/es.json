@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "SECTOR  // %d%% USADO",
+  "RING // %d%% ELAPSED": "ANILLO // %d%% TRANSCURRIDO",
+  "RING %d%% ELAPSED": "ANILLO %d%% TRANSCURRIDO",
   "Starting session…": "Iniciando la sesión…",
   "Opening the new session…": "Abriendo la nueva sesión…",
   "First message sent; still waiting for the session to appear.": "Primer mensaje enviado. A la espera de que aparezca la sesión.",

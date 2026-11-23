@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "KREIS  // %d%% VERBRAUCHT",
+  "RING // %d%% ELAPSED": "RING // %d%% VERSTRICHEN",
+  "RING %d%% ELAPSED": "RING %d%% VERSTRICHEN",
   "Starting session…": "Sitzung wird gestartet…",
   "Opening the new session…": "Neue Sitzung wird geöffnet…",
   "First message sent; still waiting for the session to appear.": "Erste Nachricht gesendet. Die Sitzung ist noch nicht sichtbar.",

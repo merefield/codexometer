@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "КРУГ  // %d%% ИСПОЛЬЗОВАНО",
+  "RING // %d%% ELAPSED": "КОЛЬЦО // %d%% ПРОШЛО",
+  "RING %d%% ELAPSED": "КОЛЬЦО %d%% ПРОШЛО",
   "Starting session…": "Запуск сеанса…",
   "Opening the new session…": "Открывается новый сеанс…",
   "First message sent; still waiting for the session to appear.": "Первое сообщение отправлено. Сеанс ещё не появился.",

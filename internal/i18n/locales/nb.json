@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "SIRKEL  // %d%% BRUKT",
+  "RING // %d%% ELAPSED": "RING // %d%% PASSERT",
+  "RING %d%% ELAPSED": "RING %d%% PASSERT",
   "Starting session…": "Starter økten…",
   "Opening the new session…": "Åpner den nye økten…",
   "First message sent; still waiting for the session to appear.": "Første melding er sendt. Venter fortsatt på at økten skal vises.",

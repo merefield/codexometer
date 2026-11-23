@@ -24,7 +24,9 @@ The interface runs locally in a terminal, with clickable and hover-highlighted c
 
 ## What does it show?
 
-The interface has four main tabs:
+The interface has four main tabs. On the **Pie** quota view, compare quota used
+with time elapsed by reading the slice and its outer reset ring clockwise from
+12 o’clock.
 
 - **Quota** — switch between Bars, Pace, Pie, Fuel Tank and Resets, plus Thresholds when quota step-down profiles are configured. See countdowns, reset dates and a pace-aware health signal. The Pace graph plots consumption against elapsed reset-window time, with a diagonal steady-use reference: above it means usage is ahead of pace. Both terminal and browser trace observed history and project consumption trends. The terminal uses Braille lines and dark colour bands; the browser uses smoother SVG with directional arrows. Learned API-equivalent estimates show both current spend and what 100% of a primary quota window might represent, with conservative confidence and a pricing-source/date footer when space permits. Eligible banked resets can be redeemed with a separate confirmation click.
 - **Sessions** — your session command centre, combining per-session context and eligible live reply/approval controls with metrics and scrolling, auto-scaling graphs on a shared 30-second tick. Compare local token shares, model calls, activity, output size, and time to first token; explicitly linked subagents are folded into their parent session. The **SESSION TOTALS** readout has **Zero** to start a fresh measurement baseline and **Close All** to dismiss listed rows while keeping measurements and Codex sessions running. Page through sessions or dismiss individual rows with `[×]`: fresh activity brings them back.

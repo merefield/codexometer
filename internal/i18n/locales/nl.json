@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "CIRKEL  // %d%% GEBRUIKT",
+  "RING // %d%% ELAPSED": "RING // %d%% VERSTREKEN",
+  "RING %d%% ELAPSED": "RING %d%% VERSTREKEN",
   "Starting session…": "Sessie starten…",
   "Opening the new session…": "Nieuwe sessie openen…",
   "First message sent; still waiting for the session to appear.": "Eerste bericht verzonden. De sessie is nog niet zichtbaar.",

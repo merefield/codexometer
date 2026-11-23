@@ -4608,6 +4608,81 @@ test('old graph bookmarks and saved selections restore the renamed Pace view', a
   }
 });
 
+test('quota pie compares its clockwise slice with a live outer reset ring', async ({
+  page,
+  pairingURL,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 900 });
+  const time = new Date('2026-11-21T12:00:00Z');
+  const seconds = time.getTime() / 1000;
+  await page.clock.install({ time });
+  await mockStream(page, {
+    meters: [
+      { name: 'Quarter cycle', used: 50, duration: 60, reset: seconds + 2700 },
+      { name: 'Cycle starting', used: 62, duration: 60, reset: seconds + 7200 },
+      { name: 'Cycle ended', used: 0, duration: 60, reset: seconds },
+      { name: 'Unknown start', used: 75, reset: seconds + 2700 },
+    ],
+    credits: [],
+    creditCount: 0,
+    sessions: [],
+    version: 'test',
+    quotaAt: time.toISOString(),
+  });
+  await page.goto(pairingURL);
+  await page.getByRole('link', { name: 'PIE', exact: true }).click();
+  const card = (name: string) =>
+    page
+      .locator('.quota-card')
+      .filter({ has: page.getByRole('heading', { name }) });
+  const quarter = card('Quarter cycle');
+  await expect(quarter.getByRole('img')).toHaveAccessibleName(
+    '50% quota used; 25% of reset cycle elapsed',
+  );
+  const legend = quarter.locator('.pie-legend');
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText('PIE // 50% USED');
+  await expect(legend).toContainText('RING // 25% ELAPSED');
+  const compact = quarter.locator('.pie-compact-cycle');
+  await expect(compact).toBeHidden();
+  const arc = quarter.locator('.pie-cycle-elapsed');
+  await expect(arc).toHaveAttribute('transform', 'rotate(-90 60 60)');
+  await expect(arc).toHaveAttribute('pathLength', '100');
+  expect(parseFloat((await arc.getAttribute('stroke-dasharray'))!)).toBeCloseTo(
+    25,
+    0,
+  );
+  const track = quarter.locator('.pie-cycle-track');
+  await expect(track).toBeVisible();
+  await expect(track).toHaveCSS('fill', 'none');
+  expect(await track.evaluate((el) => getComputedStyle(el).stroke)).not.toBe(
+    await arc.evaluate((el) => getComputedStyle(el).stroke),
+  );
+  await page.clock.fastForward(900_000);
+  await expect(quarter.getByRole('img')).toHaveAccessibleName(
+    '50% quota used; 50% of reset cycle elapsed',
+  );
+  await expect(
+    card('Cycle starting').locator('.pie-cycle-track'),
+  ).toBeVisible();
+  await expect(
+    card('Cycle starting').locator('.pie-cycle-elapsed'),
+  ).toHaveCount(0);
+  await expect(
+    card('Cycle ended').locator('.pie-cycle-elapsed'),
+  ).toHaveAttribute('stroke-dasharray', '100 100');
+  await expect(card('Unknown start')).toContainText('RESET CYCLE UNAVAILABLE');
+  await expect(card('Unknown start').locator('.pie-cycle-track')).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.quota-card .timeline')).toHaveCount(0);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(legend).toBeHidden();
+  await expect(compact).toBeVisible();
+  await expect(compact).toHaveText('RING 50% ELAPSED ·');
+  await expect(compact.locator('..')).toContainText('RESETS //');
+});
+
 test('quota graphics use viewport height and keep compact navigation accessible', async ({
   page,
   pairingURL,

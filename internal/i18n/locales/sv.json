@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "CIRKEL  // %d%% ANVÄNT",
+  "RING // %d%% ELAPSED": "RING // %d%% FÖRFLUTET",
+  "RING %d%% ELAPSED": "RING %d%% FÖRFLUTET",
   "Starting session…": "Startar sessionen…",
   "Opening the new session…": "Öppnar den nya sessionen…",
   "First message sent; still waiting for the session to appear.": "Första meddelandet skickades. Väntar fortfarande på att sessionen visas.",

@@ -98,9 +98,10 @@
     >
       {#each live.data.meters as meter}
         {@const cycle = elapsed(meter)}
+        {@const cyclePercent = cycle === null ? null : Math.round(cycle)}
         <section class="panel quota-card">
           <h2>{meter.name}</h2>
-          <div class="spread">
+          <div class="spread" class:pie-stats={view === 'pie'}>
             {#if view === 'fuel'}<span>FREE {100 - meter.used}%</span><span
                 class="muted">USED {meter.used}%</span
               >{:else}<span>USED {meter.used}%</span><span class="muted"
@@ -112,23 +113,45 @@
             class:bar-graphic={view === 'bars' || view === 'fuel'}
           >
             {#if view === 'pie'}
-              <div class="pie-wrap">
-                <svg
-                  viewBox="0 0 120 120"
-                  role="img"
-                  aria-label={`${meter.used}% quota used`}
-                >
-                  <circle class="pie-base" cx="60" cy="60" r="46" />
-                  {#if meter.used >= 100}<circle
-                      class="pie-fill"
-                      cx="60"
-                      cy="60"
-                      r="46"
-                    />{:else if meter.used > 0}<path
-                      class="pie-fill"
-                      d={sector(meter.used)}
-                    />{/if}
-                </svg>
+              <div class="pie-graphic">
+                <div class="pie-wrap">
+                  <svg
+                    viewBox="0 0 120 120"
+                    role="img"
+                    aria-label={`${meter.used}% quota used; ${cyclePercent === null ? 'reset cycle unavailable' : `${cyclePercent}% of reset cycle elapsed`}`}
+                  >
+                    <circle class="pie-base" cx="60" cy="60" r="46" />
+                    {#if meter.used >= 100}<circle
+                        class="pie-fill"
+                        cx="60"
+                        cy="60"
+                        r="46"
+                      />{:else if meter.used > 0}<path
+                        class="pie-fill"
+                        d={sector(meter.used)}
+                      />{/if}
+                    {#if cycle !== null}
+                      <circle class="pie-cycle-track" cx="60" cy="60" r="54" />
+                      {#if cycle > 0}
+                        <circle
+                          class="pie-cycle-elapsed"
+                          cx="60"
+                          cy="60"
+                          r="54"
+                          pathLength="100"
+                          transform="rotate(-90 60 60)"
+                          stroke-dasharray={`${cycle} 100`}
+                        />
+                      {/if}
+                    {/if}
+                  </svg>
+                </div>
+                <div class="pie-legend">
+                  <span>PIE&nbsp; // {meter.used}% USED</span>
+                  {#if cyclePercent !== null}<span>
+                      RING // {cyclePercent}% ELAPSED
+                    </span>{/if}
+                </div>
               </div>
             {:else if view === 'pace'}
               {#if cycle !== null}
@@ -168,7 +191,16 @@
                 </div>{/if}
             {/if}
           </div>
-          <p class="muted">RESETS // {date(meter.reset)}</p>
+          <p class="muted">
+            {#if view === 'pie'}
+              {#if cyclePercent === null}
+                RESET CYCLE UNAVAILABLE ·
+              {:else}<span class="pie-compact-cycle">
+                  RING {cyclePercent}% ELAPSED ·
+                </span>{/if}
+            {/if}
+            RESETS // {date(meter.reset)}
+          </p>
           {#if meter.details}<p>{meter.details}</p>{/if}
         </section>
       {/each}

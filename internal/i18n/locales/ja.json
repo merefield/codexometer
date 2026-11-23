@@ -1,4 +1,7 @@
 {
+  "PIE  // %d%% USED": "円  // %d%% 使用済み",
+  "RING // %d%% ELAPSED": "外周 // %d%% 経過",
+  "RING %d%% ELAPSED": "外周 %d%% 経過",
   "Starting session…": "セッションを開始しています…",
   "Opening the new session…": "新規セッションを開いています…",
   "First message sent; still waiting for the session to appear.": "最初のメッセージを送信しました。セッションの表示を待っています。",
