@@ -114,15 +114,6 @@ func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
 	if err := p.ResumeScheduledGoal(ctx, "one", account, target); !errors.Is(err, ErrScheduledGoalNotReady) {
 		t.Fatal("subscription quota must not release a known API spend cap", err)
 	}
-	p.mu.Lock()
-	conn, generation := p.connection, p.commandGeneration
-	p.mu.Unlock()
-	if err := p.executeGoalCommand(ctx, conn, "one", SessionCommandChoice{
-		method: "thread/goal/set",
-		params: map[string]any{"threadId": "one", "origin": "user", "status": "active"},
-	}, target, &generation); !errors.Is(err, errDaemonWriteGuardRejected) {
-		t.Fatal("spend cap observed after preflight must also be rejected at the socket write", err)
-	}
 	stopped, err := p.SessionCommands(ctx, "one", ScheduleGoalResumePath)
 	if err != nil || len(stopped.Choices) != 1 {
 		t.Fatal("could not obtain the stopped goal review", stopped, err)
@@ -133,6 +124,21 @@ func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
 	// A subsequent ordinary quota stop must not inherit the old cap.
 	emit("turn/started", `{"threadId":"one","turn":{"id":"quota-limited"}}`)
 	emit("turn/completed", `{"threadId":"one","turn":{"id":"quota-limited","status":"failed","error":{"message":"Quota expired","codexErrorInfo":"usageLimitExceeded"}}}`)
+	p.mu.Lock()
+	conn, generation := p.connection, p.commandGeneration
+	p.mu.Unlock()
+	stillCurrent, err := p.verifyGoalQuotaStop(ctx, conn, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	emit("turn/started", `{"threadId":"one","turn":{"id":"newer"}}`)
+	emit("turn/completed", `{"threadId":"one","turn":{"id":"newer","status":"failed","error":{"codexErrorInfo":"usageLimitExceeded"}}}`)
+	if err := p.executeGoalCommand(ctx, conn, "one", SessionCommandChoice{
+		method: "thread/goal/set",
+		params: map[string]any{"threadId": "one", "origin": "user", "status": "active"},
+	}, target, &generation, stillCurrent); !errors.Is(err, errDaemonWriteGuardRejected) {
+		t.Fatal("a newer turn must invalidate prior evidence at the socket write", err)
+	}
 	if err := p.ResumeScheduledGoal(ctx, "one", account, target); err != nil {
 		t.Fatal("native goal resume failed", err)
 	}

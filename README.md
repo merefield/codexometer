@@ -1267,8 +1267,8 @@ The other top-level views are:
   capacity, **HOOK DENIED** when a workspace inference hook blocks a request,
   and **TURN FAILED** for other failures. Codex 0.172+ also distinguishes
   **API KEY SPEND CAP**, **PROJECT SPEND CAP**, and **ORG SPEND CAP**. These are
-  API billing limits, not ChatGPT quota-reset signals. While the goal's session
-  shows a live API cap, automatic quota-recovery resume stays blocked. A hook
+  API billing limits, not ChatGPT quota-reset signals. A goal stopped by an API
+  cap does not resume automatically when subscription quota recovers. A hook
   denial is not a quota or capacity signal; inspect the supplied explanation and
   workspace policy before retrying. Codexometer never bypasses the hook.
   The row, full detail and attention pill retain the observed error message;
@@ -2121,9 +2121,11 @@ reported that stop when you armed it, the next quota reading can release the
 trigger without another stop. In either case, resuming requires fresh quota with capacity in all observed
 windows, no reported spending block, the same signed-in account and workspace
 (when Codex reports a workspace ID), and an eligible
-idle session connected to the shared app-server. A predicted reset time is not
-enough. When Codex returns its ordinary-usage signal, an explicit allowance is
-required; a blocked or unknown result keeps the trigger waiting. Older responses
+idle session connected to the shared app-server. The latest turn must confirm
+a quota stop, from a live event or a bounded history read after reconnect.
+API spend caps or an unverified stop reason do not release the trigger. A
+predicted reset time is not enough. When Codex returns its ordinary-usage signal,
+an explicit allowance is required; a blocked or unknown result keeps the trigger waiting. Older responses
 that omit the signal use the quota windows and limit flags. The resume uses
 normal quota and never redeems a reset or buys credits.
 
