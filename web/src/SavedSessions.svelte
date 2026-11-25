@@ -17,10 +17,12 @@
     scope,
     liveIDs,
     target,
+    resumeBusy = $bindable(false),
   }: {
     scope: string;
     liveIDs: Set<string>;
     target?: { row: SavedRow; turns?: SavedPage['turns'] };
+    resumeBusy?: boolean;
   } = $props();
   let query = $state('');
   let search = $state<HTMLInputElement>();
@@ -30,7 +32,6 @@
   let turns = $state<SavedPage['turns']>();
   let busy = $state(false);
   let failed = $state(false);
-  let resumeBusy = $state(false);
   let resuming = $state('');
   let resumeNotice = $state('');
   let review = $state<{ id: string; token: string } | null>(null);
@@ -176,7 +177,7 @@
             : 'Could not prepare the resume.';
       }
     } finally {
-      resumeBusy = false;
+      if (!disposed) resumeBusy = false;
     }
   }
 </script>
@@ -226,7 +227,9 @@
       </button>
     {/if}
     {#if id === row.id && turns}
-      <SessionTranscript {turns} />
+      <div inert={!!target && resumeBusy}>
+        <SessionTranscript {turns} />
+      </div>
       {#if live.data?.control}
         <p class="muted">
           If this session has an active goal, Codex may continue it

@@ -54,3 +54,44 @@ func TestLinkedSessionPreviewVerifiesAccountAndAgentHistory(t *testing.T) {
 		t.Fatal("account switched while preview loaded", got, err)
 	}
 }
+
+func TestLinkedSessionPreviewFindsOlderAccountScopedThreadOnCodex170(t *testing.T) {
+	const id = "550e8400-e29b-41d4-a716-446655440001"
+	const missing = "550e8400-e29b-41d4-a716-446655440002"
+	p, f := newQuotaDaemon(t)
+	f.catalogues = map[string]map[string]any{
+		"initialize":        {"userAgent": "codex/0.170.0 (Linux)"},
+		"account/read":      {"account": map[string]string{"type": "chatgpt", "email": "someone@example.test"}},
+		"thread/turns/list": {"data": []any{}},
+	}
+	newest := map[string]any{"data": []any{map[string]string{"id": "unrelated"}}, "nextCursor": "older"}
+	f.savedPages = map[[2]string]map[string]any{
+		{"updated_at", ""}:      newest,
+		{"created_at", ""}:      newest,
+		{"created_at", "older"}: {"data": []any{map[string]string{"id": id, "name": "Earlier work"}}},
+	}
+	ctx := t.Context()
+	if err := p.ensureConnected(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	scope := p.savedScope
+	p.mu.Unlock()
+	c := Client{LiveUsage: &LiveUsageReader{statusProvider: p}}
+	if got, err := c.PreviewSessionLink(ctx, scope, id); err != nil || got.Root.ID != id || got.Root.Name != "Earlier work" {
+		t.Fatal("could not preview older matching thread", got, err)
+	}
+	if got, err := c.PreviewSessionLink(ctx, scope, missing); err == nil || got.Root.ID != "" {
+		t.Fatal("unlisted target was exposed", got, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.historyReads) != 1 || f.historyReads[0]["threadId"] != id || len(f.resumeReads)+len(f.writes)+len(f.readUpdates) != 0 {
+		t.Fatal("unexpected history or write traffic", f.historyReads, f.resumeReads)
+	}
+	for _, params := range f.savedReads {
+		if _, hasExactIDs := params["includedThreadIds"]; hasExactIDs || params["currentAccountOnly"] != true || params["archived"] != false {
+			t.Fatal("legacy lookup lost account scope or used an unsupported filter", params)
+		}
+	}
+}

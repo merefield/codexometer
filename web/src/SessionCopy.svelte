@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Session } from './state.svelte';
+  import { sessionLinks, type Session } from './state.svelte';
   import { sessionCopyText } from './session-copy';
   let {
     session,
@@ -45,6 +45,7 @@
     if (
       !active ||
       !available ||
+      sessionLinks.ids.length ||
       event.defaultPrevented ||
       event.repeat ||
       event.ctrlKey ||

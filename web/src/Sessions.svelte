@@ -380,6 +380,7 @@
     const target = event.target as HTMLElement;
     if (
       newScope ||
+      sessionLinks.ids.length ||
       event.altKey ||
       event.ctrlKey ||
       event.metaKey ||

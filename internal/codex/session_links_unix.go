@@ -13,21 +13,39 @@ func (p *daemonStatusProvider) previewSessionLink(ctx context.Context, reader *L
 	if err != nil {
 		return SessionLinkPreview{}, ErrSavedSessions
 	}
-	var result struct{ Data []savedWireThread }
-	// The default source filter matches interactive roots only. Exact ID and
-	// account visibility must both be proven before requesting any transcript.
-	if err := p.requestOn(ctx, conn, "thread/list", map[string]any{
-		"includedThreadIds": []string{root}, "currentAccountOnly": true, "archived": false,
-		"modelProviders": []string{}, "limit": 1, "useStateDbOnly": true,
-	}, &result); err != nil || len(result.Data) != 1 || result.Data[0].ID != root {
-		return SessionLinkPreview{}, ErrSavedSessions
-	}
+	p.mu.Lock()
+	exact := p.savedExactIDs
+	p.mu.Unlock()
 	current := func() bool {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		return p.connection == conn && p.commandGeneration == generation && p.savedScope == scope
 	}
 	if !current() {
+		return SessionLinkPreview{}, ErrSavedSessions
+	}
+	var page SavedPage
+	if exact {
+		// The default source filter matches interactive roots only.
+		page, err = p.readSavedPage(ctx, conn, map[string]any{
+			"includedThreadIds": []string{root}, "currentAccountOnly": true, "archived": false,
+			"modelProviders": []string{}, "limit": 1, "useStateDbOnly": true,
+		})
+	} else {
+		// Codex 0.170 has account scoping, but silently ignores includedThreadIds.
+		page, err = savedPageFor(ctx, p, scope, "", root)
+	}
+	if err != nil || exact && len(page.Sessions) != 1 || !current() {
+		return SessionLinkPreview{}, ErrSavedSessions
+	}
+	var row SavedSession
+	for _, candidate := range page.Sessions {
+		if candidate.ID == root {
+			row = candidate
+			break
+		}
+	}
+	if row.ID == "" {
 		return SessionLinkPreview{}, ErrSavedSessions
 	}
 	turns, unverified, err := p.readSessionHistoryOn(ctx, conn, generation, id, since)
@@ -41,12 +59,7 @@ func (p *daemonStatusProvider) previewSessionLink(ctx context.Context, reader *L
 		return SessionLinkPreview{}, ErrSavedSessions
 	}
 	reader.protectSessionHistory(id, turns)
-	page := SavedPage{}
-	page.addWireThread(result.Data[0])
-	if len(page.Sessions) != 1 {
-		return SessionLinkPreview{}, ErrSavedSessions
-	}
-	preview := SessionLinkPreview{Root: page.Sessions[0], Turns: savedTurns(turns), UnverifiedTurns: unverified}
+	preview := SessionLinkPreview{Root: row, Turns: savedTurns(turns), UnverifiedTurns: unverified}
 	if root != id {
 		preview.Agent = &SessionAgent{ID: id, Name: name}
 	}

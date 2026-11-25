@@ -28,6 +28,7 @@ var errDaemonWriteGuardRejected = errors.New("daemon write superseded before sen
 
 type daemonStatusProvider struct {
 	savedScope         string
+	savedExactIDs      bool
 	savedCatalog       *savedMetadataIndex
 	resumedThreads     map[string]resumedThread
 	names              map[string]threadTitle
@@ -469,6 +470,7 @@ func (p *daemonStatusProvider) ensureConnected(ctx context.Context) error {
 	p.mu.Lock()
 	if p.connection == connection && supportsSavedScope(initialized.UserAgent) {
 		p.savedScope = rand.Text()
+		p.savedExactIDs = supportsSavedExactIDs(initialized.UserAgent)
 	}
 	p.mu.Unlock()
 	return nil
@@ -841,6 +843,7 @@ func (p *daemonStatusProvider) disconnect(connection *websocket.Conn) {
 	p.usageCoverage = nil
 	p.threadDirectories = nil
 	p.names, p.savedScope = nil, ""
+	p.savedExactIDs = false
 	p.clearSavedCatalogLocked()
 	p.resumedThreads = nil
 	p.threadAttachments = nil

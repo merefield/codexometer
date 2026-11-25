@@ -1091,7 +1091,7 @@ test('thread links preview a saved session and nested agent without switching se
   expect(writes).toEqual([]);
 });
 
-test('thread link previews preserve drafts and require a separate confirmed resume', async ({
+test('thread link previews preserve drafts and keep the confirmed resume outcome visible', async ({
   page,
   pairingURL,
 }) => {
@@ -1109,17 +1109,35 @@ test('thread link previews preserve drafts and require a separate confirmed resu
     route.fulfill({
       json: {
         root: { id, name: 'Saved work', directory: '/work' },
-        turns: [{ reply: 'Saved answer' }],
+        turns: [
+          {
+            prose: [
+              {
+                runs: [
+                  { text: 'Saved answer ' },
+                  {
+                    text: 'Another session',
+                    threadId: '550e8400-e29b-41d4-a716-446655440001',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     }),
   );
   const requests: Record<string, unknown>[] = [];
+  const reply = Promise.withResolvers<void>();
   await page.route('**/api/sessions/resume', async (route) => {
     const body = route.request().postDataJSON();
     requests.push(body);
     if (body.mode === 'prepare')
       await route.fulfill({ json: { confirmation: 'token' } });
-    else await route.fulfill({ status: 204 });
+    else {
+      await reply.promise;
+      await route.fulfill({ status: 502, body: 'Resume outcome unknown.' });
+    }
   });
   await page.goto(pairingURL);
   await expect(page.locator('html')).toHaveAttribute('data-test-streams', '1');
@@ -1146,8 +1164,26 @@ test('thread link previews preserve drafts and require a separate confirmed resu
   expect(requests).toEqual([
     { scope: 'scope', cursor: '', id, mode: 'prepare' },
   ]);
-  await dialog.getByRole('button', { name: 'Confirm resume' }).click();
-  await expect.poll(() => requests.length).toBe(2);
+  const back = dialog.getByRole('button', { name: 'Back', exact: true });
+  try {
+    await dialog.getByRole('button', { name: 'Confirm resume' }).click();
+    await expect.poll(() => requests.length).toBe(2);
+    await expect(back).toBeDisabled();
+    await expect(
+      dialog.locator('[inert]').getByText('Another session'),
+    ).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(/#\/sessions\/parent$/);
+  } finally {
+    reply.resolve();
+  }
+  await expect(dialog.getByRole('status')).toHaveText(
+    'Resume outcome unknown. Check Codex before trying again.',
+  );
+  await expect(back).toBeEnabled();
+  await back.click();
+  await expect(composer).toHaveValue('Unsent draft');
   expect(requests[1]).toEqual({
     scope: 'scope',
     cursor: '',

@@ -59,13 +59,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		deliberate = msg.Button == tea.MouseLeft
 	case tea.MouseWheelMsg:
-		deliberate = true
+		deliberate = !updated.hasThreadLinkPanel()
 		updated.monitorReadIntent = ""
-		mouse := msg.Mouse()
-		for _, row := range m.monitorSessionData {
-			if rect, ok := m.monitorResultRect(row.id); ok && rect.contains(mouse.X, mouse.Y) {
-				updated.monitorReadIntent = row.id
-				break
+		if deliberate {
+			mouse := msg.Mouse()
+			for _, row := range m.monitorSessionData {
+				if rect, ok := m.monitorResultRect(row.id); ok && rect.contains(mouse.X, mouse.Y) {
+					updated.monitorReadIntent = row.id
+					break
+				}
 			}
 		}
 	}
@@ -94,7 +96,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) monitorUnreadResult(id string) (monitorSession, bool) {
-	if _, ok := m.fetcher.(codex.SessionReadStateClient); !ok || id == "" || m.width <= 0 || m.height <= 0 || m.actionReview != nil || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open {
+	if _, ok := m.fetcher.(codex.SessionReadStateClient); !ok || id == "" || m.width <= 0 || m.height <= 0 || m.actionReview != nil || m.monitorReadBusy || m.meterView != viewMonitor || m.monitorState != monitorRunning || m.monitorError != "" || m.monitorCommands.open || m.monitorQueue.open || m.scheduleUI.open || m.hasThreadLinkPanel() {
 		return monitorSession{}, false
 	}
 	for _, row := range m.monitorSessionData {

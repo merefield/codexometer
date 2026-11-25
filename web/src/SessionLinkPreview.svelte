@@ -17,11 +17,13 @@
   let page = $state<ThreadLinkPreview>();
   let loading = $state(false);
   let savedResume = $state(false);
+  let resumeBusy = $state(false);
   let source: HTMLElement | undefined;
   let last = '';
   const offsets = new Map<string, number>();
 
   function back() {
+    if (resumeBusy) return;
     sessionLinks.ids = sessionLinks.ids.slice(0, -1);
   }
 
@@ -43,6 +45,7 @@
     }
     if (!key) {
       if (dialog.open) dialog.close();
+      resumeBusy = false;
       source?.focus({ preventScroll: true });
       source = undefined;
       offsets.clear();
@@ -58,6 +61,7 @@
       if (last && body) offsets.set(last, body.scrollTop);
       last = key;
       savedResume = false;
+      resumeBusy = false;
       page = undefined;
       loading = true;
       closeButton?.focus({ preventScroll: true });
@@ -109,7 +113,12 @@
         ? ` // ${page.agent?.name || (page.agent ? page.agent.id.slice(-5) : page.root.name || page.root.id.slice(-5))}`
         : ''}
     </h2>
-    <button type="button" bind:this={closeButton} onclick={back}>Back</button>
+    <button
+      type="button"
+      bind:this={closeButton}
+      onclick={back}
+      disabled={resumeBusy}>Back</button
+    >
   </div>
   <div class="body" bind:this={body}>
     {#if loading}<p role="status">Loading…</p>
@@ -117,6 +126,7 @@
     {:else if savedResume}<SavedSessions
         {scope}
         {liveIDs}
+        bind:resumeBusy
         target={{ row: page.root, turns: page.turns }}
       />
     {:else}

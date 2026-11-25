@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -13,7 +14,7 @@ import (
 
 const previewID = "550e8400-e29b-41d4-a716-446655440000"
 
-type threadLinkProbe struct{ Fetcher }
+type threadLinkProbe struct{ *readTestClient }
 
 func (threadLinkProbe) PreviewSessionLink(_ context.Context, scope, id string) (codex.SessionLinkPreview, error) {
 	if scope != "scope" || id != previewID {
@@ -45,7 +46,7 @@ func TestThreadLinkResumeUsesExistingReview(t *testing.T) {
 func TestThreadLinkClickAndKeyboardPreviewPreserveSource(t *testing.T) {
 	for _, keyboard := range []bool{false, true} {
 		m := contextTestModel()
-		m.fetcher = threadLinkProbe{}
+		m.fetcher = threadLinkProbe{&readTestClient{}}
 		m.finder.scope = "scope"
 		root := m.monitorSessionData[0].id
 		m.monitorSessionData[0].preview = codex.SessionContext{ThreadID: root, Kind: codex.SessionContextReply, Text: "See [Earlier work](codex://threads/" + previewID + ")."}
@@ -79,6 +80,53 @@ func TestThreadLinkClickAndKeyboardPreviewPreserveSource(t *testing.T) {
 		apply(specialKey(tea.KeyEscape))
 		if m.threadLinks != nil || m.monitorContextDetail != root || m.monitorPrompt.input.Value() != "Unsent draft" {
 			t.Fatal("escape did not restore source")
+		}
+	}
+}
+
+func TestThreadLinkPreviewLeavesHiddenSourceUnread(t *testing.T) {
+	for _, wide := range []bool{false, true} {
+		m, client := unreadTestModel()
+		m.fetcher = threadLinkProbe{client}
+		m.finder.scope = "scope"
+		row := &m.monitorSessionData[0]
+		row.preview.Text = "See [Earlier work](codex://threads/" + previewID + ")."
+		id := row.id
+		if wide {
+			m.setRowContext(id, contextWide)
+			m.monitorReadDwell = monitorReadDwell{id: id, turn: row.preview.TurnID, revision: row.readState.Revision, until: time.Now()}
+			if !m.validMonitorReadDwell(m.monitorReadDwell) {
+				t.Fatal("fixture must have an active wide-row dwell")
+			}
+		} else {
+			m.setRowContext(id, contextFull)
+		}
+		dwell := m.monitorReadDwell
+		x, y := renderedTextStart(t, m, "Earlier work")
+		wheel := tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown}
+		next, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if cmd == nil {
+			t.Fatal("no preview request")
+		}
+		next, _ = next.Update(cmd())
+		preview := next.(Model)
+		if !preview.hasThreadLinkPanel() || preview.monitorReadDwell.id != "" {
+			t.Fatal("opening preview did not cancel source dwell")
+		}
+		next, cmd = preview.Update(wheel)
+		if cmd != nil || next.(Model).monitorReadBusy || len(client.reads) != 0 {
+			t.Fatal("scrolling a preview acknowledged the hidden source")
+		}
+		if wide {
+			if _, stale := next.Update(monitorReadDwellElapsed(dwell)); stale != nil {
+				t.Fatal("cancelled source dwell still acknowledged the hidden source")
+			}
+		} else {
+			next, _ = next.Update(specialKey(tea.KeyEscape))
+			_, cmd = next.Update(wheel)
+			if cmd == nil {
+				t.Fatal("scrolling the source no longer sends a read receipt after closing")
+			}
 		}
 	}
 }

@@ -1406,9 +1406,10 @@ the same attributable-history rules as `/subagents`. Use **Open session** or
 the separate **Resume** action to switch; previewing alone does not mark a
 turn read or start work. Resume is unavailable in read-only web mode.
 
-Previews require a connected shared app-server, a ChatGPT account scope, and
-a target that the current account can verify. Unverified targets, archived
-sessions and agents with unknown ownership are not opened.
+Previews require a connected shared app-server (Codex 0.170.0 or newer), a
+ChatGPT account scope, and a target that the current account can verify.
+Unverified targets, archived sessions and agents with unknown ownership are
+not opened.
 
 Use **`/ps`** from a live session's command browser to list the background
 terminals reported by its shared app-server. The read-only panel shows the
