@@ -161,6 +161,11 @@ func (m Model) renderSessionInspector(width, height int, colors palette) string 
 	inner := max(width-4, 1)
 	lines := m.inspectorLines(inner)
 	start := m.inspectorOffset(len(lines), rows)
+	return renderInspectionFrame(width, rows, start, title, action, lines, colors)
+}
+
+func renderInspectionFrame(width, rows, start int, title, action string, lines []string, colors palette) string {
+	inner := max(width-4, 1)
 	lines = lines[start:min(start+rows, len(lines))]
 	for i := range lines {
 		lines[i] = colors.label().Render(ansi.Truncate(lines[i], inner, "…"))

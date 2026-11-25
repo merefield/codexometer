@@ -1,4 +1,8 @@
 {
+  "LINKS": "LINK",
+  "SESSION PREVIEW": "ANTEPRIMA DELLA SESSIONE",
+  "OPEN SESSION": "APRI SESSIONE",
+  "Session unavailable here.": "Sessione non disponibile qui.",
   "PIE  // %d%% USED": "DISCO  // %d%% USATO",
   "RING // %d%% ELAPSED": "ANELLO // %d%% TRASCORSO",
   "RING %d%% ELAPSED": "ANELLO %d%% TRASCORSO",

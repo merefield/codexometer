@@ -1,4 +1,8 @@
 {
+  "LINKS": "ССЫЛКИ",
+  "SESSION PREVIEW": "ПРОСМОТР СЕАНСА",
+  "OPEN SESSION": "ОТКРЫТЬ СЕАНС",
+  "Session unavailable here.": "Сеанс здесь недоступен.",
   "PIE  // %d%% USED": "КРУГ  // %d%% ИСПОЛЬЗОВАНО",
   "RING // %d%% ELAPSED": "КОЛЬЦО // %d%% ПРОШЛО",
   "RING %d%% ELAPSED": "КОЛЬЦО %d%% ПРОШЛО",

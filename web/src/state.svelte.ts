@@ -39,6 +39,29 @@ export type SavedPage = {
   }[];
 };
 export const resumePicker = $state({ open: false });
+export const sessionLinks = $state({ ids: [] as string[], scope: '' });
+export type ThreadLinkPreview = {
+  root: SavedRow;
+  agent?: { id: string; name: string };
+  turns?: SavedPage['turns'];
+  unverifiedTurns?: boolean;
+};
+export function openSessionLink(id: string) {
+  if (sessionLinks.ids.includes(id) || sessionLinks.ids.length >= 8) return;
+  if (!sessionLinks.ids.length)
+    sessionLinks.scope =
+      live.connected && !live.data?.sessionsError
+        ? live.data?.savedScope || ''
+        : '';
+  sessionLinks.ids = [...sessionLinks.ids, id];
+}
+export let previewSessionLink:
+  | ((
+      scope: string,
+      id: string,
+      signal: AbortSignal,
+    ) => Promise<ThreadLinkPreview>)
+  | undefined;
 export type InspectionKind = 'agents' | 'terminals';
 export const sessionInspector = $state<{ root: string; kind: InspectionKind }>({
   root: '',
@@ -174,6 +197,16 @@ export function connect(): () => void {
       signal,
       8000,
     );
+  };
+  previewSessionLink = (scope, id, signal) => {
+    if (
+      !scope ||
+      !live.connected ||
+      live.data?.sessionsError ||
+      live.data?.savedScope !== scope
+    )
+      return Promise.reject(new Error('Session unavailable here.'));
+    return sessionRead('/api/sessions/linked', { scope, id }, signal, 6500);
   };
   resumeSaved = async (scope, cursor, id, review) => {
     if (
@@ -342,6 +375,8 @@ export function connect(): () => void {
     resumeSaved = undefined;
     resumePicker.open = false;
     inspectSession = undefined;
+    previewSessionLink = undefined;
+    sessionLinks.ids = [];
     sessionInspector.root = '';
     controller.abort();
     clearTimeout(retry);

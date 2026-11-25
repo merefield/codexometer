@@ -1,10 +1,23 @@
 <script module lang="ts">
+  import type { ProseBlock, ProseRun } from './contracts.generated';
+
   const align = (value?: string) =>
     value === 'right' || value === 'center' ? value : 'left';
+
+  function inlineGroups(runs?: ProseRun[] | null) {
+    const groups: ProseRun[][] = [];
+    for (const run of runs || []) {
+      const last = groups.at(-1);
+      if (!last || run.threadStart || last[0].threadId !== run.threadId)
+        groups.push([run]);
+      else last.push(run);
+    }
+    return groups;
+  }
 </script>
 
 <script lang="ts">
-  import type { ProseBlock, ProseRun } from './contracts.generated';
+  import { openSessionLink } from './state.svelte';
   let { blocks }: { blocks: ProseBlock[] } = $props();
 </script>
 
@@ -14,9 +27,19 @@
 {#snippet emphasis(r: ProseRun)}
   {#if r.italic}<em>{@render literal(r)}</em>{:else}{@render literal(r)}{/if}
 {/snippet}
-{#snippet inline(runs: ProseRun[] | null | undefined)}
-  {#each runs || [] as r}{#if r.bold}<strong>{@render emphasis(r)}</strong
+{#snippet label(group: ProseRun[])}
+  {#each group as r}{#if r.bold}<strong>{@render emphasis(r)}</strong
       >{:else}{@render emphasis(r)}{/if}{/each}
+{/snippet}
+{#snippet inline(runs: ProseRun[] | null | undefined)}
+  {#each inlineGroups(runs) as group}
+    {@const id = group[0].threadId}
+    {#if id}<button
+        class="thread-link"
+        type="button"
+        onclick={() => openSessionLink(id)}>{@render label(group)}</button
+      >{:else}{@render label(group)}{/if}
+  {/each}
 {/snippet}
 
 <div class="prose" data-reply-text>
@@ -50,6 +73,18 @@
 </div>
 
 <style>
+  .thread-link {
+    display: inline;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    text-align: inherit;
+    text-decoration: underline;
+    text-transform: none;
+    overflow-wrap: anywhere;
+  }
   .prose {
     min-width: 0;
     max-width: 100%;

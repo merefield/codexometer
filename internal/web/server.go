@@ -38,6 +38,7 @@ type server struct {
 	starter       codex.SessionStartClient
 	agents        codex.SessionAgentClient
 	terminals     codex.SessionTerminalClient
+	threadLinks   codex.SessionLinkClient
 	savedRequests chan struct{}
 	store         *store
 	host          string
@@ -68,6 +69,7 @@ func Run(ctx context.Context, source Source, refresh time.Duration, port int, ou
 	s := &server{store: newStore(), host: loopbackAuthority(listener.Addr().String()), pairSecret: rand.Text(), pairUntil: time.Now().Add(5 * time.Minute), streams: make(chan struct{}, 16),
 		finder: readerCapability[codex.SavedSessionClient](source), searcher: readerCapability[codex.SavedSessionSearchClient](source),
 		agents: readerCapability[codex.SessionAgentClient](source), terminals: readerCapability[codex.SessionTerminalClient](source),
+		threadLinks:   readerCapability[codex.SessionLinkClient](source),
 		savedRequests: make(chan struct{}, 2)}
 	if writable {
 		s.resumer, _ = source.(codex.SavedSessionResumeClient)
@@ -166,6 +168,7 @@ func (s *server) handler() http.Handler {
 		handle  http.HandlerFunc
 	}{
 		{"GET /api/sessions/saved", s.finder != nil, 7 * time.Second, s.savedSessions},
+		{"GET /api/sessions/linked", s.threadLinks != nil, 5 * time.Second, s.previewThreadLink},
 		{"POST /api/sessions/resume", s.resumer != nil, codex.SavedResumeTimeout, sessionMutationHandler(s, "resume", 8<<10, s.resumeSession)},
 		{"POST /api/sessions/new", s.starter != nil, codex.SessionStartTimeout, sessionMutationHandler(s, "new-session", 48<<10, s.startSession)},
 	} {

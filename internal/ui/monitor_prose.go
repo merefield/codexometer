@@ -19,24 +19,31 @@ func (m Model) proseLines(text string, width int) []string {
 	var lines []string
 	for _, b := range doc {
 		if len(b.Rows) > 0 {
-			lines = append(lines, proseTableLines(b, width, colors)...)
+			lines = append(lines, proseTableLines(b, width, colors, m.threadLinkHitTest)...)
 		} else {
-			lines = append(lines, wrapProse(styledRuns(b.Runs, width, colors, false), width)...)
+			lines = append(lines, wrapProse(styledRuns(b.Runs, width, colors, false, m.threadLinkHitTest), width)...)
 		}
 	}
 	return lines
 }
 
-func styledRuns(runs []prose.ProseRun, width int, p palette, header bool) string {
+func styledRuns(runs []prose.ProseRun, width int, p palette, header, hitTest bool) string {
 	var b strings.Builder
 	for _, r := range runs {
 		text := r.Text
-		if width >= 12 {
+		if r.ThreadID != "" {
+			if hitTest {
+				text = ansi.SetHyperlink(threadLinkMarker+r.ThreadID, threadLinkMarkerParam) + text + ansi.ResetHyperlink()
+			}
+		} else if width >= 12 {
 			text = formatSessionWebLinks(text, !r.Code)
 		}
 		// SGR resets don't restore a parent style. Give even ordinary runs
 		// their own ink so text after code or emphasis stays in theme.
 		var style ansi.Style
+		if r.ThreadID != "" {
+			style = style.Underline(true)
+		}
 		ink := p.accent
 		if r.Bold || header {
 			style, ink = style.Bold(), p.primary
@@ -89,13 +96,13 @@ func wrapProse(s string, width int) []string {
 	return lines
 }
 
-func proseTableLines(b prose.ProseBlock, width int, p palette) []string {
+func proseTableLines(b prose.ProseBlock, width int, p palette, hitTest bool) []string {
 	header := b.Rows[0]
 	sizes := make([]int, len(header))
 	rows := make([][]string, len(b.Rows))
 	for i, cells := range b.Rows {
 		for j, cell := range cells {
-			value := styledRuns(cell, width, p, i == 0)
+			value := styledRuns(cell, width, p, i == 0, hitTest)
 			rows[i] = append(rows[i], value)
 			sizes[j] = max(sizes[j], ansi.StringWidth(value))
 		}

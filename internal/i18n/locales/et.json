@@ -1,4 +1,8 @@
 {
+  "LINKS": "LINGID",
+  "SESSION PREVIEW": "SEANSI EELVAADE",
+  "OPEN SESSION": "AVA SEANSS",
+  "Session unavailable here.": "Seanss pole siin saadaval.",
   "PIE  // %d%% USED": "SEKTOR  // %d%% KASUTATUD",
   "RING // %d%% ELAPSED": "RÕNGAS // %d%% MÖÖDUNUD",
   "RING %d%% ELAPSED": "RÕNGAS %d%% MÖÖDUNUD",

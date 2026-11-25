@@ -8,7 +8,12 @@
   import CommandReview from './CommandReview.svelte';
   import type { ApprovalReview, ReviewAssessment } from './contracts.generated';
   import type { FileDiffLine } from './state.svelte';
-  import { live, controlRequest, ControlRejected } from './state.svelte';
+  import {
+    live,
+    controlRequest,
+    ControlRejected,
+    sessionLinks,
+  } from './state.svelte';
   let {
     session,
     observedCommand = '',
@@ -264,6 +269,7 @@
   onMount(() => {
     const key = (event: KeyboardEvent) => {
       if (
+        !sessionLinks.ids.length &&
         event.ctrlKey &&
         event.key.toLowerCase() === 's' &&
         !review &&

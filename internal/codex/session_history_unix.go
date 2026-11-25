@@ -6,6 +6,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type historyTurn struct {
@@ -30,9 +32,11 @@ func (p *daemonStatusProvider) SessionHistory(ctx context.Context, id string) ([
 }
 
 func (p *daemonStatusProvider) readSessionHistory(ctx context.Context, id string, ownedSince time.Time) ([]SessionContext, bool, error) {
-	p.mu.Lock()
-	conn, generation := p.connection, p.commandGeneration
-	p.mu.Unlock()
+	conn, generation := p.currentTransport()
+	return p.readSessionHistoryOn(ctx, conn, generation, id, ownedSince)
+}
+
+func (p *daemonStatusProvider) readSessionHistoryOn(ctx context.Context, conn *websocket.Conn, generation uint64, id string, ownedSince time.Time) ([]SessionContext, bool, error) {
 	// Bounded, newest-first history reads neither resume nor change a session.
 	// Do not fall back to an unbounded includeTurns read on older servers.
 	var response struct{ Data []historyTurn }

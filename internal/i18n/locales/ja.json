@@ -1,4 +1,8 @@
 {
+  "LINKS": "リンク",
+  "SESSION PREVIEW": "セッションのプレビュー",
+  "OPEN SESSION": "セッションを開く",
+  "Session unavailable here.": "このセッションはここでは利用できません。",
   "PIE  // %d%% USED": "円  // %d%% 使用済み",
   "RING // %d%% ELAPSED": "外周 // %d%% 経過",
   "RING %d%% ELAPSED": "外周 %d%% 経過",

@@ -73,9 +73,17 @@ func (p *daemonStatusProvider) finderNotificationLocked(method string, params js
 
 // Older servers silently ignore unknown thread/list fields.
 func supportsSavedScope(userAgent string) bool {
+	return savedServerAtLeast(userAgent, "go0.170.0")
+}
+
+func supportsSavedExactIDs(userAgent string) bool {
+	return savedServerAtLeast(userAgent, "go0.171.0")
+}
+
+func savedServerAtLeast(userAgent, minimum string) bool {
 	first, _, _ := strings.Cut(userAgent, " ")
 	_, v, ok := strings.Cut(first, "/")
-	return ok && version.IsValid("go"+v) && version.Compare("go"+v, "go0.170.0") >= 0
+	return ok && version.Compare("go"+v, minimum) >= 0
 }
 
 func (p *daemonStatusProvider) savedAccount(ctx context.Context, scope string) (string, error) {
@@ -109,6 +117,10 @@ func (p *daemonStatusProvider) listSaved(ctx context.Context, scope, cursor, sor
 	if cursor != "" {
 		params["cursor"] = cursor
 	}
+	return p.readSavedPage(ctx, conn, params)
+}
+
+func (p *daemonStatusProvider) readSavedPage(ctx context.Context, conn *websocket.Conn, params map[string]any) (SavedPage, error) {
 	var result struct {
 		Data       []savedWireThread
 		NextCursor string
@@ -135,9 +147,7 @@ func (page *SavedPage) addWireThread(t savedWireThread) {
 }
 
 func (p *daemonStatusProvider) savedSessionAction(ctx context.Context, scope string) (*websocket.Conn, uint64, string, error) {
-	p.mu.Lock()
-	conn, generation := p.connection, p.commandGeneration
-	p.mu.Unlock()
+	conn, generation := p.currentTransport()
 	if conn == nil {
 		return nil, 0, "", ErrSavedSessions
 	}

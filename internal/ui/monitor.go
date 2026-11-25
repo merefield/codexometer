@@ -94,6 +94,9 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	if m.actionReview != nil {
 		return monitorView{view: m.renderActionReview(width, height, colors)}
 	}
+	if m.hasThreadLinkPanel() {
+		return monitorView{view: m.renderThreadLinks(width, height, colors)}
+	}
 	if m.newSession.open() && !m.finder.include {
 		return monitorView{view: m.renderNewSession(width, height, colors)}
 	}

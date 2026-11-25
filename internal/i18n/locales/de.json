@@ -1,4 +1,8 @@
 {
+  "LINKS": "LINKS",
+  "SESSION PREVIEW": "SITZUNGSVORSCHAU",
+  "OPEN SESSION": "SITZUNG ÖFFNEN",
+  "Session unavailable here.": "Sitzung hier nicht verfügbar.",
   "PIE  // %d%% USED": "KREIS  // %d%% VERBRAUCHT",
   "RING // %d%% ELAPSED": "RING // %d%% VERSTRICHEN",
   "RING %d%% ELAPSED": "RING %d%% VERSTRICHEN",

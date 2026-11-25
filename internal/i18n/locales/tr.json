@@ -1,4 +1,8 @@
 {
+  "LINKS": "BAĞLANTILAR",
+  "SESSION PREVIEW": "OTURUM ÖNİZLEMESİ",
+  "OPEN SESSION": "OTURUMU AÇ",
+  "Session unavailable here.": "Oturum burada kullanılamıyor.",
   "PIE  // %d%% USED": "DAİRE  // %d%% KULLANILDI",
   "RING // %d%% ELAPSED": "HALKA // %d%% GEÇTİ",
   "RING %d%% ELAPSED": "HALKA %d%% GEÇTİ",
