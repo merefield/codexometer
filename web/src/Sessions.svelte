@@ -432,6 +432,8 @@
       return 'Last observation only — refresh unavailable. Check Codex for current state.';
     if (session.status === 'CHECK SESSION')
       return 'INFERRED INACTIVITY — a quiet session, not a confirmed input or approval request. Local tools may still be running.';
+    if (isFailure(session) && session.status.endsWith(' SPEND CAP'))
+      return 'CONFIRMED TURN FAILURE — check the reported API spend cap. This is separate from ChatGPT subscription quota. No automatic retry.';
     if (isFailure(session))
       return session.status === 'MODEL BUSY'
         ? 'CONFIRMED TURN FAILURE — the selected model was at capacity. Choose another model with /model or retry when ready. This is not a quota-exhaustion signal.'
@@ -463,8 +465,10 @@
 <svelte:window onkeydown={keydown} />
 
 {#snippet context(session: Session, heading = true, full = false)}
-  {#if session.reviewer}<p class="muted">
-      REVIEW // {session.reviewer === 'auto_review' ? 'AUTO' : 'HUMAN'}
+  {#if session.reviewer === 'user' || session.reviewer === 'auto_review'}<p
+      class="muted"
+    >
+      DEFAULT REVIEW // {session.reviewer === 'auto_review' ? 'AUTO' : 'HUMAN'}
     </p>{/if}
   {#if session.currentTask}
     <h3>

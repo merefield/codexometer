@@ -168,7 +168,11 @@ func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *web
 		Goal    *SessionGoal
 		Cleared *bool
 	}
-	if err := p.requestOnChecked(ctx, conn, choice.method, choice.params, &result, generation); err != nil {
+	var readyLocked []func() bool
+	if target.Fingerprint != "" {
+		readyLocked = append(readyLocked, func() bool { return !p.goalHasAPISpendCapLocked(id) })
+	}
+	if err := p.requestOnChecked(ctx, conn, choice.method, choice.params, &result, generation, readyLocked...); err != nil {
 		return err // Never retry a possibly applied goal mutation.
 	}
 	if choice.method == "thread/goal/clear" {

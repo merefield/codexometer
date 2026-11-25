@@ -8,7 +8,11 @@ import (
 // Failure labels are shared by both interfaces; backend messages remain bounded,
 // sanitised observations, never commands or permission to retry a write.
 func SessionFailureLabel(c SessionContext) string {
-	switch normalizedFailureCode(c.FailureCode) {
+	code := normalizedFailureCode(c.FailureCode)
+	if label := apiSpendCapLabel(code); label != "" {
+		return label
+	}
+	switch code {
 	case "serveroverloaded":
 		return "MODEL BUSY"
 	case "modelnotfound":
@@ -19,6 +23,18 @@ func SessionFailureLabel(c SessionContext) string {
 		return "HOOK DENIED"
 	}
 	return "TURN FAILED"
+}
+
+func apiSpendCapLabel(normalizedCode string) string {
+	switch normalizedCode {
+	case "apikeyspendlimitexceeded":
+		return "API KEY SPEND CAP"
+	case "projectspendlimitexceeded":
+		return "PROJECT SPEND CAP"
+	case "organizationspendlimitexceeded":
+		return "ORG SPEND CAP"
+	}
+	return ""
 }
 
 func normalizedFailureCode(code string) string {

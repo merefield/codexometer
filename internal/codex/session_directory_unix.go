@@ -25,19 +25,14 @@ func (p *daemonStatusProvider) commandDirectory(ctx context.Context, conn *webso
 	if err := p.requestOn(ctx, conn, "thread/resume", map[string]any{"threadId": id, "excludeTurns": true}, &response); err != nil {
 		return "", err
 	}
-	if response.Thread.ID != id || !filepath.IsAbs(response.Cwd) {
-		return "", errors.New("running session directory unavailable; use Codex")
-	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.connection != conn {
-		p.mu.Unlock()
 		return "", ErrSessionCommand
 	}
-	if p.threadDirectories == nil {
-		p.threadDirectories = map[string]string{}
+	if response.Thread.ID != id || !p.recordThreadDirectoryLocked(id, response.Cwd) {
+		return "", errors.New("running session directory unavailable; use Codex")
 	}
-	p.threadDirectories[id] = response.Cwd
-	p.mu.Unlock()
 	return response.Cwd, nil
 }
 
@@ -53,13 +48,16 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 	m.Revision = commandDigest(cwd)
 	if path == "cwd" || path == "pwd" {
 		m.Help = "Current working directory from this session's running Codex configuration. /cwd and /pwd are aliases."
-		m.Choices = append(m.Choices, SessionCommandChoice{Label: strconv.Quote(cwd), Help: "Working directory: " + strconv.Quote(cwd)})
+		m.Choices = append(m.Choices, SessionCommandChoice{Label: cwd, Help: "Working directory: " + cwd})
 		return m, nil
 	}
 	if path != "cd" && !strings.HasPrefix(path, "cd/") {
 		return m, ErrSessionCommand
 	}
 	m.Help = "Change this session's directory for subsequent turns. History and session ID are retained. The server adjusts its directory workspace root and retains other roots and permission settings. This does not perform the native CLI's project-configuration reload or conversation fork. Review and confirm while idle, with no queued messages."
+	if !filepath.IsAbs(cwd) {
+		return m, errors.New("directory changes for server paths that cannot be resolved locally require Codex")
+	}
 	for _, env := range t.Environments {
 		if env.EnvironmentID != "local" {
 			return m, errors.New("directory changes for remote or multiple execution environments require Codex")

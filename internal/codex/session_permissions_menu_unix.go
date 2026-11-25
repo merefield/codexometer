@@ -218,7 +218,7 @@ func (p *daemonStatusProvider) permissionMenu(ctx context.Context, t commandThre
 		m.Help += "\nCurrent profile: " + s.Profile.ID
 	}
 	if s.Reviewer != "" {
-		m.Help += "\nCurrent reviewer: " + reviewerName(s.Reviewer) + "\nCurrent approval policy: " + policySummary(s.Policy)
+		m.Help += "\nSession default reviewer: " + reviewerName(s.Reviewer) + "\nCurrent approval policy: " + policySummary(s.Policy)
 	}
 	rows, err := p.commandRows(ctx, "permissionProfile/list", map[string]any{"cwd": t.Cwd})
 	if err != nil {

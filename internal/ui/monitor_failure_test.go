@@ -13,6 +13,7 @@ func TestMonitorFailureSummaryFilterPillAndContext(t *testing.T) {
 	for code, label := range map[string]string{
 		"inferenceHookDenied": "HOOK DENIED",
 		"serverOverloaded":    "MODEL BUSY", "modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED",
+		"apiKeySpendLimitExceeded": "API KEY SPEND CAP", "projectSpendLimitExceeded": "PROJECT SPEND CAP", "organizationSpendLimitExceeded": "ORG SPEND CAP",
 	} {
 		t.Run(code, func(t *testing.T) {
 			m := attentionTestModel()
@@ -48,7 +49,7 @@ func TestMonitorFailureSummaryFilterPillAndContext(t *testing.T) {
 }
 
 func TestMonitorFailureKeepsRecoveryComposerAndSlashCommands(t *testing.T) {
-	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed"} {
+	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed", "projectSpendLimitExceeded"} {
 		for _, mode := range []int{contextFull, contextWide} {
 			for _, text := range []string{"continue", "/model"} {
 				m, f := suggestionTestModel(t)

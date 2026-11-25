@@ -248,7 +248,9 @@ test('native Auto-review remains informational in read-only mode', async ({
   await page.getByRole('link', { name: 'SESSIONS', exact: true }).click();
   await setOverviewDetail(page, 1);
   const row = page.locator('.session-row').first();
-  await expect(row.getByText('REVIEW // AUTO', { exact: true })).toBeVisible();
+  await expect(
+    row.getByText('DEFAULT REVIEW // AUTO', { exact: true }),
+  ).toBeVisible();
   await expect(
     row.getByRole('heading', { name: 'COMMAND REVIEW', exact: true }),
   ).toBeVisible();
@@ -1525,6 +1527,7 @@ for (const status of [
   'MODEL UNAVAILABLE',
   'CAPACITY RESTRICTED',
   'TURN FAILED',
+  'PROJECT SPEND CAP',
 ]) {
   test(`stopped error ${status} keeps the recovery composer and model discovery`, async ({
     page,
@@ -1565,6 +1568,10 @@ for (const status of [
     await expect(page.locator('.detail-context')).toContainText(
       'Failure explanation',
     );
+    if (status === 'PROJECT SPEND CAP')
+      await expect(page.locator('.detail-context')).toContainText(
+        'separate from ChatGPT subscription quota',
+      );
     await composer.fill('continue');
     await expect(composer).toHaveValue('continue');
     await composer.fill('/model');

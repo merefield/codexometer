@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -516,7 +515,7 @@ func (m Model) scheduleFormDocument() ([]string, []scheduleControl) {
 		if label := strings.TrimSpace(terminalLabel(session.name)); label != "" {
 			name = label
 		} else if session.workingDirectory != "" {
-			name = filepath.Base(terminalLabel(session.workingDirectory))
+			name = codex.SessionDirectoryBase(terminalLabel(session.workingDirectory))
 		}
 		break
 	}

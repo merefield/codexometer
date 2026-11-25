@@ -20,6 +20,14 @@ func (p *daemonStatusProvider) checkScheduledGoalAccount(ctx context.Context, co
 	return nil
 }
 
+// Codex also marks goals usageLimited on API billing caps. A subscription
+// quota read cannot verify recovery from a cap observed on this turn.
+func (p *daemonStatusProvider) goalHasAPISpendCapLocked(id string) bool {
+	state := p.contexts[id]
+	return state != nil && state.latest.Kind == SessionContextFailure &&
+		apiSpendCapLabel(normalizedFailureCode(state.latest.FailureCode)) != ""
+}
+
 func (p *daemonStatusProvider) PrepareGoalResume(ctx context.Context, id, account, revision, choice string) (GoalResumeTarget, error) {
 	p.settingsMu.Lock()
 	defer p.settingsMu.Unlock()
@@ -39,7 +47,11 @@ func (p *daemonStatusProvider) PrepareGoalResume(ctx context.Context, id, accoun
 	p.mu.Lock()
 	_, subscribed := p.subscribed[id]
 	current := p.connection == conn && p.commandGeneration == generation && subscribed
+	apiCap := menu.goalResume.Stopped && p.goalHasAPISpendCapLocked(id)
 	p.mu.Unlock()
+	if apiCap {
+		return GoalResumeTarget{}, errors.New("API spend cap observed; resolve the provider limit before resuming manually")
+	}
 	if !current {
 		return GoalResumeTarget{}, ErrScheduledGoalNotReady
 	}
@@ -89,7 +101,7 @@ func (p *daemonStatusProvider) ResumeScheduledGoal(ctx context.Context, id, acco
 	p.mu.Lock()
 	_, subscribed := p.subscribed[id]
 	ready := p.connection == conn && p.commandGeneration == generation && subscribed &&
-		p.statuses[id] != sessionRuntimeWorking && !p.commandHumanWaitLocked(id)
+		p.statuses[id] != sessionRuntimeWorking && !p.commandHumanWaitLocked(id) && !p.goalHasAPISpendCapLocked(id)
 	p.mu.Unlock()
 	if !ready || ctx.Err() != nil {
 		return ErrScheduledGoalNotReady

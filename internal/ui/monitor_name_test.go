@@ -31,6 +31,16 @@ func TestMonitorSessionNameDisplayAndRename(t *testing.T) {
 	}
 }
 
+func TestMonitorSessionForeignDirectoryDisplay(t *testing.T) {
+	m := Model{}
+	const cwd = `D:\work\dashboard`
+	s := monitorSession{id: "root", workingDirectory: cwd}
+	metrics := ansi.Strip(m.renderMonitorSessionMetrics(48, 12, s, "", paletteFor(themeHacker)))
+	if !strings.Contains(metrics, "ROOT // DASHBOARD") || !strings.Contains(metrics, cwd) || monitorSessionIdentity(s) != "ROOT // dashboard" {
+		t.Fatal("foreign path should be retained in detail but shortened in the title", metrics)
+	}
+}
+
 func TestFullDetailIdentifiesSessionWithoutRepeatingComposerHeading(t *testing.T) {
 	for _, working := range []bool{false, true} {
 		m, _ := promptTestModel()

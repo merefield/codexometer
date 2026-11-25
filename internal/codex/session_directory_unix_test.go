@@ -204,6 +204,41 @@ func TestSessionDirectoryRejectsRemoteEnvironments(t *testing.T) {
 	}
 }
 
+func TestSessionDirectoryAcceptsForeignPathForDisplayOnly(t *testing.T) {
+	p, f, _ := directoryFixture(t)
+	const cwd = `D:\work\foo bar`
+	f.cwds["one"] = cwd
+	ctx := t.Context()
+	snapshot, ok := p.Fetch(ctx, []string{"one"})
+	if !ok || snapshot.WorkingDirectories["one"] != cwd {
+		t.Fatal("foreign path missing from initial telemetry", snapshot.WorkingDirectories)
+	}
+	for _, cmd := range []string{"pwd", "cwd"} {
+		m, err := p.SessionCommands(ctx, "one", cmd)
+		if err != nil || len(m.Choices) != 1 || m.Choices[0].Label != cwd || m.Choices[0].Action {
+			t.Fatal("foreign path not available as read-only display", m, err)
+		}
+	}
+	for _, cmd := range []string{"cd", "/cd " + t.TempDir()} {
+		if _, err := p.SessionCommands(ctx, "one", cmd); err == nil {
+			t.Fatal("foreign working directory enabled a local filesystem write", cmd)
+		}
+	}
+	const unc = `\\build-host\share\bar`
+	p.handleNotification("thread/settings/updated", rawJSON(map[string]any{
+		"threadId": "one", "threadSettings": map[string]string{"cwd": unc},
+	}))
+	p.handleNotification("thread/settings/updated", rawJSON(map[string]any{
+		"threadId": "one", "threadSettings": map[string]string{"cwd": `D:relative`},
+	}))
+	snapshot, ok = p.Fetch(ctx, []string{"one"})
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !ok || snapshot.WorkingDirectories["one"] != unc || len(f.writes) != 0 {
+		t.Fatal("foreign update dropped, invalid update accepted, or write attempted", snapshot.WorkingDirectories, f.writes)
+	}
+}
+
 func TestSessionDirectoryWaitsForQueuedApplication(t *testing.T) {
 	p, f, base := directoryFixture(t)
 	target := filepath.Join(base, "later")

@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -384,7 +383,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 func (m Model) renderSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette, target *monitorRect) string {
 	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
-		title = shortSessionID(session.id) + " // " + strings.ToUpper(filepath.Base(terminalLabel(session.workingDirectory)))
+		title = shortSessionID(session.id) + " // " + strings.ToUpper(codex.SessionDirectoryBase(terminalLabel(session.workingDirectory)))
 	}
 	if session.name != "" {
 		title = shortSessionID(session.id) + " // " + terminalLabel(session.name)
@@ -468,12 +467,11 @@ func (m Model) renderSessionMetrics(width, height int, session monitorSession, p
 		appendAgentTarget()
 	}
 	priorityRows := len(lines)
-	if reviewer := session.preview.Reviewer; reviewer != "" {
-		label := "REVIEW // HUMAN"
-		if reviewer == "auto_review" {
-			label = "REVIEW // AUTO"
-		}
-		appendLine(i18n.Text(label))
+	switch session.preview.Reviewer {
+	case "user":
+		appendLine(i18n.Text("DEFAULT REVIEW // HUMAN"))
+	case "auto_review":
+		appendLine(i18n.Text("DEFAULT REVIEW // AUTO"))
 	}
 	if estimate := m.monitorSessionQuotaEstimate(share); estimate != "" {
 		appendLine(estimate)
@@ -779,7 +777,7 @@ func monitorSessionIdentity(s monitorSession) string {
 	identity := shortSessionID(s.id)
 	name := terminalLabel(s.name)
 	if name == "" && s.workingDirectory != "" {
-		name = filepath.Base(terminalLabel(s.workingDirectory))
+		name = codex.SessionDirectoryBase(terminalLabel(s.workingDirectory))
 	}
 	if name != "" {
 		identity += " // " + name

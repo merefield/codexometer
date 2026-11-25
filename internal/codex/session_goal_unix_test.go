@@ -101,6 +101,38 @@ func TestScheduledGoalUsesReviewedNativeGoalAndAccount(t *testing.T) {
 	f.mu.Lock()
 	f.goals["one"].Objective = original
 	f.mu.Unlock()
+	emit := func(method, body string) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.contexts == nil {
+			p.contexts = make(map[string]*daemonContextState)
+		}
+		daemonContextEvent(p.contexts, method, nil, json.RawMessage(body), time.Now())
+	}
+	emit("turn/started", `{"threadId":"one","turn":{"id":"api-capped"}}`)
+	emit("error", `{"threadId":"one","turnId":"api-capped","willRetry":false,"error":{"message":"API project spend limit reached","codexErrorInfo":"projectSpendLimitExceeded"}}`)
+	if err := p.ResumeScheduledGoal(ctx, "one", account, target); !errors.Is(err, ErrScheduledGoalNotReady) {
+		t.Fatal("subscription quota must not release a known API spend cap", err)
+	}
+	p.mu.Lock()
+	conn, generation := p.connection, p.commandGeneration
+	p.mu.Unlock()
+	if err := p.executeGoalCommand(ctx, conn, "one", SessionCommandChoice{
+		method: "thread/goal/set",
+		params: map[string]any{"threadId": "one", "origin": "user", "status": "active"},
+	}, target, &generation); !errors.Is(err, errDaemonWriteGuardRejected) {
+		t.Fatal("spend cap observed after preflight must also be rejected at the socket write", err)
+	}
+	stopped, err := p.SessionCommands(ctx, "one", ScheduleGoalResumePath)
+	if err != nil || len(stopped.Choices) != 1 {
+		t.Fatal("could not obtain the stopped goal review", stopped, err)
+	}
+	if _, err := p.PrepareGoalResume(ctx, "one", account, stopped.Revision, stopped.Choices[0].ID); err == nil || !strings.Contains(err.Error(), "API spend cap") {
+		t.Fatal("accepted arming a goal stopped by a known API spend cap", err)
+	}
+	// A subsequent ordinary quota stop must not inherit the old cap.
+	emit("turn/started", `{"threadId":"one","turn":{"id":"quota-limited"}}`)
+	emit("turn/completed", `{"threadId":"one","turn":{"id":"quota-limited","status":"failed","error":{"message":"Quota expired","codexErrorInfo":"usageLimitExceeded"}}}`)
 	if err := p.ResumeScheduledGoal(ctx, "one", account, target); err != nil {
 		t.Fatal("native goal resume failed", err)
 	}

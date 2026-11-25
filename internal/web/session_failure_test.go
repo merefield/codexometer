@@ -17,7 +17,10 @@ func TestSessionFailurePresentation(t *testing.T) {
 	if sessionStatus(row) != "TURN FAILED" {
 		t.Fatal("generic failure mislabeled")
 	}
-	for code, want := range map[string]string{"modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED", "inferenceHookDenied": "HOOK DENIED"} {
+	for code, want := range map[string]string{
+		"modelNotFound": "MODEL UNAVAILABLE", "policyCapacityUnavailable": "CAPACITY RESTRICTED", "inferenceHookDenied": "HOOK DENIED",
+		"apiKeySpendLimitExceeded": "API KEY SPEND CAP", "projectSpendLimitExceeded": "PROJECT SPEND CAP", "organizationSpendLimitExceeded": "ORG SPEND CAP",
+	} {
 		row.Context.FailureCode = code
 		if sessionStatus(row) != want || contextKind(row.Context.Kind) != "TURN ERROR" {
 			t.Fatal("new error lost shared failure classification", row)
@@ -26,7 +29,7 @@ func TestSessionFailurePresentation(t *testing.T) {
 }
 
 func TestSessionFailureKeepsRecoveryActions(t *testing.T) {
-	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed", "inferenceHookDenied"} {
+	for _, code := range []string{"serverOverloaded", "modelNotFound", "policyCapacityUnavailable", "httpConnectionFailed", "inferenceHookDenied", "projectSpendLimitExceeded"} {
 		t.Run(code, func(t *testing.T) {
 			s, f, token := controlServer(t)
 			s.store.contexts["parent"] = codex.SessionContext{Kind: codex.SessionContextFailure, ThreadID: "parent", FailureCode: code, Text: "Failure explanation"}
