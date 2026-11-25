@@ -1026,7 +1026,18 @@ test('thread links preview a saved session and nested agent without switching se
         contextKind: 'LAST REPLY',
         text: 'Original reply',
         samples: [],
-        prose: [link('Earlier work', root), link('Missing thread', missing)],
+        prose: [
+          {
+            runs: [
+              { text: 'Earlier ', threadId: root, threadStart: true },
+              { text: 'work', bold: true, italic: true, threadId: root },
+              { text: ' ', threadId: root },
+              { text: 'v2', code: true, threadId: root },
+              { text: 'Another label', threadId: root, threadStart: true },
+            ],
+          },
+          link('Missing thread', missing),
+        ],
       },
     ],
   });
@@ -1062,7 +1073,14 @@ test('thread links preview a saved session and nested agent without switching se
   });
   const sourceLink = page
     .locator('.detail-context')
-    .getByRole('button', { name: 'Earlier work' });
+    .getByRole('button', { name: 'Earlier work v2', exact: true });
+  await expect(sourceLink.locator('strong em')).toHaveText('work');
+  await expect(sourceLink.locator('code')).toHaveText('v2');
+  await expect(
+    page
+      .locator('.detail-context')
+      .getByRole('button', { name: 'Another label', exact: true }),
+  ).toBeVisible();
   await sourceLink.focus();
   await sourceLink.press('Enter');
   const dialog = page.getByRole('dialog');

@@ -49,7 +49,7 @@ func TestThreadLinkClickAndKeyboardPreviewPreserveSource(t *testing.T) {
 		m.fetcher = threadLinkProbe{&readTestClient{}}
 		m.finder.scope = "scope"
 		root := m.monitorSessionData[0].id
-		m.monitorSessionData[0].preview = codex.SessionContext{ThreadID: root, Kind: codex.SessionContextReply, Text: "See [Earlier work](codex://threads/" + previewID + ")."}
+		m.monitorSessionData[0].preview = codex.SessionContext{ThreadID: root, Kind: codex.SessionContextReply, Text: "See [Earlier **work**](codex://threads/" + previewID + ")."}
 		m.setRowContext(root, contextFull)
 		m.monitorPrompt.session = root
 		m.monitorPrompt.input = newMonitorEditor()
@@ -62,12 +62,12 @@ func TestThreadLinkClickAndKeyboardPreviewPreserveSource(t *testing.T) {
 		apply := func(msg tea.Msg) { next, task := m.Update(msg); m, cmd = next.(Model), task }
 		if keyboard {
 			apply(key('l'))
-			if m.threadLinks == nil || len(m.threadLinks.choices) != 1 {
-				t.Fatal("keyboard did not open link picker")
+			if m.threadLinks == nil || len(m.threadLinks.choices) != 1 || m.threadLinks.choices[0].label != "Earlier work" {
+				t.Fatal("keyboard did not open a picker with the whole formatted label")
 			}
 			apply(specialKey(tea.KeyEnter))
 		} else {
-			x, y := renderedTextStart(t, m, "Earlier work")
+			x, y := renderedTextStart(t, m, "work")
 			apply(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		}
 		if cmd == nil || m.threadLinks.id != previewID {

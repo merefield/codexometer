@@ -197,6 +197,7 @@ export interface ProseRun {
   italic?: boolean;
   code?: boolean;
   threadId?: string;
+  threadStart?: boolean;
 }
 
 export interface QuotaPlot {

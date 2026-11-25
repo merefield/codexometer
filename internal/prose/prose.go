@@ -4,6 +4,7 @@ package prose
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"sync"
 
@@ -13,14 +14,16 @@ import (
 	"github.com/yuin/goldmark/extension"
 	table "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 type ProseRun struct {
-	Text     string `json:"text"`
-	Bold     bool   `json:"bold,omitempty"`
-	Italic   bool   `json:"italic,omitempty"`
-	Code     bool   `json:"code,omitempty"`
-	ThreadID string `json:"threadId,omitempty"`
+	Text        string `json:"text"`
+	Bold        bool   `json:"bold,omitempty"`
+	Italic      bool   `json:"italic,omitempty"`
+	Code        bool   `json:"code,omitempty"`
+	ThreadID    string `json:"threadId,omitempty"`
+	ThreadStart bool   `json:"threadStart,omitempty"` // Adjacent labels can share a target.
 }
 
 type ProseBlock struct {
@@ -241,13 +244,23 @@ func inlineRuns(parent ast.Node, src []byte, end int, style ProseRun) (out []Pro
 			stop = next.Pos()
 		}
 		literal := func() {
+			if style.ThreadID != "" {
+				// Label nodes end before the destination. Don't slice from
+				// their source position to the end of the outer link.
+				add(string(n.Text(src)))
+				return
+			}
 			if p := n.Pos(); p >= 0 && p <= stop && stop <= len(src) {
 				add(string(src[p:stop]))
 			}
 		}
 		switch v := n.(type) {
 		case *ast.Text:
-			add(string(v.Segment.Value(src)))
+			value := v.Segment.Value(src)
+			if style.ThreadID != "" && !v.IsRaw() {
+				value = util.UnescapePunctuations(value)
+			}
+			add(string(value))
 			if v.SoftLineBreak() || v.HardLineBreak() {
 				add("\n")
 			}
@@ -274,13 +287,17 @@ func inlineRuns(parent ast.Node, src []byte, end int, style ProseRun) (out []Pro
 			out = append(out, r)
 			rich = true
 		case *ast.Link:
-			if id := ThreadID(string(v.Destination)); id != "" && strings.TrimSpace(string(v.Text(src))) != "" {
-				r := style
-				r.Text, r.ThreadID = string(v.Text(src)), id
-				out, rich = append(out, r), true
-			} else {
-				literal()
+			if id := ThreadID(string(v.Destination)); id != "" && style.ThreadID == "" {
+				label := style
+				label.ThreadID = id
+				runs, _ := inlineRuns(v, src, stop, label)
+				if slices.ContainsFunc(runs, func(r ProseRun) bool { return strings.TrimSpace(r.Text) != "" }) {
+					runs[0].ThreadStart = true
+					out, rich = append(out, runs...), true
+					continue
+				}
 			}
+			literal()
 		default:
 			literal()
 		}
