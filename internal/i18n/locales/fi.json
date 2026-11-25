@@ -1,4 +1,8 @@
 {
+  "LINKS": "LINKIT",
+  "SESSION PREVIEW": "ISTUNNON ESIKATSELU",
+  "OPEN SESSION": "AVAA ISTUNTO",
+  "Session unavailable here.": "Istunto ei ole saatavilla täällä.",
   "PIE  // %d%% USED": "YMPYRÄ  // %d%% KÄYTETTY",
   "RING // %d%% ELAPSED": "RENGAS // %d%% KULUNUT",
   "RING %d%% ELAPSED": "RENGAS %d%% KULUNUT",

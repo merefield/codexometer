@@ -8,6 +8,7 @@
     controlRequest,
     resumePicker,
     sessionInspector,
+    sessionLinks,
     type Session,
   } from './state.svelte';
   import {
@@ -31,6 +32,7 @@
   import SavedSessions from './SavedSessions.svelte';
   import SessionNew from './SessionNew.svelte';
   import SessionInspector from './SessionInspector.svelte';
+  import SessionLinkPreview from './SessionLinkPreview.svelte';
   import SessionSearch from './SessionSearch.svelte';
   import { matchesSession } from './session-filter';
   let { params = {} }: { params?: { id?: string } } = $props();
@@ -174,6 +176,7 @@
   function readableResult(row: Session) {
     return (
       live.data?.control &&
+      !sessionLinks.ids.length &&
       !stale &&
       row.unread &&
       row.readRevision &&
@@ -463,6 +466,7 @@
 </script>
 
 <svelte:window onkeydown={keydown} />
+<SessionLinkPreview {scope} {liveIDs} />
 
 {#snippet context(session: Session, heading = true, full = false)}
   {#if session.reviewer === 'user' || session.reviewer === 'auto_review'}<p

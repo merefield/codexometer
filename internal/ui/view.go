@@ -205,6 +205,12 @@ func (m Model) renderFooter(width int, colors palette) string {
 			left += i18n.Text("  //  CREDITS AVAILABLE")
 		}
 	}
+	if m.threadLinkSource() {
+		label := "  //  [L] " + i18n.Text("LINKS")
+		if lipgloss.Width(left)+lipgloss.Width(label) <= width {
+			left += label
+		}
+	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
 	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused && !m.monitorAttentionFocused && !m.finder.include {
 		hint := i18n.Text("←/→ DETAIL")

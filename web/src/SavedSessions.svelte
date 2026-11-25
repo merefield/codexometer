@@ -8,11 +8,20 @@
     ControlRejected,
     live,
     resumePicker,
+    sessionLinks,
     resumeSaved,
     type SavedRow,
     type SavedPage,
   } from './state.svelte';
-  let { scope, liveIDs }: { scope: string; liveIDs: Set<string> } = $props();
+  let {
+    scope,
+    liveIDs,
+    target,
+  }: {
+    scope: string;
+    liveIDs: Set<string>;
+    target?: { row: SavedRow; turns?: SavedPage['turns'] };
+  } = $props();
   let query = $state('');
   let search = $state<HTMLInputElement>();
   let rows = $state<(SavedRow & { cursor: string })[]>([]);
@@ -31,7 +40,9 @@
   let disposed = false;
   let resumeLocked = $derived(resumeBusy || !!resuming);
   let matches = $derived(
-    rows.filter((row) => !liveIDs.has(row.id) || row.id === resuming),
+    rows.filter(
+      (row) => !!target || !liveIDs.has(row.id) || row.id === resuming,
+    ),
   );
   async function load(cursor: string, detail = '', term = query.trim()) {
     controller?.abort();
@@ -94,6 +105,12 @@
     return 'Just now';
   }
   $effect(() => {
+    if (target) {
+      rows = [{ ...target.row, cursor: '' }];
+      id = target.row.id;
+      turns = target.turns || [];
+      return;
+    }
     const term = query.trim();
     // Coalesce simultaneous input events within a frame, not with a typing
     // delay. The loopback request reads Codexometer's in-memory name index.
@@ -113,7 +130,8 @@
   $effect(() => {
     if (resuming && liveIDs.has(resuming)) {
       location.hash = '/sessions/' + encodeURIComponent(resuming);
-      resumePicker.open = false;
+      if (target) sessionLinks.ids = [];
+      else resumePicker.open = false;
     }
   });
   async function resume(row: SavedRow & { cursor: string }) {
@@ -164,45 +182,49 @@
 </script>
 
 <section class="panel" aria-label="Saved sessions">
-  <h2>SAVED // SESSIONS</h2>
-  <SessionSearch
-    label="Search saved sessions"
-    placeholder="Search by session name"
-    disabled={resumeLocked}
-    bind:field={search}
-    bind:value={query}
-  />
-  <button disabled={resumeBusy} onclick={() => (resumePicker.open = false)}
-    >Close</button
-  >
+  {#if !target}
+    <h2>SAVED // SESSIONS</h2>
+    <SessionSearch
+      label="Search saved sessions"
+      placeholder="Search by session name"
+      disabled={resumeLocked}
+      bind:field={search}
+      bind:value={query}
+    />
+    <button disabled={resumeBusy} onclick={() => (resumePicker.open = false)}
+      >Close</button
+    >
+  {/if}
   {#if resuming || resumeNotice}
     <p role="status">{resumeNotice || 'Opening the resumed session…'}</p>
   {/if}
-  {#if matches.length}
+  {#if matches.length && !target}
     <div class="saved-columns muted">
       <span>Session</span><span>Time ago</span>
     </div>
   {/if}
   {#each matches as row (row.id)}
-    <button
-      class="saved-columns saved-row"
-      disabled={resumeLocked}
-      aria-expanded={id === row.id}
-      onclick={() => {
-        review = null;
-        if (id === row.id) {
-          controller?.abort();
-          id = '';
-          busy = false;
-          failed = false;
-        } else void load(row.cursor, row.id);
-      }}
-    >
-      <span class="saved-session-name"
-        >{row.id.slice(-5).toUpperCase()} // {row.name || row.directory}</span
+    {#if !target}
+      <button
+        class="saved-columns saved-row"
+        disabled={resumeLocked}
+        aria-expanded={id === row.id}
+        onclick={() => {
+          review = null;
+          if (id === row.id) {
+            controller?.abort();
+            id = '';
+            busy = false;
+            failed = false;
+          } else void load(row.cursor, row.id);
+        }}
       >
-      <span class="muted saved-age">{age(row.updatedAt, now)}</span>
-    </button>
+        <span class="saved-session-name"
+          >{row.id.slice(-5).toUpperCase()} // {row.name || row.directory}</span
+        >
+        <span class="muted saved-age">{age(row.updatedAt, now)}</span>
+      </button>
+    {/if}
     {#if id === row.id && turns}
       <SessionTranscript {turns} />
       {#if live.data?.control}

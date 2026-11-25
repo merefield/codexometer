@@ -507,10 +507,14 @@ func (p *daemonStatusProvider) isSubscribed(threadID string) bool {
 }
 
 func (p *daemonStatusProvider) request(ctx context.Context, method string, params any, target any) error {
-	p.mu.Lock()
-	connection := p.connection
-	p.mu.Unlock()
+	connection, _ := p.currentTransport()
 	return p.requestOn(ctx, connection, method, params, target)
+}
+
+func (p *daemonStatusProvider) currentTransport() (*websocket.Conn, uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.connection, p.commandGeneration
 }
 
 func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websocket.Conn, method string, params any, target any) error {

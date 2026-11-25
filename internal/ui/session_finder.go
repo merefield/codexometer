@@ -109,6 +109,10 @@ func (m *Model) focusFinder() tea.Cmd {
 }
 
 func (m *Model) openResumePicker() tea.Cmd {
+	return tea.Batch(m.beginResumePicker(), m.requestSaved("", ""))
+}
+
+func (m *Model) beginResumePicker() tea.Cmd {
 	m.stashMonitorDraft()
 	m.monitorContextDetail = ""
 	m.monitorPrompt.input.Blur()
@@ -116,7 +120,7 @@ func (m *Model) openResumePicker() tea.Cmd {
 	f := &m.finder
 	f.filterOpen, f.filterInput = f.open, f.input
 	f.open, f.include, f.input = true, true, nil
-	return tea.Batch(m.focusFinder(), m.requestSaved("", ""))
+	return m.focusFinder()
 }
 
 // Keep the inactive finder cheap in Bubble Tea's frequently copied model.

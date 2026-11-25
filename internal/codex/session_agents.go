@@ -27,15 +27,20 @@ type agentHistoryProvider interface {
 	readSessionHistory(context.Context, string, time.Time) ([]SessionContext, bool, error)
 }
 
-func (r *LiveUsageReader) linkedAgents(parent, child string) ([]SessionAgent, time.Time) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *LiveUsageReader) sessionAgentRolloutsLocked() map[string]*rolloutCursor {
 	byID := map[string]*rolloutCursor{}
 	for _, c := range r.files {
 		if prev := byID[c.threadID]; c.threadID != "" && (prev == nil || c.activityTime().After(prev.activityTime())) {
 			byID[c.threadID] = c
 		}
 	}
+	return byID
+}
+
+func (r *LiveUsageReader) linkedAgents(parent, child string) ([]SessionAgent, time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byID := r.sessionAgentRolloutsLocked()
 	root := byID[parent]
 	if root == nil || root.nonRoot || root.parentThreadID != "" {
 		return nil, time.Time{}

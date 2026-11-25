@@ -1,4 +1,8 @@
 {
+  "LINKS": "链接",
+  "SESSION PREVIEW": "会话预览",
+  "OPEN SESSION": "打开会话",
+  "Session unavailable here.": "此处无法查看该会话。",
   "PIE  // %d%% USED": "圆内  // %d%% 已用",
   "RING // %d%% ELAPSED": "外环 // %d%% 已过",
   "RING %d%% ELAPSED": "外环 %d%% 已过",

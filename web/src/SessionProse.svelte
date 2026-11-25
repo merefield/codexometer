@@ -5,6 +5,7 @@
 
 <script lang="ts">
   import type { ProseBlock, ProseRun } from './contracts.generated';
+  import { openSessionLink } from './state.svelte';
   let { blocks }: { blocks: ProseBlock[] } = $props();
 </script>
 
@@ -15,7 +16,12 @@
   {#if r.italic}<em>{@render literal(r)}</em>{:else}{@render literal(r)}{/if}
 {/snippet}
 {#snippet inline(runs: ProseRun[] | null | undefined)}
-  {#each runs || [] as r}{#if r.bold}<strong>{@render emphasis(r)}</strong
+  {#each runs || [] as r}{#if r.threadId}<button
+        class="thread-link"
+        type="button"
+        onclick={() => openSessionLink(r.threadId!)}
+        >{@render emphasis(r)}</button
+      >{:else if r.bold}<strong>{@render emphasis(r)}</strong
       >{:else}{@render emphasis(r)}{/if}{/each}
 {/snippet}
 
@@ -50,6 +56,18 @@
 </div>
 
 <style>
+  .thread-link {
+    display: inline;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    text-align: inherit;
+    text-decoration: underline;
+    text-transform: none;
+    overflow-wrap: anywhere;
+  }
   .prose {
     min-width: 0;
     max-width: 100%;

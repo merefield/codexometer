@@ -44,11 +44,14 @@ type BenchmarkTaskProvider interface {
 }
 
 type Model struct {
-	finder     sessionFinder
-	newSession newSessionDraft
-	inspector  sessionInspector
-	proseCache *prose.Cache
-	startup    startupState
+	finder            sessionFinder
+	newSession        newSessionDraft
+	inspector         sessionInspector
+	threadLinks       *threadLinkPanel
+	threadLinkRequest uint64
+	threadLinkHitTest bool // Set only on a private copy used for hit-testing.
+	proseCache        *prose.Cache
+	startup           startupState
 	// Only populated on a local copy during a read-only render/hit-test pass.
 	geometry                            *monitorGeometryCache
 	scheduleUI                          scheduleUI
@@ -493,7 +496,7 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// Priority handlers run before editor updates; each carries the resulting
 	// immutable model forward even when it does not consume the message.
 	for _, update := range []func(Model, tea.Msg) (Model, tea.Cmd, bool){
-		Model.updateStartup, Model.updateActionReview, Model.updateNewSession, Model.updateSessionInspector, Model.updateMonitorHistory,
+		Model.updateStartup, Model.updateActionReview, Model.updateThreadLinks, Model.updateNewSession, Model.updateSessionInspector, Model.updateMonitorHistory,
 		Model.updateMonitorSuggestions, Model.updateMonitorCommands, Model.updateSessionFinder,
 	} {
 		next, cmd, handled := update(m, message)

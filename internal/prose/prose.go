@@ -1,4 +1,4 @@
-// Package prose projects assistant Markdown into inert text runs and tables.
+// Package prose projects assistant Markdown into text, tables and typed thread references.
 // It never renders HTML or ANSI, and never replaces the original message.
 package prose
 
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -15,10 +16,11 @@ import (
 )
 
 type ProseRun struct {
-	Text   string `json:"text"`
-	Bold   bool   `json:"bold,omitempty"`
-	Italic bool   `json:"italic,omitempty"`
-	Code   bool   `json:"code,omitempty"`
+	Text     string `json:"text"`
+	Bold     bool   `json:"bold,omitempty"`
+	Italic   bool   `json:"italic,omitempty"`
+	Code     bool   `json:"code,omitempty"`
+	ThreadID string `json:"threadId,omitempty"`
 }
 
 type ProseBlock struct {
@@ -61,7 +63,45 @@ func (c *Cache) Get(s string) []ProseBlock {
 }
 
 func candidate(s string) bool {
-	return len(s) <= 32*1024 && strings.ContainsAny(s, "*_|`")
+	return len(s) <= 32*1024 && (strings.ContainsAny(s, "*_|`") || strings.Contains(s, "codex://threads/"))
+}
+
+// ThreadID permits exactly the native Codex thread-link shape. The result is
+// an internal identifier, never an OS link or a fetchable URL.
+func ThreadID(destination string) string {
+	id, ok := strings.CutPrefix(destination, "codex://threads/")
+	if !ok || len(id) != 36 {
+		return ""
+	}
+	if parsed, err := uuid.Parse(id); err == nil && parsed.String() == id {
+		return id
+	}
+	return ""
+}
+
+func HasThreadLinks(blocks []ProseBlock) bool {
+	for _, block := range blocks {
+		if linkedRuns(block.Runs) {
+			return true
+		}
+		for _, row := range block.Rows {
+			for _, cell := range row {
+				if linkedRuns(cell) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func linkedRuns(runs []ProseRun) bool {
+	for _, run := range runs {
+		if run.ThreadID != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // Parse returns nil for plain text or unsupported layouts. Keep untouched
@@ -200,6 +240,11 @@ func inlineRuns(parent ast.Node, src []byte, end int, style ProseRun) (out []Pro
 		if next := n.NextSibling(); next != nil {
 			stop = next.Pos()
 		}
+		literal := func() {
+			if p := n.Pos(); p >= 0 && p <= stop && stop <= len(src) {
+				add(string(src[p:stop]))
+			}
+		}
 		switch v := n.(type) {
 		case *ast.Text:
 			add(string(v.Segment.Value(src)))
@@ -228,10 +273,16 @@ func inlineRuns(parent ast.Node, src []byte, end int, style ProseRun) (out []Pro
 			r.Text = strings.ReplaceAll(code.String(), "\n", " ")
 			out = append(out, r)
 			rich = true
-		default:
-			if p := n.Pos(); p >= 0 && p <= stop && stop <= len(src) {
-				add(string(src[p:stop]))
+		case *ast.Link:
+			if id := ThreadID(string(v.Destination)); id != "" && strings.TrimSpace(string(v.Text(src))) != "" {
+				r := style
+				r.Text, r.ThreadID = string(v.Text(src)), id
+				out, rich = append(out, r), true
+			} else {
+				literal()
 			}
+		default:
+			literal()
 		}
 	}
 	return

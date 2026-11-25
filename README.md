@@ -1397,6 +1397,19 @@ moving approvals, or changing token totals. Transcript reads require a
 connected shared app-server and omit turns that cannot be attributed to the
 child (including inherited parent history).
 
+Codex thread links in replies and transcript previews open **read-only session
+previews** without switching the current session. In the terminal, click an
+underlined link or press **L** to pick from the links on screen; press **Esc** to
+go back. In the browser, activate the link with a click or **Enter**. **Back**
+returns to the original reply without discarding a draft. Linked agents use
+the same attributable-history rules as `/subagents`. Use **Open session** or
+the separate **Resume** action to switch; previewing alone does not mark a
+turn read or start work. Resume is unavailable in read-only web mode.
+
+Previews require a connected shared app-server, a ChatGPT account scope, and
+a target that the current account can verify. Unverified targets, archived
+sessions and agents with unknown ownership are not opened.
+
 Use **`/ps`** from a live session's command browser to list the background
 terminals reported by its shared app-server. The read-only panel shows the
 command and directory, plus a PID only when Codex provides one. Refresh with

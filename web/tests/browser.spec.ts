@@ -1001,6 +1001,166 @@ test('linked agents open a read-only child transcript without navigating away', 
   await expect(page).toHaveURL(/#\/sessions$/);
 });
 
+test('thread links preview a saved session and nested agent without switching sessions or writing', async ({
+  page,
+  pairingURL,
+}) => {
+  const root = '550e8400-e29b-41d4-a716-446655440000';
+  const child = '550e8400-e29b-41d4-a716-446655440001';
+  const missing = '550e8400-e29b-41d4-a716-446655440002';
+  const link = (text: string, threadId: string) => ({
+    runs: [{ text, threadId }],
+  });
+  const writes: string[] = [];
+  await mockStream(page, {
+    control: false,
+    sessionsAt: new Date().toISOString(),
+    savedScope: 'scope',
+    sessions: [
+      {
+        id: 'source',
+        directory: '/work',
+        tokens: 10,
+        agents: 0,
+        status: 'TURN COMPLETE',
+        contextKind: 'LAST REPLY',
+        text: 'Original reply',
+        samples: [],
+        prose: [link('Earlier work', root), link('Missing thread', missing)],
+      },
+    ],
+  });
+  await page.route('**/api/control/**', async (route) => {
+    writes.push(route.request().url());
+    await route.fulfill({ status: 404 });
+  });
+  await page.route('**/api/sessions/linked?**', async (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    expect(q.get('scope')).toBe('scope');
+    expect(route.request().method()).toBe('GET');
+    const target = q.get('id');
+    if (target === missing) return route.fulfill({ status: 404 });
+    return route.fulfill({
+      json: {
+        root: { id: root, name: 'Saved work', directory: '/work' },
+        ...(target === child ? { agent: { id: child, name: 'Worker' } } : {}),
+        turns:
+          target === child
+            ? [{ reply: 'Agent-owned result' }]
+            : [
+                {
+                  reply: 'Previous result',
+                  prose: [link('Worker transcript', child)],
+                },
+              ],
+      },
+    });
+  });
+  await page.goto(pairingURL);
+  await page.evaluate(() => {
+    location.hash = '/sessions/source';
+  });
+  const sourceLink = page
+    .locator('.detail-context')
+    .getByRole('button', { name: 'Earlier work' });
+  await sourceLink.focus();
+  await sourceLink.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading')).toHaveText(
+    'Session preview // Saved work',
+  );
+  await dialog.getByRole('button', { name: 'Worker transcript' }).click();
+  await expect(dialog.getByRole('heading')).toHaveText(
+    'Agent transcript // Worker',
+  );
+  await expect(dialog).toContainText('Agent-owned result');
+  await expect(dialog.getByRole('button', { name: /resume/i })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog.getByRole('heading')).toHaveText(
+    'Session preview // Saved work',
+  );
+  await dialog.getByRole('button', { name: 'Back' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(sourceLink).toBeFocused();
+  await page
+    .locator('.detail-context')
+    .getByRole('button', { name: 'Missing thread' })
+    .click();
+  await expect(dialog).toContainText('Session unavailable here.');
+  await expect(page).toHaveURL(/#\/sessions\/source$/);
+  expect(writes).toEqual([]);
+});
+
+test('thread link previews preserve drafts and require a separate confirmed resume', async ({
+  page,
+  pairingURL,
+}) => {
+  const id = '550e8400-e29b-41d4-a716-446655440000';
+  const { snapshot, calls } = await mockActions(page, 'prompt', false, false);
+  const initial = {
+    ...snapshot,
+    savedScope: 'scope',
+    sessions: snapshot.sessions.map((row) => ({
+      ...row,
+      prose: [{ runs: [{ text: 'Earlier work', threadId: id }] }],
+    })),
+  };
+  await page.route('**/api/sessions/linked?**', (route) =>
+    route.fulfill({
+      json: {
+        root: { id, name: 'Saved work', directory: '/work' },
+        turns: [{ reply: 'Saved answer' }],
+      },
+    }),
+  );
+  const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/sessions/resume', async (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.mode === 'prepare')
+      await route.fulfill({ json: { confirmation: 'token' } });
+    else await route.fulfill({ status: 204 });
+  });
+  await page.goto(pairingURL);
+  await expect(page.locator('html')).toHaveAttribute('data-test-streams', '1');
+  await page.evaluate((detail) => {
+    window.dispatchEvent(new CustomEvent('test-snapshot', { detail }));
+    location.hash = '/sessions/parent';
+  }, initial);
+  const composer = page.getByRole('textbox', { name: 'Follow-up message' });
+  await composer.fill('Unsent draft');
+  const link = page
+    .locator('.detail-context')
+    .getByRole('button', { name: 'Earlier work' });
+  await link.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Saved answer');
+  await page.keyboard.press('Escape');
+  await expect(composer).toHaveValue('Unsent draft');
+  await link.click();
+  expect(requests).toEqual([]);
+  await dialog.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Confirm resume' }),
+  ).toBeVisible();
+  expect(requests).toEqual([
+    { scope: 'scope', cursor: '', id, mode: 'prepare' },
+  ]);
+  await dialog.getByRole('button', { name: 'Confirm resume' }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1]).toEqual({
+    scope: 'scope',
+    cursor: '',
+    id,
+    confirmation: 'token',
+  });
+  expect(
+    calls.filter(({ action }) =>
+      ['read', 'prepare', 'commit'].includes(action),
+    ),
+  ).toHaveLength(0);
+});
+
 test('/ps lists and refreshes terminals for the selected session in read-only mode', async ({
   page,
   pairingURL,

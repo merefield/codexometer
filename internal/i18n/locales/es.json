@@ -1,4 +1,8 @@
 {
+  "LINKS": "ENLACES",
+  "SESSION PREVIEW": "VISTA PREVIA DE SESIÓN",
+  "OPEN SESSION": "ABRIR SESIÓN",
+  "Session unavailable here.": "La sesión no está disponible aquí.",
   "PIE  // %d%% USED": "SECTOR  // %d%% USADO",
   "RING // %d%% ELAPSED": "ANILLO // %d%% TRANSCURRIDO",
   "RING %d%% ELAPSED": "ANILLO %d%% TRANSCURRIDO",

@@ -135,9 +135,7 @@ func (page *SavedPage) addWireThread(t savedWireThread) {
 }
 
 func (p *daemonStatusProvider) savedSessionAction(ctx context.Context, scope string) (*websocket.Conn, uint64, string, error) {
-	p.mu.Lock()
-	conn, generation := p.connection, p.commandGeneration
-	p.mu.Unlock()
+	conn, generation := p.currentTransport()
 	if conn == nil {
 		return nil, 0, "", ErrSavedSessions
 	}
