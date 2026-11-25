@@ -40,7 +40,7 @@ func TestMonitorNativeReviewPreservesConversationAndHumanApproval(t *testing.T) 
 		t.Fatal("native review hid human checkpoint", badge)
 	}
 	metrics := ansi.Strip(m.renderMonitorSessionMetrics(48, 16, *s, "", paletteFor(m.theme)))
-	if !strings.Contains(metrics, i18n.Text("REVIEW // AUTO")) {
+	if !strings.Contains(metrics, i18n.Text("DEFAULT REVIEW // AUTO")) {
 		t.Fatal("missing reviewer metadata", metrics)
 	}
 }

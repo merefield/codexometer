@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/gorilla/websocket"
@@ -18,6 +19,66 @@ func (p *daemonStatusProvider) checkScheduledGoalAccount(ctx context.Context, co
 		return ErrScheduledGoalNotReady
 	}
 	return nil
+}
+
+type goalStopObservation struct {
+	state           *daemonContextState
+	turnID, failure string
+}
+
+func (p *daemonStatusProvider) goalStopObservationLocked(id string) goalStopObservation {
+	observation := goalStopObservation{state: p.contexts[id]}
+	if state := observation.state; state != nil {
+		observation.turnID = state.activeTurn
+		if observation.turnID == "" {
+			observation.turnID = state.finishedTurn
+		}
+		if state.latest.Kind == SessionContextFailure && state.latest.TurnID != "" &&
+			(observation.turnID == "" || observation.turnID == state.latest.TurnID) {
+			observation.turnID = state.latest.TurnID
+			observation.failure = normalizedFailureCode(state.latest.FailureCode)
+		}
+	}
+	return observation
+}
+
+var errGoalAPISpendCap = errors.New("API spend cap observed; resolve the provider limit before resuming manually")
+
+// Codex reports usageLimited for both subscription quota and API billing caps.
+// After reconnect, obtain the latest turn without loading its transcript.
+func (p *daemonStatusProvider) verifyGoalQuotaStop(ctx context.Context, conn *websocket.Conn, id string) (func() bool, error) {
+	p.mu.Lock()
+	observed := p.goalStopObservationLocked(id)
+	p.mu.Unlock()
+	code := observed.failure
+	if code != "usagelimitexceeded" && apiSpendCapLabel(code) == "" {
+		var result struct {
+			Data []struct {
+				ID, Status string
+				Error      json.RawMessage
+			}
+		}
+		if err := p.requestOn(ctx, conn, "thread/turns/list", map[string]any{
+			"threadId": id, "limit": 1, "sortDirection": "desc", "itemsView": "notLoaded",
+		}, &result); err != nil || len(result.Data) != 1 {
+			return nil, ErrScheduledGoalNotReady
+		}
+		turn := result.Data[0]
+		if turn.Status != "failed" || turn.ID == "" || observed.turnID != "" && observed.turnID != turn.ID {
+			return nil, ErrScheduledGoalNotReady
+		}
+		code = normalizedFailureCode(sessionFailureContext(SessionContext{}, turn.Error).FailureCode)
+	}
+	if apiSpendCapLabel(code) != "" {
+		return nil, errGoalAPISpendCap
+	}
+	if code != "usagelimitexceeded" {
+		return nil, ErrScheduledGoalNotReady
+	}
+	return func() bool {
+		_, subscribed := p.subscribed[id]
+		return subscribed && p.goalStopObservationLocked(id) == observed
+	}, nil
 }
 
 func (p *daemonStatusProvider) PrepareGoalResume(ctx context.Context, id, account, revision, choice string) (GoalResumeTarget, error) {
@@ -36,9 +97,16 @@ func (p *daemonStatusProvider) PrepareGoalResume(ctx context.Context, id, accoun
 	if err := p.checkScheduledGoalAccount(ctx, conn, account); err != nil {
 		return GoalResumeTarget{}, err
 	}
+	var stopStillCurrent func() bool
+	if menu.goalResume.Stopped {
+		stopStillCurrent, err = p.verifyGoalQuotaStop(ctx, conn, id)
+		if err != nil {
+			return GoalResumeTarget{}, err
+		}
+	}
 	p.mu.Lock()
 	_, subscribed := p.subscribed[id]
-	current := p.connection == conn && p.commandGeneration == generation && subscribed
+	current := p.connection == conn && p.commandGeneration == generation && subscribed && (stopStillCurrent == nil || stopStillCurrent())
 	p.mu.Unlock()
 	if !current {
 		return GoalResumeTarget{}, ErrScheduledGoalNotReady
@@ -86,10 +154,17 @@ func (p *daemonStatusProvider) ResumeScheduledGoal(ctx context.Context, id, acco
 	if !target.Matches(goal) || goal.Status != "usageLimited" {
 		return ErrScheduledGoalChanged
 	}
+	stopStillCurrent, err := p.verifyGoalQuotaStop(ctx, conn, id)
+	if err != nil {
+		return ErrScheduledGoalNotReady
+	}
+	readyLocked := func() bool {
+		current := p.goals[id]
+		return !current.failed && target.Matches(current.goal) && current.goal.Status == "usageLimited" &&
+			p.statuses[id] != sessionRuntimeWorking && !p.commandHumanWaitLocked(id) && stopStillCurrent()
+	}
 	p.mu.Lock()
-	_, subscribed := p.subscribed[id]
-	ready := p.connection == conn && p.commandGeneration == generation && subscribed &&
-		p.statuses[id] != sessionRuntimeWorking && !p.commandHumanWaitLocked(id)
+	ready := p.connection == conn && p.commandGeneration == generation && readyLocked()
 	p.mu.Unlock()
 	if !ready || ctx.Err() != nil {
 		return ErrScheduledGoalNotReady
@@ -97,7 +172,7 @@ func (p *daemonStatusProvider) ResumeScheduledGoal(ctx context.Context, id, acco
 	err = p.executeGoalCommand(ctx, conn, id, SessionCommandChoice{
 		method: "thread/goal/set",
 		params: map[string]any{"threadId": id, "origin": "user", "status": "active"},
-	}, target, &generation)
+	}, target, &generation, readyLocked)
 	if errors.Is(err, errDaemonWriteGuardRejected) {
 		return ErrScheduledGoalNotReady
 	}

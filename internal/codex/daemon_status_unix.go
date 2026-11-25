@@ -223,9 +223,18 @@ func (p *daemonStatusProvider) cachedStatusSnapshot(threadIDs []string, now time
 func (p *daemonStatusProvider) recordThreadSubscriptionLocked(id, cwd, reviewer string) {
 	p.subscribed[id] = struct{}{}
 	p.permissionSettings[id] = reviewer
-	if filepath.IsAbs(cwd) {
-		p.threadDirectories[id] = cwd
+	p.recordThreadDirectoryLocked(id, cwd)
+}
+
+func (p *daemonStatusProvider) recordThreadDirectoryLocked(id, cwd string) bool {
+	if !reportedSessionDirectory(cwd) {
+		return false
 	}
+	if p.threadDirectories == nil {
+		p.threadDirectories = map[string]string{}
+	}
+	p.threadDirectories[id] = cwd
+	return true
 }
 
 func (p *daemonStatusProvider) statusSnapshotLocked(threadIDs []string) sessionDaemonSnapshot {
@@ -508,11 +517,11 @@ func (p *daemonStatusProvider) requestOn(ctx context.Context, connection *websoc
 	return p.requestOnChecked(ctx, connection, method, params, target, nil)
 }
 
-func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64) error {
-	return p.requestOnWithin(ctx, connection, method, params, target, generation, daemonStatusTimeout)
+func (p *daemonStatusProvider) requestOnChecked(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64, readyLocked ...func() bool) error {
+	return p.requestOnWithin(ctx, connection, method, params, target, generation, daemonStatusTimeout, readyLocked...)
 }
 
-func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64, timeout time.Duration) (resultErr error) {
+func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *websocket.Conn, method string, params any, target any, generation *uint64, timeout time.Duration, readyLocked ...func() bool) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
 			return
@@ -536,7 +545,7 @@ func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *
 	p.mu.Lock()
 	if connection == nil || p.connection != connection {
 		p.mu.Unlock()
-		if generation != nil {
+		if generation != nil || len(readyLocked) != 0 {
 			return errDaemonWriteGuardRejected
 		}
 		return errors.New("daemon connection is closed")
@@ -547,7 +556,7 @@ func (p *daemonStatusProvider) requestOnWithin(ctx context.Context, connection *
 	p.pending[id] = response
 	p.mu.Unlock()
 
-	if err := p.writeChecked(connection, map[string]any{"id": id, "method": method, "params": params}, generation); err != nil {
+	if err := p.writeChecked(connection, map[string]any{"id": id, "method": method, "params": params}, generation, readyLocked...); err != nil {
 		p.dropPending(id)
 		if !errors.Is(err, errDaemonWriteGuardRejected) {
 			p.disconnect(connection)
@@ -591,18 +600,23 @@ func (p *daemonStatusProvider) write(connection *websocket.Conn, value any) erro
 	return p.writeChecked(connection, value, nil)
 }
 
-func (p *daemonStatusProvider) writeChecked(connection *websocket.Conn, value any, generation *uint64) error {
+func (p *daemonStatusProvider) writeChecked(connection *websocket.Conn, value any, generation *uint64, readyLocked ...func() bool) error {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
 	p.mu.Lock()
 	wire, current := p.wire, p.connection
-	if generation != nil {
-		// Keep account/updated and reconnects out between the check and socket
-		// write. The deadline bounds this critical section; never wait for the
-		// RPC response under this lock.
+	if generation != nil || len(readyLocked) != 0 {
+		// Keep daemon observations and reconnects out between the checks and
+		// socket write. The deadline bounds this critical section; never wait
+		// for the RPC response under this lock.
 		defer p.mu.Unlock()
-		if current != connection || p.commandGeneration != *generation {
+		if current != connection || generation != nil && p.commandGeneration != *generation {
 			return errDaemonWriteGuardRejected
+		}
+		for _, ready := range readyLocked {
+			if !ready() {
+				return errDaemonWriteGuardRejected
+			}
 		}
 	} else {
 		p.mu.Unlock()
@@ -714,12 +728,7 @@ func (p *daemonStatusProvider) handleNotification(method string, params json.Raw
 			}
 			p.permissionSettings[notification.ThreadID] = notification.ThreadSettings.ApprovalsReviewer
 		}
-		if filepath.IsAbs(notification.ThreadSettings.Cwd) {
-			if p.threadDirectories == nil {
-				p.threadDirectories = map[string]string{}
-			}
-			p.threadDirectories[notification.ThreadID] = notification.ThreadSettings.Cwd
-		}
+		p.recordThreadDirectoryLocked(notification.ThreadID, notification.ThreadSettings.Cwd)
 		if notification.ThreadSettings.Model == "" || notification.ThreadSettings.Effort == "" {
 			p.mu.Unlock()
 			return

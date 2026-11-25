@@ -156,7 +156,7 @@ func (p *daemonStatusProvider) commandGoalMenu(ctx context.Context, thread comma
 	return menu, nil
 }
 
-func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *websocket.Conn, id string, choice SessionCommandChoice, target GoalResumeTarget, generation *uint64) error {
+func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *websocket.Conn, id string, choice SessionCommandChoice, target GoalResumeTarget, generation *uint64, readyLocked ...func() bool) error {
 	p.mu.Lock()
 	_, subscribed := p.subscribed[id]
 	current := p.connection == conn
@@ -168,7 +168,7 @@ func (p *daemonStatusProvider) executeGoalCommand(ctx context.Context, conn *web
 		Goal    *SessionGoal
 		Cleared *bool
 	}
-	if err := p.requestOnChecked(ctx, conn, choice.method, choice.params, &result, generation); err != nil {
+	if err := p.requestOnChecked(ctx, conn, choice.method, choice.params, &result, generation, readyLocked...); err != nil {
 		return err // Never retry a possibly applied goal mutation.
 	}
 	if choice.method == "thread/goal/clear" {

@@ -1265,9 +1265,12 @@ The other top-level views are:
   badge for server-reported model capacity, **MODEL UNAVAILABLE** when the provider
   cannot find the selected model, **CAPACITY RESTRICTED** for policy-restricted
   capacity, **HOOK DENIED** when a workspace inference hook blocks a request,
-  and **TURN FAILED** for other failures. A hook denial is not a quota or
-  capacity signal; inspect the supplied explanation and workspace policy before
-  retrying. Codexometer never bypasses the hook.
+  and **TURN FAILED** for other failures. Codex 0.172+ also distinguishes
+  **API KEY SPEND CAP**, **PROJECT SPEND CAP**, and **ORG SPEND CAP**. These are
+  API billing limits, not ChatGPT quota-reset signals. A goal stopped by an API
+  cap does not resume automatically when subscription quota recovers. A hook
+  denial is not a quota or capacity signal; inspect the supplied explanation and
+  workspace policy before retrying. Codexometer never bypasses the hook.
   The row, full detail and attention pill retain the observed error message;
   capacity is not interpreted as quota exhaustion. Both the shared app-server's
   failed-turn/error events and local rollout error records are supported. Errors
@@ -2030,7 +2033,10 @@ Profile, policy and reviewer changes target subsequent turns. An
 acknowledgement alone is not success: Codexometer reads back the requested
 settings. An unconfirmed update is not automatically retried.
 
-Rows show `REVIEW // HUMAN` or `REVIEW // AUTO` when Codex reports the setting.
+The terminal row and browser context show `DEFAULT REVIEW // HUMAN` or
+`DEFAULT REVIEW // AUTO` when Codex reports the session default. Connected-app
+tools can have their own reviewer in Codex 0.172+; this label does not identify
+the reviewer for a particular request.
 During native assessment, the working badge becomes **AUTO REVIEWING**; detail
 keeps the command and its justification separate from Codex's verdict and rationale.
 Decision and risk share a line when space permits; full detail also shows Codex's
@@ -2115,9 +2121,11 @@ reported that stop when you armed it, the next quota reading can release the
 trigger without another stop. In either case, resuming requires fresh quota with capacity in all observed
 windows, no reported spending block, the same signed-in account and workspace
 (when Codex reports a workspace ID), and an eligible
-idle session connected to the shared app-server. A predicted reset time is not
-enough. When Codex returns its ordinary-usage signal, an explicit allowance is
-required; a blocked or unknown result keeps the trigger waiting. Older responses
+idle session connected to the shared app-server. The latest turn must confirm
+a quota stop, from a live event or a bounded history read after reconnect.
+API spend caps or an unverified stop reason do not release the trigger. A
+predicted reset time is not enough. When Codex returns its ordinary-usage signal,
+an explicit allowance is required; a blocked or unknown result keeps the trigger waiting. Older responses
 that omit the signal use the quota windows and limit flags. The resume uses
 normal quota and never redeems a reset or buys credits.
 
@@ -2263,7 +2271,7 @@ old `--no-confirm` flag has been removed; replace it with `--confirmation none`.
 Use `--confirmation balanced` to select the default explicitly.
 
 **Slash-command audit and roadmap:** the [support inventory](docs/slash-command-support.md)
-compares Codexometer v0.34.0 with the pinned Codex CLI 0.171.0 registry.
+tracks Codexometer's support against the pinned Codex CLI 0.172.0 registry.
 It separates delivered controls from proposed work. For example, `/ps` lists
 background terminals, but `/stop` is not implemented. Commands such as
 `/compact`, `/fork` and `/review` have server APIs but still need Codexometer

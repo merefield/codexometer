@@ -149,6 +149,34 @@ func TestSessionFailureLocalHistory(t *testing.T) {
 	}
 }
 
+func TestSessionFailureScopedAPISpendCaps(t *testing.T) {
+	for _, tc := range []struct{ live, rollout, label string }{
+		{"apiKeySpendLimitExceeded", "api_key_spend_limit_exceeded", "API KEY SPEND CAP"},
+		{"projectSpendLimitExceeded", "project_spend_limit_exceeded", "PROJECT SPEND CAP"},
+		{"organizationSpendLimitExceeded", "organization_spend_limit_exceeded", "ORG SPEND CAP"},
+	} {
+		t.Run(tc.live, func(t *testing.T) {
+			const message = "Provider declined this request"
+			failure := map[string]string{"message": message, "codexErrorInfo": tc.live}
+			for method, event := range map[string]map[string]any{
+				"error":          {"threadId": "s", "turnId": "one", "willRetry": false, "error": failure},
+				"turn/completed": {"threadId": "s", "turn": map[string]any{"id": "one", "status": "failed", "error": failure}},
+			} {
+				states := map[string]*daemonContextState{}
+				daemonContextEvent(states, "turn/started", nil, json.RawMessage(`{"threadId":"s","turn":{"id":"one"}}`), time.Now())
+				daemonContextEvent(states, method, nil, rawJSON(event), time.Now())
+				if c := states["s"].latest; c.Kind != SessionContextFailure || SessionFailureLabel(c) != tc.label || c.Text != message {
+					t.Fatalf("%s: wrong failure: %+v", method, c)
+				}
+			}
+			local := contextRecord(t, "event_msg", map[string]string{"type": "error", "codex_error_info": tc.rollout, "message": message})
+			if c, ok := rolloutContextRecord(local, &rolloutCursor{}); !ok || c.Kind != SessionContextFailure || SessionFailureLabel(c) != tc.label || c.Text != message {
+				t.Fatalf("local rollout: wrong failure: %+v", c)
+			}
+		})
+	}
+}
+
 func TestSessionFailureNonTerminalErrorsAndSanitization(t *testing.T) {
 	for _, code := range []string{"thread_rollback_failed", "active_turn_not_steerable"} {
 		c, ok := rolloutContextRecord(contextRecord(t, "event_msg", map[string]any{"type": "error", "message": "not terminal", "codex_error_info": map[string]any{code: map[string]string{}}}), &rolloutCursor{})

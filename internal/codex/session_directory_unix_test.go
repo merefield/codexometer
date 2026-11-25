@@ -204,6 +204,68 @@ func TestSessionDirectoryRejectsRemoteEnvironments(t *testing.T) {
 	}
 }
 
+func TestSessionDirectoryAcceptsForeignPathForDisplayOnly(t *testing.T) {
+	p, f, _ := directoryFixture(t)
+	const cwd = `D:\work\foo bar`
+	f.cwds["one"] = cwd
+	ctx := t.Context()
+	snapshot, ok := p.Fetch(ctx, []string{"one"})
+	if !ok || snapshot.WorkingDirectories["one"] != cwd {
+		t.Fatal("foreign path missing from initial telemetry", snapshot.WorkingDirectories)
+	}
+	for _, cmd := range []string{"pwd", "cwd"} {
+		m, err := p.SessionCommands(ctx, "one", cmd)
+		if err != nil || len(m.Choices) != 1 || m.Choices[0].Label != cwd || m.Choices[0].Action {
+			t.Fatal("foreign path not available as read-only display", m, err)
+		}
+	}
+	for _, cmd := range []string{"cd", "/cd " + t.TempDir()} {
+		if _, err := p.SessionCommands(ctx, "one", cmd); err == nil {
+			t.Fatal("foreign working directory enabled a local filesystem write", cmd)
+		}
+	}
+	const unc = `\\build-host\share\bar`
+	p.handleNotification("thread/settings/updated", rawJSON(map[string]any{
+		"threadId": "one", "threadSettings": map[string]string{"cwd": unc},
+	}))
+	p.handleNotification("thread/settings/updated", rawJSON(map[string]any{
+		"threadId": "one", "threadSettings": map[string]string{"cwd": `D:relative`},
+	}))
+	snapshot, ok = p.Fetch(ctx, []string{"one"})
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !ok || snapshot.WorkingDirectories["one"] != unc || len(f.writes) != 0 {
+		t.Fatal("foreign update dropped, invalid update accepted, or write attempted", snapshot.WorkingDirectories, f.writes)
+	}
+}
+
+func TestSessionDirectoryRetainsValidPOSIXNamesForCatalogueAndEscapesDisplay(t *testing.T) {
+	p, f, base := directoryFixture(t)
+	cwd := filepath.Join(base, "two\u200dwords\nline")
+	if err := os.Mkdir(cwd, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.cwds["one"] = cwd
+	f.catalogues = map[string]map[string]any{
+		"skills/list": {"data": []any{map[string]any{"cwd": cwd, "skills": []any{map[string]any{"name": "local-skill", "enabled": true}}}}},
+	}
+	f.mu.Unlock()
+	ctx := t.Context()
+	m, err := p.SessionCommands(ctx, "one", "pwd")
+	if err != nil || len(m.Choices) != 1 || !strings.Contains(m.Choices[0].Label, `two\u200dwords\nline`) || strings.ContainsAny(m.Choices[0].Label, "\u200d\n") {
+		t.Fatal("valid directory missing or displayed literally", m, err)
+	}
+	m, err = p.SessionCommands(ctx, "one", "skills")
+	if err != nil || len(m.Choices) != 1 || m.Choices[0].Label != "local-skill" {
+		t.Fatal("catalogue lost the exact pathname", m, err)
+	}
+	m, err = p.SessionCommands(ctx, "one", "cd")
+	if err != nil || !m.Input || m.Value != "" {
+		t.Fatal("directory editor should not be prefilled with raw non-printing characters", m, err)
+	}
+}
+
 func TestSessionDirectoryWaitsForQueuedApplication(t *testing.T) {
 	p, f, base := directoryFixture(t)
 	target := filepath.Join(base, "later")
