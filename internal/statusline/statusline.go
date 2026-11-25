@@ -65,7 +65,7 @@ type Data struct {
 
 func Values(d Data) map[string]string {
 	combined := strings.TrimSpace(d.Model + " " + d.Effort)
-	values := map[string]string{"model-with-reasoning": combined, "model": d.Model, "reasoning": d.Effort, "fast-mode": d.Speed, "current-dir": d.Directory, "thread-name": d.Name, "thread-id": d.ID, "run-state": d.State, "source": d.Source}
+	values := map[string]string{"model-with-reasoning": combined, "model": d.Model, "reasoning": d.Effort, "fast-mode": d.Speed, "current-dir": codex.SessionDirectoryDisplay(d.Directory), "thread-name": d.Name, "thread-id": d.ID, "run-state": d.State, "source": d.Source}
 	if d.Tokens >= 0 {
 		values["used-tokens"] = fmt.Sprintf("%s tokens", count(d.Tokens))
 	}

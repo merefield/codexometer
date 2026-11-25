@@ -8,7 +8,7 @@ import (
 
 func TestSelectionAndSanitizedOneLineValues(t *testing.T) {
 	values := Values(Data{Model: "model\x1b[31m", Effort: "high", Speed: "fast", Tokens: 1200, Directory: "/work\nproject"})
-	if got := Text(nil, values); got != "model high · fast · 1.2K tokens · /work project" {
+	if got := Text(nil, values); got != `model high · fast · 1.2K tokens · "/work\nproject"` {
 		t.Fatal(got)
 	}
 	if Text([]string{}, values) != "" {

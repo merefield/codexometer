@@ -328,7 +328,7 @@ func (m *Model) layoutMonitorAttention(sessions []monitorAttentionItem, width, r
 			state = ansi.Truncate(state, max(width-lipgloss.Width(id)-3-markerWidth, 1), "…")
 		}
 		caption := state + " " + id
-		name := codex.SessionDirectoryBase(terminalLabel(s.workingDirectory))
+		name := codex.SessionDirectoryDisplay(codex.SessionDirectoryBase(s.workingDirectory))
 		if name == "." {
 			name = ""
 		}

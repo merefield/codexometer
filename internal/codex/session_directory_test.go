@@ -18,9 +18,21 @@ func TestReportedSessionDirectory(t *testing.T) {
 			t.Errorf("reported directory %q: basename %q, want %q", tc.cwd, got, tc.base)
 		}
 	}
-	for _, cwd := range []string{"", "relative", `D:relative`, `\relative`, `\\host`, "D:\\dir\nnew line", "/invalid\x1b", "/invalid\u202e", "/invalid\xff", "/" + strings.Repeat("x", 4096)} {
+	for _, cwd := range []string{"", "relative", `D:relative`, `\relative`, `\\host`, "/invalid\x00", "/invalid\xff", "/" + strings.Repeat("x", 4096)} {
 		if reportedSessionDirectory(cwd) {
 			t.Errorf("accepted invalid reported path (%d bytes): %.30q", len(cwd), cwd)
+		}
+	}
+}
+
+func TestSessionDirectoryDisplayEscapesNonPrintingCharacters(t *testing.T) {
+	for raw, expected := range map[string]string{
+		"/work/two\u200dwords": `"/work/two\u200dwords"`,
+		"/work/\x1b[2J\tX\n":   `"/work/\tX\n"`,
+		`D:\work\two  words`:   `D:\work\two  words`,
+	} {
+		if got := SessionDirectoryDisplay(raw); got != expected || !reportedSessionDirectory(raw) {
+			t.Fatalf("display of %q: %q, want %q", raw, got, expected)
 		}
 	}
 }

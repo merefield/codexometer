@@ -48,7 +48,8 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 	m.Revision = commandDigest(cwd)
 	if path == "cwd" || path == "pwd" {
 		m.Help = "Current working directory from this session's running Codex configuration. /cwd and /pwd are aliases."
-		m.Choices = append(m.Choices, SessionCommandChoice{Label: cwd, Help: "Working directory: " + cwd})
+		label := SessionDirectoryDisplay(cwd)
+		m.Choices = append(m.Choices, SessionCommandChoice{Label: label, Help: "Working directory: " + label})
 		return m, nil
 	}
 	if path != "cd" && !strings.HasPrefix(path, "cd/") {
@@ -67,7 +68,10 @@ func (p *daemonStatusProvider) commandDirectoryMenu(ctx context.Context, t comma
 		return m, ErrSessionCommand
 	}
 	if path == "cd" {
-		m.Input, m.InputLabel, m.InputLimit, m.Value = true, "Working directory", SessionDirectoryInputLimit, cwd
+		m.Input, m.InputLabel, m.InputLimit = true, "Working directory", SessionDirectoryInputLimit
+		if SessionDirectoryDisplay(cwd) == cwd {
+			m.Value = cwd
+		}
 		return m, nil
 	}
 	input, err := url.PathUnescape(strings.TrimPrefix(path, "cd/"))

@@ -239,6 +239,33 @@ func TestSessionDirectoryAcceptsForeignPathForDisplayOnly(t *testing.T) {
 	}
 }
 
+func TestSessionDirectoryRetainsValidPOSIXNamesForCatalogueAndEscapesDisplay(t *testing.T) {
+	p, f, base := directoryFixture(t)
+	cwd := filepath.Join(base, "two\u200dwords\nline")
+	if err := os.Mkdir(cwd, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.cwds["one"] = cwd
+	f.catalogues = map[string]map[string]any{
+		"skills/list": {"data": []any{map[string]any{"cwd": cwd, "skills": []any{map[string]any{"name": "local-skill", "enabled": true}}}}},
+	}
+	f.mu.Unlock()
+	ctx := t.Context()
+	m, err := p.SessionCommands(ctx, "one", "pwd")
+	if err != nil || len(m.Choices) != 1 || !strings.Contains(m.Choices[0].Label, `two\u200dwords\nline`) || strings.ContainsAny(m.Choices[0].Label, "\u200d\n") {
+		t.Fatal("valid directory missing or displayed literally", m, err)
+	}
+	m, err = p.SessionCommands(ctx, "one", "skills")
+	if err != nil || len(m.Choices) != 1 || m.Choices[0].Label != "local-skill" {
+		t.Fatal("catalogue lost the exact pathname", m, err)
+	}
+	m, err = p.SessionCommands(ctx, "one", "cd")
+	if err != nil || !m.Input || m.Value != "" {
+		t.Fatal("directory editor should not be prefilled with raw non-printing characters", m, err)
+	}
+}
+
 func TestSessionDirectoryWaitsForQueuedApplication(t *testing.T) {
 	p, f, base := directoryFixture(t)
 	target := filepath.Join(base, "later")

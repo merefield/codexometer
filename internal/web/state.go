@@ -368,7 +368,7 @@ func (s *store) live(l codex.LiveUsageSnapshot, err error, now time.Time) {
 				ApprovalReview: row.Context.ActionReview(),
 				MCPTool:        mcpTool,
 				Goal:           projectGoal(row.Goal),
-				ID:             row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: row.WorkingDirectory, Tokens: row.TotalTokens, Agents: row.AgentCount,
+				ID:             row.ID, Name: codex.SanitizeSessionContext(row.Name), Directory: codex.SessionDirectoryDisplay(row.WorkingDirectory), Tokens: row.TotalTokens, Agents: row.AgentCount,
 				StatusLine: statusline.Values(statusline.Data{Model: row.ModelSettings.Model, Effort: row.ModelSettings.ReasoningEffort, Speed: row.ModelSettings.ServiceTier, Directory: row.WorkingDirectory, Name: row.Name, ID: row.ID, State: sessionStatus(row), Source: row.Context.Source, Tokens: row.TotalTokens, Agents: row.AgentCount}),
 				Status:     sessionStatus(row), ContextKind: contextKind(row.Context.Kind), Text: text,
 				Failed:                row.Attention == codex.SessionAttentionError,

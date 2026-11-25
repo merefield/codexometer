@@ -130,7 +130,7 @@ type savedWireThread struct {
 
 func (page *SavedPage) addWireThread(t savedWireThread) {
 	if t.ID != "" && singleLine(t.ID) == t.ID {
-		page.Sessions = append(page.Sessions, SavedSession{ID: t.ID, Name: singleLine(t.Name), Directory: singleLine(t.Cwd), UpdatedAt: t.UpdatedAt})
+		page.Sessions = append(page.Sessions, SavedSession{ID: t.ID, Name: singleLine(t.Name), Directory: SessionDirectoryDisplay(t.Cwd), UpdatedAt: t.UpdatedAt})
 	}
 }
 

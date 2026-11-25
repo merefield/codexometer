@@ -383,7 +383,7 @@ func (m Model) renderMonitorSessionMetrics(width, height int, session monitorSes
 func (m Model) renderSessionMetrics(width, height int, session monitorSession, pageLabel string, colors palette, target *monitorRect) string {
 	title := i18n.Text("SESSION // ") + shortSessionID(session.id)
 	if session.workingDirectory != "" {
-		title = shortSessionID(session.id) + " // " + strings.ToUpper(codex.SessionDirectoryBase(terminalLabel(session.workingDirectory)))
+		title = shortSessionID(session.id) + " // " + codex.SessionDirectoryDisplay(strings.ToUpper(codex.SessionDirectoryBase(session.workingDirectory)))
 	}
 	if session.name != "" {
 		title = shortSessionID(session.id) + " // " + terminalLabel(session.name)
@@ -477,7 +477,7 @@ func (m Model) renderSessionMetrics(width, height int, session monitorSession, p
 		appendLine(estimate)
 	}
 	if session.name != "" && !selectedFields["current-dir"] {
-		appendLine(terminalLabel(session.workingDirectory))
+		appendLine(codex.SessionDirectoryDisplay(session.workingDirectory))
 	}
 	if !inspectAgents && !selectedFields["agents"] {
 		appendLine(memberLabel)
@@ -777,7 +777,7 @@ func monitorSessionIdentity(s monitorSession) string {
 	identity := shortSessionID(s.id)
 	name := terminalLabel(s.name)
 	if name == "" && s.workingDirectory != "" {
-		name = codex.SessionDirectoryBase(terminalLabel(s.workingDirectory))
+		name = codex.SessionDirectoryDisplay(codex.SessionDirectoryBase(s.workingDirectory))
 	}
 	if name != "" {
 		identity += " // " + name

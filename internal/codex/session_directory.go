@@ -2,17 +2,28 @@ package codex
 
 import (
 	"path"
+	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // A reported directory belongs to the server or execution environment. Its
 // syntax does not establish that it is safe to resolve on the client host.
 func reportedSessionDirectory(cwd string) bool {
 	return len(cwd) <= 4096 && (strings.HasPrefix(cwd, "/") || windowsSessionDirectory(cwd)) &&
-		utf8.ValidString(cwd) &&
-		strings.IndexFunc(cwd, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) < 0
+		utf8.ValidString(cwd) && !strings.ContainsRune(cwd, 0)
+}
+
+// SessionDirectoryDisplay drops terminal sequences and quotes non-printing
+// content without changing the path used for filesystem checks or RPCs.
+func SessionDirectoryDisplay(cwd string) string {
+	cwd = ansi.Strip(cwd)
+	if !utf8.ValidString(cwd) || strings.ContainsFunc(cwd, func(r rune) bool { return !strconv.IsPrint(r) }) {
+		return strconv.Quote(cwd)
+	}
+	return cwd
 }
 
 func windowsSessionDirectory(cwd string) bool {
@@ -31,6 +42,7 @@ func windowsSessionDirectory(cwd string) bool {
 // SessionDirectoryBase provides a short label without using the client OS's
 // path rules or changing what is retained in the full directory readout.
 func SessionDirectoryBase(cwd string) string {
+	cwd = ansi.Strip(cwd) // A terminal sequence may itself contain path separators.
 	if windowsSessionDirectory(cwd) {
 		cwd = strings.ReplaceAll(cwd, `\`, "/")
 	}
