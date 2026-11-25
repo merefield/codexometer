@@ -60,6 +60,8 @@ keep priority. These shortcuts navigate only; they never approve or send for you
 
 **Look inside a session:** click its **Agents** count or use `/subagents` to read linked workers’ attributable completed turns without switching the parent composer or approval target. Use `/ps` to see background terminals and refresh the list without stopping any process.
 
+**Follow a session link without losing your place:** click an underlined Codex thread link in a reply or transcript, or press **L** in the terminal to pick one. Preview a saved session or verified sub-agent, then press **Esc** or choose **Back** to return to your reply and draft. This also works in read-only web mode. Previewing doesn't start work or mark a reply read; opening or resuming the target is a separate action. Requires a shared Codex **0.170.0+** app-server signed in to ChatGPT.
+
 Optional quota step-down profiles are available in the terminal and writable web interface:
 configure `--quota-step-down PERCENT:MODEL:EFFORT[:SPEED[:ask|auto]]`, then follow a
 **QUOTA THRESHOLD** pill to review the proposed settings for that session.
@@ -164,7 +166,7 @@ Use `--reset-warning-hours 24` to warn one day ahead, or `--reset-warning-hours 
 
 Expiry warnings are reminders to review, not instructions to reset immediately. Confirmation warns that unused allowance does not carry over or stack and that the weekly schedule changes. Missing or incomplete expiry information is explicitly flagged: no warning is not proof that nothing expires soon, and undisclosed credits may expire sooner.
 
-Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, **MODEL UNAVAILABLE** for a missing model, **CAPACITY RESTRICTED** for policy-restricted capacity, or **TURN FAILED** with the observed explanation. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch. Working-command headings can also show elapsed/completed time when the shared server supplies valid timestamps.
+Confirmed turn failures also get their own **ERRORS** category: **MODEL BUSY** for model-capacity failures, **MODEL UNAVAILABLE** for a missing model, **CAPACITY RESTRICTED** for policy-restricted capacity, or **TURN FAILED** with the observed explanation. Codex 0.172+ also distinguishes API key, project and organisation spend caps from ChatGPT quota. A goal stopped by an API spend cap does not restart when subscription quota recovers. Click the warning pill to inspect the session. Retrying errors stay **WORKING**; **INPUT NEEDED** means an actual blocking question, not merely a completed turn. The terminal and browser use the same failure detection, with no automatic retry or model switch. Working-command headings can also show elapsed/completed time when the shared server supplies valid timestamps.
 
 Troubleshooting a gremlin? Opt into `--error-log ./error.log`, optionally with `--verbose`, in terminal or web mode. Bounded diagnostics capture actionable filesystem failures and safe operational context—not prompts, replies, credentials or raw API payloads. Paths can reveal project names, so review logs before sharing.
 
