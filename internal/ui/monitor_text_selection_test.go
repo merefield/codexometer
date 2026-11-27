@@ -38,12 +38,17 @@ func TestMonitorOutputDragAcrossDetailModes(t *testing.T) {
 				t.Fatal("missing selection flash or copy receipt")
 			}
 			next, _ = n.Update(monitorSelectionExpired(n.monitorSelectionSequence - 1))
-			if next.(Model).monitorSelectionCopied != 9 {
-				t.Fatal("an old timer cleared the new copy receipt")
+			next, _ = next.Update(monitorCopyReceiptExpired(n.monitorSelectionSequence - 1))
+			if updated := next.(Model); updated.monitorSelection == nil || updated.monitorSelectionCopied != 9 {
+				t.Fatal("an old timer cleared the new copy highlight or receipt")
 			}
 			next, _ = next.Update(monitorSelectionExpired(n.monitorSelectionSequence))
-			if n := next.(Model); n.monitorSelection != nil || strings.Contains(ansi.Strip(n.View().Content), "Copied 9 chars") {
-				t.Fatal("selection flash or receipt did not clear")
+			if updated := next.(Model); updated.monitorSelection != nil || !strings.Contains(ansi.Strip(updated.View().Content), "Copied 9 chars") {
+				t.Fatal("the receipt should outlast the selection flash")
+			}
+			next, _ = next.Update(monitorCopyReceiptExpired(n.monitorSelectionSequence))
+			if strings.Contains(ansi.Strip(next.(Model).View().Content), "Copied 9 chars") {
+				t.Fatal("copy receipt did not clear")
 			}
 		})
 	}

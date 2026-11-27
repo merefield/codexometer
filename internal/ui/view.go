@@ -192,9 +192,6 @@ func (m Model) renderFooter(width int, colors palette) string {
 	if m.sessionWebLinkError {
 		left = i18n.Text("Could not open web link.")
 	}
-	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
-		left = i18n.Format("Copied %d chars", m.monitorSelectionCopied)
-	}
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
 		left += i18n.Format("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)
 	}
@@ -215,6 +212,10 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
+	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
+		label := ansi.Truncate(" "+i18n.Format("Copied %d chars", m.monitorSelectionCopied)+" ", width, "")
+		status = colors.label().Bold(true).Foreground(colors.background).Background(colors.primary).Render(label)
+	}
 	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused && !m.monitorAttentionFocused && !m.finder.include {
 		hint := i18n.Text("←/→ DETAIL")
 		if lipgloss.Width(status)+2+lipgloss.Width(hint) <= width {

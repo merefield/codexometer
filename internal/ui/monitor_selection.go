@@ -8,7 +8,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-const monitorSelectionFlash = 2 * time.Second
+const (
+	monitorSelectionFlash = 2 * time.Second
+	monitorCopyReceipt    = 5 * time.Second
+)
 
 // Capture what was actually visible, not the underlying Markdown or offscreen
 // reply. Coordinates and a text check prevent a live redraw from copying a
@@ -24,16 +27,19 @@ type monitorTextSelection struct {
 }
 
 type monitorSelectionExpired uint64
+type monitorCopyReceiptExpired uint64
 
 func (m Model) updateMonitorSelection(msg tea.Msg) (Model, tea.Msg, tea.Cmd) {
 	s := m.monitorSelection
 	switch event := msg.(type) {
 	case monitorSelectionExpired:
+		if uint64(event) == m.monitorSelectionSequence && s != nil && s.released {
+			m.monitorSelection = nil
+		}
+		return m, nil, nil
+	case monitorCopyReceiptExpired:
 		if uint64(event) == m.monitorSelectionSequence {
 			m.monitorSelectionCopied = 0
-			if s != nil && s.released {
-				m.monitorSelection = nil
-			}
 		}
 		return m, nil, nil
 	case tea.MouseClickMsg:
@@ -102,10 +108,11 @@ func (m Model) updateMonitorSelection(msg tea.Msg) (Model, tea.Msg, tea.Cmd) {
 		m.monitorSelection = &next
 		m.monitorSelectionCopied = count
 		m.monitorSelectionSequence++
-		sequence := monitorSelectionExpired(m.monitorSelectionSequence)
-		return m, nil, tea.Batch(tea.SetClipboard(selected), tea.Tick(monitorSelectionFlash, func(time.Time) tea.Msg {
-			return sequence
-		}))
+		sequence := m.monitorSelectionSequence
+		return m, nil, tea.Batch(tea.SetClipboard(selected),
+			tea.Tick(monitorSelectionFlash, func(time.Time) tea.Msg { return monitorSelectionExpired(sequence) }),
+			tea.Tick(monitorCopyReceipt, func(time.Time) tea.Msg { return monitorCopyReceiptExpired(sequence) }),
+		)
 	case tea.KeyPressMsg, tea.PasteMsg, tea.MouseWheelMsg, tea.WindowSizeMsg, tea.BlurMsg:
 		m.monitorSelection = nil
 	}

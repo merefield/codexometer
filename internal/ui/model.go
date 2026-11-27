@@ -223,6 +223,7 @@ type Model struct {
 	monitorCopySequence     uint64
 	monitorDismissSeq       uint64
 	monitorCloseAllConfirm  []string
+	monitorCheckOnly        bool
 	monitorCloseAllUntil    time.Time
 	monitorScroll           int
 	monitorError            string
@@ -403,6 +404,7 @@ const (
 	footerButtonQuit
 	footerButtonMonitorReset
 	footerButtonMonitorCloseAll
+	footerButtonMonitorClearCheck
 	footerButtonMonitorNew
 	footerButtonBenchmarkPrevious
 	footerButtonBenchmarkNext
@@ -657,23 +659,30 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.meterView == viewMonitor {
-			if m.monitorFilterKey(strings.ToLower(message.String())) {
+			keyName := strings.ToLower(message.String())
+			if m.monitorFilterKey(keyName) {
 				return m, nil
 			}
-			if strings.EqualFold(message.String(), "o") {
-				if !message.IsRepeat && m.monitorContextDetail == "" && m.monitorCloseAllEnabled() {
-					return m.pressFooterButton(footerButtonMonitorCloseAll)
+			if keyName == "o" || keyName == "k" {
+				if !message.IsRepeat && m.monitorContextDetail == "" {
+					button, enabled := footerButtonMonitorCloseAll, m.monitorCloseAllEnabled()
+					if keyName == "k" {
+						button, enabled = footerButtonMonitorClearCheck, m.monitorClearCheckEnabled()
+					}
+					if enabled {
+						return m.pressFooterButton(button)
+					}
 				}
 				return m, nil
 			}
-			if strings.EqualFold(message.String(), "n") && !message.IsRepeat && m.monitorContextDetail == "" && !m.monitorPrompt.input.Focused() {
+			if keyName == "n" && !message.IsRepeat && m.monitorContextDetail == "" && !m.monitorPrompt.input.Focused() {
 				return m.pressFooterButton(footerButtonMonitorNew)
 			}
-			if message.String() == "esc" && len(m.monitorCloseAllConfirm) > 0 {
+			if keyName == "esc" && len(m.monitorCloseAllConfirm) > 0 {
 				m.clearMonitorCloseAllConfirmation()
 				return m, nil
 			}
-			next, cmd, handled := m.updateMonitorContextKey(strings.ToLower(message.String()))
+			next, cmd, handled := m.updateMonitorContextKey(keyName)
 			m = next
 			if handled {
 				return next, cmd
@@ -1481,6 +1490,10 @@ func (m Model) activateFooterButton(button footerButtonID) (Model, tea.Cmd) {
 	case footerButtonMonitorCloseAll:
 		if m.meterView == viewMonitor && m.monitorCloseAllEnabled() {
 			m.requestMonitorCloseAll()
+		}
+	case footerButtonMonitorClearCheck:
+		if m.meterView == viewMonitor && m.monitorContextDetail == "" && m.monitorClearCheckEnabled() {
+			m.requestMonitorBulkDismiss(true)
 		}
 	case footerButtonMonitorNew:
 		if m.meterView == viewMonitor {
@@ -2728,11 +2741,16 @@ func (m *Model) dismissMonitorSession(id string) {
 	if index < 0 {
 		return
 	}
+	m.recordMonitorDismissal(m.monitorSessionData[index])
+	m.monitorSessions = m.visibleMonitorSessionCount()
+	m.scrollMonitorRows(0)
+}
+
+func (m *Model) recordMonitorDismissal(session monitorSession) {
 	if m.monitorDismissed == nil {
 		m.monitorDismissed = make(map[string]monitorSessionDismissal)
 	}
-	session := m.monitorSessionData[index]
-	m.monitorDismissed[id] = monitorSessionDismissal{
+	m.monitorDismissed[session.id] = monitorSessionDismissal{
 		latest:       session.latest,
 		lastActivity: session.lastActivity,
 		callSequence: session.callSequence,
@@ -2740,9 +2758,6 @@ func (m *Model) dismissMonitorSession(id string) {
 		attention:    session.attention,
 		preview:      session.preview,
 	}
-	m.monitorSessions = m.visibleMonitorSessionCount()
-	maximumScroll := max(m.monitorListSessionCount()-m.monitorPageSize(), 0)
-	m.monitorScroll = min(m.monitorScroll, maximumScroll)
 }
 
 // Dismiss the whole list, including rows outside the current page. Retain
