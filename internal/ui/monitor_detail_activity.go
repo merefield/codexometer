@@ -107,6 +107,13 @@ func (m Model) layoutDetailControls(width, height int) detailControlLayout {
 }
 
 func (m Model) layoutDetailControlsBase(width, height int) detailControlLayout {
+	if m.geometry != nil {
+		return m.geometry.detailControls.at(width, height, m.computeDetailControlsBase)
+	}
+	return m.computeDetailControlsBase(width, height)
+}
+
+func (m Model) computeDetailControlsBase(width, height int) detailControlLayout {
 	if s, ok := m.contextDetailSession(); ok {
 		if buttons := m.profileButtons(width, height, s); len(buttons) > 0 {
 			return detailControlLayout{kind: "profile", rows: buttons[len(buttons)-1].y + 1}

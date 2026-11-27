@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/merefield/codexometer/internal/codex"
 	"github.com/merefield/codexometer/internal/i18n"
@@ -67,6 +68,28 @@ func TestMonitorGeometryPassMatchesUncached(t *testing.T) {
 				t.Fatal("cache escaped the read-only pass")
 			}
 		}
+	}
+}
+
+func TestMonitorHitTestPassDoesNotKeepExpiredApprovalClickable(t *testing.T) {
+	m := approvalTestModel()
+	label := m.approvalButtonLabel("accept", false, 0)
+	x, y := renderedTextStart(t, m, label)
+	hit := m.monitorContextHitTester()
+	if hit(x, y) != "decision:0" || hit(x+1, y) != "decision:0" {
+		t.Fatal("active approval did not cover its rendered button")
+	}
+
+	// Approval state may change independently of the UI model when the
+	// app-server consumes a request. Live clicks must start a new pass.
+	provider := m.fetcher.(*approvalTestClient)
+	provider.token = "replacement"
+	if got := m.monitorContextAt(x, y); got == "decision:0" {
+		t.Fatal("fresh hit test retained the obsolete approval")
+	}
+	updated, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if updated.(Model).monitorApprovalBusy || cmd != nil || m.geometry != nil {
+		t.Fatal("live click used stale approval geometry or leaked the read-only cache")
 	}
 }
 

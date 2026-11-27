@@ -398,8 +398,26 @@ func (m Model) renderMonitorAttention(width, rows int, buttons []monitorNavigati
 // Overview attention fits between the summary and session rows; retain at least
 // one useful row. The full detail budget additionally protects controls/text.
 type monitorGeometryCache struct {
-	areas     map[[2]int]monitorGeometry
-	dashboard *dashboardGeometry
+	areas           map[[2]int]monitorGeometry
+	baseDashboard   *dashboardGeometry
+	dashboard       *dashboardGeometry
+	detailControls  monitorSizedCache[detailControlLayout]
+	approvalButtons monitorSizedCache[[]monitorApprovalButton]
+}
+
+type monitorSizedCache[T any] map[[2]int]T
+
+func (c *monitorSizedCache[T]) at(width, height int, compute func(int, int) T) T {
+	key := [2]int{width, height}
+	if v, ok := (*c)[key]; ok {
+		return v
+	}
+	v := compute(width, height)
+	if *c == nil {
+		*c = make(monitorSizedCache[T])
+	}
+	(*c)[key] = v
+	return v
 }
 
 func (m Model) monitorArea(width, height int) monitorGeometry {

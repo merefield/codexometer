@@ -120,6 +120,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 				}
 				g := m.dashboardLayout()
 				shown := m.monitorApprovalControls(g.contentWidth, g.meterHeight)
+				hit := m.monitorContextHitTester()
 				for i, option := range m.monitorSessionData[0].preview.ApprovalOptions {
 					if option.Kind == "" {
 						continue
@@ -135,7 +136,7 @@ func TestMonitorApprovalRenderedTargets(t *testing.T) {
 						found = true
 						x := lipgloss.Width(line[:pos])
 						for dx := 0; dx < lipgloss.Width(label); dx++ {
-							if got := m.monitorContextAt(x+dx, y); got != action {
+							if got := hit(x+dx, y); got != action {
 								t.Fatalf("%s miss at %d,%d got %q\n%s", action, x+dx, y, got, ansi.Strip(out))
 							}
 						}

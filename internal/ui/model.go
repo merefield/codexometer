@@ -1634,6 +1634,17 @@ type dashboardGeometry struct {
 }
 
 func (m Model) dashboardLayout() dashboardGeometry {
+	if m.geometry == nil {
+		return m.computeDashboardLayout()
+	}
+	if m.geometry.baseDashboard == nil {
+		layout := m.computeDashboardLayout()
+		m.geometry.baseDashboard = &layout
+	}
+	return *m.geometry.baseDashboard
+}
+
+func (m Model) computeDashboardLayout() dashboardGeometry {
 	width := m.width
 	if width == 0 {
 		width = 80
