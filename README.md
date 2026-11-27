@@ -1765,8 +1765,9 @@ not an unlimited transcript: it cannot recover text omitted by observation limit
 Clipboard contents then follow your terminal and operating system's retention behaviour.
 In terminal Sessions detail (split, expanded, or full), drag across visible
 output to copy just that selection as plain text, with on-screen line breaks.
-The selection flashes briefly and a highlighted footer badge shows how many
-characters were copied for five seconds. A normal click still follows its usual
+The selection flashes briefly and a centred badge at the bottom of the footer
+shows how many characters were copied for five seconds. On narrow terminals it
+uses the footer row above the shortcuts. A normal click still follows its usual
 action.
 When Codex marks an answer as hidden, blocked, or requiring a native display
 that Codexometer cannot provide, Sessions shows **View this reply in Codex.**

@@ -212,10 +212,6 @@ func (m Model) renderFooter(width int, colors palette) string {
 		}
 	}
 	status := colors.dimmed().Render(ansi.Truncate(left, width, ""))
-	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
-		label := ansi.Truncate(" "+i18n.Format("Copied %d chars", m.monitorSelectionCopied)+" ", width, "")
-		status = colors.label().Bold(true).Foreground(colors.background).Background(colors.primary).Render(label)
-	}
 	if m.meterView == viewMonitor && !m.monitorCommands.open && !m.monitorSummaryFocused && !m.monitorAttentionFocused && !m.finder.include {
 		hint := i18n.Text("←/→ DETAIL")
 		if lipgloss.Width(status)+2+lipgloss.Width(hint) <= width {
@@ -235,7 +231,22 @@ func (m Model) renderFooter(width int, colors palette) string {
 		).Render(button.label))
 	}
 	theme := colors.dimmed().Render(i18n.Format("THEME // %s", colors.name))
-	controlRow := joinRight(strings.Join(controls, separator), theme, width)
+	controlLabels := strings.Join(controls, separator)
+	controlRow := joinRight(controlLabels, theme, width)
+	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
+		label := ansi.Truncate(" "+i18n.Format("Copied %d chars", m.monitorSelectionCopied)+" ", width, "")
+		badge := colors.header().Foreground(colors.background).Background(colors.primary).Render(label)
+		badgeWidth := lipgloss.Width(badge)
+		start := (width - badgeWidth) / 2
+		leftGap := start - lipgloss.Width(controlLabels)
+		rightGap := width - start - badgeWidth - lipgloss.Width(theme)
+		if leftGap >= 1 && rightGap >= 1 {
+			controlRow = controlLabels + strings.Repeat(" ", leftGap) + badge + strings.Repeat(" ", rightGap) + theme
+		} else {
+			// Keep the shortcut labels and their mouse targets in place on narrow terminals.
+			status = strings.Repeat(" ", start) + badge
+		}
+	}
 	return status + "\n" + controlRow
 }
 

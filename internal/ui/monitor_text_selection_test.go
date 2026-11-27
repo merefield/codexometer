@@ -54,6 +54,37 @@ func TestMonitorOutputDragAcrossDetailModes(t *testing.T) {
 	}
 }
 
+func TestMonitorCopyReceiptCentresWithoutDisplacingFooterButtons(t *testing.T) {
+	const receipt = "Copied 123 chars"
+	for _, tc := range []struct{ width, row int }{{36, 0}, {56, 0}, {80, 1}, {121, 1}} {
+		m := contextTestModel()
+		m.width = tc.width + 4
+		colors := paletteFor(m.theme)
+		before := strings.Split(ansi.Strip(m.renderFooter(tc.width, colors)), "\n")
+		m.monitorSelectionCopied = 123
+		got := strings.Split(ansi.Strip(m.renderFooter(tc.width, colors)), "\n")
+		row := got[tc.row]
+		index := strings.Index(row, receipt)
+		if index < 0 || index != (tc.width-ansi.StringWidth(receipt))/2 || ansi.StringWidth(row) > tc.width {
+			t.Fatalf("width %d: receipt not centred on row %d: %q", tc.width, tc.row, got)
+		}
+		if got[1-tc.row] != before[1-tc.row] {
+			t.Fatalf("width %d: unaffected footer row changed: %q -> %q", tc.width, before, got)
+		}
+		buttons, separator := footerButtonLayoutWithTheme(tc.width, colors.name, viewMonitor)
+		y, x := m.dashboardLayout().footerY+1, 0
+		for _, b := range buttons {
+			if !strings.HasPrefix(got[1][x:], b.label) || m.footerButtonAt(2+x, y) != b.id {
+				t.Fatalf("width %d: footer button %q moved or lost its click target", tc.width, b.label)
+			}
+			x += ansi.StringWidth(b.label) + len(separator)
+		}
+		if tc.row == 1 && (!strings.HasSuffix(got[1], "THEME // "+colors.name) || m.footerButtonAt(2+index, y) != footerButtonNone) {
+			t.Fatal("badge displaced the theme or gained a click target")
+		}
+	}
+}
+
 func TestMonitorOutputSelectionCopiesWholeGraphemesAndStripsStyles(t *testing.T) {
 	rect := monitorRect{x: 2, y: 1, width: 8, height: 3}
 	rows := monitorSelectionRows("ignored\n│ \x1b[31mAé界Z\x1b[0m   │\n│         │\n│ Done    │", rect)
