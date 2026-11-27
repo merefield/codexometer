@@ -128,9 +128,12 @@ jobs:
 
       - name: Localised screens (all locales, race and coverage)
         shell: bash
+        env:
+          # Standard macOS runners can exceed 10m on the full locale matrix.
+          LOCALE_TEST_TIMEOUT: ${{ runner.os == 'macOS' && '15m' || '10m' }}
         run: |
           set -o pipefail
-          go test -race -cover -json -timeout 10m -run '^TestLocalisedScreens$' ./internal/ui | tee locale-test-results.json
+          go test -race -cover -json -timeout "$LOCALE_TEST_TIMEOUT" -run '^TestLocalisedScreens$' ./internal/ui | tee locale-test-results.json
 
       - name: Preserve test results and timings
         if: always()
