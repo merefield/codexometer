@@ -362,8 +362,10 @@ func (m Model) detailPage(width, height, controls int) monitorDetailPage {
 	}
 	// Keep a blank before the first heading if it fits. For an already
 	// scrolling document, keep it on roomy viewports but not on short ones.
-	if n < len(doc) && doc[n] == (detailLine{}) && len(doc) > p.rows &&
-		(p.rows < 8 || len(doc)-1 == p.rows) {
+	// A short viewport with a slash popup uses that row for reply text.
+	compactPopup := p.rows < 8 && (m.monitorCommands.open || m.suggestionsActive())
+	if n < len(doc) && doc[n] == (detailLine{}) &&
+		(compactPopup || len(doc) > p.rows && (p.rows < 8 || len(doc)-1 == p.rows)) {
 		doc = append(doc[:n], doc[n+1:]...)
 	}
 	p.document = spaceCommandReview(doc, p.rows, false)

@@ -224,18 +224,34 @@ func TestNativeQueuePlacementAndClickSurfaces(t *testing.T) {
 			if activityY != queueY-1 || strings.Count(strings.Join(lines, "\n"), monitorDotWave(m.phase)) != 1 {
 				t.Fatal("task activity must appear exactly once immediately above follow-ups")
 			}
-			if inline && !strings.Contains(lines[queueY], "1–1") {
-				t.Fatal("wide row didn't collapse queue")
+			if inline {
+				want := "1–1"
+				if size == [2]int{80, 32} {
+					want = "open follow-ups"
+				}
+				if !strings.Contains(lines[queueY], want) {
+					t.Fatalf("%v wide row lost its responsive queue: %q", size, lines[queueY])
+				}
+			}
+			g := m.monitorDashboardLayout()
+			composerX, composerWidth := 4, g.contentWidth
+			if inline {
+				left, width, _ := monitorSessionColumnWidths(g.contentWidth)
+				composerX, composerWidth = left+5, width
+			}
+			assertDarkComposerSpacer(t, m, composerX, composerWidth-4, composerY-1)
+			if m.monitorContextAt(composerX, composerY-1) != "prompt" {
+				t.Fatal("queue intercepted the composer spacer")
 			}
 			// Composer remains anchored at its existing position.
 			w, h := m.monitorPromptSize()
 			rows := m.monitorPromptRows(w, h)
-			if rows != 3 && !m.monitorPrompt.input.Focused() {
+			if rows != 4 && !m.monitorPrompt.input.Focused() {
 				t.Fatal("queue changed composer size")
 			}
 			m.monitorQueue.items = nil
 			withoutQueue := strings.Split(ansi.Strip(m.render()), "\n")
-			if withoutQueue[composerY] != lines[composerY] || !strings.Contains(withoutQueue[composerY-1], monitorDotWave(m.phase)) {
+			if withoutQueue[composerY] != lines[composerY] || !strings.Contains(withoutQueue[composerY-2], monitorDotWave(m.phase)) {
 				t.Fatal("moving animation shifted composer or lost its no-queue placement")
 			}
 		}

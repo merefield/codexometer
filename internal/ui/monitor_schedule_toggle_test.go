@@ -49,7 +49,7 @@ func TestScheduleToggleRenderedHoverAndClicks(t *testing.T) {
 			} else {
 				rows := m.monitorPromptRows(g.contentWidth, g.meterHeight)
 				_, _, cy := monitorContextBodyLayout(g.meterHeight, rows)
-				if y != g.meterY+cy+rows-1 || rows != 2 {
+				if y != g.meterY+cy+rows-1 || rows != 3 {
 					t.Fatal("idle composer retained a heading or misplaced schedule button")
 				}
 			}

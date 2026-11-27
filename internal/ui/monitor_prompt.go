@@ -119,6 +119,8 @@ func (m Model) monitorPromptOffer() codex.SessionPromptOffer {
 	return o
 }
 
+const monitorComposerSpacerRows = 1
+
 func (m Model) monitorPromptRows(width, height int) int {
 	if s, ok := m.contextDetailSession(); ok {
 		if _, pending := m.sessionProfile(s); pending {
@@ -137,10 +139,10 @@ func (m Model) monitorPromptRows(width, height int) int {
 	if m.monitorPromptOffer().Token != "" || m.monitorPrompt.session == m.monitorContextTarget() && (m.monitorPrompt.busy || m.monitorPrompt.notice != "" && !sentNotice(m.monitorPrompt.notice)) {
 		p := m.monitorPrompt
 		headerRows := m.monitorPromptHeaderRows()
-		rows := 2 + headerRows
+		rows := 2 + headerRows + monitorComposerSpacerRows
 		if (p.input.Focused() || p.input.Value() != "") && !p.busy {
 			p.input.configure(width, m.monitorPromptEditorHeight(width, height))
-			rows = p.input.Height() + 1 + headerRows
+			rows = p.input.Height() + 1 + headerRows + monitorComposerSpacerRows
 		}
 		if m.monitorContextDetail == "" {
 			s, ok := m.contextDetailSession()
@@ -164,6 +166,21 @@ func (m Model) monitorPromptHeaderRows() int {
 	return 0
 }
 
+func (m Model) monitorPromptHit(width, height, rows, x, y int) bool {
+	if x < 0 || x >= width {
+		return false
+	}
+	_, _, top := monitorContextBodyLayout(height, rows)
+	spacer := top + m.monitorPromptHeaderRows()
+	hint := top + rows - 1
+	// The whole hint row focuses either composer. Full detail also accepts
+	// clicks on the spacer and bottom border outside their explicit buttons.
+	if y == hint || m.monitorContextDetail != "" && (y == spacer || y >= height-3 && y < height) {
+		return true
+	}
+	return x >= 2 && x < width-2 && y >= spacer && y < hint
+}
+
 func (m Model) monitorComposerActivity() string {
 	if m.monitorPromptOffer().TurnID != "" {
 		if s, ok := m.contextDetailSession(); ok {
@@ -176,7 +193,7 @@ func (m Model) monitorComposerActivity() string {
 // Inline drafts grow only into spare space, then scroll inside the editor;
 // they never displace the source context. Full detail keeps its usual viewport.
 func (m Model) monitorPromptEditorHeight(width, height int) int {
-	extra := 1 - m.monitorPromptHeaderRows()
+	extra := 1 - m.monitorPromptHeaderRows() - monitorComposerSpacerRows
 	if m.monitorContextDetail == "" {
 		if s, ok := m.contextDetailSession(); ok {
 			return min(height+extra, max(8, height+3+extra-len(m.expandedContextLines(width, s))))
@@ -281,7 +298,8 @@ func (m Model) renderMonitorPrompt(width, height int, colors palette) string {
 	if scheduling && !m.hasGoalResume() {
 		footer = m.renderScheduleToggleHint(width, hint, false, hintStyle, colors)
 	}
-	body := strings.Join(inputLines, "\n") + "\n" + footer
+	// Keep this row unstyled so the frame paints the normal dark background.
+	body := "\n" + strings.Join(inputLines, "\n") + "\n" + footer
 	if header != "" {
 		body = colors.label().Render(ansi.Truncate(header, max(width-4, 1), "…")) + "\n" + body
 	}

@@ -281,6 +281,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 	buttons := m.expandedApprovalButtons(width, height, s)
 	n := 0
 	controls := ""
+	composer := false
 	if len(buttons) > 0 {
 		n = buttons[len(buttons)-1].y + 1
 		controls = m.renderMonitorApprovalControls(width, height, colors)
@@ -292,6 +293,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		if rows := m.monitorPromptRows(width, height); rows > 0 {
 			n = rows
 			controls = m.renderMonitorPrompt(width, height, colors)
+			composer = true
 		}
 	}
 	if dots := m.sessionActivityDots(s); n == 0 && dots != "" && height >= 5 && width >= 7 {
@@ -311,6 +313,12 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		withoutTask := s
 		withoutTask.preview.CurrentTask, withoutTask.preview.LatestGuidance = "", ""
 		lines = m.expandedContextLines(width, withoutTask)
+	}
+	if composer && textRows <= 5 && len(lines) > 1 && s.preview.Kind == codex.SessionContextReply &&
+		(m.monitorCommands.open || m.suggestionsActive()) {
+		// The row title and telemetry already identify the session. Give
+		// the first text row to its reply when a compact slash popup opens.
+		lines = lines[1:]
 	}
 	if hasWorkingCommand(s.preview) {
 		lines = m.workingContextLines(s.preview, max(width-4, 1), max(textRows, 1), false)
@@ -419,12 +427,9 @@ func (m Model) expandedContextAt(x, y int) string {
 			mw, cw, _ := monitorSessionColumnWidths(a.width)
 			x -= mw + 1
 			y -= rowY
-			if s.id == m.monitorContextTarget() && m.monitorPromptOffer().Token != "" {
-				if rows := m.monitorPromptRows(cw, heights[i]); rows > 0 {
-					_, _, cy := monitorContextBodyLayout(heights[i], rows)
-					if y >= cy+m.monitorPromptHeaderRows() && y < cy+rows-1 && x >= 2 && x < cw-2 {
-						return "prompt"
-					}
+			if s.id == m.monitorContextTarget() && !m.monitorApprovalHasOutcome() && m.monitorPromptOffer().Token != "" {
+				if rows := m.monitorPromptRows(cw, heights[i]); rows > 0 && m.monitorPromptHit(cw, heights[i], rows, x, y) {
+					return "prompt"
 				}
 			}
 			if hit := monitorButtonAt(m.expandedApprovalButtons(cw, heights[i], s), heights[i], x, y); hit != "" {

@@ -26,7 +26,7 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 		w, h := m.monitorPromptSize()
 		rows := m.monitorPromptRows(w, h)
 		placeholder := ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(w-4, 1), "")
-		if rows != 2 || !strings.Contains(ansi.Strip(m.render()), placeholder) {
+		if rows != 3 || !strings.Contains(ansi.Strip(m.render()), placeholder) {
 			t.Fatalf("missing inline composer at width %d", width)
 		}
 		g := m.dashboardLayout()
@@ -34,22 +34,41 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 		mw, _, _ := monitorSessionColumnWidths(a.width)
 		_, _, cy := monitorContextBodyLayout(h, rows)
 		y := g.meterY + a.topHeight + a.gap - 1 + cy
+		assertDarkComposerSpacer(t, m, mw+5, w-4, y)
 		for x := mw + 5; x < mw+3+w-2; x++ {
 			if got := m.monitorContextAt(x, y); got != "prompt" {
 				t.Fatalf("width %d click %d,%d = %q", width, x, y, got)
 			}
 		}
-		next, _ := m.Update(tea.MouseClickMsg{X: mw + 5, Y: y, Button: tea.MouseLeft})
-		m = next.(Model)
-		if !m.monitorPrompt.input.Focused() || m.monitorContextDetail != "" {
-			t.Fatal("composer click navigated instead of focusing")
+		hintY, left := y+rows-1, mw+3
+		for x := left; x < left+w; x++ {
+			if got := m.monitorContextAt(x, hintY); got != "prompt" {
+				t.Fatalf("width %d hint click %d,%d = %q", width, x, hintY, got)
+			}
+		}
+		for _, x := range []int{left - 1, left + w} {
+			if m.monitorContextAt(x, hintY) == "prompt" {
+				t.Fatalf("hint click leaked outside the detail pane at %d,%d", x, hintY)
+			}
+		}
+		copyX, copyY := renderedTextStart(t, m, benchmarkDetailCopyLabel)
+		if copyY != hintY+1 || m.monitorContextAt(copyX, copyY) != "copy:root-one" {
+			t.Fatal("composer hint displaced or intercepted Copy")
+		}
+		base := m
+		for _, clickY := range []int{y, hintY} {
+			next, _ := base.Update(tea.MouseClickMsg{X: mw + 5, Y: clickY, Button: tea.MouseLeft})
+			m = next.(Model)
+			if !m.monitorPrompt.input.Focused() || m.monitorContextDetail != "" || c.answers != nil {
+				t.Fatalf("click at row %d did not just focus the inline composer", clickY)
+			}
 		}
 		m, _ = promptKey(m, 't', "t")
 		m, cmd := promptKey(m, tea.KeyEnter, "")
 		if cmd == nil || !m.monitorPrompt.busy {
 			t.Fatal("inline Enter did not send")
 		}
-		next, _ = m.Update(cmd())
+		next, _ := m.Update(cmd())
 		m = next.(Model)
 		if len(c.answers) != 1 || c.answers[0] != "t" || m.monitorPrompt.input.Focused() {
 			t.Fatal("inline send destination/content or focus incorrect")
