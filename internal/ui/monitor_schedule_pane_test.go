@@ -95,8 +95,9 @@ func TestSchedulePaneScrollAndHitTargets(t *testing.T) {
 	if !actionVisible {
 		t.Fatal("keyboard focus left action offscreen")
 	}
-	// Clicking composer focuses it without changing the scroll/trigger.
-	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 6, Y: g.meterY + l.composerY + 1, Button: tea.MouseLeft})
+	// Clicking the dark spacer focuses the anchored composer without changing the form.
+	assertDarkComposerSpacer(t, m, 4, g.contentWidth-4, g.meterY+l.composerY-1)
+	m, _, _ = m.updateSchedule(tea.MouseClickMsg{X: 6, Y: g.meterY + l.composerY - 1, Button: tea.MouseLeft})
 	if m.scheduleUI.focus != 0 || !m.scheduleUI.input.Focused() {
 		t.Fatal("anchored composer click missed")
 	}

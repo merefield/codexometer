@@ -90,6 +90,7 @@ func TestMonitorCommandPopupPreservesContextComposerAndRowMode(t *testing.T) {
 			if !strings.Contains(out, "CONVERSATION STAYS VISIBLE") || !strings.Contains(out, "Medium") || f.calls != 0 {
 				t.Fatalf("submenu replaced context or applied a command: %s", out)
 			}
+			assertDarkComposerSpacer(t, m, before.x, before.width, before.y+before.height)
 			if lipgloss.Width(out) > m.width || lipgloss.Height(out) > m.height {
 				t.Fatalf("popup exceeds viewport at %v mode %d", size, mode)
 			}

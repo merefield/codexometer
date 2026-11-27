@@ -26,7 +26,7 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 		w, h := m.monitorPromptSize()
 		rows := m.monitorPromptRows(w, h)
 		placeholder := ansi.Truncate(i18n.Text("[ Click here or press Enter to write ]"), max(w-4, 1), "")
-		if rows != 2 || !strings.Contains(ansi.Strip(m.render()), placeholder) {
+		if rows != 3 || !strings.Contains(ansi.Strip(m.render()), placeholder) {
 			t.Fatalf("missing inline composer at width %d", width)
 		}
 		g := m.dashboardLayout()
@@ -34,6 +34,7 @@ func TestInlineMonitorPromptClicksAndSend(t *testing.T) {
 		mw, _, _ := monitorSessionColumnWidths(a.width)
 		_, _, cy := monitorContextBodyLayout(h, rows)
 		y := g.meterY + a.topHeight + a.gap - 1 + cy
+		assertDarkComposerSpacer(t, m, mw+5, w-4, y)
 		for x := mw + 5; x < mw+3+w-2; x++ {
 			if got := m.monitorContextAt(x, y); got != "prompt" {
 				t.Fatalf("width %d click %d,%d = %q", width, x, y, got)

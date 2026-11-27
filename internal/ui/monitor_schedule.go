@@ -80,7 +80,7 @@ func (m *Model) openSchedule() tea.Cmd {
 	}
 	p := scheduleUI{queue: q, polling: m.scheduleUI.polling, drafts: m.scheduleUI.drafts, open: true, session: id, input: newMonitorEditor(), hours: 1, date: time.Now().Add(time.Hour).Truncate(time.Minute)}
 	g := m.monitorDashboardLayout()
-	p.composerRows = max(2, m.monitorPromptRows(g.contentWidth, g.meterHeight))
+	p.composerRows = max(2, m.monitorPromptRows(g.contentWidth, g.meterHeight)-monitorComposerSpacerRows)
 	if m.monitorPrompt.session == id {
 		p.input = m.monitorPrompt.input
 	}
@@ -299,7 +299,7 @@ func (m Model) updateSchedule(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if click.X < 2 || click.X >= g.contentWidth-2 {
 			return m, nil, true
 		}
-		if localY >= layout.composerY && localY < layout.composerY+layout.composerRows {
+		if localY >= layout.composerY-monitorComposerSpacerRows && localY < layout.composerY+layout.composerRows {
 			p.focus = 0
 			return m, p.input.Focus(), true
 		}

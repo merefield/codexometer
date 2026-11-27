@@ -35,7 +35,7 @@ func TestInlineWorkingComposerKeysAndClicks(t *testing.T) {
 			m.width = width
 			w, h := m.monitorPromptSize()
 			rows := m.monitorPromptRows(w, h)
-			if rows != 3 || !strings.Contains(ansi.Strip(m.render()), "Tab: queue") {
+			if rows != 4 || !strings.Contains(ansi.Strip(m.render()), "Tab: queue") {
 				t.Fatalf("missing working composer at width %d", width)
 			}
 			g := m.dashboardLayout()
@@ -216,7 +216,7 @@ func TestWorkingComposerErrorAndScheduleIsolation(t *testing.T) {
 		t.Fatal("failed queue lost draft or hid error")
 	}
 	view := m.renderMonitorPrompt(120, 30, paletteFor(themeHacker))
-	if !strings.Contains(view, monitorDotWave(m.phase)) || strings.Contains(view, "FOLLOW-UP") || strings.Contains(view, "WORKING") || len(strings.Split(view, "\n")) != 3 {
+	if !strings.Contains(view, monitorDotWave(m.phase)) || strings.Contains(view, "FOLLOW-UP") || strings.Contains(view, "WORKING") || len(strings.Split(view, "\n")) != 4 {
 		t.Fatal("composer must retain progress above the input without a redundant heading")
 	}
 	if ansi.Strip(strings.Split(view, "\n")[0]) != monitorDotWave(m.phase) {
@@ -224,7 +224,7 @@ func TestWorkingComposerErrorAndScheduleIsolation(t *testing.T) {
 	}
 	m.monitorSessionData[0].working = false
 	view = m.renderMonitorPrompt(120, 30, paletteFor(themeHacker))
-	if strings.Contains(view, monitorDotWave(m.phase)) || m.monitorPromptHeaderRows() != 0 || len(strings.Split(view, "\n")) != 2 {
+	if strings.Contains(view, monitorDotWave(m.phase)) || m.monitorPromptHeaderRows() != 0 || len(strings.Split(view, "\n")) != 3 {
 		t.Fatal("inactive session retained a progress row")
 	}
 }

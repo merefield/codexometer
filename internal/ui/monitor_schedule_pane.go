@@ -20,7 +20,8 @@ func (m Model) schedulePaneLayout(width, height int) schedulePaneLayout {
 		l.indices = append(l.indices, row)
 	}
 	l.composerRows = min(max(p.composerRows, 2), max(height-5, 1))
-	l.textRows, _, l.composerY = monitorContextBodyLayout(height, l.composerRows)
+	l.textRows, _, l.composerY = monitorContextBodyLayout(height, l.composerRows+monitorComposerSpacerRows)
+	l.composerY += monitorComposerSpacerRows
 	l.scroll = min(max(p.scroll, 0), max(len(l.indices)-l.textRows, 0))
 	return l
 }

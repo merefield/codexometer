@@ -34,7 +34,7 @@ func TestMonitorPromptPlaceholderComposerBackground(t *testing.T) {
 				t.Fatal("composer has no background")
 			}
 			for x := 0; x < width-4; x++ {
-				cell := cells.CellAt(x, 0)
+				cell := cells.CellAt(x, monitorComposerSpacerRows)
 				if cell == nil || cell.Style.Bg == nil {
 					t.Fatalf("theme %d width %d: missing placeholder background at %d", theme, width, x)
 				}
@@ -144,7 +144,7 @@ func TestMonitorPromptQuestionsAndSecret(t *testing.T) {
 	m.monitorSessionData[0].preview.InputToken = c.offer.Token
 	m.focusMonitorPrompt()
 	question := strings.Split(ansi.Strip(m.renderMonitorPrompt(120, 30, paletteFor(m.theme))), "\n")
-	if len(question) != 3 || !strings.Contains(question[0], "REPLY 1/2") || !strings.Contains(question[0], "Pick one") || m.monitorPromptHeaderRows() != 1 {
+	if len(question) != 4 || question[1] != "" || !strings.Contains(question[0], "REPLY 1/2") || !strings.Contains(question[0], "Pick one") || m.monitorPromptHeaderRows() != 1 {
 		t.Fatal("structured question lost its heading or answer progress")
 	}
 	m.monitorPrompt.input.SetValue("not offered")
@@ -211,7 +211,7 @@ func TestMonitorPromptResponsiveClickTargets(t *testing.T) {
 			continue
 		}
 		_, _, y := monitorContextBodyLayout(g.meterHeight, rows)
-		y += g.meterY + 1
+		y += g.meterY
 		for x := 4; x < g.contentWidth; x++ {
 			if m.monitorContextAt(x, y) != "prompt" {
 				t.Fatalf("miss %s %v %d,%d", lang, size, x, y)
@@ -288,7 +288,7 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 			t.Fatal("wrapping altered the submitted text")
 		}
 		m.monitorPrompt.input.SetValue("short")
-		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 2 {
+		if m.monitorPromptRows(g.contentWidth, g.meterHeight) != 3 {
 			t.Fatal("editor failed to shrink")
 		}
 	}
@@ -300,6 +300,14 @@ func TestMonitorDetailBottomRowsFocusComposer(t *testing.T) {
 		m.height = height
 		g := m.monitorDashboardLayout()
 		copyX, copyY := renderedTextStart(t, m, benchmarkDetailCopyLabel)
+		composerY := g.meterY + g.meterHeight - 3
+		assertDarkComposerSpacer(t, m, 4, g.contentWidth-4, composerY-1)
+		for _, x := range []int{2, 4, 1 + g.contentWidth} {
+			n, _ := m.Update(tea.MouseClickMsg{X: x, Y: composerY - 1, Button: tea.MouseLeft})
+			if !n.(Model).monitorPrompt.input.Focused() || c.answers != nil {
+				t.Fatalf("spacer click at %d,%d should focus without sending", x, composerY-1)
+			}
+		}
 		for y := g.meterY + g.meterHeight - 3; y < g.meterY+g.meterHeight; y++ {
 			for x := 2; x < 2+g.contentWidth; x++ {
 				want := "prompt"
@@ -323,6 +331,27 @@ func TestMonitorDetailBottomRowsFocusComposer(t *testing.T) {
 		c.offer.Token = ""
 		if m.monitorContextAt(2, g.meterY+g.meterHeight-1) == "prompt" {
 			t.Fatal("unavailable composer remained clickable")
+		}
+	}
+}
+
+func assertDarkComposerSpacer(t *testing.T, m Model, x, width, y int) {
+	t.Helper()
+	screen := uv.NewScreenBuffer(m.width, m.height)
+	uv.NewStyledString(m.render()).Draw(&screen, image.Rect(0, 0, m.width, m.height))
+	colors := paletteFor(m.theme)
+	if m.monitorContextDetail == "" {
+		colors.primary = colors.accent // the selected overview row uses its accent as primary
+	}
+	for col := x; col < x+width; col++ {
+		spacer := screen.CellAt(col, y)
+		if spacer == nil || strings.TrimSpace(spacer.Content) != "" {
+			t.Fatalf("expected a blank row above the composer at %d,%d, got %v", col, y, spacer)
+		}
+		assertBackground(t, spacer.Style.Bg, colors.background)
+		// A CJK glyph's trailing cell does not carry its own style.
+		if col == x || screen.CellAt(col-1, y+1).Width < 2 {
+			assertBackground(t, screen.CellAt(col, y+1).Style.Bg, monitorComposerBackground(colors))
 		}
 	}
 }
