@@ -37,12 +37,14 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	}
 	got := fmt.Sprintf("%x", hash.Sum(nil))
 	// Baseline includes Pace graph controls, explicit panel/border
-	// backgrounds, Sessions Zero/Close All, ACTIVE/ERRORS categories and responsive
-	// summary filters and Sessions finder button. Refresh no longer occupies
+	// backgrounds, Sessions Zero/Close All/Clear Check, ACTIVE/ERRORS categories
+	// and responsive summary filters and Sessions finder button. Refresh no longer occupies
 	// the Sessions footer. Every theme, view and size remains covered.
 	// Pie labels usage and the reset ring without a horizontal reset bar.
 	// The displayed pricing review date is now 2026-11-17.
-	const want = "034bbb1b4ece977142f93978ee5a8d19f34b5ecbf4bd3866c468ab19aceeac10"
+	// Sessions header buttons share one width; Close All takes two lines.
+	// Sessions border navigation uses the primary theme colour at rest.
+	const want = "c7bd1cbf3b9c4ccdfe94c92e8210d469f88fe1b0fe22116cad0a70e4ca105a13"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

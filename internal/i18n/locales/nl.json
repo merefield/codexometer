@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "CONTROLE VERBERGEN (K)",
+  "CONFIRM (K)": "BEVESTIGEN (K)",
+  "Copied %d chars": "%d tekens gekopieerd",
   "LINKS": "LINKS",
   "SESSION PREVIEW": "SESSIEVOORBEELD",
   "OPEN SESSION": "SESSIE OPENEN",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "LET OP QUOTUM",
   "RANK": "RANG",
   "AVG TOK/MIN ": "GEM. TOK/MIN ",
-  "CL(O)SE ALL": "ALLES SLUITEN (O)",
+  "CL(O)SE\nALL": "ALLES\nSLUITEN (O)",
   "C(O)NFIRM": "BEVESTIG (O)",
   "(Z)ERO": "NULSTELLEN (Z)",
   "READY": "GEREED",

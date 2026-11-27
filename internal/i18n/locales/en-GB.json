@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "CLEAR CHEC(K)",
+  "CONFIRM (K)": "CONFIRM (K)",
+  "Copied %d chars": "Copied %d chars",
   "LINKS": "LINKS",
   "SESSION PREVIEW": "SESSION PREVIEW",
   "OPEN SESSION": "OPEN SESSION",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "QUOTA WATCH",
   "RANK": "RANK",
   "AVG TOK/MIN ": "AVG TOK/MIN ",
-  "CL(O)SE ALL": "CL(O)SE ALL",
+  "CL(O)SE\nALL": "CL(O)SE\nALL",
   "C(O)NFIRM": "C(O)NFIRM",
   "(Z)ERO": "(Z)ERO",
   "READY": "READY",

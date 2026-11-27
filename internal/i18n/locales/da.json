@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "RYD TJEK (K)",
+  "CONFIRM (K)": "BEKRÆFT (K)",
+  "Copied %d chars": "Kopierede %d tegn",
   "LINKS": "LINKS",
   "SESSION PREVIEW": "FORHÅNDSVISNING AF SESSION",
   "OPEN SESSION": "ÅBN SESSION",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "HOLD ØJE MED KVOTEN",
   "RANK": "RANG",
   "AVG TOK/MIN ": "GNS. TOK/MIN ",
-  "CL(O)SE ALL": "LUK ALLE (O)",
+  "CL(O)SE\nALL": "LUK\nALLE (O)",
   "C(O)NFIRM": "BEKRÆFT (O)",
   "(Z)ERO": "NULSTIL (Z)",
   "READY": "KLAR",

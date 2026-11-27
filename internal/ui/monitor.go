@@ -32,18 +32,19 @@ type monitorView struct {
 }
 
 type monitorGeometry struct {
-	attention     []monitorNavigationButton
-	attentionRows int
-	finderRows    int
-	width         int
-	height        int
-	gap           int
-	topHeight     int
-	graphHeight   int
-	readoutWidth  int
-	resetRect     monitorRect
-	closeAllRect  monitorRect
-	newRect       monitorRect
+	attention      []monitorNavigationButton
+	attentionRows  int
+	finderRows     int
+	width          int
+	height         int
+	gap            int
+	topHeight      int
+	graphHeight    int
+	readoutWidth   int
+	resetRect      monitorRect
+	closeAllRect   monitorRect
+	clearCheckRect monitorRect
+	newRect        monitorRect
 }
 
 const monitorDismissLabel = "[×]"
@@ -58,36 +59,52 @@ func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 	}
 	graphHeight := max(height-topHeight-gap, 1)
 
-	// Keep the summary usable on narrow terminals; compact both controls when
-	// their full translated labels cannot fit.
+	// Fit the full group only when its shortcut labels have room. On very
+	// narrow terminals keep the existing controls and leave Clear Check on K.
 	controlsWidth := min(max(width/4, 22), max(width*2/5, 3))
-	newWidth := 0
-	if len(newButton) > 0 && newButton[0] && width >= 27 {
-		total := min(max(width/3, 30), max(width/2, 13))
-		newWidth = max((total-2*gap)/3, 1)
-		controlsWidth = total - newWidth - gap
+	showNew := len(newButton) > 0 && newButton[0] && width >= 27
+	showClear := width >= 43 && (!showNew || width >= 46)
+	count := 2
+	if showClear {
+		count++
+		controlsWidth = min(max(width/3+5, 34), width*2/5)
 	}
-	resetWidth := max((controlsWidth-gap)/2, 1)
-	closeAllWidth := max(controlsWidth-resetWidth-gap, 1)
-	readoutWidth := max(width-controlsWidth-gap, 1)
-	if newWidth > 0 {
-		readoutWidth -= newWidth + gap
+	if showNew {
+		count++
+		controlsWidth = min(max(width/3, 30), width/2)
+		if showClear {
+			controlsWidth = min(max(width*2/5, 42), width/2)
+		}
 	}
+	buttonWidth := max((controlsWidth-(count-1)*gap)/count, 1)
+	// Give spare cells to the readout rather than widening individual buttons.
+	readoutWidth := max(width-count*(buttonWidth+gap), 1)
 	if height >= 12 {
 		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
 	}
-	return monitorGeometry{
+	a := monitorGeometry{
 		width:        width,
 		height:       height,
 		gap:          gap,
 		topHeight:    topHeight,
 		graphHeight:  graphHeight,
 		readoutWidth: readoutWidth,
-		resetRect:    monitorRect{x: readoutWidth + gap, width: resetWidth, height: topHeight},
-		closeAllRect: monitorRect{x: readoutWidth + gap + resetWidth + gap, width: closeAllWidth, height: topHeight},
-		newRect:      monitorRect{x: width - newWidth, width: newWidth, height: topHeight},
 	}
+	x := readoutWidth + gap
+	next := func() monitorRect {
+		r := monitorRect{x: x, width: buttonWidth, height: topHeight}
+		x += buttonWidth + gap
+		return r
+	}
+	a.resetRect, a.closeAllRect = next(), next()
+	if showClear {
+		a.clearCheckRect = next()
+	}
+	if showNew {
+		a.newRect = next()
+	}
+	return a
 }
 
 func (m Model) renderMonitorArea(width, height int, colors palette) monitorView {
@@ -121,39 +138,26 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := m.monitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	resetLabel := i18n.Text("(Z)ERO")
-	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-		resetLabel = "0 (Z)"
-		if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-			resetLabel = "0\n(Z)"
-		}
-	}
+	resetLabel := fitMonitorButtonLabel(layout.resetRect, i18n.Text("(Z)ERO"), "0 (Z)", "0\n(Z)", "(Z)", "Z")
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	closeAllLabel := i18n.Text("CL(O)SE ALL")
-	if layout.closeAllRect.width < lipgloss.Width(closeAllLabel)+2 {
-		wrapped := strings.Replace(closeAllLabel, " ", "\n", 1)
-		if lipgloss.Width(wrapped)+2 <= layout.closeAllRect.width && lipgloss.Height(wrapped)+2 <= layout.topHeight {
-			closeAllLabel = wrapped
-		} else {
-			closeAllLabel = "[××]\n(O)"
-		}
-	}
+	closeAllLabel := fitMonitorButtonLabel(layout.closeAllRect, i18n.Text("CL(O)SE\nALL"), "[××]\n(O)", "××\n(O)", "×\nO", "(O)", "O")
 	if m.monitorCloseAllArmed() {
-		closeAllLabel = i18n.Text("C(O)NFIRM") + "\nEsc"
-		if layout.closeAllRect.width < lipgloss.Width(i18n.Text("C(O)NFIRM"))+2 {
-			closeAllLabel = "(O)?\nEsc"
-		}
+		closeAllLabel = fitMonitorButtonLabel(layout.closeAllRect, i18n.Text("C(O)NFIRM")+"\nEsc", "(O)?\nEsc", "(O)\nEsc", "?\nO", "(O)", "O")
 	}
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
+	if r := layout.clearCheckRect; r.width > 0 {
+		full := i18n.Text("CLEAR CHEC(K)")
+		label := fitMonitorButtonLabel(r, full, strings.Replace(full, " ", "\n", 1), "CHK\n(K)", "(K)", "K")
+		if m.monitorBulkDismissArmed(true) {
+			label = fitMonitorButtonLabel(r, i18n.Text("CONFIRM (K)")+"\nEsc", "(K)?\nEsc", "(K)\nEsc", "(K)", "K")
+		}
+		button := m.renderMonitorButton(r.width, r.height, label, footerButtonMonitorClearCheck, m.monitorClearCheckEnabled(), colors)
+		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
+	}
 	if layout.newRect.width > 0 {
-		label := i18n.Text("(N)EW SESSION")
-		if layout.newRect.width < lipgloss.Width(label)+2 {
-			label = strings.Replace(label, " ", "\n", 1)
-		}
-		if layout.newRect.width < lipgloss.Width(label)+2 || layout.topHeight < lipgloss.Height(label)+2 {
-			label = "(N)"
-		}
+		full := i18n.Text("(N)EW SESSION")
+		label := fitMonitorButtonLabel(layout.newRect, full, strings.Replace(full, " ", "\n", 1), "(N)", "N")
 		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)
 		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
 	}
@@ -175,6 +179,15 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	return monitorView{
 		view: view, resetRect: layout.resetRect, closeAllRect: layout.closeAllRect,
 	}
+}
+
+func fitMonitorButtonLabel(r monitorRect, labels ...string) string {
+	for _, label := range labels {
+		if lipgloss.Width(label)+2 <= r.width && lipgloss.Height(label)+2 <= r.height {
+			return label
+		}
+	}
+	return ""
 }
 
 func (m Model) renderMonitorReadout(width, height int, colors palette) string {
@@ -375,7 +388,7 @@ func monitorSessionColumnWidths(width int) (int, int, bool) {
 	available := max(width-gap, 2)
 	// Keep rows aligned and give spare space to context/graphs. All rendering
 	// and hit targets share this split, including the inline composer/menus.
-	metricsWidth := min(max(available/3, 1), 48)
+	metricsWidth := min(max(available/3, 1), 40)
 	return metricsWidth, max(available-metricsWidth, 1), true
 }
 
@@ -899,6 +912,9 @@ func (m Model) monitorButtonAt(x, y int) footerButtonID {
 	}
 	if m.monitorCloseAllEnabled() && area.closeAllRect.contains(localX, localY) {
 		return footerButtonMonitorCloseAll
+	}
+	if area.clearCheckRect.contains(localX, localY) && m.monitorClearCheckEnabled() {
+		return footerButtonMonitorClearCheck
 	}
 	if area.newRect.contains(localX, localY) {
 		return footerButtonMonitorNew

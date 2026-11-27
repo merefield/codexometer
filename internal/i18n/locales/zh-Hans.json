@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "隐藏待检查 (K)",
+  "CONFIRM (K)": "确认 (K)",
+  "Copied %d chars": "已复制 %d 个字符",
   "LINKS": "链接",
   "SESSION PREVIEW": "会话预览",
   "OPEN SESSION": "打开会话",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "关注配额",
   "RANK": "排名",
   "AVG TOK/MIN ": "平均令牌/分钟 ",
-  "CL(O)SE ALL": "全部关闭 (O)",
+  "CL(O)SE\nALL": "全部\n关闭 (O)",
   "C(O)NFIRM": "确认 (O)",
   "(Z)ERO": "归零 (Z)",
   "READY": "就绪",

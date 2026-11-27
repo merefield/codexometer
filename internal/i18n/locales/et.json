@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "PEIDA KONTROLL (K)",
+  "CONFIRM (K)": "KINNITA (K)",
+  "Copied %d chars": "Kopeeriti %d märki",
   "LINKS": "LINGID",
   "SESSION PREVIEW": "SEANSI EELVAADE",
   "OPEN SESSION": "AVA SEANSS",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "JÄLGI KVOOTI",
   "RANK": "KOHT",
   "AVG TOK/MIN ": "KESK. TOK/MIN ",
-  "CL(O)SE ALL": "SULGE KÕIK (O)",
+  "CL(O)SE\nALL": "SULGE\nKÕIK (O)",
   "C(O)NFIRM": "KINNITA (O)",
   "(Z)ERO": "NULLI (Z)",
   "READY": "VALMIS",

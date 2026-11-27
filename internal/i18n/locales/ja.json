@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "要確認を非表示 (K)",
+  "CONFIRM (K)": "確認 (K)",
+  "Copied %d chars": "%d 文字をコピーしました",
   "LINKS": "リンク",
   "SESSION PREVIEW": "セッションのプレビュー",
   "OPEN SESSION": "セッションを開く",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "利用枠に注意",
   "RANK": "順位",
   "AVG TOK/MIN ": "平均トークン/分 ",
-  "CL(O)SE ALL": "すべて閉じる (O)",
+  "CL(O)SE\nALL": "すべて\n閉じる (O)",
   "C(O)NFIRM": "確認 (O)",
   "(Z)ERO": "ゼロにする (Z)",
   "READY": "準備完了",

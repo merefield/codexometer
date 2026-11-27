@@ -138,14 +138,19 @@ func (m Model) renderProfileControls(buttons []monitorApprovalButton, colors pal
 	return renderMonitorButtonRows(buttons, colors, m.renderContextAction)
 }
 
-func (m Model) renderSessionProfile(width, height int, s monitorSession, colors palette) string {
-	doc := m.profileDocument(s, max(width-4, 1))
-	buttons := m.profileButtons(width, height, s)
+func monitorProfileBodyLayout(height int, buttons []monitorApprovalButton) (rows, gap int) {
 	n := 0
 	if len(buttons) > 0 {
 		n = buttons[len(buttons)-1].y + 1
 	}
-	rows, gap, _ := monitorContextBodyLayout(height, n)
+	rows, gap, _ = monitorContextBodyLayout(height, n)
+	return
+}
+
+func (m Model) renderSessionProfile(width, height int, s monitorSession, colors palette) string {
+	doc := m.profileDocument(s, max(width-4, 1))
+	buttons := m.profileButtons(width, height, s)
+	rows, gap := monitorProfileBodyLayout(height, buttons)
 	var body []string
 	for _, line := range doc[:min(len(doc), rows)] {
 		body = append(body, line.render(colors))
@@ -153,7 +158,7 @@ func (m Model) renderSessionProfile(width, height int, s monitorSession, colors 
 	if len(doc) > rows && rows > 0 {
 		body[rows-1] = colors.label().Render(ansi.Truncate(i18n.Text("QUOTA THRESHOLD")+" →", max(width-4, 1), ""))
 	}
-	if n > 0 {
+	if len(buttons) > 0 {
 		for len(body) < rows+gap {
 			body = append(body, "")
 		}

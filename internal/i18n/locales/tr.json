@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "KONTROL GİZLE (K)",
+  "CONFIRM (K)": "ONAYLA (K)",
+  "Copied %d chars": "%d karakter kopyalandı",
   "LINKS": "BAĞLANTILAR",
   "SESSION PREVIEW": "OTURUM ÖNİZLEMESİ",
   "OPEN SESSION": "OTURUMU AÇ",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "KOTAYI İZLE",
   "RANK": "SIRA",
   "AVG TOK/MIN ": "ORT. TOK/DK ",
-  "CL(O)SE ALL": "TÜMÜNÜ KAPAT (O)",
+  "CL(O)SE\nALL": "TÜMÜNÜ\nKAPAT (O)",
   "C(O)NFIRM": "ONAYLA (O)",
   "(Z)ERO": "SAYACI SIFIRLA (Z)",
   "READY": "HAZIR",

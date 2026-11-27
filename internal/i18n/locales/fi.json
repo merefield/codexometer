@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "PIILOTA TARKISTA (K)",
+  "CONFIRM (K)": "VAHVISTA (K)",
+  "Copied %d chars": "Kopioitu %d merkkiä",
   "LINKS": "LINKIT",
   "SESSION PREVIEW": "ISTUNNON ESIKATSELU",
   "OPEN SESSION": "AVAA ISTUNTO",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "SEURAA KIINTIÖTÄ",
   "RANK": "SIJA",
   "AVG TOK/MIN ": "KESKIM. TOK/MIN ",
-  "CL(O)SE ALL": "SULJE KAIKKI (O)",
+  "CL(O)SE\nALL": "SULJE\nKAIKKI (O)",
   "C(O)NFIRM": "VAHVISTA (O)",
   "(Z)ERO": "NOLLAA (Z)",
   "READY": "VALMIS",

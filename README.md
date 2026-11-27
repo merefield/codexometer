@@ -210,7 +210,7 @@ includes the explicit backgrounds used for consistent terminal rendering.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
   Terminal session telemetry boxes keep their proportional width on narrow
-  screens but cap at 48 columns, leaving extra width for detail and graphs.
+  screens but cap at 40 columns, leaving extra width for detail and graphs.
 - Dismissible session rows that automatically return on fresh activity,
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
@@ -598,6 +598,7 @@ codexometer --codex /path/to/codex
 | `z` | Zero the Sessions baseline |
 | `s` | Open Benchmark Scope (Benchmark view only) |
 | `o` | Close All session rows; strict confirmation mode adds a second press, with `Esc` to cancel |
+| `k` | Clear the matching Check* session rows; strict confirmation mode adds a second press |
 | `g` | Cycle available trend periods in Quota → Pace |
 | `h` | Toggle the trace in Quota → Pace |
 | `y` | Cycle all listed Sessions rows: first match the most detailed row, then graph → split → wide → graph; never opens full detail |
@@ -1211,10 +1212,12 @@ The other top-level views are:
   parent sessions and are not counted again. Tokens retain the existing measurement
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
-  remain underneath when space permits; clickable Zero and Close All controls
-  sit beside it, labelled `(Z)ERO` and `CL(O)SE ALL`. Close All dismisses
-  every visible session row, including those outside the current page, while
-  keeping the measurement baseline and telemetry.
+  remain underneath when space permits. Beside the summary, `(Z)ERO` resets the
+  measurement baseline, the two-line `CL(O)SE ALL` dismisses all matching rows, and
+  `CLEAR CHEC(K)` dismisses only matching rows flagged for inferred inactivity.
+  Both dismissal actions include off-page matches, leave Codex sessions running,
+  and keep measurement history. On very narrow terminals, use `k` when the
+  Clear Check button does not fit.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1320,6 +1323,9 @@ The other top-level views are:
   cancels. Changed visible rows require fresh confirmation; switching views
   or Zero cancels an armed action.
   Close All is disabled when no rows are visible.
+  Clear Check uses the same confirmation setting and leaves working, approval,
+  input, error and completed rows alone, including pending quota-profile reviews.
+  A dismissed Check* row comes back when new activity or a new alert is observed.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
   wheel to page through the rows.
 - **Benchmark** — runs the selected scope from the active Core, Extended, or
@@ -1752,9 +1758,17 @@ Usable Sessions and Benchmark Copy buttons match their panel border colour at re
 highlight on hover, and flash briefly on click or `C`. An unavailable Benchmark matrix
 Copy button remains dim. Translations embed the shortcut where
 the word starts with C; otherwise they retain a separate `(C)` before the label.
+Ordinary Sessions border controls also use the border colour at rest; disabled
+navigation is dim, and approval warnings keep their warning colour.
 Copy exports the complete sanitized text available in the bounded session preview,
 not an unlimited transcript: it cannot recover text omitted by observation limits.
 Clipboard contents then follow your terminal and operating system's retention behaviour.
+In terminal Sessions detail (split, expanded, or full), drag across visible
+output to copy just that selection as plain text, with on-screen line breaks.
+The selection flashes briefly and a centred badge at the bottom of the footer
+shows how many characters were copied for five seconds. On narrow terminals it
+uses the footer row above the shortcuts. A normal click still follows its usual
+action.
 When Codex marks an answer as hidden, blocked, or requiring a native display
 that Codexometer cannot provide, Sessions shows **View this reply in Codex.**
 The terminal, history, Copy, and read-only web view use that notice in the
@@ -1812,8 +1826,8 @@ the other categories; the counts are not separate parts to add together.
 The summary counts and token totals remain global, excluding dismissed sessions
 from state counts but retaining their measured tokens. Attention pills stay
 available across filters; opening an excluded session clears the filter to keep
-its row accessible. **Close All** only dismisses matching, non-dismissed sessions;
-`--confirmation require` adds confirmation. Filtering never stops telemetry
+its row accessible. **Close All** and **Clear Check** only dismiss matching,
+non-dismissed sessions; `--confirmation require` adds confirmation. Filtering never stops telemetry
 collection or changes the Zero baseline. Dismissed sessions are skipped, and Down is disabled at the last
 matching session.
 These up/down session-selection buttons disappear in full detail, where Up/Down scroll the text.

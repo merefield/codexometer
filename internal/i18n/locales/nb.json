@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "SKJUL SJEKK (K)",
+  "CONFIRM (K)": "BEKREFT (K)",
+  "Copied %d chars": "Kopierte %d tegn",
   "LINKS": "LENKER",
   "SESSION PREVIEW": "FORHÅNDSVISNING AV ØKT",
   "OPEN SESSION": "ÅPNE ØKT",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "FØLG MED PÅ KVOTEN",
   "RANK": "RANGERING",
   "AVG TOK/MIN ": "SNITT TOK/MIN ",
-  "CL(O)SE ALL": "LUKK ALLE (O)",
+  "CL(O)SE\nALL": "LUKK\nALLE (O)",
   "C(O)NFIRM": "BEKREFT (O)",
   "(Z)ERO": "NULLSTILL (Z)",
   "READY": "KLAR",

@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "NASCONDI VERIFICA (K)",
+  "CONFIRM (K)": "CONFERMA (K)",
+  "Copied %d chars": "%d caratteri copiati",
   "LINKS": "LINK",
   "SESSION PREVIEW": "ANTEPRIMA DELLA SESSIONE",
   "OPEN SESSION": "APRI SESSIONE",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "ATTENZIONE ALLA QUOTA",
   "RANK": "POSIZIONE",
   "AVG TOK/MIN ": "MEDIA TOK/MIN ",
-  "CL(O)SE ALL": "CHIUDI TUTTO (O)",
+  "CL(O)SE\nALL": "CHIUDI\nTUTTO (O)",
   "C(O)NFIRM": "CONFERMA (O)",
   "(Z)ERO": "AZZERA (Z)",
   "READY": "PRONTO",

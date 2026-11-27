@@ -20,7 +20,7 @@ func TestDetailMetadataSharesTimelineOnlyWhenItFits(t *testing.T) {
 	metadata := "LIVE // 界-session // --"
 	colors := paletteFor(m.theme)
 	buttons := m.historyNavigationButtons(120, 30)
-	minWidth := 4 + lipgloss.Width(m.renderMonitorNavigationButtons(buttons, colors)+" "+metadata)
+	minWidth := 4 + lipgloss.Width(m.renderMonitorNavigationButtons(buttons, colors.label(), colors)+" "+metadata)
 	for _, width := range []int{minWidth - 1, minWidth, minWidth + 10} {
 		frame := strings.Split(m.renderMonitorContextDetail(width, 30, colors), "\n")
 		lines := stripLinkLines(frame)

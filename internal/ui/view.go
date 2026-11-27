@@ -16,7 +16,7 @@ import (
 )
 
 func (m Model) View() tea.View {
-	content := m.render()
+	content := m.highlightMonitorSelection(m.render())
 	if !m.inline && m.width > 0 && m.height > 0 {
 		// Paint the complete alternate screen without changing the user's
 		// terminal profile. Inline mode only paints its own content.
@@ -231,7 +231,22 @@ func (m Model) renderFooter(width int, colors palette) string {
 		).Render(button.label))
 	}
 	theme := colors.dimmed().Render(i18n.Format("THEME // %s", colors.name))
-	controlRow := joinRight(strings.Join(controls, separator), theme, width)
+	controlLabels := strings.Join(controls, separator)
+	controlRow := joinRight(controlLabels, theme, width)
+	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
+		label := ansi.Truncate(" "+i18n.Format("Copied %d chars", m.monitorSelectionCopied)+" ", width, "")
+		badge := colors.header().Foreground(colors.background).Background(colors.primary).Render(label)
+		badgeWidth := lipgloss.Width(badge)
+		start := (width - badgeWidth) / 2
+		leftGap := start - lipgloss.Width(controlLabels)
+		rightGap := width - start - badgeWidth - lipgloss.Width(theme)
+		if leftGap >= 1 && rightGap >= 1 {
+			controlRow = controlLabels + strings.Repeat(" ", leftGap) + badge + strings.Repeat(" ", rightGap) + theme
+		} else {
+			// Keep the shortcut labels and their mouse targets in place on narrow terminals.
+			status = strings.Repeat(" ", start) + badge
+		}
+	}
 	return status + "\n" + controlRow
 }
 

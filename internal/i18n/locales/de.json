@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "PRÜFFÄLLE AUSBLENDEN (K)",
+  "CONFIRM (K)": "BESTÄTIGEN (K)",
+  "Copied %d chars": "%d Zeichen kopiert",
   "LINKS": "LINKS",
   "SESSION PREVIEW": "SITZUNGSVORSCHAU",
   "OPEN SESSION": "SITZUNG ÖFFNEN",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "KONTINGENT BEACHTEN",
   "RANK": "RANG",
   "AVG TOK/MIN ": "Ø TOK/MIN ",
-  "CL(O)SE ALL": "ALLE SCHLIESSEN (O)",
+  "CL(O)SE\nALL": "ALLE (O)\nSCHLIESSEN",
   "C(O)NFIRM": "BESTÄTIGEN (O)",
   "(Z)ERO": "NULLEN (Z)",
   "READY": "BEREIT",

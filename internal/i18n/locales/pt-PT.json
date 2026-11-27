@@ -1,4 +1,7 @@
 {
+  "CLEAR CHEC(K)": "OCULTAR VERIFICAR (K)",
+  "CONFIRM (K)": "CONFIRMAR (K)",
+  "Copied %d chars": "%d caracteres copiados",
   "LINKS": "LIGAÇÕES",
   "SESSION PREVIEW": "PRÉ-VISUALIZAÇÃO DA SESSÃO",
   "OPEN SESSION": "ABRIR SESSÃO",
@@ -394,7 +397,7 @@
   "QUOTA WATCH": "ATENÇÃO À QUOTA",
   "RANK": "RANKING",
   "AVG TOK/MIN ": "MÉDIA TOK/MIN ",
-  "CL(O)SE ALL": "FECHAR TUDO (O)",
+  "CL(O)SE\nALL": "FECHAR\nTUDO (O)",
   "C(O)NFIRM": "CONFIRMAR (O)",
   "(Z)ERO": "ZERAR (Z)",
   "READY": "PRONTO",
