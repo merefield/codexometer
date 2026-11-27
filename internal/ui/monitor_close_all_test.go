@@ -98,7 +98,7 @@ func TestMonitorCloseAllRenderedControlAndEmptyList(t *testing.T) {
 	if a.closeAllRect.x <= a.resetRect.x+a.resetRect.width || a.closeAllRect.y != a.resetRect.y || a.closeAllRect.height != a.resetRect.height {
 		t.Fatal("Close All is not beside Zero")
 	}
-	if !strings.Contains(ansi.Strip(view.view), i18n.Text("CL(O)SE ALL")) || lipgloss.Width(view.view) > g.contentWidth {
+	if text := strings.Join(monitorHeaderButtonLabel(view.view, a.closeAllRect), "\n"); text != i18n.Text("CL(O)SE\nALL") || lipgloss.Width(view.view) > g.contentWidth {
 		t.Fatal("Close All label is missing or overflows the header")
 	}
 	updated, cmd := m.Update(tea.MouseMotionMsg{X: 2 + a.closeAllRect.x + 1, Y: g.meterY + 1})
@@ -109,6 +109,52 @@ func TestMonitorCloseAllRenderedControlAndEmptyList(t *testing.T) {
 	m.dismissAllMonitorSessions()
 	if m.monitorCloseAllEnabled() || m.monitorButtonAt(2+a.closeAllRect.x+1, g.meterY+1) != footerButtonNone || !m.monitorResetEnabled() {
 		t.Fatal("empty list did not disable Close All while leaving Zero available")
+	}
+}
+
+func monitorHeaderButtonLabel(view string, r monitorRect) []string {
+	rows := strings.Split(view, "\n")
+	var label []string
+	for _, row := range rows[r.y+1 : r.y+r.height-1] {
+		line := strings.TrimSpace(ansi.Strip(ansi.Cut(row, r.x+1, r.x+r.width-1)))
+		if line != "" {
+			label = append(label, line)
+		}
+	}
+	return label
+}
+
+func TestMonitorHeaderButtonsShareOneWidth(t *testing.T) {
+	for _, newSession := range []bool{false, true} {
+		for _, width := range []int{29, 35, 40, 47, 49, 50, 84, 120, 136, 241} {
+			m := statusFilterTestModel()
+			m.width, m.height = width, 36
+			if newSession {
+				m.fetcher = &newSessionProbe{}
+				m.finder.setScope("account")
+			}
+			g := m.monitorDashboardLayout()
+			a := m.monitorArea(g.contentWidth, g.meterHeight)
+			view := m.renderMonitorArea(g.contentWidth, g.meterHeight, paletteFor(m.theme)).view
+			border := strings.SplitN(view, "\n", 2)[0]
+			nextX := a.readoutWidth + 1
+			for _, r := range []monitorRect{a.resetRect, a.closeAllRect, a.clearCheckRect, a.newRect} {
+				if r.width == 0 {
+					continue
+				}
+				if r.width != a.resetRect.width || r.x != nextX || r.height != a.topHeight {
+					t.Fatalf("unequal button geometry at width %d (new=%v): %+v", width, newSession, r)
+				}
+				edge := ansi.Strip(ansi.Cut(border, r.x, r.x+r.width))
+				if !strings.HasPrefix(edge, "╭") || !strings.HasSuffix(edge, "╮") {
+					t.Fatalf("button border did not match its hit box at width %d (new=%v): %q", width, newSession, edge)
+				}
+				nextX += r.width + 1
+			}
+			if nextX-1 != g.contentWidth {
+				t.Fatalf("header did not use available width %d (new=%v)", width, newSession)
+			}
+		}
 	}
 }
 

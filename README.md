@@ -1213,7 +1213,7 @@ The other top-level views are:
   baseline (including previously dismissed sessions); the session/state counts
   describe currently visible rows. Elapsed time and average rate
   remain underneath when space permits. Beside the summary, `(Z)ERO` resets the
-  measurement baseline, `CL(O)SE ALL` dismisses all matching rows, and
+  measurement baseline, the two-line `CL(O)SE ALL` dismisses all matching rows, and
   `CLEAR CHEC(K)` dismisses only matching rows flagged for inferred inactivity.
   Both dismissal actions include off-page matches, leave Codex sessions running,
   and keep measurement history. On very narrow terminals, use `k` when the

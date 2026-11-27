@@ -76,7 +76,9 @@ func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 			controlsWidth = min(max(width*2/5, 42), width/2)
 		}
 	}
-	readoutWidth := max(width-controlsWidth-gap, 1)
+	buttonWidth := max((controlsWidth-(count-1)*gap)/count, 1)
+	// Give spare cells to the readout rather than widening individual buttons.
+	readoutWidth := max(width-count*(buttonWidth+gap), 1)
 	if height >= 12 {
 		topHeight = min(monitorSummaryHeight(readoutWidth), height-7)
 		graphHeight = max(height-topHeight-gap, 1)
@@ -89,12 +91,10 @@ func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 		graphHeight:  graphHeight,
 		readoutWidth: readoutWidth,
 	}
-	x, remaining := readoutWidth+gap, controlsWidth-(count-1)*gap
+	x := readoutWidth + gap
 	next := func() monitorRect {
-		w := max(remaining/count, 1)
-		r := monitorRect{x: x, width: w, height: topHeight}
-		count--
-		x, remaining = x+w+gap, remaining-w
+		r := monitorRect{x: x, width: buttonWidth, height: topHeight}
+		x += buttonWidth + gap
 		return r
 	}
 	a.resetRect, a.closeAllRect = next(), next()
@@ -138,56 +138,26 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	layout := m.monitorArea(width, height)
 
 	readout := m.renderMonitorReadout(layout.readoutWidth, layout.topHeight, colors)
-	resetLabel := i18n.Text("(Z)ERO")
-	if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-		resetLabel = "0 (Z)"
-		if layout.resetRect.width < lipgloss.Width(resetLabel)+2 {
-			resetLabel = "0\n(Z)"
-		}
-	}
+	resetLabel := fitMonitorButtonLabel(layout.resetRect, i18n.Text("(Z)ERO"), "0 (Z)", "0\n(Z)", "(Z)", "Z")
 	resetButton := m.renderMonitorButton(layout.resetRect.width, layout.topHeight, resetLabel, footerButtonMonitorReset, m.monitorResetEnabled(), colors)
-	closeAllLabel := i18n.Text("CL(O)SE ALL")
-	if layout.closeAllRect.width < lipgloss.Width(closeAllLabel)+2 {
-		wrapped := strings.Replace(closeAllLabel, " ", "\n", 1)
-		if lipgloss.Width(wrapped)+2 <= layout.closeAllRect.width && lipgloss.Height(wrapped)+2 <= layout.topHeight {
-			closeAllLabel = wrapped
-		} else {
-			closeAllLabel = "[××]\n(O)"
-		}
-	}
+	closeAllLabel := fitMonitorButtonLabel(layout.closeAllRect, i18n.Text("CL(O)SE\nALL"), "[××]\n(O)", "××\n(O)", "×\nO", "(O)", "O")
 	if m.monitorCloseAllArmed() {
-		closeAllLabel = i18n.Text("C(O)NFIRM") + "\nEsc"
-		if layout.closeAllRect.width < lipgloss.Width(i18n.Text("C(O)NFIRM"))+2 {
-			closeAllLabel = "(O)?\nEsc"
-		}
+		closeAllLabel = fitMonitorButtonLabel(layout.closeAllRect, i18n.Text("C(O)NFIRM")+"\nEsc", "(O)?\nEsc", "(O)\nEsc", "?\nO", "(O)", "O")
 	}
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
 	if r := layout.clearCheckRect; r.width > 0 {
-		label := i18n.Text("CLEAR CHEC(K)")
-		compact := "CHK\n(K)"
+		full := i18n.Text("CLEAR CHEC(K)")
+		label := fitMonitorButtonLabel(r, full, strings.Replace(full, " ", "\n", 1), "CHK\n(K)", "(K)", "K")
 		if m.monitorBulkDismissArmed(true) {
-			label, compact = i18n.Text("CONFIRM (K)")+"\nEsc", "(K)?\nEsc"
-		} else if lipgloss.Width(label)+2 > r.width {
-			label = strings.Replace(label, " ", "\n", 1)
-		}
-		if lipgloss.Width(label)+2 > r.width || lipgloss.Height(label)+2 > r.height {
-			label = compact
-			if lipgloss.Width(label)+2 > r.width || lipgloss.Height(label)+2 > r.height {
-				label = "(K)"
-			}
+			label = fitMonitorButtonLabel(r, i18n.Text("CONFIRM (K)")+"\nEsc", "(K)?\nEsc", "(K)\nEsc", "(K)", "K")
 		}
 		button := m.renderMonitorButton(r.width, r.height, label, footerButtonMonitorClearCheck, m.monitorClearCheckEnabled(), colors)
 		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
 	}
 	if layout.newRect.width > 0 {
-		label := i18n.Text("(N)EW SESSION")
-		if layout.newRect.width < lipgloss.Width(label)+2 {
-			label = strings.Replace(label, " ", "\n", 1)
-		}
-		if layout.newRect.width < lipgloss.Width(label)+2 || layout.topHeight < lipgloss.Height(label)+2 {
-			label = "(N)"
-		}
+		full := i18n.Text("(N)EW SESSION")
+		label := fitMonitorButtonLabel(layout.newRect, full, strings.Replace(full, " ", "\n", 1), "(N)", "N")
 		button := m.renderMonitorButton(layout.newRect.width, layout.topHeight, label, footerButtonMonitorNew, true, colors)
 		top = lipgloss.JoinHorizontal(lipgloss.Top, top, " ", button)
 	}
@@ -209,6 +179,15 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	return monitorView{
 		view: view, resetRect: layout.resetRect, closeAllRect: layout.closeAllRect,
 	}
+}
+
+func fitMonitorButtonLabel(r monitorRect, labels ...string) string {
+	for _, label := range labels {
+		if lipgloss.Width(label)+2 <= r.width && lipgloss.Height(label)+2 <= r.height {
+			return label
+		}
+	}
+	return ""
 }
 
 func (m Model) renderMonitorReadout(width, height int, colors palette) string {
