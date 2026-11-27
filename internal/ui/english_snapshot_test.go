@@ -43,7 +43,8 @@ func TestEnglishPresentationSnapshot(t *testing.T) {
 	// Pie labels usage and the reset ring without a horizontal reset bar.
 	// The displayed pricing review date is now 2026-11-17.
 	// Sessions header buttons share one width; Close All takes two lines.
-	const want = "813c8152d8e5d2e2d71154778741b281ef155bcbeeb2a36fc1da5ec7e165d7f1"
+	// Sessions border navigation uses the primary theme colour at rest.
+	const want = "c7bd1cbf3b9c4ccdfe94c92e8210d469f88fe1b0fe22116cad0a70e4ca105a13"
 	if got != want {
 		t.Fatalf("English presentation changed: got %s, want %s", got, want)
 	}

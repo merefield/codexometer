@@ -92,10 +92,10 @@ func layoutNavigationButtons(buttons []monitorNavigationButton, x, y int) int {
 }
 
 func (m Model) renderMonitorNavigation(width int, id string, full bool, colors palette) string {
-	return m.renderMonitorNavigationButtons(m.monitorNavigationButtons(width, id, full), colors)
+	return m.renderMonitorNavigationButtons(m.monitorNavigationButtons(width, id, full), colors.header(), colors)
 }
 
-func (m Model) renderMonitorNavigationButtons(buttons []monitorNavigationButton, colors palette) string {
+func (m Model) renderMonitorNavigationButtons(buttons []monitorNavigationButton, resting lipgloss.Style, colors palette) string {
 	var labels []string
 	for _, b := range buttons {
 		if !b.enabled {
@@ -107,7 +107,7 @@ func (m Model) renderMonitorNavigationButtons(buttons []monitorNavigationButton,
 			}
 			labels = append(labels, style.Render(b.label))
 		} else {
-			labels = append(labels, m.renderContextAction(b.action, b.label, colors))
+			labels = append(labels, m.renderContextActionStyled(b.action, b.label, resting, colors))
 		}
 	}
 	return strings.Join(labels, " ")

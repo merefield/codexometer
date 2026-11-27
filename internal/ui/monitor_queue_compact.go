@@ -63,7 +63,7 @@ func (m Model) renderFollowupBadge(id, label string, colors palette) string {
 	if m.monitorQueue.compactFocus == id && m.monitorContextHover != "followups:"+id {
 		return colors.label().Underline(true).Foreground(colors.primary).Render(label)
 	}
-	return m.renderContextAction("followups:"+id, label, colors)
+	return m.renderContextActionStyled("followups:"+id, label, colors.header(), colors)
 }
 
 func (m Model) detailFollowupFooter(width, height, rows int, colors palette) (string, monitorRect) {
@@ -129,13 +129,13 @@ func (m Model) compactPanelHeader(width int) (label, close string) {
 
 func (m Model) renderCompactFollowups(width, height int, colors palette) string {
 	label, close := m.compactPanelHeader(width)
-	title := m.renderContextAction("followups:toggle", label, colors)
+	title := m.renderContextActionStyled("followups:toggle", label, colors.header(), colors)
 	if s, ok := m.contextDetailSession(); ok {
 		title += colors.dimmed().Render(" // " + monitorSessionIdentity(s))
 	}
 	body := m.renderMonitorQueue(width, max(height-1, 1), colors)
 	return frameSizedWithTitleAction(width, max(height-2, 1), title,
-		m.renderContextAction("followups:close", close, colors), body, colors.primary, colors)
+		m.renderContextActionStyled("followups:close", close, colors.header(), colors), body, colors.primary, colors)
 }
 
 func (m *Model) closeCompactFollowups() {

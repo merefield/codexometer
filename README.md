@@ -1758,6 +1758,8 @@ Usable Sessions and Benchmark Copy buttons match their panel border colour at re
 highlight on hover, and flash briefly on click or `C`. An unavailable Benchmark matrix
 Copy button remains dim. Translations embed the shortcut where
 the word starts with C; otherwise they retain a separate `(C)` before the label.
+Ordinary Sessions border controls also use the border colour at rest; disabled
+navigation is dim, and approval warnings keep their warning colour.
 Copy exports the complete sanitized text available in the bounded session preview,
 not an unlimited transcript: it cannot recover text omitted by observation limits.
 Clipboard contents then follow your terminal and operating system's retention behaviour.

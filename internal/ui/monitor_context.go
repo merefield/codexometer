@@ -73,7 +73,10 @@ func (m Model) monitorCycleLabel(widths ...int) string {
 }
 
 func (m Model) renderContextAction(id, label string, colors palette) string {
-	s := colors.label()
+	return m.renderContextActionStyled(id, label, colors.label(), colors)
+}
+
+func (m Model) renderContextActionStyled(id, label string, s lipgloss.Style, colors palette) string {
 	if m.monitorContextHover == id {
 		s = s.Foreground(colors.background).Background(colors.primary)
 	}
@@ -226,7 +229,7 @@ func (m Model) renderMonitorContextDetail(width, height int, colors palette) str
 	start, end := m.detailVisibleRange(len(lines), page.rows)
 	bodyLines := append([]string(nil), lines[start:end]...)
 	if len(page.buttons) > 0 {
-		timeline := m.renderMonitorNavigationButtons(page.buttons, colors) + colors.dimmed().Render(page.right)
+		timeline := m.renderMonitorNavigationButtons(page.buttons, colors.label(), colors) + colors.dimmed().Render(page.right)
 		bodyLines = append([]string{timeline}, bodyLines...)
 	}
 	if controls != "" {

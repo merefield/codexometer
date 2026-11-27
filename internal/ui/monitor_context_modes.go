@@ -360,7 +360,7 @@ func (m Model) renderExpandedContext(width, height int, s monitorSession, colors
 		}
 		lines = append(lines, controls)
 	}
-	action := m.renderMonitorNavigationButtons(m.expandedContextNavigation(width, height, s), colors)
+	action := m.renderMonitorNavigationButtons(m.expandedContextNavigation(width, height, s), colors.header(), colors)
 	return frameSizedWithActions(width, max(height-2, 1), contextTitle(s.preview), action, m.renderMonitorCopy(width, s.id, colors), strings.Join(lines, "\n"), colors.primary, colors)
 }
 

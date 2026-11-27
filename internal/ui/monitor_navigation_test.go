@@ -9,6 +9,34 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func TestMonitorBorderNavigationColoursAcrossThemes(t *testing.T) {
+	for theme := themeHacker; theme < themeCount; theme++ {
+		colors := paletteFor(theme)
+		m := contextTestModel()
+		m.setRowContext("root-one", contextFull)
+		box := m.renderMonitorNavigation(100, "root-one", true, colors)
+		for _, want := range []string{
+			colors.header().Render("[←]"),
+			colors.dimmed().Render("[→]"),
+			colors.header().Render(monitorDismissLabel),
+		} {
+			if !strings.Contains(box, want) {
+				t.Fatalf("theme %v: border controls use the wrong resting colour: %q", theme, box)
+			}
+		}
+		m.monitorContextHover = "less:root-one"
+		box = m.renderMonitorNavigation(100, "root-one", true, colors)
+		hover := colors.label().Foreground(colors.background).Background(colors.primary).Render("[←]")
+		if !strings.Contains(box, hover) {
+			t.Fatalf("theme %v: hover no longer uses the original highlight", theme)
+		}
+		warning := monitorNavigationButton{label: "APPROVAL →", action: "detail:root-one", enabled: true}
+		if got := m.renderMonitorNavigationButtons([]monitorNavigationButton{warning}, colors.header(), colors); got != colors.label().Foreground(colors.warning).Render(warning.label) {
+			t.Fatalf("theme %v: approval lost its warning colour", theme)
+		}
+	}
+}
+
 func TestMonitorNavigationRenderedButtons(t *testing.T) {
 	for _, size := range [][2]int{{40, 16}, {60, 24}, {80, 30}, {120, 40}, {148, 40}, {200, 50}, {320, 50}} {
 		for _, mode := range []int{contextGraph, contextSplit, contextWide, contextFull} {

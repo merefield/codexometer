@@ -422,7 +422,7 @@ func (m Model) renderSessionFinder(w, h int, colors palette) string {
 		lines = append(lines, m.renderSavedResults(g, colors)...)
 	}
 	if g.framed {
-		arrows := m.renderMonitorNavigationButtons(m.savedListButtons(g, w), colors)
+		arrows := m.renderMonitorNavigationButtons(m.savedListButtons(g, w), colors.header(), colors)
 		return frameSizedWithTitleAction(w, h-2, savedFinderTitle(), arrows, strings.Join(lines, "\n"), colors.primary, colors)
 	}
 	for len(lines) < h {
@@ -513,7 +513,7 @@ func (m Model) renderSavedResults(g finderGeometry, colors palette) []string {
 	if f.detail != "" {
 		for _, r := range rows {
 			if r.ID == f.detail {
-				header := m.renderMonitorNavigationButtons(m.savedPreviewButtons(g), colors)
+				header := m.renderMonitorNavigationButtons(m.savedPreviewButtons(g), colors.label(), colors)
 				separator := ""
 				if header != "" {
 					separator = " "
