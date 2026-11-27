@@ -69,6 +69,7 @@ func TestThreadLinkClickAndKeyboardPreviewPreserveSource(t *testing.T) {
 		} else {
 			x, y := renderedTextStart(t, m, "work")
 			apply(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			apply(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
 		}
 		if cmd == nil || m.threadLinks.id != previewID {
 			t.Fatal("link activation did not request preview", m.threadLinks)
@@ -104,7 +105,8 @@ func TestThreadLinkPreviewLeavesHiddenSourceUnread(t *testing.T) {
 		dwell := m.monitorReadDwell
 		x, y := renderedTextStart(t, m, "Earlier work")
 		wheel := tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown}
-		next, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		next, cmd := next.Update(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
 		if cmd == nil {
 			t.Fatal("no preview request")
 		}

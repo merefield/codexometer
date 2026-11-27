@@ -16,7 +16,7 @@ import (
 )
 
 func (m Model) View() tea.View {
-	content := m.render()
+	content := m.highlightMonitorSelection(m.render())
 	if !m.inline && m.width > 0 && m.height > 0 {
 		// Paint the complete alternate screen without changing the user's
 		// terminal profile. Inline mode only paints its own content.
@@ -191,6 +191,9 @@ func (m Model) renderFooter(width int, colors palette) string {
 	left := i18n.Format("AUTO-SCAN %s", compactDuration(remaining))
 	if m.sessionWebLinkError {
 		left = i18n.Text("Could not open web link.")
+	}
+	if m.meterView == viewMonitor && m.monitorSelectionCopied > 0 {
+		left = i18n.Format("Copied %d chars", m.monitorSelectionCopied)
 	}
 	if m.snapshot.RateLimitResetCredits != nil && m.snapshot.RateLimitResetCredits.AvailableCount > 0 {
 		left += i18n.Format("  //  RESET TOKENS %d", m.snapshot.RateLimitResetCredits.AvailableCount)

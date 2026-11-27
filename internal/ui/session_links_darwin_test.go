@@ -44,7 +44,8 @@ func TestMacWebLinkClickDoesNotNavigateOrApprove(t *testing.T) {
 			if sessionWebLinkAt(line, x, 0) != target {
 				continue
 			}
-			next, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			next, cmd := next.Update(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
 			n := next.(Model)
 			// Do not execute cmd: regression tests must never launch a real browser.
 			if cmd == nil || n.monitorContextDetail != m.monitorContextDetail || n.monitorApprovalConfirm != "" || n.monitorPrompt.input.Focused() {

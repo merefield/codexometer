@@ -11,8 +11,8 @@ import (
 
 func TestMonitorSessionColumnsCapTelemetryAndPreserveSpace(t *testing.T) {
 	for _, tc := range []struct{ width, metrics, detail int }{
-		{3, 1, 1}, {80, 26, 53}, {144, 47, 96}, {145, 48, 96},
-		{147, 48, 98}, {148, 48, 99}, {240, 48, 191}, {320, 48, 271},
+		{3, 1, 1}, {80, 26, 53}, {120, 39, 80}, {121, 40, 80},
+		{124, 40, 83}, {145, 40, 104}, {240, 40, 199}, {320, 40, 279},
 	} {
 		metrics, detail, ok := monitorSessionColumnWidths(tc.width)
 		if !ok || metrics != tc.metrics || detail != tc.detail || metrics+detail+1 != tc.width {
@@ -38,7 +38,7 @@ func TestMonitorTelemetryCapResizeKeepsRenderedTargetsAligned(t *testing.T) {
 		if id, ok := m.monitorSessionDismissAt(x, y); !ok || id != "root-one" {
 			t.Fatalf("width %d dismiss target missed: %s, %v", width, id, ok)
 		}
-		if x+lipgloss.Width(monitorDismissLabel) > 2+48 {
+		if x+lipgloss.Width(monitorDismissLabel) > 2+40 {
 			t.Fatalf("width %d dismiss target exceeds capped box", width)
 		}
 		for _, delta := range []int{-1, 1} {
@@ -55,7 +55,7 @@ func TestMonitorTelemetryCapResizeKeepsRenderedTargetsAligned(t *testing.T) {
 }
 
 func TestMonitorSessionTelemetryRenderedWidthIsCappedInEveryRowMode(t *testing.T) {
-	for _, width := range []int{145, 148, 240, 320} {
+	for _, width := range []int{121, 124, 240, 320} {
 		for _, mode := range []int{contextGraph, contextSplit, contextWide} {
 			m := contextTestModel()
 			m.setRowContext("root-one", mode)
@@ -68,8 +68,8 @@ func TestMonitorSessionTelemetryRenderedWidthIsCappedInEveryRowMode(t *testing.T
 			}
 			top := strings.Split(row, "\n")[0]
 			end := strings.Index(top, "╮")
-			if end < 0 || lipgloss.Width(top[:end])+1 != 48 {
-				t.Fatalf("mode %d width %d telemetry border not at 48: %q", mode, width, top)
+			if end < 0 || lipgloss.Width(top[:end])+1 != 40 {
+				t.Fatalf("mode %d width %d telemetry border not at 40: %q", mode, width, top)
 			}
 		}
 	}

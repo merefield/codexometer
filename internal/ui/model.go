@@ -71,6 +71,9 @@ type Model struct {
 	monitorReadIntent                   string
 	monitorReadDwell                    monitorReadDwell
 	monitorReadBusy                     bool
+	monitorSelection                    *monitorTextSelection
+	monitorSelectionSequence            uint64
+	monitorSelectionCopied              int
 	monitorHistory                      map[string]monitorTurnHistory
 	monitorHistorySequence              uint64
 	monitorAttentionPage                int

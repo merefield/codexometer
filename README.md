@@ -210,7 +210,7 @@ includes the explicit backgrounds used for consistent terminal rendering.
   Each independent local root session gets its own metrics and 30-second graph;
   explicitly linked spawned agents are included with their root.
   Terminal session telemetry boxes keep their proportional width on narrow
-  screens but cap at 48 columns, leaving extra width for detail and graphs.
+  screens but cap at 40 columns, leaving extra width for detail and graphs.
 - Dismissible session rows that automatically return on fresh activity,
   without closing or modifying the underlying Codex session.
 - Highlighted per-session attention badges. A shared Codex app-server supplies
@@ -1755,6 +1755,10 @@ the word starts with C; otherwise they retain a separate `(C)` before the label.
 Copy exports the complete sanitized text available in the bounded session preview,
 not an unlimited transcript: it cannot recover text omitted by observation limits.
 Clipboard contents then follow your terminal and operating system's retention behaviour.
+In terminal Sessions detail (split, expanded, or full), drag across visible
+output to copy just that selection as plain text, with on-screen line breaks.
+The selection flashes briefly and the footer shows how many characters were
+copied. A normal click still follows its usual action.
 When Codex marks an answer as hidden, blocked, or requiring a native display
 that Codexometer cannot provide, Sessions shows **View this reply in Codex.**
 The terminal, history, Copy, and read-only web view use that notice in the

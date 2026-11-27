@@ -29,6 +29,10 @@ type monitorReadDwellElapsed monitorReadDwell
 // Only deliberate selection/expansion starts the wide-row dwell. Full detail
 // reviews immediately; rendering, restored layouts and result arrival do not.
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	var selectionCmd tea.Cmd
+	if m, message, selectionCmd = m.updateMonitorSelection(message); message == nil {
+		return m, selectionCmd
+	}
 	if elapsed, ok := message.(monitorReadDwellElapsed); ok {
 		command := m.finishMonitorReadDwell(monitorReadDwell(elapsed), time.Now())
 		return m, command
@@ -198,21 +202,30 @@ func (m Model) monitorResultRect(id string) (monitorRect, bool) {
 	}
 	for _, pane := range m.monitorPartialContextPanes() {
 		if pane.session.id == id {
-			r := pane.frame
-			rows, _, _ := monitorContextBodyLayout(r.height, 0)
-			if m.rowContextMode(id) == contextWide {
-				controls := m.expandedControlRows(r.width, r.height, pane.session)
-				if id == m.monitorContextTarget() {
-					controls += m.monitorQueueRows(r.width, r.height, controls)
-				}
-				rows, _, _ = monitorContextBodyLayout(r.height, controls)
-			} else {
-				rows = min(rows, 2) // split previews display at most two reply rows
-			}
-			rect := monitorRect{x: r.x + 4, y: g.meterY + r.y + 1, width: r.width - 4, height: rows}
+			rect := m.monitorPartialResultRect(pane, g.meterY)
 			return rect, rect.width > 0 && rect.height > 0
 		}
 	}
 
 	return monitorRect{}, false
+}
+
+func (m Model) monitorPartialResultRect(pane monitorContextPane, meterY int) monitorRect {
+	r, id := pane.frame, pane.session.id
+	rows, _, _ := monitorContextBodyLayout(r.height, 0)
+	if m.hasSessionProfile(pane.session) {
+		rows, _ = monitorProfileBodyLayout(r.height, m.profileButtons(r.width, r.height, pane.session))
+	} else if m.rowContextMode(id) == contextWide {
+		controls := m.expandedControlRows(r.width, r.height, pane.session)
+		if id == m.monitorContextTarget() {
+			controls += m.monitorQueueRows(r.width, r.height, controls)
+		}
+		rows, _, _ = monitorContextBodyLayout(r.height, controls)
+	} else {
+		rows, _ = m.monitorSplitContextBody(pane.session, r.width-4, rows)
+		if !hasWorkingCommand(pane.session.preview) {
+			rows = min(rows, 2) // exclude split preview metadata
+		}
+	}
+	return monitorRect{x: r.x + 4, y: meterY + r.y + 1, width: r.width - 4, height: rows}
 }

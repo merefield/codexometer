@@ -360,6 +360,12 @@ func walkTerminalText(text string, visit func(string, int, *ansi.Parser)) {
 	var state byte
 	for len(text) > 0 {
 		seq, width, n, next := ansi.DecodeSequence(text, state, p)
+		// DecodeSequence fast-paths ASCII bytes. Keep a letter and any
+		// following combining marks together, just as the layout does.
+		if width == 1 && n == 1 && len(text) > 1 && text[1] >= 0xc0 {
+			seq, width = ansi.FirstGraphemeCluster(text, ansi.GraphemeWidth)
+			n = len(seq)
+		}
 		visit(seq, width, p)
 		text, state = text[n:], next
 	}
