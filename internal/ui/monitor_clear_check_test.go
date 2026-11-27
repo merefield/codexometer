@@ -144,8 +144,33 @@ func TestMonitorClearCheckResponsiveHitTargets(t *testing.T) {
 			m.monitorButtonAt(x-1, y) != footerButtonNone || m.monitorButtonAt(x+r.width, y) != footerButtonNone {
 			t.Fatalf("misaligned Clear Check* button at %v", size)
 		}
-		if size.w == 240 && !strings.Contains(ansi.Strip(view), i18n.Text("CLEAR CHEC(K)*")) {
-			t.Fatal("full button label missing at wide size")
+		lines := strings.Split(view, "\n")[r.y+1 : r.y+r.height-1]
+		top, bottom := -1, -1
+		var label []string
+		for i, line := range lines {
+			inner := ansi.Strip(ansi.Cut(line, r.x+1, r.x+r.width-1))
+			trimmed := strings.TrimSpace(inner)
+			if trimmed == "" {
+				continue
+			}
+			if top < 0 {
+				top = i
+			}
+			bottom = i
+			label = append(label, trimmed)
+			left := strings.Index(inner, trimmed)
+			right := r.width - 2 - left - ansi.StringWidth(trimmed)
+			if left-right < -1 || left-right > 1 {
+				t.Fatalf("label %q not centred horizontally at %v: padding %d/%d", trimmed, size, left, right)
+			}
+		}
+		below := len(lines) - 1 - bottom
+		if top < 0 || top-below < -1 || top-below > 1 {
+			t.Fatalf("label not centred vertically at %v: padding %d/%d", size, top, below)
+		}
+		text := strings.Join(label, " ")
+		if strings.Contains(text, "*") || (size.w == 240 && text != i18n.Text("CLEAR CHEC(K)")) {
+			t.Fatalf("unexpected button label at %v: %q", size, text)
 		}
 		m.monitorFilter = monitorFilterWorking
 		if m.monitorButtonAt(x, y) != footerButtonNone {

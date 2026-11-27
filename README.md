@@ -1214,10 +1214,10 @@ The other top-level views are:
   describe currently visible rows. Elapsed time and average rate
   remain underneath when space permits. Beside the summary, `(Z)ERO` resets the
   measurement baseline, `CL(O)SE ALL` dismisses all matching rows, and
-  `CLEAR CHEC(K)*` dismisses only matching rows flagged for inferred inactivity.
+  `CLEAR CHEC(K)` dismisses only matching rows flagged for inferred inactivity.
   Both dismissal actions include off-page matches, leave Codex sessions running,
   and keep measurement history. On very narrow terminals, use `k` when the
-  Clear Check* button does not fit.
+  Clear Check button does not fit.
   Account-wide quota details live in Quota, not Sessions.
   During unavailable observation, live state counts show **—**, not zero.
   Active sessions are checked once per second and the idle cadence relaxes to five seconds.
@@ -1323,7 +1323,7 @@ The other top-level views are:
   cancels. Changed visible rows require fresh confirmation; switching views
   or Zero cancels an armed action.
   Close All is disabled when no rows are visible.
-  Clear Check* uses the same confirmation setting and leaves working, approval,
+  Clear Check uses the same confirmation setting and leaves working, approval,
   input, error and completed rows alone, including pending quota-profile reviews.
   A dismissed Check* row comes back when new activity or a new alert is observed.
   When the terminal cannot fit every root, use Page Up, Page Down, or the mouse
@@ -1823,7 +1823,7 @@ the other categories; the counts are not separate parts to add together.
 The summary counts and token totals remain global, excluding dismissed sessions
 from state counts but retaining their measured tokens. Attention pills stay
 available across filters; opening an excluded session clears the filter to keep
-its row accessible. **Close All** and **Clear Check*** only dismiss matching,
+its row accessible. **Close All** and **Clear Check** only dismiss matching,
 non-dismissed sessions; `--confirmation require` adds confirmation. Filtering never stops telemetry
 collection or changes the Zero baseline. Dismissed sessions are skipped, and Down is disabled at the last
 matching session.

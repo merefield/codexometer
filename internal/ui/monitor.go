@@ -60,7 +60,7 @@ func layoutMonitorArea(width, height int, newButton ...bool) monitorGeometry {
 	graphHeight := max(height-topHeight-gap, 1)
 
 	// Fit the full group only when its shortcut labels have room. On very
-	// narrow terminals keep the existing controls and leave Clear Check* on K.
+	// narrow terminals keep the existing controls and leave Clear Check on K.
 	controlsWidth := min(max(width/4, 22), max(width*2/5, 3))
 	showNew := len(newButton) > 0 && newButton[0] && width >= 27
 	showClear := width >= 43 && (!showNew || width >= 46)
@@ -164,8 +164,8 @@ func (m Model) renderMonitorArea(width, height int, colors palette) monitorView 
 	closeAllButton := m.renderMonitorButton(layout.closeAllRect.width, layout.topHeight, closeAllLabel, footerButtonMonitorCloseAll, m.monitorCloseAllEnabled(), colors)
 	top := lipgloss.JoinHorizontal(lipgloss.Top, readout, strings.Repeat(" ", layout.resetRect.x-layout.readoutWidth), resetButton, strings.Repeat(" ", layout.closeAllRect.x-layout.resetRect.x-layout.resetRect.width), closeAllButton)
 	if r := layout.clearCheckRect; r.width > 0 {
-		label := i18n.Text("CLEAR CHEC(K)*")
-		compact := "CHK*\n(K)"
+		label := i18n.Text("CLEAR CHEC(K)")
+		compact := "CHK\n(K)"
 		if m.monitorBulkDismissArmed(true) {
 			label, compact = i18n.Text("CONFIRM (K)")+"\nEsc", "(K)?\nEsc"
 		} else if lipgloss.Width(label)+2 > r.width {
