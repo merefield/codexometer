@@ -1673,10 +1673,10 @@ same action on that session. The presentations are:
    can still require action in Codex.
    The selected session also offers a follow-up composer here when the shared
    server confirms it is ready for input and the complete context plus composer
-   fit. Only one inline composer is available at a time. Click its input or the
-   blank row above it, or press `Enter` to focus. Press `Enter` to send;
-   `Esc` leaves the editor without
-   changing the row view. Drafts wrap and scroll within spare space, preserving
+   fit. Only one inline composer is available at a time. Click its input, the
+   blank row above it, or the hints below it to focus, or press `Enter`.
+   Press `Enter` to send; `Esc` leaves the editor without changing the row view.
+   Drafts wrap and scroll within spare space, preserving
    the context above. Resizing to hide the composer releases keyboard focus;
    enlarge the window and refocus to continue the draft. Approval requests and
    structured questions do not use this inline composer; use full detail instead.

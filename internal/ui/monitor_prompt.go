@@ -167,14 +167,18 @@ func (m Model) monitorPromptHeaderRows() int {
 }
 
 func (m Model) monitorPromptHit(width, height, rows, x, y int) bool {
+	if x < 0 || x >= width {
+		return false
+	}
 	_, _, top := monitorContextBodyLayout(height, rows)
 	spacer := top + m.monitorPromptHeaderRows()
-	// Full detail also accepts the full-width spacer, hint and bottom border.
-	// Explicit buttons in those rows are checked before the composer.
-	if m.monitorContextDetail != "" && x >= 0 && x < width && (y == spacer || y >= height-3 && y < height) {
+	hint := top + rows - 1
+	// The whole hint row focuses either composer. Full detail also accepts
+	// clicks on the spacer and bottom border outside their explicit buttons.
+	if y == hint || m.monitorContextDetail != "" && (y == spacer || y >= height-3 && y < height) {
 		return true
 	}
-	return x >= 2 && x < width-2 && y >= spacer && y < top+rows-1
+	return x >= 2 && x < width-2 && y >= spacer && y < hint
 }
 
 func (m Model) monitorComposerActivity() string {
