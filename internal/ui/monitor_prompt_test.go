@@ -274,14 +274,15 @@ func TestMonitorPromptWrapsAndGrowsUpward(t *testing.T) {
 		if lipgloss.Width(out) > m.width || lipgloss.Height(out) > m.height {
 			t.Fatalf("overflow %v\n%s", size, ansi.Strip(out))
 		}
+		hit := m.monitorContextHitTester()
 		for row := y; row < y+rows-1; row++ {
 			for x := 4; x < g.contentWidth; x++ {
-				if got := m.monitorContextAt(x, g.meterY+row); got != "prompt" {
+				if got := hit(x, g.meterY+row); got != "prompt" {
 					t.Fatalf("wrapped input miss %v %d,%d: %s", size, x, row, got)
 				}
 			}
 		}
-		if m.monitorContextAt(4, g.meterY+y+rows-1) != "prompt" {
+		if hit(4, g.meterY+y+rows-1) != "prompt" {
 			t.Fatal("bottom hint line should focus the composer")
 		}
 		if m.monitorPrompt.input.Value() != value {

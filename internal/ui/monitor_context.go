@@ -401,7 +401,17 @@ func (m Model) updateMonitorContextKey(key string) (Model, tea.Cmd, bool) {
 }
 
 func (m Model) monitorContextAt(x, y int) string {
+	return m.monitorContextHitTester()(x, y)
+}
+
+// Reuse geometry only while probing one unchanged screen. Live input starts
+// a new pass so a resize, telemetry update or approval expiry cannot reuse it.
+func (m Model) monitorContextHitTester() func(x, y int) string {
 	m.geometry = &monitorGeometryCache{}
+	return m.monitorContextAtInPass
+}
+
+func (m Model) monitorContextAtInPass(x, y int) string {
 	if m.meterView != viewMonitor || m.loading && len(m.snapshot.Meters()) == 0 {
 		return ""
 	}
@@ -449,7 +459,8 @@ func (m Model) monitorContextAt(x, y int) string {
 				return hit
 			}
 		}
-		if hit := monitorButtonAt(m.monitorApprovalButtons(g.contentWidth, g.meterHeight), g.meterHeight, x, y); hit != "" {
+		approvalButtons := m.geometry.approvalButtons.at(g.contentWidth, g.meterHeight, m.monitorApprovalButtons)
+		if hit := monitorButtonAt(approvalButtons, g.meterHeight, x, y); hit != "" {
 			return hit
 		}
 		if r, ok := contextActionRect(g.contentWidth, 0, monitorDismissLabel); ok && r.contains(x, y) {
